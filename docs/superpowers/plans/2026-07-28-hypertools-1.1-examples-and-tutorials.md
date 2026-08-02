@@ -862,9 +862,24 @@ git commit -m "feat(colors): image_palette() + palette='image:<path>', salience-
 
 ## Task 2: Market — the MultiIndex showcase
 
-**BEFORE (measured):** `examples/animate_market_forecast.py` — 355 raw lines, **191 code lines, 11 native (5.8%)**. Audit classification: A=61 **B=17 C=100** D=14 NATIVE=7. `docs/tutorials/market_forecast.ipynb` — **192 code lines, 11 native (5.7%)**, 0 of 7 code cells executed.
+> **v3: THE SCRIPT HALF IS PARTIALLY LANDED.** `d730a085` migrated this file off the `ani._func`/`ani._args` monkeypatch onto the public `anim.on_frame(...)`. Read the file on disk before doing anything; `git show d730a085~1:examples/animate_market_forecast.py` shows the pre-migration state. Do **not** apply "replace the file entirely" without reconciling first — it would delete the migration and the two evidence-bearing rationales Contract 3 now allowlists.
 
-**AFTER (contracted budget):** script **≤ 115 code lines, ≥ 26% native**; notebook **≤ 120 code lines, ≥ 24% native**; **zero** defect markers.
+**BEFORE — re-measured 2026-08-02 at `065c841e`, with the docstring-aware metric:**
+
+| file | v2 said | actual now |
+|-|-|-|
+| `examples/animate_market_forecast.py` | 355 raw, 191 code, 11 native (5.8%) | **376 raw, 191 code, 11 native (5.8%)** |
+| `docs/tutorials/market_forecast.ipynb` | 192 code, 11 native (5.7%), "0 of 7 executed" | **187 code, 11 native (5.9%), 4 of 7 cells carry output** |
+
+Audit classification (unchanged, still accurate for the parts this task rewrites): A=61 **B=17 C=100** D=14 NATIVE=7.
+
+**Already done by `d730a085`:** the per-frame monkeypatch is gone; the decorator is a `FrameContext` callback registered on the public hook (`def decorate(ctx):` and `anim.on_frame(decorate)`). **Everything else in this task remains** — the 5 FRED series are still not a 24-ticker MultiIndex, `predict=`/`t=` is still hand-rolled, and the reduce→drawn affine recovery, the 16-slot hand-drawn fan, the hand-built colorbar and the hand-built title all survive.
+
+**BLOCKED:** the prescribed call passes `forecast_trail=16`, which does not exist in `plot()` yet (Plan 3 Task 5). Do not start this task until Plan 3 has landed.
+
+**AFTER (contracted budget):** script **≤ 115 code lines**; notebook **≤ 120** (= 115 + 5); **zero** defect markers. Prescribed content measures 109 and 113.
+
+The notebook budget is DERIVED, not written down: `script_budget + NOTEBOOK_OVERHEAD` (Contract 6b), so it can never again be set below its own script's. No ratio floor — ratio is reported, never gated (Contract 6a).
 
 **What goes, and to what:**
 
@@ -1220,7 +1235,7 @@ Rewrite `docs/tutorials/market_forecast.ipynb` so its code cells are the script'
 
 (`scripts/measure_native_ratio.py` is created in Task 8 Step 1; if you are working tasks in order, do that step first — it is standalone.)
 
-Expected: the notebook reports `7/8 code cells produced output` or better, and both files measure **≤ 115/120 code lines and ≥ 26%/24% native**. If either budget is missed, cut presentation code — never inflate the native count with redundant calls.
+Expected: both files inside budget (**≤ 115 / ≤ 120 code lines**). If either is missed, cut presentation code. **Do not predict an output-cell count here** — v2 guessed `7/8` and every one of its five per-task guesses was wrong. Record the measured visible-output INDEX SET from this run into `EXPECTED_VISIBLE_OUTPUTS` (Task 8), which names the offending cell when it drifts.
 
 - [ ] **Step 7: Commit**
 
@@ -1234,9 +1249,22 @@ git commit -m "docs(gallery): market example is a column-MultiIndex showcase wit
 
 ## Task 3: Weather — the paper figure, nearly all native
 
-**BEFORE (measured):** `examples/animate_weather_decades.py` — 333 raw lines, **196 code lines, 11 native (5.6%)**. Audit classification: A=72 **B=8 C=44** D=70 NATIVE=19. `docs/tutorials/weather_decades.ipynb` — **206 code lines, 10 native (4.9%)**, 0 of 7 code cells executed.
+> **v3: THE SCRIPT HALF IS PARTIALLY LANDED.** `d730a085` migrated this file off `ani._func` onto `anim.on_frame(...)`, and changed `fig, ani =` to `anim` + `anim.figure`. Read the file on disk first (`git show d730a085~1:examples/animate_weather_decades.py` for the pre-migration state) and reconcile rather than overwrite.
 
-**AFTER (contracted budget):** script **≤ 62 code lines, ≥ 18% native**; notebook **≤ 66 code lines, ≥ 17% native**; **zero** defect markers.
+**BEFORE — re-measured 2026-08-02 at `065c841e`, with the docstring-aware metric:**
+
+| file | v2 said | actual now |
+|-|-|-|
+| `examples/animate_weather_decades.py` | 333 raw, 196 code, 11 native (5.6%) | **336 raw, 195 code, 11 native (5.6%)** |
+| `docs/tutorials/weather_decades.ipynb` | 206 code, 10 native (4.9%), "0 of 7 executed" | **194 code, 11 native (5.7%), 2 of 7 cells carry output** |
+
+Audit classification (unchanged): A=72 **B=8 C=44** D=70 NATIVE=19.
+
+**Note for the defect-marker gate:** this file's docstring now contains the string `` `ani._func` `` while *explaining the migration away from it*. That is documentation, not a private reach — which is why Task 8's scan strips docstrings before matching (Contract 3).
+
+**AFTER (contracted budget):** script **≤ 62 code lines**; notebook **≤ 67** (= 62 + 5); **zero** defect markers. Prescribed content measures 56 and 60.
+
+The notebook budget is DERIVED, not written down: `script_budget + NOTEBOOK_OVERHEAD` (Contract 6b), so it can never again be set below its own script's. No ratio floor — ratio is reported, never gated (Contract 6a).
 
 **The reframe.** The current example treats 6 cities as 6 *datasets* and hand-builds a hemisphere hierarchy on top (26 lines of **C**), plus a whole second daily-temperature panel (70 lines of **D**), plus a `Line3DCollection` linewidth workaround (**C**, and a library bug that animation-core Task 2 fixes). The paper figure is a different, simpler object: **20 cities are 20 FEATURES of one trajectory through time**, coloured by the average temperature across them. That is one `hyp.plot` call, and it needs no hierarchy at all.
 
@@ -1416,7 +1444,7 @@ Rewrite `docs/tutorials/weather_decades.ipynb`, keeping cell 0 (Colab install) u
     examples/animate_weather_decades.py docs/tutorials/weather_decades.ipynb
 ```
 
-Expected: `4/5 code cells produced output` (cells 3, 5, 7, 9; cell 0's Colab install cell produces none), and both files inside budget (**≤ 62/66 code lines, ≥ 18%/17% native**).
+Expected: both files inside budget (**≤ 62 / ≤ 67 code lines**). Record the measured visible-output index set into `EXPECTED_VISIBLE_OUTPUTS` rather than asserting a predicted count — v2's `4/5` named cells 3/5/7/9, and the real emitting cells are a different set entirely.
 
 - [ ] **Step 6: Commit**
 
@@ -1429,9 +1457,18 @@ git commit -m "docs(gallery): weather example is the paper figure in one native 
 
 ## Task 4: Paintings — native text, native palette, full descriptions
 
-**BEFORE (measured):** `examples/animate_painting_embeddings.py` — 213 raw lines, **146 code lines, 11 native (7.5%)**. Audit classification: A=97 **B=25 C=6** D=13 NATIVE=8. `docs/tutorials/painting_embeddings.ipynb` — **116 code lines, 10 native (8.6%)**, 0 of 6 code cells executed.
+**BEFORE — re-measured 2026-08-02 at `065c841e`. This is the ONE example `d730a085` did not touch** (its last change is `4d1d2223`), so v2's baseline for the script is still exact and this task is a clean rewrite rather than a rebase:
 
-**AFTER (contracted budget):** script **≤ 118 code lines, ≥ 20% native**; notebook **≤ 110 code lines, ≥ 20% native**; **zero** defect markers. (The floor is high because the `PAINTINGS` dict alone is ~54 lines of genuine class-**A** data.)
+| file | v2 said | actual now |
+|-|-|-|
+| `examples/animate_painting_embeddings.py` | 213 raw, 146 code, 11 native (7.5%) | **212 raw, 146 code, 11 native (7.5%)** — matches |
+| `docs/tutorials/painting_embeddings.ipynb` | 116 code, 10 native (8.6%), "0 of 6 executed" | **121 code, 11 native (9.1%), 2 of 6 cells carry output** |
+
+Audit classification (unchanged): A=97 **B=25 C=6** D=13 NATIVE=8.
+
+**AFTER (contracted budget):** script **≤ 118 code lines**; notebook **≤ 123** (= 118 + 5); **zero** defect markers. Prescribed content measures 111 and 116. (The budget is generous because the `PAINTINGS` dict alone is ~54 lines of genuine class-**A** data.) **v2 set the notebook at 110 — BELOW the script's 118 — which no correct notebook could satisfy.**
+
+The notebook budget is DERIVED, not written down: `script_budget + NOTEBOOK_OVERHEAD` (Contract 6b), so it can never again be set below its own script's. No ratio floor — ratio is reported, never gated (Contract 6a).
 
 **What goes, and to what:**
 
@@ -1650,7 +1687,7 @@ Rewrite `docs/tutorials/painting_embeddings.ipynb`, keeping cell 0 unchanged:
     examples/animate_painting_embeddings.py docs/tutorials/painting_embeddings.ipynb
 ```
 
-Expected: `5/6 code cells produced output` (cell 0's Colab install cell produces none), both files inside budget (**≤ 118/110 code lines, ≥ 20% native**).
+Expected: both files inside budget (**≤ 118 / ≤ 123 code lines**). Record the measured visible-output index set into `EXPECTED_VISIBLE_OUTPUTS`; do not assert a predicted count.
 
 - [ ] **Step 6: Commit**
 
@@ -1663,9 +1700,22 @@ git commit -m "docs(gallery): paintings example uses native text embedding and n
 
 ## Task 5: Conversation — native text, serial order, per-segment titles
 
-**BEFORE (measured):** `examples/animate_conversation.py` — 316 raw lines, **166 code lines, 9 native (5.4%)**. Audit classification: A=61 **B=31 C=49** D=40 NATIVE=9. `docs/tutorials/conversation_shape.ipynb` — **186 code lines, 11 native (5.9%)**, 0 of 6 code cells executed.
+> **v3: THE SCRIPT HALF IS PARTIALLY LANDED, AND v2's PRESCRIBED TEXT WOULD REGRESS IT INTO A CRASH.** `d730a085` migrated this file onto `anim.on_frame(decorate)` and replaced `ani._args[0]`/`[1]` with `ctx.datasets`/`ctx.artists`. It binds `anim = hyp.plot(...)` **without unpacking**, which is what makes `.on_frame()` reachable (Contract 8). v2's prescribed notebook does `fig, ani = hyp.plot(...)` and then `ani.on_frame(recency_fade)` — an `AttributeError`, because `ani` is then the raw `FuncAnimation`. Reconcile against the file on disk; `git show d730a085~1:examples/animate_conversation.py` shows the pre-migration state.
 
-**AFTER (contracted budget):** script **≤ 72 code lines, ≥ 25% native**; notebook **≤ 76 code lines, ≥ 24% native**; **zero** defect markers. (The `TURNS` list alone is 29 lines of class-**A** data.)
+**BEFORE — re-measured 2026-08-02 at `065c841e`, with the docstring-aware metric:**
+
+| file | v2 said | actual now |
+|-|-|-|
+| `examples/animate_conversation.py` | 316 raw, 166 code, 9 native (5.4%) | **320 raw, 165 code, 9 native (5.5%)** |
+| `docs/tutorials/conversation_shape.ipynb` | 186 code, 11 native (5.9%), "0 of 6 executed" | **176 code, 11 native (6.2%), 2 of 6 cells carry output** |
+
+Audit classification (unchanged): A=61 **B=31 C=49** D=40 NATIVE=9.
+
+**Note for the defect-marker gate:** as with weather, this file's docstring names `` `ani._func` `` while explaining its removal. Documentation, not a reach.
+
+**AFTER (contracted budget):** script **≤ 90 code lines**; notebook **≤ 95** (= 90 + 5); **zero** defect markers. Prescribed content measures 88 and 93 — the tightest pair in the plan. (The `TURNS` list alone is 29 lines of class-**A** data.) **v2 said 72 here in prose while its enforced `BUDGETS` dict already said 90, and set the notebook at 76 — BELOW the script's — which no correct notebook could satisfy.**
+
+The notebook budget is DERIVED, not written down: `script_budget + NOTEBOOK_OVERHEAD` (Contract 6b), so it can never again be set below its own script's. No ratio floor — ratio is reported, never gated (Contract 6a).
 
 **What goes, and to what:**
 
@@ -2022,7 +2072,7 @@ Rewrite `docs/tutorials/conversation_shape.ipynb`, keeping cell 0 unchanged:
     examples/animate_conversation.py docs/tutorials/conversation_shape.ipynb
 ```
 
-Expected: `5/6 code cells produced output` (cell 0's Colab install cell produces none), both inside budget (**≤ 72/76 code lines, ≥ 25%/24% native**).
+Expected: both files inside budget (**≤ 90 / ≤ 95 code lines**). Record the measured visible-output index set into `EXPECTED_VISIBLE_OUTPUTS`; do not assert a predicted count.
 
 - [ ] **Step 6: Commit**
 
@@ -2035,9 +2085,18 @@ git commit -m "docs(gallery): conversation example uses native text, order='seri
 
 ## Task 6: Morph — per-segment titles, natively
 
-**BEFORE (measured):** `examples/animate_morph_zoo.py` — 129 raw lines, **40 code lines, 6 native (15.0%)**. Audit classification: A=17 **B=5 C=16** D=0 NATIVE=5 — the best-proportioned of the five, whose only defect is the missing per-segment-title feature. `docs/tutorials/morph_shapes_zoo.ipynb` — **45 code lines, 8 native (17.8%)**, 0 of 6 code cells executed.
+> **v3: THE SCRIPT HALF OF THIS TASK IS ALREADY DONE.** Commit `d730a085` landed it on 2026-08-01. Step 1 below is retained only as a record of what was asked for; **do not apply it** — see "Step 1 (ALREADY LANDED)". The remaining work is the notebook, which still reaches into the private API the script has stopped using.
 
-**AFTER (contracted budget):** script **≤ 30 code lines, ≥ 26% native**; notebook **≤ 34 code lines, ≥ 26% native**; **zero** defect markers.
+**BEFORE — re-measured 2026-08-02 at `065c841e`, with the docstring-aware metric:**
+
+| file | v2 said | actual now | note |
+|-|-|-|-|
+| `examples/animate_morph_zoo.py` | 129 raw, 40 code, 6 native (15.0%) | **96 raw, 26 code, 6 native (23.1%)** | `d730a085` already deleted the workaround |
+| `docs/tutorials/morph_shapes_zoo.ipynb` | 45 code, 8 native (17.8%), "0 of 6 executed" | **46 code, 9 native (19.6%), 1 of 6 cells carries output** | the "0 executed" claim was never true |
+
+**AFTER (contracted budget):** script **≤ 30 code lines** — already met, at 26; notebook **≤ 35 code lines** (derived: 30 + `NOTEBOOK_OVERHEAD`, Contract 6); **zero** defect markers. No ratio floor (Contract 6a).
+
+**Gate status today:** the script is **the only one of the five that already passes** both the defect-marker scan and its budget. The notebook fails on `ani._func` and `from hypertools.plot import morph`.
 
 **What goes, and to what:**
 
@@ -2055,9 +2114,20 @@ git commit -m "docs(gallery): conversation example uses native text, order='seri
 
 **Files:** rewrite the tail of `examples/animate_morph_zoo.py`; rewrite `docs/tutorials/morph_shapes_zoo.ipynb`.
 
-- [ ] **Step 1: Rewrite the example**
+- [x] **Step 1 (ALREADY LANDED — verify, do not apply)**
 
-Delete `from hypertools.plot import morph as _morph` (line 35) and replace everything from line 94 to the end of the file with:
+`d730a085` implemented this. **Verify rather than rewrite:**
+
+```bash
+grep -nE "_morph|morph_schedule|ani\._func|shape_title" examples/animate_morph_zoo.py
+# expected: no output -- every class-C workaround is gone
+grep -n "title=titles" examples/animate_morph_zoo.py
+# expected: one hit, inside the hyp.plot(...) call
+```
+
+Both were run on 2026-08-02 and give exactly that. The landed code is **semantically equivalent to the block below, not textually identical** — the comment wording differs and `title=titles` sits at the end of the call rather than mid-list. That is fine; the contract is the behaviour, and re-applying the block would be a pointless diff. The docstring rewrite also landed, in different words that say the same thing.
+
+**If the greps above do NOT come back clean**, the migration was reverted somewhere; only then apply the original instruction, recorded here for that case: delete `from hypertools.plot import morph as _morph` and replace everything from the `hyp.plot` call to the end of the file with:
 
 ```python
 # THE hypertools call: black pixel-sized dots morphing through the zoo, with
@@ -2134,7 +2204,7 @@ Rewrite `docs/tutorials/morph_shapes_zoo.ipynb`. The current cell 9 (24 lines of
     examples/animate_morph_zoo.py docs/tutorials/morph_shapes_zoo.ipynb
 ```
 
-Expected: `4/5 code cells produced output` (cell 0's Colab install cell produces none), both inside budget (**≤ 30/34 code lines, ≥ 26% native**).
+Expected: both files inside budget (**≤ 30 / ≤ 35 code lines**). Record the measured visible-output index set into `EXPECTED_VISIBLE_OUTPUTS`; do not assert a predicted count.
 
 - [ ] **Step 5: Commit**
 
