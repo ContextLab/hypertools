@@ -190,7 +190,7 @@ This is the first revision of this plan, so there is no prior version to correct
 - Target release: **1.1**. Nothing here ships to users until the whole 1.1 line is working.
 - Run everything with the repo venv: `.venv/bin/python`. **The base anaconda python is BROKEN** (numpy/matplotlib mismatch); a bare `python`/`pytest` will fail confusingly.
 - Run pytest from the repo root; `pyproject.toml` sets `testpaths = ["tests"]` and `timeout = 1200`.
-- **Baseline, re-measured 2026-08-02: `2799/2801 tests collected (2 deselected)`.** (It was `2782/2784` at `065c841e`; Plan 3's Tasks 0-1 have since added 17 — 9 for `FrameHooks.add_internal`, 8 for `forecast_from_history`. The arithmetic reconciles exactly, which is the point: measure, do not carry a number forward.) (v2 said `2564`; that number was ~7 months of commits stale.) Plan 3's Tasks 0–1 have since landed (+17), so measure again at the moment this plan starts rather than trusting any number written here — the suite is moving while Plans 1–3 are implemented. This plan states its own deltas relative to whatever the suite is when it starts, and each task re-runs the whole suite.
+- **Baseline: MEASURE IT WHEN THIS PLAN STARTS. Do not trust any number written here.** For reference only, it was `2564` in v2 (~7 months stale by the time anyone read it), `2782/2784` at `065c841e`, and `2799/2801` on 2026-08-02 after Plan 3's Tasks 0–1 added 17. Each of those was correct when written and wrong within days, because Plans 1–3 are landing concurrently. This plan states its own deltas relative to whatever the suite is when it starts, and each task re-runs the whole suite.
 - **Reading a file's BEFORE state: use `git show <base>:<path>`, never `git stash`.** v2 prescribed `git stash && measure && git stash pop`. That is a **data-loss hazard**, demonstrated end-to-end: with a clean tree — exactly the state at `065c841e` — `git stash` saves nothing and returns 0, and the following `git stash pop` then restores *and drops* an unrelated pre-existing stash (`Dropped refs/stash@{0}`; stash count 1 → 0; the unrelated file appears in the tree). `git show` is read-only, needs no clean tree, and leaves `git status --porcelain` byte-identical before and after.
 - **New test files must be `git add`ed before running the full suite.** `tests/test_packaging_artifacts.py::test_sdist_contains_only_tracked_files_plus_allowlist` fails on any untracked file that lands in the sdist. This is the guard working, not a false positive — but it will look like an unrelated failure if the new test file is still untracked. (Observed twice while preparing this revision.)
 - **Never simplify a test to make it pass.** If a test fails repeatedly, fix the code.
@@ -1000,7 +1000,7 @@ Verify it on an untouched notebook before relying on it:
 ```bash
 .venv/bin/python -m ipykernel install --user --name hypertools-venv \
     --display-name "hypertools (.venv)"
-git stash list   # (ensure a clean tree first)
+git status --porcelain   # confirm a clean tree before an in-place execute
 .venv/bin/python scripts/execute_tutorial.py docs/tutorials/reduce.ipynb
 git diff --stat docs/tutorials/reduce.ipynb
 git checkout -- docs/tutorials/reduce.ipynb
@@ -3028,9 +3028,12 @@ if __name__ == '__main__':
 Verify it reproduces the recorded baseline **before** any rewrite is measured against it:
 
 ```bash
-git stash && .venv/bin/python scripts/measure_native_ratio.py examples/animate_conversation.py && git stash pop
+git show d730a085~1:examples/animate_conversation.py > /tmp/before_conversation.py
+.venv/bin/python scripts/measure_native_ratio.py /tmp/before_conversation.py
 ```
-Expected on the untouched file: `code= 166 native=   9 ratio=  5.4%`.
+Expected on the pre-`d730a085` file: `code= 166 native=   9 ratio=  5.4%`. On the file as it stands **today** (post-migration, docstring-aware metric): `code= 165 native=   9 ratio=  5.5%`.
+
+**Never `git stash` for this.** Global Constraints explains why: with a clean tree it saves nothing and the following `pop` restores *and drops* an unrelated pre-existing stash. `git show` is read-only and needs no clean tree.
 
 - [ ] **Step 2: Write the gate as a real test**
 
@@ -4053,7 +4056,7 @@ Flagged rather than invented. Each states the options and the exact change to sw
 
 **Task dependencies.** 1 → 4 (`image_palette`). 2–6 each depend on Plans 1–3 as tabulated. Task 2 Step 1 creates `scripts/execute_tutorial.py`, which Tasks 3–7 use; Task 8 Step 1 creates `scripts/measure_native_ratio.py`, which Tasks 2–7 use in their measure steps — **do Task 8 Step 1 first** if working strictly in order, as noted in Task 2 Step 6. Tasks 1 and 7 have no dependency on Plans 1–3 and can run in parallel with them.
 
-**Suite arithmetic.** Task 1 adds **19**; Task 5 adds **12**; Task 8 adds **147** (138 in `test_examples_are_native.py`, itemised in its Step 3 table, plus 9 in `test_hyper_animation_accessors.py`). Total **+178**, on top of whatever Plans 1–3 leave the suite at. The baseline itself is moving — re-measured 2026-08-02 at `2782/2784 collected`, and Plan 3's Tasks 0–1 have since added 17 — so measure it when this plan starts rather than trusting any number written here.
+**Suite arithmetic.** Task 1 adds **19**; Task 5 adds **12**; Task 8 adds **147** (138 in `test_examples_are_native.py`, itemised in its Step 3 table, plus 9 in `test_hyper_animation_accessors.py`). Total **+178**. That is a DELTA; the absolute is whatever the suite measures when this plan starts, per Global Constraints. Verify each of the three by real collection rather than by this sum — the stated figure has been stale in every revision of this plan so far.
 
 **Remaining risk.** Three places:
 
