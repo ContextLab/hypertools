@@ -1497,19 +1497,32 @@ def plot(
         drawn overlay prepends the last observed row so the dashed trace
         connects to the trajectory (`t + 1` drawn vertices); the forecast
         DATA itself -- e.g. in the ``return_model=True`` bundle -- has
-        exactly `t` rows, matching `hyp.predict`. Supported for STATIC plots
-        and for ``animate='spin'`` (which only rotates the camera around the
+        exactly `t` rows, matching `hyp.predict`. Supported for STATIC plots,
+        for ``animate='spin'`` (which only rotates the camera around the
         static forecast overlay, so the dashed trace simply rotates with the
-        rest of the scene); NOT supported with the time-progressing animate
-        modes (``True``/``'parallel'``/``'serial'``/``'window'``/``'morph'``,
-        or a per-dataset morph list), which reveal/append data over time --
-        combining `predict` with any of those raises ``NotImplementedError``
+        rest of the scene), and for the TIME-PROGRESSING animate modes
+        (``True``/``'parallel'``/``'serial'``/``'window'``), where the
+        forecast is recomputed from the history revealed so far and
+        re-anchored on the last revealed observation, so it grows with the
+        animation. Every one of those forecasts is computed BEFORE the first
+        frame is drawn and folded into the plot's centre/scale statistics,
+        so the whole fan lands inside the cube and nothing is clipped or
+        clamped, and every frame is a lookup -- ``ani.save()`` and
+        ``to_jshtml()`` replays render identically. NOT supported with
+        ``animate='morph'`` (including the per-dataset morph list form),
+        which interpolates between point CLOUDS and so has no time axis to
+        forecast along; that combination raises ``NotImplementedError``
         (default: None).
 
     t : int or datetime-like
         Forecast horizon passed to `predict` (see
         `hypertools.predict.common.resolve_t`); ignored unless `predict` is
-        set (default: 10).
+        set. Measured in RAW observations of the analyzed data -- NOT in
+        animation frames and NOT in drawn vertices. ``t=1`` forecasts only
+        the next observation. Because an animation is paced on a resampled
+        frame grid (see `duration`/`frame_rate`), an animated forecast joins
+        the drawn trajectory to within one raw observation rather than
+        exactly (default: 10).
 
     save_path : str or path-like
         Path to save the image/movie; the format is chosen by the file
@@ -4975,6 +4988,74 @@ def plot(
                 if animate == 'spin':
                     for _artist in _forecast_artists:
                         _artist.set_clip_on(False)
+
+            # ...and the time-progressing modes get one LIVE artist per
+            # dataset instead, refilled every frame from the precomputed
+            # schedule. Created EMPTY: frame 0 may legitimately have no
+            # forecast for a dataset (too little history revealed), and
+            # emptiness -- not alpha -- is how "nothing to draw" is said.
+            if forecast_schedule is not None:
+                # Colours come from the trajectory lines as they stand
+                # BEFORE any forecast artist is added: `ax.lines` grows as
+                # this loop runs, so snapshot it first or artist i would take
+                # its colour from forecast i-1. (Same guard
+                # `_draw_forecast_overlays` opens with.)
+                _src_lines = list(ax.lines)
+                _live_forecast_artists = []
+                for _i in range(len(xform)):
+                    _fc_color = (_src_lines[_i].get_color()
+                                 if _i < len(_src_lines) else None)
+                    # the SAME three-way split, linestyle, alpha and label
+                    # `_draw_forecast_overlays` uses, so a paused animation
+                    # is indistinguishable from the static plot. 1-D is a
+                    # real branch: `_display_ndims` can be 1.
+                    if _display_ndims >= 3:
+                        _art, = ax.plot([], [], [], linestyle='--',
+                                        color=_fc_color, alpha=0.6,
+                                        label='_nolegend_')
+                    elif _display_ndims == 2:
+                        _art, = ax.plot([], [], linestyle='--',
+                                        color=_fc_color, alpha=0.6,
+                                        label='_nolegend_')
+                    else:
+                        _art, = ax.plot([], linestyle='--', color=_fc_color,
+                                        alpha=0.6, label='_nolegend_')
+                    _art.set_clip_on(False)
+                    _art._hyp_forecast_role = 'live'
+                    _live_forecast_artists.append(_art)
+
+                def _update_forecasts(ctx, _sched=forecast_schedule,
+                                      _artists=_live_forecast_artists,
+                                      _antialias=antialias,
+                                      _ndims=_display_ndims):
+                    for i, art in enumerate(_artists):
+                        pts = _sched.polyline(i, ctx.frame)
+                        if pts is None or len(pts) < 2:
+                            art.set_visible(False)
+                            if _ndims >= 3:
+                                art.set_data_3d([], [], [])
+                            else:
+                                art.set_data([], [])
+                            continue
+                        if _antialias:
+                            # documented parity with the static overlay
+                            pts = _interp_static_line(pts)
+                        art.set_visible(True)
+                        # the SAME three-way split `_draw_forecast_overlays`
+                        # uses. A 3-D forecast artist is a Line3D: set_data
+                        # alone would leave its z-data at whatever it held
+                        # last, drawing in the wrong place instead of failing.
+                        if _ndims >= 3:
+                            art.set_data_3d(pts[:, 0], pts[:, 1], pts[:, 2])
+                        elif _ndims == 2:
+                            art.set_data(pts[:, 0], pts[:, 1])
+                        else:
+                            art.set_data(np.arange(len(pts)), pts[:, 0])
+
+                # INTERNAL phase: library updaters run before user callbacks,
+                # so an on_frame= callback observes this frame's completed
+                # forecast geometry rather than the previous frame's.
+                _frame_hooks.add_internal(_update_forecasts)
 
             # exact per-point colors: swap the single-color artists for
             # per-segment-colored line collections or per-point-colored

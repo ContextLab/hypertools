@@ -43,10 +43,26 @@ Small, additive plotting features and fixes (fully backward-compatible).
 
 - **`predict=` now works with `animate='spin'`.** A spinning 3-D plot can
   carry its `predict=` forecast overlay -- the dashed, low-opacity forecast
-  trace(s) are drawn once and rotate with the scene. The time-progressing
-  animation styles (`True`/`'parallel'`/`'serial'`/`'window'`/`'morph'`)
-  still raise `NotImplementedError` with `predict=`, since a growing forecast
-  trace over those remains follow-up work.
+  trace(s) are drawn once and rotate with the scene.
+
+- **`predict=` now works with the time-progressing animations too**
+  (`animate=True`/`'parallel'`/`'serial'`/`'window'`). The forecast is
+  recomputed from the history revealed so far and re-anchored on the last
+  revealed observation, so the dashed trace grows with the animation instead
+  of standing still. Because the data is static -- all of it known before the
+  first frame, merely revealed over time -- every forecast the animation will
+  ever draw is computed up front. Two things follow: the whole fan is folded
+  into the plot's centre/scale statistics, so it lands inside the cube **by
+  construction** and is never clipped or clamped; and each frame is a table
+  lookup, so `ani.save()` and `to_jshtml()` replay identically no matter what
+  order matplotlib asks for frames in. Fits are memoized per (dataset,
+  revealed-count), so a 900-frame animation of a 60-row dataset costs at most
+  59 fits rather than 900.
+
+  `animate='morph'` (including the per-dataset morph list form) still raises
+  `NotImplementedError`, and now for a stated reason rather than as blanket
+  follow-up: a morph interpolates between point CLOUDS, so there is no time
+  axis to forecast along.
 
 - **`plot(..., on_frame=...)`: a public per-frame hook, on both backends.**
   `on_frame` is called once per drawn animation frame with a single
