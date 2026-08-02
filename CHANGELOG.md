@@ -72,9 +72,9 @@ Small, additive plotting features and fixes (fully backward-compatible).
   prediction *changed* as history accumulated -- a forecast that keeps
   revising points somewhere different from one that settles.
 
-  The fan at frame *f* is a pure function of *f*, recomputed from the
-  precomputed schedule rather than accumulated in a buffer, so a saved GIF and
-  an interactively-played animation are identical and frames delivered out of
+  The fan is recomputed from the frame index rather than accumulated in a
+  buffer, so it depends only on which frame is being drawn: a saved GIF and an
+  interactively-played animation are identical, and frames delivered out of
   order (which `save()` and `to_jshtml()` do) give the same picture. Artists
   are preallocated at setup, since allocating them mid-animation is what makes
   matplotlib animations stutter, and an unwritten slot is hidden with EMPTY
@@ -84,6 +84,13 @@ Small, additive plotting features and fixes (fully backward-compatible).
 
   Without `predict=` it raises `ValueError` rather than silently doing
   nothing.
+
+- **Forecast artists and traces are tagged, so callbacks can find them.**
+  `artist._hyp_forecast_role` on matplotlib (`'static'`, `'live'` or
+  `'trail'`) and `trace.meta['hyp_forecast_role']` on plotly, with
+  `_hyp_forecast_age` on trail artists. Previously the only way to pick a
+  forecast out of `ax.lines` was to guess from its linestyle, which also
+  matched any user-supplied dashed line.
 
 - **`plot(..., on_frame=...)`: a public per-frame hook, on both backends.**
   `on_frame` is called once per drawn animation frame with a single

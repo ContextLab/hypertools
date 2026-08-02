@@ -1847,10 +1847,11 @@ def plot(
         with age down to a floor of 0.08, so a viewer can see how the
         prediction CHANGED as history accumulated.
 
-        The fan at frame *f* is a pure function of *f* -- recomputed from the
-        precomputed schedule, never accumulated -- so a saved GIF and an
-        interactively-played animation are identical, and driving frames out
-        of order (which `save()`/`to_jshtml()` do) gives the same picture.
+        The fan is recomputed from the frame index rather than accumulated
+        in a buffer, so it depends only on which frame is being drawn: a
+        saved GIF and an interactively-played animation are identical, and
+        driving frames out of order (which `save()`/`to_jshtml()` do) gives
+        the same picture.
         Retained forecasts need no extra room in the plot box: a retained
         forecast is just an earlier frame's, and the box is already built to
         contain every forecast the animation will draw.

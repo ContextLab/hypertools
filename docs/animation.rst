@@ -302,6 +302,81 @@ that frame's traces), so a callback that touches them is backend-specific
 code. Each backend does guarantee that a mutation you make is retained in
 the frame it renders.
 
+Forecasting during an animation
+--------------------------------
+
+``predict=`` works with the time-progressing animation styles
+(``animate=True``, ``'parallel'``, ``'serial'``, ``'window'``) on **both**
+backends. The forecast is recomputed from the history revealed so far and
+re-anchored on the last revealed observation, so the dashed trace grows with
+the animation instead of standing still:
+
+.. code-block:: python
+
+    fig, ani = hyp.plot(data, '-', predict='Kalman', t=10,
+                        animate=True, duration=8, frame_rate=20)
+
+``t`` is measured in **raw observations of the analyzed data** -- not in
+animation frames, and not in drawn vertices. ``t=1`` forecasts the next
+observation. Because an animation is paced on a resampled frame grid (see
+``duration``/``frame_rate``), an animated forecast joins the drawn trajectory
+to within one raw observation rather than exactly.
+
+Everything is computed before the first frame
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Animating static data means every observation is known before drawing starts,
+so every forecast the animation will *ever* draw is knowable up front. Two
+things follow, and both are contracts rather than implementation details:
+
+- The whole fan is folded into the plot's centre/scale statistics, so it lands
+  inside the cube **by construction**. Nothing is clipped or clamped.
+- Each frame is a table lookup, so ``ani.save()`` and ``to_jshtml()`` replay
+  identically no matter what order matplotlib asks for frames in.
+
+Fits are memoized per (dataset, revealed-count), so a 900-frame animation of a
+60-row dataset costs at most 59 fits rather than 900.
+
+Keeping earlier forecasts on screen
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``forecast_trail=`` is the forecast analogue of ``chemtrails=``: earlier
+forecasts stay visible and fade, so a viewer can see how the prediction
+*changed* as history accumulated.
+
+.. code-block:: python
+
+    fig, ani = hyp.plot(data, '-', predict='Kalman', t=10,
+                        animate=True, forecast_trail=True,
+                        duration=8, frame_rate=20)
+
+``True`` retains 16 past forecasts; an int sets the cap. Without ``predict=``
+it raises ``ValueError`` rather than silently doing nothing. Like the live
+forecast, the fan is recomputed from the frame index rather than accumulated
+in a buffer, so it depends only on which frame is being drawn -- a saved
+animation and an interactively-played one are identical, and asking for
+frames out of order (which ``save()`` does) gives the same picture.
+
+Identifying forecast artists
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Forecast artists carry an explicit tag, so a per-frame callback can find them
+without guessing from linestyle -- ``artist._hyp_forecast_role`` on matplotlib
+(``'static'``, ``'live'`` or ``'trail'``) and ``trace.meta['hyp_forecast_role']``
+on plotly. Trail artists additionally carry ``_hyp_forecast_age``.
+
+Note that forecast artists are deliberately **not** in
+``FrameContext.artists``: that sequence has cardinality assumptions (one entry
+per drawn dataset) that a variable number of forecast overlays would violate.
+
+What ``animate='morph'`` does
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``animate='morph'`` (including the per-dataset morph list form) raises
+``NotImplementedError`` with ``predict=``. A morph interpolates between point
+*clouds*, so there is no time axis to forecast along -- this is a statement
+about what a morph means, not a gap to be filled later.
+
 Migrating from ``_func``/``_args``
 ----------------------------------
 
