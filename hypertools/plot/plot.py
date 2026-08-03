@@ -34,6 +34,14 @@ from .multiindex import expand_multiindex, build_multiindex_styles
 from .morph import resolve_morph_rotations
 from .fonts import resolve_font, sans_serif_stack
 from .forecast import FORECAST_ALPHA_SCALE, forecast_alpha
+# matplotlib's own fmt-string grammar, used so `forecast_fmt=` means
+# exactly what the same string means in `fmt=` (same guarded import
+# `matplotlib_backend` uses; a future relocation degrades rather than
+# crashes).
+try:
+    from matplotlib.axes._base import _process_plot_format
+except ImportError:  # pragma: no cover
+    _process_plot_format = None
 
 
 # GH #206: the subset of mpl_kwargs keys `plotly_backend.plotly_draw` (and
@@ -135,7 +143,38 @@ def _fmt_draws_line(fmt):
     return has_line_component(fmt)
 
 
-def _forecast_style_from(src_line, alpha_scale=FORECAST_ALPHA_SCALE):
+def _apply_forecast_override(style, override):
+    """Overlay one dataset's `forecast_*=` override onto an inherited style.
+
+    Sparse by design (see `forecast.resolve_forecast_overrides`): only the
+    aspects the user actually named are replaced, so `forecast_fmt=':'`
+    leaves the inherited colour alone and `forecast_palette=` leaves the
+    inherited dash alone.
+
+    An explicit override colour beats a colour letter inside `forecast_fmt=`
+    (``forecast_fmt='r--'`` with `forecast_hue=`), matching matplotlib's own
+    rule that a `color=` kwarg wins over a fmt string.
+    """
+    if not override:
+        return style
+    fmt = override.get('fmt')
+    if fmt is not None:
+        if _process_plot_format is not None:
+            ls, marker, color = _process_plot_format(fmt)
+        else:  # pragma: no cover - matplotlib moved its private parser
+            ls, marker, color = fmt, 'None', None
+        style['linestyle'] = ls
+        if marker not in (None, 'None'):
+            style['marker'] = marker
+        if color is not None:
+            style['color'] = color
+    if 'color' in override:
+        style['color'] = override['color']
+    return style
+
+
+def _forecast_style_from(src_line, alpha_scale=FORECAST_ALPHA_SCALE,
+                         override=None):
     """Style a forecast to match the observed trace it continues.
 
     A forecast is the SAME series projected forward, so it inherits its
@@ -158,16 +197,23 @@ def _forecast_style_from(src_line, alpha_scale=FORECAST_ALPHA_SCALE):
         datasets -- the same defensive case the call sites already guarded)
         falls back to matplotlib's own defaults, letting the colour cycle.
     alpha_scale : float, default `FORECAST_ALPHA_SCALE`
+    override : dict or None
+        This dataset's `forecast_*=` override
+        (`forecast.resolve_forecast_overrides`). Sparse: only the aspects it
+        names replace the inherited ones.
 
     Returns
     -------
     dict
-        ``color``/``linestyle``/``linewidth``/``alpha`` kwargs for `ax.plot`.
+        ``color``/``linestyle``/``linewidth``/``alpha`` kwargs for `ax.plot`
+        (plus ``marker`` when `forecast_fmt=` asked for one).
     """
     if src_line is None:
-        return dict(color=None, linestyle='-',
-                    linewidth=plt.rcParams['lines.linewidth'],
-                    alpha=forecast_alpha(None, alpha_scale))
+        return _apply_forecast_override(
+            dict(color=None, linestyle='-',
+                 linewidth=plt.rcParams['lines.linewidth'],
+                 alpha=forecast_alpha(None, alpha_scale)),
+            override)
     linestyle = src_line.get_linestyle()
     if linestyle in ('None', 'none', ' ', '', None):
         # a MARKER-ONLY observed trace has no linestyle to inherit, and
@@ -176,14 +222,16 @@ def _forecast_style_from(src_line, alpha_scale=FORECAST_ALPHA_SCALE):
         # what plotly's `_resolve_fmt` yields for a marker-only fmt, keeping
         # the two backends identical in this corner too.
         linestyle = '-'
-    return dict(color=src_line.get_color(),
-                linestyle=linestyle,
-                linewidth=src_line.get_linewidth(),
-                alpha=forecast_alpha(src_line.get_alpha(), alpha_scale))
+    return _apply_forecast_override(
+        dict(color=src_line.get_color(),
+             linestyle=linestyle,
+             linewidth=src_line.get_linewidth(),
+             alpha=forecast_alpha(src_line.get_alpha(), alpha_scale)),
+        override)
 
 
 def _draw_forecast_overlays(ax, raw_forecasts, antialias=True,
-                            owner=None):
+                            owner=None, overrides=None):
     """Overlay one forecast trace per input dataset (GH #169), styled to
     match its source line (`_forecast_style_from`): same colour, linestyle
     and linewidth, at half its alpha.
@@ -220,7 +268,8 @@ def _draw_forecast_overlays(ax, raw_forecasts, antialias=True,
         # regrouped the traces. Without it, forecast i continues trace i.
         _src = owner[i] if owner is not None and i < len(owner) else i
         style = _forecast_style_from(
-            src_lines[_src] if _src < len(src_lines) else None)
+            src_lines[_src] if _src < len(src_lines) else None,
+            override=overrides[i] if overrides is not None else None)
         d = fc.shape[1] if fc.ndim > 1 else 1
         _before = len(artists)
         if d >= 3:
@@ -921,6 +970,11 @@ def plot(
     precog=False,
     bullettime=False,
     forecast_trail=False,
+    forecast_hue=None,
+    forecast_cluster=None,
+    forecast_n_clusters=None,
+    forecast_palette=None,
+    forecast_fmt=None,
     slow_warning_seconds=_UNSET_SLOW_WARNING,
     frame_rate=30,
     focused=None,
@@ -1940,6 +1994,76 @@ def plot(
         forecast is just an earlier frame's, and the box is already built to
         contain every forecast the animation will draw.
 
+    forecast_hue : sequence or None
+        Group the FORECASTS by one value per dataset, colouring them
+        independently of the observed data (default: `None` -- inherit).
+        Requires `predict=`; without it, `ValueError`.
+
+        One value per DATASET, not per observation: a forecast is a single
+        trace. Datasets sharing a value share a colour, drawn from
+        `forecast_palette=`. Mutually exclusive with `forecast_cluster=`
+        (both decide the same thing), exactly as `hue=` and `cluster=` are
+        for the observed data.
+
+    forecast_cluster : str, class, instance, dict, or None
+        Colour each forecast by WHERE IT IS PREDICTED TO END UP: the forecast
+        ENDPOINTS are clustered, and each forecast takes its cluster's colour
+        (default: `None` -- inherit). Requires `predict=`; without it,
+        `ValueError`. Takes the same model specs as `cluster=`.
+
+        So a forecast's colour answers "which of these series are heading to
+        the same place?" -- a question the observed data cannot answer, which
+        is the point of the separate kwarg. It deliberately does NOT
+        recluster the observed data: inheriting the observed assignment is
+        what the default already does, so that reading would make this a
+        no-op. Nor does it cluster every predicted POINT (a single forecast
+        would then change colour along its own short path) or whole
+        flattened trajectories (sensitive to `t`, to sampling and to
+        dimensionality, where an endpoint has one stable meaning).
+
+        The endpoints are taken in the space the figure DRAWS -- after
+        `reduce=`/`align=` -- so the grouping matches the geometry on screen
+        rather than a pre-reduction one the viewer cannot see. With fewer
+        than two forecasts it warns and inherits: every partition of a
+        single point is the same partition.
+
+    forecast_n_clusters : int or None
+        Number of groups for `forecast_cluster=` (default: `None` -- the
+        clusterer's own default). Separate from `n_clusters=` on purpose:
+        the observed observations and the forecast endpoints are different
+        point sets, and a good number of groups for one need not be a good
+        number for the other. Without `forecast_cluster=` it warns and is
+        ignored.
+
+    forecast_palette : str, list of colors, matplotlib Colormap, or None
+        Colours for the forecast grouping (default: `None` -- inherit the
+        observed colours). Requires `predict=`; without it, `ValueError`.
+        Takes the same forms as `palette=`, so the forecasts can use a
+        different colormap from the data.
+
+        With `forecast_hue=` or `forecast_cluster=`, one colour per group.
+        With NEITHER, there is no forecast grouping to colour by, so it is
+        spent one colour per dataset.
+
+    forecast_fmt : str, sequence of str, or None
+        Line/marker style for the forecast overlays, in the same format-string
+        grammar as `fmt` (default: `None` -- inherit the observed style).
+        Requires `predict=`; without it, `ValueError`. One string, or one per
+        dataset.
+
+        Overrides ONLY the style: a dotted forecast of a red trace is still
+        red, unless a colour is also given (via `forecast_palette=`,
+        `forecast_hue=`, `forecast_cluster=`, or a colour letter in the
+        format string itself -- an explicit colour beats the format string's,
+        matching matplotlib's own rule).
+
+        Note that these four kwargs are independent, so observed and
+        forecast data may differ in style, in grouping, in palette, or in
+        any combination. Everything not named stays inherited: a forecast is
+        its observed trace projected forward, drawn at half its alpha
+        (`hypertools.plot.forecast.FORECAST_ALPHA_SCALE`), and each of these
+        replaces exactly one aspect of that.
+
     slow_warning_seconds (animation only) : float or None
         Warn when an animated `predict=` schedule looks like it will take a
         long time to build (default: 10 seconds). Pass `None` to silence it.
@@ -2818,6 +2942,26 @@ def plot(
     # known yet, so the length check is deferred to the second call, beside
     # `_resolve_animate_mode`, once `len(xform)` exists -- plan 1.1 Task 8).
     _n_forecast_trail = _validate_forecast_trail(forecast_trail, predict)
+    # forecast_*= style the forecast overlays, so without predict= there
+    # is nothing for them to style. Raising beats ignoring: a silently
+    # dropped style kwarg leaves the user staring at an unchanged plot
+    # with no clue which of their arguments did nothing.
+    _forecast_style_kwargs = {
+        'forecast_hue': forecast_hue,
+        'forecast_cluster': forecast_cluster,
+        'forecast_n_clusters': forecast_n_clusters,
+        'forecast_palette': forecast_palette,
+        'forecast_fmt': forecast_fmt,
+    }
+    if predict is None:
+        _given = sorted(k for k, v in _forecast_style_kwargs.items()
+                        if v is not None)
+        if _given:
+            raise ValueError(
+                f"{', '.join(_given)} style the forecast overlays, but no "
+                f"forecast was requested; pass predict= (e.g. "
+                f"predict='Kalman') or drop "
+                f"{'these' if len(_given) > 1 else 'it'}.")
     _segment_titles = _validate_title(title, style=animate, order=order)
 
     # fail-fast on order= (same precedent as title= above): it depends only
@@ -5095,6 +5239,23 @@ def plot(
     if raw_forecasts is not None:
         raw_forecasts = [np.nan_to_num(fc) for fc in raw_forecasts]
 
+    # forecast_*= overrides, resolved ONCE here rather than in each backend --
+    # `forecast_cluster=` in particular must give both backends the same
+    # labels, and clustering twice would not guarantee that. Resolved at this
+    # point because the forecasts are now in the space they are DRAWN in, so
+    # `forecast_cluster=` groups the geometry the user actually sees rather
+    # than a pre-reduction one they do not.
+    _forecast_overrides = None
+    if raw_forecasts is not None and any(
+            v is not None for v in _forecast_style_kwargs.values()):
+        from .forecast import resolve_forecast_overrides
+        _forecast_overrides = resolve_forecast_overrides(
+            len(raw_forecasts), raw_forecasts,
+            hue=forecast_hue, cluster=forecast_cluster,
+            n_clusters=forecast_n_clusters,
+            palette=forecast_palette, fmt=forecast_fmt,
+            stacklevel=external_stacklevel())
+
     # on_frame= (plan 1.1 Task 7): ONE shared registry, created before
     # either backend's per-frame closures exist, and threaded into both --
     # `plotly_draw`/`_add_animation` dispatch it directly (plotly builds
@@ -5164,6 +5325,9 @@ def plot(
             # regrouping -- the SAME mapping `_draw_forecast_overlays` uses
             # on the matplotlib side, so neither backend has to re-derive it
             forecast_owner=_forecast_owner,
+            # the SAME resolved per-dataset overrides the matplotlib path
+            # applies, so `forecast_cluster=` cannot label differently here
+            forecast_overrides=_forecast_overrides,
             # the SAME precomputed, display-mapped schedule the matplotlib
             # path drives its per-frame forecast artists from, so the two
             # backends read one table instead of two transcriptions of it
@@ -5290,7 +5454,7 @@ def plot(
             if raw_forecasts is not None and animate in (False, None, 'spin'):
                 _forecast_artists = _draw_forecast_overlays(
                     ax, raw_forecasts, antialias=antialias,
-                    owner=_forecast_owner)
+                    owner=_forecast_owner, overrides=_forecast_overrides)
                 # animate='spin' only rotates the camera around the fully-
                 # drawn static scene, so these overlays rotate with everything
                 # else once they exist -- no per-frame update needed. But they
@@ -5329,7 +5493,11 @@ def plot(
                     # paused animation is indistinguishable from the static
                     # plot and the two paths cannot drift.
                     _fc_style = _forecast_style_from(
-                        _src_lines[_i] if _i < len(_src_lines) else None)
+                        _src_lines[_i] if _i < len(_src_lines) else None,
+                        override=(_forecast_overrides[_i]
+                                  if _forecast_overrides is not None
+                                  and _i < len(_forecast_overrides)
+                                  else None))
                     # trails FIRST, so the live forecast draws on top of its
                     # own fan rather than under it
                     _row = []

@@ -101,6 +101,30 @@ items under **Changed** below alter how existing figures LOOK.
   render a different animation than the one asked for. The outcome is not
   negotiable, so the time is.
 
+- **`forecast_hue=`, `forecast_cluster=`, `forecast_n_clusters=`,
+  `forecast_palette=`, `forecast_fmt=`: style the forecasts separately from
+  the data.** Inheritance stays the default -- a forecast is its observed
+  trace projected forward at half its alpha -- and each of these replaces
+  exactly one aspect of it, so observed and forecast data may differ in
+  style, grouping, palette, or any combination.
+
+  **`forecast_cluster=` clusters the forecast ENDPOINTS**, so a forecast's
+  colour answers *which of these series are heading to the same place?* --
+  a question the observed data cannot answer, which is the point of a
+  separate kwarg. It deliberately does not recluster the observed data
+  (inheriting that assignment is what the default already gives, so the
+  kwarg would be a no-op), nor cluster every predicted point (one forecast
+  would change colour along its own short path), nor flatten whole
+  trajectories (sensitive to `t`, to sampling and to dimensionality, where
+  an endpoint has one stable meaning). Endpoints are taken in the space the
+  figure draws, after `reduce=`/`align=`.
+
+  `forecast_hue=` and `forecast_cluster=` are mutually exclusive, mirroring
+  `hue=` and `cluster=`. `forecast_n_clusters=` is separate from
+  `n_clusters=` on purpose: the observations and the forecast endpoints are
+  different point sets. All five require `predict=` and raise `ValueError`
+  without it, rather than being silently dropped.
+
 - **`predict=` now works with `hue=` and `cluster=` on static plots.**
   Previously a forecast survived regrouping only by accident: the guard was a
   cardinality check, so two datasets falling into two category runs kept their

@@ -440,3 +440,175 @@ def trail_alpha(age, n_retained, live_alpha=None, floor=None):
         return live_alpha
     decay = 1.0 - (age / max(1, int(n_retained) + 1))
     return max(floor, floor + (live_alpha - floor) * decay)
+
+
+# ---------------------------------------------------------------------------
+# forecast_*= overrides
+#
+# The DEFAULT is inheritance: a forecast reads as its observed trace projected
+# forward (`FORECAST_ALPHA_SCALE` above), and that is unchanged. These kwargs
+# let the forecasts carry their OWN grouping, palette and line style, so a
+# figure can say two different things at once -- what the observed series ARE,
+# and what the predictions DO.
+#
+# Resolved HERE, backend-neutrally, into one plain dict per dataset, because
+# resolving it twice is how the two backends drift apart. Each backend's
+# `_forecast_style_from` then translates the same dict into its own colour /
+# dash / opacity vocabulary.
+# ---------------------------------------------------------------------------
+
+def _forecast_label_colors(labels, palette):
+    """One RGB tuple per dataset, from `labels` (one per DATASET).
+
+    Categorical throughout: two datasets share a colour exactly when they
+    share a label. `mat2colors`' 1-D numeric path is deliberately NOT used --
+    it BINS values into a gradient, so integer cluster labels 0/1/2 would come
+    out as three shades of one hue rather than three distinguishable colours.
+    """
+    import seaborn as sns
+    from .colors import _get_palette
+
+    ordered = []
+    for lab in labels:
+        if lab not in ordered:
+            ordered.append(lab)
+    colors = _get_palette(palette, len(ordered), sns)
+    index = {lab: i for i, lab in enumerate(ordered)}
+    return [tuple(colors[index[lab]])[:3] for lab in labels]
+
+
+def resolve_forecast_overrides(n_datasets, forecasts=None, *, hue=None,
+                               cluster=None, n_clusters=None, palette=None,
+                               fmt=None, stacklevel=2):
+    """Resolve `forecast_hue=`/`forecast_cluster=`/`forecast_palette=`/
+    `forecast_fmt=` into one override dict per dataset.
+
+    Parameters
+    ----------
+    n_datasets : int
+        How many forecasts there are -- one per INPUT dataset, whatever the
+        observed data was regrouped into.
+    forecasts : list of numpy.ndarray or None
+        The forecast paths, in the space they are DRAWN in. Only
+        `forecast_cluster=` needs them: it clusters their ENDPOINTS, and
+        clustering the raw model space would group by a geometry the user
+        cannot see when `reduce=`/`align=` changed it.
+    hue : sequence or None
+        One value per dataset. Datasets sharing a value share a colour.
+    cluster : cluster spec or None
+        Clusters the forecast ENDPOINTS -- where each series is predicted to
+        end up -- so a forecast's colour answers "which of these are heading
+        to the same place?".
+
+        It deliberately does NOT recluster the observed data: inheriting the
+        observed assignment is what the default already gives, so that
+        reading would make the kwarg a no-op. Nor does it cluster every
+        predicted POINT (one forecast would change colour along its own short
+        path, contradicting "coloured by where it is heading"), nor whole
+        flattened trajectories (sensitive to `t`, to sampling and to
+        dimensionality, where an endpoint has one stable meaning).
+    n_clusters : int or None
+        Passed to the clusterer. Separate from `plot`'s `n_clusters=` on
+        purpose: the observed data and the forecasts are different point
+        sets, and there is no reason a good number of groups for one is a
+        good number for the other.
+    palette : str, list of colors, matplotlib Colormap, or None
+        Colours for the grouping. With no grouping given, spent one colour
+        per dataset. `None` means "no colour override" -- callers pass the
+        figure's own `palette=` when they want the observed one inherited.
+    fmt : str, sequence of str, or None
+        Line/marker style for the forecasts, independent of the observed
+        `fmt`.
+
+    Returns
+    -------
+    list of dict
+        One per dataset, each with optional ``'color'`` and ``'fmt'`` keys.
+        A MISSING key means inherit that aspect from the observed trace --
+        which is why these are sparse dicts rather than complete styles:
+        only the aspects actually named are overridden.
+    """
+    overrides = [{} for _ in range(n_datasets)]
+
+    if hue is not None and cluster is not None:
+        raise ValueError(
+            "forecast_hue= and forecast_cluster= both decide how the "
+            "forecasts are grouped and coloured, so passing both would mean "
+            "silently picking a winner. Pass one (this mirrors hue= and "
+            "cluster= for the observed data).")
+    if n_clusters is not None and cluster is None:
+        warnings.warn(
+            "forecast_n_clusters= has no effect without forecast_cluster=; "
+            "it sets the number of groups the FORECAST endpoints are "
+            "clustered into. (The observed data's cluster count is "
+            "n_clusters=.)", stacklevel=stacklevel)
+
+    labels = None
+    if hue is not None:
+        labels = list(hue)
+        # a per-observation hue (the shape `hue=` takes) reaches here as a
+        # list of ARRAYS, and grouping by `==` on those raises numpy's
+        # "truth value of an array is ambiguous" from deep inside the colour
+        # code. Say what was actually wrong instead.
+        if any(isinstance(v, (list, tuple, np.ndarray)) for v in labels):
+            raise ValueError(
+                "forecast_hue= takes one SCALAR value per dataset (a "
+                "forecast is a single trace, so there is no per-observation "
+                "hue to take); got a sequence as one of its values. Pass "
+                "hue= to colour the observed data per observation.")
+        if len(labels) != n_datasets:
+            raise ValueError(
+                f"forecast_hue= must have exactly one value per dataset (a "
+                f"forecast is one trace, not one value per observation); got "
+                f"{len(labels)} value(s) for {n_datasets} dataset(s).")
+    elif cluster is not None:
+        if n_datasets < 2:
+            warnings.warn(
+                f"forecast_cluster= needs at least two forecasts to group "
+                f"({n_datasets} given): every partition of a single point is "
+                f"the same partition. Falling back to the observed trace's "
+                f"style.", stacklevel=stacklevel)
+        else:
+            from ..cluster.cluster import cluster as _clusterer
+            endpoints = np.vstack(
+                [np.asarray(fc, dtype=float)[-1] for fc in forecasts])
+            try:
+                labels = [int(v) for v in np.asarray(
+                    _clusterer(endpoints, cluster=cluster,
+                               n_clusters=n_clusters)).ravel()]
+            except ValueError as exc:
+                # The clusterer's own validation decides what is legal --
+                # inventing a forecast-specific rule here would let the two
+                # disagree. Only the MESSAGE is amended: sklearn says
+                # "n_samples=3 should be >= n_clusters=5", and nothing in
+                # that tells a user that `n_samples` is their dataset count.
+                raise ValueError(
+                    f"forecast_cluster= clusters one endpoint per dataset, so "
+                    f"it has {n_datasets} point(s) to work with"
+                    f"{f' and forecast_n_clusters={n_clusters}' if n_clusters is not None else ''}"
+                    f". The clusterer rejected that: {exc}") from exc
+
+    if labels is not None:
+        for i, color in enumerate(_forecast_label_colors(
+                labels, 'hls' if palette is None else palette)):
+            overrides[i]['color'] = color
+    elif palette is not None:
+        # nothing to group BY, so the palette is spent one colour per
+        # dataset -- the only grouping a forecast set has on its own
+        for i, color in enumerate(_forecast_label_colors(
+                list(range(n_datasets)), palette)):
+            overrides[i]['color'] = color
+
+    if fmt is not None:
+        if isinstance(fmt, str):
+            fmts = [fmt] * n_datasets
+        else:
+            fmts = list(fmt)
+            if len(fmts) != n_datasets:
+                raise ValueError(
+                    f"forecast_fmt= must be one format string, or one per "
+                    f"dataset; got {len(fmts)} for {n_datasets} dataset(s).")
+        for i, f in enumerate(fmts):
+            overrides[i]['fmt'] = f
+
+    return overrides

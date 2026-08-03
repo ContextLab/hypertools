@@ -463,6 +463,7 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 focused=None,
                 chemtrails=False, precog=False, bullettime=False, zoom=1,
                 forecasts=None, forecast_owner=None,
+                forecast_overrides=None,
                 forecast_schedule=None, forecast_trail=0,
                 colorbar_info=None, surface=None,
                 surface_colors=None, surface_point_colors=None,
@@ -538,6 +539,10 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     forecasts : list of numpy.ndarray or None
         predict= forecast traces (see below). ONE PER INPUT DATASET, which
         after `hue=`/`cluster=` regrouping is NOT one per drawn trace.
+    forecast_overrides : list of dict or None
+        One `forecast_*=` override per dataset
+        (`forecast.resolve_forecast_overrides`), or `None` for pure
+        inheritance.
     forecast_owner : list of int or None
         `forecast_owner[i]` is the index in `data` of the run that forecast
         `i` continues -- the run holding dataset `i`'s last observation, and
@@ -982,7 +987,11 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
             arr = data[src]
             tkwargs = kwargs_list[src] or {}
             fc = np.atleast_2d(np.asarray(forecasts[i], dtype=np.float64))
-            fc_line, fc_alpha = _forecast_style_from(tkwargs, fmt[src])
+            fc_line, fc_alpha = _forecast_style_from(
+                tkwargs, fmt[src],
+                override=(forecast_overrides[i]
+                          if forecast_overrides is not None
+                          and i < len(forecast_overrides) else None))
             fc_common = dict(mode='lines', showlegend=False,
                              hoverinfo='skip',
                              line=fc_line,
@@ -1033,8 +1042,11 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 # the declared alpha and the one baked into the rgba string
                 # are the SAME float, so a reader of `meta` can trust it
                 alpha = trail_alpha(age, n_retained, live_alpha=live_alpha)
-                fc_line, alpha = _forecast_style_from(tkwargs, fmt[i],
-                                                      alpha=alpha)
+                fc_line, alpha = _forecast_style_from(
+                    tkwargs, fmt[i], alpha=alpha,
+                    override=(forecast_overrides[i]
+                              if forecast_overrides is not None
+                              and i < len(forecast_overrides) else None))
                 fc_common = dict(
                     mode='lines', showlegend=False, hoverinfo='skip',
                     line=fc_line,
@@ -2508,7 +2520,7 @@ def _resolve_fmt(fmt_str, tkwargs):
     return mode, symbol, dash, marker_char
 
 
-def _forecast_style_from(tkwargs, fmt_str, alpha=None):
+def _forecast_style_from(tkwargs, fmt_str, alpha=None, override=None):
     """Style a forecast trace to match the observed trace it continues.
 
     The plotly twin of `hypertools.plot.plot._forecast_style_from`, sharing
@@ -2531,6 +2543,12 @@ def _forecast_style_from(tkwargs, fmt_str, alpha=None):
     alpha : float, optional
         Override the computed alpha -- used by the animated TRAIL traces,
         whose alpha is `forecast.trail_alpha` of the live one.
+    override : dict, optional
+        This dataset's `forecast_*=` override
+        (`forecast.resolve_forecast_overrides`) -- the SAME dict the
+        matplotlib side applies, resolved once and translated here into
+        plotly's dash/rgba vocabulary. Sparse: only the aspects it names
+        replace the inherited ones.
 
     Returns
     -------
@@ -2540,12 +2558,26 @@ def _forecast_style_from(tkwargs, fmt_str, alpha=None):
         reader of `meta` can trust it.
     """
     from .forecast import forecast_alpha
-    _mode, _symbol, dash, _marker_char = _resolve_fmt(fmt_str, tkwargs)
+    override = override or {}
+    # a `forecast_fmt=` is read through the SAME `_resolve_fmt` the observed
+    # trace's own fmt goes through, so the two strings mean the same thing --
+    # but WITHOUT the observed trace's linestyle=/marker= kwargs. Inside
+    # `_resolve_fmt` an explicit style kwarg beats the fmt string, which is
+    # right for the observed trace's own fmt and wrong for an override whose
+    # entire purpose is to overrule the observed style: `linestyle='--'` with
+    # `forecast_fmt=':'` drew a DASHED forecast here and a dotted one on
+    # matplotlib, which applies the override last.
+    _fmt_kwargs = tkwargs
+    if 'fmt' in override:
+        _fmt_kwargs = {k: v for k, v in tkwargs.items()
+                       if k not in ('linestyle', 'ls', 'marker')}
+    _mode, _symbol, dash, _marker_char = _resolve_fmt(
+        override.get('fmt', fmt_str), _fmt_kwargs)
     if alpha is None:
         alpha = forecast_alpha(tkwargs.get('alpha'))
     width = float(tkwargs.get('linewidth') or DEFAULT_LINEWIDTH_PT) * PT_TO_PX
-    line = dict(color=_to_plotly_color(tkwargs.get('color'), alpha),
-                width=width, dash=dash)
+    color = override.get('color', tkwargs.get('color'))
+    line = dict(color=_to_plotly_color(color, alpha), width=width, dash=dash)
     return line, alpha
 
 

@@ -432,6 +432,62 @@ whether or not the figure could render it; ``drawn`` is what keeps "no
 forecast was computed" and "a forecast was computed but not drawn"
 distinguishable.
 
+Styling the forecasts separately
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Inheritance is the default, and four kwargs each replace one aspect of it.
+Everything they do not name stays inherited.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Setting
+     - What a forecast's colour means
+   * - *(nothing)*
+     - the identity of the observed trace it continues
+   * - ``forecast_palette=``
+     - the same, in a palette of its own
+   * - ``forecast_hue=``
+     - a grouping you supply, one value per dataset
+   * - ``forecast_cluster=``
+     - which forecasts are heading to the same place
+
+``forecast_fmt=`` sets the line/marker style, in the same format-string
+grammar as ``fmt``, and changes nothing else:
+
+.. code-block:: python
+
+    # dotted forecasts, still in each trace's own colour
+    hyp.plot(data, '-', predict='Kalman', t=10, forecast_fmt=':')
+
+    # observed data grouped by condition; forecasts coloured by destination
+    hyp.plot(data, '-', predict='Kalman', t=10, hue=conditions,
+             forecast_cluster='KMeans', forecast_n_clusters=3,
+             forecast_palette='viridis')
+
+``forecast_cluster=`` clusters the forecast **endpoints** -- where each series
+is predicted to end up -- so its colours answer a question the observed data
+cannot: *which of these are heading to the same place?* That is why it does
+not simply recluster the observed data; inheriting the observed assignment is
+what the default already gives, so defining it that way would make the kwarg
+a no-op. Nor does it cluster every predicted point (one forecast would then
+change colour along its own short path) or whole flattened trajectories
+(sensitive to ``t``, to sampling and to dimensionality, where an endpoint has
+one stable meaning). Endpoints are taken in the space the figure draws, after
+``reduce=``/``align=``, so the grouping matches the geometry on screen.
+
+``forecast_hue=`` and ``forecast_cluster=`` are mutually exclusive -- both
+decide how the forecasts are grouped -- exactly as ``hue=`` and ``cluster=``
+are for the observed data. ``forecast_n_clusters=`` is separate from
+``n_clusters=`` on purpose: the observations and the forecast endpoints are
+different point sets, and a good number of groups for one need not be a good
+number for the other.
+
+All of them require ``predict=``; without it they raise ``ValueError`` rather
+than being quietly dropped, since a silently ignored style kwarg leaves you
+looking at an unchanged plot with no clue which argument did nothing.
+
 Identifying forecast artists
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
