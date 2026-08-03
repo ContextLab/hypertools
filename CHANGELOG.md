@@ -119,11 +119,31 @@ items under **Changed** below alter how existing figures LOOK.
   an endpoint has one stable meaning). Endpoints are taken in the space the
   figure draws, after `reduce=`/`align=`.
 
+  In an **animation** the endpoint groups are resolved once, from the
+  full-history forecasts (the ones `return_model=True` returns), and stay
+  fixed for every frame -- they are not reclustered as the reveal
+  progresses. Cluster labels are arbitrary names for groups, so per-frame
+  reclustering would let a forecast change colour whenever a fit nudged its
+  endpoint across a boundary, and would repaint a retained
+  `forecast_trail=` fan drawn under the old grouping.
+
   `forecast_hue=` and `forecast_cluster=` are mutually exclusive, mirroring
   `hue=` and `cluster=`. `forecast_n_clusters=` is separate from
   `n_clusters=` on purpose: the observations and the forecast endpoints are
   different point sets. All five require `predict=` and raise `ValueError`
-  without it, rather than being silently dropped.
+  without it, rather than being silently dropped. `forecast_fmt=` is
+  validated with matplotlib's own `fmt=` parser, so it provably accepts
+  exactly what `fmt=` accepts and both backends reject the same strings at
+  the same moment.
+
+- **A missing categorical `hue=` label now means one unlabeled group.**
+  `nan != nan`, so two missing labels were not equal to each other and became
+  two separate saturated categories -- and, since `np.nan` is a singleton
+  while `float('nan')` is a fresh object each time, *which* of those happened
+  depended on how the caller spelled it. Every missing spelling (`None`,
+  NaN, `pd.NA`) now normalizes to the `None` sentinel a partially-labeled
+  `hue=` already used: one group, neutral gray, no legend entry, no palette
+  slot consumed. `forecast_hue=` follows the same rule.
 
 - **`predict=` now works with `hue=` and `cluster=` on static plots.**
   Previously a forecast survived regrouping only by accident: the guard was a

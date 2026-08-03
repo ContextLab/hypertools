@@ -477,6 +477,20 @@ change colour along its own short path) or whole flattened trajectories
 one stable meaning). Endpoints are taken in the space the figure draws, after
 ``reduce=``/``align=``, so the grouping matches the geometry on screen.
 
+In an **animation**, forecast endpoint groups are resolved once from the
+full-history forecasts -- the same forecasts ``return_model=True`` hands back
+in the model bundle -- and stay fixed for every frame. They are not
+reclustered per frame, so the colours hold still while the forecast geometry
+evolves.
+
+That is a deliberate choice rather than an implementation detail. Cluster
+labels are arbitrary names for groups, so reclustering each frame would let
+a forecast change colour whenever the fit shifted a point across a boundary,
+and would repaint a whole retained ``forecast_trail=`` fan whose earlier
+members were drawn under the old grouping. A fixed assignment also keeps a
+saved animation identical to a played one, which is the same reason the
+schedule itself is precomputed.
+
 ``forecast_hue=`` and ``forecast_cluster=`` are mutually exclusive -- both
 decide how the forecasts are grouped -- exactly as ``hue=`` and ``cluster=``
 are for the observed data. ``forecast_n_clusters=`` is separate from

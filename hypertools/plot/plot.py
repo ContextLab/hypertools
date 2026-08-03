@@ -2029,6 +2029,16 @@ def plot(
         than two forecasts it warns and inherits: every partition of a
         single point is the same partition.
 
+        In an ANIMATION the groups are resolved ONCE, from the full-history
+        forecasts (the ones `return_model=True` returns), and stay fixed for
+        every frame -- they are not reclustered as the reveal progresses, so
+        the colours hold still while the forecast geometry moves. Cluster
+        labels are arbitrary names for groups, so per-frame reclustering
+        would let a forecast change colour whenever a fit nudged its
+        endpoint across a boundary, and would repaint a retained
+        `forecast_trail=` fan whose earlier members were drawn under the old
+        grouping.
+
     forecast_n_clusters : int or None
         Number of groups for `forecast_cluster=` (default: `None` -- the
         clusterer's own default). Separate from `n_clusters=` on purpose:

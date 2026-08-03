@@ -24,6 +24,7 @@ trace the forecast continues and the trace whose style it should inherit.
 import matplotlib
 matplotlib.use('Agg')
 
+import contextlib
 import warnings
 
 import numpy as np
@@ -56,6 +57,39 @@ CATEGORICAL = {
     'singleton runs': ['a', 'b'] * 30,
 }
 
+#: The `'singleton runs'` fixture is deliberately extreme -- alternating
+#: every observation makes 60 runs of ONE point each -- so `plot()`
+#: legitimately warns that a pure line format cannot render them. It is the
+#: only fixture here that should.
+_SINGLETON_NOTICE = 'only one observation'
+
+
+@contextlib.contextmanager
+def _categorical_warnings(name):
+    """Assert exactly which fixtures provoke a warning, instead of letting
+    the true ones scroll past as noise.
+
+    CAPTURED, not filtered: a filter would equally hide the notice
+    disappearing, and the singleton fixture exists to provoke it. Anything
+    else that warns fails the test rather than hiding behind the expected
+    two -- which is the whole reason to clean this up.
+    """
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter('always')
+        yield
+    singleton = [w for w in caught if _SINGLETON_NOTICE in str(w.message)]
+    other = [f'{w.category.__name__}: {w.message}'
+             for w in caught if _SINGLETON_NOTICE not in str(w.message)]
+    assert not other, f'{name}: unexpected warning(s): {other}'
+    if name == 'singleton runs':
+        assert singleton, (
+            f'{name}: 60 one-observation runs drawn with a pure line format '
+            f'no longer warn that they will be invisible')
+    else:
+        assert not singleton, (
+            f'{name}: warned about single-observation runs, but this '
+            f'fixture has none: {[str(w.message) for w in singleton]}')
+
 
 @pytest.mark.parametrize('name', sorted(CATEGORICAL))
 def test_a_categorical_hue_keeps_one_forecast_per_dataset(name):
@@ -65,8 +99,9 @@ def test_a_categorical_hue_keeps_one_forecast_per_dataset(name):
     that dependence was the bug.
     """
     data = _walks(2)
-    fig = hyp.plot(data, '-', predict='Kalman', t=4, hue=CATEGORICAL[name],
-                   show=False)
+    with _categorical_warnings(name):
+        fig = hyp.plot(data, '-', predict='Kalman', t=4,
+                       hue=CATEGORICAL[name], show=False)
     assert len(_forecasts(fig)) == len(data), (
         f'{name}: {len(_forecasts(fig))} forecasts for {len(data)} datasets, '
         f'with {len(_observed(fig))} observed traces drawn')
@@ -274,7 +309,7 @@ def _ply_observed(fig):
 @pytest.mark.parametrize('name', sorted(CATEGORICAL))
 def test_plotly_also_keeps_one_forecast_per_dataset(name):
     data = _walks(2)
-    with hyp.set_interactive_backend('plotly'):
+    with hyp.set_interactive_backend('plotly'), _categorical_warnings(name):
         fig = hyp.plot(data, '-', predict='Kalman', t=4,
                        hue=CATEGORICAL[name], show=False)
     assert len(_ply_forecasts(fig)) == len(data), (

@@ -554,6 +554,111 @@ def test_the_ANIMATED_live_and_trail_artists_take_the_override_too():
         assert tr.line.dash == 'dot'
 
 
+# --------------------------------------------------------------------------
+# ANIMATED forecast_cluster= -- resolved ONCE, from the full-history
+# forecasts, and fixed for the whole animation
+# --------------------------------------------------------------------------
+
+def _endpoint_pairs(data, k, t=6):
+    """Which datasets an endpoint clustering of their `k`-row histories puts
+    together, via the public forecasting and clustering API."""
+    ends = np.vstack([np.asarray(hyp.predict(d[:k], model='Kalman', t=t))[-1]
+                      for d in data])
+    labels = np.asarray(hyp.cluster(ends, cluster='KMeans',
+                                    n_clusters=2)).ravel()
+    return {(i, j) for i in range(len(labels)) for j in range(len(labels))
+            if labels[i] == labels[j]}
+
+
+def test_the_animations_EARLY_forecasts_would_cluster_DIFFERENTLY():
+    """The control for the two tests below. If a partly-revealed history and
+    the full one happened to group the datasets the same way, a per-frame
+    clustering implementation would keep the colours constant too, and
+    neither test would be able to tell the two policies apart.
+
+    They must not agree here: early on, `_converging`'s series are still far
+    apart on x (which groups them {0,1} | {2,3}); by the end x has collapsed
+    and y decides ({0,2} | {1,3})."""
+    data = _converging()
+    assert _endpoint_pairs(data, 10) != _endpoint_pairs(data, len(data[0])), (
+        'the fixture no longer distinguishes an early endpoint clustering '
+        'from the full-history one, so the stability tests below cannot '
+        'discriminate')
+
+
+def test_an_animated_forecast_cluster_holds_ONE_colour_for_the_whole_run():
+    """Endpoint groups are resolved once, from the full-history forecasts,
+    and do not move as the animation reveals data.
+
+    Frames are driven out of order and repeated, because `save()` and
+    `to_jshtml()` do exactly that -- a colour that depended on frame HISTORY
+    rather than frame INDEX would make a saved animation differ from a
+    played one."""
+    data = _converging()
+    kw = dict(predict='Kalman', t=6, forecast_cluster='KMeans',
+              forecast_n_clusters=2, show=False)
+    expected = {i: _rgb(a)
+                for i, a in _by_dataset(hyp.plot(data, '-', **kw)).items()}
+
+    fig, ani = hyp.plot(data, '-', animate=True, duration=2, frame_rate=6,
+                        forecast_trail=3, **kw)
+    artists = [ln for ln in fig.axes[0].lines
+               if getattr(ln, '_hyp_forecast_role', None) in ('live', 'trail')]
+    assert artists, 'no live/trail forecast artists to check'
+
+    seen = {id(a): set() for a in artists}
+    for frame in (0, 4, 9, 11, 2, 11, 7, 0, 5):
+        ani._func(frame, *ani._args)
+        for a in artists:
+            seen[id(a)].add(tuple(np.round(_rgb(a), 6)))
+
+    for a in artists:
+        colours = seen[id(a)]
+        assert len(colours) == 1, (
+            f'{a._hyp_forecast_role} forecast of dataset '
+            f'{a._hyp_forecast_dataset} changed colour across frames: '
+            f'{sorted(colours)}')
+        assert np.allclose(np.asarray(next(iter(colours))),
+                           expected[a._hyp_forecast_dataset], atol=1e-6), (
+            f'{a._hyp_forecast_role} forecast of dataset '
+            f'{a._hyp_forecast_dataset} is not in its full-history endpoint '
+            f'group\'s colour')
+
+
+def test_plotly_animated_forecast_colours_are_the_same_fixed_grouping():
+    """Same promise on the other backend -- and structurally, since plotly
+    frames carry GEOMETRY only: a frame that also set `line.color` would be
+    per-frame clustering by another name."""
+    data = _converging()
+    kw = dict(predict='Kalman', t=6, forecast_cluster='KMeans',
+              forecast_n_clusters=2, show=False)
+    expected = {i: _rgb(a)
+                for i, a in _by_dataset(hyp.plot(data, '-', **kw)).items()}
+
+    with hyp.set_interactive_backend('plotly'):
+        ply = hyp.plot(data, '-', animate=True, duration=2, frame_rate=6,
+                       forecast_trail=3, **kw)
+
+    roles = [(tr.meta or {}).get('hyp_forecast_role') for tr in ply.data]
+    animated = [tr for tr in ply.data
+                if (tr.meta or {}).get('hyp_forecast_role')
+                in ('live', 'trail')]
+    assert animated, 'no live/trail forecast traces to check'
+    for tr in animated:
+        assert np.allclose(_ply_rgb(tr),
+                           expected[tr.meta['hyp_dataset']], atol=0.01), (
+            f"{tr.meta['hyp_forecast_role']} forecast of dataset "
+            f"{tr.meta['hyp_dataset']} is not in its full-history endpoint "
+            f"group's colour")
+
+    for f, frame in enumerate(ply.frames):
+        for target, datum in zip(frame.traces, frame.data):
+            if roles[target] in ('live', 'trail'):
+                assert getattr(datum.line, 'color', None) is None, (
+                    f'frame {f} restyles forecast trace {target}, so its '
+                    f'colour is not fixed for the animation')
+
+
 def test_both_backends_agree_on_forecast_cluster_colours():
     data = _converging()
     mpl_fig = hyp.plot(data, '-', predict='Kalman', t=6,

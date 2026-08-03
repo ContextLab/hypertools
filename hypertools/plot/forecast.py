@@ -620,6 +620,12 @@ def resolve_forecast_overrides(n_datasets, forecasts=None, *, hue=None,
         path, contradicting "coloured by where it is heading"), nor whole
         flattened trajectories (sensitive to `t`, to sampling and to
         dimensionality, where an endpoint has one stable meaning).
+
+        `plot()` calls this ONCE per figure, animated or not, with the
+        FULL-HISTORY forecasts -- so an animation's live and trailing
+        forecasts all carry the grouping of where each series ends up, held
+        fixed for every frame rather than recomputed as the reveal
+        progresses. See the `forecast_cluster=` docs for why.
     n_clusters : int or None
         Passed to the clusterer. Separate from `plot`'s `n_clusters=` on
         purpose: the observed data and the forecasts are different point
