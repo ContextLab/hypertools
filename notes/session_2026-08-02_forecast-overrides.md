@@ -105,3 +105,25 @@ feature branch.
   missing-observation policy (fit to all currently visible observations
   sorted by source index; a contiguous-prefix rule would stall whenever
   another run exposes later observations).
+
+## Verification (final)
+
+- **Full suite: 2960 passed, 13 skipped, 0 failed** (10m33s)
+- **Docs: `sphinx -W -E -a` build succeeded**, 0 warnings
+- Commits: `96eecda6` (plotly crash / bundle status / identity tags),
+  `846656fc` (the five `forecast_*=` kwargs)
+
+An earlier run of the same suite failed ONE test —
+`test_sdist_contains_only_tracked_files_plus_allowlist` — because
+`tests/plot/test_forecast_overrides.py` existed on disk but was not yet
+tracked, so it would have shipped in the sdist without being in git. The
+check was right; committing was the fix. Worth recording because the
+failure looked like a packaging bug and was actually a working guard
+catching an untracked file at exactly the moment it mattered.
+
+Two `UserWarning`s remain in the suite output, both from the deliberately
+extreme `'singleton runs'` fixture in `test_forecast_with_hue.py`
+(`['a', 'b'] * 30` -> 60 one-observation runs). The warning is a true
+statement about that data and the tests it fires in do not use
+`pytest.warns`, so it cannot mask a wrong match. Left as-is rather than
+restyling a fixture to quiet correct output.
