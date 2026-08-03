@@ -109,17 +109,34 @@ items under **Changed** below alter how existing figures LOOK.
   it is now matched to whichever drawn trace holds that observation -- which
   is also the trace whose style it inherits.
 
-  This uncovered two further ways a forecast could vanish. Under a continuous
+  This uncovered a further way a forecast could vanish. Under a continuous
   `hue=` the overlays were drawn and then **deleted**: the code that swaps
   data lines for a colour-graded `LineCollection` cleared every line on the
-  axes, forecasts included. And `return_model=True` reported forecasts even
-  when none had been drawn -- data claiming a forecast beside a picture
-  without one. Both fixed; the bundle now always agrees with the figure.
+  axes, forecasts included.
+
+  Letting forecasts reach the drawing layer under regrouping for the first
+  time then exposed the plotly backend, whose forecast block was written when
+  that could not happen: it looped over the drawn **runs** while indexing the
+  per-**dataset** forecast list, so `predict=` with a regrouping `hue=` raised
+  `IndexError`. It now takes the same dataset-to-run mapping the matplotlib
+  side uses, and both backends draw the same forecast from the same anchor.
 
   ANIMATED plots still draw no forecast under `hue=`/`cluster=`, but now say
   so instead of failing silently. The per-frame schedule maps frame-grid rows
   onto each dataset's raw observations, and regrouping leaves only per-run
-  traces to reveal.
+  traces to reveal. **Both** backends now refuse: plotly's static block fires
+  whenever there is no per-frame schedule -- exactly the state this refusal
+  creates -- so it warned "no forecast is drawn" and then drew the
+  full-history forecast, visible from frame 0.
+
+- **`return_model=True` reports forecasts it could not draw, and says so.**
+  `bundle['predict']` gains **`drawn`** (bool) and **`draw_reason`** (`None`,
+  or a sentence naming the limitation). A fit that succeeded is reported
+  whether or not the figure could render it -- `return_model=` hands back
+  model output, and discarding a valid result because a rendering combination
+  is unsupported would throw away the thing it exists to return. `drawn` is
+  what keeps "no forecast was computed" and "a forecast was computed but not
+  drawn" distinguishable.
 
 - **Forecast artists and traces are tagged, so callbacks can find them.**
   `artist._hyp_forecast_role` on matplotlib (`'static'`, `'live'` or
@@ -127,6 +144,12 @@ items under **Changed** below alter how existing figures LOOK.
   `_hyp_forecast_age` on trail artists. Previously the only way to pick a
   forecast out of `ax.lines` was to guess from its linestyle, which also
   matched any user-supplied dashed line.
+
+  Every forecast artist also names the series it belongs to:
+  `artist._hyp_forecast_dataset` on matplotlib, matching plotly's existing
+  `trace.meta['hyp_dataset']`. The role tag says what an artist *is*; this
+  says *whose* it is, so forecasts pair with their data by identity rather
+  than by drawing order.
 
 - **`plot(..., on_frame=...)`: a public per-frame hook, on both backends.**
   `on_frame` is called once per drawn animation frame with a single

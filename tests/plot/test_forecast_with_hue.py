@@ -119,10 +119,16 @@ def test_cluster_keeps_its_forecasts_too():
     assert len(_forecasts(fig)) == len(data)
 
 
-def test_the_bundle_never_claims_a_forecast_that_was_not_drawn():
-    """`return_model=True` reported forecasts even when the figure showed
-    none -- data saying the forecast exists beside a picture where it does
-    not. Whatever the drawing decision is, the bundle must agree with it."""
+def test_the_bundle_says_whether_its_forecasts_reached_the_figure():
+    """`return_model=True` hands back MODEL output, so a successful fit is
+    reported whether or not the figure could render it -- discarding it to
+    make the bundle mirror the picture would lose the result to a drawing
+    limitation. What the bundle must never do is leave the two
+    indistinguishable, so `drawn` states which happened.
+
+    An earlier version asserted the opposite (bundle empty when nothing is
+    drawn) and passed -- because every case it tried DOES draw, so its
+    not-drawn branch never ran. The animated case below is here to run it."""
     data = _walks(2)
     for kw in ({}, dict(hue=(['a'] * 5 + ['b'] * 5) * 6),
                dict(cluster='KMeans', n_clusters=3),
@@ -133,11 +139,24 @@ def test_the_bundle_never_claims_a_forecast_that_was_not_drawn():
         drawn = len([ln for ln in fig.axes[0].lines
                      if getattr(ln, '_hyp_forecast_role', None) == 'static'])
         reported = bundle['predict']
-        if drawn == 0:
-            assert reported is None or not reported.get('forecasts'), (
-                f'{kw}: bundle reports forecasts but none were drawn')
-        else:
-            assert reported is not None and len(reported['forecasts']) == drawn
+        assert len(reported['forecasts']) == len(data), (
+            f'{kw}: the fit succeeded, so the bundle must report it')
+        assert reported['drawn'] is (drawn > 0), (
+            f"{kw}: bundle says drawn={reported['drawn']} but the figure has "
+            f"{drawn} forecast artist(s)")
+        assert (reported['draw_reason'] is None) is reported['drawn'], (
+            f'{kw}: a refusal must come with a reason, and a drawn forecast '
+            f'without one')
+
+    # the not-drawn branch, actually exercised
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore')
+        animated = hyp.plot(data, '-', predict='Kalman', t=4, animate=True,
+                            duration=2, frame_rate=4, show=False,
+                            return_model=True,
+                            hue=(['a'] * 5 + ['b'] * 5) * 6)
+    assert animated['predict']['drawn'] is False
+    assert len(animated['predict']['forecasts']) == len(data)
 
 
 def test_a_continuous_hue_does_not_silently_lose_its_forecast():
@@ -171,11 +190,146 @@ def test_a_continuous_hue_colours_the_forecast_from_its_anchor():
                    show=False)
     fc = _forecasts(fig)
     assert len(fc) == 2
+    # `> 1` colours: a 3-D axes carries several SINGLE-colour
+    # `Line3DCollection`s of its own (panes and grid lines, all black), and
+    # counting those as data traces let a black forecast pass this check.
     colls = [c for c in fig.axes[0].collections
-             if hasattr(c, 'get_colors') and len(c.get_colors())]
+             if hasattr(c, 'get_colors') and len(c.get_colors()) > 1]
     assert colls, 'expected the data to be drawn as colour collections'
     tail_colours = [np.asarray(c.get_colors())[-1][:3] for c in colls]
     for f in fc:
         rgb = np.asarray(matplotlib.colors.to_rgba(f.get_color())[:3])
         assert any(np.allclose(rgb, t, atol=0.02) for t in tail_colours), (
             f'forecast colour {rgb} matches no trace-end colour')
+
+
+def test_every_matplotlib_forecast_artist_names_its_dataset():
+    """`_hyp_forecast_role` says WHAT an artist is; it does not say WHICH
+    series it belongs to. plotly has carried `meta['hyp_dataset']` from the
+    start -- matplotlib had only list position, so anything that reorders or
+    filters forecasts (`forecast_cluster=`, a per-dataset refusal) would
+    silently re-pair them with the wrong data."""
+    data = _walks(3)
+    for kw in ({}, dict(hue=(['a'] * 5 + ['b'] * 5) * 9),
+               dict(cluster='KMeans', n_clusters=3),
+               dict(hue=np.arange(90))):
+        fig = hyp.plot(data, '-', predict='Kalman', t=4, show=False, **kw)
+        tags = sorted(getattr(f, '_hyp_forecast_dataset', None)
+                      for f in _forecasts(fig))
+        assert tags == list(range(len(data))), (
+            f'{kw}: forecast artists carry dataset tags {tags}')
+
+
+def test_a_continuous_hue_colours_each_forecast_from_ITS_OWN_dataset():
+    """`_apply_multicolor_lines` paired retained forecasts with `line_colors`
+    by list POSITION, which is only right while both stay one-per-dataset in
+    the same order. Pair by the dataset tag instead, so the pairing survives
+    anything that reorders forecasts.
+
+    Two datasets given deliberately disjoint hue ranges: their tail colours
+    are far apart, so a swapped pairing fails rather than landing within
+    tolerance of the other trace's colour."""
+    data = _walks(2, rows=30)
+    hue = np.concatenate([np.linspace(0, 1, 30), np.linspace(9, 10, 30)])
+    fig = hyp.plot(data, '-', predict='Kalman', t=4, hue=hue, show=False)
+    fc = _forecasts(fig)
+    assert len(fc) == 2
+    colls = [c for c in fig.axes[0].collections
+             if hasattr(c, 'get_colors') and len(c.get_colors()) > 1]
+    assert len(colls) == 2, 'expected one colour collection per dataset'
+    tails = [np.asarray(c.get_colors())[-1][:3] for c in colls]
+    assert not np.allclose(tails[0], tails[1], atol=0.05), (
+        'the two datasets must end in visibly different colours for this '
+        'test to be able to detect a swap')
+    for f in fc:
+        ds = getattr(f, '_hyp_forecast_dataset', None)
+        rgb = np.asarray(matplotlib.colors.to_rgba(f.get_color())[:3])
+        assert np.allclose(rgb, tails[ds], atol=0.02), (
+            f'forecast for dataset {ds} is coloured {rgb}, but that '
+            f"dataset's trace ends at {tails[ds]}")
+
+
+# --------------------------------------------------------------------------
+# plotly parity.
+#
+# The matplotlib fix let forecasts reach the DRAWING layer under regrouping
+# for the first time -- and plotly's forecast block was written when that
+# could never happen, so it still indexes `forecasts[i]` while looping over
+# the drawn RUNS. With 2 datasets in 8 runs that is a hard IndexError, i.e.
+# fixing one backend broke the other. Every matplotlib assertion above needs
+# its plotly twin, or the two drift again.
+# --------------------------------------------------------------------------
+
+def _ply_forecasts(fig):
+    return [tr for tr in fig.data
+            if (tr.meta or {}).get('hyp_forecast_role') == 'static']
+
+
+def _ply_observed(fig):
+    return [tr for tr in fig.data
+            if (tr.meta or {}).get('hyp_forecast_role') is None
+            and tr.mode is not None and 'lines' in str(tr.mode)]
+
+
+@pytest.mark.parametrize('name', sorted(CATEGORICAL))
+def test_plotly_also_keeps_one_forecast_per_dataset(name):
+    data = _walks(2)
+    with hyp.set_interactive_backend('plotly'):
+        fig = hyp.plot(data, '-', predict='Kalman', t=4,
+                       hue=CATEGORICAL[name], show=False)
+    assert len(_ply_forecasts(fig)) == len(data), (
+        f'{name}: {len(_ply_forecasts(fig))} plotly forecasts for '
+        f'{len(data)} datasets')
+
+
+def test_plotly_tags_each_forecast_with_the_dataset_it_belongs_to():
+    """`meta['hyp_dataset']` is the plotly half of the artist tag, and under
+    regrouping it must still name the DATASET -- not the loop index over
+    runs, which is what it recorded when the loop ran over runs."""
+    data = _walks(3)
+    hue = (['a'] * 5 + ['b'] * 5) * 9      # one value per observation (3x30)
+    with hyp.set_interactive_backend('plotly'):
+        fig = hyp.plot(data, '-', predict='Kalman', t=4, hue=hue, show=False)
+    tags = sorted((tr.meta or {})['hyp_dataset'] for tr in _ply_forecasts(fig))
+    assert tags == list(range(len(data))), (
+        f'forecast dataset tags {tags}; expected one per dataset')
+
+
+def test_plotly_forecast_inherits_the_colour_of_the_run_it_continues():
+    """The style must come from the run holding the dataset's LAST
+    observation. Indexing the run list by forecast number picks run 0 and
+    run 1 -- which under an alternating hue are the WRONG (and differently
+    coloured) runs, so this discriminates."""
+    data = _walks(2)
+    hue = (['a'] * 5 + ['b'] * 5) * 6
+    with hyp.set_interactive_backend('plotly'):
+        fig = hyp.plot(data, '-', predict='Kalman', t=4, hue=hue, show=False)
+    obs = _ply_observed(fig)
+    fc = _ply_forecasts(fig)
+    assert len(fc) == 2
+    # each dataset's last observation falls in the FINAL run carrying it;
+    # the forecast must start exactly where that run ends
+    for tr in fc:
+        head = np.array([tr.x[0], tr.y[0], tr.z[0]], dtype=float)
+        assert any(np.allclose(
+            head, [o.x[-1], o.y[-1], o.z[-1]], atol=1e-6) for o in obs), (
+            'a plotly forecast does not start at the end of any drawn run')
+
+
+def test_plotly_and_matplotlib_draw_the_same_forecast_geometry_under_hue():
+    """Same anchors, same forecast, whichever backend renders it."""
+    data = _walks(2)
+    hue = (['a'] * 5 + ['b'] * 5) * 6
+    mpl_fig = hyp.plot(data, '-', predict='Kalman', t=4, hue=hue,
+                       antialias=False, show=False)
+    with hyp.set_interactive_backend('plotly'):
+        ply_fig = hyp.plot(data, '-', predict='Kalman', t=4, hue=hue,
+                           antialias=False, show=False)
+    mpl_heads = sorted(tuple(np.round(np.array(f.get_data_3d())[:, 0], 9))
+                       for f in _forecasts(mpl_fig))
+    ply_heads = sorted(tuple(np.round([tr.x[0], tr.y[0], tr.z[0]], 9))
+                       for tr in _ply_forecasts(ply_fig))
+    assert len(mpl_heads) == len(ply_heads) == len(data)
+    for m, p in zip(mpl_heads, ply_heads):
+        assert np.allclose(m, p, atol=1e-9), (
+            f'backends anchor the forecast differently: {m} vs {p}')

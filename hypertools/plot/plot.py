@@ -203,6 +203,9 @@ def _draw_forecast_overlays(ax, raw_forecasts, antialias=True,
         `animate='spin'` path -- can `set_clip_on(False)` on them).
     """
     artists = []
+    # (dataset index, artist) for every artist created, so the identity tag
+    # below survives an `ax.plot` call returning more than one artist
+    _artist_dataset = []
     src_lines = list(ax.lines)
     for i, fc in enumerate(raw_forecasts):
         # antialias (see `plot`'s `antialias=`): smooth the forecast the SAME
@@ -219,6 +222,7 @@ def _draw_forecast_overlays(ax, raw_forecasts, antialias=True,
         style = _forecast_style_from(
             src_lines[_src] if _src < len(src_lines) else None)
         d = fc.shape[1] if fc.ndim > 1 else 1
+        _before = len(artists)
         if d >= 3:
             artists.extend(ax.plot(
                 fc[:, 0], fc[:, 1], fc[:, 2], label='_nolegend_', **style))
@@ -227,14 +231,23 @@ def _draw_forecast_overlays(ax, raw_forecasts, antialias=True,
                 fc[:, 0], fc[:, 1], label='_nolegend_', **style))
         else:
             artists.extend(ax.plot(fc[:, 0], label='_nolegend_', **style))
+        _artist_dataset.extend((i, _a) for _a in artists[_before:])
     # role tag (see hypertools/plot/forecast.py): forecast artists must be
     # identifiable WITHOUT guessing from linestyle -- user data drawn with
     # fmt='--' is dashed too, and trail artists also carry '_nolegend_'.
     # Tagged once over the whole list rather than per iteration, so an
     # `ax.plot` call that ever returns more than one artist cannot leave any
     # of them untagged.
-    for _a in artists:
+    #
+    # `_hyp_forecast_dataset` is the SOURCE DATASET's index -- the plotly
+    # backend's `meta['hyp_dataset']` under matplotlib's naming. The role
+    # tag says what an artist IS; this says which series it belongs to, so
+    # downstream consumers pair forecasts with data by identity rather than
+    # by list position (which only holds while forecasts stay
+    # one-per-dataset in dataset order).
+    for _ds, _a in _artist_dataset:
         _a._hyp_forecast_role = 'static'
+        _a._hyp_forecast_dataset = _ds
     return artists
 
 
@@ -2462,26 +2475,41 @@ def plot(
         rows, matching what ``hyp.predict(xform_data, model=..., t=t)``
         returns.
 
-        **With `hue=` or `cluster=`.** These regroup the drawn traces by
-        category rather than by dataset, so there is no longer one trace per
-        dataset. A STATIC plot still draws one forecast per dataset: each is
-        anchored at that dataset's last observation and takes the style of
-        the trace holding it, which is the trace it visually continues. That
-        holds for a categorical `hue=`, a continuous `hue=` (where the
-        colour is taken at the anchor, since the trace has many) and
-        `cluster=`.
+        ``predict`` also carries ``'drawn'`` (bool) and ``'draw_reason'``
+        (``None``, or a sentence naming the limitation). The forecasts are
+        reported whenever the FIT succeeded, whether or not the figure could
+        render them: `return_model=` hands back model output, and throwing a
+        valid result away because a rendering combination is unsupported
+        would discard the very thing it exists to return. ``drawn`` is what
+        keeps the two cases distinguishable.
 
-        An ANIMATED plot does not, and warns: the per-frame schedule maps
-        frame-grid rows onto each DATASET's raw observations, and regrouping
-        leaves only per-run traces to reveal, with no per-dataset reveal to
-        schedule against. Plot statically to see forecasts alongside
-        `hue=`/`cluster=`. This holds for ANIMATED plots too, and needs no separate
-        definition: at the final frame the revealed history *is* the full
-        history, so the full-history forecast the bundle carries is exactly
-        the one the last frame draws. At every EARLIER frame the drawn
-        forecast is computed from the history revealed so far and so is
-        deliberately different -- the bundle is the end state, not a
-        per-frame record.
+        There are three cases:
+
+        1. **A plain forecast** (no `hue=`/`cluster=`), static or animated.
+           Drawn, and ``drawn`` is True. For an ANIMATION the bundle is the
+           END state: at the final frame the revealed history *is* the full
+           history, so the full-history forecast the bundle carries is
+           exactly the one the last frame draws; at every EARLIER frame the
+           drawn forecast is computed from the history revealed so far and
+           so is deliberately different. The bundle is not a per-frame
+           record.
+
+        2. **A STATIC plot with `hue=` or `cluster=`.** These regroup the
+           drawn traces by category rather than by dataset, so there is no
+           longer one trace per dataset -- but there is still one forecast
+           per dataset, each anchored at that dataset's last observation and
+           taking the style of the trace holding it, which is the trace it
+           visually continues. That holds for a categorical `hue=`, a
+           continuous `hue=` (where the colour is taken at the anchor, since
+           the trace has many) and `cluster=`. Drawn, and ``drawn`` is True.
+
+        3. **An ANIMATED plot with `hue=` or `cluster=`.** Not drawn, and
+           warns: the per-frame schedule maps frame-grid rows onto each
+           DATASET's raw observations, and regrouping leaves only per-run
+           traces to reveal, with no per-dataset reveal to schedule against.
+           ``drawn`` is False and ``draw_reason`` says why; ``forecasts``
+           still holds the full-history fit. Plot statically to SEE
+           forecasts alongside `hue=`/`cluster=`.
 
         The DRAWN overlay is not vertex-for-vertex the bundled
         array: it prepends the last observed row as a connector (`t + 1`
@@ -4778,6 +4806,12 @@ def plot(
     # traces (by category rather than by dataset), the 1:1 correspondence
     # no longer holds -- skip drawing forecasts rather than mismatch traces.
     _forecast_owner = None
+    #: Why no forecast overlay was drawn, or `None` when one was. The
+    #: `return_model=True` bundle reports this alongside the forecasts
+    #: themselves: a fit that SUCCEEDED but could not be rendered is still a
+    #: model result, and discarding it to make the bundle mirror the figure
+    #: would throw away the very thing `return_model=` exists to hand back.
+    _forecast_draw_reason = None
     if raw_forecasts is not None and len(raw_forecasts) != len(xform):
         # A forecast belongs to a DATASET and is anchored at that dataset's
         # last observation, so after regrouping it belongs to whichever run
@@ -4809,6 +4843,9 @@ def plot(
                 f"or use a CATEGORICAL hue (which keeps one trace per run "
                 f"and so keeps its forecasts).",
                 stacklevel=external_stacklevel())
+            _forecast_draw_reason = (
+                f"hue=/cluster= regrouped the data into {len(xform)} trace(s) "
+                f"with no per-dataset trace to anchor the forecasts to")
             raw_forecasts = None
             analyze_histories = None
 
@@ -4845,14 +4882,30 @@ def plot(
     if (raw_forecasts is not None and analyze_histories is not None
             and animate and animate not in ('spin',)
             and len(analyze_histories) != len(xform)):
+        _reveal = ('serial' if (animate == 'serial' or order == 'serial')
+                   else 'parallel')
         warnings.warn(
             f"predict= with an ANIMATED plot needs one drawn trace per "
             f"dataset, but hue=/cluster= regrouped {len(analyze_histories)} "
-            f"dataset(s) into {len(xform)} trace(s), so no per-frame forecast "
-            f"is drawn. A STATIC plot (no animate=) does draw forecasts "
-            f"here.",
+            f"dataset(s) into {len(xform)} trace(s), so no forecast overlay "
+            f"is drawn (animate={animate!r}, {_reveal} reveal); the observed "
+            f"trajectories still animate. Plot statically (drop animate=), "
+            f"drop hue=/cluster=, or render the forecast as a separate "
+            f"plot.",
             stacklevel=external_stacklevel())
+        _forecast_draw_reason = (
+            f"an ANIMATED plot needs one drawn trace per dataset, but "
+            f"hue=/cluster= regrouped {len(analyze_histories)} dataset(s) "
+            f"into {len(xform)} trace(s)")
         analyze_histories = None
+        # ...and drop the DRAWING copy too. Leaving it set drew the
+        # full-history forecast as a STATIC overlay on the plotly backend
+        # (whose static block fires whenever there is no schedule), i.e. the
+        # final forecast visible from frame 0 -- on a figure whose warning
+        # says none is drawn. It also inflated the centre/scale statistics
+        # below to fit a forecast that is never rendered. `bundle_forecasts`
+        # is untouched: the fit succeeded and is still reported.
+        raw_forecasts = None
     if (raw_forecasts is not None and analyze_histories is not None
             and animate and animate not in ('spin',)):
         from .forecast import ForecastSchedule
@@ -5107,6 +5160,10 @@ def plot(
             bullettime=bullettime,
             zoom=zoom,
             forecasts=raw_forecasts,
+            # which drawn run each forecast continues after hue=/cluster=
+            # regrouping -- the SAME mapping `_draw_forecast_overlays` uses
+            # on the matplotlib side, so neither backend has to re-derive it
+            forecast_owner=_forecast_owner,
             # the SAME precomputed, display-mapped schedule the matplotlib
             # path drives its per-frame forecast artists from, so the two
             # backends read one table instead of two transcriptions of it
@@ -5295,6 +5352,11 @@ def plot(
                         _t.set_visible(False)
                         _t._hyp_forecast_role = 'trail'
                         _t._hyp_forecast_age = _age
+                        # identity, like the static overlay and plotly's
+                        # meta['hyp_dataset']: the animated artists ARE
+                        # per-dataset, so every forecast artist on the axes
+                        # answers "which series?" the same way.
+                        _t._hyp_forecast_dataset = _i
                         _row.append(_t)
                     _trail_forecast_artists.append(_row)
                     # the SAME three-way split and label
@@ -5310,6 +5372,7 @@ def plot(
                         _art, = ax.plot([], label='_nolegend_', **_fc_style)
                     _art.set_clip_on(False)
                     _art._hyp_forecast_role = 'live'
+                    _art._hyp_forecast_dataset = _i
                     _live_forecast_artists.append(_art)
 
                 def _update_forecasts(ctx, _sched=forecast_schedule,
@@ -5678,6 +5741,12 @@ def plot(
                 "model": predict,
                 "params": {"t": t},
                 "forecasts": bundle_forecasts,
+                # whether those forecasts reached the FIGURE. They are
+                # reported either way -- `return_model=` hands back model
+                # output, and a successful fit that a rendering combination
+                # cannot display is still a successful fit.
+                "drawn": _forecast_draw_reason is None,
+                "draw_reason": _forecast_draw_reason,
             },
         }
 
@@ -6360,9 +6429,16 @@ def _apply_multicolor_lines(ax, xform, line_colors, kwargs_list):
     # A continuous hue gives the observed data MANY colours, so "the same
     # colour as its trace" resolves to the colour where the forecast starts:
     # the last segment of the trace it continues.
+    #
+    # Paired by the artist's DATASET tag, not by its position in
+    # `_kept_forecasts`: position is only the right key while forecasts stay
+    # one-per-dataset in dataset order, which anything that reorders or
+    # filters them (`forecast_cluster=`, a per-dataset refusal) breaks
+    # silently -- each forecast would simply take a neighbour's colour.
     for _fi, _fc_line in enumerate(_kept_forecasts):
-        if _fi < len(line_colors) and len(line_colors[_fi]):
-            _anchor_color = line_colors[_fi][-1]
+        _ds = getattr(_fc_line, '_hyp_forecast_dataset', _fi)
+        if _ds is not None and _ds < len(line_colors) and len(line_colors[_ds]):
+            _anchor_color = line_colors[_ds][-1]
             _fc_line.set_color(_anchor_color)
 
     is_3d = xform[0].shape[1] >= 3

@@ -462,7 +462,8 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 elev=10, azim=-60, point_colors=None, tail_duration=2,
                 focused=None,
                 chemtrails=False, precog=False, bullettime=False, zoom=1,
-                forecasts=None, forecast_schedule=None, forecast_trail=0,
+                forecasts=None, forecast_owner=None,
+                forecast_schedule=None, forecast_trail=0,
                 colorbar_info=None, surface=None,
                 surface_colors=None, surface_point_colors=None,
                 density=None, density_colors=None,
@@ -535,7 +536,13 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     zoom : float
         3-D camera zoom factor.
     forecasts : list of numpy.ndarray or None
-        predict= forecast traces (see below).
+        predict= forecast traces (see below). ONE PER INPUT DATASET, which
+        after `hue=`/`cluster=` regrouping is NOT one per drawn trace.
+    forecast_owner : list of int or None
+        `forecast_owner[i]` is the index in `data` of the run that forecast
+        `i` continues -- the run holding dataset `i`'s last observation, and
+        so the run whose style it inherits. `None` when no regrouping
+        happened, in which case forecast `i` continues run `i`.
     forecast_schedule : hypertools.plot.forecast.ForecastSchedule or None
         Every forecast a TIME-PROGRESSING animation will draw, precomputed by
         `plot()` and already mapped into the display box (see below). `None`
@@ -960,10 +967,22 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     forecast_trace_start = len(traces)
     forecast_trace_specs = []
     if forecasts is not None and forecast_schedule is None:
-        for i, arr in enumerate(data):
-            tkwargs = kwargs_list[i] or {}
+        # Loop over the FORECASTS (one per input dataset), not over `data`
+        # (one per drawn RUN). `hue=`/`cluster=` regrouping makes those two
+        # counts differ, and looping over runs indexed `forecasts[i]` off
+        # the end -- an IndexError that only became reachable once the
+        # matplotlib side started keeping forecasts under regrouping.
+        for i in range(len(forecasts)):
+            # `forecast_owner` names the run this forecast continues; without
+            # it, forecast i continues run i (the un-regrouped case).
+            src = (forecast_owner[i]
+                   if forecast_owner is not None and i < len(forecast_owner)
+                   else i)
+            src = src if src < len(data) else len(data) - 1
+            arr = data[src]
+            tkwargs = kwargs_list[src] or {}
             fc = np.atleast_2d(np.asarray(forecasts[i], dtype=np.float64))
-            fc_line, fc_alpha = _forecast_style_from(tkwargs, fmt[i])
+            fc_line, fc_alpha = _forecast_style_from(tkwargs, fmt[src])
             fc_common = dict(mode='lines', showlegend=False,
                              hoverinfo='skip',
                              line=fc_line,

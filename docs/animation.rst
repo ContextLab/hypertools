@@ -409,6 +409,29 @@ per-dataset reveal to schedule against; regrouping leaves only per-run traces
 revealing themselves, and a run is not a dataset. Plot statically to see
 forecasts alongside ``hue=``/``cluster=``.
 
+Both backends refuse identically. That is worth stating because they nearly
+did not: plotly draws its static forecast block whenever there is no per-frame
+schedule, which is exactly the state this refusal creates, so it warned "no
+forecast is drawn" and then drew the **full-history** forecast -- visible from
+frame 0, before any of the data it is predicted from.
+
+The forecasts are still *computed*, and ``return_model=True`` still reports
+them:
+
+.. code-block:: python
+
+    bundle = hyp.plot(data, '-', predict='Kalman', t=10, hue=categories,
+                      animate=True, return_model=True)
+
+    bundle['predict']['forecasts']    # the fit -- one array per dataset
+    bundle['predict']['drawn']        # False
+    bundle['predict']['draw_reason']  # why the figure has none
+
+``return_model=`` hands back model output, so a fit that succeeded is reported
+whether or not the figure could render it; ``drawn`` is what keeps "no
+forecast was computed" and "a forecast was computed but not drawn"
+distinguishable.
+
 Identifying forecast artists
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -418,6 +441,12 @@ trace's linestyle, no longer distinguishes them at all) --
 ``artist._hyp_forecast_role`` on matplotlib
 (``'static'``, ``'live'`` or ``'trail'``) and ``trace.meta['hyp_forecast_role']``
 on plotly. Trail artists additionally carry ``_hyp_forecast_age``.
+
+Every forecast artist also names the series it belongs to:
+``artist._hyp_forecast_dataset`` on matplotlib, ``trace.meta['hyp_dataset']``
+on plotly -- an index into the original input datasets. The role tag says what
+an artist *is*; this says *whose* it is, so a callback (or hypertools itself)
+can pair a forecast with its data by identity rather than by drawing order.
 
 Note that forecast artists are deliberately **not** in
 ``FrameContext.artists``: that sequence has cardinality assumptions (one entry

@@ -393,9 +393,13 @@ def test_hue_regrouping_still_has_no_ANIMATED_forecast_but_says_so():
 
     So the contract is: no animated forecast under regrouping, and the user
     is TOLD. The absence alone is not enough -- silence is what made the
-    original bug invisible."""
+    original bug invisible.
+
+    Runs are two observations long on purpose: single-observation runs raise
+    a SEPARATE "a pure line format cannot render a single point" warning,
+    which would make `pytest.warns` pass on the wrong warning."""
     data = _series(n=1, rows=60)
-    labels = np.array(['a', 'b'] * 30)
+    labels = np.array(['a', 'a', 'b', 'b'] * 15)
     with pytest.warns(UserWarning, match='ANIMATED'):
         fig, ani = hyp.plot(data, '-', predict='Kalman', t=3, hue=labels,
                             animate=True, duration=2, frame_rate=4,
@@ -410,6 +414,50 @@ def test_hue_regrouping_still_has_no_ANIMATED_forecast_but_says_so():
                       show=False)
     assert [ln for ln in static.axes[0].lines
             if getattr(ln, '_hyp_forecast_role', None) == 'static']
+
+
+def test_the_plotly_backend_refuses_the_same_case_the_same_way():
+    """`_draw_forecast_overlays` is matplotlib-only, so the "draw nothing"
+    half of the contract above was enforced on ONE backend. plotly's static
+    forecast block fires whenever there is no schedule -- which is exactly
+    the state this refusal creates -- so plotly warned "no forecast is
+    drawn" and then drew two, showing the FINAL forecast from frame 0."""
+    data = _series(n=1, rows=60)
+    labels = np.array(['a', 'a', 'b', 'b'] * 15)
+    with hyp.set_interactive_backend('plotly'):
+        with pytest.warns(UserWarning, match='ANIMATED'):
+            fig = hyp.plot(data, '-', predict='Kalman', t=3, hue=labels,
+                           animate=True, duration=2, frame_rate=4,
+                           show=False)
+    roles = [(tr.meta or {}).get('hyp_forecast_role') for tr in fig.data]
+    assert [r for r in roles if r is not None] == [], (
+        f'plotly drew forecast traces {[r for r in roles if r]} on a plot '
+        f'whose warning says none are drawn')
+
+
+def test_a_refused_forecast_is_still_REPORTED_even_though_it_is_not_drawn():
+    """`return_model=True` describes MODEL output. The fit succeeded; only
+    the rendering combination is unsupported, so throwing the arrays away
+    would lose a valid result to a drawing limitation. The bundle says both
+    things instead: the forecasts, and that they were not drawn."""
+    data = _series(n=1, rows=60)
+    labels = np.array(['a', 'a', 'b', 'b'] * 15)
+    with pytest.warns(UserWarning, match='ANIMATED'):
+        bundle = hyp.plot(data, '-', predict='Kalman', t=3, hue=labels,
+                          animate=True, duration=2, frame_rate=4,
+                          show=False, return_model=True)
+    reported = bundle['predict']
+    assert reported is not None
+    assert len(reported['forecasts']) == 1
+    assert np.asarray(reported['forecasts'][0]).shape == (3, 3)
+    assert reported['drawn'] is False
+    assert reported['draw_reason'] and 'hue' in reported['draw_reason']
+
+    # and when they ARE drawn, the bundle says so without a reason to give
+    drawn = hyp.plot(data, '-', predict='Kalman', t=3, show=False,
+                     return_model=True)
+    assert drawn['predict']['drawn'] is True
+    assert drawn['predict']['draw_reason'] is None
 
 
 def test_bundle_forecasts_are_the_full_history_forecast():
