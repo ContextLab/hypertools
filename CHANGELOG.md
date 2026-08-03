@@ -134,7 +134,8 @@ items under **Changed** below alter how existing figures LOOK.
   without it, rather than being silently dropped. `forecast_fmt=` is
   validated with matplotlib's own `fmt=` parser, so it provably accepts
   exactly what `fmt=` accepts and both backends reject the same strings at
-  the same moment.
+  the same moment; `forecast_hue=` rejects a bare string rather than reading
+  it as one label per character, and requires hashable per-dataset values.
 
 - **A missing categorical `hue=` label now means one unlabeled group.**
   `nan != nan`, so two missing labels were not equal to each other and became

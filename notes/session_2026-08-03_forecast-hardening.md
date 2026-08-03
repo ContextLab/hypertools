@@ -121,6 +121,38 @@ parallelism to quiet someone else's environment. Left alone, flagged.
 compared against `c8c4f533` in a scratch worktree. All pre-existing, all
 from a star import that predates this work.
 
+## Round 2 — the resolver as an independently callable interface
+
+The maintainer's follow-up review accepted the `plot()` path and asked for
+three boundary guards on `resolve_forecast_overrides` itself. `plot()` cannot
+trigger any of them; a direct caller can, and each failed *quietly or
+misleadingly* rather than loudly:
+
+| input | before | now |
+|-|-|-|
+| forecast count != `n_datasets` | 4 for 3: `IndexError` writing `overrides[3]`. 2 for 3: this resolver's OWN message, "it has 3 point(s) to work with" — a count read off `n_datasets` when 2 endpoints were stacked | `ValueError` naming both counts |
+| a raw `(t,)` forecast | `atleast_2d` -> `(1, t)`: the whole trajectory as ONE t-dimensional endpoint, clustered silently | `ValueError` naming the shape |
+| a ragged nested list | numpy's "inhomogeneous shape", naming neither kwarg nor forecast | `ValueError` naming forecast `i` |
+| an unhashable `forecast_hue=` label | bare `TypeError: unhashable type: 'dict'` from the colour code | `TypeError` naming the kwarg |
+
+Two things the red phase changed about the tests:
+
+- The count test's *first* draft asserted against the wrong evidence. Running
+  it showed the 2-for-3 case already raised — but with a message asserting
+  three points existed. The docstring now records that, because "it already
+  raises" was the tempting and wrong reading.
+- The 1-D test used two forecasts and passed for a reason unrelated to
+  shape: KMeans' default `n_clusters=3` exceeded the 2 samples. At **four**
+  datasets the old code SUCCEEDS, clustering trajectories. The test uses four
+  so the guard is what makes it raise.
+
+`hash(v)` rather than `isinstance(v, Hashable)`: the ABC only asks whether
+`__hash__` exists, and a tuple holding a list has one that raises when called.
+
+Verified empirically before making the 2-D rule strict: every forecast
+reaching the resolver through `plot()` is 2-D, including one-feature input
+(`(20, 1)` in -> `(11, 1)` forecast), and at every `reduce=` setting.
+
 ## Still open (unchanged, by the maintainer's scoping)
 
 - **`TraceOwnership` / `DatasetRevealSchedule`** — the missing mapping is
@@ -143,3 +175,13 @@ from a star import that predates this work.
 - Docs: `sphinx -W -E -a` **build succeeded** (warnings are errors)
 - Commits: `ed7fe3a3` (validation + missing labels),
   `9c227d55` (animated clustering docs, tests, warning capture)
+
+### Round 2 (resolver boundary guards)
+
+- `tests -k "forecast or predict"`: **362 passed**
+- Full suite: **2981 passed, 13 skipped, 0 failed** (10m57s), still **no
+  warnings summary section** -- +5 over the round-1 run, exactly the 5 tests
+  added (2 parametrized count cases, 1-D, ragged, unhashable)
+- Docs: `sphinx -W -E -a` **build succeeded**
+- Ruff on both touched files: **1 finding before, 1 after** (the pre-existing
+  star-import one), compared against `a2550259`

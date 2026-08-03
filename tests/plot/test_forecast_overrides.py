@@ -464,6 +464,58 @@ def test_forecast_cluster_on_non_finite_endpoints_says_which_datasets():
         resolve_forecast_overrides(3, forecasts, cluster='KMeans')
 
 
+@pytest.mark.parametrize('n_forecasts', [2, 4])
+def test_forecast_cluster_needs_one_forecast_per_dataset(n_forecasts):
+    """A count mismatch is the one error `plot()` structurally cannot make --
+    it passes `len(raw_forecasts)` as `n_datasets`, so the two agree by
+    construction. A direct caller can, and the result would be worse than an
+    exception: too many forecasts raises a bare `IndexError` while writing
+    `overrides[3]`, and too few reaches the clusterer, which fails with THIS
+    resolver's own message claiming "it has 3 point(s) to work with" -- a
+    count taken from `n_datasets` when only two endpoints were stacked."""
+    from hypertools.plot.forecast import resolve_forecast_overrides
+    forecasts = [np.zeros((4, 3)) + i for i in range(n_forecasts)]
+    with pytest.raises(ValueError, match='one forecast per dataset'):
+        resolve_forecast_overrides(3, forecasts, cluster='KMeans')
+
+
+def test_forecast_cluster_on_a_1D_forecast_says_the_shape():
+    """A raw `(t,)` array is ambiguous, and the dangerous reading is the one
+    numpy's `atleast_2d` picks: it yields `(1, t)`, making the WHOLE
+    trajectory a single t-dimensional "endpoint". That clusters by a geometry
+    no forecast overlay ever draws, silently. Every forecast that reaches here
+    through `plot()` is `(steps, dimensions)` -- even for one-feature input --
+    so requiring it costs nothing and closes the ambiguity.
+
+    Four datasets, not two, so the clusterer's own "n_samples < n_clusters"
+    complaint cannot stand in for the check being tested: with four the
+    current code SUCCEEDS, silently grouping trajectories."""
+    from hypertools.plot.forecast import resolve_forecast_overrides
+    forecasts = [np.arange(5.0) * k for k in range(1, 5)]
+    with pytest.raises(ValueError, match=r'\(steps, dimensions\)'):
+        resolve_forecast_overrides(4, forecasts, cluster='KMeans')
+
+
+def test_forecast_cluster_on_a_ragged_nested_list_says_which_forecast():
+    """numpy's own complaint is "setting an array element with a sequence.
+    The requested array has an inhomogeneous shape...", which names neither
+    the kwarg nor the forecast that was malformed."""
+    from hypertools.plot.forecast import resolve_forecast_overrides
+    forecasts = [[[1.0, 2.0], [3.0]], [[1.0, 2.0], [3.0, 4.0]]]
+    with pytest.raises(ValueError, match='could not read forecast 0'):
+        resolve_forecast_overrides(2, forecasts, cluster='KMeans')
+
+
+def test_forecast_hue_with_an_UNHASHABLE_label_says_which_kwarg():
+    """Labels become the keys of a label -> colour map. A dict survives the
+    "is this a sequence?" guard above (it is neither list, tuple nor array)
+    and then fails as a bare `TypeError: unhashable type: 'dict'` from inside
+    the colour code, naming nothing the caller passed."""
+    from hypertools.plot.forecast import resolve_forecast_overrides
+    with pytest.raises(TypeError, match='forecast_hue'):
+        resolve_forecast_overrides(2, hue=[{'a': 1}, {'b': 2}])
+
+
 # --------------------------------------------------------------------------
 # plotly parity
 # --------------------------------------------------------------------------

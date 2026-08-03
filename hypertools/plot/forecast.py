@@ -557,6 +557,13 @@ def _forecast_endpoints(forecasts):
     except for the concatenation axis must match exactly", and a non-finite
     endpoint raises sklearn's "Input contains NaN" -- none of which mentions
     a forecast.
+
+    Every forecast must be exactly 2-D, `(steps, dimensions)` -- the shape
+    `plot()` always produces, one-feature input included. `np.atleast_2d`
+    would ACCEPT a raw `(t,)` array by reading it as `(1, t)`, making the
+    whole trajectory one t-dimensional "endpoint" and clustering a geometry
+    the overlay never draws. Silently reinterpreting a shape is the one
+    failure mode this function exists to prevent.
     """
     if forecasts is None:
         raise ValueError(
@@ -564,7 +571,21 @@ def _forecast_endpoints(forecasts):
             "it needs the forecasts themselves; none were given.")
     endpoints = []
     for i, fc in enumerate(forecasts):
-        arr = np.atleast_2d(np.asarray(fc, dtype=float))
+        try:
+            arr = np.asarray(fc, dtype=float)
+        except ValueError as exc:
+            # a ragged nested list raises numpy's "setting an array element
+            # with a sequence ... inhomogeneous shape", which names neither
+            # the kwarg nor which forecast was malformed
+            raise ValueError(
+                f"forecast_cluster= could not read forecast {i} as an array "
+                f"of numbers: {exc}") from exc
+        if arr.ndim != 2:
+            raise ValueError(
+                f"forecast_cluster= needs each forecast as (steps, "
+                f"dimensions); forecast {i} has shape {arr.shape}."
+                + (f" For a one-dimensional forecast, pass it as "
+                   f"({arr.shape[0]}, 1)." if arr.ndim == 1 else ""))
         if arr.shape[0] == 0:
             raise ValueError(
                 f"forecast_cluster= groups each forecast by its last point, "
@@ -601,13 +622,20 @@ def resolve_forecast_overrides(n_datasets, forecasts=None, *, hue=None,
         `forecast_cluster=` needs them: it clusters their ENDPOINTS, and
         clustering the raw model space would group by a geometry the user
         cannot see when `reduce=`/`align=` changed it.
+
+        With `cluster=`, exactly `n_datasets` of them, each 2-D
+        ``(steps, dimensions)`` -- what `plot()` always passes. Both are
+        checked rather than assumed: this resolver is importable on its own,
+        and both mismatches otherwise fail silently or misleadingly (a raw
+        ``(t,)`` array would be read as one t-dimensional endpoint).
     hue : sequence or None
         One value per dataset. Datasets sharing a value share a colour. A
         missing value (`None`, NaN, `pd.NA`) marks that dataset UNLABELED:
         every one of them forms a single group drawn in neutral gray and
         consuming no palette slot, exactly as `plot()` treats a
         partially-labeled `hue=`. A bare string is rejected rather than read
-        as one label per character.
+        as one label per character, and each value must be hashable -- it
+        becomes a key in the label -> colour map.
     cluster : cluster spec or None
         Clusters the forecast ENDPOINTS -- where each series is predicted to
         end up -- so a forecast's colour answers "which of these are heading
@@ -697,7 +725,36 @@ def resolve_forecast_overrides(n_datasets, forecasts=None, *, hue=None,
         # normalization `plot()` applies to a categorical `hue=`)
         from .colors import is_missing_label
         labels = [None if is_missing_label(v) else v for v in labels]
+        # labels become the KEYS of a label -> colour map, so an unhashable
+        # one (a dict, a set) passes the sequence guard above and then fails
+        # as a bare "unhashable type" from inside the colour code
+        # `hash(v)` rather than `isinstance(v, Hashable)`: the ABC only asks
+        # whether `__hash__` EXISTS, and a tuple holding a list has one that
+        # raises when called.
+        for v in labels:
+            if v is None:
+                continue
+            try:
+                hash(v)
+            except TypeError as exc:
+                raise TypeError(
+                    f"every forecast_hue= value must be usable as a group "
+                    f"label, which means hashable (datasets sharing a value "
+                    f"share a colour); got {v!r} "
+                    f"({type(v).__name__}).") from exc
     elif cluster is not None:
+        # `plot()` passes `len(raw_forecasts)` as `n_datasets`, so it cannot
+        # disagree with itself here -- but a direct caller can, and the
+        # consequences are silent rather than loud: too many forecasts write
+        # past the end of `overrides` with a bare IndexError, and too few
+        # style every dataset from labels that clustered a DIFFERENT set of
+        # endpoints, reported (below) with a point count taken from
+        # `n_datasets` rather than from the forecasts actually stacked.
+        if forecasts is not None and len(forecasts) != n_datasets:
+            raise ValueError(
+                f"forecast_cluster= needs exactly one forecast per dataset "
+                f"(it groups each dataset by where ITS forecast ends up); got "
+                f"{len(forecasts)} forecast(s) for {n_datasets} dataset(s).")
         if n_datasets < 2:
             warnings.warn(
                 f"forecast_cluster= needs at least two forecasts to group "
