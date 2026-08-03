@@ -19,7 +19,8 @@ from ..core.model import external_stacklevel
 from ..tools.analyze import analyze
 from ..cluster.cluster import cluster as clusterer, mixture_models, \
     models as hard_cluster_models
-from .colors import mat2colors, colors2groups, get_palette_colors, continuous_colormap
+from .colors import (mat2colors, colors2groups, get_palette_colors,
+                     continuous_colormap, NAN_COLOR, is_missing_label)
 from ..reduce.reduce import reduce as reducer
 from ..tools.format_data import format_data
 from .matplotlib_backend import _draw
@@ -33,15 +34,13 @@ from .trails import broadcast_trail_flag
 from .multiindex import expand_multiindex, build_multiindex_styles
 from .morph import resolve_morph_rotations
 from .fonts import resolve_font, sans_serif_stack
-from .forecast import FORECAST_ALPHA_SCALE, forecast_alpha
-# matplotlib's own fmt-string grammar, used so `forecast_fmt=` means
-# exactly what the same string means in `fmt=` (same guarded import
-# `matplotlib_backend` uses; a future relocation degrades rather than
-# crashes).
-try:
-    from matplotlib.axes._base import _process_plot_format
-except ImportError:  # pragma: no cover
-    _process_plot_format = None
+# `_process_plot_format` is matplotlib's own fmt-string grammar, used so
+# `forecast_fmt=` means exactly what the same string means in `fmt=`. Taken
+# from `.forecast` rather than imported again here: that module VALIDATES
+# `forecast_fmt=` with it, and a second guarded import is a second chance
+# for the check and the application to disagree about what parses.
+from .forecast import (FORECAST_ALPHA_SCALE, forecast_alpha,
+                       _process_plot_format)
 
 
 # GH #206: the subset of mpl_kwargs keys `plotly_backend.plotly_draw` (and
@@ -104,8 +103,11 @@ _STATIC_LINE_TARGET_VERTICES = 900
 # de-emphasized color for UNLABELED points (the None entries of a
 # partially-labeled categorical hue; release-1.0 audit, F02-013) -- the
 # same neutral gray `colors.NAN_COLOR` uses for non-finite hue values, so
-# "no information" reads consistently across the library.
-_UNLABELED_HUE_COLOR = (0.75, 0.75, 0.75)
+# "no information" reads consistently across the library. It IS that
+# constant rather than a second copy of its value: the two were written as
+# separate literals and are one drift away from disagreeing about what
+# "no information" looks like.
+_UNLABELED_HUE_COLOR = NAN_COLOR
 
 #: Largest morphing-cloud size `animate='morph'` will accept without an
 #: explicit `morph_samples=`. The one-to-one point matching is a Hungarian
@@ -4380,6 +4382,19 @@ def plot(
             # if list of lists, unpack
             if any(isinstance(el, list) for el in hue):
                 hue = list(itertools.chain(*hue))
+
+            # A MISSING label in a categorical hue means the point is
+            # unlabeled, which this pipeline already spells `None` (the
+            # partially-labeled branch below). Say it once, here: `nan !=
+            # nan`, so two missing labels are not equal to each other and
+            # became two SEPARATE saturated categories -- and, since
+            # `np.nan` is a singleton while `float('nan')` is a fresh object
+            # each time, WHICH of those happened depended on how the caller
+            # spelled it. Guarded on "some entry is a string" so a purely
+            # numeric hue (binned as continuous values, where non-finite
+            # entries are already handled by `mat2colors`) is untouched.
+            if any(isinstance(el, str) for el in hue):
+                hue = [None if is_missing_label(el) else el for el in hue]
 
             # if all of the elements are numbers, map them to colors
             if not isinstance(hue[0], tuple):

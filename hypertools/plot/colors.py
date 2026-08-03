@@ -21,6 +21,26 @@ import pandas as pd
 NAN_COLOR = (0.75, 0.75, 0.75)
 
 
+def is_missing_label(value):
+    """True for every spelling of "no label given": `None`, NaN, `pd.NA`.
+
+    NaN needs saying because it is not equal to itself, so two missing
+    labels group as two DIFFERENT categories -- and, since `np.nan` is a
+    singleton while `float('nan')` is a fresh object each time, whether they
+    did depended on how the caller happened to spell it. Callers normalize
+    every one of these to `None`, the sentinel this module and `plot()`
+    already use for "unlabeled" (drawn `NAN_COLOR`, no legend entry).
+    """
+    if value is None:
+        return True
+    try:
+        return bool(pd.isna(value))
+    except (TypeError, ValueError):
+        # pd.isna returns an ARRAY for array-like input, and raises for some
+        # exotic types; neither is a missing scalar
+        return False
+
+
 def mat2colors(m, palette='hls', n_bins=100):
     """Map labels, values, or matrices to RGB colors.
 

@@ -343,6 +343,128 @@ def test_forecast_styling_survives_a_regrouping_hue():
 
 
 # --------------------------------------------------------------------------
+# input validation
+#
+# `resolve_forecast_overrides` is internal, but it is independently
+# importable and every one of these inputs is a plausible typo, so each has
+# to fail by NAMING the kwarg rather than surfacing as an internal error from
+# inside numpy, matplotlib or sklearn.
+# --------------------------------------------------------------------------
+
+def test_a_non_iterable_forecast_fmt_names_the_kwarg():
+    """`list(3)` raises "'int' object is not iterable", which names neither
+    the kwarg nor what it should have been given."""
+    with pytest.raises(TypeError, match='forecast_fmt'):
+        hyp.plot(_walks(2), '-', predict='Kalman', t=4, forecast_fmt=3,
+                 show=False)
+
+
+def test_a_forecast_fmt_entry_that_is_not_a_format_string_is_rejected():
+    """One bad entry in an otherwise fine list. Left alone it reaches a
+    different layer on each backend, so the two would not even fail alike."""
+    with pytest.raises(TypeError, match='forecast_fmt'):
+        hyp.plot(_walks(2), '-', predict='Kalman', t=4,
+                 forecast_fmt=['-', 3], show=False)
+
+
+def test_a_bytes_forecast_fmt_is_decoded_rather_than_iterated():
+    """`list(b'--')` is `[45, 45]` -- two ints, silently taken as one format
+    per dataset. Decoding is the only reading that is not nonsense."""
+    fig = hyp.plot(_walks(2), '-', predict='Kalman', t=4, forecast_fmt=b':',
+                   show=False)
+    assert all(f.get_linestyle() in (':', 'dotted') for f in _forecasts(fig))
+
+
+def test_an_unparseable_forecast_fmt_is_rejected_before_anything_is_drawn():
+    """`fmt=` and `forecast_fmt=` share matplotlib's grammar, so they must
+    share its verdict on what is a legal string -- said once, here, rather
+    than differently by each backend at drawing time."""
+    with pytest.raises(ValueError, match='forecast_fmt'):
+        hyp.plot(_walks(2), '-', predict='Kalman', t=4, forecast_fmt='zz',
+                 show=False)
+
+
+def test_a_bare_string_forecast_hue_is_rejected():
+    """'ab' is a sequence of two characters, so a two-dataset plot would
+    silently accept it as one label per dataset -- and a three-dataset plot
+    would reject it with a length message that reads as nonsense."""
+    with pytest.raises(TypeError, match='forecast_hue'):
+        hyp.plot(_walks(2), '-', predict='Kalman', t=4, forecast_hue='ab',
+                 show=False)
+
+
+def test_missing_forecast_hue_values_form_ONE_unlabeled_group():
+    """`nan != nan`, so two missing labels are not equal and would come out
+    as two separate groups in two separate colours (and, since `float('nan')`
+    is a fresh object each time but `np.nan` is a singleton, WHICH of those
+    happened would depend on how the caller spelled it).
+
+    They are normalized to the `None` the observed categorical hue already
+    uses for "unlabeled", so a missing forecast label means the same thing as
+    a missing observed one: one group, drawn in neutral gray."""
+    from hypertools.plot.plot import _UNLABELED_HUE_COLOR
+    data = _walks(4)
+    fig = hyp.plot(data, '-', predict='Kalman', t=4,
+                   forecast_hue=['a', float('nan'), 'b', float('nan')],
+                   show=False)
+    fc = _by_dataset(fig)
+    assert np.allclose(_rgb(fc[1]), _rgb(fc[3])), (
+        'two missing labels came out as two different groups')
+    assert np.allclose(_rgb(fc[1]), _UNLABELED_HUE_COLOR)
+    assert not np.allclose(_rgb(fc[0]), _rgb(fc[2]))
+
+
+def test_a_missing_forecast_hue_label_does_not_consume_a_palette_slot():
+    """The named categories keep the first palette slots, exactly as they do
+    for an observed `hue=` containing `None` (release-1.0 audit F02-013)."""
+    data = _walks(3)
+    named = hyp.plot(data, '-', predict='Kalman', t=4,
+                     forecast_hue=['a', 'b', 'b'],
+                     forecast_palette=['#ff0000', '#0000ff'], show=False)
+    partial = hyp.plot(data, '-', predict='Kalman', t=4,
+                       forecast_hue=['a', None, 'b'],
+                       forecast_palette=['#ff0000', '#0000ff'], show=False)
+    assert np.allclose(_rgb(_by_dataset(partial)[0]), [1, 0, 0])
+    assert np.allclose(_rgb(_by_dataset(partial)[2]), [0, 0, 1])
+    assert np.allclose(_rgb(_by_dataset(named)[0]), [1, 0, 0])
+
+
+# -- resolver-level guards. These inputs cannot come through `plot()`, which
+# always hands over real forecasts -- but the resolver is importable on its
+# own, and an internal function that raises IndexError from inside numpy
+# tells its next caller nothing.
+
+def test_forecast_cluster_without_forecasts_says_what_is_missing():
+    from hypertools.plot.forecast import resolve_forecast_overrides
+    with pytest.raises(ValueError, match='forecast_cluster'):
+        resolve_forecast_overrides(3, None, cluster='KMeans')
+
+
+def test_forecast_cluster_on_an_empty_forecast_says_which_one():
+    from hypertools.plot.forecast import resolve_forecast_overrides
+    forecasts = [np.zeros((4, 3)), np.zeros((0, 3)), np.zeros((4, 3))]
+    with pytest.raises(ValueError, match='no rows'):
+        resolve_forecast_overrides(3, forecasts, cluster='KMeans')
+
+
+def test_forecast_cluster_on_ragged_forecasts_says_so():
+    """`np.vstack` reports "all the input array dimensions except for the
+    concatenation axis must match exactly", which never mentions forecasts."""
+    from hypertools.plot.forecast import resolve_forecast_overrides
+    forecasts = [np.zeros((4, 3)), np.zeros((4, 2))]
+    with pytest.raises(ValueError, match='same number of dimensions'):
+        resolve_forecast_overrides(2, forecasts, cluster='KMeans')
+
+
+def test_forecast_cluster_on_non_finite_endpoints_says_which_datasets():
+    from hypertools.plot.forecast import resolve_forecast_overrides
+    forecasts = [np.zeros((4, 3)), np.full((4, 3), np.nan),
+                 np.zeros((4, 3))]
+    with pytest.raises(ValueError, match='non-finite'):
+        resolve_forecast_overrides(3, forecasts, cluster='KMeans')
+
+
+# --------------------------------------------------------------------------
 # plotly parity
 # --------------------------------------------------------------------------
 

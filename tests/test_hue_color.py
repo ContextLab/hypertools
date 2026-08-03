@@ -491,3 +491,47 @@ def test_gh291_marker_only_hue_style_list_matches_trace_count():
         'linewidth')
     assert cap['n'] == 2
     assert cap['vals'] == [1, 3]             # one per category trace
+
+
+# --- a MISSING categorical hue label means one unlabeled group ----------
+
+def test_missing_categorical_hue_labels_form_ONE_unlabeled_group():
+    """`nan != nan`, so two missing labels are not equal to each other and
+    came out as two SEPARATE categories in two saturated palette colours --
+    and, since `np.nan` is a singleton while `float('nan')` is a fresh object
+    each time, WHICH of those happened depended on how the caller spelled it.
+
+    A missing label means the point is unlabeled, which this pipeline already
+    spells `None`: one group, neutral gray, no legend entry (F02-013).
+    """
+    from hypertools.plot.plot import _UNLABELED_HUE_COLOR
+    A, = _walks(1, ndims=3)
+    n = len(A)
+    hue = (['a'] * (n // 4) + [float('nan')] * (n // 4)
+           + ['b'] * (n // 4) + [float('nan')] * (n - 3 * (n // 4)))
+    fig = hyp.plot([A], '-', hue=hue, show=False)
+    drawn = {tuple(np.round(matplotlib.colors.to_rgb(ln.get_color()), 6))
+             for ln in fig.axes[0].lines if len(ln.get_xdata()) > 1}
+    gray = tuple(np.round(_UNLABELED_HUE_COLOR, 6))
+    assert gray in drawn, 'the missing labels did not become the gray group'
+    assert len(drawn) == 3, (
+        f'expected a, b and ONE unlabeled group; got {len(drawn)} colours: '
+        f'{sorted(drawn)}')
+
+
+def test_a_missing_hue_label_behaves_exactly_like_None():
+    """The two spellings must be indistinguishable in the figure -- that is
+    the whole content of "normalize missing labels to one sentinel"."""
+    A, = _walks(1, ndims=3)
+    n = len(A)
+    base = ['a'] * (n // 2)
+    with_none = base + [None] * (n - n // 2)
+    with_nan = base + [float('nan')] * (n - n // 2)
+    a = hyp.plot([A], '-', hue=with_none, show=False)
+    b = hyp.plot([A], '-', hue=with_nan, show=False)
+
+    def _colours(fig):
+        return [tuple(np.round(matplotlib.colors.to_rgb(ln.get_color()), 6))
+                for ln in fig.axes[0].lines if len(ln.get_xdata()) > 1]
+
+    assert _colours(a) == _colours(b)

@@ -25,6 +25,20 @@ import numpy as np
 
 from ..predict.predict import predict as _predict
 
+# matplotlib's own fmt-string grammar. `forecast_fmt=` promises to mean
+# exactly what the same string means in `fmt=`, which is only true if the
+# same parser decides what is legal -- so it is checked here, once, rather
+# than by whichever backend happens to be drawing. Guarded (this is a
+# private matplotlib API): a future relocation degrades to "unvalidated"
+# rather than crashing at import.
+#
+# This is the SINGLE guarded import: `plot.py` takes the symbol from here,
+# so the two cannot end up parsing `forecast_fmt=` with different parsers.
+try:
+    from matplotlib.axes._base import _process_plot_format
+except ImportError:  # pragma: no cover
+    _process_plot_format = None
+
 #: Project a schedule's build time once the first fit has been timed, and say
 #: so if it exceeds this many seconds. Striding the schedule to make it
 #: cheaper was ruled out deliberately -- sampling the reveal would change
@@ -464,17 +478,111 @@ def _forecast_label_colors(labels, palette):
     share a label. `mat2colors`' 1-D numeric path is deliberately NOT used --
     it BINS values into a gradient, so integer cluster labels 0/1/2 would come
     out as three shades of one hue rather than three distinguishable colours.
+
+    ``None`` marks an UNLABELED dataset (see `_is_missing_label`): it forms
+    one group drawn in the neutral `colors.NAN_COLOR` gray and consumes no
+    palette slot, so the named categories keep the first slots -- the same
+    rule `plot()` applies to a partially-labeled `hue=` (release-1.0 audit,
+    F02-013), so a missing forecast label means what a missing observed one
+    does.
     """
     import seaborn as sns
-    from .colors import _get_palette
+    from .colors import _get_palette, NAN_COLOR
 
     ordered = []
     for lab in labels:
-        if lab not in ordered:
+        if lab is not None and lab not in ordered:
             ordered.append(lab)
-    colors = _get_palette(palette, len(ordered), sns)
+    colors = _get_palette(palette, max(1, len(ordered)), sns)
     index = {lab: i for i, lab in enumerate(ordered)}
-    return [tuple(colors[index[lab]])[:3] for lab in labels]
+    return [NAN_COLOR if lab is None else tuple(colors[index[lab]])[:3]
+            for lab in labels]
+
+
+def _validate_fmt(fmt, kwarg='forecast_fmt'):
+    """Reject a format string matplotlib's own `fmt=` grammar cannot parse.
+
+    Checked HERE so both backends refuse the same strings at the same
+    moment: left to drawing time, matplotlib raises from inside
+    `_apply_forecast_override` and plotly's `_resolve_fmt` quietly ignores
+    the characters it does not recognise.
+    """
+    if _process_plot_format is None:  # pragma: no cover
+        return
+    try:
+        _process_plot_format(fmt)
+    except ValueError as exc:
+        raise ValueError(
+            f"{kwarg}={fmt!r} is not a format string matplotlib can parse "
+            f"(it takes the same grammar as fmt=): {exc}") from exc
+
+
+def _resolve_fmt_list(fmt, n_datasets):
+    """`forecast_fmt=` -> one validated format string per dataset."""
+    # `list(b'--')` is `[45, 45]` -- two ints, silently taken as one format
+    # per dataset. Decoding is the only reading of a bytes fmt that is not
+    # nonsense.
+    if isinstance(fmt, bytes):
+        fmt = fmt.decode('utf-8')
+    if isinstance(fmt, str):
+        fmts = [fmt] * n_datasets
+    else:
+        if not isinstance(fmt, (list, tuple, np.ndarray)):
+            raise TypeError(
+                f"forecast_fmt= takes one format string, or a list/tuple of "
+                f"them (one per dataset); got "
+                f"{type(fmt).__name__} ({fmt!r}).")
+        fmts = [f.decode('utf-8') if isinstance(f, bytes) else f for f in fmt]
+        bad = [f for f in fmts if not isinstance(f, str)]
+        if bad:
+            raise TypeError(
+                f"every forecast_fmt= entry must be a format string; got "
+                f"{bad[0]!r} ({type(bad[0]).__name__}).")
+        if len(fmts) != n_datasets:
+            raise ValueError(
+                f"forecast_fmt= must be one format string, or one per "
+                f"dataset; got {len(fmts)} for {n_datasets} dataset(s).")
+    for f in fmts:
+        _validate_fmt(f)
+    return fmts
+
+
+def _forecast_endpoints(forecasts):
+    """The last point of every forecast, stacked -- what `forecast_cluster=`
+    actually groups.
+
+    Every failure here is reported against the FORECASTS, because the
+    library's own messages would not be: an empty forecast raises IndexError
+    from numpy, ragged ones raise `vstack`'s "all the input array dimensions
+    except for the concatenation axis must match exactly", and a non-finite
+    endpoint raises sklearn's "Input contains NaN" -- none of which mentions
+    a forecast.
+    """
+    if forecasts is None:
+        raise ValueError(
+            "forecast_cluster= groups the forecasts by WHERE THEY END UP, so "
+            "it needs the forecasts themselves; none were given.")
+    endpoints = []
+    for i, fc in enumerate(forecasts):
+        arr = np.atleast_2d(np.asarray(fc, dtype=float))
+        if arr.shape[0] == 0:
+            raise ValueError(
+                f"forecast_cluster= groups each forecast by its last point, "
+                f"but forecast {i} has no rows.")
+        endpoints.append(arr[-1])
+    widths = sorted({len(e) for e in endpoints})
+    if len(widths) > 1:
+        raise ValueError(
+            f"forecast_cluster= clusters every forecast's endpoint together, "
+            f"so they must all have the same number of dimensions; got "
+            f"{widths}.")
+    stacked = np.vstack(endpoints)
+    bad = [i for i in range(len(stacked)) if not np.isfinite(stacked[i]).all()]
+    if bad:
+        raise ValueError(
+            f"forecast_cluster= cannot group non-finite (NaN/inf) endpoints; "
+            f"forecast(s) {bad} end at one.")
+    return stacked
 
 
 def resolve_forecast_overrides(n_datasets, forecasts=None, *, hue=None,
@@ -494,7 +602,12 @@ def resolve_forecast_overrides(n_datasets, forecasts=None, *, hue=None,
         clustering the raw model space would group by a geometry the user
         cannot see when `reduce=`/`align=` changed it.
     hue : sequence or None
-        One value per dataset. Datasets sharing a value share a colour.
+        One value per dataset. Datasets sharing a value share a colour. A
+        missing value (`None`, NaN, `pd.NA`) marks that dataset UNLABELED:
+        every one of them forms a single group drawn in neutral gray and
+        consuming no palette slot, exactly as `plot()` treats a
+        partially-labeled `hue=`. A bare string is rejected rather than read
+        as one label per character.
     cluster : cluster spec or None
         Clusters the forecast ENDPOINTS -- where each series is predicted to
         end up -- so a forecast's colour answers "which of these are heading
@@ -518,7 +631,8 @@ def resolve_forecast_overrides(n_datasets, forecasts=None, *, hue=None,
         figure's own `palette=` when they want the observed one inherited.
     fmt : str, sequence of str, or None
         Line/marker style for the forecasts, independent of the observed
-        `fmt`.
+        `fmt`. Validated here with matplotlib's own `fmt=` parser, so both
+        backends refuse the same strings at the same moment.
 
     Returns
     -------
@@ -545,6 +659,16 @@ def resolve_forecast_overrides(n_datasets, forecasts=None, *, hue=None,
 
     labels = None
     if hue is not None:
+        # a bare string is a sequence of CHARACTERS, so `list('ab')` is a
+        # perfectly-shaped pair of labels for a two-dataset plot -- silently
+        # right by accident and, at any other dataset count, wrong with a
+        # length message that reads as nonsense.
+        if isinstance(hue, (str, bytes)):
+            raise TypeError(
+                f"forecast_hue= takes one value per dataset, and a bare "
+                f"string would be read as one label per CHARACTER; got "
+                f"{hue!r}. Pass a sequence, e.g. [{hue!r}] for a single "
+                f"dataset.")
         labels = list(hue)
         # a per-observation hue (the shape `hue=` takes) reaches here as a
         # list of ARRAYS, and grouping by `==` on those raises numpy's
@@ -561,6 +685,12 @@ def resolve_forecast_overrides(n_datasets, forecasts=None, *, hue=None,
                 f"forecast_hue= must have exactly one value per dataset (a "
                 f"forecast is one trace, not one value per observation); got "
                 f"{len(labels)} value(s) for {n_datasets} dataset(s).")
+        # every "no label here" spelling becomes ONE sentinel, so missing
+        # labels form a single unlabeled group rather than one group per
+        # distinct NaN object (`colors.is_missing_label` -- the same
+        # normalization `plot()` applies to a categorical `hue=`)
+        from .colors import is_missing_label
+        labels = [None if is_missing_label(v) else v for v in labels]
     elif cluster is not None:
         if n_datasets < 2:
             warnings.warn(
@@ -570,8 +700,7 @@ def resolve_forecast_overrides(n_datasets, forecasts=None, *, hue=None,
                 f"style.", stacklevel=stacklevel)
         else:
             from ..cluster.cluster import cluster as _clusterer
-            endpoints = np.vstack(
-                [np.asarray(fc, dtype=float)[-1] for fc in forecasts])
+            endpoints = _forecast_endpoints(forecasts)
             try:
                 labels = [int(v) for v in np.asarray(
                     _clusterer(endpoints, cluster=cluster,
@@ -600,15 +729,7 @@ def resolve_forecast_overrides(n_datasets, forecasts=None, *, hue=None,
             overrides[i]['color'] = color
 
     if fmt is not None:
-        if isinstance(fmt, str):
-            fmts = [fmt] * n_datasets
-        else:
-            fmts = list(fmt)
-            if len(fmts) != n_datasets:
-                raise ValueError(
-                    f"forecast_fmt= must be one format string, or one per "
-                    f"dataset; got {len(fmts)} for {n_datasets} dataset(s).")
-        for i, f in enumerate(fmts):
+        for i, f in enumerate(_resolve_fmt_list(fmt, n_datasets)):
             overrides[i]['fmt'] = f
 
     return overrides
