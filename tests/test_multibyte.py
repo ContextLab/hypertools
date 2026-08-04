@@ -19,6 +19,7 @@ CI provisions a covering font separately -- see the F2 follow-up noted in
 notes/issues-to-close-on-merge.md).
 """
 
+import importlib.util
 import os
 import warnings
 
@@ -424,6 +425,15 @@ _RENDER_PLOTLY_SCRIPT = os.path.join(
     os.path.dirname(__file__), '..', 'scripts', 'render_multibyte_plotly.py')
 _KALEIDO_TIMEOUT_S = 120
 
+# Imported from the render script rather than restated, so the two cannot
+# drift into disagreeing about which exit code means "no usable browser".
+_render_spec = importlib.util.spec_from_file_location(
+    '_render_multibyte_plotly', _RENDER_PLOTLY_SCRIPT)
+_render_mod = importlib.util.module_from_spec(_render_spec)
+_render_spec.loader.exec_module(_render_mod)
+_NO_BROWSER_EXIT = _render_mod.NO_BROWSER_EXIT
+_BROWSER_PATH_ENV = _render_mod.BROWSER_PATH_ENV
+
 
 def _plotly_plot(legend, **kwargs):
     data = [_random_points(10, seed=i) for i in range(len(legend))]
@@ -555,6 +565,18 @@ def _render_plotly_png(legend, title, out_path, labels=None):
             "hang, not a test failure (see the known deadlock-prone "
             "plotly export tests deselected in "
             "test_animation_export.py/test_round3.py)")
+        return
+    if result.returncode == _NO_BROWSER_EXIT:
+        # The render subprocess reports "no usable browser here" with its own
+        # reserved exit code, raised only for the three browser-lifecycle
+        # exception types kaleido itself exports plus plotly's no-Chrome
+        # RuntimeError. A Chrome that dies during startup is a fact about the
+        # machine, not about hypertools -- but the discrimination is narrow on
+        # purpose: EVERY other non-zero exit is still a hard failure below, so
+        # a real rendering defect cannot hide behind this skip.
+        pytest.skip(
+            "kaleido could not drive a browser in this environment "
+            f"(render script exit {_NO_BROWSER_EXIT}):\n{result.stderr[-600:]}")
         return
     assert result.returncode == 0, (
         f"render_multibyte_plotly.py failed (exit {result.returncode}):\n"
@@ -849,3 +871,49 @@ def test_plotly_public_path_dedups_explicit_family_already_in_stack():
                    font='Noto Sans', show=False)
     assert fig.layout.font.family.count('"Noto Sans"') == 1
     assert fig.layout.font.family.startswith('"Noto Sans"')
+
+
+# --------------------------------------- the no-browser skip is discriminating
+#
+# The pixel checks above skip when the render subprocess reports that no
+# browser could be driven. A skip that fires too eagerly is worse than no
+# skip at all, so both halves of that discrimination are pinned here with a
+# REAL failing browser (a real binary that is not Chrome, launched by a real
+# subprocess, raising a real `BrowserFailedError`) -- never a stub.
+
+def _run_render(out_path, env=None):
+    full = dict(os.environ)
+    full.update(env or {})
+    return subprocess.run(
+        [sys.executable, _RENDER_PLOTLY_SCRIPT, json.dumps(['a', 'b']), '',
+         out_path],
+        timeout=_KALEIDO_TIMEOUT_S, capture_output=True, text=True, env=full)
+
+
+@requires_covering_font
+def test_render_script_exits_NO_BROWSER_when_the_browser_will_not_launch(
+        tmp_path):
+    """`/bin/echo` is a real executable that is not a browser, so kaleido
+    genuinely raises `BrowserFailedError: the browser seemed to close
+    immediately after starting` -- the same class of failure as a managed
+    Chrome dying during startup. That must exit with the reserved code, not
+    with a generic non-zero the caller would (correctly) treat as a defect."""
+    result = _run_render(str(tmp_path / 'nope.png'),
+                         {_BROWSER_PATH_ENV: '/bin/echo'})
+    assert result.returncode == _NO_BROWSER_EXIT, (
+        f'expected exit {_NO_BROWSER_EXIT}, got {result.returncode}\n'
+        f'stderr:\n{result.stderr[-800:]}')
+    assert 'NO_BROWSER:' in result.stderr
+
+
+@requires_covering_font
+def test_a_render_failure_that_is_NOT_the_browser_still_fails_loudly(tmp_path):
+    """The other half, and the one that matters: an unwritable output path is
+    a plain `OSError` from inside the render, and it must NOT be laundered
+    into the no-browser skip. Without this, widening the catch by one
+    exception type would silently turn every pixel check into a skip."""
+    result = _run_render(str(tmp_path / 'no_such_dir' / 'x.png'))
+    assert result.returncode not in (0, _NO_BROWSER_EXIT), (
+        f'a bad output path exited {result.returncode}; it must be a hard '
+        f'failure\nstderr:\n{result.stderr[-800:]}')
+    assert 'NO_BROWSER:' not in result.stderr
