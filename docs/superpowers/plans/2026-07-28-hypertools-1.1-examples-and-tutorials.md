@@ -152,7 +152,7 @@ files changes:
 
    *Do not enforce this plan's metrics from Plan 1*: measuring a file Plan 1 has migrated but this plan has not yet rewritten fails for the wrong reason, and would push Plan 1's implementer into doing editorial work that gets discarded here.
 
-4. **Network fetches live in examples, wrapped in a fallback, never in a library test.** Every fetch follows the shape the current examples already use (`fetch_fred` in `animate_market_forecast.py`, `fetch_city_months` in `animate_weather_decades.py`): a `try/except Exception: return None` fetcher, a deterministic synthetic substitute, and a `print(...)` naming which source was used. Task 1's tests write real image files to `tmp_path` and touch no network. `image_palette()` deliberately does **not** accept a URL, so the library never fetches.
+4. **Network fetches live in examples, wrapped in a fallback, never in a library test.** Every fetch follows the shape the examples' network helpers already use — post-rewrite, `fetch_prices()` in `animate_market_forecast.py` and `fetch_temperatures()` in `animate_weather_decades.py` (the files as they stand today name these `fetch_fred` and `fetch_city_months`, both of which Tasks 2 and 3 delete; the shape is what carries over, not the names): a `try/except Exception: return None` fetcher, a deterministic synthetic substitute, and a `print(...)` naming which source was used. Task 1's tests write real image files to `tmp_path` and touch no network. `image_palette()` deliberately does **not** accept a URL, so the library never fetches.
 
    **v3 — measured, and stronger than v2 assumed. All five examples are network-coupled**, not three, in three different severities. Blocked-connection counts are real (measured by refusing outbound sockets and running each example to completion):
 
@@ -233,7 +233,7 @@ files changes:
 
   | task | script | notebook | what this plan must do |
   |-|-|-|-|
-  | **2** market | partially landed | unchanged — **out of sync** | **REBASE**, and it is **BLOCKED**: see below |
+  | **2** market | partially landed | unchanged — **out of sync** | **REBASE** (its `forecast_trail=` prerequisite has landed — see below) |
   | **3** weather | partially landed | unchanged — **out of sync** | **REBASE** (light) |
   | **4** paintings | untouched; v2's baseline verified still accurate | in sync with its script | **WRITE AS-IS** (still gated on Task 1) |
   | **5** conversation | partially landed | unchanged — **out of sync** | **REBASE** |
@@ -241,7 +241,9 @@ files changes:
 
   **Before starting any task, read the current file** (`git show d730a085~1:<path>` for the pre-migration state) and treat what is on disk as the baseline. Do **not** apply a prescribed "replace the file entirely" block without first reconciling it against what landed — for Task 5 that would replace working code with a crash (Contract 8).
 
-- **Task 2 is blocked until Plan 3 Task 5 lands.** Its prescribed call passes `forecast_trail=16`, and `forecast_trail` is **absent** from `plot()`'s 75 parameters today (verified with `inspect.signature`). This is the concrete reason for the maintainer's ordering — **Plan 3 before Plan 4**.
+- **Task 2's `forecast_trail=` prerequisite is SATISFIED.** Task 2's prescribed call passes `forecast_trail=16`. When this plan was written that parameter was absent from `plot()`'s 75 parameters, and Task 2 carried a **BLOCKED** banner because of it. Plan 3 Task 5 has since landed it: `forecast_trail` is one of `plot()`'s **82** parameters today (`inspect.signature`, verified 2026-08-04), implemented at [`plot.py:700` (`_validate_forecast_trail`)](../../../hypertools/plot/plot.py) by commit **`90a63a1a`**, with plotly parity in **`bb6fcb18`** and 11 tests in [`tests/plot/test_forecast_trail.py`](../../../tests/plot/test_forecast_trail.py). Nothing in this plan is blocked on it.
+
+  This does **not** discharge the maintainer's ordering — **Plan 3 before Plan 4** — which stands on the regrouped-reveal behaviour Task 2's market example depends on, not on this one parameter.
 
 ---
 
@@ -897,7 +899,7 @@ Audit classification (unchanged, still accurate for the parts this task rewrites
 
 **Already done by `d730a085`:** the per-frame monkeypatch is gone; the decorator is a `FrameContext` callback registered on the public hook (`def decorate(ctx):` and `anim.on_frame(decorate)`). **Everything else in this task remains** — the 5 FRED series are still not a 24-ticker MultiIndex, `predict=`/`t=` is still hand-rolled, and the reduce→drawn affine recovery, the 16-slot hand-drawn fan, the hand-built colorbar and the hand-built title all survive.
 
-**BLOCKED:** the prescribed call passes `forecast_trail=16`, which does not exist in `plot()` yet (Plan 3 Task 5). Do not start this task until Plan 3 has landed.
+**Prerequisite SATISFIED (was: BLOCKED).** The prescribed call passes `forecast_trail=16`. That parameter did not exist when this task was written; it does now — `90a63a1a` added it (`_validate_forecast_trail`, `hypertools/plot/plot.py:700`), `bb6fcb18` gave it plotly parity, and `tests/plot/test_forecast_trail.py` covers it in 11 tests. Verified 2026-08-04 with `inspect.signature(hyp.plot)`. Start this task when the plan order reaches it.
 
 **AFTER (contracted budget):** script **≤ 130 code lines**; notebook **≤ 135** (= 130 + 5); **zero** defect markers. **Measured, not projected** (2026-08-04): the rewrite above is **110** code lines and the split takes it to **126** (+16). The budget is that 126 rounded up to the next multiple of 5, so the 4 lines of headroom are a stated allowance for wording differences and nothing more.
 
@@ -970,9 +972,13 @@ def execute(path, out=None):
     nb = nbformat.read(path, as_version=4)
     original = json.loads(json.dumps(nb.metadata.get('kernelspec',
                                                      NEUTRAL_KERNELSPEC)))
+    # the notebook's OWN directory is the cwd it runs in, so its relative
+    # data paths resolve -- `or '.'` because a bare filename has no dirname
+    # (`'reduce.ipynb'.rsplit('/', 1)[0]` is the filename itself, which would
+    # make the kernel's cwd a nonexistent directory)
     NotebookClient(nb, timeout=TIMEOUT, kernel_name=KERNEL,
-                   resources={'metadata': {'path': str(path.rsplit('/', 1)[0])}}
-                   ).execute()
+                   resources={'metadata': {'path': os.path.dirname(path)
+                                           or '.'}}).execute()
     nb.metadata['kernelspec'] = original
     nbformat.write(nb, out or path)
     executed = sum(1 for c in nb.cells
@@ -1012,8 +1018,9 @@ Expected: a `<n>/<total> code cells produced output` line naming the path under
 `$SMOKE`, and **silence** from `git status`. The redirect is the point — the smoke test must
 not need undoing. `git checkout -- <notebook>` would discard the change instead, and it cannot
 distinguish an unwanted execution from a wanted edit made in the same window, so it is not a
-safe instruction to leave in a plan that other tasks copy from.
-Expected: prints `docs/tutorials/reduce.ipynb: 5/9 code cells produced output` or more, `git diff --stat` shows a change, and the checkout restores it. If `metadata.kernelspec` appears in the diff, the restore is broken — fix `execute_tutorial.py`, do not proceed.
+safe instruction to leave in a plan that other tasks copy from. There is no restore step, and
+nothing to restore: if `git status` prints anything at all, `--out-dir` is not being honoured —
+fix `execute_tutorial.py`, do not proceed.
 
 - [ ] **Step 2: Rewrite the example**
 
@@ -4692,7 +4699,7 @@ Flagged rather than invented. Each states the options and the exact change to sw
 | requirement | discharged by |
 |-|-|
 | Read both audits first | Both read in full; their per-file classifications drive every "what goes, and to what" table, and their headline numbers are reproduced independently (48/739 = 6.5% on the 2026-07-28 tree vs. the audit's 6.0%) in *Verification note*. |
-| Match the siblings' v2 format and rigor | Same skeleton: goal / architecture / tech stack → verification note → contracts → global constraints → prerequisites → file structure → TDD tasks with `- [ ] **Step N:**` → decisions → self-review. The "Revision note (v2)" slot is filled by a **Verification note (v1)** that plays the same role — a table of received claims against measurements — because this plan has not yet been adversarially reviewed and inventing a revision history would be a fabrication. |
+| Match the siblings' v2 format and rigor | Same skeleton: goal / architecture / tech stack → verification note → contracts → global constraints → prerequisites → file structure → TDD tasks with `- [ ] **Step N:**` → decisions → self-review. The "Revision note (v2)" slot was originally filled by a **Verification note (v1)** playing the same role — a table of received claims against measurements — because at v1 this plan had not been adversarially reviewed and inventing a revision history would have been a fabrication. It has been reviewed since; the note is now joined by the per-revision banners the review produced (v2, v3, v4), and each records what was measured rather than what was intended. |
 | Explicit contracts | Seven, covering the script/notebook lockstep, the no-private-reaches rule, network-in-examples-only, scoring-stays-out-of-the-library, and the "budgets are contracts, never weakened to fit the code" rule. |
 | Prerequisites, per task | A per-task table naming the *specific* tasks of Plans 1–3 each rewrite needs (e.g. Market ← MultiIndex T1/T2/T5/T6/T8 + Forecast T3/T4/T5 + Animation-core T1) and *why*, including the two tasks (1 and 7) that have none and can start immediately. |
 | Task 1 is library work, TDD, justified API, no largest-cluster bug | Task 1: **19** real tests written before the implementation; the API choice (one function + **two** interception points — `_get_palette`'s string branch at `colors.py:305-306` and `_seaborn_palette_arg` at `plot.py:113`) is justified against the consumers each serves; the ordering rule is `frac × chroma` with a documented achromatic fallback, and `test_a_vivid_minority_colour_beats_the_muted_background` asserts the exact colour (`0.863, 0.078, 0.078`) the buggy rule fails to produce. Both states were **run**: red = `ValueError: 'image:...' is not a valid palette name`, green = the prototype's measured output. |
