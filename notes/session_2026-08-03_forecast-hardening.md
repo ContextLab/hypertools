@@ -244,3 +244,121 @@ round 2's two red-phase corrections).
 - Docs: `sphinx -W -E -a` **build succeeded**
 - Ruff on both touched files: **1 finding before, 1 after** (the pre-existing
   star-import one), compared against `a2550259`
+
+---
+
+# Round 4 — review of plan v2 + Plan 4 (2026-08-04)
+
+Ten-item review arrived. Items 1-5 = Plan 4, 6 = the singleton edge case,
+7 = Plan 3's stale prose, 9 = the Kaleido failure. Items 8 and 10
+(implement the regrouped plan, then start Plan 4) are the maintainer's
+call and are NOT started.
+
+## Item 6 — the one-row-dataset edge case (`5bbeb50d`)
+
+**The stated trigger does not exist.** The review's fix keys on
+`anim_window_bounds` returning `end == 0`, but it clamps
+`end = max(1, min(n_points, end))` (`trails.py:86`). Swept every frame of
+7488 `(total, grid, window)` combinations: **zero** hits. `end == 0` in
+`RunWindow`'s docstring comes from the PROJECTION (`count_from`, for a run
+the clock has not reached), never from `anim_window_bounds`. Docstring
+corrected to say so.
+
+**The concern is still right in kind.** `reached = p_head >= first_row` was
+correct only because `_param` returns 0 for a dataset with no extent and
+the first run's `first_row` is also 0 -- a degenerate value coinciding with
+a real boundary, i.e. a second derivation of what `head_end` already
+carries. Now `reached = head_end > 0`, `future_start = max(0, head_end - 1)`
+unconditionally. Measured equal over 1116 windows BEFORE substituting, so
+no behaviour changed.
+
+**A one-row dataset was genuinely untested** (only a one-row RUN inside a
+longer dataset was) and it turns out to project to the exact unregrouped
+identity: 480 comparisons across 5 frame counts x 5 window lengths, alone
+and beside 5-row and 3-row neighbours; `DatasetRevealSchedule` handles it
+in parallel AND serial (168 states). It is visible from frame 0 because
+`end >= 1` always -- audited behaviour (F05-012) -- so there is no
+"before the singleton is reached" frame to test. Pinned deliberately.
+
+Four tests added; `REGROUPED_CASES` gained four one-row entries so every
+existing invariant meets the degenerate projection. That exposed a harness
+gap: the lag bound took `max()` over runs with a grid to slide along, empty
+for an unsplit one-row dataset -> `default=0`, which TIGHTENS that case to
+exact identity. Re-extracted from the edited plan and run: **160 passed**.
+
+## Item 7 — Plan 3's forecast_cluster= prose (`5bbeb50d`)
+
+`:2540` still said OPEN. It shipped: endpoints, in the drawn space, fixed
+across animation frames. Recorded with evidence (`plot.py:2010-2024`,
+`:5268-5279`, `animation.rst:480-493`, `CHANGELOG.md:122-127`) and listed
+as Plan 3's fifth settled decision in the README.
+
+## Items 1-5 — Plan 4 (`12a14133`)
+
+Four defects of the same classes found while fixing the five reported:
+
+1. Ordering: split blocks physically moved after their rewrite, tasks
+   renumbered 1..N, all cross-references repointed. Task 8's 0/0b/0c ARE in
+   execution order -- left alone with a note rather than renamed into ten
+   dangling references.
+2. Stale contracts were in ALL FIVE tables, not just market's FRED: weather
+   named `fetch_city_months`/`CITIES`, paintings and conversation had
+   `vectors` fields for examples that never hold an embedding, morph had no
+   `source`. Task 8 Step 0b's worked weather split -- the one the other four
+   copy -- has the same defect and is now labelled as being against the
+   CURRENT file.
+3. Wrapper returns: Task 5's rewrite did `fig, ani = hyp.plot(...)` then
+   `ani.on_frame(...)` -- an AttributeError, the exact regression that
+   task's own v3 banner warns about. All five now bind `anim`; each split
+   step carries its file's real builder tail ending in `return anim`.
+4. `git checkout -- <notebook>` replaced by `execute_tutorial.py --out-dir`
+   plus an assertion that `git status --porcelain` prints nothing.
+5. Budgets MEASURED, two were unattainable:
+
+   | file | rewrite | split | overhead | was | now |
+   |-|-|-|-|-|-|
+   | market | 110 | 126 | +16 | 130 | 130 |
+   | weather | 56 | 73 | +17 | 77 | 75 |
+   | paintings | 112 | 135 | +23 | 133 | **140** |
+   | conversation | 88 | 106 | +18 | 105 | **110** |
+   | morph | 26 | 43 | +17 | 45 | 45 |
+
+   Method: transcribe each rewrite block to a file, apply the split, measure
+   with the plan's own `measure_native_ratio.py` -- validated first by
+   reproducing the plan's BEFORE figures exactly (market 191, weather 195,
+   morph 26). Weather's "+15 MEASURED" was measured on the file Task 3
+   DELETES; an overhead cannot be carried across the rewrite that removes it.
+
+Flagged, not silently fixed: Tasks 2-6 verify with `anim.n_frames` and Task
+5 drives `draw_frame(i)`, none of which exist until Task 8 Step 0 (ordering
+notes now say Steps 0-2). And Contract 4 says the loader is the only code
+that may touch the network, but for conversation and paintings the model
+download happens inside `hyp.plot`, i.e. inside `construct_artifact` --
+written up as an explicit maintainer call.
+
+## Item 9 — the Kaleido failure (`82c5a72c`)
+
+Passes here (Chrome present). The reported failure was a browser dying
+during startup, which exits non-zero and hit the hard `returncode == 0`
+assertion -- the hang path was handled, the crash path was not.
+
+Render script now exits 3 for exactly the three browser-lifecycle
+exceptions kaleido exports plus plotly's no-Chrome `RuntimeError` (needed
+because `plotly/io/_kaleido.py:411` catches `ChromeNotFoundError` and
+re-raises it untyped, so it cannot be caught by type through
+`fig.write_image`; matched on plotly's own constant). Test skips on that
+code alone; every other non-zero exit still fails hard.
+
+Both halves pinned with REAL failures: `/bin/echo` is a real non-browser
+binary and kaleido genuinely raises `BrowserFailedError: the browser seemed
+to close immediately after starting`; an unwritable output path is a plain
+OSError that must NOT be laundered into a skip.
+
+## Open / not started
+
+- **Item 8** — implement the regrouped plan. Gated on the maintainer.
+- **Item 10** — begin Plan 4. Explicitly not started.
+- **Nothing pushed.** `dev-1.0` is now 103 commits ahead of origin; CI has
+  not seen any of this work since 2026-07-24.
+- macOS-CI `ConvergenceWarning` from `tests/predict/test_gp.py` (run
+  30097502289) still not reproduced locally.
