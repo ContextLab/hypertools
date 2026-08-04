@@ -43,20 +43,32 @@ NO_BROWSER_EXIT = 3
 BROWSER_PATH_ENV = 'HYPERTOOLS_RENDER_BROWSER_PATH'
 
 
-def _browser_lifecycle_errors():
-    """The exception types that mean "no usable browser", from the libraries
-    that define them -- never a hand-written message match.
+def is_browser_lifecycle_error(err):
+    """Does `err` mean "no usable browser HERE" (-> skip) rather than "the
+    thing under test is broken" (-> fail)?
 
-    `plotly.io._kaleido` catches `ChromeNotFoundError` and re-raises it as a
-    plain `RuntimeError` carrying `PLOTLY_GET_CHROME_ERROR_MSG`, so that one
-    cannot be caught by type through `fig.write_image` and is matched on
-    plotly's own constant instead.
+    The types come from the libraries that define them -- never a
+    hand-written message match. `plotly.io._kaleido` is the one exception:
+    it catches kaleido's `ChromeNotFoundError` and re-raises it as a PLAIN
+    `RuntimeError` carrying `PLOTLY_GET_CHROME_ERROR_MSG` (`_kaleido.py:411`),
+    so through `fig.write_image` that case cannot be caught by type and is
+    matched on plotly's own constant instead.
+
+    This is a standalone predicate, not an inline `except` clause, so that
+    BOTH of its answers can be pinned on real exception objects from a test
+    -- including on a machine where no browser can start at all. Driving the
+    "not the browser" half through the subprocess would need a working
+    Chrome just to reach the non-browser failure, which is exactly the
+    environment where the answer matters least.
     """
     from kaleido.errors import (BrowserClosedError, BrowserFailedError,
                                 ChromeNotFoundError)
     from plotly.io._kaleido import PLOTLY_GET_CHROME_ERROR_MSG
-    return ((BrowserClosedError, BrowserFailedError, ChromeNotFoundError),
-            PLOTLY_GET_CHROME_ERROR_MSG)
+    if isinstance(err, (BrowserClosedError, BrowserFailedError,
+                        ChromeNotFoundError)):
+        return True
+    return (isinstance(err, RuntimeError)
+            and PLOTLY_GET_CHROME_ERROR_MSG.strip() in str(err))
 
 
 def _write_image(fig, out_png):
@@ -79,14 +91,10 @@ def main():
             for i in range(len(legend))]
     fig = hyp.plot(data, legend=legend, title=title or None, labels=labels,
                    backend='plotly', show=False)
-    browser_errors, no_chrome_msg = _browser_lifecycle_errors()
     try:
         _write_image(fig, out_png)
-    except browser_errors as err:
-        print(f'NO_BROWSER: {type(err).__name__}: {err}', file=sys.stderr)
-        sys.exit(NO_BROWSER_EXIT)
-    except RuntimeError as err:
-        if no_chrome_msg.strip() not in str(err):
+    except Exception as err:
+        if not is_browser_lifecycle_error(err):
             raise            # a real failure: let the traceback through
         print(f'NO_BROWSER: {type(err).__name__}: {err}', file=sys.stderr)
         sys.exit(NO_BROWSER_EXIT)

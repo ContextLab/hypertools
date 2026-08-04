@@ -42,6 +42,19 @@ Verified 2026-08-04: with that set, `pylsl.resolve_streams()` returns `[]` on
 a machine where four STARSTIM-8 outlets were otherwise visible, and both
 branches of `test_lsl_stream_resolves_any_stream` pass in their respective
 environments.
+
+**Machines that cannot create an outlet at all.** Binding liblsl's service
+ports can fail outright (``All local ports were found occupied`` ->
+``RuntimeError: could not create stream outlet``), which would otherwise
+turn every outlet-backed test here into a setup error that reads like a
+library regression. `_outlet_capability_reason` probes that once and
+`_require_outlets` classifies it: a SKIP quoting the real liblsl error
+locally, a hard FAILURE under `GITHUB_ACTIONS` or `HYPERTOOLS_REQUIRE_LSL=1`
+(a provisioned runner is expected to pass the probe, so there its failing is
+the news). Everything that needs no outlet -- validation, the ImportError
+message, resolution failures, the ambiguity advice -- keeps running either
+way, and `test_the_outlet_capability_probe_AGREES_with_reality` pins the
+probe against a real outlet so it cannot silently skip a working machine.
 """
 
 import os
@@ -86,12 +99,68 @@ def _sample_for_index(i, n_channels=N_CHANNELS):
     return [float(i) + 0.1 * c for c in range(n_channels)]
 
 
+#: Set to any non-empty value to turn "this machine cannot provision an LSL
+#: outlet" from a skip into a failure. Always on under GITHUB_ACTIONS: a CI
+#: runner is provisioned, so there the probe failing IS the news.
+REQUIRE_LSL_ENV = 'HYPERTOOLS_REQUIRE_LSL'
+
+#: '' once outlets are known to work here, the real failure text if they do
+#: not, None before the (single) probe has run.
+_outlet_capability = None
+
+
+def _outlet_capability_reason():
+    """Probe ONCE, for real, whether this machine can create an LSL outlet.
+
+    Creating a `pylsl.StreamOutlet` binds liblsl's service ports, and that
+    can fail for reasons that have nothing to do with hypertools -- observed
+    as ``All local ports were found occupied`` followed by ``RuntimeError:
+    could not create stream outlet``, which turns every outlet-backed test
+    in this module into a setup error at once. That is an unprovisionable
+    environment, and it must be named as one: reported as a library
+    regression it is noise, and swallowed silently it would hide a real
+    liblsl breakage. The probe is what tells the two apart -- and it never
+    stands in for the outlets themselves, which every test still creates for
+    real.
+    """
+    global _outlet_capability
+    if _outlet_capability is None:
+        info = pylsl.StreamInfo(f'HypertoolsOutletProbe-{time.time_ns()}',
+                                'EEG', 1, 100.0, 'float32', 'hypertools-probe')
+        try:
+            probe = pylsl.StreamOutlet(info)
+        except Exception as err:
+            _outlet_capability = f'{type(err).__name__}: {err}'
+        else:
+            _outlet_capability = ''
+            del probe           # release the port again immediately
+    return _outlet_capability
+
+
+def _require_outlets():
+    """Skip (locally) or fail (on CI) when `_outlet_capability_reason` says
+    no outlet can be created here. Validation, import-error and
+    resolution-failure tests do not call this -- they need no outlet, so
+    they keep running and keep covering the library either way."""
+    reason = _outlet_capability_reason()
+    if not reason:
+        return
+    message = (f'this machine cannot create a pylsl.StreamOutlet, so the '
+               f'real-outlet integration tests cannot be provisioned here '
+               f'(the tests themselves are untouched): {reason}')
+    if os.environ.get('GITHUB_ACTIONS') == 'true' \
+            or os.environ.get(REQUIRE_LSL_ENV):
+        pytest.fail(message)
+    pytest.skip(message)
+
+
 def _start_outlet(name, stream_type='EEG', n_channels=N_CHANNELS,
                   rate=100.0, push_interval=0.01):
     """Start a REAL pylsl.StreamOutlet on a background daemon thread,
     continuously pushing `_sample_for_index` samples until `stop` is set.
     Returns (thread, stop_event); caller must `stop.set(); thread.join(...)`
     when done."""
+    _require_outlets()
     info = pylsl.StreamInfo(name, stream_type, n_channels, rate, 'float32',
                             f'hypertools-test-{name}')
     outlet = pylsl.StreamOutlet(info)
@@ -288,7 +357,17 @@ def test_import_error_without_pylsl_names_the_extra():
 _TEST_STREAM_PREFIXES = ('HypertoolsTestStream-', 'HypertoolsStallTest-')
 
 
-def _foreign_lsl_streams(wait_time=1.0):
+#: One wait time shared by the "any stream" probe and the `lsl_stream()`
+#: call it decides between. They MUST match: `pylsl.resolve_streams` waits
+#: the full time and returns everything it heard, but a shorter wait hears
+#: less -- measured on a machine with five outlets, `wait_time=0.5` found
+#: two of them and `wait_time=1.0` found all five. Probing for less time
+#: than the call gets would therefore pick the sole-outlet branch on a
+#: machine that has foreign hardware, and fail there for the wrong reason.
+_ANY_STREAM_WAIT = 10.0
+
+
+def _foreign_lsl_streams(wait_time=_ANY_STREAM_WAIT):
     """Names of resolvable LSL outlets this module did NOT create.
 
     `lsl_stream()` with neither `name=` nor `type=` means "any stream", and
@@ -322,7 +401,7 @@ def test_lsl_stream_resolves_any_stream(outlet_stream):
     foreign = _foreign_lsl_streams()
     if not foreign:
         # sole outlet: "any" is unambiguously ours, so it must deliver
-        stream = hyp.io.lsl_stream(timeout=10.0)
+        stream = hyp.io.lsl_stream(timeout=_ANY_STREAM_WAIT)
         assert is_stream(stream)
         sample = next(stream)
         assert len(sample) == N_CHANNELS
@@ -336,20 +415,41 @@ def test_lsl_stream_resolves_any_stream(outlet_stream):
     # a fact about someone else's hardware, so it is not asserted here --
     # `test_lsl_stream_raises_when_source_stops_delivering` covers a silent
     # source against an outlet this module owns.
-    with pytest.warns(RuntimeWarning, match='LSL streams match') as caught:
+    #
+    # `pytest.warns` is deliberately NOT used: it turns "no warning" into a
+    # failure before this test can ask WHY there was none, and one of the
+    # two reasons is somebody else's amplifier being unplugged mid-test.
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter('always')
         try:
-            stream = hyp.io.lsl_stream(timeout=10.0)
+            stream = hyp.io.lsl_stream(timeout=_ANY_STREAM_WAIT)
         except HypertoolsIOError:
             stream = None       # resolved a foreign outlet that is idle
-    message = str(caught[0].message)
-    assert 'using the first one' in message
-    assert 'Pass name= to select a specific stream' in message
-    for name in foreign[:1]:
-        assert name in message, (
-            f'the ambiguity warning named none of the foreign outlets '
-            f'{foreign}: {message}')
     if stream is not None:
         stream.close()
+    ambiguity = [w for w in caught if 'LSL streams match' in str(w.message)]
+
+    if not ambiguity:
+        still = _foreign_lsl_streams()
+        assert not still, (
+            f'foreign LSL outlets {still} are resolvable, and this test owns '
+            f'one more, but lsl_stream() reported no ambiguity -- it bound '
+            f'to a stream silently')
+        pytest.skip(f'the foreign LSL outlets {foreign} stopped announcing '
+                    f'themselves partway through this test, so there was no '
+                    f'ambiguity left to detect')
+
+    assert issubclass(ambiguity[0].category, RuntimeWarning)
+    message = str(ambiguity[0].message)
+    assert 'using the first one' in message
+    assert 'Pass name= to select a specific stream' in message
+    # The warning lists the first FIVE streams in resolver order; `foreign`
+    # is every foreign stream in alphabetical order. So the right assertion
+    # is that the two overlap -- not that any particular element of one
+    # appears in the other, which is a coin flip once six outlets exist.
+    assert [name for name in foreign if repr(name) in message], (
+        f'the ambiguity warning named none of the foreign outlets '
+        f'{foreign}: {message}')
 
 
 @requires_pylsl
@@ -369,6 +469,87 @@ def test_lsl_stream_by_NAME_is_unaffected_by_foreign_outlets(outlet_stream):
                 if 'LSL streams match' in str(w.message)], (
         'name= resolved exactly one outlet, so the ambiguity warning must '
         'not fire')
+
+
+# ------------------------------------ the ambiguity warning's own advice
+
+
+@requires_pylsl
+def test_the_outlet_capability_probe_AGREES_with_reality():
+    """A probe that wrongly answered "no outlets here" would silently skip
+    every outlet-backed test in this module at once -- the one failure mode
+    a skip must never have. So this creates a real outlet WITHOUT the guard
+    and requires the probe's verdict to match what actually happened, in
+    both directions. It therefore holds on a machine that cannot create
+    outlets too, where it pins the probe as the reason the others skipped.
+    """
+    info = pylsl.StreamInfo(f'HypertoolsTestStream-agree-{time.time_ns()}',
+                            'EEG', 1, 100.0, 'float32', 'hypertools-agree')
+    try:
+        outlet = pylsl.StreamOutlet(info)
+    except Exception as err:
+        assert _outlet_capability_reason(), (
+            f'creating an outlet really failed ({type(err).__name__}: '
+            f'{err}), but the probe reported this machine as capable')
+    else:
+        del outlet
+        assert _outlet_capability_reason() == '', (
+            f'an outlet was created successfully, but the probe reported '
+            f'this machine as incapable: {_outlet_capability_reason()}')
+
+
+@requires_pylsl
+def test_the_ambiguity_ADVICE_is_executable_on_the_path_that_gives_it():
+    """The multi-match warning ends by telling the user what to do next, so
+    that advice has to work on the path that emitted it. The two paths call
+    different pylsl functions: `resolve_byprop` accepts `minimum=`,
+    `resolve_streams` does not -- so a single shared caveat advising
+    `minimum=2` was advising a `TypeError` to every "any stream" user.
+
+    Pinned against the REAL signatures, so a future pylsl that adds or drops
+    the argument fails here rather than in somebody's warning text."""
+    import inspect
+
+    from hypertools.io.lsl import _ambiguity_caveat
+
+    assert 'minimum' in inspect.signature(pylsl.resolve_byprop).parameters
+    assert 'minimum' not in inspect.signature(
+        pylsl.resolve_streams).parameters
+
+    assert 'minimum=2' in _ambiguity_caveat(any_stream=False)
+    assert 'minimum=2' not in _ambiguity_caveat(any_stream=True)
+    # the any-stream path's own remedy is a longer wait, and it says so
+    assert 'timeout=' in _ambiguity_caveat(any_stream=True)
+
+
+@requires_pylsl
+def test_minimum_really_is_forwarded_to_the_byprop_resolver(outlet_stream):
+    """The other half of the advice: `minimum=2` must actually reach
+    `pylsl.resolve_byprop` and actually force the ambiguity detection the
+    warning promises. Two REAL outlets of the same type are live here, so a
+    resolver honouring `minimum=2` finds both and `lsl_stream()` warns --
+    where the default `minimum=1` may return the first and warn about
+    nothing."""
+    second = f'HypertoolsTestStream-second-{time.time_ns()}'
+    thread, stop = _start_outlet(second, stream_type='EEG')
+    try:
+        with pytest.warns(RuntimeWarning, match='LSL streams match'):
+            stream = hyp.io.lsl_stream(type='EEG', timeout=10.0, minimum=2)
+        stream.close()
+    finally:
+        stop.set()
+        thread.join(timeout=5.0)
+        assert not thread.is_alive()
+
+
+@requires_pylsl
+def test_minimum_on_the_ANY_STREAM_path_is_a_pylsl_TypeError():
+    """And the documented consequence of the advice the caveat no longer
+    gives: `resolve_kwargs` are forwarded verbatim, so `minimum=` on the
+    "any stream" path is `pylsl.resolve_streams`' own `TypeError`. Needs no
+    outlet -- the call fails before any stream is resolved."""
+    with pytest.raises(TypeError, match='minimum'):
+        hyp.io.lsl_stream(timeout=0.5, minimum=2)
 
 
 @requires_pylsl

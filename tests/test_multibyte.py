@@ -433,6 +433,7 @@ _render_mod = importlib.util.module_from_spec(_render_spec)
 _render_spec.loader.exec_module(_render_mod)
 _NO_BROWSER_EXIT = _render_mod.NO_BROWSER_EXIT
 _BROWSER_PATH_ENV = _render_mod.BROWSER_PATH_ENV
+_is_browser_lifecycle_error = _render_mod.is_browser_lifecycle_error
 
 
 def _plotly_plot(legend, **kwargs):
@@ -877,9 +878,18 @@ def test_plotly_public_path_dedups_explicit_family_already_in_stack():
 #
 # The pixel checks above skip when the render subprocess reports that no
 # browser could be driven. A skip that fires too eagerly is worse than no
-# skip at all, so both halves of that discrimination are pinned here with a
-# REAL failing browser (a real binary that is not Chrome, launched by a real
-# subprocess, raising a real `BrowserFailedError`) -- never a stub.
+# skip at all, so both halves of that discrimination are pinned here with
+# REAL exceptions -- never a stub.
+#
+# Every test in this section runs WITHOUT a working browser, deliberately:
+# the machines where the skip's accuracy actually matters are the ones that
+# cannot start Chrome, and a check that needs Chrome in order to prove
+# "Chrome is not what failed" is exactly backwards. That is why the
+# "not the browser" half calls `is_browser_lifecycle_error` directly on a
+# real exception object instead of driving the subprocess: with the
+# subprocess, a bad output path is only reached AFTER the browser renders,
+# so on a Chrome-less machine the run exits NO_BROWSER for the right reason
+# and the check fails for the wrong one.
 
 def _run_render(out_path, env=None):
     full = dict(os.environ)
@@ -907,13 +917,65 @@ def test_render_script_exits_NO_BROWSER_when_the_browser_will_not_launch(
 
 
 @requires_covering_font
-def test_a_render_failure_that_is_NOT_the_browser_still_fails_loudly(tmp_path):
-    """The other half, and the one that matters: an unwritable output path is
-    a plain `OSError` from inside the render, and it must NOT be laundered
-    into the no-browser skip. Without this, widening the catch by one
-    exception type would silently turn every pixel check into a skip."""
-    result = _run_render(str(tmp_path / 'no_such_dir' / 'x.png'))
-    assert result.returncode not in (0, _NO_BROWSER_EXIT), (
-        f'a bad output path exited {result.returncode}; it must be a hard '
-        f'failure\nstderr:\n{result.stderr[-800:]}')
-    assert 'NO_BROWSER:' not in result.stderr
+def test_render_script_exits_NO_BROWSER_when_CHROME_CANNOT_BE_FOUND(tmp_path):
+    """The other no-browser shape, and the one no `except` clause can catch
+    by type: plotly swallows kaleido's `ChromeNotFoundError` and re-raises a
+    PLAIN `RuntimeError` (`plotly/io/_kaleido.py:411`), so it is recognised
+    by plotly's own message constant.
+
+    Driven for real, and without launching anything: `BROWSER_PATH` is
+    choreographer's documented override (`choreographer/utils/_which.py:91`)
+    and pointing it at a path that is not a file makes `Chromium.__init__`
+    raise `ChromeNotFoundError` (`chromium.py:177`). `HOME` moves with it
+    because choreographer looks for its OWN downloaded Chrome first, before
+    ever consulting `BROWSER_PATH` (`chromium.py:83`), and that download
+    lives under the home directory.
+    """
+    result = _run_render(
+        str(tmp_path / 'out.png'),
+        {'BROWSER_PATH': str(tmp_path / 'not-a-browser'),
+         'HOME': str(tmp_path / 'home')})
+    assert result.returncode == _NO_BROWSER_EXIT, (
+        f'expected exit {_NO_BROWSER_EXIT}, got {result.returncode}\n'
+        f'stderr:\n{result.stderr[-800:]}')
+    assert 'NO_BROWSER: RuntimeError' in result.stderr
+
+
+def test_a_real_OSError_from_the_render_is_NOT_the_browser(tmp_path):
+    """The half that matters: a failure that is not the browser's must never
+    be laundered into the skip. Without this, widening the predicate by one
+    exception type would silently turn every pixel check into a skip.
+
+    The `OSError` is a real one, caught from a real failed write into a
+    directory that does not exist -- the same call the render performs, and
+    the same exception it would raise.
+    """
+    try:
+        with open(tmp_path / 'no_such_dir' / 'x.png', 'wb'):
+            pass
+    except OSError as err:
+        caught = err
+    else:
+        raise AssertionError('writing into a missing directory must fail')
+    assert not _is_browser_lifecycle_error(caught), (
+        f'{caught!r} is a hypertools/kaleido failure, not a missing browser')
+
+
+def test_a_real_RuntimeError_that_is_NOT_plotly_s_is_NOT_the_browser():
+    """`ChromeNotFoundError` reaches us as a bare `RuntimeError`, so the
+    predicate has to inspect a message -- which makes "some OTHER
+    `RuntimeError`" the exact failure mode to pin. This one is real (the
+    interpreter's own, from a generator that lets `StopIteration` escape),
+    not a constructed stand-in."""
+    def leaks_stop_iteration():
+        yield next(iter([]))
+
+    try:
+        next(leaks_stop_iteration())
+    except RuntimeError as err:
+        caught = err
+    else:
+        raise AssertionError('a generator raising StopIteration must become '
+                             'a RuntimeError (PEP 479)')
+    assert not _is_browser_lifecycle_error(caught), (
+        f'{caught!r} is unrelated to the browser: {caught}')

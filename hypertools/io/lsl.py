@@ -33,6 +33,36 @@ def _import_pylsl():
     return pylsl
 
 
+def _ambiguity_caveat(any_stream):
+    """The "...and here is what to do about it" tail of the multi-match
+    warning, which differs by resolution path because the two pylsl calls
+    behave differently (both measured against pylsl 1.18.2 / liblsl 1.17.7):
+
+    * `resolve_byprop(prop, value, minimum=1, timeout=...)` returns as soon
+      as `minimum` streams match -- 0.00s for a live outlet at the default
+      `minimum=1`, 1.07s for `minimum=2` -- so its count really is
+      best-effort, and `minimum=` is the fix.
+    * `resolve_streams(wait_time=...)` takes NO `minimum` argument at all;
+      it always waits the full `wait_time` and returns everything it heard
+      (0.5s -> 2 outlets, 1.0s and 3.0s -> all 5, on a machine with five).
+      So its count is not best-effort in that sense -- but a short
+      `timeout=` under-reports, which is why the advice there is to raise
+      `timeout=`. Advising `minimum=` on this path would be advising a
+      `TypeError`.
+    """
+    if any_stream:
+        return ('(This enumerates every outlet heard within timeout= '
+                'seconds; liblsl warns that a short wait returns only a '
+                'subset of those present, so raise timeout= if a stream you '
+                'expect is missing. minimum= is not accepted on this path -- '
+                'pylsl.resolve_streams() takes no such argument.)')
+    return ('(This check is best-effort: resolution returns as soon as at '
+            'least one stream matches, so a matching outlet that announces '
+            'itself later is not detected -- pass minimum=2 to force '
+            'ambiguity detection, at the cost of waiting the full timeout '
+            'when only one stream exists.)')
+
+
 def lsl_stream(name=None, type=None, timeout=10.0, **resolve_kwargs):
     """Resolve a live Lab Streaming Layer (LSL) stream and return it as a
     plain Python iterator of per-sample numeric vectors, compatible with
@@ -65,7 +95,12 @@ def lsl_stream(name=None, type=None, timeout=10.0, **resolve_kwargs):
         source device disconnected).
     **resolve_kwargs
         Extra keyword arguments forwarded to the underlying pylsl resolve
-        call (e.g. ``minimum=`` for `pylsl.resolve_byprop`).
+        call -- which differs by criterion, and so therefore do the
+        arguments it accepts: `name=`/`type=` go to
+        `pylsl.resolve_byprop`, which takes ``minimum=``; the "any stream"
+        fallback goes to `pylsl.resolve_streams`, which takes only its
+        wait time, so passing ``minimum=`` there is a `TypeError` from
+        pylsl.
 
     Returns
     -------
@@ -154,12 +189,8 @@ def lsl_stream(name=None, type=None, timeout=10.0, **resolve_kwargs):
         warnings.warn(
             f'{len(infos)} LSL streams match ({criterion}); using the '
             f'first one: {infos[0].name()!r}. Matching streams: '
-            f'{matches}. Pass name= to select a specific stream. (This '
-            'check is best-effort: LSL resolution returns as soon as at '
-            'least one stream matches, so a matching outlet that '
-            'announces itself later is not detected -- pass minimum=2 to '
-            'force ambiguity detection, at the cost of waiting the full '
-            'timeout when only one stream exists.)',
+            f'{matches}. Pass name= to select a specific stream. '
+            f'{_ambiguity_caveat(criterion == "any stream")}',
             RuntimeWarning, stacklevel=2)
 
     if infos[0].channel_format() == pylsl.cf_string:
