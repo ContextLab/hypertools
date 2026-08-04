@@ -32,7 +32,7 @@ forecast -> both backends) is unchanged.
 | **Bridge rows broke "exactly the visible history".** `patch_lines` appends the NEXT run's first observation to a bridged run, so that observation is on screen while `visible_rows` still reported only the preceding run's owned rows. | A run's *drawn* span is `n_rows - 1 + bridged` source-parameter units, and the projection uses that span. Run *r* therefore completes at exactly the parameter where run *r+1* shows its first point — verified simultaneous, every frame, in every case below. `head_run` returns the destination run at that instant. |
 | **`head_run` was ambiguous at a boundary.** | Falls out of the above: `visible_rows` is derived from the run windows, so the last visible row and the run drawing it are the same fact. |
 | **Tuple-key memoization was promised but converted to a count.** | `ForecastSchedule` now stores explicit row tuples and keys `self._paths` on `(dataset, rows)`, slicing `histories[i][list(rows)]`. `counts` becomes a derived view. Task 6. |
-| **`precog` mishandled `end == 0`** (`data[end - 1:]` -> `data[-1:]`). | `RunWindow(head_start, head_end, past_stop, future_start, reached)` — four named bounds instead of three overloaded ones. An unreached run gets `RunWindow(0, 0, 0, 0, reached=False)`: empty head, empty chemtrail, precog covering the whole not-yet-revealed run. |
+| **`precog` mishandled `end == 0`** (`data[end - 1:]` -> `data[-1:]`). | `RunWindow(head_start, head_end, past_stop, future_start, reached, grid)` — four named bounds instead of three overloaded ones. An unreached run gets `RunWindow(0, 0, 0, 0, reached=False, grid=g)`: empty head, empty chemtrail, precog covering the whole not-yet-revealed run. The zero is produced by the *projection* (`count_from`), never by `anim_window_bounds`, which clamps `end` to `>= 1` at `trails.py:86`. |
 | **Projected grids included bridge geometry but source spans did not.** | `TraceOwnership` carries `owned rows` *and* `bridged`; `draw_span(run)` is the rendered geometry, `run_span(run)` the owned rows, and each is used where it belongs. |
 | **Trail forecast colours were unspecified.** | Decision R3 (v2): a retained forecast of age *k* takes `head_run(dataset, past[k-1])` — the head run at the frame it was *fit*, not the current one. Task 7 pins it with a fan spanning a boundary. |
 | **`assert early != late` did not prove exclusion.** | Task 6 compares `schedule.polyline(i, f)` against a direct `forecast_from_history(history[list(visible_rows)], ...)` fit, plus a mutation control showing one extra row changes the answer. |
@@ -40,6 +40,13 @@ forecast -> both backends) is unchanged.
 | **`TraceOwnership` assumed dense dataset ids without checking.** | `from_segments` validates dense, zero-based, first-appearance-ordered ids. |
 | **Ownership construction was too broad** (`not isinstance(xform, np.ndarray)`). | Built only from `_seg_ds` (line regrouping), or as `identity` when *no* regrouping happened at all and the cardinality matches. Marker/scatter regrouping gets `ownership=None` and the existing behaviour. |
 | **Plotly parity compared only empty/non-empty.** | Compares exact per-run vertex counts at every frame, plus boundary/final/singleton/unequal-length cases. |
+
+### And from v2, after review
+
+| v2 finding | resolution |
+|-|-|
+| **A whole ONE-ROW dataset could be marked `reached` while `anim_window_bounds` reported `end == 0`.** | The trigger does not exist — `end` is clamped to `>= 1` (`trails.py:86`) and no frame of 7488 `(total, grid, window)` combinations produces 0. But the concern is right in kind: `reached = p_head >= first_row` was correct only because `_param` returns 0 for a dataset with no extent and the first run's `first_row` is also 0, so a degenerate value coincided with a real boundary. `reached` is now `head_end > 0` — the fact `head_end` already carries — and `future_start` is `max(0, head_end - 1)` unconditionally. Measured equal over 1116 windows, so no behaviour changed. Task 2 gains four singleton tests (a one-row dataset alone at first and last frame, one beside longer datasets, `precog` on it, and the `reached == head_end > 0` invariant across every case). |
+| **A one-row DATASET was untested** (only a one-row *run* inside a longer dataset was). | Measured: it projects to the exact unregrouped identity — 480 comparisons against `anim_window_bounds` across five frame counts and five window lengths, alone and beside 5-row and 3-row datasets — and `DatasetRevealSchedule` handles it in both parallel and serial (168 frame/dataset states). Note it is visible from frame 0, because `end >= 1` always; there is no "before the singleton is reached" frame to test, and that matches what the library does today (F05-012). |
 
 ---
 
@@ -694,6 +701,9 @@ REGROUPED_CASES = [
     ([7, 2, 11, 5], 30, 30), ([2, 2], 3, 3), ([5, 5, 5, 5, 5, 5], 60, 60),
     ([20, 10], 24, 24), ([1, 29], 12, 12), ([29, 1], 12, 12),
     ([50, 50], 24, 24), ([2, 26, 2], 12, 12),
+    # whole ONE-ROW datasets: `span` is 0 for the dataset, not just for a run,
+    # so every invariant below meets the degenerate projection too
+    ([1], 6, 2), ([1], 12, 12), ([1, 1], 6, 2), ([1, 5], 10, 3),
 ]
 
 
@@ -784,12 +794,15 @@ def test_a_split_dataset_never_reveals_a_row_EARLY(lengths, n_frames, w):
     own, grids = _one_dataset(lengths, n_frames)
     n_rows = sum(lengths)
     whole = TraceOwnership.identity([n_rows])
-    step = max(Fraction(own.draw_span(r), grids[r] - 1)
-               for r in range(len(lengths)) if grids[r] >= 2
-               and own.draw_span(r) > 0)
+    whole_grid = [n_frames if n_rows >= 2 else 1]   # same rule as _one_dataset
+    # `default=0`: an UNSPLIT one-row dataset has no run grid to slide along,
+    # so there is no step to lag by and the bound tightens to exact identity.
+    step = max((Fraction(own.draw_span(r), grids[r] - 1)
+                for r in range(len(lengths)) if grids[r] >= 2
+                and own.draw_span(r) > 0), default=Fraction(0))
     for num in range(n_frames):
         split = len(_visible(own, grids, num, n_frames, w))
-        unsplit = len(_visible(whole, [n_frames], num, n_frames, w))
+        unsplit = len(_visible(whole, whole_grid, num, n_frames, w))
         assert split <= unsplit, f'frame {num}: split LEADS unsplit'
         assert unsplit - split <= int(step) + 1, (
             f'frame {num}: lag {unsplit - split} exceeds one run-grid step '
@@ -842,6 +855,69 @@ def test_a_singleton_FINAL_run_appears_when_the_sweep_REACHES_it():
     assert grids[1] == 1
     assert dataset_window_bounds(0, 12, own, grids, 12)[1].head_end == 0
     assert dataset_window_bounds(11, 12, own, grids, 12)[1].head_end == 1
+
+
+@pytest.mark.parametrize('n_frames,w', [
+    (1, 0), (2, 1), (3, 2), (6, 2), (6, 6), (12, 5), (12, 12)])
+def test_a_ONE_ROW_DATASET_is_the_unregrouped_identity_at_EVERY_frame(
+        n_frames, w):
+    """The test above covers a one-row RUN inside a longer dataset. A whole
+    one-row DATASET is the harder degenerate case: `span` is 0 for the dataset
+    as well as for the run, so the projection has no extent to project ONTO.
+    It must still be the identity, at the first frame and the last."""
+    own = TraceOwnership.identity([1])
+    for num in range(n_frames):
+        got, = dataset_window_bounds(num, n_frames, own, [1], w)
+        start, end, trail_stop = anim_window_bounds(num, n_frames, 1, w)
+        assert (got.head_start, got.head_end, got.past_stop) == (
+            start, end, trail_stop), f'frame {num}'
+        assert got.future_start == max(0, end - 1), f'frame {num}'
+
+
+def test_a_ONE_ROW_dataset_beside_LONGER_ones_keeps_its_own_clock():
+    """R1 is per SOURCE DATASET, so a singleton must not be dragged along by a
+    longer neighbour's grid, nor drag the neighbour back to its own."""
+    own = TraceOwnership.identity([5, 1, 3])
+    grids = [12, 1, 12]
+    for num in range(12):
+        wins = dataset_window_bounds(num, 12, own, grids, 2)
+        for r, g in enumerate(grids):
+            start, end, trail_stop = anim_window_bounds(num, 12, g, 2)
+            assert (wins[r].head_start, wins[r].head_end,
+                    wins[r].past_stop) == (start, end, trail_stop), (
+                        f'frame {num}, dataset {r}')
+
+
+def test_a_ONE_ROW_dataset_is_ON_SCREEN_from_frame_0():
+    """Deliberate, not incidental. `anim_window_bounds` clamps `end` to at
+    least 1 (`trails.py:86`), so a single-point dataset is drawn from the first
+    frame -- audited behaviour (F05-012), and NOT the `end == 0` state
+    `RunWindow` exists to name. There is therefore no 'before the singleton is
+    reached' frame to test: `reached` is True throughout, and a `precog` trail
+    on it is its whole (one-point) self. A change that hid it until the end
+    would be a regression, so it must fail here rather than pass quietly."""
+    own = TraceOwnership.identity([1])
+    for num in range(6):
+        got, = dataset_window_bounds(num, 6, own, [1], 2)
+        assert got.reached and got.head_end == 1, f'frame {num}'
+        assert got.future_start == 0, f'frame {num}'
+
+
+@pytest.mark.parametrize('lengths,n_frames,w', REGROUPED_CASES)
+def test_reached_means_EXACTLY_that_the_head_is_NON_EMPTY(
+        lengths, n_frames, w):
+    """`reached` must stay a RESTATEMENT of `head_end`, never a second
+    derivation of it. Comparing the head parameter against the run's first row
+    also works today, but only because `_param` returns 0 for a dataset with no
+    extent and the first run's `first_row` is 0 as well -- a degenerate value
+    coinciding with a real boundary. This fails the moment the two disagree
+    anywhere, which is what the equivalent-by-accident version could not."""
+    own, grids = _one_dataset(lengths, n_frames)
+    for num in range(n_frames):
+        for r, win in enumerate(dataset_window_bounds(
+                num, n_frames, own, grids, w)):
+            assert win.reached == (win.head_end > 0), f'frame {num}, run {r}'
+            assert win.future_start == max(0, win.head_end - 1)
 ```
 
 - [ ] **Step 2: Run the tests to verify they fail**
@@ -870,6 +946,13 @@ class RunWindow:
     screen from frame 0. Naming the future bound separately makes that slice
     unwritable.
 
+    That zero comes from the PROJECTION, not from `anim_window_bounds`, which
+    clamps ``end = max(1, min(n_points, end))`` (`trails.py:86`) and so cannot
+    return 0 for any real run -- swept over every frame of 7488 ``(total,
+    grid, window)`` combinations, zero hits. It is `count_from` in
+    `dataset_window_bounds` that returns 0, for a run the dataset's clock has
+    not yet reached, and that is exactly the state the triple could not name.
+
     Attributes
     ----------
     head_start, head_end : int
@@ -884,7 +967,15 @@ class RunWindow:
         vertex so there is no one-segment gap (F05-008). 0 -- the WHOLE run --
         for a run the clock has not reached: all of it is still ahead.
     reached : bool
-        Whether the dataset's clock has entered this run at all.
+        Whether the dataset's clock has entered this run at all -- defined as
+        ``head_end > 0``, i.e. the run has at least one drawn vertex on
+        screen. Deliberately NOT a second comparison of the head parameter
+        against the run's first row: those two agree today only because
+        `_param` returns 0 for a dataset with no extent (a ONE-ROW dataset)
+        and the first run's `first_row` is also 0, so a degenerate value and
+        a real boundary coincide. Two derivations of one fact can drift;
+        `head_end` already carries it. (The two were measured equal over 1116
+        windows before the substitution, so this changes no behaviour.)
     grid : int
         The run's drawn row count. Carried so `run_head_param` can invert the
         projection from the window ALONE -- the reveal schedule must read the
@@ -995,13 +1086,16 @@ def dataset_window_bounds(num, total_frames, ownership, grid_lengths,
                 return min(_g, int((p - _a) * (_g - 1) / _s))
 
             head_end = count_from(p_head)
-            reached = p_head >= first_row
             windows[r] = RunWindow(
                 head_start=index_from(p_start),
                 head_end=head_end,
                 past_stop=count_from(p_trail),
-                future_start=max(0, head_end - 1) if reached else 0,
-                reached=reached,
+                # `head_end == 0` is exactly "this run has nothing drawn", so
+                # both of these follow from it and neither re-derives it: an
+                # unreached run's precog is its WHOLE future (`data[0:]`, R5)
+                # because `max(0, -1)` is 0, and `reached` is the same test.
+                future_start=max(0, head_end - 1),
+                reached=head_end > 0,
                 grid=g_run)
     return windows
 
@@ -1029,7 +1123,10 @@ def run_head_param(window, ownership, run):
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `.venv/bin/python -m pytest tests/plot/test_trace_ownership.py -q`
-Expected: PASS — 11 from Task 1 plus 12 parametrized groups here.
+Expected: PASS — 160 tests: 11 from Task 1 plus 16 groups here, most
+parametrized (`REGROUPED_CASES` has 18 entries, four of them one-row datasets).
+This exact count was measured by running these test bodies against this task's
+implementation code; if you get a different one, find out why before moving on.
 
 - [ ] **Step 5: Commit**
 

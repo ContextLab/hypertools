@@ -131,7 +131,7 @@ one-line change. **These want a maintainer call before execution.**
 **Plans 1 and 2 have none left** — Plan 2's four were resolved in the round-3 review, Plan 1's four
 in the round-5 exchange. Both sets are recorded under *Standing decisions*.
 
-### Plan 3 — none left; all four settled by shipping
+### Plan 3 — none left; all five settled by shipping
 
 Plan 3 has been executed and its forecast work released, so these are no longer
 open questions: each was resolved in code, documented, and pinned with a test.
@@ -154,6 +154,12 @@ Verified against the tree at `a062f768`, not from memory:
 - **A finished dataset's forecast under `order='serial'`** — resolved as **freeze**.
   `ForecastSchedule.for_serial` holds a finished dataset's revealed count at its full history, so
   its forecast stays drawn at the final value while later datasets reveal.
+- **`forecast_cluster=`'s operand** — resolved as the forecast **ENDPOINT**. Plain forecasts
+  inherit the observed trace's assignment; `forecast_cluster=` clusters where each series is
+  predicted to end up, in the space the figure draws (`plot.py:2010-2024`, `:5268-5279`). In an
+  animation the groups are resolved once from the full-history forecasts and stay fixed for every
+  frame (`docs/animation.rst:480-493`, `CHANGELOG.md:122-127`). The canonical Plan 3 text carried
+  this as *"OPEN, for the maintainer"* until 2026-08-04; it now records the shipped answer.
 
 **The one Plan 3-adjacent thing still outstanding** is the regrouped reveal + animated regrouped
 forecasts, which is now its own plan: `2026-08-03-hypertools-1.1-regrouped-reveal-and-forecasts.md`

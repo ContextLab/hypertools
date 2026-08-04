@@ -2537,11 +2537,24 @@ primary/documented direction"):
 Each defaults to `None` = inherit from the observed trace. Specifying any one overrides only that
 aspect, so `forecast_palette='viridis'` alone re-colours without changing linestyle.
 
-**OPEN, for the maintainer:** `forecast_cluster=` needs its operand pinned. A forecast is a short
-`(t, d)` trajectory, so "cluster the forecasts" most plausibly means clustering those trajectories
-(by direction/endpoint) and colouring each forecast by the cluster it lands in. The alternative
-reading -- inherit the observed data's cluster assignment -- is what inheritance already gives, so
-it would add nothing. Confirm before building.
+**SETTLED — the operand is the forecast ENDPOINT.** (This read "OPEN, for the maintainer" while the
+kwarg was being designed; it shipped, so the question is closed and the answer belongs here rather
+than in the reader's memory.) A forecast is a short `(t, d)` trajectory, and `forecast_cluster=`
+clusters *where each one ends up*, colouring each forecast by the group its endpoint lands in.
+As implemented on `dev-1.0`:
+
+- **Plain forecasts inherit the observed trace's assignment.** That is the default and it is why
+  "recluster the observed data" was rejected as the operand: inheritance already gives it, so the
+  kwarg would be a no-op (`plot.py:2018-2020`).
+- **`forecast_cluster=` clusters the ENDPOINTS**, not whole flattened trajectories (sensitive to
+  `t`, to sampling and to dimensionality) and not every predicted point (one forecast would change
+  colour along its own short path). Endpoints are taken in the space the figure draws, after
+  `reduce=`/`align=`, so the grouping matches the geometry on screen (`plot.py:5268-5279`).
+- **In an animation the groups are fixed**, resolved once from the full-history forecasts — the
+  ones `return_model=True` returns — and never reclustered as the reveal progresses. Cluster labels
+  are arbitrary names, so per-frame reclustering would recolour a forecast whenever a fit nudged
+  its endpoint across a boundary, and would repaint a retained `forecast_trail=` fan drawn under
+  the old grouping (`docs/animation.rst:480-493`, `CHANGELOG.md:120-127`).
 
 ## Self-Review
 
