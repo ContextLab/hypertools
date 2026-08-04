@@ -362,3 +362,39 @@ OSError that must NOT be laundered into a skip.
   not seen any of this work since 2026-07-24.
 - macOS-CI `ConvergenceWarning` from `tests/predict/test_gp.py` (run
   30097502289) still not reproduced locally.
+
+## Full-suite failure found and fixed: LSL "any stream" (`98897ece`)
+
+Post-change full suite: **1 failed, 2982 passed, 13 skipped** (11m42s). The
+failure was NOT from this session's changes, and it is not a flake:
+
+`test_lsl_stream_resolves_any_stream` -> `HypertoolsIOError: nothing
+received for ~10.0s`. `lsl_stream()` with neither `name=` nor `type=` means
+"any stream", and LSL resolution is machine- and subnet-wide. This machine
+has a STARSTIM-8 attached publishing four outlets (Accelerometer / Markers
+/ Quality / EEG; 3 and 8 channels). The accelerometer resolved FIRST and is
+idle. Even had it delivered, `len(sample) == N_CHANNELS` would fail on 3
+channels. The test assumed its own outlet was the only one on the machine
+-- its fixture docstring anticipated collisions between hypertools tests
+but not with real hardware, so the assumption was never stated or checked.
+
+Fixed by covering both machine states rather than skipping either:
+
+- sole outlet -> the original sample assertions, unchanged
+- foreign outlets present -> `lsl_stream()` must WARN (naming the first
+  match and telling the user to pass `name=`) rather than silently binding;
+  whether that stream delivers is a fact about someone else's hardware and
+  is not asserted
+
+Plus `test_lsl_stream_by_NAME_is_unaffected_by_foreign_outlets` -- the
+escape the warning recommends, which must work on exactly the machines that
+emit the warning, and must not warn.
+
+**Useful for future debugging:** liblsl scopes resolution by SessionID, so
+
+    printf '[lab]\nSessionID = hypertools-tests\n' > /tmp/lsl.cfg
+    LSLAPICFG=/tmp/lsl.cfg .venv/bin/python -m pytest tests/test_lsl_streaming.py
+
+makes `pylsl.resolve_streams()` return `[]` on a machine with hardware
+attached. That is how the sole-outlet branch (the one CI takes) was
+actually run here rather than assumed. Recorded in the module docstring.
