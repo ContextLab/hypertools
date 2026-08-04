@@ -233,7 +233,7 @@ files changes:
 
   | task | script | notebook | what this plan must do |
   |-|-|-|-|
-  | **2** market | partially landed | unchanged — **out of sync** | **REBASE** (its `forecast_trail=` prerequisite has landed — see below) |
+  | **2** market | partially landed | unchanged — **out of sync** | **REBASE** — its `forecast_trail=` prerequisite has landed; its *remaining* prerequisite is the separate regrouped-reveal plan (see below) |
   | **3** weather | partially landed | unchanged — **out of sync** | **REBASE** (light) |
   | **4** paintings | untouched; v2's baseline verified still accurate | in sync with its script | **WRITE AS-IS** (still gated on Task 1) |
   | **5** conversation | partially landed | unchanged — **out of sync** | **REBASE** |
@@ -243,18 +243,22 @@ files changes:
 
 - **Task 2's `forecast_trail=` prerequisite is SATISFIED.** Task 2's prescribed call passes `forecast_trail=16`. When this plan was written that parameter was absent from `plot()`'s 75 parameters, and Task 2 carried a **BLOCKED** banner because of it. Plan 3 Task 5 has since landed it: `forecast_trail` is one of `plot()`'s **82** parameters today (`inspect.signature`, verified 2026-08-04), implemented at [`plot.py:700` (`_validate_forecast_trail`)](../../../hypertools/plot/plot.py) by commit **`90a63a1a`**, with plotly parity in **`bb6fcb18`** and 11 tests in [`tests/plot/test_forecast_trail.py`](../../../tests/plot/test_forecast_trail.py). Nothing in this plan is blocked on it.
 
-  This does **not** discharge the maintainer's ordering — **Plan 3 before Plan 4** — which stands on the regrouped-reveal behaviour Task 2's market example depends on, not on this one parameter.
+  **But Task 2 still has a prerequisite, and it is a different plan.** *"Plan 3 before Plan 4"* no longer names it: Plan 3 has landed, so that ordering is now satisfiable while the behaviour Task 2 actually needs does not exist. Stated plainly, so no executor can truthfully check it off early:
+
+  > **Plan 4 Task 2 requires the regrouped-reveal-and-forecasts plan — [`2026-08-03-hypertools-1.1-regrouped-reveal-and-forecasts.md`](2026-08-03-hypertools-1.1-regrouped-reveal-and-forecasts.md) — to be implemented, with its focused tests green.**
+
+  Task 2's call is `hue=<ticker level>` on a column MultiIndex, animated, with `predict='Kalman'` and `forecast_trail=16` — i.e. a *regrouped* line trajectory revealed over time with one forecast per regrouped trace. That is that plan's **Task 1** (`TraceOwnership`), **Task 2** (`RunWindow`/`dataset_window_bounds`), **Task 3** (the matplotlib parallel updaters), **Task 5** (`DatasetRevealSchedule`), **Task 6** (`ForecastSchedule` from a reveal) and **Task 7** (draw the forecast over a regrouped animation, matplotlib) — the example is matplotlib-only, so Tasks 4 and 8 are its plotly and docs halves. Land that plan whole regardless; run its focused tests, then `tests/plot`, before starting Task 2 here.
 
 ---
 
 ## Prerequisites
 
-Plans 1, 2 and 3 must land first. Per task:
+Plans 1, 2 and 3 must land first — **and so must the separate regrouped-reveal-and-forecasts plan** ([`2026-08-03-…`](2026-08-03-hypertools-1.1-regrouped-reveal-and-forecasts.md)), which Plan 3's landing does *not* cover. Per task:
 
 | this plan's task | depends on | why |
 |-|-|-|
 | **Task 1** (palette from image) | *(code: none; docs: animation-core)* | The code is a pure library addition to `hypertools/plot/colors.py` and `plot.py`, and can start immediately in parallel with Plans 1–3. **Its Step 6 cannot**: it writes under a `## 1.1.0 (unreleased)` → `### Added` heading that the animation-core plan creates, and `CHANGELOG.md` has neither today (`grep -n "1.1.0\|### Added" CHANGELOG.md` → nothing). Either land animation-core's CHANGELOG step first, or have Step 6 create the heading if it is missing. |
-| **Task 2** (Market) | **MultiIndex** T1 (`group_columns`), T2 (final-trace builder), T5 (column MultiIndex in `plot()`), T6 (hue as a per-trace auxiliary value), T8 (`predict=` over final traces); **Forecast-animation** T3 (narrow the `predict=` refusal), T4 (draw the per-frame forecast), T5 (`forecast_trail=`); **Animation-core** T1 (`title=` type contract) | The whole example *is* a column MultiIndex + a continuous hue through a hierarchy + one forecast per trace during a time-progressing animation. Without MultiIndex T6 the hue is discarded (the `_multiindex_meta is not None` hue branch in `plot()`); without Forecast-animation T3 the call raises `NotImplementedError` (the `predict is not None and animate` refusal in `plot()` — since Plan 3 Task 3 landed, narrowed to `_is_morph_request`). |
+| **Task 2** (Market) | **Regrouped-reveal-and-forecasts** T1 (`TraceOwnership`), T2 (`RunWindow`/`dataset_window_bounds`), T3 (matplotlib parallel updaters), T5 (`DatasetRevealSchedule`), T6 (`ForecastSchedule` from a reveal), T7 (draw the forecast over a regrouped animation) — **its focused tests must be green**; **MultiIndex** T1 (`group_columns`), T2 (final-trace builder), T5 (column MultiIndex in `plot()`), T6 (hue as a per-trace auxiliary value), T8 (`predict=` over final traces); **Forecast-animation** T3 (narrow the `predict=` refusal), T4 (draw the per-frame forecast), T5 (`forecast_trail=`); **Animation-core** T1 (`title=` type contract) | The whole example *is* a column MultiIndex + a continuous hue through a hierarchy + one forecast per trace during a time-progressing animation. `hue=` regroups the rows, so every frame of it is the regrouped-reveal plan's subject: without that plan the reveal clock is per-run rather than per-dataset and the animated forecast has no regrouped trace to hang off. Without MultiIndex T6 the hue is discarded (the `_multiindex_meta is not None` hue branch in `plot()`); without Forecast-animation T3 the call raises `NotImplementedError` (the `predict is not None and animate` refusal in `plot()` — since Plan 3 Task 3 landed, narrowed to `_is_morph_request`). |
 | **Task 3** (Weather) | *(none strictly)* — verified to run on today's `dev-1.0`; **Animation-core** T1 for the `title=` contract | The paper-style call already works today. Sequence it after Plan 1 only so the whole 1.1 line is tested together. |
 | **Task 4** (Paintings) | **Task 1** (palette from image); **Animation-core** T1 (`title=`) | `color=` per cloud comes from `image_palette`; the hand-rolled title becomes `title=`. |
 | **Task 5** (Conversation) | **Animation-core** T5 (`order='serial'`), T7 (`on_frame=` + `HyperAnimation.on_frame`), T8 (per-segment `title=`), T4 (plotly serial+trail parity) | `animate=True, order='serial', chemtrails=True` is exactly Animation-core T4+T5; the recency fade moves onto the public `on_frame=` hook; the caption/speaker artists are replaced by per-segment `title=`. |
@@ -899,7 +903,9 @@ Audit classification (unchanged, still accurate for the parts this task rewrites
 
 **Already done by `d730a085`:** the per-frame monkeypatch is gone; the decorator is a `FrameContext` callback registered on the public hook (`def decorate(ctx):` and `anim.on_frame(decorate)`). **Everything else in this task remains** — the 5 FRED series are still not a 24-ticker MultiIndex, `predict=`/`t=` is still hand-rolled, and the reduce→drawn affine recovery, the 16-slot hand-drawn fan, the hand-built colorbar and the hand-built title all survive.
 
-**Prerequisite SATISFIED (was: BLOCKED).** The prescribed call passes `forecast_trail=16`. That parameter did not exist when this task was written; it does now — `90a63a1a` added it (`_validate_forecast_trail`, `hypertools/plot/plot.py:700`), `bb6fcb18` gave it plotly parity, and `tests/plot/test_forecast_trail.py` covers it in 11 tests. Verified 2026-08-04 with `inspect.signature(hyp.plot)`. Start this task when the plan order reaches it.
+**The `forecast_trail=` prerequisite is SATISFIED (was: BLOCKED) — read the next paragraph before starting.** The prescribed call passes `forecast_trail=16`. That parameter did not exist when this task was written; it does now — `90a63a1a` added it (`_validate_forecast_trail`, `hypertools/plot/plot.py:700`), `bb6fcb18` gave it plotly parity, and `tests/plot/test_forecast_trail.py` covers it in 11 tests. Verified 2026-08-04 with `inspect.signature(hyp.plot)`.
+
+**The `forecast_trail=` prerequisite is satisfied; the separate regrouped-reveal prerequisite REMAINS.** This task's call is a `hue=`-regrouped, animated, forecast-carrying trajectory, so it also needs [`2026-08-03-hypertools-1.1-regrouped-reveal-and-forecasts.md`](2026-08-03-hypertools-1.1-regrouped-reveal-and-forecasts.md) — Tasks 1–3 and 5–7 — implemented with its focused tests green. That plan is *not* Plan 3, and Plan 3's landing does not imply it. Do not start this task until it is in.
 
 **AFTER (contracted budget):** script **≤ 130 code lines**; notebook **≤ 135** (= 130 + 5); **zero** defect markers. **Measured, not projected** (2026-08-04): the rewrite above is **110** code lines and the split takes it to **126** (+16). The budget is that 126 rounded up to the next multiple of 5, so the 4 lines of headroom are a stated allowance for wording differences and nothing more.
 

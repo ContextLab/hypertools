@@ -55,6 +55,10 @@ the news). Everything that needs no outlet -- validation, the ImportError
 message, resolution failures, the ambiguity advice -- keeps running either
 way, and `test_the_outlet_capability_probe_AGREES_with_reality` pins the
 probe against a real outlet so it cannot silently skip a working machine.
+The *classification* is pinned separately, by
+`test_the_capability_POLICY_skips_here_and_FAILS_where_it_must`: only one of
+its branches is reachable on any given machine, so that one drives both from
+a real liblsl failure string with the environment as the only variable.
 """
 
 import os
@@ -499,6 +503,80 @@ def test_the_outlet_capability_probe_AGREES_with_reality():
 
 
 @requires_pylsl
+def test_the_capability_POLICY_skips_here_and_FAILS_where_it_must(monkeypatch):
+    """`test_..._AGREES_with_reality` pins the probe's *verdict* against a
+    real outlet -- but it cannot pin what is DONE with that verdict, because
+    on any one machine only one branch is reachable (here, the capable one).
+    The consequence of getting the other branch wrong is severe and silent:
+    a skip where CI should have failed hides a real liblsl breakage behind
+    "unsupported environment" forever.
+
+    So this drives the policy directly, on a REAL liblsl failure string
+    harvested from a REAL failed call, with the environment as the only
+    thing varied. Nothing is faked: `_outlet_capability` is this module's
+    own memo of an already-answered question, and it is restored afterwards
+    so the next test re-probes for real."""
+    try:
+        pylsl.StreamInfo('HypertoolsPolicyProbe', 'EEG', -1, 100.0,
+                         'float32', 'hypertools-policy')
+    except Exception as err:
+        real_reason = f'{type(err).__name__}: {err}'
+    else:
+        pytest.skip('this pylsl accepts a negative channel count, so no real '
+                    'liblsl failure string is available to drive the policy '
+                    'with -- refusing to invent one')
+
+    this_module = sys.modules[__name__]
+    monkeypatch.setattr(this_module, '_outlet_capability', real_reason)
+
+    def classify(**env):
+        """Run the policy under exactly `env` and NAME what it did.
+
+        `pytest.raises(pytest.fail.Exception)` would be the obvious spelling
+        and it is the wrong one: an inverted policy raises `Skipped` there,
+        `raises` does not catch it, and this test would report itself as
+        skipped -- silently, which is the precise failure it exists to
+        prevent. Catching both outcomes and comparing names makes every
+        wrong answer an assertion failure. (Verified by mutation: forcing
+        the CI branch off turns this test red, not green and not skipped.)"""
+        monkeypatch.delenv('GITHUB_ACTIONS', raising=False)
+        monkeypatch.delenv(REQUIRE_LSL_ENV, raising=False)
+        for name, value in env.items():
+            monkeypatch.setenv(name, value)
+        try:
+            _require_outlets()
+        except pytest.skip.Exception as skipped:
+            return 'skip', str(skipped)
+        except pytest.fail.Exception as failed:
+            return 'fail', str(failed)
+        return 'proceed', ''
+
+    # (1) an unprovisionable laptop: skip, quoting what liblsl actually said
+    verdict, message = classify()
+    assert verdict == 'skip', (
+        f'an unprovisionable local machine must skip, not {verdict}')
+    assert real_reason in message, (
+        'the skip must carry the real reason, or an unprovisionable machine '
+        'is indistinguishable from a broken one')
+
+    # (2) a provisioned CI runner: the same condition is the news itself
+    for env in ({REQUIRE_LSL_ENV: '1'}, {'GITHUB_ACTIONS': 'true'}):
+        verdict, message = classify(**env)
+        assert verdict == 'fail', (
+            f'{env} must FAIL rather than {verdict} -- a provisioned runner '
+            f'that cannot make an outlet is the news, not an excuse')
+        assert real_reason in message, f'{env} must say why it failed'
+
+    # (3) a capable machine proceeds -- under every one of those settings
+    monkeypatch.setattr(this_module, '_outlet_capability', '')
+    for env in ({}, {REQUIRE_LSL_ENV: '1'}, {'GITHUB_ACTIONS': 'true'}):
+        verdict, _ = classify(**env)
+        assert verdict == 'proceed', (
+            f'a capable machine must proceed to the real outlet tests, but '
+            f'with {env} the policy said {verdict}')
+
+
+@requires_pylsl
 def test_the_ambiguity_ADVICE_is_executable_on_the_path_that_gives_it():
     """The multi-match warning ends by telling the user what to do next, so
     that advice has to work on the path that emitted it. The two paths call
@@ -520,6 +598,12 @@ def test_the_ambiguity_ADVICE_is_executable_on_the_path_that_gives_it():
     assert 'minimum=2' not in _ambiguity_caveat(any_stream=True)
     # the any-stream path's own remedy is a longer wait, and it says so
     assert 'timeout=' in _ambiguity_caveat(any_stream=True)
+
+    # reaching a private helper from its own module's tests is fine; letting
+    # it become part of the hypertools.io surface is not
+    assert not hasattr(hyp.io, '_ambiguity_caveat'), (
+        'the caveat builder is internal to hypertools.io.lsl and must not be '
+        're-exported from hypertools.io')
 
 
 @requires_pylsl

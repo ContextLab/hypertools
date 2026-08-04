@@ -534,3 +534,86 @@ Every other occurrence of a deleted symbol was checked: all are deliberate
 
 Commits: `c0d1d7a2` (tests + the `minimum=` advice fix), `06be1248`
 (Plan 4 v5).
+
+---
+
+# Round 6 — review of the round-5 fixes (2026-08-04)
+
+Three findings, all upheld. Nothing in `hypertools/` changed this round: one
+new test, one added assertion, and Plan 4 v6.
+
+## Medium — Plan 4's ordering language named the wrong prerequisite
+
+`:246` said the ordering "Plan 3 before Plan 4" stood on the regrouped-reveal
+behaviour Task 2 needs. That was true when written and is not now: Plan 3 has
+LANDED, while regrouped reveal is a separate, still-unimplemented plan
+(`docs/superpowers/plans/2026-08-03-hypertools-1.1-regrouped-reveal-and-forecasts.md`).
+So an executor could truthfully check "Plan 3 landed" and start the market
+rewrite against behaviour that does not exist.
+
+Named explicitly in four places, so the check cannot be passed early:
+
+- `:236` table cell — the remaining prerequisite is the regrouped-reveal plan,
+  not `forecast_trail=`
+- `:246-250` — a block-quoted requirement naming the plan file, plus which of
+  its tasks Task 2 actually consumes: T1 `TraceOwnership`, T2 `RunWindow`/
+  `dataset_window_bounds`, T3 the matplotlib parallel updaters, T5
+  `DatasetRevealSchedule`, T6 `ForecastSchedule` from a reveal, T7 draw the
+  forecast over a regrouped animation. The example is matplotlib-only
+  (`examples/animate_market_forecast.py:191` — `hyp.plot(..., hue=idx_level)`,
+  no backend switch), so that plan's T4 and T8 are its plotly and docs halves;
+  land it whole anyway.
+- `:256` Prerequisites intro — "Plans 1, 2 and 3 must land first" now also
+  names the regrouped-reveal plan and says Plan 3's landing does not cover it
+- `:906/:908` Task 2's own banner — retitled to `The forecast_trail=
+  prerequisite is SATISFIED ... read the next paragraph`, followed by the
+  regrouped-reveal requirement in full
+
+## Low — the capability probe's POLICY was untested
+
+`test_the_outlet_capability_probe_AGREES_with_reality` pins the probe's
+VERDICT against a real outlet, but not what is done with that verdict: on any
+one machine only one branch is reachable (here, the capable one). A skip where
+CI should have failed would hide a real liblsl breakage behind "unsupported
+environment" indefinitely.
+
+New `test_the_capability_POLICY_skips_here_and_FAILS_where_it_must` drives all
+three branches with the environment as the only variable. No fabrication:
+
+- the reason string is harvested from a REAL liblsl failure —
+  `pylsl.StreamInfo('...', 'EEG', -1, ...)` raises
+  `RuntimeError: could not create stream description object.` (measured). If a
+  future pylsl accepts a negative channel count the test skips rather than
+  invent a string.
+- `_outlet_capability` is this module's own memo of an already-answered
+  question; `monkeypatch.setattr` restores it, so the next test re-probes.
+
+**The first version of this test was wrong, and mutation testing caught it.**
+It used `pytest.raises(pytest.fail.Exception)`. Under an inverted policy
+`_require_outlets` raises `Skipped`, `raises` does not catch it, and the test
+reported itself as SKIPPED — silently, which is precisely the failure mode it
+exists to prevent. Rewritten to catch both outcomes and compare names, so any
+wrong answer is an assertion failure. Re-verified by mutation, all three RED:
+
+| mutation | outcome |
+|-|-|
+| CI branch disabled (`... and False`) | FAILED (was: silently skipped) |
+| `{reason}` dropped from the message | FAILED |
+| `if not reason:` → `if False:` (capable machine gated) | FAILED |
+
+## Low — `_ambiguity_caveat` privacy
+
+Already private: `hypertools/io/__init__.py` imports only `load`, `save`,
+`sources`, `streaming`, `lsl_stream`, and `dir(hyp.io)` has no such name. No
+API change — but the property is now pinned, by an assertion in
+`test_the_ambiguity_ADVICE_is_executable_on_the_path_that_gives_it` that
+`hyp.io` has no `_ambiguity_caveat`. Tests reach it at
+`hypertools.io.lsl._ambiguity_caveat`, which is its own module's business.
+
+## Verification
+
+- `tests/test_lsl_streaming.py`: **15 passed, 1 skipped** (was 14+1), run both
+  normally and under `HYPERTOOLS_REQUIRE_LSL=1`
+- ruff clean on `tests/test_lsl_streaming.py`
+- no sphinx impact: `docs/conf.py:143` sets `source_suffix = '.rst'`, so the
+  Markdown plans are not build inputs
