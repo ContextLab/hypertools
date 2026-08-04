@@ -85,7 +85,7 @@ Step 1's `measure_native_ratio.py` from this document and running it, so these a
 script produces — not a hand tally. Two things moved them since v1:
 
 - `d730a085` already landed the morph script rewrite (`40 → 26` code lines), so the morph row is a
-  **post**-migration number and Task 6 is a reconciliation, not a rewrite. See Task 6's Step 0.
+  **post**-migration number and Task 6 is a reconciliation, not a rewrite. See Task 6's Step 2.
 - The **metric itself was wrong** for notebooks in v1/v2 (`_code_lines_nb` did not strip docstrings,
   so the same source measured differently as `.py` and `.ipynb`). Every notebook row moved. The
   five notebook budgets in Task 8 were re-derived from these numbers, not carried forward.
@@ -182,7 +182,7 @@ files changes:
    notebook_budget = script_budget + NOTEBOOK_OVERHEAD      # NOTEBOOK_OVERHEAD = 5
    ```
 
-   `NOTEBOOK_OVERHEAD` is measured, not guessed: the largest install cell across the five is 3 code lines, plus a 2-line display cell (`from IPython.display import HTML` + `HTML(ani.to_jshtml())`). One number is chosen per task — the script budget — and the notebook's follows. Verified against the prescribed content, with the loader/builder split's ~15 lines included (these were pre-split figures and were wrong the moment Step 0b was added): market 128 ≤ 135, weather 71 ≤ 82, paintings 126 ≤ 138, conversation 103 ≤ 110, morph 41 ≤ 50. Still tight, and a notebook budget can never again be set below its script's.
+   `NOTEBOOK_OVERHEAD` is measured, not guessed: the largest install cell across the five is 3 code lines, plus a 2-line display cell (`from IPython.display import HTML` + `HTML(ani.to_jshtml())`). One number is chosen per task — the script budget — and the notebook's follows. Verified against the prescribed content with each file's own MEASURED split included (2026-08-04): market 128 ≤ 135, weather 75 ≤ 80, paintings 137 ≤ 145, conversation 108 ≤ 115, morph 45 ≤ 50. Still tight, and a notebook budget can never again be set below its script's.
 
 7. **Behaviour parity with today, except where a defect is being removed.** Each rewrite keeps its example's visual identity (the market's quarter-turn and forecast fan, the weather figure's blue-cold/red-hot sweep, the paintings' spin, the conversation's one-turn-at-a-time reveal, the morph's closed loop and teapot). Where an effect is deliberately dropped because no 1.1 API expresses it, it is named in *Decisions still needed*, never quietly lost.
 
@@ -899,7 +899,7 @@ Audit classification (unchanged, still accurate for the parts this task rewrites
 
 **BLOCKED:** the prescribed call passes `forecast_trail=16`, which does not exist in `plot()` yet (Plan 3 Task 5). Do not start this task until Plan 3 has landed.
 
-**AFTER (contracted budget):** script **≤ 130 code lines** (115 for the rewrite + 15 for the Step 0b split); notebook **≤ 135** (= 130 + 5); **zero** defect markers. The rewrite alone measures 109; the split's cost is a placeholder until Step 0c measures this file's own.
+**AFTER (contracted budget):** script **≤ 130 code lines**; notebook **≤ 135** (= 130 + 5); **zero** defect markers. **Measured, not projected** (2026-08-04): the rewrite above is **110** code lines and the split takes it to **126** (+16). The budget is that 126 rounded up to the next multiple of 5, so the 4 lines of headroom are a stated allowance for wording differences and nothing more.
 
 The notebook budget is DERIVED, not written down: `script_budget + NOTEBOOK_OVERHEAD` (Contract 6b), so it can never again be set below its own script's. No ratio floor — ratio is reported, never gated (Contract 6a).
 
@@ -920,49 +920,6 @@ The notebook budget is DERIVED, not written down: `script_budget + NOTEBOOK_OVER
 **Accuracy readout.** Per Contract 5 this lives in the example. Budget measured: `hyp.predict(..., model='Kalman', t=1)` on a **60-row** rolling window, **30** anchors, **7** series (6 sectors + the market mean) = **210 fits in 7.3 s**. A 250-row window costs 30.7 s for the same loop, and the whole current example runs in 6.2 s — so 60/30 is the budget, and it is stated in the module docstring.
 
 **Files:** rewrite `examples/animate_market_forecast.py`; rewrite `docs/tutorials/market_forecast.ipynb`; create `scripts/execute_tutorial.py`.
-
-- [ ] **Step 0: Split the loader from the figure builder (Contract 4 / Step 0b) — DO THIS *AFTER* THE REWRITE STEP BELOW**
-
-> **Ordering, and it is not cosmetic.** This step restructures the file the rewrite step produces.
-> Run it first and the rewrite deletes it: the prescribed rewrite blocks are monolithic — measured,
-> not one of the four defines `construct_artifact`, `fixture_data`, or a `__main__` guard — so a
-> "replace the file entirely" applied on top of a completed split obliterates it, and every later
-> step then calls names that no longer exist. Sequence for this task is therefore:
-> **rewrite → this split → verify → measure → commit.**
-
-**Do this FIRST, before the rewrite below.** Task 8 Step 0b defines the contract and works the whole pattern through on weather; this step applies it to `examples/animate_market_forecast.py`. Without it `test_examples_produce_their_stated_artifact` fails on this example, and importing it fetches.
-
-Produce exactly these three names in `examples/animate_market_forecast.py`:
-
-| name | signature | notes |
-|-|-|-|
-| payload | `class Market(NamedTuple)` with fields `dates, prices, source` | self-documenting; `source` records which path was used |
-| loader | `load_market(ids=FRED_IDS) -> Market` | the ONLY code here that may touch the network (fetch_fred) |
-| fixture | `fixture_data() -> Market` | its own seeded `synthetic_basket()` — no network, no committed bytes unless stated |
-| builder | `construct_artifact(data) -> HyperAnimation` | everything else, reading `data.<field>` instead of module globals. **Returns the wrapper, never the unpacked pair** (Contract 8) |
-
-Then move every loader CALL behind a `__main__` guard, and make each fetcher honour `HYPERTOOLS_OFFLINE` by raising:
-
-```python
-if __name__ == '__main__':
-    data = load_market()
-    anim = construct_artifact(data)
-    fig = anim.figure
-```
-
-Verify before moving on:
-
-```bash
-MPLBACKEND=Agg .venv/bin/python -c "
-import importlib.util, os
-os.environ['HYPERTOOLS_OFFLINE'] = '1'
-spec = importlib.util.spec_from_file_location('m', 'examples/animate_market_forecast.py')
-m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
-print('imported with no fetch; has', [n for n in ('construct_artifact', 'fixture_data') if hasattr(m, n)])
-anim = m.construct_artifact(m.fixture_data()); print('frames:', anim.n_frames)"
-```
-
-Expected: it imports without touching the network and prints both names plus a frame count. If the import fetches, a loader call is still at module scope.
 
 - [ ] **Step 1: Create the notebook execution helper (used by every task from here on)**
 
@@ -986,9 +943,17 @@ Outputs are written back into the notebook (`nbsphinx_execute = 'never'`,
 docs/conf.py:131, means the committed outputs are what the docs render), and
 `metadata.kernelspec` is restored to the neutral python3 entry the committed
 notebooks carry, so Colab is unaffected.
+
+``--out-dir DIR`` writes the executed copy into `DIR` instead, leaving the
+tracked notebook untouched. That exists so a smoke test of this script does
+not have to be undone afterwards: `git checkout -- <notebook>` discards a
+file change and cannot tell an unwanted execution from a wanted edit made in
+the same window. Execution still resolves relative paths against the
+notebook's ORIGINAL directory, so a redirected run reads the same data.
 """
 
 import json
+import os
 import sys
 
 import nbformat
@@ -1000,7 +965,8 @@ KERNEL = 'hypertools-venv'
 TIMEOUT = 1800
 
 
-def execute(path):
+def execute(path, out=None):
+    """Execute `path`, writing the result to `out` (default: in place)."""
     nb = nbformat.read(path, as_version=4)
     original = json.loads(json.dumps(nb.metadata.get('kernelspec',
                                                      NEUTRAL_KERNELSPEC)))
@@ -1008,18 +974,26 @@ def execute(path):
                    resources={'metadata': {'path': str(path.rsplit('/', 1)[0])}}
                    ).execute()
     nb.metadata['kernelspec'] = original
-    nbformat.write(nb, path)
+    nbformat.write(nb, out or path)
     executed = sum(1 for c in nb.cells
                    if c.cell_type == 'code' and c.get('outputs'))
     total = sum(1 for c in nb.cells if c.cell_type == 'code')
-    print(f'{path}: {executed}/{total} code cells produced output')
+    print(f'{out or path}: {executed}/{total} code cells produced output')
 
 
 if __name__ == '__main__':
-    if len(sys.argv) < 2:
-        raise SystemExit('usage: execute_tutorial.py <notebook> [<notebook>...]')
-    for target in sys.argv[1:]:
-        execute(target)
+    args = sys.argv[1:]
+    out_dir = None
+    if '--out-dir' in args:
+        k = args.index('--out-dir')
+        out_dir = args[k + 1]
+        del args[k:k + 2]
+    if not args:
+        raise SystemExit(
+            'usage: execute_tutorial.py [--out-dir DIR] <notebook> [...]')
+    for target in args:
+        execute(target, os.path.join(out_dir, os.path.basename(target))
+                if out_dir else None)
 ```
 
 Verify it on an untouched notebook before relying on it:
@@ -1027,16 +1001,23 @@ Verify it on an untouched notebook before relying on it:
 ```bash
 .venv/bin/python -m ipykernel install --user --name hypertools-venv \
     --display-name "hypertools (.venv)"
-git status --porcelain   # confirm a clean tree before an in-place execute
-.venv/bin/python scripts/execute_tutorial.py docs/tutorials/reduce.ipynb
-git diff --stat docs/tutorials/reduce.ipynb
-git checkout -- docs/tutorials/reduce.ipynb
+SMOKE=$(mktemp -d)
+.venv/bin/python scripts/execute_tutorial.py --out-dir "$SMOKE" \
+    docs/tutorials/reduce.ipynb
+git status --porcelain docs/tutorials/reduce.ipynb   # MUST print nothing
+rm -rf "$SMOKE"
 ```
+
+Expected: a `<n>/<total> code cells produced output` line naming the path under
+`$SMOKE`, and **silence** from `git status`. The redirect is the point — the smoke test must
+not need undoing. `git checkout -- <notebook>` would discard the change instead, and it cannot
+distinguish an unwanted execution from a wanted edit made in the same window, so it is not a
+safe instruction to leave in a plan that other tasks copy from.
 Expected: prints `docs/tutorials/reduce.ipynb: 5/9 code cells produced output` or more, `git diff --stat` shows a change, and the checkout restores it. If `metadata.kernelspec` appears in the diff, the restore is broken — fix `execute_tutorial.py`, do not proceed.
 
 - [ ] **Step 2: Rewrite the example**
 
-Replace the body of `examples/animate_market_forecast.py` (reconciling against what `d730a085` already landed — see the banner above). **Step 0's loader/builder split is applied to the result of this step, not before it.**
+Replace the body of `examples/animate_market_forecast.py` (reconciling against what `d730a085` already landed — see the banner above). **Step 3's loader/builder split is applied to the result of this step, not before it.**
 
 ```python
 # -*- coding: utf-8 -*-
@@ -1112,12 +1093,12 @@ SECTORS = {
 COLUMN_NAMES = ['Market', 'Sector', 'Ticker']
 
 
-def fetch_prices():
+def fetch_prices(sectors=SECTORS):
     """Daily closes with a ``(Market, Sector, Ticker)`` column MultiIndex,
     or ``None`` if anything (network, parsing) goes wrong."""
     try:
         series = {}
-        for sector, tickers in SECTORS.items():
+        for sector, tickers in sectors.items():
             for ticker in tickers:
                 dest = os.path.join(CACHE, f'yahoo_{ticker}_{RANGE}.json')
                 if not (os.path.exists(dest) and os.path.getsize(dest) > 0):
@@ -1138,7 +1119,7 @@ def fetch_prices():
         return None
 
 
-def synthetic_prices(n_days=2513, seed=0):
+def synthetic_prices(sectors=SECTORS, n_days=2513, seed=0):
     """Fallback: a market factor + per-sector factors + idiosyncratic noise,
     laid out with exactly the same column hierarchy."""
     rng = np.random.default_rng(seed)
@@ -1146,7 +1127,7 @@ def synthetic_prices(n_days=2513, seed=0):
                            periods=n_days)
     market = np.cumsum(rng.standard_normal(n_days)) * 0.4
     series = {}
-    for s, (sector, tickers) in enumerate(SECTORS.items()):
+    for s, (sector, tickers) in enumerate(sectors.items()):
         factor = np.cumsum(rng.standard_normal(n_days)) * (0.3 + 0.05 * s)
         for k, ticker in enumerate(tickers):
             idio = np.cumsum(rng.standard_normal(n_days)) * (0.2 + 0.05 * k)
@@ -1184,7 +1165,12 @@ sector_index = [(prices[MARKET][sector].mean(axis=1)
 # linewidth= is passed: with a MultiIndex, plot() warns and ignores it
 # (documented in plot()'s docstring under the MultiIndex kwarg rules).
 duration, fps = 8, 20
-fig, ani = hyp.plot(
+# BIND THE WRAPPER, do not unpack. `HyperAnimation` subclasses `tuple`
+# (`hyper_animation.py:45`), so `fig, ani = hyp.plot(...)` succeeds and throws
+# the wrapper away -- `ani` is then the bare `FuncAnimation`, with no
+# `.figure`, no `.on_frame()` and no `.n_frames`. Contract 8, and the reason
+# `construct_artifact` can `return anim` at all.
+anim = hyp.plot(
     prices, '-',
     hue=sector_index, palette='plasma',
     colorbar={'label': 'sector price index (start = 100)'},
@@ -1221,6 +1207,7 @@ print('next-day direction correct: '
       + ', '.join(f'{name} {pct:.0f}%' for name, pct in scores.items()))
 
 # --- which tickers make up which sector, and how each one scored -------------
+fig = anim.figure
 ax = [a for a in fig.axes if hasattr(a, 'zaxis')][0]
 ax.set_position([0.0, 0.03, 0.62, 0.9])
 for row, (sector, tickers) in enumerate(SECTORS.items()):
@@ -1235,7 +1222,72 @@ fig.text(0.66, 0.015, 'next-day direction, last 30 sessions (50% = coin flip)',
          ha='left', va='top', fontsize=8.5, color='#8a8a8a', style='italic')
 ```
 
-- [ ] **Step 3: Run the example and confirm it renders**
+- [ ] **Step 3: Split the loader from the figure builder (Contract 4 / Task 8 Step 0b)**
+
+> **Ordering.** This step restructures the file the rewrite step above produces, so it comes
+> after it and never before. The prescribed rewrite blocks are monolithic — measured, not one of
+> the four defines `construct_artifact`, `fixture_data`, or a `__main__` guard — so a "replace the
+> file entirely" applied on top of a completed split would obliterate it, and every later step
+> would then call names that no longer exist. The task's sequence is
+> **rewrite → this split → verify → measure → commit**, and the steps below are numbered in that
+> order.
+
+Task 8 Step 0b defines the contract and works the whole pattern through on weather; this step applies it to `examples/animate_market_forecast.py`. Without it `test_examples_produce_their_stated_artifact` fails on this example, and importing it fetches.
+
+Produce exactly these four names in `examples/animate_market_forecast.py`:
+
+| name | signature | notes |
+|-|-|-|
+| payload | `class Market(NamedTuple)` with fields `prices, source` | `prices` is the `(Market, Sector, Ticker)`-columned DataFrame the rewrite builds; `source` records which path was used. **No `dates` field** — the dates are already `prices.index`, and a second copy could disagree with it. |
+| loader | `load_market(sectors=SECTORS) -> Market` | the ONLY code here that may touch the network: `fetch_prices(sectors)`, falling back to `synthetic_prices(sectors)` |
+| fixture | `fixture_data() -> Market` | `synthetic_prices(SECTORS)` alone, never `fetch_prices` — no network, no committed bytes |
+| builder | `construct_artifact(data: Market) -> HyperAnimation` | everything else, reading `data.prices` / `data.source` instead of module globals. **Returns the wrapper, never the unpacked pair** (Contract 8) |
+
+**These names are the rewrite's, not v2's.** v2 specified `load_market(ids=FRED_IDS)` and a `fetch_fred` — symbols of the five-series FRED implementation the rewrite step above *deletes*. Nothing named `FRED_IDS` or `fetch_fred` exists after Step 2; a split written against them cannot be applied.
+
+**The builder's exact shape.** "Indent everything and return the wrapper" is only mechanical if
+the rewrite kept the wrapper — so Step 2 above binds `anim = hyp.plot(...)`, and this is the tail
+that follows from it:
+
+```python
+def construct_artifact(data):
+    """`data.prices` in, the animation out. No network, no module globals."""
+    sector_index = [...]                    # unchanged, from `data.prices`
+    anim = hyp.plot(data.prices, '-', ..., show=False)
+    fig = anim.figure                       # the accuracy panel draws on it
+    ...                                     # scoring + the fig.text() block
+    return anim                             # the WRAPPER, not `fig, ani`
+```
+
+`return anim` is the whole point of Contract 8: `test_examples_produce_their_stated_artifact`
+calls `construct_artifact(fixture_data())` and reads `.n_frames` off the result, which a raw
+`FuncAnimation` does not have.
+
+Then move every loader CALL behind a `__main__` guard, and make each fetcher honour
+`HYPERTOOLS_OFFLINE` by raising:
+
+```python
+if __name__ == '__main__':
+    data = load_market()
+    anim = construct_artifact(data)
+    fig = anim.figure
+```
+
+Verify before moving on:
+
+```bash
+MPLBACKEND=Agg .venv/bin/python -c "
+import importlib.util, os
+os.environ['HYPERTOOLS_OFFLINE'] = '1'
+spec = importlib.util.spec_from_file_location('m', 'examples/animate_market_forecast.py')
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+print('imported with no fetch; has', [n for n in ('construct_artifact', 'fixture_data') if hasattr(m, n)])
+anim = m.construct_artifact(m.fixture_data()); print('frames:', anim.n_frames)"
+```
+
+Expected: it imports without touching the network and prints both names plus a frame count. If the import fetches, a loader call is still at module scope.
+
+- [ ] **Step 4: Run the example and confirm it renders**
 
 Run: `MPLBACKEND=Agg .venv/bin/python examples/animate_market_forecast.py`
 
@@ -1248,13 +1300,13 @@ next-day direction correct: Technology NN%, Financials NN%, ..., Market NN%
 
 Report whatever accuracy comes out; do **not** tune the example until a number looks good. Wall clock should be roughly the current 6.2 s plus the measured ~7 s of scoring.
 
-- [ ] **Step 4: Confirm the hierarchy actually drew what the docstring claims**
+- [ ] **Step 5: Confirm the hierarchy actually drew what the docstring claims**
 
 Run:
 
 ```bash
 MPLBACKEND=Agg .venv/bin/python - <<'PY'
-# Load the example WITHOUT running its loaders: after Step 0 every binding
+# Load the example WITHOUT running its loaders: after Step 3 every binding
 # lives inside construct_artifact()/__main__, and runpy.run_path does NOT set
 # __name__ to '__main__' (verified: it sets '<run_path>'), so ns['fig'] would
 # raise KeyError. Drive frames through the public draw_frame(), not ani._func.
@@ -1279,7 +1331,7 @@ PY
 
 Expected: `axes: 2` (the 3-D box plus the colorbar), **7 drawn traces** (6 sectors + 1 market mean) plus their forecast artists, **at least two distinct linewidths** (the MultiIndex contract is `linewidth = 1 + (L - 1 - level_idx)`, so the market mean is wider than a sector), and `title: 'many markets as one path'`. This snippet uses `ani._func` **only as a test probe**, exactly as the sibling plans' tests do; it never enters the example.
 
-- [ ] **Step 5: Rewrite the notebook in lockstep**
+- [ ] **Step 6: Rewrite the notebook in lockstep**
 
 Rewrite `docs/tutorials/market_forecast.ipynb` so its code cells are the script's code, split at the script's own section boundaries, keeping cell 0 (the Colab install cell) untouched:
 
@@ -1302,7 +1354,7 @@ Rewrite `docs/tutorials/market_forecast.ipynb` so its code cells are the script'
 | 14 | markdown | `## 7. Display the animation` |
 | 15 | code | `from IPython.display import HTML` / `HTML(ani.to_jshtml())` |
 
-- [ ] **Step 6: Execute the notebook and check the code stayed in lockstep**
+- [ ] **Step 7: Execute the notebook and check the code stayed in lockstep**
 
 ```bash
 .venv/bin/python scripts/execute_tutorial.py docs/tutorials/market_forecast.ipynb
@@ -1312,9 +1364,9 @@ Rewrite `docs/tutorials/market_forecast.ipynb` so its code cells are the script'
 
 (`scripts/measure_native_ratio.py` is created in Task 8 Step 1; if you are working tasks in order, do that step first — it is standalone.)
 
-Expected: both files inside budget (**≤ 130 / ≤ 135 code lines**) -- the rewrite measures 109, plus the ~15 the loader/builder split costs. If either is missed, cut presentation code. **Do not predict an output-cell count here** — v2 guessed `7/8` and every one of its five per-task guesses was wrong. Record the measured visible-output INDEX SET from this run into `EXPECTED_VISIBLE_OUTPUTS` (Task 8), which names the offending cell when it drifts. **Ordering:** that dict lives in `tests/test_examples_are_native.py`, which Task 8 Step 2 creates — so **do Task 8 Steps 1–2 before Tasks 2–6**, exactly as you must for `scripts/measure_native_ratio.py`. Both are pure additions with no dependency on the rewrites. If you genuinely run Task 8 last instead, then Tasks 2–6 have nowhere to record anything and Task 8 Step 3's five reds become the to-do list; pick one of those two procedures and do not half-do both.
+Expected: both files inside budget (**≤ 130 / ≤ 135 code lines**) -- the rewrite measures 110 and the split 126, both measured. If either is missed, cut presentation code. **Do not predict an output-cell count here** — v2 guessed `7/8` and every one of its five per-task guesses was wrong. Record the measured visible-output INDEX SET from this run into `EXPECTED_VISIBLE_OUTPUTS` (Task 8), which names the offending cell when it drifts. **Ordering:** that dict lives in `tests/test_examples_are_native.py`, which Task 8 Step 2 creates — so **do Task 8 Steps 0–2 before Tasks 2–6**, exactly as you must for `scripts/measure_native_ratio.py`. Step **0** is in that list for a reason the earlier revision missed: every task's split step verifies itself with `anim.n_frames`, and Task 5's confirmation step drives `draw_frame(i)` — neither exists on `HyperAnimation` until Task 8 Step 0 adds them (`hyper_animation.py` today exposes only `figure`, `animation` and `on_frame`, verified 2026-08-04). Both are pure additions with no dependency on the rewrites. If you genuinely run Task 8 last instead, then Tasks 2–6 have nowhere to record anything and Task 8 Step 3's five reds become the to-do list; pick one of those two procedures and do not half-do both.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add examples/animate_market_forecast.py docs/tutorials/market_forecast.ipynb \
@@ -1339,7 +1391,7 @@ Audit classification (unchanged): A=72 **B=8 C=44** D=70 NATIVE=19.
 
 **Note for the defect-marker gate:** this file's docstring now contains the string `` `ani._func` `` while *explaining the migration away from it*. That is documentation, not a private reach — which is why Task 8's scan strips docstrings before matching (Contract 3).
 
-**AFTER (contracted budget):** script **≤ 77 code lines** (62 for the rewrite + **15 measured** for the Step 0b split); notebook **≤ 82** (= 77 + 5); **zero** defect markers. The rewrite alone measures 56, and 56 + 15 = 71 ≤ 77. **v3 briefly had 62 here with the split mandated on top, i.e. 71 against 62 — unsatisfiable, the exact class this plan claims to have made impossible.**
+**AFTER (contracted budget):** script **≤ 75 code lines**; notebook **≤ 80** (= 75 + 5); **zero** defect markers. **Measured, not projected** (2026-08-04): the rewrite above is **56** code lines and the split takes it to **73** (+17), rounded up to the next multiple of 5. The earlier 77 came from a +15 measured on the file as it stands TODAY (195 -> 210) — but Step 1 above replaces that file, so the overhead had to be re-measured against the rewrite, not inherited across it.
 
 The notebook budget is DERIVED, not written down: `script_budget + NOTEBOOK_OVERHEAD` (Contract 6b), so it can never again be set below its own script's. No ratio floor — ratio is reported, never gated (Contract 6a).
 
@@ -1349,52 +1401,9 @@ Verified today, end to end: `hyp.plot(temps, fmt='-', hue=avg_temp, palette='RdB
 
 **Files:** rewrite `examples/animate_weather_decades.py`; rewrite `docs/tutorials/weather_decades.ipynb`.
 
-- [ ] **Step 0: Split the loader from the figure builder (Contract 4 / Step 0b) — DO THIS *AFTER* THE REWRITE STEP BELOW**
-
-> **Ordering, and it is not cosmetic.** This step restructures the file the rewrite step produces.
-> Run it first and the rewrite deletes it: the prescribed rewrite blocks are monolithic — measured,
-> not one of the four defines `construct_artifact`, `fixture_data`, or a `__main__` guard — so a
-> "replace the file entirely" applied on top of a completed split obliterates it, and every later
-> step then calls names that no longer exist. Sequence for this task is therefore:
-> **rewrite → this split → verify → measure → commit.**
-
-**Do this FIRST, before the rewrite below.** Task 8 Step 0b defines the contract and works the whole pattern through on weather; this step applies it to `examples/animate_weather_decades.py`. Without it `test_examples_produce_their_stated_artifact` fails on this example, and importing it fetches.
-
-Produce exactly these three names in `examples/animate_weather_decades.py`:
-
-| name | signature | notes |
-|-|-|-|
-| payload | `class Weather(NamedTuple)` with fields `monthly, daily, hemispheres, source` | self-documenting; `source` records which path was used |
-| loader | `load_weather(cities=CITIES) -> Weather` | the ONLY code here that may touch the network (fetch_city_months, fetch_city_daily_temp) |
-| fixture | `fixture_data() -> Weather` | its own seeded `synthetic_city_months` / `synthetic_city_daily` — no network, no committed bytes unless stated |
-| builder | `construct_artifact(data) -> HyperAnimation` | everything else, reading `data.<field>` instead of module globals. **Returns the wrapper, never the unpacked pair** (Contract 8) |
-
-Then move every loader CALL behind a `__main__` guard, and make each fetcher honour `HYPERTOOLS_OFFLINE` by raising:
-
-```python
-if __name__ == '__main__':
-    data = load_weather()
-    anim = construct_artifact(data)
-    fig = anim.figure
-```
-
-Verify before moving on:
-
-```bash
-MPLBACKEND=Agg .venv/bin/python -c "
-import importlib.util, os
-os.environ['HYPERTOOLS_OFFLINE'] = '1'
-spec = importlib.util.spec_from_file_location('m', 'examples/animate_weather_decades.py')
-m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
-print('imported with no fetch; has', [n for n in ('construct_artifact', 'fixture_data') if hasattr(m, n)])
-anim = m.construct_artifact(m.fixture_data()); print('frames:', anim.n_frames)"
-```
-
-Expected: it imports without touching the network and prints both names plus a frame count. If the import fetches, a loader call is still at module scope.
-
 - [ ] **Step 1: Rewrite the example**
 
-Replace the body of `examples/animate_weather_decades.py`. **Step 0's loader/builder split is applied to the result of this step, not before it.**
+Replace the body of `examples/animate_weather_decades.py`. **Step 2's loader/builder split is applied to the result of this step, not before it.**
 
 ```python
 # -*- coding: utf-8 -*-
@@ -1498,7 +1507,7 @@ print(f'weather: {temps.shape[0]} months x {temps.shape[1]} cities ({source})')
 # THE hypertools call: twenty cities as twenty FEATURES of one path, coloured
 # by the average temperature across them on a blue-cold / red-hot scale.
 duration, fps = 8, 20
-fig, ani = hyp.plot(
+anim = hyp.plot(   # the WRAPPER, never `fig, ani = ...` -- Contract 8
     temps, '-',
     hue=temps.mean(axis=1), palette='RdBu_r',
     colorbar={'label': 'average temperature across '
@@ -1509,7 +1518,68 @@ fig, ani = hyp.plot(
     duration=duration, frame_rate=fps, size=(8, 7), show=False)
 ```
 
-- [ ] **Step 2: Run the example and confirm it renders**
+- [ ] **Step 2: Split the loader from the figure builder (Contract 4 / Task 8 Step 0b)**
+
+> **Ordering.** This step restructures the file the rewrite step above produces, so it comes
+> after it and never before. The prescribed rewrite blocks are monolithic — measured, not one of
+> the four defines `construct_artifact`, `fixture_data`, or a `__main__` guard — so a "replace the
+> file entirely" applied on top of a completed split would obliterate it, and every later step
+> would then call names that no longer exist. The task's sequence is
+> **rewrite → this split → verify → measure → commit**, and the steps below are numbered in that
+> order.
+
+Task 8 Step 0b defines the contract and works the whole pattern through on weather; this step applies it to `examples/animate_weather_decades.py`. Without it `test_examples_produce_their_stated_artifact` fails on this example, and importing it fetches.
+
+Produce exactly these four names in `examples/animate_weather_decades.py`:
+
+| name | signature | notes |
+|-|-|-|
+| payload | `class Weather(NamedTuple)` with fields `temps, cities, source` | `temps` is the months x cities array and `cities` its column names — the two halves of what `fetch_temperatures()` returns; `source` records which path was used |
+| loader | `load_weather() -> Weather` | the ONLY code here that may touch the network: `fetch_temperatures()`, falling back to `synthetic_temperatures()` |
+| fixture | `fixture_data() -> Weather` | `synthetic_temperatures()` alone — no network, no committed bytes |
+
+**These names are the rewrite's, not the current file's.** v3 specified `load_weather(cities=CITIES)` over `fetch_city_months` / `fetch_city_daily_temp` / `synthetic_city_months` — every one of them a symbol of the file Step 1 above *deletes*. The rewrite has `fetch_temperatures`, `synthetic_temperatures` and no `CITIES` at all. The worked split in Task 8 Step 0b has the same problem and carries the same correction.
+| builder | `construct_artifact(data) -> HyperAnimation` | everything else, reading `data.<field>` instead of module globals. **Returns the wrapper, never the unpacked pair** (Contract 8) |
+
+**The builder's exact shape.** Weather draws nothing after the call, so the tail is two lines:
+
+```python
+def construct_artifact(data):
+    """`data.monthly` / `data.daily` in, the animation out."""
+    temps = ...                             # unchanged, from `data.<field>`
+    anim = hyp.plot(temps, '-', ..., show=False)
+    return anim                             # the WRAPPER, not `fig, ani`
+```
+
+`return anim` is the whole point of Contract 8: `test_examples_produce_their_stated_artifact`
+calls `construct_artifact(fixture_data())` and reads `.n_frames` off the result, which a raw
+`FuncAnimation` does not have.
+
+Then move every loader CALL behind a `__main__` guard, and make each fetcher honour
+`HYPERTOOLS_OFFLINE` by raising:
+
+```python
+if __name__ == '__main__':
+    data = load_weather()
+    anim = construct_artifact(data)
+    fig = anim.figure
+```
+
+Verify before moving on:
+
+```bash
+MPLBACKEND=Agg .venv/bin/python -c "
+import importlib.util, os
+os.environ['HYPERTOOLS_OFFLINE'] = '1'
+spec = importlib.util.spec_from_file_location('m', 'examples/animate_weather_decades.py')
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+print('imported with no fetch; has', [n for n in ('construct_artifact', 'fixture_data') if hasattr(m, n)])
+anim = m.construct_artifact(m.fixture_data()); print('frames:', anim.n_frames)"
+```
+
+Expected: it imports without touching the network and prints both names plus a frame count. If the import fetches, a loader call is still at module scope.
+
+- [ ] **Step 3: Run the example and confirm it renders**
 
 Run: `MPLBACKEND=Agg .venv/bin/python examples/animate_weather_decades.py`
 
@@ -1519,14 +1589,14 @@ Expected: exits 0, no warnings, prints
 weather: 1645 months x 20 cities (HyperTools paper temperature archive)
 ```
 
-- [ ] **Step 3: Confirm the colour sweep and colorbar are real**
+- [ ] **Step 4: Confirm the colour sweep and colorbar are real**
 
 Run:
 
 ```bash
 MPLBACKEND=Agg .venv/bin/python - <<'PY'
 import numpy as np
-# Load the example WITHOUT running its loaders: after Step 0 every binding
+# Load the example WITHOUT running its loaders: after Step 2 every binding
 # lives inside construct_artifact()/__main__, and runpy.run_path does NOT set
 # __name__ to '__main__' (verified: it sets '<run_path>'), so ns['fig'] would
 # raise KeyError. Drive frames through the public draw_frame(), not ani._func.
@@ -1551,7 +1621,7 @@ PY
 
 Expected: `axes: 2`, **several hundred distinct colours** (879 measured for these exact parameters), and the title string. If `axes` is 1, the colorbar did not render and `colorbar=` is wrong.
 
-- [ ] **Step 4: Rewrite the notebook in lockstep**
+- [ ] **Step 5: Rewrite the notebook in lockstep**
 
 Rewrite `docs/tutorials/weather_decades.ipynb`, keeping cell 0 (Colab install) unchanged:
 
@@ -1568,7 +1638,7 @@ Rewrite `docs/tutorials/weather_decades.ipynb`, keeping cell 0 (Colab install) u
 | 8 | markdown | `## 4. Display the animation` |
 | 9 | code | `HTML(ani.to_jshtml())` |
 
-- [ ] **Step 5: Execute and measure**
+- [ ] **Step 6: Execute and measure**
 
 ```bash
 .venv/bin/python scripts/execute_tutorial.py docs/tutorials/weather_decades.ipynb
@@ -1576,9 +1646,9 @@ Rewrite `docs/tutorials/weather_decades.ipynb`, keeping cell 0 (Colab install) u
     examples/animate_weather_decades.py docs/tutorials/weather_decades.ipynb
 ```
 
-Expected: both files inside budget (**≤ 77 / ≤ 82 code lines**) -- the rewrite alone measures 56, and 56 + 15 = 71 ≤ 77. (This line said `≤ 62` while the AFTER line and the enforced `SCRIPT_BUDGETS` both said 77: a file that measures 71 could not satisfy it. The unsatisfiable-gate class, reintroduced in the one place the fix was not propagated.) Record the measured visible-output index set into `EXPECTED_VISIBLE_OUTPUTS` (see Task 2's measure step for the Task-8-first ordering this requires) rather than asserting a predicted count — v2's `4/5` named cells 3/5/7/9, and the real emitting cells are a different set entirely.
+Expected: both files inside budget (**≤ 75 / ≤ 80 code lines**) -- the rewrite measures 56 and the split 73, both measured. (This line said `≤ 62` while the AFTER line and the enforced `SCRIPT_BUDGETS` both said 77: a file that measures 71 could not satisfy it. The unsatisfiable-gate class, reintroduced in the one place the fix was not propagated.) Record the measured visible-output index set into `EXPECTED_VISIBLE_OUTPUTS` (see Task 2's measure step for the Task-8-first ordering this requires) rather than asserting a predicted count — v2's `4/5` named cells 3/5/7/9, and the real emitting cells are a different set entirely.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add examples/animate_weather_decades.py docs/tutorials/weather_decades.ipynb
@@ -1598,7 +1668,7 @@ git commit -m "docs(gallery): weather example is the paper figure in one native 
 
 Audit classification (unchanged): A=97 **B=25 C=6** D=13 NATIVE=8.
 
-**AFTER (contracted budget):** script **≤ 133 code lines** (118 + 15 placeholder); notebook **≤ 138** (= 133 + 5); **zero** defect markers. The rewrite alone measures 111. Paintings has TWO fetch sites, so its real split overhead is likely above weather's 15 — measure it in Step 0c. (The budget is generous because the `PAINTINGS` dict alone is ~54 lines of genuine class-**A** data.) **v2 set the notebook at 110 — BELOW the script's 118 — which no correct notebook could satisfy.**
+**AFTER (contracted budget):** script **≤ 140 code lines**; notebook **≤ 145** (= 140 + 5); **zero** defect markers. **Measured, not projected** (2026-08-04): the rewrite above, with the retained `PAINTINGS` dict spliced back in, is **112** code lines and the split takes it to **135** (+23 — the largest of the five, as predicted, because this example has two fetch sites and a four-field payload), rounded up to the next multiple of 5. **The placeholder budget of 133 was UNATTAINABLE**: the file the plan prescribes measures 135. That is the unsatisfiable-gate class this plan twice claims to have eliminated, surviving in the one number nobody had measured.
 
 The notebook budget is DERIVED, not written down: `script_budget + NOTEBOOK_OVERHEAD` (Contract 6b), so it can never again be set below its own script's. No ratio floor — ratio is reported, never gated (Contract 6a).
 
@@ -1617,52 +1687,9 @@ The download-and-cache half of `canvas_color` **stays** (class **A**, textbook: 
 
 **Files:** rewrite `examples/animate_painting_embeddings.py`; rewrite `docs/tutorials/painting_embeddings.ipynb`.
 
-- [ ] **Step 0: Split the loader from the figure builder (Contract 4 / Step 0b) — DO THIS *AFTER* THE REWRITE STEP BELOW**
-
-> **Ordering, and it is not cosmetic.** This step restructures the file the rewrite step produces.
-> Run it first and the rewrite deletes it: the prescribed rewrite blocks are monolithic — measured,
-> not one of the four defines `construct_artifact`, `fixture_data`, or a `__main__` guard — so a
-> "replace the file entirely" applied on top of a completed split obliterates it, and every later
-> step then calls names that no longer exist. Sequence for this task is therefore:
-> **rewrite → this split → verify → measure → commit.**
-
-**Do this FIRST, before the rewrite below.** Task 8 Step 0b defines the contract and works the whole pattern through on weather; this step applies it to `examples/animate_painting_embeddings.py`. Without it `test_examples_produce_their_stated_artifact` fails on this example, and importing it fetches.
-
-Produce exactly these three names in `examples/animate_painting_embeddings.py`:
-
-| name | signature | notes |
-|-|-|-|
-| payload | `class Paintings(NamedTuple)` with fields `vectors, owners, colors, source` | self-documenting; `source` records which path was used |
-| loader | `load_paintings(PAINTINGS) -> Paintings` | the ONLY code here that may touch the network (canvas_color, the SentenceTransformer load) |
-| fixture | `fixture_data() -> Paintings` | the one committed 1.7 KB 64-px thumbnail, `examples/data/painting_palette_fixture.png`, named by the module constant `PALETTE_FIXTURE`. This is the ONLY committed fixture byte in the plan; the other four examples reuse their seeded synthetic fallbacks. |
-| builder | `construct_artifact(data) -> HyperAnimation` | everything else, reading `data.<field>` instead of module globals. **Returns the wrapper, never the unpacked pair** (Contract 8) |
-
-Then move every loader CALL behind a `__main__` guard, and make each fetcher honour `HYPERTOOLS_OFFLINE` by raising:
-
-```python
-if __name__ == '__main__':
-    data = load_paintings()
-    anim = construct_artifact(data)
-    fig = anim.figure
-```
-
-Verify before moving on:
-
-```bash
-MPLBACKEND=Agg .venv/bin/python -c "
-import importlib.util, os
-os.environ['HYPERTOOLS_OFFLINE'] = '1'
-spec = importlib.util.spec_from_file_location('m', 'examples/animate_painting_embeddings.py')
-m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
-print('imported with no fetch; has', [n for n in ('construct_artifact', 'fixture_data') if hasattr(m, n)])
-anim = m.construct_artifact(m.fixture_data()); print('frames:', anim.n_frames)"
-```
-
-Expected: it imports without touching the network and prints both names plus a frame count. If the import fetches, a loader call is still at module scope.
-
 - [ ] **Step 1: Rewrite the example**
 
-Keep the `PAINTINGS` dict verbatim (lines 43-96 of the current file) and replace everything else. **Step 0's loader/builder split is applied to the result of this step, not before it.** The new body:
+Keep the `PAINTINGS` dict verbatim (lines 43-96 of the current file) and replace everything else. **Step 2's loader/builder split is applied to the result of this step, not before it.** The new body:
 
 ```python
 # -*- coding: utf-8 -*-
@@ -1772,7 +1799,7 @@ print(f'paintings: {len(names)}, '
 # together, min_dist=0.25 lets a clump pack closely, random_state=42 fixes
 # the stochastic layout.
 duration, fps = 12, 20
-fig, ani = hyp.plot(
+anim = hyp.plot(   # the WRAPPER, never `fig, ani = ...` -- Contract 8
     descriptions, '.',
     vectorizer='all-MiniLM-L6-v2', semantic=None, corpus=None,
     reduce={'model': 'UMAP', 'kwargs': {'n_neighbors': 12, 'min_dist': 0.25,
@@ -1783,6 +1810,7 @@ fig, ani = hyp.plot(
     duration=duration, frame_rate=fps, size=(13, 9), show=False)
 
 # the descriptions that were actually embedded, each in its cloud's colour
+fig = anim.figure
 ax = fig.axes[0]
 ax.set_position([0.0, 0.0, 0.52, 1.0])
 for i, name in enumerate(names):
@@ -1795,7 +1823,69 @@ for i, name in enumerate(names):
              color=color)
 ```
 
-- [ ] **Step 2: Run the example and confirm it renders**
+- [ ] **Step 2: Split the loader from the figure builder (Contract 4 / Task 8 Step 0b)**
+
+> **Ordering.** This step restructures the file the rewrite step above produces, so it comes
+> after it and never before. The prescribed rewrite blocks are monolithic — measured, not one of
+> the four defines `construct_artifact`, `fixture_data`, or a `__main__` guard — so a "replace the
+> file entirely" applied on top of a completed split would obliterate it, and every later step
+> would then call names that no longer exist. The task's sequence is
+> **rewrite → this split → verify → measure → commit**, and the steps below are numbered in that
+> order.
+
+Task 8 Step 0b defines the contract and works the whole pattern through on weather; this step applies it to `examples/animate_painting_embeddings.py`. Without it `test_examples_produce_their_stated_artifact` fails on this example, and importing it fetches.
+
+Produce exactly these four names in `examples/animate_painting_embeddings.py`:
+
+| name | signature | notes |
+|-|-|-|
+| payload | `class Paintings(NamedTuple)` with fields `names, descriptions, colors, source` | **not** `vectors` — the rewrite passes TEXT to `hyp.plot(vectorizer=...)` and never holds an embedding, so a `vectors` field would have nothing to put in it. `descriptions` is the per-painting window list; `source` records which path was used |
+| loader | `load_paintings(paintings=PAINTINGS) -> Paintings` | the ONLY code here that may touch the network for the CANVASES (`canvas_color`). See the note below about the embedding model, which this cannot cover |
+| fixture | `fixture_data() -> Paintings` | the one committed 1.7 KB 64-px thumbnail, `examples/data/painting_palette_fixture.png`, named by the module constant `PALETTE_FIXTURE`. This is the ONLY committed fixture byte in the plan; the other four examples reuse their seeded synthetic fallbacks. |
+| builder | `construct_artifact(data) -> HyperAnimation` | everything else, reading `data.<field>` instead of module globals. **Returns the wrapper, never the unpacked pair** (Contract 8) |
+
+**The builder's exact shape.** The description panel needs the figure, so bind it from the
+wrapper rather than from an unpacked pair:
+
+```python
+def construct_artifact(data):
+    """`data.vectors` / `data.colors` in, the animation out."""
+    anim = hyp.plot(descriptions, '.', ..., show=False)
+    fig = anim.figure                       # the description panel draws on it
+    ax = fig.axes[0]
+    ...                                     # the fig.text() block, unchanged
+    return anim                             # the WRAPPER, not `fig, ani`
+```
+
+`return anim` is the whole point of Contract 8: `test_examples_produce_their_stated_artifact`
+calls `construct_artifact(fixture_data())` and reads `.n_frames` off the result, which a raw
+`FuncAnimation` does not have.
+
+Then move every loader CALL behind a `__main__` guard, and make each fetcher honour
+`HYPERTOOLS_OFFLINE` by raising:
+
+```python
+if __name__ == '__main__':
+    data = load_paintings()
+    anim = construct_artifact(data)
+    fig = anim.figure
+```
+
+Verify before moving on:
+
+```bash
+MPLBACKEND=Agg .venv/bin/python -c "
+import importlib.util, os
+os.environ['HYPERTOOLS_OFFLINE'] = '1'
+spec = importlib.util.spec_from_file_location('m', 'examples/animate_painting_embeddings.py')
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+print('imported with no fetch; has', [n for n in ('construct_artifact', 'fixture_data') if hasattr(m, n)])
+anim = m.construct_artifact(m.fixture_data()); print('frames:', anim.n_frames)"
+```
+
+Expected: it imports without touching the network and prints both names plus a frame count. If the import fetches, a loader call is still at module scope.
+
+- [ ] **Step 3: Run the example and confirm it renders**
 
 Run: `MPLBACKEND=Agg .venv/bin/python examples/animate_painting_embeddings.py`
 
@@ -1819,14 +1909,14 @@ except ImportError:
 ```
 and pass `vectorizer=VECTORIZER`. That is 4 lines of graceful degradation using **only** documented kwargs — it is not a re-implementation, and it keeps the offline property Contract 4 requires.
 
-- [ ] **Step 3: Confirm the colour is the vivid one, not the background**
+- [ ] **Step 4: Confirm the colour is the vivid one, not the background**
 
 Run:
 
 ```bash
 MPLBACKEND=Agg .venv/bin/python - <<'PY'
 import numpy as np
-# Load the example WITHOUT running its loaders: after Step 0 every binding
+# Load the example WITHOUT running its loaders: after Step 2 every binding
 # lives inside construct_artifact()/__main__, and runpy.run_path does NOT set
 # __name__ to '__main__' (verified: it sets '<run_path>'), so ns['fig'] would
 # raise KeyError. Drive frames through the public draw_frame(), not ani._func.
@@ -1847,7 +1937,7 @@ PY
 
 Expected: five colours, each with **chroma > 0.10** for any painting whose image was fetched. A chroma near zero means the extraction returned a grey/beige — i.e. the salience ordering regressed, or the fallback hex was used because the download failed. Distinguish the two by checking `ls $TMPDIR/hypertools_gallery_cache/paint_*.jpg`.
 
-- [ ] **Step 4: Rewrite the notebook in lockstep**
+- [ ] **Step 5: Rewrite the notebook in lockstep**
 
 Rewrite `docs/tutorials/painting_embeddings.ipynb`, keeping cell 0 unchanged:
 
@@ -1866,7 +1956,7 @@ Rewrite `docs/tutorials/painting_embeddings.ipynb`, keeping cell 0 unchanged:
 | 10 | markdown | `## 5. Display the animation` |
 | 11 | code | `HTML(ani.to_jshtml())` |
 
-- [ ] **Step 5: Execute and measure**
+- [ ] **Step 6: Execute and measure**
 
 ```bash
 .venv/bin/python scripts/execute_tutorial.py docs/tutorials/painting_embeddings.ipynb
@@ -1874,9 +1964,9 @@ Rewrite `docs/tutorials/painting_embeddings.ipynb`, keeping cell 0 unchanged:
     examples/animate_painting_embeddings.py docs/tutorials/painting_embeddings.ipynb
 ```
 
-Expected: both files inside budget (**≤ 133 / ≤ 138 code lines**) -- the rewrite measures 111, plus the split. Paintings has TWO fetch sites, so measure its real overhead here rather than assuming 15. Record the measured visible-output index set into `EXPECTED_VISIBLE_OUTPUTS` (see Task 2's measure step for the Task-8-first ordering this requires); do not assert a predicted count.
+Expected: both files inside budget (**≤ 140 / ≤ 145 code lines**) -- the rewrite measures 112 and the split 135, both measured. Record the measured visible-output index set into `EXPECTED_VISIBLE_OUTPUTS` (see Task 2's measure step for the Task-8-first ordering this requires); do not assert a predicted count.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 # the fixture PNG is new and binary; an untracked file in the sdist fails
@@ -1903,7 +1993,7 @@ Audit classification (unchanged): A=61 **B=31 C=49** D=40 NATIVE=9.
 
 **Note for the defect-marker gate:** as with weather, this file's docstring names `` `ani._func` `` while explaining its removal. Documentation, not a reach.
 
-**AFTER (contracted budget):** script **≤ 105 code lines** (90 + 15 placeholder); notebook **≤ 110** (= 105 + 5); **zero** defect markers. The rewrite alone measures 88. (The `TURNS` list alone is 29 lines of class-**A** data.) **v2 said 72 here in prose while its enforced `BUDGETS` dict already said 90, and set the notebook at 76 — BELOW the script's — which no correct notebook could satisfy.**
+**AFTER (contracted budget):** script **≤ 110 code lines**; notebook **≤ 115** (= 110 + 5); **zero** defect markers. **Measured, not projected** (2026-08-04): the rewrite above, with the retained `SPEAKER_COLOR`/`TURNS` head, is **88** code lines and the split takes it to **106** (+18), rounded up to the next multiple of 5. **The placeholder budget of 105 was UNATTAINABLE by one line.** (The `TURNS` list alone is 29 lines of class-**A** data.)
 
 The notebook budget is DERIVED, not written down: `script_budget + NOTEBOOK_OVERHEAD` (Contract 6b), so it can never again be set below its own script's. No ratio floor — ratio is reported, never gated (Contract 6a).
 
@@ -1923,52 +2013,9 @@ The `word_spans` window helper collapses to a plain `windows()` (the span bookke
 
 **Files:** rewrite `examples/animate_conversation.py`; rewrite `docs/tutorials/conversation_shape.ipynb`.
 
-- [ ] **Step 0: Split the loader from the figure builder (Contract 4 / Step 0b) — DO THIS *AFTER* THE REWRITE STEP BELOW**
-
-> **Ordering, and it is not cosmetic.** This step restructures the file the rewrite step produces.
-> Run it first and the rewrite deletes it: the prescribed rewrite blocks are monolithic — measured,
-> not one of the four defines `construct_artifact`, `fixture_data`, or a `__main__` guard — so a
-> "replace the file entirely" applied on top of a completed split obliterates it, and every later
-> step then calls names that no longer exist. Sequence for this task is therefore:
-> **rewrite → this split → verify → measure → commit.**
-
-**Do this FIRST, before the rewrite below.** Task 8 Step 0b defines the contract and works the whole pattern through on weather; this step applies it to `examples/animate_conversation.py`. Without it `test_examples_produce_their_stated_artifact` fails on this example, and importing it fetches.
-
-Produce exactly these three names in `examples/animate_conversation.py`:
-
-| name | signature | notes |
-|-|-|-|
-| payload | `class Conversation(NamedTuple)` with fields `vectors, speakers, spans, source` | self-documenting; `source` records which path was used |
-| loader | `embed_turns(TURNS) -> Conversation` | the ONLY code here that may touch the network (the SentenceTransformer load) |
-| fixture | `fixture_data() -> Conversation` | the TF-IDF branch, already a deterministic real sklearn fit — no network, no committed bytes unless stated |
-| builder | `construct_artifact(data) -> HyperAnimation` | everything else, reading `data.<field>` instead of module globals. **Returns the wrapper, never the unpacked pair** (Contract 8) |
-
-Then move every loader CALL behind a `__main__` guard, and make each fetcher honour `HYPERTOOLS_OFFLINE` by raising:
-
-```python
-if __name__ == '__main__':
-    data = embed_turns()
-    anim = construct_artifact(data)
-    fig = anim.figure
-```
-
-Verify before moving on:
-
-```bash
-MPLBACKEND=Agg .venv/bin/python -c "
-import importlib.util, os
-os.environ['HYPERTOOLS_OFFLINE'] = '1'
-spec = importlib.util.spec_from_file_location('m', 'examples/animate_conversation.py')
-m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
-print('imported with no fetch; has', [n for n in ('construct_artifact', 'fixture_data') if hasattr(m, n)])
-anim = m.construct_artifact(m.fixture_data()); print('frames:', anim.n_frames)"
-```
-
-Expected: it imports without touching the network and prints both names plus a frame count. If the import fetches, a loader call is still at module scope.
-
 - [ ] **Step 1: Rewrite the example**
 
-Keep `SPEAKER_COLOR` and the `TURNS` list verbatim (lines 44-85). Replace everything below. **Step 0's loader/builder split is applied to the result of this step, not before it.**
+Keep `SPEAKER_COLOR` and the `TURNS` list verbatim (lines 44-85). Replace everything below. **Step 2's loader/builder split is applied to the result of this step, not before it.**
 
 ```python
 WINDOW, STEP, MIN_WINDOWS = 6, 2, 3
@@ -2005,8 +2052,8 @@ print(f'conversation: {len(TURNS)} turns, {len(speakers)} speakers, '
 # reveal schedule it renders from.
 duration, fps = 12, 16
 FLOOR, DECAY = 0.10, 0.45
-fig, ani = hyp.plot(
-    turns, '-',
+anim = hyp.plot(   # the WRAPPER: `.on_frame()` below lives on it, not on
+    turns, '-',    # the `FuncAnimation` that `fig, ani = ...` would give
     vectorizer='all-MiniLM-L6-v2', semantic=None, corpus=None,
     reduce={'model': 'UMAP', 'kwargs': {'n_neighbors': 8, 'min_dist': 0.5,
                                         'random_state': 1}},
@@ -2077,19 +2124,89 @@ def recency_fade(ctx):
         trail.set_alpha(0.3 * alpha)
 
 
-ani.on_frame(recency_fade)
+anim.on_frame(recency_fade)
 ```
 
 **Why not a general head/trail mapping.** `FrameContext` publishes artists as a flat tuple with a documented order, not as a role-tagged mapping. Making the split general — every backend branch populating per-role, per-dataset artist groups identically — is a public-API expansion, and it is not needed for this example: the plot sets `chemtrails=True` for every dataset, so the layout is known and the guard above proves it at runtime. If a future example needs a mix of trailed and untrailed datasets in one plot, that is when the richer metadata earns its cost.
 
 > **Interface check before writing this:** `FrameContext` is defined in animation-core Task 7 (`hypertools/plot/animation_context.py`) with the fields `current_index`, `revealed_counts` and `artists`, and `HyperAnimation.on_frame()` registers against the shared `FrameHooks` registry that `plot()` created (animation-core contract #3). If any field is named differently when Task 7 lands, follow the implemented names — do not add a shim here.
 
-- [ ] **Step 2: Run the example and confirm it renders**
+- [ ] **Step 2: Split the loader from the figure builder (Contract 4 / Task 8 Step 0b)**
+
+> **Ordering.** This step restructures the file the rewrite step above produces, so it comes
+> after it and never before. The prescribed rewrite blocks are monolithic — measured, not one of
+> the four defines `construct_artifact`, `fixture_data`, or a `__main__` guard — so a "replace the
+> file entirely" applied on top of a completed split would obliterate it, and every later step
+> would then call names that no longer exist. The task's sequence is
+> **rewrite → this split → verify → measure → commit**, and the steps below are numbered in that
+> order.
+
+Task 8 Step 0b defines the contract and works the whole pattern through on weather; this step applies it to `examples/animate_conversation.py`. Without it `test_examples_produce_their_stated_artifact` fails on this example, and importing it fetches.
+
+Produce exactly these four names in `examples/animate_conversation.py`:
+
+| name | signature | notes |
+|-|-|-|
+| payload | `class Conversation(NamedTuple)` with fields `turns, speakers, vectorizer, source` | **not** `vectors`/`spans` — the rewrite passes TEXT to `hyp.plot(vectorizer=...)` and never holds an embedding. `vectorizer` is in the payload deliberately; see the note below |
+| loader | `embed_turns(spec=TURNS, vectorizer='all-MiniLM-L6-v2') -> Conversation` | windows each turn and names the vectorizer the figure should use |
+| fixture | `fixture_data() -> Conversation` | `embed_turns(TURNS, 'TfidfVectorizer')` — a deterministic real sklearn fit, no model download |
+
+> **Unresolved, and a maintainer call.** Contract 4 says the loader is the only code that may touch the network, but for this example and paintings the network access is the **embedding model download**, and that happens inside `hyp.plot(vectorizer='all-MiniLM-L6-v2')` — i.e. inside `construct_artifact`, not the loader. So `construct_artifact(fixture_data())` would still try to fetch unless the fixture can force the offline vectorizer. Carrying `vectorizer` in the payload is the smallest fix that makes Contract 4 true rather than merely stated, and it is what the table above assumes. If you would rather keep the payload purely about data, the alternative is to embed in the loader and pass arrays to `hyp.plot` — which costs the example its `vectorizer=` demonstration, the thing it exists to show. Decide before implementing; do not leave the contract stating something the code does not do.
+| builder | `construct_artifact(data) -> HyperAnimation` | everything else, reading `data.<field>` instead of module globals. **Returns the wrapper, never the unpacked pair** (Contract 8) |
+
+**The builder's exact shape — and this is the one that breaks if you get it wrong.**
+`.on_frame()` lives on the `HyperAnimation`, not on the `FuncAnimation` inside it, so the tail
+must register the callback on the bound wrapper:
+
+```python
+def construct_artifact(data):
+    """`data.vectors` / `data.speakers` / `data.spans` in, the animation out."""
+    anim = hyp.plot(turns, '-', ..., show=False)
+
+    def recency_fade(ctx):
+        ...                                 # unchanged
+
+    anim.on_frame(recency_fade)             # NOT `ani.on_frame(...)`: with
+                                            # `fig, ani = hyp.plot(...)` that is
+                                            # an AttributeError on a raw
+                                            # FuncAnimation, and nbclient halts
+    return anim                             # the WRAPPER, not `fig, ani`
+```
+
+`return anim` is the whole point of Contract 8: `test_examples_produce_their_stated_artifact`
+calls `construct_artifact(fixture_data())` and reads `.n_frames` off the result, which a raw
+`FuncAnimation` does not have.
+
+Then move every loader CALL behind a `__main__` guard, and make each fetcher honour
+`HYPERTOOLS_OFFLINE` by raising:
+
+```python
+if __name__ == '__main__':
+    data = embed_turns()
+    anim = construct_artifact(data)
+    fig = anim.figure
+```
+
+Verify before moving on:
+
+```bash
+MPLBACKEND=Agg .venv/bin/python -c "
+import importlib.util, os
+os.environ['HYPERTOOLS_OFFLINE'] = '1'
+spec = importlib.util.spec_from_file_location('m', 'examples/animate_conversation.py')
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+print('imported with no fetch; has', [n for n in ('construct_artifact', 'fixture_data') if hasattr(m, n)])
+anim = m.construct_artifact(m.fixture_data()); print('frames:', anim.n_frames)"
+```
+
+Expected: it imports without touching the network and prints both names plus a frame count. If the import fetches, a loader call is still at module scope.
+
+- [ ] **Step 3: Run the example and confirm it renders**
 
 Run: `MPLBACKEND=Agg .venv/bin/python examples/animate_conversation.py`
 Expected: exits 0, prints `conversation: 28 turns, 4 speakers, NNN windows`, no warnings.
 
-- [ ] **Step 2a: Write the callback's tests**
+- [ ] **Step 3a: Write the callback's tests**
 
 The head/trail split is the part that was wrong in v1 and the part a future edit is most likely to break, so it gets real tests rather than an eyeball check. Create `tests/plot/test_recency_fade.py`:
 
@@ -2260,7 +2377,7 @@ def test_a_single_point_turn_stays_invisible(example):
     assert ctx.artists[1].get_alpha() == 0.0
 ```
 
-- [ ] **Step 2b: Run the callback's tests**
+- [ ] **Step 3b: Run the callback's tests**
 
 Run: `.venv/bin/python -m pytest tests/plot/test_recency_fade.py -v`
 
@@ -2280,13 +2397,13 @@ Expected: **12 passed**, derived from the block above (8 `def test_` functions, 
 
 `DATASET_COUNTS` deliberately does **not** have to track the example: `recency_fade` is dataset-count agnostic and the fixture parametrises over 1, 6 and 28 to prove it. What *does* have to be checked against the real example is that 28 is still its FINAL drawn dataset count — `hue=` reshapes, so confirm with `len(ctx.revealed_counts)` from the Step 3 script below and update the tuple if the example's turn count changes.
 
-- [ ] **Step 3: Confirm the reveal, the legend and the titles**
+- [ ] **Step 4: Confirm the reveal, the legend and the titles**
 
 Run:
 
 ```bash
 MPLBACKEND=Agg .venv/bin/python - <<'PY'
-# Load the example WITHOUT running its loaders: after Step 0 every binding
+# Load the example WITHOUT running its loaders: after Step 2 every binding
 # lives inside construct_artifact()/__main__, and runpy.run_path does NOT set
 # __name__ to '__main__' (verified: it sets '<run_path>'), so ns['fig'] would
 # raise KeyError. Drive frames through the public draw_frame(), not ani._func.
@@ -2316,7 +2433,7 @@ PY
 
 Expected: the legend has exactly **4 entries** in first-appearance order (`Alice`, `March Hare`, `Hatter`, `Dormouse`); the four titles are **different** and each begins with a speaker name; and at least three distinct alpha values are present (the fade is working). If every title is identical, `title=` did not receive the per-segment list — check `order='serial'` reached `_validate_title`.
 
-- [ ] **Step 4: Rewrite the notebook in lockstep**
+- [ ] **Step 5: Rewrite the notebook in lockstep**
 
 Rewrite `docs/tutorials/conversation_shape.ipynb`, keeping cell 0 unchanged:
 
@@ -2331,11 +2448,11 @@ Rewrite `docs/tutorials/conversation_shape.ipynb`, keeping cell 0 unchanged:
 | 6 | markdown | `## 3. One call: text in, a serial reveal out` — name each kwarg's job, and that `title=` takes one string per turn for serial-style animations |
 | 7 | code | the `hyp.plot(...)` call |
 | 8 | markdown | `## 4. The one bespoke effect: a recency fade, on the public hook` |
-| 9 | code | `recency_fade` + `ani.on_frame(recency_fade)` |
+| 9 | code | `recency_fade` + `anim.on_frame(recency_fade)` — on the WRAPPER; `ani.on_frame(...)` is the `AttributeError` Contract 8 exists to prevent |
 | 10 | markdown | `## 5. Display the animation` |
 | 11 | code | `HTML(ani.to_jshtml())` |
 
-- [ ] **Step 5: Execute and measure**
+- [ ] **Step 6: Execute and measure**
 
 ```bash
 .venv/bin/python scripts/execute_tutorial.py docs/tutorials/conversation_shape.ipynb
@@ -2343,9 +2460,9 @@ Rewrite `docs/tutorials/conversation_shape.ipynb`, keeping cell 0 unchanged:
     examples/animate_conversation.py docs/tutorials/conversation_shape.ipynb
 ```
 
-Expected: both files inside budget (**≤ 105 / ≤ 110 code lines**) -- the rewrite measures 88, plus the split. Record the measured visible-output index set into `EXPECTED_VISIBLE_OUTPUTS` (see Task 2's measure step for the Task-8-first ordering this requires); do not assert a predicted count.
+Expected: both files inside budget (**≤ 110 / ≤ 115 code lines**) -- the rewrite measures 88 and the split 106, both measured. Record the measured visible-output index set into `EXPECTED_VISIBLE_OUTPUTS` (see Task 2's measure step for the Task-8-first ordering this requires); do not assert a predicted count.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 # tests/plot/test_recency_fade.py is CREATED by this task (Step 4). An
@@ -2370,7 +2487,7 @@ git commit -m "docs(gallery): conversation example uses native text, order='seri
 | `examples/animate_morph_zoo.py` | 129 raw, 40 code, 6 native (15.0%) | **96 raw, 26 code, 6 native (23.1%)** | `d730a085` already deleted the workaround |
 | `docs/tutorials/morph_shapes_zoo.ipynb` | 45 code, 8 native (17.8%), "0 of 6 executed" | **46 code, 9 native (19.6%), 1 of 6 cells carries output** | the "0 executed" claim was never true |
 
-**AFTER (contracted budget):** script **≤ 45 code lines** (30 for the file + 15 placeholder for the Step 0b split); notebook **≤ 50** (= 45 + 5); **zero** defect markers. The script is at 26 today and needs only the split — plus an offline fallback for `hyp.load`, which is the one loader in the five that hard-fails rather than degrading. No ratio floor (Contract 6a).
+**AFTER (contracted budget):** script **≤ 45 code lines**; notebook **≤ 50** (= 45 + 5); **zero** defect markers. **Measured, not projected** (2026-08-04): the landed script is **26** code lines and the split takes it to **43** (+17), rounded up to the next multiple of 5. It needs only the split — plus an offline fallback for `hyp.load`, which is the one loader in the five that hard-fails rather than degrading. No ratio floor (Contract 6a).
 
 **Gate status today:** the script is **the only one of the five that already passes** both the defect-marker scan and its budget. The notebook fails on `ani._func` and `from hypertools.plot import morph`.
 
@@ -2414,10 +2531,10 @@ Both were run on 2026-08-02 and give exactly that. The landed code is **semantic
 # longer recomputes that schedule, and no longer has to know plot's default
 # azimuth.
 duration, fps = 12, 20
-fig, ani = hyp.plot(clouds, fmt='.', color='k', markersize=1.6,
-                    animate='morph', rotations=rotations, morph_samples=N,
-                    title=titles, duration=duration, frame_rate=fps,
-                    size=(6, 6), show=False)
+anim = hyp.plot(clouds, fmt='.', color='k', markersize=1.6,
+                animate='morph', rotations=rotations, morph_samples=N,
+                title=titles, duration=duration, frame_rate=fps,
+                size=(6, 6), show=False)   # the WRAPPER -- Contract 8
 ```
 
 Update the module docstring's second paragraph (`:14-22`) to describe the native feature rather than the workaround:
@@ -2430,27 +2547,44 @@ shape. Nothing here recomputes hypertools' morph schedule or reaches into
 its private modules.
 ```
 
-- [ ] **Step 0: Split the loader from the figure builder (Contract 4 / Step 0b) — DO THIS *AFTER* THE REWRITE STEP BELOW**
+- [ ] **Step 2: Split the loader from the figure builder (Contract 4 / Task 8 Step 0b)**
 
-> **Ordering, and it is not cosmetic.** This step restructures the file the rewrite step produces.
-> Run it first and the rewrite deletes it: the prescribed rewrite blocks are monolithic — measured,
-> not one of the four defines `construct_artifact`, `fixture_data`, or a `__main__` guard — so a
-> "replace the file entirely" applied on top of a completed split obliterates it, and every later
-> step then calls names that no longer exist. Sequence for this task is therefore:
-> **rewrite → this split → verify → measure → commit.**
+> **Ordering.** This step restructures the file the rewrite step above produces, so it comes
+> after it and never before. The prescribed rewrite blocks are monolithic — measured, not one of
+> the four defines `construct_artifact`, `fixture_data`, or a `__main__` guard — so a "replace the
+> file entirely" applied on top of a completed split would obliterate it, and every later step
+> would then call names that no longer exist. The task's sequence is
+> **rewrite → this split → verify → measure → commit**, and the steps below are numbered in that
+> order.
 
-**Do this FIRST, before the rewrite below.** Task 8 Step 0b defines the contract and works the whole pattern through on weather; this step applies it to `examples/animate_morph_zoo.py`. Without it `test_examples_produce_their_stated_artifact` fails on this example, and importing it fetches.
+Task 8 Step 0b defines the contract and works the whole pattern through on weather; this step applies it to `examples/animate_morph_zoo.py`. Without it `test_examples_produce_their_stated_artifact` fails on this example, and importing it fetches.
 
-Produce exactly these three names in `examples/animate_morph_zoo.py`:
+Produce exactly these four names in `examples/animate_morph_zoo.py`:
 
 | name | signature | notes |
 |-|-|-|
-| payload | `class Shapes(NamedTuple)` with fields `clouds, titles` | self-documenting; `source` records which path was used |
+| payload | `class Shapes(NamedTuple)` with fields `clouds, titles, source` | `source` records which path was used, as in the other four. v2 listed only `clouds, titles` while its note still described a `source` field; add the field rather than drop the note — `hyp.load` is the one loader here with no offline fallback, so recording which path produced the clouds matters more, not less. |
 | loader | `load_shapes(SHAPES, n=N) -> Shapes` | the ONLY code here that may touch the network (hyp.load -- which has NO offline fallback today and hard-fails, exit 1) |
 | fixture | `fixture_data() -> Shapes` | deterministic parametric clouds — no network, no committed bytes unless stated |
 | builder | `construct_artifact(data) -> HyperAnimation` | everything else, reading `data.<field>` instead of module globals. **Returns the wrapper, never the unpacked pair** (Contract 8) |
 
-Then move every loader CALL behind a `__main__` guard, and make each fetcher honour `HYPERTOOLS_OFFLINE` by raising:
+**The builder's exact shape.** Morph draws nothing after the call, so the tail is two lines:
+
+```python
+def construct_artifact(data):
+    """`data.clouds` / `data.titles` in, the animation out."""
+    anim = hyp.plot(data.clouds, fmt='.', ..., title=data.titles, show=False)
+    return anim                             # the WRAPPER, not `fig, ani`
+```
+
+`return anim` is the whole point of Contract 8: `test_examples_produce_their_stated_artifact`
+calls `construct_artifact(fixture_data())` and reads `.n_frames` off the result, which a raw
+`FuncAnimation` does not have. Note this task's Step 1 is ALREADY LANDED and the landed file
+still binds `fig, ani = hyp.plot(...)` at module scope — check it, and convert that binding as
+part of this step rather than assuming the migration already did it.
+
+Then move every loader CALL behind a `__main__` guard, and make each fetcher honour
+`HYPERTOOLS_OFFLINE` by raising:
 
 ```python
 if __name__ == '__main__':
@@ -2473,7 +2607,7 @@ anim = m.construct_artifact(m.fixture_data()); print('frames:', anim.n_frames)"
 
 Expected: it imports without touching the network and prints both names plus a frame count. If the import fetches, a loader call is still at module scope.
 
-- [ ] **Step 2: Run the example and confirm the titles track the schedule**
+- [ ] **Step 3: Run the example and confirm the titles track the schedule**
 
 ```bash
 MPLBACKEND=Agg .venv/bin/python examples/animate_morph_zoo.py
@@ -2507,7 +2641,7 @@ PY
 
 Expected: exits 0 and prints `frames checked: 240 | mismatches: 0 []`. Any mismatch means the native titles are not tracking `frame_to_segment`'s parity — that is animation-core Task 8's contract, so fix it there, not here.
 
-- [ ] **Step 3: Rewrite the notebook in lockstep**
+- [ ] **Step 4: Rewrite the notebook in lockstep**
 
 Rewrite `docs/tutorials/morph_shapes_zoo.ipynb`. The current cell 9 (24 lines of schedule recomputation and `_func` monkeypatching) is **deleted outright**, and its markdown heading (cell 8, `## 4. A title that tracks the current shape`) is folded into the plot cell's markdown:
 
@@ -2524,7 +2658,7 @@ Rewrite `docs/tutorials/morph_shapes_zoo.ipynb`. The current cell 9 (24 lines of
 | 8 | markdown | `## 4. Display (or save) the animation` |
 | 9 | code | `HTML(ani.to_jshtml())` / `# or: ani.save('morph_zoo.gif', fps=fps)` |
 
-- [ ] **Step 4: Execute and measure**
+- [ ] **Step 5: Execute and measure**
 
 ```bash
 .venv/bin/python scripts/execute_tutorial.py docs/tutorials/morph_shapes_zoo.ipynb
@@ -2532,9 +2666,9 @@ Rewrite `docs/tutorials/morph_shapes_zoo.ipynb`. The current cell 9 (24 lines of
     examples/animate_morph_zoo.py docs/tutorials/morph_shapes_zoo.ipynb
 ```
 
-Expected: both files inside budget (**≤ 45 / ≤ 50 code lines**) -- morph measures 26 today, plus the split. Record the measured visible-output index set into `EXPECTED_VISIBLE_OUTPUTS` (see Task 2's measure step for the Task-8-first ordering this requires); do not assert a predicted count.
+Expected: both files inside budget (**≤ 45 / ≤ 50 code lines**) -- morph measures 26 today and 43 split, both measured. Record the measured visible-output index set into `EXPECTED_VISIBLE_OUTPUTS` (see Task 2's measure step for the Task-8-first ordering this requires); do not assert a predicted count.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add examples/animate_morph_zoo.py docs/tutorials/morph_shapes_zoo.ipynb
@@ -2706,6 +2840,13 @@ Expected: every one of the eight has a **strictly higher** ratio than the audit'
 ---
 
 ## Task 8: Verification — measure it, and keep it measured
+
+> **On the `Step 0 / 0b / 0c` numbering here.** Tasks 2–6 had a `Step 0` that ran *after* Step 2,
+> which is why they were renumbered 1..N. These are different: 0, 0b, 0c, 1, 2, … is the order they
+> are executed in, so the names are unusual but nothing contradicts. They are left alone
+> deliberately — every cross-reference in this plan and in the other tasks' ordering notes cites
+> them by these names, and renaming would trade a cosmetic improvement for a real chance of a
+> dangling reference.
 
 - [ ] **Step 0: Give `HyperAnimation` the three accessors the gate needs**
 
@@ -2895,15 +3036,17 @@ fetch/load data  ->  load_<thing>()          # the ONLY code that may touch the 
                                              # OWN seeded synthetic fallback -- what tests drive
 ```
 
-**Required signatures, per example.** Each returns a `NamedTuple` so the fields are self-documenting:
+**Required signatures, per example.** Each returns a `NamedTuple` so the fields are self-documenting. **These are the POST-REWRITE names** — every earlier revision of this table named symbols of the files Tasks 2–6 delete (`FRED_IDS`, `fetch_fred`, `fetch_city_months`, `CITIES`), and a split written against a deleted symbol cannot be applied:
 
 | example | loader | payload fields | fixture bytes |
 |-|-|-|-|
-| `animate_weather_decades` | `load_weather(cities=CITIES)` | `Weather(monthly, daily, hemispheres, source)` | **0** — its own seeded `synthetic_city_months`/`synthetic_city_daily` |
-| `animate_market_forecast` | `load_market(ids=FRED_IDS)` | `Market(dates, prices, source)` | **0** — its own seeded `synthetic_basket()` |
-| `animate_conversation` | `embed_turns(TURNS)` | `Conversation(vectors, speakers, spans, source)` | **0** — the TF-IDF branch is a real `sklearn` fit, already deterministic |
-| `animate_painting_embeddings` | `load_paintings(PAINTINGS)` | `Paintings(vectors, owners, colors, source)` | **one 1.7 KB** 64-px thumbnail at `examples/data/painting_palette_fixture.png`, module constant `PALETTE_FIXTURE` (measured: 48 px = 1258 B, 64 px = 1744 B, 96 px = 2967 B) |
-| `animate_morph_zoo` | `load_shapes(SHAPES, n=N)` | `Shapes(clouds, titles)` | **0** — deterministic parametric clouds |
+| `animate_weather_decades` | `load_weather()` | `Weather(temps, cities, source)` | **0** — its own seeded `synthetic_temperatures()` |
+| `animate_market_forecast` | `load_market(sectors=SECTORS)` | `Market(prices, source)` | **0** — its own seeded `synthetic_prices()` |
+| `animate_conversation` | `embed_turns(spec=TURNS, vectorizer=...)` | `Conversation(turns, speakers, vectorizer, source)` | **0** — the TF-IDF branch is a real `sklearn` fit, already deterministic |
+| `animate_painting_embeddings` | `load_paintings(paintings=PAINTINGS)` | `Paintings(names, descriptions, colors, source)` | **one 1.7 KB** 64-px thumbnail at `examples/data/painting_palette_fixture.png`, module constant `PALETTE_FIXTURE` (measured: 48 px = 1258 B, 64 px = 1744 B, 96 px = 2967 B) |
+| `animate_morph_zoo` | `load_shapes(shapes=SHAPES, n=N)` | `Shapes(clouds, titles, source)` | **0** — deterministic parametric clouds |
+
+> **The worked weather split shown above is against the file as it stands TODAY, and Task 3 Step 1 replaces that file.** It is kept because it demonstrates the *pattern* end to end on real code — including the sphinx-gallery `__main__` check, which is real evidence. But its names (`fetch_city_months`, `fetch_city_daily_temp`, `CITIES`) do not survive the rewrite; the post-rewrite loader is `fetch_temperatures()` with a `synthetic_temperatures()` fallback, as in the table. The same applies to its **+15** overhead figure, which was measured on the 195-line current file: against the 56-line rewrite the real overhead is **+17**. Step 0c carries the measured numbers for all five.
 
 **`HYPERTOOLS_OFFLINE` has to be made real — nothing reads it today.** (`grep -rn HYPERTOOLS_OFFLINE examples/ hypertools/ scripts/ tests/` returns nothing.) Each fetcher gains one line at its top, so the variable actually does something:
 
@@ -2992,11 +3135,27 @@ if __name__ == '__main__':
 
 - [ ] **Step 0c: Renegotiate the budgets the split costs**
 
-The split is not free, and Contract 6 says a budget is renegotiated **in the plan**, never weakened in the test. Measured on weather: **+15 code lines** (195 → 210), being the `NamedTuple` (6), two `def` lines, `load_weather`'s scaffolding, and the 4-line `__main__` guard. That is ~24% of its 62-line budget.
+**This step is DONE — it was performed on 2026-08-04 and its results are already in `SCRIPT_BUDGETS`.** Verify rather than repeat, and only re-measure if you change what a task prescribes.
 
-So each of Tasks 2–6 raises its script budget by its own measured split overhead, and the notebook budget follows automatically (Contract 6b). **Measure it, do not copy weather's 15** — the overhead depends on how many loaders an example has and how big its payload is. Weather's is the worked figure; paintings has two fetch sites and morph has one, so theirs will differ.
+The split is not free, and Contract 6 says a budget is renegotiated **in the plan**, never weakened in the test. Every task's rewrite block was transcribed to a file, the split was applied to it, and both were measured with `measure()`:
 
-Record each measured overhead in `SCRIPT_BUDGETS` with a one-line comment naming it, exactly as the conversation entry already does.
+| file | rewrite | split | overhead | budget |
+|-|-|-|-|-|
+| market | 110 | 126 | +16 | 130 |
+| weather | 56 | 73 | +17 | 75 |
+| paintings | 112 | 135 | **+23** | 140 |
+| conversation | 88 | 106 | +18 | 110 |
+| morph | 26 | 43 | +17 | 45 |
+
+Three things this measurement found that the placeholder hid:
+
+1. **Paintings' 133 was unattainable** — the file this plan prescribes measures 135. Copying weather's +15 across is what produced it.
+2. **Conversation's 105 was short by one.**
+3. **Weather's own "+15 MEASURED" did not apply to weather.** It was measured on the file as it stands today (195 → 210), and Task 3 Step 1 *replaces* that file with a 56-line rewrite whose loaders are different functions entirely. Re-measured against the rewrite the overhead is **+17**. An overhead measured on the pre-rewrite file cannot be carried across the rewrite that deletes it — which is the same mistake, one level up, as copying it between files.
+
+The overhead is not constant, and the spread is explained: it scales with the payload's field count and the number of loader entry points, so paintings (two fetch sites, four fields) costs 44% more than market (one, two fields).
+
+To re-measure after changing a task: transcribe its rewrite block to a scratch file, apply the split, and run `.venv/bin/python scripts/measure_native_ratio.py <both files>`. Record the result in `SCRIPT_BUDGETS` with a one-line comment, and round the budget up to the next multiple of 5 — that rounding is the only allowance.
 
 - [ ] **Step 1: Commit the measurement**
 
@@ -3251,30 +3410,38 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 #: ever chosen by hand.
 NOTEBOOK_OVERHEAD = 5
 
-#: script path -> max code lines. Measured against the code this plan
-#: actually prescribes (see each task's AFTER line), never guessed ahead of
-#: it: market 109, weather 56, paintings 111, conversation 88, morph 26.
-#: EVERY figure here includes the Step 0b loader/builder split overhead,
-#: because the split is part of what each task delivers. Measured on
-#: weather: **+15** code lines (the NamedTuple 6, two def lines,
-#: load_weather's scaffolding, and the 4-line __main__ guard).
+#: script path -> max code lines. EVERY figure here is MEASURED, on
+#: 2026-08-04, against the exact code this plan prescribes: each task's
+#: rewrite block was transcribed to a file, the Step 0b loader/builder split
+#: was applied to it, and both were run through `measure()` below. No entry is
+#: projected, and none is weather's overhead carried across -- doing that is
+#: what made two of them unattainable.
 #:
-#: Weather's is measured. The other four are weather's +15 carried across as
-#: a PLACEHOLDER, and Step 0c replaces each with that file's own measured
-#: overhead -- an example with two fetch sites (paintings) or one
-#: (morph) will not cost the same as weather's two. Until a task measures
-#: its own, `test_file_is_within_its_size_budget` may fail for that file,
-#: and that failure is the instruction, exactly as with
-#: EXPECTED_VISIBLE_OUTPUTS. Do NOT satisfy it by trimming the split.
+#:      file            rewrite   split   overhead
+#:      market            110      126      +16
+#:      weather            56       73      +17
+#:      paintings         112      135      +23   (two fetch sites)
+#:      conversation       88      106      +18
+#:      morph              26       43      +17
+#:
+#: Each budget is the SPLIT figure rounded up to the next multiple of 5. That
+#: rounding is the entire allowance: at most 4 lines, for wording differences
+#: an implementer will legitimately introduce, and nothing else. A file that
+#: exceeds its budget has grown beyond what the plan prescribes.
+#:
+#: The two that changed and why: paintings' placeholder 133 was UNATTAINABLE
+#: (the prescribed file measures 135) and conversation's 105 was short by one
+#: (it measures 106). Weather's 77 came from a +15 measured on the file as it
+#: stands TODAY (195 -> 210), but Task 3 REPLACES that file; re-measured
+#: against the rewrite the overhead is +17 on a 56-line base, so 75.
+#: `test_file_is_within_its_size_budget` failing is still an instruction, not
+#: a licence to trim the split.
 SCRIPT_BUDGETS = {
-    'examples/animate_market_forecast.py': 130,   # 115 + 15 (placeholder)
-    'examples/animate_weather_decades.py': 77,    # 62 + 15 (MEASURED)
-    'examples/animate_painting_embeddings.py': 133,  # 118 + 15 (placeholder)
-    # 90, not v2's prose figure of 72: the prescribed rewrite measures 88
-    # code lines (87 at best, with `turn_alpha` inlined -- which was
-    # deliberately split OUT to fix the recency_fade Fatal).
-    'examples/animate_conversation.py': 105,      # 90 + 15 (placeholder)
-    'examples/animate_morph_zoo.py': 45,          # 30 + 15 (placeholder)
+    'examples/animate_market_forecast.py': 130,   # 126 measured -> 130
+    'examples/animate_weather_decades.py': 75,    # 73 measured -> 75
+    'examples/animate_painting_embeddings.py': 140,  # 135 measured -> 140
+    'examples/animate_conversation.py': 110,      # 106 measured -> 110
+    'examples/animate_morph_zoo.py': 45,          # 43 measured -> 45
 }
 
 #: script stem -> notebook, so the derivation below has something to pair.
@@ -4531,7 +4698,7 @@ Flagged rather than invented. Each states the options and the exact change to sw
 | Task 1 is library work, TDD, justified API, no largest-cluster bug | Task 1: **19** real tests written before the implementation; the API choice (one function + **two** interception points — `_get_palette`'s string branch at `colors.py:305-306` and `_seaborn_palette_arg` at `plot.py:113`) is justified against the consumers each serves; the ordering rule is `frac × chroma` with a documented achromatic fallback, and `test_a_vivid_minority_colour_beats_the_muted_background` asserts the exact colour (`0.863, 0.078, 0.078`) the buggy rule fails to produce. Both states were **run**: red = `ValueError: 'image:...' is not a valid palette name`, green = the prototype's measured output. |
 | Tasks 2–6 rewrite one example + its notebook each, in lockstep | Each task rewrites both, in one commit, and specifies the notebook's full cell table. Lockstep is enforced mechanically by `tests/test_examples_are_native.py`, which scans `.py` **and** `.ipynb`. |
 | Market = MultiIndex showcase, per-sector + market forecasts, colour by price, ticker panel, accuracy overall + per sector in the tutorial, `t=1` | Task 2: `(Market, Sector, Ticker)` columns over 24 verified tickers; 6 sector traces + 1 market-mean trace with hierarchy-derived widths; `hue=` nested one sequence per sector (MultiIndex T6 form 2); `predict='Kalman', t=1, forecast_trail=16`; a right-hand panel listing each sector's tickers and score; the accuracy loop is example code with a **measured** 210-fit / 7.3 s budget. |
-| Weather = the paper figure, nearly all native, a handful of lines | Task 3: one `hyp.plot` call, verified end to end today (0.3 s, no warnings, 2 axes, 879 distinct colours at frame 150); the 70-line second panel and the 26-line hand-built hierarchy are deleted; budget ≤ 77 code lines (62 pre-split). |
+| Weather = the paper figure, nearly all native, a handful of lines | Task 3: one `hyp.plot` call, verified end to end today (0.3 s, no warnings, 2 axes, 879 distinct colours at frame 150); the 70-line second panel and the 26-line hand-built hierarchy are deleted; budget ≤ 75 code lines (56 pre-split, 73 split — measured). |
 | Paintings = full `text` displayed, native embeddings, native palette, names via `labels=` | Task 4: the side panel renders `PAINTINGS[name]['text']` (not `blurb`); `vectorizer='all-MiniLM-L6-v2', semantic=None, corpus=None`; `color=[image_palette(path)[0] ...]` from Task 1; `labels=` nested, one non-None entry per cloud at its middle window — the per-observation semantics verified on real annotations. |
 | Conversation = native text, `animate='serial'` + `chemtrails`, per-segment titles | Task 5: list-of-lists of strings in; `animate=True, order='serial', chemtrails=True`; `title=[one per turn]`. The collision I feared (categorical hue collapsing 28 turns and breaking per-dataset titles) was **measured and disproved**: 6 datasets stay 6 datasets with a 3-entry legend. |
 | Morph = native per-segment titles, explicit `morph_samples`, keep the teapot, cube scaling, closed loop | Task 6: `title=titles` replaces the private `_morph` reach; `morph_samples=N` kept and now load-bearing; teapot, `CUBE_SCALE`, and `clouds.append(clouds[0])` all kept with the reasons restated. |
@@ -4546,7 +4713,7 @@ Flagged rather than invented. Each states the options and the exact change to sw
 
 **Type consistency.** `image_palette` returns `np.ndarray (k, 3)` float64 in `[0, 1]`, `k ≤ n_colors`, in every path (file, PIL, uint8 array, float array) — asserted by `test_returns_rgb_floats_in_the_unit_range` and `test_accepts_a_pil_image_and_a_numpy_array`. `_get_palette` still returns a list of RGB tuples for the `'image:'` branch, because it rebinds `palette` to a colour list and falls through to the existing list handling — so the short-list blending and the too-few-colours error are the same code paths as for any user-supplied list. `measure(path)` returns `(int, int)` and is imported by both the script's `__main__` and the test module, so there is exactly one implementation of the metric.
 
-**Task dependencies.** 1 → 4 (`image_palette`). 2–6 each depend on Plans 1–3 as tabulated. Task 2 Step 1 creates `scripts/execute_tutorial.py`, which Tasks 3–7 use; Task 8 Step 1 creates `scripts/measure_native_ratio.py`, which Tasks 2–7 use in their measure steps — **do Task 8 Step 1 first** if working strictly in order, as noted in Task 2 Step 6. Tasks 1 and 7 have no dependency on Plans 1–3 and can run in parallel with them.
+**Task dependencies.** 1 → 4 (`image_palette`). 2–6 each depend on Plans 1–3 as tabulated. Task 2 Step 1 creates `scripts/execute_tutorial.py`, which Tasks 3–7 use; Task 8 Step 0 adds `HyperAnimation.n_frames` / `.n_segments` / `.draw_frame`, which every task's split step and Task 5's confirmation step call; Task 8 Step 1 creates `scripts/measure_native_ratio.py`, which Tasks 2–7 use in their measure steps — **do Task 8 Steps 0–2 first** if working strictly in order, as noted in Task 2's measure step. Tasks 1 and 7 have no dependency on Plans 1–3 and can run in parallel with them.
 
 **Suite arithmetic.** Task 1 adds **19**; Task 5 adds **12**; Task 8 adds **148** (139 in `test_examples_are_native.py`, itemised in its Step 3 table, plus 9 in `test_hyper_animation_accessors.py`). Total **+179**. That is a DELTA; the absolute is whatever the suite measures when this plan starts, per Global Constraints. Verify each of the three by real collection rather than by this sum — the stated figure has been stale in every revision of this plan so far.
 
