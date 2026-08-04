@@ -131,15 +131,35 @@ one-line change. **These want a maintainer call before execution.**
 **Plans 1 and 2 have none left** — Plan 2's four were resolved in the round-3 review, Plan 1's four
 in the round-5 exchange. Both sets are recorded under *Standing decisions*.
 
-### Plan 3
+### Plan 3 — none left; all four settled by shipping
 
-- **Silent forecast drop under `hue=`/`cluster=`** (`plot.py:3999`) — keep silent, warn, or raise?
-  Implemented as status quo (silent) and pinned with a test.
-- **Throttling beyond memoization.** Memoization caps a 900-frame animation at ≤177 fits instead
-  of 2700 (~10 s vs ~146 s), but a 500-row history is ~440 ms per fit, so long series stay slow.
-  A `forecast_every=` default would be a product decision.
-- **`min_history`** — a 2-row history draws a degenerate flat stub in the opening frames.
-- **A finished dataset's forecast under `order='serial'`** — freeze (implemented), fade, or hide.
+Plan 3 has been executed and its forecast work released, so these are no longer
+open questions: each was resolved in code, documented, and pinned with a test.
+Verified against the tree at `a062f768`, not from memory:
+
+- **Silent forecast drop under `hue=`/`cluster=`** — resolved as **warn**, not silent.
+  Both refusals now name what happened and why: a continuous `hue=` (`plot.py:5007`) and an
+  animated regrouped plot (`plot.py:5056`). The `return_model=True` bundle carries the fit with
+  `drawn=False` and a `draw_reason` string, so a forecast that succeeded but could not be
+  rendered is still handed back. CHANGELOG entries at `:152` and `:169`.
+- **Throttling beyond memoization** — resolved as **memoization only, plus a projected-cost
+  warning**. No `forecast_every=` exists. `ForecastSchedule.__init__` times the first real fit
+  and, when the projection exceeds `slow_warning_seconds`, says how many fits are queued and
+  roughly how long they will take, explicitly framed as an order of magnitude rather than a
+  countdown. Sampling the reveal was rejected in the code comment's own words: it "would change
+  what is plotted."
+- **`min_history`** — resolved as `DEFAULT_MIN_HISTORY = 2` (`forecast.py:57`). A history shorter
+  than that yields `None` from `forecast_from_history`, and the artist is left EMPTY rather than
+  drawn as a degenerate stub — emptiness, not alpha, is how "nothing to draw" is said.
+- **A finished dataset's forecast under `order='serial'`** — resolved as **freeze**.
+  `ForecastSchedule.for_serial` holds a finished dataset's revealed count at its full history, so
+  its forecast stays drawn at the final value while later datasets reveal.
+
+**The one Plan 3-adjacent thing still outstanding** is the regrouped reveal + animated regrouped
+forecasts, which is now its own plan: `2026-08-03-hypertools-1.1-regrouped-reveal-and-forecasts.md`
+(v2, revised after review; not yet implemented). Its own named decisions R1-R5 live in that
+document — R1 (per-dataset reveal clock) was called by Jeremy on 2026-08-03; R2-R5 are recorded
+with the measurements behind them.
 
 ### Plan 4
 

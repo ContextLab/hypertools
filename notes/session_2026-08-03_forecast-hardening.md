@@ -153,6 +153,65 @@ Verified empirically before making the 2-D rule strict: every forecast
 reaching the resolver through `plot()` is 2-D, including one-feature input
 (`(20, 1)` in -> `(11, 1)` forecast), and at every `reduce=` setting.
 
+## Round 3 — regrouped-reveal plan v2
+
+The maintainer reviewed the plan written at the end of round 2 and found it
+**not implementable**: architectural direction right, several low-level
+contracts contradicting either the renderer or the plan's own guarantees.
+Three were fatal. v2 addresses all of them; the full mapping is the table at
+the top of the plan document.
+
+The three that mattered most, and what they turned out to be:
+
+- **Bridge rows.** `patch_lines` appends the NEXT run's first observation to
+  every bridged run, so that observation is on screen while `visible_rows`
+  reported only the preceding run's owned rows. v1 excluded the bridge from
+  ownership (correct) and then paced the DRAWN geometry with the OWNED span
+  (wrong), desynchronising every category boundary by one vertex. Fixed by
+  carrying `bridged_by_run` and separating `run_span` (owned) from
+  `draw_span` (`n_rows - 1 + bridged`, the rendered polyline).
+- **Two derivations of "what is on screen".** v1 computed run windows one way
+  and visible rows another; they can drift while each passes its own tests.
+  v2 makes the windows primary and reads the rows back off them
+  (`run_head_param`), so the cross-invariant is structural, not a coincidence.
+- **Tuple-key memoization was claimed, not implemented.** v1's `for_regrouped`
+  converted the row tuple straight to `len()`, then argued the prefix
+  invariant made that equivalent — circular. `ForecastSchedule` now stores
+  rows and keys `_paths` on `(dataset, rows)`, slicing
+  `histories[i][list(rows)]`; counts are a derived view.
+
+Also fixed: `precog`'s `data[end - 1:]` becoming `data[-1:]` when a run has
+`end == 0` (four named bounds on a `RunWindow` instead of three overloaded
+integers); retained forecast-trail colours (Decision R3 now uses the head run
+at the frame each was FIT, not the current one, or a boundary crossing
+repaints the whole fan); ownership built from a too-broad predicate that would
+have mis-described marker-only regrouping; blanket `simplefilter('ignore')` in
+the test bodies; and weak plotly parity assertions.
+
+### The arithmetic was measured, not reasoned
+
+**v1's projection was wrong and its own self-review had already caught one
+version of it.** v2's was verified BEFORE being written into the plan, in
+`Fraction` arithmetic against the real `anim_window_bounds` /
+`revealed_raw_counts`, over every frame of 13 regrouped cases + 6 unregrouped
+ones. Findings:
+
+- floor-quantizing each run's head is exact for the unregrouped case (the
+  identity, every frame) and never lets a split dataset reveal a row EARLY
+- it lags by at most one run-grid step; `ceil` halves the lag but breaks
+  bridge simultaneity in 6 places, so floor wins
+- a 1-row unbridged final run has no grid to slide along and needs an
+  explicit all-or-nothing rule; without it, two bridge violations
+- the "split reveals at the same time as unsplit" claim v1 made is FALSE and
+  was removed — what holds is "never early, bounded by one grid step", which
+  is the direction that matters (no forecast is fit on an undrawn row)
+
+The plan's own Task 1/Task 2 test bodies were then transcribed verbatim
+alongside its implementation code and run: **109 passed**, after one
+test-drafting fix (a sparse-dataset-id case tripped the dense check before
+the order check, so it passed for the wrong reason — the same failure mode as
+round 2's two red-phase corrections).
+
 ## Still open (unchanged, by the maintainer's scoping)
 
 - **`TraceOwnership` / `DatasetRevealSchedule`** — the missing mapping is
