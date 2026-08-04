@@ -26,6 +26,22 @@ macosx_11_0_universal2 -> liblsl.dylib, win_amd64/win32 -> lsl.dll), so no
 separate system liblsl install step is needed on any of the three CI
 platforms -- see .github/workflows/test.yml for the verified details. That
 means all three platforms are "provisioned" and none needs to be excluded.
+
+**Running these on a machine with real LSL hardware.** LSL resolution is
+machine- and subnet-wide, so an attached amplifier's outlets match
+`lsl_stream()`'s "any stream" fallback exactly as this module's own outlets
+do. The tests below handle that themselves (see `_foreign_lsl_streams`), but
+to reproduce a CLEAN machine deliberately -- e.g. to run the sole-outlet
+branch on a laptop with an EEG cap plugged in -- give liblsl a private
+session, which scopes resolution to processes sharing the same SessionID::
+
+    printf '[lab]\\nSessionID = hypertools-tests\\n' > /tmp/lsl.cfg
+    LSLAPICFG=/tmp/lsl.cfg .venv/bin/python -m pytest tests/test_lsl_streaming.py
+
+Verified 2026-08-04: with that set, `pylsl.resolve_streams()` returns `[]` on
+a machine where four STARSTIM-8 outlets were otherwise visible, and both
+branches of `test_lsl_stream_resolves_any_stream` pass in their respective
+environments.
 """
 
 import os
@@ -34,6 +50,7 @@ import sys
 import textwrap
 import threading
 import time
+import warnings
 
 import numpy as np
 import pytest
@@ -266,16 +283,92 @@ def test_import_error_without_pylsl_names_the_extra():
     assert 'SUBPROCESS_OK' in result.stdout
 
 
+#: Every outlet name this module creates. Anything else resolvable is a real
+#: outlet belonging to the machine, not to the test run.
+_TEST_STREAM_PREFIXES = ('HypertoolsTestStream-', 'HypertoolsStallTest-')
+
+
+def _foreign_lsl_streams(wait_time=1.0):
+    """Names of resolvable LSL outlets this module did NOT create.
+
+    `lsl_stream()` with neither `name=` nor `type=` means "any stream", and
+    LSL resolution is MACHINE-WIDE (and subnet-wide): a real EEG amplifier,
+    an accelerometer bridge, or a colleague's recorder all match. On such a
+    machine "any" can legitimately resolve to an outlet that is idle for the
+    whole timeout, or has a different channel count -- so an assertion about
+    THIS module's outlet is not merely flaky there, it is wrong.
+
+    Observed 2026-08-04 on a machine with a STARSTIM-8 attached: four
+    outlets (Accelerometer/Markers/Quality/EEG, 3 and 8 channels), the
+    accelerometer resolving first and delivering nothing, so
+    `test_lsl_stream_resolves_any_stream` failed with `HypertoolsIOError`
+    after 10s of silence.
+    """
+    return sorted(
+        info.name() for info in pylsl.resolve_streams(wait_time=wait_time)
+        if not info.name().startswith(_TEST_STREAM_PREFIXES))
+
+
 @requires_pylsl
 def test_lsl_stream_resolves_any_stream(outlet_stream):
     """With neither name= nor type=, lsl_stream falls back to
-    pylsl.resolve_streams ("any stream") and still yields real samples."""
-    stream = hyp.io.lsl_stream(timeout=10.0)
-    assert is_stream(stream)
-    sample = next(stream)
+    pylsl.resolve_streams ("any stream").
+
+    What that yields depends on the machine, so this checks the two
+    outcomes separately rather than assuming a quiet one. NEITHER branch
+    skips: the ambiguous branch is the only place the ambiguity warning can
+    be exercised at all, because it needs an outlet this test cannot create.
+    """
+    foreign = _foreign_lsl_streams()
+    if not foreign:
+        # sole outlet: "any" is unambiguously ours, so it must deliver
+        stream = hyp.io.lsl_stream(timeout=10.0)
+        assert is_stream(stream)
+        sample = next(stream)
+        assert len(sample) == N_CHANNELS
+        assert all(isinstance(v, float) for v in sample)
+        stream.close()
+        return
+
+    # Foreign outlets present. `lsl_stream()` must SAY so rather than
+    # silently binding to one of them, and must name enough of them for the
+    # user to pick with `name=`. Whether the chosen stream then delivers is
+    # a fact about someone else's hardware, so it is not asserted here --
+    # `test_lsl_stream_raises_when_source_stops_delivering` covers a silent
+    # source against an outlet this module owns.
+    with pytest.warns(RuntimeWarning, match='LSL streams match') as caught:
+        try:
+            stream = hyp.io.lsl_stream(timeout=10.0)
+        except HypertoolsIOError:
+            stream = None       # resolved a foreign outlet that is idle
+    message = str(caught[0].message)
+    assert 'using the first one' in message
+    assert 'Pass name= to select a specific stream' in message
+    for name in foreign[:1]:
+        assert name in message, (
+            f'the ambiguity warning named none of the foreign outlets '
+            f'{foreign}: {message}')
+    if stream is not None:
+        stream.close()
+
+
+@requires_pylsl
+def test_lsl_stream_by_NAME_is_unaffected_by_foreign_outlets(outlet_stream):
+    """The documented escape from the ambiguity above. This is what the
+    warning tells the user to do, so it must work on exactly the machines
+    that emit the warning -- and it must not warn, because `name=` resolves
+    one outlet."""
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter('always')
+        stream = hyp.io.lsl_stream(name=outlet_stream, timeout=10.0)
+        sample = next(stream)
+        stream.close()
     assert len(sample) == N_CHANNELS
     assert all(isinstance(v, float) for v in sample)
-    stream.close()
+    assert not [w for w in caught
+                if 'LSL streams match' in str(w.message)], (
+        'name= resolved exactly one outlet, so the ambiguity warning must '
+        'not fire')
 
 
 @requires_pylsl
