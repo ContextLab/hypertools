@@ -398,3 +398,139 @@ emit the warning, and must not warn.
 makes `pylsl.resolve_streams()` return `[]` on a machine with hardware
 attached. That is how the sole-outlet branch (the one CI takes) was
 actually run here rather than assumed. Recorded in the module docstring.
+
+---
+
+# Round 5 — review of the round-4 guards (2026-08-04)
+
+The reviewer ran the suites on their machine and found that BOTH environment
+guards added in round 4 were only correct on the machine that wrote them.
+That is the theme of this round: a guard whose correctness depends on the
+environment it guards against is not a guard.
+
+## H1 — the multibyte negative control needed a working browser
+
+`test_a_render_failure_that_is_NOT_the_browser_still_fails_loudly` drove the
+render subprocess with an unwritable output path and asserted the exit code
+was NOT the no-browser code. But an unwritable output path is only reached
+*after* the browser renders. On a machine where Chrome dies during startup,
+the subprocess exits NO_BROWSER for the right reason and the assertion fails
+for the wrong one:
+
+    3 failed, 60 passed, 4 skipped, 6 errors
+    ... bad output path exited 3
+
+Fixed by making the discrimination a value rather than control flow:
+`scripts/render_multibyte_plotly.py` now exposes
+`is_browser_lifecycle_error(err)`, and `main()` is
+
+    except Exception as err:
+        if not is_browser_lifecycle_error(err):
+            raise
+
+The "NOT the browser" half is now checked by calling that predicate on real
+exception objects — a real `OSError` caught from a real failed `open()` into
+a missing directory, and a real `RuntimeError` (the interpreter's own, from
+a generator letting `StopIteration` escape, PEP 479). No browser involved,
+so it holds on a Chrome-less machine, which is the machine where the answer
+matters.
+
+**New: a third no-browser trigger that needs no browser.** The plotly branch
+(`_kaleido.py:411` catches `ChromeNotFoundError` and re-raises a PLAIN
+`RuntimeError`) had never been driven for real. It can be:
+
+- `BROWSER_PATH` is choreographer's documented override
+  (`choreographer/utils/_which.py:91`), and a path that is not a file makes
+  `Chromium.__init__` raise `ChromeNotFoundError` (`chromium.py:177`)
+- but `find_browser` checks choreographer's OWN downloaded Chrome FIRST
+  (`chromium.py:83`), which is why setting `BROWSER_PATH` alone did nothing
+  in round 4 — that download lives under `$HOME`, so redirecting `HOME`
+  moves it out of reach
+
+Together they produce plotly's laundered `RuntimeError` with nothing
+launched at all. `test_render_script_exits_NO_BROWSER_when_CHROME_CANNOT_BE_FOUND`.
+
+## H2 — the LSL ambiguity branch, and a measurement that changed the fix
+
+The reviewer recommended `lsl_stream(timeout=10.0, minimum=2)` in the
+foreign-outlet branch. Measured against real pylsl 1.18.2 / liblsl 1.17.7:
+
+| call | signature | behaviour |
+|-|-|-|
+| `resolve_byprop` | `(prop, value, minimum=1, timeout=...)` | returns as soon as `minimum` match — 0.00s at 1, 1.07s at 2 |
+| `resolve_streams` | `(wait_time=1.0)` | **no `minimum` at all**; always waits the full time and returns everything heard |
+
+So `minimum=2` on the any-stream path is a `TypeError`, not a fix — and the
+shipped warning told *every* user to pass it. That is a real user-facing
+defect, fixed by making the caveat per-criterion (`_ambiguity_caveat`), and
+pinned by three tests, one of which reads the real pylsl signatures so a
+future pylsl that adds or drops the argument fails here rather than in
+somebody's warning text.
+
+The genuine fragility was elsewhere, and worse than the one reported:
+`resolve_streams` under-reports on short waits (measured on a 5-outlet
+machine: `wait_time=0.5` -> 2 outlets, `1.0` -> all 5). The probe used 1.0s
+while the call it decides between got 10.0s, so the probe could pick the
+sole-outlet branch on a machine that has hardware. Both now use
+`_ANY_STREAM_WAIT = 10.0`.
+
+Also as recommended: the "warning names a foreign outlet" assertion is now
+an intersection. The warning lists five streams in resolver order; the probe
+is sorted alphabetically — with six outlets, asserting on `foreign[0]` is a
+coin flip. And `pytest.warns` is gone in favour of `catch_warnings`, because
+it turns "no warning" into a failure before the test can ask why: if the
+warning is absent the test re-probes, FAILS if the foreign outlets are still
+there (that is silent binding, a real defect) and skips only if they
+genuinely vanished mid-test.
+
+## M1 — a machine that cannot create an outlet at all
+
+Reported: `All local ports were found occupied` -> `RuntimeError: could not
+create stream outlet`, six setup errors and two failures. Not reproducible
+here (40 simultaneous outlets created without complaint), so it is
+environmental — but it must be *named* as environmental rather than read as
+a library regression.
+
+`_outlet_capability_reason()` probes once and `_require_outlets()`
+classifies: skip locally quoting liblsl's real error text, hard fail under
+`GITHUB_ACTIONS` or `HYPERTOOLS_REQUIRE_LSL=1`. Everything needing no outlet
+keeps running. The hazard of a skip like this is that it fires when it
+should not and hides everything at once, so
+`test_the_outlet_capability_probe_AGREES_with_reality` creates a real outlet
+WITHOUT the guard and requires the probe's verdict to match what happened,
+in both directions.
+
+## M2/M3/L1 — Plan 4 v5
+
+- Task 2's **BLOCKED** banner (and its two summary-table echoes) said
+  `forecast_trail=` does not exist. It does: `90a63a1a`, plotly parity in
+  `bb6fcb18`, 11 tests in `tests/plot/test_forecast_trail.py`, and one of
+  `plot()`'s **82** parameters today. The Plan-3-before-Plan-4 ordering is
+  kept, but on its real grounds (regrouped-reveal behaviour), not this one
+  parameter.
+- The notebook smoke test kept a second, contradictory `Expected:` from
+  before the `--out-dir` redirect. Deleted; the only expected state is
+  output under `$SMOKE` and silence from `git status`.
+- Contract 4 cited `fetch_fred`/`fetch_city_months` — both deleted by Tasks
+  2 and 3. Now names `fetch_prices()`/`fetch_temperatures()` and says the
+  shape, not the name, is what carries over.
+- Sweep also found: the self-review still claimed the plan "has not yet been
+  adversarially reviewed" (three times since), and `execute_tutorial.py`
+  derived the kernel cwd with `path.rsplit('/', 1)[0]`, which for a bare
+  filename yields the filename itself.
+
+Every other occurrence of a deleted symbol was checked: all are deliberate
+"these names do not survive" notes, not live prescriptions.
+
+## Verification
+
+- `tests/test_multibyte.py`: 63 passed, 1 skipped
+- `tests/test_lsl_streaming.py`: 14 passed, 1 skipped — run BOTH with the
+  machine's STARSTIM-8 outlets visible and under a private liblsl SessionID
+  where they are not (confirmed `resolve_streams()` returns `[]` there, so
+  the sole-outlet branch was genuinely exercised, not assumed)
+- ruff at parity on every touched file (multibyte at its pre-existing 4
+  E402s; `hypertools/io/lsl.py` and `tests/test_lsl_streaming.py` clean)
+
+Commits: `c0d1d7a2` (tests + the `minimum=` advice fix), `06be1248`
+(Plan 4 v5).
