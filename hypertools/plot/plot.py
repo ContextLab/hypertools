@@ -5122,7 +5122,18 @@ def plot(
     if (raw_forecasts is not None and analyze_histories is not None
             and animate and animate not in ('spin',)):
         from .forecast import ForecastSchedule
-        _n_frames = max(2, int(round(frame_rate * duration)))
+        # `max(1, ...)`, matching what BOTH backends pace with (`total_frames`
+        # in every updater and in `_add_animation`) -- NOT the `max(2, ...)`
+        # used above for the interpolation grid, which is floored at 2 only
+        # because PCHIP needs two samples to interpolate between. The two are
+        # different quantities and were the same expression: at
+        # `round(frame_rate * duration) == 1` the renderer drew a single frame
+        # holding the WHOLE trajectory while a schedule built for 2 frames
+        # reported one row revealed, so that frame showed all the data and no
+        # forecast at all. Measured on an 8-row dataset at frame_rate=1,
+        # duration=1: renderer 8 rows, schedule 1. Every other frame count
+        # already agreed (checked at 2 and 12), so this changes nothing else.
+        _n_frames = max(1, int(round(frame_rate * duration)))
         _grid_lengths = [len(xi) for xi in xform]
         _builder = (ForecastSchedule.for_serial
                     if (animate == 'serial' or order == 'serial')

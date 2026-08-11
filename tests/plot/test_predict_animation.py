@@ -533,3 +533,28 @@ def test_return_model_xform_data_is_untouched_by_the_schedule():
         ani._func(f, *ani._args)
     assert np.allclose(np.asarray(forecast['xform_data'][0], dtype=float),
                        before), 'rendering frames mutated the returned data'
+
+
+def test_a_SINGLE_FRAME_animation_forecasts_from_the_whole_trajectory():
+    """The schedule's clock is the RENDERER's clock, at every frame count.
+
+    `plot()` floors the interpolation grid at 2 rows because PCHIP needs two
+    samples; it used to floor the forecast SCHEDULE's frame count with the
+    same expression, while both backends pace with `max(1, ...)`. The two
+    differ at exactly one setting -- `round(frame_rate * duration) == 1` --
+    and there the renderer draws its single frame holding the WHOLE
+    trajectory while a 2-frame schedule reports one row revealed, so the
+    finished animation showed all the data and no forecast at all. Measured
+    before the fix on this fixture: renderer 8 raw rows, schedule 1.
+    """
+    data = np.random.default_rng(0).normal(size=(8, 3)).cumsum(axis=0)
+    fig, ani = hyp.plot([data], '-', predict='Kalman', t=3, animate=True,
+                        duration=1, frame_rate=1, show=False)
+    ani._func(0, *ani._args)
+    drawn = _forecasts(_ax(fig), role='live')
+    assert drawn, 'the only frame shows the whole trajectory, so it must ' \
+                  'also show the forecast that trajectory implies'
+    # `get_data_3d`, not `get_xdata`: a Line3D keeps its vertices in
+    # `_verts3d`, and `get_xdata()` reports the stale 2-D projection
+    pts = np.array(drawn[0].get_data_3d())
+    assert pts.shape[1] > 1, pts.shape

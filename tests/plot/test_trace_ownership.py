@@ -3,7 +3,10 @@ from fractions import Fraction
 
 import pytest
 
-from hypertools.plot.forecast import (DatasetRevealSchedule,
+import numpy as np
+
+from hypertools.plot.forecast import (DatasetRevealSchedule, ForecastSchedule,
+                                      forecast_from_history,
                                       revealed_raw_counts)
 from hypertools.plot.ownership import TraceOwnership
 from hypertools.plot.trails import (RunWindow, anim_window_bounds,
@@ -449,3 +452,79 @@ def test_the_serial_schedule_reveals_datasets_one_at_a_time():
     assert sched.visible_rows(1, 0) == ()
     assert len(sched.visible_rows(0, 11)) == 6
     assert len(sched.visible_rows(1, 11)) == 6
+
+
+def _history(rows=12, seed=3):
+    rng = np.random.RandomState(seed)
+    return np.cumsum(rng.randn(rows, 3), 0)
+
+
+def test_the_schedule_keys_on_ROWS_not_counts():
+    """Decision R4. Two frames could expose equal-sized but DIFFERENT
+    histories; a count key collides silently, a row key does not."""
+    h = _history()
+    sched = ForecastSchedule([h], rows=[[(0, 1, 2, 3)], [(4, 5, 6, 7)]],
+                             model='Kalman', t=3)
+    assert set(sched._paths) == {(0, (0, 1, 2, 3)), (0, (4, 5, 6, 7))}
+    assert sched.n_fits == 2
+
+
+def test_a_count_built_schedule_is_UNCHANGED_by_the_row_key():
+    """`for_parallel`/`for_serial` still pass counts; normalizing them to
+    `range(k)` must fit exactly the same arrays as `histories[i][:k]` did."""
+    h = _history()
+    sched = ForecastSchedule([h], counts=[[4], [7], [12]], model='Kalman', t=3)
+    for k in (4, 7, 12):
+        want = forecast_from_history(h[:k], 'Kalman', 3)
+        got = sched._paths[(0, tuple(range(k)))]
+        assert (want is None) == (got is None)
+        if want is not None:
+            assert np.allclose(want, got)
+
+
+def test_for_regrouped_fits_EXACTLY_the_visible_rows():
+    """The direct expected fit the review asked for: not 'the early forecast
+    differs from the late one' (many wrong subsets would satisfy that), but
+    'the forecast IS the one you get from exactly these rows'."""
+    own, grids = _one_dataset([6, 6], 12)
+    reveal = DatasetRevealSchedule(own, grids, 12, 12)
+    h = _history(rows=12)
+    sched = ForecastSchedule.for_regrouped([h], reveal, model='Kalman', t=3,
+                                           n_frames=12)
+    checked = 0
+    for frame in range(12):
+        rows = reveal.visible_rows(0, frame)
+        want = forecast_from_history(h[list(rows)], 'Kalman', 3)
+        got = sched.path(0, frame)
+        assert (want is None) == (got is None), f'frame {frame}'
+        if want is not None:
+            assert np.allclose(want, got), f'frame {frame}'
+            checked += 1
+    assert checked >= 6, f'only {checked} frames had a real fit'
+
+
+def test_one_EXTRA_row_changes_the_expected_forecast():
+    """The control for the test above. Without it the comparison could be
+    passing because the fixture is insensitive to its own history."""
+    h = _history(rows=12)
+    a = forecast_from_history(h[:6], 'Kalman', 3)
+    b = forecast_from_history(h[:7], 'Kalman', 3)
+    assert a is not None and b is not None
+    assert not np.allclose(a, b)
+
+
+def test_stacked_paths_still_covers_every_forecast_it_will_draw():
+    """It feeds the centre/scale statistics, so a missed entry renders a
+    forecast outside the cube with the axes off and nothing to clip it."""
+    own, grids = _one_dataset([6, 6], 12)
+    reveal = DatasetRevealSchedule(own, grids, 12, 12)
+    h = _history(rows=12)
+    sched = ForecastSchedule.for_regrouped([h], reveal, model='Kalman', t=3,
+                                           n_frames=12)
+    stacked = sched.stacked_paths()
+    for frame in range(12):
+        pts = sched.polyline(0, frame)
+        if pts is None:
+            continue
+        for row in pts:
+            assert np.any(np.all(np.isclose(stacked, row), axis=1)), frame

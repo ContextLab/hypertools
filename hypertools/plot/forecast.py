@@ -299,11 +299,25 @@ class ForecastSchedule:
     animation of a 60-row dataset costs at most 59 fits.
     """
 
-    def __init__(self, histories, counts, model, t,
+    def __init__(self, histories, counts=None, model=None, t=None, rows=None,
                  min_history=DEFAULT_MIN_HISTORY, transform=None,
                  slow_warning_seconds=DEFAULT_SLOW_WARNING_SECONDS):
+        if (counts is None) == (rows is None):
+            raise ValueError(
+                "pass exactly one of counts= (a revealed ROW COUNT per "
+                "dataset per frame) or rows= (the revealed ROW INDICES); got "
+                f"{'both' if counts is not None else 'neither'}.")
         self.histories = [np.asarray(h, dtype=float) for h in histories]
-        self.counts = [list(row) for row in counts]
+        # ONE internal representation. A count `k` means "the first k rows",
+        # which is what every reveal has produced since the runs of a dataset
+        # were given a shared clock -- but the KEY is the row tuple, so two
+        # frames exposing equal-sized DIFFERENT histories cannot collide in
+        # the cache. That is the whole reason this is not `(dataset, count)`.
+        if rows is None:
+            rows = [[tuple(range(int(k))) for k in frame] for frame in counts]
+        self.rows = [[tuple(int(i) for i in r) for r in frame]
+                     for frame in rows]
+        self.counts = [[len(r) for r in frame] for frame in self.rows]
         self.model = model
         self.t = int(t)
         self.min_history = int(min_history)
@@ -313,26 +327,27 @@ class ForecastSchedule:
         self.n_fits = 0
         self._paths = {}
 
-        # Every DISTINCT (dataset, revealed-count) pair needs one fit; the
+        # Every DISTINCT (dataset, revealed-ROWS) pair needs one fit; the
         # rest are cache hits. Known before any work is done, so the size of
         # the job is knowable up front even though its cost is not.
         todo = []
-        for frame_counts in self.counts:
-            for i, k in enumerate(frame_counts):
-                if (i, k) not in self._paths:
-                    self._paths[(i, k)] = None
-                    todo.append((i, k))
+        for frame_rows in self.rows:
+            for i, r in enumerate(frame_rows):
+                if (i, r) not in self._paths:
+                    self._paths[(i, r)] = None
+                    todo.append((i, r))
         self._paths.clear()
 
         warned = slow_warning_seconds is None
-        for n_done, (i, k) in enumerate(todo):
+        for n_done, (i, r) in enumerate(todo):
             start = time.perf_counter()
-            path = forecast_from_history(self.histories[i][:k], self.model,
-                                         self.t, min_history=self.min_history)
+            path = forecast_from_history(self.histories[i][list(r)],
+                                         self.model, self.t,
+                                         min_history=self.min_history)
             elapsed = time.perf_counter() - start
             if path is not None:
                 self.n_fits += 1
-            self._paths[(i, k)] = path
+            self._paths[(i, r)] = path
             # Project off the first REAL fit, not the first ITEM. The earliest
             # (dataset, count) pairs are histories shorter than min_history,
             # where forecast_from_history returns None without fitting
@@ -376,7 +391,8 @@ class ForecastSchedule:
         counts = [[revealed_raw_counts(len(h), g, f, n_frames)
                    for h, g in zip(histories, grid_lengths)]
                   for f in range(n_frames)]
-        return cls(histories, counts, model, t, min_history=min_history,
+        return cls(histories, counts=counts, model=model, t=t,
+                   min_history=min_history,
                    slow_warning_seconds=slow_warning_seconds)
 
     @classmethod
@@ -399,29 +415,52 @@ class ForecastSchedule:
                     pos = (min(shown, g) - 1) * (n_raw - 1) / (g - 1)
                     row.append(min(n_raw, int(np.floor(pos)) + 1))
             counts.append(row)
-        return cls(histories, counts, model, t, min_history=min_history,
+        return cls(histories, counts=counts, model=model, t=t,
+                   min_history=min_history,
+                   slow_warning_seconds=slow_warning_seconds)
+
+    @classmethod
+    def for_regrouped(cls, histories, reveal, model, t, n_frames,
+                      min_history=DEFAULT_MIN_HISTORY,
+                      slow_warning_seconds=DEFAULT_SLOW_WARNING_SECONDS):
+        """Schedule for an animation whose data `hue=`/`cluster=` regrouped.
+
+        The revealed rows come from a `DatasetRevealSchedule` rather than from
+        the drawn traces, because a dataset may now be spread over several of
+        them. They are passed through as ROW TUPLES, not summarised to counts:
+        the reveal is what defines a frame's history, and the cache key must
+        say so.
+        """
+        rows = [[reveal.visible_rows(i, f) for i in range(len(histories))]
+                for f in range(n_frames)]
+        return cls(histories, rows=rows, model=model, t=t,
+                   min_history=min_history,
                    slow_warning_seconds=slow_warning_seconds)
 
     # -- lookups -----------------------------------------------------------
-    def revealed(self, dataset, frame):
-        """RAW analyze-space rows `dataset` has revealed at `frame`.
+    def revealed_rows(self, dataset, frame):
+        """The ORIGINAL row indices `dataset` has revealed at `frame`.
 
         Frames past the end clamp to the last scheduled frame, so a backend
         that renders one frame beyond `n_frames` (matplotlib can, on a loop
         or a save) gets the final forecast rather than an IndexError.
         """
-        return self.counts[min(frame, self.n_frames - 1)][dataset]
+        return self.rows[min(frame, self.n_frames - 1)][dataset]
+
+    def revealed(self, dataset, frame):
+        """How many raw analyze-space rows `dataset` has revealed at `frame`."""
+        return len(self.revealed_rows(dataset, frame))
 
     def anchor(self, dataset, frame):
         """The last revealed observation, in this schedule's coordinates."""
-        k = self.revealed(dataset, frame)
-        if k < 1:
+        rows = self.revealed_rows(dataset, frame)
+        if not rows:
             return None
-        return self.histories[dataset][k - 1]
+        return self.histories[dataset][rows[-1]]
 
     def path(self, dataset, frame):
         """Displacement path (t + 1, d) for `dataset` at `frame`, or None."""
-        return self._paths[(dataset, self.revealed(dataset, frame))]
+        return self._paths[(dataset, self.revealed_rows(dataset, frame))]
 
     def polyline(self, dataset, frame):
         """The DRAWN forecast: anchor + displacement, or None."""
@@ -437,10 +476,10 @@ class ForecastSchedule:
         the display box contains all of it by construction.
         """
         rows = []
-        for (i, k), path in self._paths.items():
-            if path is None or k < 1:
+        for (i, r), path in self._paths.items():
+            if path is None or not r:
                 continue
-            rows.append(self.histories[i][k - 1] + path)
+            rows.append(self.histories[i][r[-1]] + path)
         if not rows:
             return np.zeros((0, self.histories[0].shape[1]))
         return np.vstack(rows)
@@ -450,6 +489,7 @@ class ForecastSchedule:
         `transform`, so `polyline()` returns display-box coordinates."""
         out = object.__new__(ForecastSchedule)
         out.histories = [transform(h) for h in self.histories]
+        out.rows = self.rows
         out.counts = self.counts
         out.model, out.t = self.model, self.t
         out.min_history = self.min_history
