@@ -1,7 +1,12 @@
 """Pure mapping tests: no figures, no backends, no animation."""
+from fractions import Fraction
+
 import pytest
 
+from hypertools.plot.forecast import revealed_raw_counts
 from hypertools.plot.ownership import TraceOwnership
+from hypertools.plot.trails import (RunWindow, anim_window_bounds,
+                                    dataset_window_bounds, run_head_param)
 
 
 def test_runs_of_one_dataset_partition_its_rows_in_order():
@@ -117,3 +122,252 @@ def test_a_dataset_s_LAST_run_cannot_be_bridged():
     describe geometry that was never drawn."""
     with pytest.raises(ValueError, match='last run'):
         TraceOwnership.from_segments([0, 1], [3, 3], [True, False])
+
+
+def _one_dataset(lengths, n_frames):
+    """Ownership + grid lengths for ONE dataset split into `lengths` runs."""
+    bridge = [i < len(lengths) - 1 for i in range(len(lengths))]
+    own = TraceOwnership.from_segments([0] * len(lengths), lengths, bridge)
+    # `_interp_anim_line` leaves an array with fewer than 2 rows alone
+    grids = [n_frames if (L + int(b)) >= 2 else 1
+             for L, b in zip(lengths, bridge)]
+    return own, grids
+
+
+def _visible(own, grids, num, n_frames, w, dataset=0):
+    """Visible rows DERIVED FROM the run windows -- the single source of
+    truth this whole design turns on."""
+    wins = dataset_window_bounds(num, n_frames, own, grids, w)
+    best = None
+    for r in own.runs_of(dataset):
+        p = run_head_param(wins[r], own, r)
+        if p is not None:
+            best = p if best is None else max(best, p)
+    if best is None:
+        return ()
+    return tuple(range(min(own.row_count(dataset), int(best) + 1)))
+
+
+REGROUPED_CASES = [
+    ([10, 10, 10], 12, 12), ([10, 10, 10], 40, 40), ([10, 10, 10], 120, 120),
+    ([3, 3, 3], 12, 2), ([4, 1, 4], 20, 20), ([1, 1, 1, 1], 8, 8),
+    ([7, 2, 11, 5], 30, 30), ([2, 2], 3, 3), ([5, 5, 5, 5, 5, 5], 60, 60),
+    ([20, 10], 24, 24), ([1, 29], 12, 12), ([29, 1], 12, 12),
+    ([50, 50], 24, 24), ([2, 26, 2], 12, 12),
+    # whole ONE-ROW datasets: `span` is 0 for the dataset, not just for a run,
+    # so every invariant below meets the degenerate projection too
+    ([1], 6, 2), ([1], 12, 12), ([1, 1], 6, 2), ([1, 5], 10, 3),
+]
+
+
+@pytest.mark.parametrize('n_rows,n_frames,w', [
+    (30, 12, 12), (9, 12, 2), (60, 60, 2), (5, 15, 2), (100, 24, 24),
+    (2, 12, 12)])
+def test_unregrouped_bounds_are_IDENTICAL_to_anim_window_bounds(
+        n_rows, n_frames, w):
+    """The load-bearing invariant. One run per dataset must project to the
+    identity at EVERY frame, or fixing the regrouped case silently shifts
+    every animation that was already correct."""
+    own = TraceOwnership.identity([n_rows])
+    for num in range(n_frames + 2):
+        got, = dataset_window_bounds(num, n_frames, own, [n_frames], w)
+        start, end, trail_stop = anim_window_bounds(num, n_frames, n_frames, w)
+        assert (got.head_start, got.head_end, got.past_stop) == (
+            start, end, trail_stop), f'frame {num}'
+        # today's precog slice, `data[end - 1:]`, with no chance of `data[-1:]`
+        assert got.future_start == max(0, end - 1), f'frame {num}'
+        assert got.reached
+
+
+@pytest.mark.parametrize('n_rows,n_frames,w', [
+    (30, 12, 12), (9, 12, 2), (60, 60, 2), (5, 15, 2), (100, 24, 24)])
+def test_unregrouped_visible_rows_equal_revealed_raw_counts(
+        n_rows, n_frames, w):
+    """The reveal schedule reads the same clock `ForecastSchedule.for_parallel`
+    already reads, so an unregrouped forecast is bit-for-bit unchanged."""
+    own = TraceOwnership.identity([n_rows])
+    for num in range(n_frames):
+        assert len(_visible(own, [n_frames], num, n_frames, w)) == \
+            revealed_raw_counts(n_rows, n_frames, num, n_frames), f'frame {num}'
+
+
+@pytest.mark.parametrize('lengths,n_frames,w', REGROUPED_CASES)
+def test_a_run_completes_exactly_when_the_NEXT_one_starts(
+        lengths, n_frames, w):
+    """The bridge contract. `patch_lines` put the next run's first observation
+    on the end of this run's line, so that observation is on screen the moment
+    this run finishes. The next run must expose its own copy of it at the SAME
+    frame, or the two disagree about one vertex at every category boundary."""
+    own, grids = _one_dataset(lengths, n_frames)
+    for num in range(n_frames):
+        wins = dataset_window_bounds(num, n_frames, own, grids, w)
+        for r in range(len(lengths) - 1):
+            done = wins[r].head_end == grids[r]
+            started = wins[r + 1].head_end > 0
+            assert done == started, (
+                f'frame {num}: run {r} done={done}, run {r+1} '
+                f'started={started}')
+
+
+@pytest.mark.parametrize('lengths,n_frames,w', REGROUPED_CASES)
+def test_runs_of_one_dataset_reveal_IN_ORDER_not_together(
+        lengths, n_frames, w):
+    """The defect this task fixes: every run of one dataset used to grow
+    simultaneously, so the trajectory animated in several places at once."""
+    own, grids = _one_dataset(lengths, n_frames)
+    for num in range(n_frames):
+        wins = dataset_window_bounds(num, n_frames, own, grids, w)
+        for r in range(1, len(lengths)):
+            if wins[r].head_end > 0:
+                assert wins[r - 1].head_end == grids[r - 1], (
+                    f'frame {num}: run {r} started while run {r-1} was only '
+                    f'{wins[r-1].head_end}/{grids[r-1]}')
+
+
+@pytest.mark.parametrize('lengths,n_frames,w', REGROUPED_CASES)
+def test_visible_rows_are_a_growing_PREFIX_reaching_every_row(
+        lengths, n_frames, w):
+    own, grids = _one_dataset(lengths, n_frames)
+    prev = -1
+    for num in range(n_frames):
+        rows = _visible(own, grids, num, n_frames, w)
+        assert rows == tuple(range(len(rows))), f'frame {num}: {rows}'
+        assert len(rows) >= prev, f'frame {num}: shrank {prev} -> {len(rows)}'
+        prev = len(rows)
+    assert prev == sum(lengths)
+
+
+@pytest.mark.parametrize('lengths,n_frames,w', REGROUPED_CASES)
+def test_a_split_dataset_never_reveals_a_row_EARLY(lengths, n_frames, w):
+    """Decision R2. A run's head can only stop on one of its own drawn
+    vertices, which do not line up with the unsplit grid, so a regrouped
+    reveal lags by up to one run-grid step. The DIRECTION is what matters:
+    it must never lead, or a forecast could be fit on an observation the
+    renderer has not drawn yet."""
+    own, grids = _one_dataset(lengths, n_frames)
+    n_rows = sum(lengths)
+    whole = TraceOwnership.identity([n_rows])
+    whole_grid = [n_frames if n_rows >= 2 else 1]   # same rule as _one_dataset
+    # `default=0`: an UNSPLIT one-row dataset has no run grid to slide along,
+    # so there is no step to lag by and the bound tightens to exact identity.
+    step = max((Fraction(own.draw_span(r), grids[r] - 1)
+                for r in range(len(lengths)) if grids[r] >= 2
+                and own.draw_span(r) > 0), default=Fraction(0))
+    for num in range(n_frames):
+        split = len(_visible(own, grids, num, n_frames, w))
+        unsplit = len(_visible(whole, whole_grid, num, n_frames, w))
+        assert split <= unsplit, f'frame {num}: split LEADS unsplit'
+        assert unsplit - split <= int(step) + 1, (
+            f'frame {num}: lag {unsplit - split} exceeds one run-grid step '
+            f'({float(step):.2f} rows)')
+
+
+@pytest.mark.parametrize('lengths,n_frames,w', REGROUPED_CASES)
+def test_the_final_frame_draws_every_run_in_full(lengths, n_frames, w):
+    own, grids = _one_dataset(lengths, n_frames)
+    last = dataset_window_bounds(n_frames - 1, n_frames, own, grids, w)
+    assert [win.head_end for win in last] == grids
+
+
+@pytest.mark.parametrize('lengths,n_frames,w', REGROUPED_CASES)
+def test_no_window_ever_has_a_NEGATIVE_future_start(lengths, n_frames, w):
+    """`data[end - 1:]` with `end == 0` is `data[-1:]` -- one stray point of a
+    not-yet-reached category, sitting on screen from frame 0. Four named
+    bounds exist so that slice cannot be written."""
+    own, grids = _one_dataset(lengths, n_frames)
+    for num in range(n_frames):
+        for r, win in enumerate(dataset_window_bounds(
+                num, n_frames, own, grids, w)):
+            assert win.future_start >= 0, f'frame {num}, run {r}'
+
+
+def test_an_unreached_run_is_EMPTY_head_EMPTY_past_WHOLE_future():
+    """Decision R5. `precog` means the trajectory ahead of the head; a run the
+    clock has not entered is entirely ahead of it."""
+    own, grids = _one_dataset([5, 5], 20)
+    win = dataset_window_bounds(0, 20, own, grids, 2)[1]
+    assert win == RunWindow(head_start=0, head_end=0, past_stop=0,
+                            future_start=0, reached=False, grid=grids[1])
+
+
+def test_separate_datasets_still_advance_TOGETHER():
+    """'Parallel' keeps its meaning across datasets; only runs WITHIN one
+    dataset were ever meant to be sequential."""
+    own = TraceOwnership.from_segments([0, 1], [10, 10], [False, False])
+    for num in range(20):
+        a, b = dataset_window_bounds(num, 20, own, [20, 20], 2)
+        assert a == b, f'frame {num}'
+
+
+def test_a_singleton_FINAL_run_appears_when_the_sweep_REACHES_it():
+    """A 1-row unbridged run is not interpolated (`plot.py:4901` leaves arrays
+    with fewer than 2 rows alone), so it has no grid to slide along: it is
+    all-or-nothing, and 'all' must wait for the head rather than showing from
+    frame 0 as it did when each run was paced on its own rows."""
+    own, grids = _one_dataset([29, 1], 12)
+    assert grids[1] == 1
+    assert dataset_window_bounds(0, 12, own, grids, 12)[1].head_end == 0
+    assert dataset_window_bounds(11, 12, own, grids, 12)[1].head_end == 1
+
+
+@pytest.mark.parametrize('n_frames,w', [
+    (1, 0), (2, 1), (3, 2), (6, 2), (6, 6), (12, 5), (12, 12)])
+def test_a_ONE_ROW_DATASET_is_the_unregrouped_identity_at_EVERY_frame(
+        n_frames, w):
+    """The test above covers a one-row RUN inside a longer dataset. A whole
+    one-row DATASET is the harder degenerate case: `span` is 0 for the dataset
+    as well as for the run, so the projection has no extent to project ONTO.
+    It must still be the identity, at the first frame and the last."""
+    own = TraceOwnership.identity([1])
+    for num in range(n_frames):
+        got, = dataset_window_bounds(num, n_frames, own, [1], w)
+        start, end, trail_stop = anim_window_bounds(num, n_frames, 1, w)
+        assert (got.head_start, got.head_end, got.past_stop) == (
+            start, end, trail_stop), f'frame {num}'
+        assert got.future_start == max(0, end - 1), f'frame {num}'
+
+
+def test_a_ONE_ROW_dataset_beside_LONGER_ones_keeps_its_own_clock():
+    """R1 is per SOURCE DATASET, so a singleton must not be dragged along by a
+    longer neighbour's grid, nor drag the neighbour back to its own."""
+    own = TraceOwnership.identity([5, 1, 3])
+    grids = [12, 1, 12]
+    for num in range(12):
+        wins = dataset_window_bounds(num, 12, own, grids, 2)
+        for r, g in enumerate(grids):
+            start, end, trail_stop = anim_window_bounds(num, 12, g, 2)
+            assert (wins[r].head_start, wins[r].head_end,
+                    wins[r].past_stop) == (start, end, trail_stop), (
+                        f'frame {num}, dataset {r}')
+
+
+def test_a_ONE_ROW_dataset_is_ON_SCREEN_from_frame_0():
+    """Deliberate, not incidental. `anim_window_bounds` clamps `end` to at
+    least 1 (`trails.py:86`), so a single-point dataset is drawn from the first
+    frame -- audited behaviour (F05-012), and NOT the `end == 0` state
+    `RunWindow` exists to name. There is therefore no 'before the singleton is
+    reached' frame to test: `reached` is True throughout, and a `precog` trail
+    on it is its whole (one-point) self. A change that hid it until the end
+    would be a regression, so it must fail here rather than pass quietly."""
+    own = TraceOwnership.identity([1])
+    for num in range(6):
+        got, = dataset_window_bounds(num, 6, own, [1], 2)
+        assert got.reached and got.head_end == 1, f'frame {num}'
+        assert got.future_start == 0, f'frame {num}'
+
+
+@pytest.mark.parametrize('lengths,n_frames,w', REGROUPED_CASES)
+def test_reached_means_EXACTLY_that_the_head_is_NON_EMPTY(
+        lengths, n_frames, w):
+    """`reached` must stay a RESTATEMENT of `head_end`, never a second
+    derivation of it. Comparing the head parameter against the run's first row
+    also works today, but only because `_param` returns 0 for a dataset with no
+    extent and the first run's `first_row` is 0 as well -- a degenerate value
+    coinciding with a real boundary. This fails the moment the two disagree
+    anywhere, which is what the equivalent-by-accident version could not."""
+    own, grids = _one_dataset(lengths, n_frames)
+    for num in range(n_frames):
+        for r, win in enumerate(dataset_window_bounds(
+                num, n_frames, own, grids, w)):
+            assert win.reached == (win.head_end > 0), f'frame {num}, run {r}'
+            assert win.future_start == max(0, win.head_end - 1)
