@@ -2,13 +2,25 @@
 """The precomputed forecast schedule: reveal mapping, memoization, purity."""
 
 import numpy as np
-import pytest
 
 from hypertools.plot.forecast import (DisplayTransform, ForecastSchedule,
                                       forecast_from_history,
                                       revealed_raw_counts)
 
 N_RAW, N_GRID, N_FRAMES = 60, 8, 8
+
+#: Every schedule built here passes this, and none of these tests is about the
+#: warning -- `test_forecast_schedule_warning.py` pins both of its branches
+#: deterministically (`0.0` always warns, `None` never does). At the DEFAULT
+#: threshold the warning fires when `one_fit_seconds * remaining_fits > 10`,
+#: which makes it a function of how fast the machine is at that moment rather
+#: than of anything the code does: the 900-frame memoization test below
+#: projects ~9.7 s on this laptop, so a machine a hair slower emits a warning
+#: here and a hair faster does not. The suite is held to ZERO warnings, so
+#: that difference is the difference between green and red -- a CI failure
+#: nobody can reproduce locally. Measured: under `PYTHONDEVMODE=1`, which
+#: slows a Kalman fit from ~54 ms to ~1.3 s, the default threshold warns.
+NO_SPEED_WARNING = dict(slow_warning_seconds=None)
 
 
 def _history(n=N_RAW, d=3, seed=0):
@@ -47,7 +59,7 @@ def test_reveal_matches_the_library_formula_not_a_second_copy_of_it():
 def test_schedule_has_one_entry_per_frame_per_dataset():
     sched = ForecastSchedule.for_parallel(
         [_history(seed=s) for s in range(2)], [N_GRID] * 2,
-        model='Kalman', t=3, n_frames=N_FRAMES)
+        model='Kalman', t=3, n_frames=N_FRAMES, **NO_SPEED_WARNING)
     assert sched.n_datasets == 2 and sched.n_frames == N_FRAMES
     for i in range(2):
         for f in range(N_FRAMES):
@@ -58,14 +70,16 @@ def test_schedule_has_one_entry_per_frame_per_dataset():
 def test_early_frames_have_no_forecast():
     """Frame 0 reveals 1 raw row; min_history=2 refuses to fit it."""
     sched = ForecastSchedule.for_parallel(
-        [_history()], [N_GRID], model='Kalman', t=3, n_frames=N_FRAMES)
+        [_history()], [N_GRID], model='Kalman', t=3, n_frames=N_FRAMES,
+        **NO_SPEED_WARNING)
     assert sched.path(0, 0) is None
 
 
 def test_final_frame_forecast_equals_the_full_history_forecast():
     hist = _history()
     sched = ForecastSchedule.for_parallel(
-        [hist], [N_GRID], model='Kalman', t=3, n_frames=N_FRAMES)
+        [hist], [N_GRID], model='Kalman', t=3, n_frames=N_FRAMES,
+        **NO_SPEED_WARNING)
     direct = forecast_from_history(hist, 'Kalman', t=3)
     assert np.allclose(sched.path(0, N_FRAMES - 1), direct)
 
@@ -76,14 +90,15 @@ def test_fits_are_memoized_by_revealed_history_length():
     single 60-row Kalman fit: 54 ms -- 900 fits would be 48s PER DATASET."""
     sched = ForecastSchedule.for_parallel(
         [_history(seed=s) for s in range(3)], [900] * 3,
-        model='Kalman', t=3, n_frames=900)
+        model='Kalman', t=3, n_frames=900, **NO_SPEED_WARNING)
     assert sched.n_fits <= 3 * N_RAW
     assert sched.n_fits < 900 * 3 / 4, sched.n_fits
 
 
 def test_the_schedule_is_a_pure_lookup_so_frames_are_idempotent():
     sched = ForecastSchedule.for_parallel(
-        [_history()], [N_GRID], model='Kalman', t=3, n_frames=N_FRAMES)
+        [_history()], [N_GRID], model='Kalman', t=3, n_frames=N_FRAMES,
+        **NO_SPEED_WARNING)
     forward = [sched.path(0, f) for f in range(N_FRAMES)]
     backward = [sched.path(0, f) for f in reversed(range(N_FRAMES))]
     for a, b in zip(forward, reversed(backward)):
@@ -95,7 +110,7 @@ def test_stacked_paths_covers_every_forecast_vertex():
     forecast that could render outside the cube."""
     sched = ForecastSchedule.for_parallel(
         [_history(seed=s) for s in range(2)], [N_GRID] * 2,
-        model='Kalman', t=3, n_frames=N_FRAMES)
+        model='Kalman', t=3, n_frames=N_FRAMES, **NO_SPEED_WARNING)
     stacked = sched.stacked_paths()
     assert stacked.ndim == 2 and stacked.shape[1] == 3
     for i in range(2):
@@ -113,7 +128,8 @@ def test_stacked_paths_covers_every_forecast_vertex():
 def test_serial_schedule_reveals_datasets_in_order():
     hists = [_history(seed=s) for s in range(3)]
     sched = ForecastSchedule.for_serial(hists, [N_GRID] * 3, model='Kalman',
-                                        t=3, n_frames=16)
+                                        t=3, n_frames=16,
+                                        **NO_SPEED_WARNING)
     early = [sched.revealed(i, 1) for i in range(3)]
     assert early[0] >= early[1] >= early[2]
     assert [sched.revealed(i, 15) for i in range(3)] == [N_RAW] * 3
@@ -151,7 +167,8 @@ def test_to_display_maps_every_scheduled_forecast_into_the_cube():
     """
     hists = [_history(seed=s) for s in range(2)]
     sched = ForecastSchedule.for_parallel(hists, [N_GRID] * 2, model='Kalman',
-                                          t=5, n_frames=N_FRAMES)
+                                          t=5, n_frames=N_FRAMES,
+                                          **NO_SPEED_WARNING)
     joint = np.vstack([np.vstack(hists), sched.stacked_paths()])
     mean = joint.mean(axis=0)
     joint_c = joint - mean
@@ -176,7 +193,8 @@ def test_display_paths_are_displacements_not_positions():
     same thing, the test above has silently stopped testing Contract 4."""
     hists = [_history(seed=s) for s in range(2)]
     sched = ForecastSchedule.for_parallel(hists, [N_GRID] * 2, model='Kalman',
-                                          t=5, n_frames=N_FRAMES)
+                                          t=5, n_frames=N_FRAMES,
+                                          **NO_SPEED_WARNING)
     joint = np.vstack([np.vstack(hists), sched.stacked_paths()])
     mean = joint.mean(axis=0)
     m1 = (joint - mean).min()
