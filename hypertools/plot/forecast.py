@@ -175,6 +175,95 @@ def revealed_raw_counts(n_raw, n_grid, num, total_frames):
     return min(n_raw, int(np.floor(pos)) + 1)
 
 
+class DatasetRevealSchedule:
+    """Which ORIGINAL rows of each source dataset are on screen at each frame.
+
+    `hue=`/`cluster=` draw one trace per contiguous same-category run, so the
+    backends' own reveal is expressed in RUNS. A forecast is fit per DATASET,
+    from the observations revealed so far, and needs the inverse: original row
+    indices, in temporal order, for a dataset that may be spread over several
+    traces.
+
+    The rows are read back off the `RunWindow`s
+    `trails.dataset_window_bounds` produces -- the SAME objects the backends
+    slice their artists with -- rather than recomputed from the frame index.
+    Two derivations of "what is on screen" can drift while each passes its own
+    tests; one cannot. The bridge vertex `patch_lines` appends is covered by
+    the same rule, because a bridged run's drawn span reaches it: the frame on
+    which a run completes is the frame on which its successor's first
+    observation becomes visible, through either trace.
+
+    `visible_rows` returns the row TUPLE rather than a count. Under the fixed
+    reveal it is always a prefix, so the two carry the same information today;
+    the tuple is what `ForecastSchedule` memoizes on, so a future reveal that
+    exposed a non-prefix would produce a different cache key rather than a
+    silent collision between two equal-sized but different histories.
+    """
+
+    def __init__(self, ownership, grid_lengths, n_frames, window_frames,
+                 serial=False):
+        from .trails import dataset_window_bounds, run_head_param
+        self.ownership = ownership
+        self.grid_lengths = [int(g) for g in grid_lengths]
+        self.n_frames = int(n_frames)
+        self.window_frames = int(window_frames)
+        self.serial = bool(serial)
+        self._rows = []
+        for frame in range(self.n_frames):
+            if self.serial:
+                counts = self._serial_counts(frame)
+            else:
+                windows = dataset_window_bounds(
+                    frame, self.n_frames, ownership, self.grid_lengths,
+                    self.window_frames)
+                counts = []
+                for d in range(ownership.n_datasets):
+                    head = None
+                    for r in ownership.runs_of(d):
+                        p = run_head_param(windows[r], ownership, r)
+                        if p is not None:
+                            head = p if head is None else max(head, p)
+                    counts.append(0 if head is None
+                                  else min(ownership.row_count(d),
+                                           int(head) + 1))
+            self._rows.append([tuple(range(k)) for k in counts])
+
+    def _serial_counts(self, frame):
+        """`order='serial'` already sweeps runs in order (`serial_reveal_counts`
+        walks the trace list), so a dataset's count is the sum of its runs'."""
+        from .matplotlib_backend import serial_reveal_counts
+        own = self.ownership
+        grid_counts = serial_reveal_counts(
+            list(self.grid_lengths), frame, self.n_frames)
+        out = []
+        for d in range(own.n_datasets):
+            total = 0
+            for r in own.runs_of(d):
+                g = self.grid_lengths[r]
+                _, n_rows = own.run_span(r)
+                span = own.draw_span(r)
+                shown = min(grid_counts[r], g)
+                if g < 2 or span <= 0 or shown <= 0:
+                    total += min(n_rows, max(0, shown))
+                else:
+                    pos = (shown - 1) * span / (g - 1)
+                    total += min(n_rows, int(np.floor(pos)) + 1)
+            out.append(min(own.row_count(d), total))
+        return out
+
+    def visible_rows(self, dataset, frame):
+        """Original row indices of `dataset` on screen at `frame`, in order."""
+        return self._rows[min(max(int(frame), 0), self.n_frames - 1)][dataset]
+
+    def head_run(self, dataset, frame):
+        """The run DRAWING this dataset's last visible row, or `None` when
+        nothing of it is on screen yet."""
+        rows = self.visible_rows(dataset, frame)
+        if not rows:
+            return None
+        return self.ownership.run_holding(dataset, rows[-1])
+
+
 class DisplayTransform:
     """The centre/scale affine `plot()` applies at `plot.py:4569-4582`.
 

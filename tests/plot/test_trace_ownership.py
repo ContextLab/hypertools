@@ -3,7 +3,8 @@ from fractions import Fraction
 
 import pytest
 
-from hypertools.plot.forecast import revealed_raw_counts
+from hypertools.plot.forecast import (DatasetRevealSchedule,
+                                      revealed_raw_counts)
 from hypertools.plot.ownership import TraceOwnership
 from hypertools.plot.trails import (RunWindow, anim_window_bounds,
                                     dataset_window_bounds, run_head_param)
@@ -371,3 +372,80 @@ def test_reached_means_EXACTLY_that_the_head_is_NON_EMPTY(
                 num, n_frames, own, grids, w)):
             assert win.reached == (win.head_end > 0), f'frame {num}, run {r}'
             assert win.future_start == max(0, win.head_end - 1)
+
+
+@pytest.mark.parametrize('lengths,n_frames,w', REGROUPED_CASES)
+def test_the_schedule_agrees_with_the_RENDERED_windows_at_every_frame(
+        lengths, n_frames, w):
+    """The cross-invariant. Without it the reveal schedule and the renderer
+    can drift while each passes its own tests -- and the symptom would be a
+    forecast fit on an observation that is (or is not) on screen."""
+    own, grids = _one_dataset(lengths, n_frames)
+    sched = DatasetRevealSchedule(own, grids, n_frames, w)
+    for frame in range(n_frames):
+        assert sched.visible_rows(0, frame) == _visible(
+            own, grids, frame, n_frames, w), f'frame {frame}'
+
+
+@pytest.mark.parametrize('lengths,n_frames,w', REGROUPED_CASES)
+def test_the_head_run_is_the_run_DRAWING_the_last_visible_row(
+        lengths, n_frames, w):
+    own, grids = _one_dataset(lengths, n_frames)
+    sched = DatasetRevealSchedule(own, grids, n_frames, w)
+    for frame in range(n_frames):
+        rows = sched.visible_rows(0, frame)
+        run = sched.head_run(0, frame)
+        if not rows:
+            assert run is None, f'frame {frame}'
+        else:
+            assert run == own.run_holding(0, rows[-1]), f'frame {frame}'
+
+
+def test_the_head_run_ADVANCES_at_a_category_boundary():
+    """Decision R3 depends on this changing: if `head_run` were constant the
+    live forecast could never take the new category's colour."""
+    own, grids = _one_dataset([10, 10, 10], 12)
+    sched = DatasetRevealSchedule(own, grids, 12, 12)
+    assert sorted({sched.head_run(0, f) for f in range(12)}) == [0, 1, 2]
+
+
+def test_visible_rows_are_a_PREFIX_of_the_dataset():
+    """The property the fixed reveal buys us, asserted as an invariant rather
+    than assumed: `(0, 3, 6)` -- a sample spanning the whole trajectory -- is
+    what the old reveal produced, and it is what a forecast must never see."""
+    own, grids = _one_dataset([3, 3, 3], 12)
+    sched = DatasetRevealSchedule(own, grids, 12, 2)
+    for frame in range(12):
+        rows = sched.visible_rows(0, frame)
+        assert rows == tuple(range(len(rows))), f'frame {frame}: {rows}'
+
+
+def test_the_last_frame_sees_the_WHOLE_history():
+    own, grids = _one_dataset([3, 3, 3], 12)
+    sched = DatasetRevealSchedule(own, grids, 12, 2)
+    assert sched.visible_rows(0, 11) == tuple(range(9))
+
+
+def test_frames_past_the_end_clamp_instead_of_raising():
+    """matplotlib renders one frame past the end on a loop or a save."""
+    own = TraceOwnership.identity([9])
+    sched = DatasetRevealSchedule(own, [12], 12, 2)
+    assert sched.visible_rows(0, 99) == sched.visible_rows(0, 11)
+    assert sched.visible_rows(0, -5) == sched.visible_rows(0, 0)
+
+
+def test_an_UNREGROUPED_schedule_matches_revealed_raw_counts():
+    """The path an unregrouped animated forecast already takes, so switching
+    every animation onto this class changes nothing about them."""
+    own = TraceOwnership.identity([30])
+    sched = DatasetRevealSchedule(own, [12], 12, 12)
+    assert [len(sched.visible_rows(0, f)) for f in range(12)] == [
+        revealed_raw_counts(30, 12, f, 12) for f in range(12)]
+
+
+def test_the_serial_schedule_reveals_datasets_one_at_a_time():
+    own = TraceOwnership.from_segments([0, 1], [6, 6], [False, False])
+    sched = DatasetRevealSchedule(own, [12, 12], 12, 2, serial=True)
+    assert sched.visible_rows(1, 0) == ()
+    assert len(sched.visible_rows(0, 11)) == 6
+    assert len(sched.visible_rows(1, 11)) == 6
