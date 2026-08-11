@@ -49,7 +49,8 @@ from .density import (
     resolve_grid,
     resolve_plotly_volume_params,
 )
-from .trails import anim_window_bounds, broadcast_trail_flag
+from .trails import (RunWindow, anim_window_bounds, broadcast_trail_flag,
+                     dataset_window_bounds)
 from .._shared.helpers import antialias_line, has_line_component
 from . import morph as _morph
 
@@ -456,6 +457,25 @@ def _aa_resample_colors(colors, n_orig, n_dense):
     return [colors[j] for j in np.round(grid).astype(int)]
 
 
+def _run_window(frame_windows, idx, n_rows, num, total_frames,
+                window_frames):
+    """This trace's `RunWindow` at one frame.
+
+    `frame_windows` is what `trails.dataset_window_bounds` returned for this
+    frame -- ONE clock per source dataset, so `hue=`/`cluster=` runs of one
+    dataset reveal in row order -- or None when the caller has no ownership
+    mapping (marker-only categorical regrouping, whose traces are not
+    datasets). The fallback rebuilds the historical per-trace bounds as a
+    `RunWindow` so both paths hand the drawing code one shape, and it is the
+    SAME shared `anim_window_bounds` the matplotlib backend falls back to.
+    """
+    if frame_windows is not None:
+        return frame_windows[idx]
+    start, end, trail_stop = anim_window_bounds(
+        num, total_frames, n_rows, window_frames)
+    return RunWindow(start, end, trail_stop, max(0, end - 1), True, n_rows)
+
+
 def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 title=None, animate=False, size=None, show=True,
                 save_path=None, frame_rate=30, duration=30, rotations=1,
@@ -471,7 +491,7 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 morph_tags=None, morph_colors=None, morph_samples=None,
                 font=None, font_extra=None, label_alpha=0.5, xlabel=None,
                 ylabel=None, zlabel=None, antialias=True, frame_hooks=None,
-                segment_titles=None):
+                segment_titles=None, ownership=None):
     """Render grouped datasets with plotly, mirroring _draw's contract and
     the matplotlib renderer's appearance.
 
@@ -593,6 +613,18 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         callback immediately before that frame is appended to
         `fig.frames` -- see `_add_animation`'s docstring. `None` (the
         default) when no `on_frame=` was requested.
+    ownership : hypertools.plot.ownership.TraceOwnership or None
+        Which source dataset each drawn trace came from and which of its
+        rows (`None` when the traces do not correspond to input datasets --
+        marker-only categorical regrouping groups globally by category).
+        When given, the animation's head/trail windows come from
+        `trails.dataset_window_bounds`, which paces every trace of ONE
+        dataset from that dataset's single clock, so a `hue=`/`cluster=`
+        regrouped trajectory sweeps once in row order rather than growing
+        in several places at once. This is the SAME call the matplotlib
+        updaters make, for the reason the `trails` module exists: a window
+        arithmetic transcribed separately into this backend once blanked a
+        5-row dataset for 9 of its 15 frames.
     segment_titles : list of str or None
         Per-segment titles for serial-style animations (`_validate_title`'s
         resolved list, plan 1.1 Task 8) -- `None` for every static or
@@ -1468,7 +1500,10 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                        morph_surface_spec=morph_surface_spec_3d,
                        morph_sampled=sampled0, morph_dup_masks=dup_masks0,
                        aa_curves=aa_curves, frame_hooks=frame_hooks,
-                       segment_titles=segment_titles)
+                       segment_titles=segment_titles,
+                       # the run -> dataset -> rows mapping the reveal
+                       # clock is driven from (see `_run_window`)
+                       ownership=ownership)
 
     if save_path is not None:
         ext = save_path.lower().rsplit('.', 1)[-1]
@@ -2762,7 +2797,7 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                    morph_trace_start=None, morph_mesh_trace_start=None,
                    morph_surface_spec=None, surface_point_colors=None,
                    morph_sampled=None, morph_dup_masks=None, aa_curves=None,
-                   frame_hooks=None, segment_titles=None):
+                   frame_hooks=None, segment_titles=None, ownership=None):
     """Attach frames + play controls: 'spin' rotates the camera; True /
     'parallel' reveals trajectories through a sliding time window; 'morph'
     eases the single traveling point-cloud trace (+ mesh, if surfaced)
@@ -3430,7 +3465,19 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
             # assuming contiguity with n_data_traces.
             trace_indices = list(trace_indices) + list(range(
                 trail_trace_start, trail_trace_start + n_trail_traces))
+        # every trace's drawn row count, once: the reveal clock needs them
+        # every frame and they do not change between frames
+        _grid_lengths = [
+            np.atleast_2d(np.asarray(a, dtype=np.float64)).shape[0]
+            for a in data]
         for k in range(n_frames):
+            # ONE clock per source dataset -- the same call the matplotlib
+            # updater makes, so the two backends cannot drift (see the
+            # `trails` module docstring for the drift this rule prevents).
+            frame_windows = None
+            if ownership is not None:
+                frame_windows = dataset_window_bounds(
+                    k, n_frames, ownership, _grid_lengths, window_frames)
             frame_traces = []
             windows_by_index = {}
             window_colors_by_index = {}
@@ -3442,8 +3489,9 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                 # rescaled window instead of being clamped into the longest
                 # dataset's, which used to slide off its end and leave it
                 # blank for most of the animation (`trails` docstring).
-                start, end, _ = anim_window_bounds(
-                    k, n_frames, arr.shape[0], window_frames)
+                _win = _run_window(frame_windows, idx, arr.shape[0],
+                                   k, n_frames, window_frames)
+                start, end = _win.head_start, _win.head_end
                 seg = arr[start:end]
                 windows_by_index[idx] = seg
                 forecast_anchors[idx] = max(0, end - 1)
@@ -3481,8 +3529,8 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                     # computed the same triple, but only the trailed datasets
                     # need `trail_stop`, and re-deriving beats threading a
                     # parallel dict through the head loop for it
-                    _, end, trail_stop = anim_window_bounds(
-                        k, n_frames, arr.shape[0], window_frames)
+                    _twin = _run_window(frame_windows, idx, arr.shape[0],
+                                        k, n_frames, window_frames)
                     if (ct and pc) or bt:
                         t0, t1 = 0, arr.shape[0]
                     elif ct:
@@ -3491,10 +3539,14 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                         # `start` (a `start + 1` off-by-one that used to
                         # overstate this trail by one point at every frame,
                         # not just the early, fully-clamped ones)
-                        t0, t1 = 0, trail_stop
+                        t0, t1 = 0, _twin.past_stop
                     else:
-                        # precog shares the head's last vertex (F05-008)
-                        t0, t1 = end - 1, arr.shape[0]
+                        # precog shares the head's last vertex (F05-008) --
+                        # via `future_start`, never `end - 1`: a run this
+                        # dataset's clock has not reached has `end == 0`, and
+                        # `data[-1:]` would draw one point of a future
+                        # category from the first frame (Decision R5).
+                        t0, t1 = _twin.future_start, arr.shape[0]
                     # antialias=: trail bounds stay ORIGINAL-row indices; the
                     # smooth curve spanning exactly those rows is drawn
                     trail = _aa_window(aa_curves, idx, t0, t1)

@@ -55,10 +55,12 @@ class TraceOwnership:
 
     @property
     def n_runs(self):
+        """How many runs (drawn traces) this figure has."""
         return len(self.dataset_by_run)
 
     @property
     def n_datasets(self):
+        """How many source input datasets those runs came from."""
         return len(self.final_run_by_dataset)
 
     def runs_of(self, dataset):

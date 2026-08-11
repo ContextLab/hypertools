@@ -38,7 +38,8 @@ from .surface import (
     surface_cube_scale,
     view_vector,
 )
-from .trails import anim_window_bounds, broadcast_trail_flag
+from .trails import (RunWindow, anim_window_bounds, broadcast_trail_flag,
+                     dataset_window_bounds)
 from . import morph as _morph
 from .density import (
     DENSITY_DEFAULTS,
@@ -468,6 +469,7 @@ def _draw(
     ylabel=None,
     zlabel=None,
     frame_hooks=None,
+    ownership=None,
 ):
     """
     Draws the plot
@@ -486,6 +488,17 @@ def _draw(
     currently render at the interpolated points rather than only the
     original samples; splitting the animated marker/line artists frame-by-
     frame was judged out of scope for this fix.
+
+    `ownership` (a `hypertools.plot.ownership.TraceOwnership`, or None): which
+    source dataset each drawn trace came from and which of its rows. When
+    given, the parallel/'window' updaters pace every trace of ONE dataset
+    from that dataset's single clock (`trails.dataset_window_bounds`), so a
+    `hue=`/`cluster=` regrouped trajectory sweeps once in row order instead of
+    growing in several places at once. `plot()` passes an `identity` ownership
+    for unregrouped figures, where the projection is provably the identity, so
+    both cases take one code path; it passes None for anything whose traces do
+    not correspond to input datasets (marker-only categorical regrouping
+    groups globally by category), and those keep `anim_window_bounds` directly.
 
     `frame_hooks` (the public `on_frame=` hook, plan 1.1 Task 7): a
     `hypertools.plot.animation_context.FrameHooks` registry, created once by
@@ -1156,6 +1169,15 @@ def _draw(
         # are no longer interchangeable for marker-only datasets, which
         # keep their raw rows -- see `anim_window_bounds`).
         total_frames = max(1, int(round(frame_rate * duration)))
+        # ONE clock per source dataset: `hue=`/`cluster=` runs of the same
+        # dataset must reveal in row order, not all at once (see
+        # `trails.dataset_window_bounds`). Without regrouping this returns
+        # exactly what `anim_window_bounds` returned before, frame for frame.
+        _windows = None
+        if ownership is not None:
+            _windows = dataset_window_bounds(
+                num, total_frames, ownership,
+                [d.shape[0] for d in data_lines], tail_duration)
         azim_now = azim + rotations * (360 * (num / total_frames))
         ax.view_init(elev=elev, azim=azim_now)
         # Axes3D.dist was removed in matplotlib >= 3.8, silently disabling
@@ -1182,8 +1204,14 @@ def _draw(
             # F05-001 (negative chemtrails slice), F05-008 (precog gap),
             # F04-003/F05-012 (shorter/1-point datasets vanishing or driving
             # the frame count) fixes it encodes.
-            start, end, trail_stop = anim_window_bounds(
-                num, total_frames, data.shape[0], tail_duration)
+            if _windows is not None:
+                win = _windows[i]
+            else:
+                _s, _e, _ts = anim_window_bounds(
+                    num, total_frames, data.shape[0], tail_duration)
+                win = RunWindow(_s, _e, _ts, max(0, _e - 1), True,
+                                data.shape[0])
+            start, end = win.head_start, win.head_end
 
             # antialias: each artist draws the SMOOTH curve spanning the same
             # rows it would otherwise have drawn raw (`_aa_window`).
@@ -1194,9 +1222,13 @@ def _draw(
                 if (pc and ct) or bt:
                     trail_seg = _aa_window(i, 0, n_rows, artist=trail)
                 elif ct:
-                    trail_seg = _aa_window(i, 0, trail_stop, artist=trail)
+                    trail_seg = _aa_window(i, 0, win.past_stop, artist=trail)
                 elif pc:
-                    trail_seg = _aa_window(i, end - 1, n_rows, artist=trail)
+                    # `win.future_start`, never `end - 1`: a run the dataset's
+                    # clock has not reached has `end == 0`, and `data[-1:]`
+                    # would put one point of a future category on screen.
+                    trail_seg = _aa_window(i, win.future_start, n_rows,
+                                           artist=trail)
                 if trail_seg is not None:
                     trail.set_data(trail_seg[:, 0:2].T)
                     trail.set_3d_properties(trail_seg[:, 2])
@@ -2072,12 +2104,24 @@ def _draw(
             artists, for `blit=True` animation.
         """
         total_frames = max(1, int(round(frame_rate * duration)))
+        # one clock per source dataset, exactly as in the 3-D updater above
+        _windows = None
+        if ownership is not None:
+            _windows = dataset_window_bounds(
+                num, total_frames, ownership,
+                [d.shape[0] for d in data_lines], tail_duration)
         for i, (line, data, trail) in enumerate(itertools.zip_longest(
                 lines, data_lines, trail_lines)):
             # same F05-001/F05-008/F04-003/F05-012 slicing fixes as the 3-D
             # path -- see `anim_window_bounds`.
-            start, end, trail_stop = anim_window_bounds(
-                num, total_frames, data.shape[0], tail_duration)
+            if _windows is not None:
+                win = _windows[i]
+            else:
+                _s, _e, _ts = anim_window_bounds(
+                    num, total_frames, data.shape[0], tail_duration)
+                win = RunWindow(_s, _e, _ts, max(0, _e - 1), True,
+                                data.shape[0])
+            start, end = win.head_start, win.head_end
             # antialias: draw the smooth curve spanning the same rows
             n_rows = data.shape[0]
             if trail is not None:
@@ -2086,9 +2130,11 @@ def _draw(
                 if (pc and ct) or bt:
                     trail_seg = _aa_window(i, 0, n_rows, artist=trail)
                 elif ct:
-                    trail_seg = _aa_window(i, 0, trail_stop, artist=trail)
+                    trail_seg = _aa_window(i, 0, win.past_stop, artist=trail)
                 elif pc:
-                    trail_seg = _aa_window(i, end - 1, n_rows, artist=trail)
+                    # `win.future_start`, never `end - 1` -- see the 3-D path
+                    trail_seg = _aa_window(i, win.future_start, n_rows,
+                                           artist=trail)
                 if trail_seg is not None:
                     trail.set_data(trail_seg[:, 0], trail_seg[:, 1])
 

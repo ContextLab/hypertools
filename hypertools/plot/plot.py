@@ -347,8 +347,13 @@ def _regroup_categorical_lines(xform, hue, labels, cat_color, cat_label):
     ONE legend entry (the first run carries the label; later runs of the same
     category get ``'_nolegend_'``). Returns
     ``(segments, seg_labels, run_colors, run_group_labels, seg_dataset,
-    run_category_names)``; `seg_dataset` is each run's source input-dataset
-    index (for propagating per-dataset styles via `_expand_styles_to_runs`).
+    run_category_names, seg_lengths, run_bridged)``; `seg_dataset` is each
+    run's source input-dataset index (for propagating per-dataset styles via
+    `_expand_styles_to_runs`), `seg_lengths` is each run's row count BEFORE
+    bridging, and `run_bridged` is whether `patch_lines` appended the next
+    run's first row to it. The last two exist so the animation's reveal clock
+    can tell a run's OWNED rows from its DRAWN geometry (see
+    `ownership.TraceOwnership`).
 
     `run_category_names` carries every run's CATEGORY, which
     `run_group_labels` deliberately does not: that list is matplotlib's
@@ -360,8 +365,22 @@ def _regroup_categorical_lines(xform, hue, labels, cat_color, cat_label):
     matplotlib and a human; this is the human one."""
     segments, seg_labels, seg_cat, seg_bridge, seg_dataset = segment_by_run(
         xform, hue, labels)
+    # BEFORE patch_lines, which appends the next run's first point to every
+    # bridged run: TraceOwnership must not be told a run OWNS its neighbour's
+    # first observation -- it needs the owned span and the drawn span kept
+    # apart (see ownership.TraceOwnership.draw_span).
+    seg_lengths = [len(s) for s in segments]
     breaks = {i + 1 for i in range(len(segments) - 1) if not seg_bridge[i]}
     segments = patch_lines(segments, breaks=breaks, labels=seg_labels)
+    # what patch_lines ACTUALLY bridged, as ONE FLAG PER RUN. `seg_bridge`
+    # is one flag per GAP -- `segment_by_run` documents its length as
+    # `len(segments) - 1` -- so the final run has no entry at all, and
+    # `seg_bridge[i] and i < n - 1` raises rather than guarding: Python
+    # subscripts before it reaches the `and`. The last run is never bridged
+    # (it has no successor), which is also what `TraceOwnership` requires of
+    # each dataset's final run.
+    run_bridged = [i < len(seg_bridge) and bool(seg_bridge[i])
+                   for i in range(len(segments))]
     run_colors = [cat_color[c] for c in seg_cat]
     seen = set()
     run_group_labels = []
@@ -376,7 +395,7 @@ def _regroup_categorical_lines(xform, hue, labels, cat_color, cat_label):
             seen.add(c)
             run_group_labels.append(cat_label.get(c, str(c)))
     return (segments, seg_labels, run_colors, run_group_labels, seg_dataset,
-            run_category_names)
+            run_category_names, seg_lengths, run_bridged)
 
 
 def _expand_styles_to_runs(fmt, mpl_kwargs, seg_dataset, n_datasets):
@@ -3835,6 +3854,10 @@ def plot(
     #: Each drawn run's SOURCE dataset index, when `hue=`/`cluster=`
     #: regrouped the traces. `None` when no regrouping happened.
     _seg_ds = None
+    # each run's PRE-bridge row count and whether `patch_lines` bridged it;
+    # set together with `_seg_ds` by `_regroup_categorical_lines`
+    _seg_lengths = None
+    _seg_bridged = None
     # (n_input_datasets, n_hue_groups) when a categorical hue regrouped the
     # data by category -- names= (one name per INPUT dataset) cannot apply
     # after that regrouping (F02-009).
@@ -4147,7 +4170,8 @@ def plot(
                 _cat_label = {gid: str(gid) for gid in dict.fromkeys(group_ids)}
                 _nd = len(xform)
                 (xform, labels, _run_colors, hue_group_labels, _seg_ds,
-                 _run_cat_names) = _regroup_categorical_lines(
+                 _run_cat_names, _seg_lengths,
+                 _seg_bridged) = _regroup_categorical_lines(
                      xform, group_ids, labels, _cat_color, _cat_label)
                 fmt = _expand_styles_to_runs(fmt, mpl_kwargs, _seg_ds, _nd)
                 mpl_kwargs["color"] = _run_colors
@@ -4173,7 +4197,8 @@ def plot(
                 cluster_labels, palette, None, None, sort_numeric=True)
             _nd = len(xform)
             (xform, labels, _run_colors, hue_group_labels, _seg_ds,
-             _run_cat_names) = _regroup_categorical_lines(
+             _run_cat_names, _seg_lengths,
+             _seg_bridged) = _regroup_categorical_lines(
                  xform, cluster_labels, labels, _cat_color, _cat_label)
             fmt = _expand_styles_to_runs(fmt, mpl_kwargs, _seg_ds, _nd)
             mpl_kwargs["color"] = _run_colors
@@ -4490,7 +4515,8 @@ def plot(
                     hue, palette, mpl_kwargs.get("color"),
                     hue_group_labels, _hue_sort_numeric)
                 (xform, labels, _run_colors, hue_group_labels, _seg_ds,
-                 _run_cat_names) = _regroup_categorical_lines(
+                 _run_cat_names, _seg_lengths,
+                 _seg_bridged) = _regroup_categorical_lines(
                      xform, hue, labels, _cat_color, _cat_label)
                 fmt = _expand_styles_to_runs(
                     fmt, mpl_kwargs, _seg_ds, _n_datasets_before_hue)
@@ -5018,6 +5044,24 @@ def plot(
             raw_forecasts = None
             analyze_histories = None
 
+    # Run -> dataset -> original rows, for the animation's reveal clock and
+    # (below) the forecast schedule. Built for regrouped LINE plots and for
+    # unregrouped ones, so both take the same code path; left None for
+    # anything whose drawn traces do not correspond to input datasets.
+    from .ownership import TraceOwnership
+    _ownership = None
+    if _seg_ds is not None and _seg_lengths is not None:
+        _ownership = TraceOwnership.from_segments(
+            _seg_ds, _seg_lengths, _seg_bridged)
+    elif (_hue_regrouped_counts is None and isinstance(xform, list)
+            and len(xform) == len(raw_xform)):
+        # nothing regrouped: one drawn trace per input dataset. MARKER-only
+        # hue regrouping (`reshape_data`, plot.py:4503) also leaves `_seg_ds`
+        # None while CHANGING the trace count -- it groups globally by
+        # category, so its traces are not datasets at all and must not be
+        # described as such.
+        _ownership = TraceOwnership.identity([len(xi) for xi in raw_xform])
+
     # center + scale. When forecasts are drawn, the frame must contain
     # EVERYTHING drawn: compute the center/scale statistics from the FULL
     # stacked data (observed + forecasts, mirroring the animation principle
@@ -5323,6 +5367,9 @@ def plot(
             _apply_extra_kwargs(kwargs_list, kwargs)
         fig = plotly_draw(
             xform,
+            # the same run -> dataset -> rows mapping the matplotlib updaters
+            # pace their reveal with, so neither backend re-derives it
+            ownership=_ownership,
             fmt=draw_fmt,
             antialias=antialias,
             kwargs_list=kwargs_list,
@@ -5460,6 +5507,7 @@ def plot(
                 ylabel=ylabel,
                 zlabel=zlabel,
                 frame_hooks=_frame_hooks,
+                ownership=_ownership,
             )
 
             # predict=: overlay one forecast trace per input dataset
