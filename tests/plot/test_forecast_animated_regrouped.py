@@ -239,3 +239,85 @@ def test_a_CONTINUOUS_hue_DRAWS_its_forecasts_and_never_refused():
                             frame_rate=6, show=False)
     ani._func(11, *ani._args)
     assert [a for a in _artists(fig, 'live') if a.get_visible()]
+
+
+def _plotly(data, **kwargs):
+    hyp.set_interactive_backend('plotly')
+    try:
+        with no_warnings():
+            return hyp.plot(data, '-', predict='Kalman', t=4, animate=True,
+                            duration=2, frame_rate=6, show=False, **kwargs)
+    finally:
+        hyp.set_interactive_backend('matplotlib')
+
+
+def _roles(fig):
+    return {i: (tr.meta or {}).get('hyp_forecast_role')
+            for i, tr in enumerate(fig.data)}
+
+
+def _live_tips(pfig, frame_index):
+    """Last drawn vertex of every non-empty live forecast trace, sorted.
+
+    `d.x is None`, never `d.x or ()`: plotly stores a frame's coordinates as
+    a numpy array, and `array or ()` raises "truth value of an array with
+    more than one element is ambiguous".
+    """
+    roles = _roles(pfig)
+    frame = pfig.frames[frame_index]
+    return sorted(float(d.x[-1]) for t, d in zip(frame.traces, frame.data)
+                  if roles.get(t) == 'live'
+                  and d.x is not None and len(d.x))
+
+
+def _mpl_tips(mfig, ani, frame):
+    ani._func(frame, *ani._args)
+    return sorted(float(_endpoint(a)[0]) for a in _artists(mfig, 'live')
+                  if a.get_visible())
+
+
+def test_plotly_draws_forecasts_over_a_regrouped_animation():
+    pytest.importorskip('plotly')
+    fig = _plotly(_walks(), hue=HUE * 2)
+    roles = _roles(fig)
+    assert 'live' in roles.values(), 'no live forecast trace was built'
+    last = fig.frames[-1]
+    drawn = [d for t, d in zip(last.traces, last.data)
+             if roles.get(t) == 'live']
+    assert drawn and any(d.x is not None and len(d.x) for d in drawn)
+
+
+def test_both_backends_end_the_animation_at_the_same_forecast():
+    pytest.importorskip('plotly')
+    data = _walks()
+    pfig = _plotly(data, hue=HUE * 2)
+    mfig, ani = _animate(data)
+    assert np.allclose(_mpl_tips(mfig, ani, 11), _live_tips(pfig, 11),
+                       atol=1e-8)
+
+
+def test_both_backends_agree_at_EVERY_frame_not_just_the_last():
+    """A final-frame-only check passes for any schedule that ends correctly,
+    including one that reveals at a different rate throughout."""
+    pytest.importorskip('plotly')
+    data = _walks(n=1)
+    pfig = _plotly(data, hue=HUE)
+    mfig, ani = _animate(data, hue=HUE)
+    for f in range(12):
+        assert np.allclose(_mpl_tips(mfig, ani, f), _live_tips(pfig, f),
+                           atol=1e-8), f'frame {f}'
+
+
+def test_plotly_forecast_colour_follows_the_head_run_too():
+    pytest.importorskip('plotly')
+    fig = _plotly(_walks(n=1), hue=HUE)
+    roles = _roles(fig)
+    seen = set()
+    for frame in fig.frames:
+        for t, d in zip(frame.traces, frame.data):
+            # `d.line` is a plotly `Line` object, not a dict -- it has no
+            # `.get`, and asking for one raises rather than returning None
+            colour = getattr(d.line, 'color', None) if d.line else None
+            if roles.get(t) == 'live' and colour:
+                seen.add(colour)
+    assert len(seen) > 1, f'the plotly forecast kept one colour: {seen}'

@@ -5420,6 +5420,9 @@ def plot(
             # the same run -> dataset -> rows mapping the matplotlib updaters
             # pace their reveal with, so neither backend re-derives it
             ownership=_ownership,
+            # ...and the same reveal schedule its per-frame forecast colours
+            # come from (Decision R3)
+            forecast_reveal=_reveal,
             fmt=draw_fmt,
             antialias=antialias,
             kwargs_list=kwargs_list,

@@ -385,42 +385,50 @@ line colour and echoed in ``meta['hyp_forecast_alpha']``).
 a floor proportional to it -- so a retained forecast is never more opaque than
 the live forecast it decays from, however faint the dataset.
 
-``hue=`` and ``cluster=``: static only
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Animated forecasts under ``hue=``/``cluster=``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-``hue=`` and ``cluster=`` regroup the drawn traces by category rather than by
-dataset, so there is no longer one trace per dataset. A **static** plot copes:
-it draws one forecast per dataset, anchored at that dataset's last
-observation and styled like the trace holding it.
-
-An **animated** plot does not, and warns rather than failing quietly:
+When ``hue=`` or ``cluster=`` splits a trajectory into per-category runs, each
+run is drawn as its own trace, but the reveal still follows the **dataset**:
+one run finishes as the next begins, so the trajectory sweeps once and changes
+colour as it crosses a category boundary. (Before 1.0.1 every run advanced
+at once, so one trajectory animated in several places simultaneously.) A forecast
+is fit per dataset from exactly the observations on screen, so it means the
+same thing it does without ``hue=``:
 
 .. code-block:: python
 
-    # draws forecasts
+    # both draw forecasts, and agree at every frame
     hyp.plot(data, '-', predict='Kalman', t=10, hue=categories)
-
-    # warns; no per-frame forecast is drawn
     hyp.plot(data, '-', predict='Kalman', t=10, hue=categories, animate=True)
 
-The reason is structural rather than an oversight. The per-frame schedule
-maps frame-grid rows onto each **dataset's** raw observations, so it needs a
-per-dataset reveal to schedule against; regrouping leaves only per-run traces
-revealing themselves, and a run is not a dataset. Plot statically to see
-forecasts alongside ``hue=``/``cluster=``.
+A live forecast inherits the colour of the run drawing the head, and therefore
+changes colour with it; a retained ``forecast_trail=`` member keeps the colour
+it was drawn with, so the fan records the history rather than being repainted.
+Pass ``forecast_hue=``, ``forecast_cluster=`` or ``forecast_palette=`` to give
+the forecasts a grouping of their own; those are resolved once from the
+full-history forecasts and stay fixed for every frame.
 
-Both backends refuse identically. That is worth stating because they nearly
-did not: plotly draws its static forecast block whenever there is no per-frame
-schedule, which is exactly the state this refusal creates, so it warned "no
-forecast is drawn" and then drew the **full-history** forecast -- visible from
-frame 0, before any of the data it is predicted from.
+Because each run is resampled onto its own frame grid, a regrouped reveal can
+lag the un-regrouped one by up to one grid step -- under a single frame of
+trajectory, and never early, so a forecast is never fit on an observation that
+has not been drawn.
 
-The forecasts are still *computed*, and ``return_model=True`` still reports
-them:
+Both backends draw this identically, frame for frame; that is worth stating
+because they nearly did not. Each pace their reveal with the same shared
+window arithmetic rather than a transcription of it, and both take their
+per-frame forecast rows from the same schedule.
+
+**Marker-only** categorical regrouping is the one case still refused. With a
+marker format, ``hue=`` groups every observation of a category together
+regardless of which dataset it came from, so the drawn traces are categories
+rather than datasets and there is nothing to anchor a per-dataset forecast to.
+``plot()`` says so instead of dropping it silently, and the forecasts are
+still *computed* -- ``return_model=True`` reports them:
 
 .. code-block:: python
 
-    bundle = hyp.plot(data, '-', predict='Kalman', t=10, hue=categories,
+    bundle = hyp.plot(data, 'o', predict='Kalman', t=10, hue=categories,
                       animate=True, return_model=True)
 
     bundle['predict']['forecasts']    # the fit -- one array per dataset

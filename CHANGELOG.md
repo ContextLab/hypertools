@@ -146,6 +146,29 @@ items under **Changed** below alter how existing figures LOOK.
   `hue=` already used: one group, neutral gray, no legend entry, no palette
   slot consumed. `forecast_hue=` follows the same rule.
 
+- **A regrouped trajectory now animates in row order.** With `hue=`/`cluster=`,
+  each contiguous same-category run is drawn as its own trace, and every run
+  used to advance at once -- so one trajectory animated in several disjoint
+  time windows simultaneously (three runs of a 30-row dataset were all 27%
+  drawn on frame 3 of 12). Runs of one input dataset now share a single reveal
+  clock, so the head sweeps the trajectory once and changes colour at each
+  category boundary, matching both the un-regrouped and `order='serial'`
+  behaviour. Animations without `hue=`/`cluster=` are unchanged row for row.
+  A `precog=` trail on a not-yet-reached run now shows that run's whole future
+  rather than a single stray point.
+
+- **`predict=` now works with `hue=`/`cluster=` on ANIMATED plots.** Previously
+  the fit succeeded and the forecasts were returned in the `return_model=True`
+  bundle with `drawn=False`, but no overlay was drawn. Each frame's forecast is
+  fit from exactly the observations visible for that dataset. A live forecast
+  inherits the colour of the run drawing the head; a retained
+  `forecast_trail=` member keeps the colour it was fit with;
+  `forecast_hue=`/`forecast_cluster=`/`forecast_palette=` override both with a
+  grouping fixed for the whole animation. Both backends draw it identically at
+  every frame. Marker-only categorical regrouping (which groups globally by
+  category, so its traces are not datasets) still draws no overlay and still
+  says so.
+
 - **`predict=` now works with `hue=` and `cluster=` on static plots.**
   Previously a forecast survived regrouping only by accident: the guard was a
   cardinality check, so two datasets falling into two category runs kept their

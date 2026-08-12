@@ -491,7 +491,7 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 morph_tags=None, morph_colors=None, morph_samples=None,
                 font=None, font_extra=None, label_alpha=0.5, xlabel=None,
                 ylabel=None, zlabel=None, antialias=True, frame_hooks=None,
-                segment_titles=None, ownership=None):
+                segment_titles=None, ownership=None, forecast_reveal=None):
     """Render grouped datasets with plotly, mirroring _draw's contract and
     the matplotlib renderer's appearance.
 
@@ -613,6 +613,15 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         callback immediately before that frame is appended to
         `fig.frames` -- see `_add_animation`'s docstring. `None` (the
         default) when no `on_frame=` was requested.
+    forecast_reveal : hypertools.plot.forecast.DatasetRevealSchedule or None
+        Which of each dataset's ORIGINAL rows are on screen at each frame,
+        when `hue=`/`cluster=` regrouping means a dataset spans several
+        traces. Used only to colour the animated forecast traces: a live
+        forecast wears the colour of the run drawing the head at that frame,
+        and a retained `forecast_trail=` member wears the one it was FIT
+        with, so a boundary crossing does not repaint the historical fan
+        (Decision R3, matching the matplotlib backend). `None` for
+        unregrouped figures, where the forecast keeps its build-time colour.
     ownership : hypertools.plot.ownership.TraceOwnership or None
         Which source dataset each drawn trace came from and which of its
         rows (`None` when the traces do not correspond to input datasets --
@@ -1003,6 +1012,10 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     # `traces[forecast_trace_start + k]`; age 0 is the live forecast.
     forecast_trace_start = len(traces)
     forecast_trace_specs = []
+    #: parallel to `forecast_trace_specs`: {run -> colour} for each
+    #: forecast trace, so a frame can repaint it in the head run's
+    #: colour (Decision R3). Empty dict = the colour is pinned.
+    forecast_frame_colors = []
     if forecasts is not None and forecast_schedule is None:
         # Loop over the FORECASTS (one per input dataset), not over `data`
         # (one per drawn RUN). `hue=`/`cluster=` regrouping makes those two
@@ -1105,6 +1118,28 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 else:
                     traces.append(go.Scatter(x=[], y=[], **fc_common))
                 forecast_trace_specs.append((i, age))
+                # Decision R3: the colour a live/retained forecast wears is
+                # the HEAD RUN's, which changes from frame to frame. Plotly
+                # frames carry geometry, so the colour must be resolvable
+                # per frame -- precompute what THIS trace would look like
+                # continuing each possible run, through the same
+                # `_forecast_style_from` the build above uses, so the two
+                # cannot express different policies. Empty when the user
+                # pinned the colour (forecast_hue=/_cluster=/_palette=):
+                # an explicit grouping is fixed for the whole animation.
+                _ov = (forecast_overrides[i]
+                       if forecast_overrides is not None
+                       and i < len(forecast_overrides) else None)
+                _pinned = isinstance(_ov, dict) and _ov.get('color') is not None
+                forecast_frame_colors.append({} if _pinned else {
+                    _r: _forecast_style_from(
+                        kwargs_list[_r] or {}, fmt[_r],
+                        alpha=trail_alpha(
+                            age, n_retained,
+                            live_alpha=forecast_alpha(
+                                (kwargs_list[_r] or {}).get('alpha'))),
+                        override=_ov)[0].get('color')
+                    for _r in range(len(data))})
 
     # low-opacity trail traces for chemtrails (past) / precog (future) /
     # bullettime (both) on window animations, mirroring the matplotlib
@@ -1500,6 +1535,8 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                        forecast_schedule=forecast_schedule,
                        forecast_trace_start=forecast_trace_start,
                        forecast_trace_specs=forecast_trace_specs,
+                       forecast_frame_colors=forecast_frame_colors,
+                       forecast_reveal=forecast_reveal,
                        forecast_trail=forecast_trail,
                        forecast_antialias=antialias,
                        surface=surface, surface_colors=surface_colors,
@@ -2811,7 +2848,8 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                    morph_trace_start=None, morph_mesh_trace_start=None,
                    morph_surface_spec=None, surface_point_colors=None,
                    morph_sampled=None, morph_dup_masks=None, aa_curves=None,
-                   frame_hooks=None, segment_titles=None, ownership=None):
+                   frame_hooks=None, segment_titles=None, ownership=None,
+                   forecast_frame_colors=None, forecast_reveal=None):
     """Attach frames + play controls: 'spin' rotates the camera; True /
     'parallel' reveals trajectories through a sliding time window; 'morph'
     eases the single traveling point-cloud trace (+ mesh, if surfaced)
@@ -3027,13 +3065,28 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
         from .forecast import trail_frames
         past = trail_frames(k, forecast_trail) if forecast_trail else []
         out = []
-        for dataset, age in forecast_trace_specs:
+        _colors = forecast_frame_colors or []
+        for _spec, (dataset, age) in enumerate(forecast_trace_specs):
             if age == 0:
+                fit_frame = k
                 pts = forecast_schedule.polyline(dataset, k)
             elif age <= len(past):
+                fit_frame = past[age - 1]
                 pts = forecast_schedule.polyline(dataset, past[age - 1])
             else:
+                fit_frame = None
                 pts = None          # fewer past frames than the fan is deep
+            # Decision R3, matplotlib parity: the live forecast takes the
+            # colour of the run drawing the head NOW; a retained one takes
+            # the run that was drawing it when it was FIT, so a boundary
+            # crossing does not repaint the historical fan.
+            _line = None
+            if (forecast_reveal is not None and fit_frame is not None
+                    and _spec < len(_colors) and _colors[_spec]):
+                _run = forecast_reveal.head_run(dataset, fit_frame)
+                _colour = _colors[_spec].get(_run)
+                if _colour is not None:
+                    _line = dict(color=_colour)
             if pts is None or len(pts) < 2:
                 out.append(go.Scatter3d(x=[], y=[], z=[]) if ndims >= 3
                            else go.Scatter(x=[], y=[]))
@@ -3045,16 +3098,17 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
             # from a static plot
             draw, step = (antialias_line(pts) if forecast_antialias
                           else (pts, 1))
+            _extra = {} if _line is None else dict(line=_line)
             if ndims >= 3:
                 out.append(go.Scatter3d(x=draw[:, 0], y=draw[:, 1],
-                                        z=draw[:, 2]))
+                                        z=draw[:, 2], **_extra))
             elif ndims == 2:
-                out.append(go.Scatter(x=draw[:, 0], y=draw[:, 1]))
+                out.append(go.Scatter(x=draw[:, 0], y=draw[:, 1], **_extra))
             else:
                 out.append(go.Scatter(
                     x=_aa_x(step, anchor_rows.get(dataset, 0),
                             draw.shape[0]),
-                    y=draw[:, 0]))
+                    y=draw[:, 0], **_extra))
         return out
 
     def _window_colors(idx, start, stop):
