@@ -11,14 +11,24 @@ commit.
 | Task | State | Commit |
 |-|-|-|
 | 1 `TraceOwnership` | done, 11 tests | `c50b5037` |
-| 2 `RunWindow` + `dataset_window_bounds` | done, 160 tests in module | `aebe4689` |
+| 2 `RunWindow` + `dataset_window_bounds` | done | `aebe4689` |
 | (fix) machine-speed-dependent warning | done | `0a719e24` |
 | 3 matplotlib updaters | done | `a701b32c` |
-| 4 plotly parity | done (same commit — shares plot.py) | `a701b32c` |
-| 5 `DatasetRevealSchedule` | done, 202 in module | `4dd5ec16` |
-| 6 `ForecastSchedule` row-tuple keys + `for_regrouped` | done, 207 in module | `4e77d20c` |
-| 7 forecast over a regrouped animation (matplotlib) | NOT STARTED | |
-| 8 plotly parity, docs, CHANGELOG | NOT STARTED | |
+| 4 plotly reveal parity | done (same commit — shares plot.py) | `a701b32c` |
+| 5 `DatasetRevealSchedule` | done | `4dd5ec16` |
+| 6 `ForecastSchedule` row-tuple keys + `for_regrouped` | done | `4e77d20c` |
+| 7 forecasts over regrouped animations (both backends) | done, 11 tests | `2de3812b` |
+| 8 plotly colour parity, docs, CHANGELOG | done, 15 tests | `530c1e23` |
+
+**THE PLAN IS FULLY IMPLEMENTED.** Final gate, every check re-run after the
+last change:
+
+- full suite **3228 passed, 13 skipped, 0 failed** (2991 before this work),
+  with **no `warnings summary` section at all**
+- `cd docs && sphinx -W -E -a` — build succeeded
+- ruff over `hypertools/` + `tests/`: **353 findings at the base commit
+  (`882a3643`, compared via a worktree) and 353 now** — no new ones
+- `tests/plot` 553 passed at the mid-plan checkpoint
 
 Checkpoint the maintainer asked for — all of `tests/plot` once both backends
 consume `RunWindow` — ran GREEN: **553 passed**, zero warnings.
@@ -99,14 +109,57 @@ holds only `test.yml`), so nothing gates them. I fixed only the ones in files
 this work touched and kept new files clean. Cleaning all 417 is a separate
 decision.
 
-## Resuming at Task 7
+## What the plan got wrong (all fixed in this branch)
 
-Task 7 (plan lines 2054-2378) draws the forecast over a regrouped animation
-in matplotlib — replacing the refusal at `plot.py:5051-5077` (line numbers
-have drifted; grep for the refusal warning text). Decision R3 governs colour:
-a live forecast takes `head_run` at the CURRENT frame; a retained
-`forecast_trail=` member of age k takes `head_run(dataset, past[k-1])` — the
-head run at the frame it was FIT — so a saved animation matches a played one.
-Task 8 is plotly parity + docs + CHANGELOG.
+Seven defects in the plan's own listings, found by running them. Three in the
+library code (`seg_bridge` length, the plotly frame loop's location, missing
+docstrings) and four in the test code (`_animate` had no `fmt`,
+`len(d.x or ())` on a numpy array, `_hyp_row_window` selecting heads as well
+as trails, a hue list shorter than the data). Details in the commits.
 
-Nothing pushed. `dev-1.0` is ~115 commits ahead of `origin/dev-1.0`.
+Two more the plan asserted that measurement disproved:
+
+- **A CONTINUOUS hue does not refuse forecasts.** The plan (and a comment in
+  `plot.py`) named it as the example of "no per-dataset trace to anchor to".
+  It colours one line artist per dataset through a `LineCollection` overlay
+  WITHOUT changing the trace count, so its forecasts draw -- static and
+  animated. What actually reaches that refusal is MARKER-only categorical
+  regrouping (`reshape_data` groups globally by category, so 3 datasets under
+  2 categories become 2 traces). Code comment corrected, both facts pinned by
+  tests, docs written to the corrected version.
+- **"Before 1.1" in the docs text.** There is no 1.1 on this branch; an
+  existing guard (`tests/test_animation_guide_docs.py`) caught it.
+
+And one test premise that could not hold as written:
+`test_the_final_frame_forecast_equals_the_STATIC_one` compared raw display
+coordinates, but `plot()` builds the [-1, 1] box from everything it will draw
+-- an animation draws every frame's forecast, a static plot only the final
+one -- so the two figures have different centre/scale. Measured: the observed
+DATA endpoints differ between them too, on identical data. Rewritten to
+compare direction plus one shared magnitude ratio (0.85883598 for both
+datasets), which is the scale-invariant statement of the same claim.
+
+## Two per-trace-vs-per-dataset defects, one per backend
+
+Both reachable from a public call, neither mentioned by the plan. matplotlib
+built one forecast artist per DRAWN TRACE, and plotly stamped
+`meta['hyp_dataset']` with a RUN index; each produced `IndexError` from the
+schedule the moment regrouping made those counts differ. Both now loop over
+the forecasts and style from the owning run.
+
+## Left for the maintainer
+
+- **Nothing is pushed.** `dev-1.0` is ~121 commits ahead of `origin/dev-1.0`;
+  CI has not seen any of this since 2026-07-24.
+- **417 pre-existing ruff findings repo-wide** (190 F405, 103 F401, 58 E402,
+  43 E741, ...), unchanged by this work and ungated (no lint job in CI).
+  Cleaning them is a separate decision.
+- **The ANIMATED-regrouping refusal in `plot.py` is now effectively dead
+  code.** It fires only when a count mismatch coexists with an ownership
+  mapping that is absent while `_forecast_owner` is present -- a combination
+  the current code cannot produce, because both come from
+  `_regroup_categorical_lines` together. It is kept as a guard so a future
+  regrouping path that builds one without the other refuses loudly rather
+  than crashing, but it is no longer covered by a test that can reach it.
+- **Plan 4 Task 2's prerequisite is now satisfied.** Its blocking dependency
+  was this plan, with its focused tests green. That is the state above.
