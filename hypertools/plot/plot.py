@@ -5026,10 +5026,17 @@ def plot(
                 _forecast_owner = [_owner[i]
                                    for i in range(len(raw_forecasts))]
         if _forecast_owner is None:
-            # No usable mapping -- e.g. a CONTINUOUS hue, which draws the
-            # data as a LineCollection, so there is no per-dataset trace to
-            # anchor or inherit from at all. Say so: a forecast the user
-            # asked for and did not get must not vanish in silence.
+            # No usable mapping -- in practice MARKER-only categorical
+            # regrouping, which goes through `reshape_data` and groups
+            # GLOBALLY by category, so 3 datasets under 2 categories become 2
+            # traces that are not datasets at all. (A CONTINUOUS hue, named
+            # here previously, is NOT an example: it colours one line artist
+            # per dataset through a LineCollection overlay without changing
+            # the trace count, so the correspondence holds and its forecasts
+            # draw -- measured, and pinned by
+            # `test_a_CONTINUOUS_hue_DRAWS_its_forecasts_and_never_refused`.)
+            # Say so: a forecast the user asked for and did not get must not
+            # vanish in silence.
             warnings.warn(
                 f"predict= was given, but the forecast overlays could not be "
                 f"matched to the {len(xform)} drawn trace(s): hue=/cluster= "
@@ -5092,16 +5099,41 @@ def plot(
     # be mapped back onto per-dataset histories -- building the schedule
     # anyway raises IndexError partway through the first frame, which is how
     # this was found.
+    _reveal = None
     if (raw_forecasts is not None and analyze_histories is not None
             and animate and animate not in ('spin',)
-            and len(analyze_histories) != len(xform)):
-        _reveal = ('serial' if (animate == 'serial' or order == 'serial')
-                   else 'parallel')
+            and len(analyze_histories) != len(xform)
+            and _ownership is not None):
+        # `hue=`/`cluster=` regrouped the data into one trace per RUN, and a
+        # `TraceOwnership` says which dataset each run came from and from
+        # which of its rows. `DatasetRevealSchedule` maps every frame onto
+        # that dataset's own visible rows, read off the SAME `RunWindow`s the
+        # backends slice their artists with -- so the fitted history and the
+        # drawn trajectory cannot describe different states. The refusal
+        # below now applies only when there is no such mapping at all.
+        from .forecast import DatasetRevealSchedule
+        from .trails import head_window_frames
+        _reveal = DatasetRevealSchedule(
+            _ownership, [np.asarray(xi).shape[0] for xi in xform],
+            n_frames=max(1, int(round(frame_rate * duration))),
+            # the length the BACKENDS will use, from the one function all
+            # three callers share -- a schedule built on a different window
+            # would disagree with the picture about what is on screen
+            window_frames=head_window_frames(
+                frame_rate, tail_duration, resolved_focused,
+                animate == 'window', chemtrails, precog, bullettime),
+            serial=(animate == 'serial' or order == 'serial'))
+    if (raw_forecasts is not None and analyze_histories is not None
+            and animate and animate not in ('spin',)
+            and len(analyze_histories) != len(xform)
+            and _reveal is None):
+        _reveal_kind = ('serial' if (animate == 'serial' or order == 'serial')
+                        else 'parallel')
         warnings.warn(
             f"predict= with an ANIMATED plot needs one drawn trace per "
             f"dataset, but hue=/cluster= regrouped {len(analyze_histories)} "
             f"dataset(s) into {len(xform)} trace(s), so no forecast overlay "
-            f"is drawn (animate={animate!r}, {_reveal} reveal); the observed "
+            f"is drawn (animate={animate!r}, {_reveal_kind} reveal); the observed "
             f"trajectories still animate. Plot statically (drop animate=), "
             f"drop hue=/cluster=, or render the forecast as a separate "
             f"plot.",
@@ -5142,9 +5174,16 @@ def plot(
         _slow_secs = (DEFAULT_SLOW_WARNING_SECONDS
                       if slow_warning_seconds is _UNSET_SLOW_WARNING
                       else slow_warning_seconds)
-        forecast_schedule = _builder(
-            analyze_histories, _grid_lengths, model=predict, t=t,
-            n_frames=_n_frames, slow_warning_seconds=_slow_secs)
+        if _reveal is not None:
+            # rows from the reveal, not counts from the drawn traces: a
+            # dataset may now be spread over several of them
+            forecast_schedule = ForecastSchedule.for_regrouped(
+                analyze_histories, _reveal, model=predict, t=t,
+                n_frames=_n_frames, slow_warning_seconds=_slow_secs)
+        else:
+            forecast_schedule = _builder(
+                analyze_histories, _grid_lengths, model=predict, t=t,
+                n_frames=_n_frames, slow_warning_seconds=_slow_secs)
 
     if raw_forecasts is not None:
         _fc_rows = [np.vstack(raw_forecasts)]
@@ -5570,14 +5609,28 @@ def plot(
                 # because `trail_alpha` never returns 0 and a stale artist
                 # would otherwise be indistinguishable from an empty one.
                 _trail_forecast_artists = []
-                for _i in range(len(xform)):
+                # one per DATASET, not per drawn trace: `hue=`/`cluster=`
+                # regrouping makes those different counts (a 30-row dataset
+                # under A/B/A is three traces), and a forecast belongs to the
+                # dataset. Without regrouping the two are equal and nothing
+                # changes.
+                for _i in range(len(raw_forecasts)):
+                    # which drawn run this dataset's forecast continues: the
+                    # run holding its LAST observation, the same trace the
+                    # static overlay inherits from. Per FRAME the live artist
+                    # re-takes the colour of whichever run is drawing the head
+                    # (Decision R3); this is its build-time default.
+                    _fc_src = (_forecast_owner[_i]
+                               if _forecast_owner is not None
+                               and _i < len(_forecast_owner) else _i)
                     # the SAME styling policy `_draw_forecast_overlays` uses
                     # (colour/linestyle/linewidth inherited from the observed
                     # trace, alpha halved), from the SAME helper -- so a
                     # paused animation is indistinguishable from the static
                     # plot and the two paths cannot drift.
                     _fc_style = _forecast_style_from(
-                        _src_lines[_i] if _i < len(_src_lines) else None,
+                        _src_lines[_fc_src] if _fc_src < len(_src_lines)
+                        else None,
                         override=(_forecast_overrides[_i]
                                   if _forecast_overrides is not None
                                   and _i < len(_forecast_overrides)
@@ -5627,12 +5680,41 @@ def plot(
                     _art._hyp_forecast_dataset = _i
                     _live_forecast_artists.append(_art)
 
+                # whether the user pinned this dataset's forecast colour
+                # (`forecast_hue=`/`forecast_cluster=`/`forecast_palette=`);
+                # an explicit grouping is resolved once from the full-history
+                # forecasts and must stay fixed for every frame, so it wins
+                # over the per-frame head-run colour below.
+                _override_colour = [
+                    bool(_forecast_overrides is not None
+                         and _i < len(_forecast_overrides)
+                         and isinstance(_forecast_overrides[_i], dict)
+                         and _forecast_overrides[_i].get('color') is not None)
+                    for _i in range(len(raw_forecasts))]
+
                 def _update_forecasts(ctx, _sched=forecast_schedule,
                                       _artists=_live_forecast_artists,
                                       _trails=_trail_forecast_artists,
                                       _retained=_n_forecast_trail,
                                       _antialias=antialias,
-                                      _ndims=_display_ndims):
+                                      _ndims=_display_ndims,
+                                      _reveal_sched=_reveal,
+                                      _lines=_src_lines,
+                                      _pinned=_override_colour):
+                    def _run_colour(dataset, frame):
+                        """Decision R3: the colour of the run DRAWING the
+                        head at `frame` -- the CURRENT frame for the live
+                        forecast, and the frame it was FIT at for a retained
+                        one, so crossing a category boundary does not repaint
+                        the whole historical fan (which would make a saved
+                        animation differ from a played one)."""
+                        if _reveal_sched is None or _pinned[dataset]:
+                            return None
+                        run = _reveal_sched.head_run(dataset, frame)
+                        if run is None or run >= len(_lines):
+                            return None
+                        return _lines[run].get_color()
+
                     def _blank(art):
                         art.set_visible(False)
                         if _ndims >= 3:
@@ -5668,6 +5750,9 @@ def plot(
                         if pts is None or len(pts) < 2:
                             _blank(art)
                         else:
+                            _colour = _run_colour(i, ctx.frame)
+                            if _colour is not None:
+                                art.set_color(_colour)
                             _fill(art, pts)
                         for _age, slot in enumerate(_trails[i], start=1):
                             # `past` is newest-first, so age N is past[N-1];
@@ -5680,6 +5765,10 @@ def plot(
                             if old_pts is None or len(old_pts) < 2:
                                 _blank(slot)
                             else:
+                                # the head run AT THE FRAME THIS WAS FIT
+                                _colour = _run_colour(i, past[_age - 1])
+                                if _colour is not None:
+                                    slot.set_color(_colour)
                                 _fill(slot, old_pts)
 
                 # INTERNAL phase: library updaters run before user callbacks,

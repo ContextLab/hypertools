@@ -50,7 +50,7 @@ from .density import (
     resolve_plotly_volume_params,
 )
 from .trails import (RunWindow, anim_window_bounds, broadcast_trail_flag,
-                     dataset_window_bounds)
+                     dataset_window_bounds, head_window_frames)
 from .._shared.helpers import antialias_line, has_line_component
 from . import morph as _morph
 
@@ -1062,8 +1062,22 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         # unwritten one would otherwise be indistinguishable.
         from .forecast import forecast_alpha, trail_alpha
         n_retained = int(forecast_trail or 0)
-        for i in range(len(data)):
-            tkwargs = kwargs_list[i] or {}
+        # over the FORECASTS (one per input dataset), not over `data` (one
+        # per drawn RUN) -- the same rule the static branch above states, and
+        # for the same reason: `hue=`/`cluster=` regrouping makes those
+        # counts differ, `meta['hyp_dataset']` is what `_forecast_frame_data`
+        # asks the schedule with, and a run index there indexed off the end
+        # of the schedule (IndexError on the first frame of every regrouped
+        # animated forecast).
+        _n_forecasts = len(forecasts) if forecasts is not None else len(data)
+        for i in range(_n_forecasts):
+            # style from the run this dataset's forecast CONTINUES, exactly
+            # as the static branch does
+            _src = (forecast_owner[i]
+                    if forecast_owner is not None and i < len(forecast_owner)
+                    else i)
+            _src = _src if _src < len(data) else len(data) - 1
+            tkwargs = kwargs_list[_src] or {}
             # the LIVE forecast's alpha for this dataset -- the fan decays
             # from THIS, not from a fixed value, so a trail can never be more
             # opaque than the live forecast it fades from (matplotlib parity)
@@ -1075,7 +1089,7 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 # are the SAME float, so a reader of `meta` can trust it
                 alpha = trail_alpha(age, n_retained, live_alpha=live_alpha)
                 fc_line, alpha = _forecast_style_from(
-                    tkwargs, fmt[i], alpha=alpha,
+                    tkwargs, fmt[_src], alpha=alpha,
                     override=(forecast_overrides[i]
                               if forecast_overrides is not None
                               and i < len(forecast_overrides) else None))
@@ -3439,12 +3453,7 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
         # `plot.py`'s own resolution, which never passes `None` through) --
         # resolved defensively here the same way `chemtrails`/`precog`/
         # `bullettime` are re-broadcast defensively above.
-        _focused = focused if focused is not None else tail_duration
-        _uses_focus_window = (
-            animate == 'window' or any(chemtrails) or any(precog)
-            or any(bullettime)
-        )
-        _window_duration = _focused if _uses_focus_window else tail_duration
+        # shared with matplotlib AND with plot()'s reveal schedule
         # the visible head window is `window_frames` FRAMES long, resolved
         # byte-identically to `matplotlib_backend.animate_plot3D`/`2D` (same
         # int() truncation, same `_window_duration == 0` special case) and
@@ -3453,10 +3462,9 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
         # rounded, which mis-sized the window whenever that count was not the
         # frame count AND left every dataset sharing one window -- see
         # `trails.anim_window_bounds`.
-        if _window_duration == 0:
-            window_frames = 1
-        else:
-            window_frames = int(frame_rate * float(_window_duration))
+        window_frames = head_window_frames(
+            frame_rate, tail_duration, focused, animate == 'window',
+            chemtrails, precog, bullettime)
         has_trails = n_trail_traces > 0
         if has_trails:
             # trail traces are NOT guaranteed to sit right after the data

@@ -22,7 +22,7 @@ from fractions import Fraction
 import numpy as np
 
 __all__ = ["broadcast_trail_flag", "anim_window_bounds", "RunWindow",
-           "dataset_window_bounds", "run_head_param"]
+           "dataset_window_bounds", "run_head_param", "head_window_frames"]
 
 
 def anim_window_bounds(num, total_frames, n_points, window_frames):
@@ -96,6 +96,56 @@ def anim_window_bounds(num, total_frames, n_points, window_frames):
     start = max(0, end - 1 - w)
     trail_stop = max(0, end - w)
     return start, end, trail_stop
+
+
+def head_window_frames(frame_rate, tail_duration, focused, window_style,
+                       chemtrails=False, precog=False, bullettime=False):
+    """The opaque head window's length, in FRAMES.
+
+    `focused=` governs the in-focus head boundary for ``animate='window'``
+    and for any dataset carrying a chemtrails/precog/bullettime trail; plain
+    ``animate=True``/``'parallel'`` with no trail flag anywhere keeps using
+    `tail_duration` alone (`plot()`'s "ignored for parallel" case).
+
+    It lives here, beside `anim_window_bounds`, because THREE callers need
+    the same number: both backends, which slice their artists with it, and
+    `plot()`, which builds the forecast reveal schedule from it. A schedule
+    computed from a different window length than the renderer used would
+    disagree with the picture about which rows are on screen -- the same
+    class of drift this module already exists to prevent between the two
+    backends.
+
+    Parameters
+    ----------
+    frame_rate, tail_duration : float
+        As passed to `plot()`.
+    focused : float or None
+        The resolved `focused=`. `None` (plotly's pre-resolution state)
+        falls back to `tail_duration`.
+    window_style : bool
+        Whether this animation is the ``'window'`` style.
+    chemtrails, precog, bullettime : bool or sequence of bool
+        Per-dataset trail flags, before or after broadcasting -- a bare bool
+        and a list of bools both answer "is any trail set?".
+
+    Returns
+    -------
+    int
+        Never 0: a zero-length window is one frame, matching both backends'
+        ``_window_duration == 0`` special case.
+    """
+    def _any(flag):
+        if isinstance(flag, (list, tuple, np.ndarray)):
+            return any(bool(f) for f in flag)
+        return bool(flag)
+
+    uses_focus = (bool(window_style) or _any(chemtrails) or _any(precog)
+                  or _any(bullettime))
+    duration = (focused if uses_focus and focused is not None
+                else tail_duration)
+    if duration == 0:
+        return 1
+    return int(frame_rate * float(duration))
 
 
 @dataclass(frozen=True)

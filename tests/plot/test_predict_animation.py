@@ -4,6 +4,8 @@
 import matplotlib
 matplotlib.use("Agg")
 
+import warnings
+
 import numpy as np
 import pytest
 
@@ -377,62 +379,68 @@ def test_forecast_artists_are_not_identified_by_linestyle():
     assert len(_forecasts(ax, role='live')) == 3
 
 
-def test_hue_regrouping_still_has_no_ANIMATED_forecast_but_says_so():
-    """The static and animated paths NO LONGER agree here, deliberately.
+def test_hue_regrouping_now_ANIMATES_its_forecasts_like_the_static_plot():
+    """The static/animated asymmetry this test used to pin is GONE.
 
-    A static plot now draws forecasts under `hue=`/`cluster=`: each one is
-    anchored on the run holding its dataset's last observation. The animated
-    path cannot do that yet -- its schedule maps frame-grid rows onto each
-    DATASET's raw rows, and regrouping replaces the per-dataset traces with
-    per-RUN ones, so there is no per-dataset reveal to schedule against.
+    It formerly asserted the refusal: an animated `hue=`/`cluster=` plot drew
+    no forecast and warned, because the schedule mapped frame-grid rows onto
+    each DATASET's raw rows while regrouping had replaced the per-dataset
+    traces with per-RUN ones. The regrouped-reveal work supplies the missing
+    mapping -- `TraceOwnership` says which dataset each run came from, and
+    `DatasetRevealSchedule` reads each frame's visible rows off the very
+    `RunWindow`s the backend sliced its artists with -- so the animated path
+    now draws what the static path draws, silently.
 
-    Building the schedule anyway is not a harmless approximation: it raised
-    `IndexError` partway through the first frame (1 history zipped against 60
-    run lengths). That is how this was found, by this test, after the static
-    fix landed.
-
-    So the contract is: no animated forecast under regrouping, and the user
-    is TOLD. The absence alone is not enough -- silence is what made the
-    original bug invisible.
+    The `IndexError` that motivated the old refusal (1 history zipped against
+    60 run lengths) is still the thing to guard: driving a real frame below
+    is what would raise it.
 
     Runs are two observations long on purpose: single-observation runs raise
-    a SEPARATE "a pure line format cannot render a single point" warning,
-    which would make `pytest.warns` pass on the wrong warning."""
+    a SEPARATE "a pure line format cannot render a single point" warning."""
     data = _series(n=1, rows=60)
     labels = np.array(['a', 'a', 'b', 'b'] * 15)
-    with pytest.warns(UserWarning, match='ANIMATED'):
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter('always')
         fig, ani = hyp.plot(data, '-', predict='Kalman', t=3, hue=labels,
                             animate=True, duration=2, frame_rate=4,
                             show=False)
+    assert not caught, [str(w.message) for w in caught]
     ax = _ax(fig)
     ani._func(6, *ani._args)          # must not raise
-    assert _forecasts(ax) == []
+    assert [a for a in _forecasts(ax, role='live') if a.get_visible()]
 
-    # ...and the STATIC plot of the same data DOES draw them, which is the
-    # asymmetry this test exists to pin
+    # ...and the STATIC plot of the same data draws them too -- the two
+    # paths agree again, which is what this test now pins
     static = hyp.plot(data, '-', predict='Kalman', t=3, hue=labels,
                       show=False)
     assert [ln for ln in static.axes[0].lines
             if getattr(ln, '_hyp_forecast_role', None) == 'static']
 
 
-def test_the_plotly_backend_refuses_the_same_case_the_same_way():
-    """`_draw_forecast_overlays` is matplotlib-only, so the "draw nothing"
-    half of the contract above was enforced on ONE backend. plotly's static
-    forecast block fires whenever there is no schedule -- which is exactly
-    the state this refusal creates -- so plotly warned "no forecast is
-    drawn" and then drew two, showing the FINAL forecast from frame 0."""
+def test_the_plotly_backend_DRAWS_the_same_case_the_same_way():
+    """Backend parity, in its new direction.
+
+    This used to pin that plotly REFUSED the case matplotlib refused (it had
+    warned "no forecast is drawn" and then drawn two, showing the final
+    forecast from frame 0, because its static block fires whenever there is
+    no schedule). Now that a schedule exists for regrouped animations, parity
+    means plotly draws per-frame forecast traces too -- and its animated
+    trace loop had the SAME per-trace-vs-per-dataset defect the matplotlib
+    side did, raising IndexError from `_forecast_frame_data` on the first
+    frame until it was fixed to loop over the forecasts."""
     data = _series(n=1, rows=60)
     labels = np.array(['a', 'a', 'b', 'b'] * 15)
     with hyp.set_interactive_backend('plotly'):
-        with pytest.warns(UserWarning, match='ANIMATED'):
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter('always')
             fig = hyp.plot(data, '-', predict='Kalman', t=3, hue=labels,
                            animate=True, duration=2, frame_rate=4,
                            show=False)
+    assert not caught, [str(w.message) for w in caught]
     roles = [(tr.meta or {}).get('hyp_forecast_role') for tr in fig.data]
-    assert [r for r in roles if r is not None] == [], (
-        f'plotly drew forecast traces {[r for r in roles if r]} on a plot '
-        f'whose warning says none are drawn')
+    assert 'live' in [r for r in roles if r is not None], roles
+    # one live forecast trace per DATASET, not per drawn run
+    assert len([r for r in roles if r == 'live']) == len(data)
 
 
 def test_a_refused_forecast_is_still_REPORTED_even_though_it_is_not_drawn():
@@ -440,15 +448,21 @@ def test_a_refused_forecast_is_still_REPORTED_even_though_it_is_not_drawn():
     the rendering combination is unsupported, so throwing the arrays away
     would lose a valid result to a drawing limitation. The bundle says both
     things instead: the forecasts, and that they were not drawn."""
-    data = _series(n=1, rows=60)
-    labels = np.array(['a', 'a', 'b', 'b'] * 15)
-    with pytest.warns(UserWarning, match='ANIMATED'):
-        bundle = hyp.plot(data, '-', predict='Kalman', t=3, hue=labels,
+    # MARKER-only categorical regrouping is what is still refused: it groups
+    # globally by category through `reshape_data`, so 3 datasets under 2
+    # categories become 2 traces that are not datasets at all. (The LINE
+    # regrouping this test used to use now draws -- see the test above.)
+    data = _series(n=3, rows=20)
+    labels = np.array(['a'] * 10 + ['b'] * 10)
+    labels = np.tile(labels, 3)
+    with pytest.warns(UserWarning, match='no per-dataset trace'):
+        bundle = hyp.plot(data, 'o', predict='Kalman', t=3, hue=labels,
                           animate=True, duration=2, frame_rate=4,
                           show=False, return_model=True)
     reported = bundle['predict']
     assert reported is not None
-    assert len(reported['forecasts']) == 1
+    assert len(reported['forecasts']) == 3
+    # t=3 forecast rows, in the REDUCED (3-D) analyze space
     assert np.asarray(reported['forecasts'][0]).shape == (3, 3)
     assert reported['drawn'] is False
     assert reported['draw_reason'] and 'hue' in reported['draw_reason']

@@ -183,15 +183,30 @@ def test_the_bundle_says_whether_its_forecasts_reached_the_figure():
             f'{kw}: a refusal must come with a reason, and a drawn forecast '
             f'without one')
 
-    # the not-drawn branch, actually exercised
-    with warnings.catch_warnings():
-        warnings.simplefilter('ignore')
-        animated = hyp.plot(data, '-', predict='Kalman', t=4, animate=True,
-                            duration=2, frame_rate=4, show=False,
-                            return_model=True,
-                            hue=(['a'] * 5 + ['b'] * 5) * 6)
-    assert animated['predict']['drawn'] is False
-    assert len(animated['predict']['forecasts']) == len(data)
+    # The not-drawn branch, actually exercised. It used to be an ANIMATED
+    # line plot under `hue=`, which now DRAWS its forecasts (the regrouped
+    # reveal gave the schedule the per-dataset mapping it lacked). What is
+    # still refused is MARKER-only categorical regrouping: `reshape_data`
+    # groups globally by category, so 3 datasets under 2 categories become 2
+    # traces that are not datasets and have no per-dataset trace to anchor
+    # to. Named rather than blanket-ignored -- an unexpected second warning
+    # here must fail, not vanish.
+    marker_data = _walks(3, rows=20)
+    with pytest.warns(UserWarning, match='no per-dataset trace'):
+        refused = hyp.plot(marker_data, 'o', predict='Kalman', t=4,
+                           animate=True, duration=2, frame_rate=4,
+                           show=False, return_model=True,
+                           hue=(['a'] * 10 + ['b'] * 10) * 3)
+    assert refused['predict']['drawn'] is False
+    assert len(refused['predict']['forecasts']) == len(marker_data)
+
+    # ...and the animated LINE case it used to use now reports drawn=True
+    animated = hyp.plot(data, '-', predict='Kalman', t=4, animate=True,
+                        duration=2, frame_rate=4, show=False,
+                        return_model=True,
+                        hue=(['a'] * 5 + ['b'] * 5) * 6)
+    assert animated['predict']['drawn'] is True
+    assert animated['predict']['draw_reason'] is None
 
 
 def test_a_continuous_hue_does_not_silently_lose_its_forecast():

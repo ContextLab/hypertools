@@ -39,7 +39,7 @@ from .surface import (
     view_vector,
 )
 from .trails import (RunWindow, anim_window_bounds, broadcast_trail_flag,
-                     dataset_window_bounds)
+                     dataset_window_bounds, head_window_frames)
 from . import morph as _morph
 from .density import (
     DENSITY_DEFAULTS,
@@ -1997,15 +1997,11 @@ def _draw(
         # to `tail_duration`'s own value there), so when it IS used the
         # numeric result is byte-identical to before whenever the caller
         # never passed an explicit `focused=`.
-        _uses_focus_window = (
-            style == "window" or any(chemtrails) or any(precog)
-            or any(bullettime)
-        )
-        _window_duration = focused if _uses_focus_window else tail_duration
-        if _window_duration == 0:
-            window_frames = 1
-        else:
-            window_frames = int(frame_rate * _window_duration)
+        # one implementation, shared with the plotly backend AND with the
+        # forecast reveal schedule `plot()` builds (see `trails`)
+        window_frames = head_window_frames(
+            frame_rate, tail_duration, focused, style == "window",
+            chemtrails, precog, bullettime)
 
         # get line animation
         if style in ["parallel", True, "window"]:
@@ -2445,15 +2441,11 @@ def _draw(
         if density is not None:
             _draw_density_2d(ax, x, density, density_colors)
 
-        _uses_focus_window = (
-            style == "window" or any(chemtrails) or any(precog)
-            or any(bullettime)
-        )
-        _window_duration = focused if _uses_focus_window else tail_duration
-        if _window_duration == 0:
-            window_frames = 1
-        else:
-            window_frames = int(frame_rate * _window_duration)
+        # one implementation, shared with the plotly backend AND with the
+        # forecast reveal schedule `plot()` builds (see `trails`)
+        window_frames = head_window_frames(
+            frame_rate, tail_duration, focused, style == "window",
+            chemtrails, precog, bullettime)
 
         if style in ["parallel", True, "window"]:
             # frames == round(frame_rate * duration) -- see the identical
