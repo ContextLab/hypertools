@@ -131,6 +131,19 @@ one-line change. **These want a maintainer call before execution.**
 **Plans 1 and 2 have none left** — Plan 2's four were resolved in the round-3 review, Plan 1's four
 in the round-5 exchange. Both sets are recorded under *Standing decisions*.
 
+## Execution status (updated 2026-08-15)
+
+| plan | state |
+|-|-|
+| 1 — animation core | landed (`FrameHooks`/`FrameContext`/`on_frame`/`HyperAnimation` all present) |
+| 3 — forecast animation | landed (`forecast_trail=`, per-frame forecasts) |
+| regrouped reveal + forecasts | **landed 2026-08-11**, 10 commits ending `59405545` |
+| 2 — MultiIndex | **IN PROGRESS**: T1 `420ef60c`, T2 `1f6e4d6d`, T3 `7a415d28`, T4 `86db0842`, plus an NA-label grouping fix. T5-T12 not started |
+| 4 — examples and tutorials | not started; Task 2 blocked on MultiIndex T5/T6/T8/T9 |
+
+Nothing above is pushed: `dev-1.0` is ~125 commits ahead of `origin/dev-1.0` and CI has not seen
+any of it since 2026-07-24.
+
 ### Plan 3 — none left; all five settled by shipping
 
 Plan 3 has been executed and its forecast work released, so these are no longer
@@ -138,10 +151,17 @@ open questions: each was resolved in code, documented, and pinned with a test.
 Verified against the tree at `a062f768`, not from memory:
 
 - **Silent forecast drop under `hue=`/`cluster=`** — resolved as **warn**, not silent.
-  Both refusals now name what happened and why: a continuous `hue=` (`plot.py:5007`) and an
-  animated regrouped plot (`plot.py:5056`). The `return_model=True` bundle carries the fit with
+  The refusal names what happened and why, and the `return_model=True` bundle carries the fit with
   `drawn=False` and a `draw_reason` string, so a forecast that succeeded but could not be
   rendered is still handed back. CHANGELOG entries at `:152` and `:169`.
+  **Superseded in part by the regrouped-reveal plan (landed 2026-08-11, `59405545`):** the two
+  cases named here were a continuous `hue=` and an animated regrouped plot. Measurement disproved
+  both. A continuous `hue=` colours one line artist per dataset through a `LineCollection` overlay
+  WITHOUT changing the trace count, so its forecasts draw — static and animated. Animated
+  regrouped forecasts now draw too. What actually reaches the refusal is **MARKER-ONLY categorical
+  regrouping**, where `reshape_data` groups globally by category so 3 datasets under 2 categories
+  become 2 traces that are not datasets at all. `docs/animation.rst` and the code comment both
+  state the corrected version; the plan text that said otherwise was wrong.
 - **Throttling beyond memoization** — resolved as **memoization only, plus a projected-cost
   warning**. No `forecast_every=` exists. `ForecastSchedule.__init__` times the first real fit
   and, when the projection exceeds `slow_warning_seconds`, says how many fits are queued and
@@ -161,11 +181,20 @@ Verified against the tree at `a062f768`, not from memory:
   frame (`docs/animation.rst:480-493`, `CHANGELOG.md:122-127`). The canonical Plan 3 text carried
   this as *"OPEN, for the maintainer"* until 2026-08-04; it now records the shipped answer.
 
-**The one Plan 3-adjacent thing still outstanding** is the regrouped reveal + animated regrouped
-forecasts, which is now its own plan: `2026-08-03-hypertools-1.1-regrouped-reveal-and-forecasts.md`
-(v2, revised after review; not yet implemented). Its own named decisions R1-R5 live in that
-document — R1 (per-dataset reveal clock) was called by Jeremy on 2026-08-03; R2-R5 are recorded
-with the measurements behind them.
+**The one Plan 3-adjacent thing that WAS outstanding** — the regrouped reveal + animated regrouped
+forecasts, `2026-08-03-hypertools-1.1-regrouped-reveal-and-forecasts.md` (v2) — is now
+**IMPLEMENTED IN FULL**, all 8 tasks, landed 2026-08-11 across 10 commits ending at `59405545`.
+Its named decisions R1-R5 live in that document; R1 (per-dataset reveal clock) was called by
+Jeremy on 2026-08-03, R2-R5 are recorded with the measurements behind them.
+
+Session record: `notes/session_2026-08-11_regrouped-reveal-implementation.md`. Gate at landing:
+full suite 3228 passed / 13 skipped / 0 failed with no warnings summary, `sphinx -W -E -a` clean,
+ruff at parity with the base commit (353 → 353). Seven defects in that plan's own listings, and
+two claims measurement disproved (the continuous-hue refusal above, and a "Before 1.1" version
+string), were corrected in code, tests and docs during implementation.
+
+**Consequence for Plan 4 Task 2:** its regrouped-reveal prerequisite is satisfied. Its remaining
+blockers are MultiIndex T1/T2/T5/T6/T8 — T1-T4 have since landed (see below), T5 onward have not.
 
 ### Plan 4
 

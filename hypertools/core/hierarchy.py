@@ -35,6 +35,49 @@ See docs/hierarchy.rst for the user-facing comparison table.
 
 import pandas as pd
 
+#: Stand-in for ANY missing hierarchy label during comparison and indexing.
+#: Module-private and never user-visible: it exists only so that missing
+#: labels hash and compare as one another's equals. Original label values
+#: are always what get stored in keys and rendered into legend labels.
+_MISSING = object()
+
+
+def _canonical_label(value):
+    """Map one hierarchy label to a hashable, NA-aware comparison key.
+
+    `dropna=False` keeps a group whose hierarchy LABEL is missing, but that
+    group then has to be built and styled as ONE group, and ordinary
+    equality cannot do it: ``NaN != NaN``. Measured on the pandas here,
+    `np.nan`, `None` and `pd.NA` in a MultiIndex level all normalise to
+    plain `float('nan')`, and `groupby` mints a SEPARATE nan object per
+    group key -- so a dict keyed on raw labels sees two groups where there
+    is one, producing duplicate mean traces, duplicate palette entries and
+    duplicate legend entries. (`pd.NaT` is a singleton, so identity
+    short-circuiting hides the problem for that spelling alone, and
+    `expand_multiindex` avoids it only because `df.index` hands back the
+    same object each time -- neither is something to rely on.)
+
+    Every missing spelling canonicalises to the same sentinel, which matches
+    what the grouping layer already did: pandas had already merged them into
+    one group before these keys were built.
+
+    Use this for COMPARISON and INDEXING only. Callers keep the original
+    value for `FinalTraces.keys`, `unique_top` and legend labels.
+    """
+    try:
+        if bool(pd.isna(value)):
+            return _MISSING
+    except (TypeError, ValueError):
+        # array-likes make `pd.isna` return an array, whose truth value is
+        # ambiguous; such a label is not missing, it is just not scalar.
+        pass
+    return value
+
+
+def _canonical_key(key):
+    """Canonicalise every level of a hierarchy key tuple (see above)."""
+    return tuple(_canonical_label(value) for value in key)
+
 
 def is_hierarchical(obj, axes='both'):
     """True when `obj` is a DataFrame carrying a MultiIndex on `axes`."""

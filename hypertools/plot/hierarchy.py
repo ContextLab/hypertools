@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from ..core.hierarchy import _canonical_key, _canonical_label
 from .colors import get_palette_colors
 
 
@@ -141,17 +142,25 @@ def build_hierarchy_traces(leaf_arrays, meta, aux=None):
     # are always LEAVES, never previously derived means.
     _unequal_length_groups = []
     for k in range(n_levels - 2, -1, -1):
+        # Group prefixes under an NA-AWARE canonical key: NaN != NaN, and a
+        # missing hierarchy label would otherwise split one group into one
+        # group per leaf, giving duplicate means. The ORIGINAL prefix is
+        # kept alongside for `keys` and for the warning text.
         prefix_members = {}
         prefix_order = []
+        prefix_display = {}
         for i, key in enumerate(leaf_keys):
             prefix = key[:k + 1]
-            if prefix not in prefix_members:
-                prefix_members[prefix] = []
-                prefix_order.append(prefix)
-            prefix_members[prefix].append(i)
+            canon = _canonical_key(prefix)
+            if canon not in prefix_members:
+                prefix_members[canon] = []
+                prefix_order.append(canon)
+                prefix_display[canon] = prefix
+            prefix_members[canon].append(i)
 
-        for prefix in prefix_order:
-            member_idx = prefix_members[prefix]
+        for canon in prefix_order:
+            prefix = prefix_display[canon]
+            member_idx = prefix_members[canon]
             member_arrays = [arrays[i] for i in member_idx]
             lengths = [a.shape[0] for a in member_arrays]
             min_len = min(lengths)
@@ -219,10 +228,18 @@ def build_hierarchy_styles(traces, palette='hls', linestyle=None,
     """
     n_levels = traces.meta['n_levels']
 
-    top_vals = [key[0] for key in traces.keys]
-    unique_top = list(dict.fromkeys(top_vals))
+    # Top-level uniqueness is NA-aware for the same reason prefix grouping
+    # is: two leaves whose top label is missing are ONE group, and must get
+    # one colour and one legend entry rather than one each. `unique_top`
+    # keeps the ORIGINAL value -- the sentinel is never user-visible.
+    unique_top = []
+    top_index_of = {}
+    for key in traces.keys:
+        canon = _canonical_label(key[0])
+        if canon not in top_index_of:
+            top_index_of[canon] = len(unique_top)
+            unique_top.append(key[0])
     n_top = len(unique_top)
-    top_index_of = {val: i for i, val in enumerate(unique_top)}
 
     palette_colors = get_palette_colors(palette, n_top)
     color_of_top = [tuple(float(c) for c in palette_colors[i])
@@ -249,9 +266,10 @@ def build_hierarchy_styles(traces, palette='hls', linestyle=None,
 
     for key, level, mean in zip(traces.keys, traces.level_idx, traces.is_mean):
         top_val = key[0]
+        top_i = top_index_of[_canonical_label(top_val)]
         linewidths.append(float(1 + (n_levels - 1 - level)))
         alphas.append(float(min(1.0, 1.0 / (level + 1) + 0.2)))
-        colors.append(color_of_top[top_index_of[top_val]])
+        colors.append(color_of_top[top_i])
         # Only the TOP-level mean carries a legend label -- except when
         # n_levels == 1, where there IS no mean and each leaf is itself a
         # top-level group. Without that exception a (Group, Feature) column
@@ -259,7 +277,7 @@ def build_hierarchy_styles(traces, palette='hls', linestyle=None,
         top_level = (level == 0) and (mean or n_levels == 1)
         labels.append(str(top_val) if top_level else '_nolegend_')
         if linestyles_out is not None:
-            linestyles_out.append(per_top_linestyle[top_index_of[top_val]])
+            linestyles_out.append(per_top_linestyle[top_i])
 
     return {
         'colors': colors,
