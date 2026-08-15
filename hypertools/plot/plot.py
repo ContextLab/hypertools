@@ -31,7 +31,10 @@ from .animate import _save_animation
 from .surface import broadcast_surface, normalize_surface_arg
 from .density import broadcast_density, normalize_density_arg
 from .trails import broadcast_trail_flag
-from .multiindex import expand_multiindex, build_multiindex_styles
+from .multiindex import expand_multiindex
+from .hierarchy import build_hierarchy_styles, build_hierarchy_traces
+from ..core.hierarchy import (group_columns, reject_dual_axis,
+                              reject_hierarchical_in_list)
 from .morph import resolve_morph_rotations
 from .fonts import resolve_font, sans_serif_stack
 # `_process_plot_format` is matplotlib's own fmt-string grammar, used so
@@ -1113,19 +1116,49 @@ def plot(
         ``UserWarning`` per affected group (deduplicated even when a
         3+-level tree causes multiple groupings to share members). Works
         with both static and animated plots and both rendering backends,
-        since the expansion happens upstream of drawing. A MultiIndex on
-        the COLUMNS (as opposed to the row index) is unrelated to this and
-        is unaffected -- it is handled by the existing column-formatting
-        pipeline in `hypertools.tools.format_data`/`hypertools.tools.df2mat`.
-        A single-level (or default `RangeIndex`) DataFrame, or a plain
-        array/list input, is completely unaffected by any of the above.
+        since the expansion happens upstream of drawing. A single-level (or
+        default `RangeIndex`) DataFrame, or a plain array/list input, is
+        completely unaffected by any of the above.
+
+        A MultiIndex on the **COLUMNS** (``x.columns.nlevels >= 2``) is
+        expanded too, since 1.1, under a DIFFERENT rule: the INNERMOST
+        column level is the FEATURE axis and every level above it is the
+        grouping hierarchy. A ``(Market, Sector, Ticker)`` frame therefore
+        groups by ``(Market, Sector)`` -- one leaf per sector, each holding
+        that sector's tickers as its features -- and gains one market mean,
+        for 4 traces. Styling, legend, `linestyle` and the `cluster=`/
+        `color=`/`linewidth=` rules above all apply unchanged, reading
+        ``n_levels`` as the number of GROUPING levels (2 here, not 3).
+        Unlike the row rule, every group keeps all ``len(x)`` rows: column
+        grouping never shortens a trace.
+
+        Two things follow from that rule and are worth stating plainly.
+        **Feature correspondence across groups is POSITIONAL, not by name.**
+        The joint reduction stacks every group, so position *i* is treated
+        as commensurable across them even though Tech's position 0 is AAPL
+        and Energy's is XOM. That is appropriate when groups are parallel
+        measurements of like quantities (prices in one currency) and
+        inappropriate otherwise; reduce per group, or pass `align=`, if you
+        need group-independent axes. **Groups must be equal width:** a
+        hierarchy whose sectors hold different numbers of tickers is
+        expanded happily and then rejected by the usual equal-width check,
+        since the analysis pipeline has no way to compare a 4-feature group
+        with a 2-feature one.
+
+        A frame carrying a hierarchy on **both** axes raises ``ValueError``:
+        which one takes precedence is genuinely ambiguous, and before 1.1
+        the row path silently won. Flatten one axis and try again.
 
         Expansion is ONLY applied when a single bare DataFrame is passed as
-        `x`. If `x` is a LIST containing one or more MultiIndex DataFrames
-        (whether alone or mixed with arrays/other DataFrames), the
-        MultiIndex is silently treated as a flat index on each such element
-        by the normal list-of-datasets pipeline -- a ``UserWarning`` is
-        raised naming each offending element's position in the list.
+        `x`, because the hierarchy determines the entire trace list and that
+        cannot be reconciled with a caller-supplied list of datasets. If `x`
+        is a LIST containing a **row**-MultiIndex DataFrame, the MultiIndex
+        is treated as a flat index on that element by the normal
+        list-of-datasets pipeline, with a ``UserWarning`` naming its
+        position. A **column**-MultiIndex DataFrame in a list instead raises
+        ``ValueError`` -- before 1.1 it silently flattened to a single line
+        with no warning at all. The asymmetry is deliberate: the row
+        behaviour is documented and depended upon, the column one was not.
 
     fmt : str or list of strings
         A list of format strings.  All matplotlib format strings are
@@ -3485,6 +3518,15 @@ def plot(
                     f"{_i} is being treated as a flat index."
                 , stacklevel=external_stacklevel())
 
+    # A hierarchy in a LIST is rejected on the COLUMN axis only: before 1.1
+    # it flattened to a single line with no warning at all (nothing pinned
+    # it, so rejecting is purely additive), whereas a ROW hierarchy in a
+    # list keeps today's documented warn-and-flatten path just above.
+    # Dual-axis frames are rejected outright -- 1.1 declines to guess which
+    # hierarchy wins, where before the row path silently won.
+    reject_hierarchical_in_list(x, caller='hyp.plot', axes='columns')
+    reject_dual_axis(x)
+
     _multiindex_meta = None
     if isinstance(x, pd.DataFrame) and x.index.nlevels >= 2:
         if cluster is not None or n_clusters is not None:
@@ -3513,6 +3555,56 @@ def plot(
             , stacklevel=external_stacklevel())
             hue = None
         x, _multiindex_meta = expand_multiindex(x)
+    elif isinstance(x, pd.DataFrame) and x.columns.nlevels >= 2:
+        # COLUMN hierarchy (1.1): the innermost column level is the FEATURE
+        # axis and every level above it groups, so (Market, Sector, Ticker)
+        # becomes one leaf per sector plus a market mean. Unlike the row
+        # rule, every group keeps all len(df) rows.
+        if cluster is not None or n_clusters is not None:
+            raise ValueError(
+                "cluster=/n_clusters= is not compatible with a column-"
+                "MultiIndex DataFrame: MultiIndex grouping already assigns "
+                "colors by the top-level column index and would conflict "
+                "with cluster-based grouping. Flatten the columns "
+                "(df.columns = df.columns.map('_'.join)) before clustering, "
+                "or drop cluster=/n_clusters= to use the MultiIndex "
+                "grouping."
+            )
+        if predict is not None:
+            raise ValueError(
+                "predict= is not supported with MultiIndex expansion in "
+                "this release: forecasts are computed one-per-leaf before "
+                "the per-level mean traces are appended, so the leaf count "
+                "no longer matches the final trace count. Flatten the "
+                "columns (df.columns = df.columns.map('_'.join)) before "
+                "using predict=, or drop predict= to use the MultiIndex "
+                "grouping."
+            )
+        if hue is not None:
+            # TEMPORARY, replaced by real support in Plan 2 Task 6, which
+            # carries a continuous hue through the hierarchy as a per-trace
+            # auxiliary value. Warning rather than silently dropping it is
+            # the honest intermediate state: the styling branch below would
+            # otherwise overwrite the colours with no explanation.
+            warnings.warn(
+                "x has a column MultiIndex: MultiIndex grouping (group "
+                "traces + per-level averages) takes precedence over hue= in "
+                "this release; ignoring hue."
+            , stacklevel=external_stacklevel())
+            hue = None
+        x, _multiindex_meta = group_columns(x)
+        # Feature correspondence across groups is POSITIONAL, not nominal.
+        # Tech's column 0 is AAPL and Energy's is XOM, and the joint
+        # reduction stacks every group, treating position i as commensurable
+        # -- the modelling assumption documented in plot()'s `x` entry.
+        # format_data matches DataFrame features BY COLUMN NAME across
+        # datasets (GH #132), which is right for an arbitrary list of frames
+        # but wrong here: it would reject the market frame outright because
+        # no two sectors share a ticker. The hierarchy has already asserted
+        # that these groups correspond, so hand the pipeline plain arrays
+        # and let position line them up. Ragged groups then reach the
+        # existing equal-width check rather than a name-mismatch error.
+        x = [leaf.to_numpy() for leaf in x]
 
     # default axis labels from DataFrame column names (release-1.0 audit,
     # F08-plot-inputs-016): when a SINGLE DataFrame with named (non-default,
@@ -3992,27 +4084,47 @@ def plot(
     # already squelched (with a warning) above, so this always wins the
     # cluster/hue/nested_groups chain below.
     if _multiindex_meta is not None:
+        _mi_axis = _multiindex_meta.get('axis', 'rows')
+        _mi_which = ("a row MultiIndex (GH #95)" if _mi_axis == 'rows'
+                     else "a column MultiIndex")
         if color is not None or colors is not None:
             warnings.warn(
-                "x has a row MultiIndex (GH #95): MultiIndex grouping "
+                f"x has {_mi_which}: MultiIndex grouping "
                 "assigns color by the top-level index; ignoring "
                 "color/colors."
             , stacklevel=external_stacklevel())
         if linewidth is not None:
             warnings.warn(
-                "x has a row MultiIndex (GH #95): MultiIndex grouping "
+                f"x has {_mi_which}: MultiIndex grouping "
                 "assigns linewidth by level (leaves=1, thicker per level "
                 "averaged over); ignoring linewidth."
             , stacklevel=external_stacklevel())
         if alpha is not None:
             warnings.warn(
-                "x has a row MultiIndex (GH #95): MultiIndex grouping "
+                f"x has {_mi_which}: MultiIndex grouping "
                 "assigns alpha by level (leaves most transparent, "
                 "top-level means fully opaque); ignoring alpha."
             , stacklevel=external_stacklevel())
-        xform, _mi_style = build_multiindex_styles(
-            xform, _multiindex_meta, palette=palette,
-            linestyle=linestyle, linestyles=linestyles)
+        # ONE owner builds the final trace list (means, truncation, the
+        # truncation warning); a SEPARATE, array-blind function styles it.
+        # Before 1.1 a single function did both, so any second caller
+        # appended every mean twice.
+        _ft = build_hierarchy_traces(xform, _multiindex_meta)
+        _mi_style = build_hierarchy_styles(
+            _ft, palette=palette, linestyle=linestyle, linestyles=linestyles)
+        xform = _ft.arrays
+        # Contract 5: `trace_data` is the pre-center/pre-scale plotted
+        # trajectory list, which for a hierarchy includes the derived means
+        # -- deliberately NOT in `xform_data`, which holds only the analysed
+        # leaves the returned pipeline can reproduce.
+        trace_data = _ft.arrays
+        trace_metadata = {'keys': _ft.keys, 'level_idx': _ft.level_idx,
+                          'is_mean': _ft.is_mean, 'axis': _mi_axis,
+                          'level_names': _ft.meta['level_names'],
+                          'aux': _ft.aux}
+        # recompute: the means were appended after the earlier pass, so the
+        # cached lengths no longer cover every trace.
+        pre_interp_lengths = [len(xi) for xi in xform]
         mpl_kwargs["color"] = _mi_style["colors"]
         mpl_kwargs["linewidth"] = _mi_style["linewidths"]
         mpl_kwargs["alpha"] = _mi_style["alphas"]
