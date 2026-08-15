@@ -2608,7 +2608,8 @@ def plot(
 
     return_model : bool
         If True, return a dict bundle
-        ``{'fig': ..., 'xform_data': ..., 'animation': ..., 'pipeline': ...,
+        ``{'fig': ..., 'xform_data': ..., 'trace_data': ...,
+        'trace_metadata': ..., 'animation': ..., 'pipeline': ...,
         'models': ..., 'predict': ...}`` instead of the bare figure, where
         ``xform_data`` is the normalized/reduced/aligned data, ``animation``
         is the ``matplotlib.animation.Animation`` handle (``None`` unless
@@ -2629,6 +2630,26 @@ def plot(
         pre-center/scale -- space). Each bundled forecast has exactly `t`
         rows, matching what ``hyp.predict(xform_data, model=..., t=t)``
         returns.
+
+        ``xform_data`` vs ``trace_data``. ``xform_data`` is the analysed
+        pipeline output, one entry per analysed INPUT dataset.
+        ``trace_data`` is the final PRE-CENTER/PRE-SCALE plotted
+        trajectories -- for a hierarchical input, the leaves followed by the
+        per-level means, which are presentation artifacts built in display
+        space and so are deliberately absent from ``xform_data``. The two
+        are the same object only when no display-only projection occurred;
+        if a ``reduce=`` spec pins more than three components, ``xform_data``
+        keeps that many while ``trace_data`` is projected to the plotted
+        dimensionality. Neither is what the artists hold: those are centered,
+        scaled and (unless ``antialias=False``) PCHIP-upsampled afterwards.
+        Bundled forecasts always correspond to ``trace_data``, so
+        ``forecasts[i]`` matches ``hyp.predict(trace_data[i], model=..., t=t)``
+        for every i; they match ``hyp.predict(xform_data, ...)`` element-wise
+        only when the two spaces coincide -- the usual case.
+
+        ``trace_metadata`` is ``None`` for non-hierarchical input. For a
+        hierarchy it describes every entry of ``trace_data`` positionally:
+        ``{'keys', 'level_idx', 'is_mean', 'axis', 'level_names', 'aux'}``.
 
         ``predict`` also carries ``'drawn'`` (bool) and ``'draw_reason'``
         (``None``, or a sentence naming the limitation). The forecasts are
@@ -2686,7 +2707,8 @@ def plot(
         auto-plays inline in notebooks -- keep a reference to it so the
         underlying ``matplotlib.animation.FuncAnimation`` stays alive.
         When ``return_model=True``, a dict
-        ``{'fig': ..., 'xform_data': ..., 'animation': ..., 'pipeline': ...,
+        ``{'fig': ..., 'xform_data': ..., 'trace_data': ...,
+        'trace_metadata': ..., 'animation': ..., 'pipeline': ...,
         'models': ..., 'predict': ...}`` is returned (``animation`` included
         so the handle isn't dropped for animated plots; ``pipeline`` is the
         fitted `hypertools.Pipeline` covering the stages that ran, reusable
@@ -3635,6 +3657,17 @@ def plot(
     # Return data that has been normalized and possibly reduced and/or aligned
     xform_data = copy.copy(xform)
 
+    # `trace_data` is whatever the PLOTTED trajectories are at the last point
+    # before centering/scaling; `xform_data` is never reassigned after this
+    # line. They start as the same object and diverge only where the drawn
+    # trajectories stop being the analysed ones: the display-dimensionality
+    # projection below (which rebinds `xform`), and the hierarchy branch,
+    # which draws per-level means that the analysed leaf list does not
+    # contain. `trace_metadata` describes those traces, or is None for
+    # non-hierarchical input.
+    trace_data = xform_data
+    trace_metadata = None
+
     # catch all matplotlib kwargs here to pass on
     mpl_kwargs = {}
 
@@ -3738,6 +3771,12 @@ def plot(
             xform = reducer(xform, ndims=_display_ndims,
                             reduce="IncrementalPCA", internal=True,
                             format_data=False)
+        # a display-ONLY projection just ran: the plotted trajectories are no
+        # longer the analysed ones, so re-point `trace_data` at the rebound
+        # list. `xform_data` deliberately keeps the pre-projection arrays --
+        # it was captured before this block and is the analysed pipeline
+        # output, which is what `pipeline.transform()` reproduces.
+        trace_data = xform
 
     # surface= (GH #109): no hull concept in 1D -- fail fast rather than
     # silently ignoring the kwarg.
@@ -6073,6 +6112,8 @@ def plot(
         return {
             "fig": fig,
             "xform_data": xform_data,
+            "trace_data": trace_data,
+            "trace_metadata": trace_metadata,
             "animation": line_ani,
             "pipeline": bundle_pipeline,
             "models": {
