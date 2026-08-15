@@ -40,8 +40,8 @@ Jeremy chose "Execute Plan 2 (MultiIndex)" when asked.
 | 2 `build_hierarchy_traces` (one trace owner) | done, 14 tests | `1f6e4d6d` |
 | 3 style-only `build_hierarchy_styles` | done, 6 tests | `7a415d28` |
 | 4 `trace_data`/`trace_metadata` bundle keys | done, 6 tests | `86db0842` |
-| (fix) NA hierarchy labels — review finding 1 | done, 14 tests, mutation-verified | pending |
-| 5 column MultiIndex end-to-end in `plot()` | next | — |
+| (fix) NA hierarchy labels — review finding 1 | done, 14 tests, mutation-verified | `af77f09e` |
+| 5 column MultiIndex end-to-end in `plot()` | done, 17 tests | `5b21e3c6` |
 | 6 continuous hue as per-trace aux | not started | — |
 | 7 hierarchical `hyp.predict` | not started | — |
 | 8 `predict=` over final traces | not started | — |
@@ -126,6 +126,79 @@ a Kaleido/Chrome-for-Testing startup failure in a pre-existing real-PNG
 serial-title test, plus the known local joblib physical-core warning. Noted
 as an environment difference, not a disputed result — the figure here is
 reproducible in this venv and is re-measured after every task.
+
+## Task 5's unanticipated collision (resolved, worth remembering)
+
+`format_data` matches DataFrame features **by column name** across datasets
+(GH #132). Column-hierarchy leaves have different names per group by
+construction, so the market frame was rejected outright: *"dataset 1 is
+missing ['AAPL','MSFT','NVDA'] and has unexpected ['BAC','GS','JPM']"*.
+
+The plan had already settled the question in its *Documented modelling
+assumption* — correspondence across groups is **positional**, because the
+joint reduction stacks every group and treats position *i* as commensurable.
+So `plot()` passes `leaf.to_numpy()` into the pipeline. `group_columns`'
+flattened, NAMED leaves are unchanged, so Task 7's predict path still gets
+them; and ragged groups reach the existing equal-width check
+(`plot.py:3650`) instead of a name-mismatch error.
+
+## Ruff counting: use ruff's own summary, not a grep
+
+Earlier parity checks used `grep -c '^[A-Z][0-9]'`, which UNDERCOUNTS. The
+reliable figure is ruff's own `Found N errors.` line, and the reliable
+comparison is a **set difference** against a base worktree keyed on
+`(file, code, message)` with line numbers stripped. That method caught a real
+slip in Task 5: an added `np.asarray` registered as a NEW `F405`, because
+`plot.py` takes `np` from a star import and every `np.` use is already
+flagged (~190 of them). `leaf.to_numpy()` avoids the reference. Parity is
+**353 at base `59405545`, 353 now**.
+
+## Task 6 design notes (NEXT — the piece Plan 4 Task 2 needs most)
+
+**The structural blocker.** `plot()`'s hue handling is an `elif` arm of the
+same chain the hierarchy branch wins (`if _multiindex_meta is not None:` at
+`plot.py:4081`, hue at `:4536`), so a hierarchy never reaches the continuous
+colour path at all. Hue must be classified BEFORE the chain and carried
+through `FinalTraces.aux`.
+
+Key call shapes, measured:
+
+- `multicolor_hue` is a FLAT array of length `sum(len(trace))`, split by
+  `pre_interp_lengths` — so for a hierarchy it is
+  `np.concatenate(ft.aux)` with `pre_interp_lengths = [len(a) for a in
+  ft.arrays]` (already recomputed in the branch as of Task 5).
+- `_multicolor_line_colors(multicolor_hue, pre_interp_lengths, xform,
+  palette, is_rgb=...)` at `:5115`; `_apply_multicolor_lines` at `:5966`
+  gives each SEGMENT the midpoint of its endpoints' colours.
+- Setting `multicolor_hue` requires `hue = None` afterwards so the
+  categorical regroup does not also run.
+- On this path `_mi_style['colors']` must be DROPPED (colour comes from the
+  hue), while `linewidths`/`alphas`/`labels` still apply.
+
+**Accepted hue forms (input-relative only, F12):** flat length `len(df)`
+(broadcast to every leaf), or one sequence per leaf each of length
+`len(df)`. A flat array sized to the TOTAL DRAWN observations is REJECTED —
+it is new API, indistinguishable from form 1 when `T == n_obs`, and would
+require the caller to predict how many means expansion creates.
+
+**Task 5 leaves two temporary guards for Task 6/8 to lift:** the column
+branch currently warns-and-ignores `hue=`, and raises on `predict=`. Both
+are deliberate intermediate states, not oversights.
+
+## Reviewer's adversarial matrix (to fold into Tasks 6/8/9)
+
+Requested in review round 1, item 4. Covered so far / still owed:
+
+| case | state |
+|-|-|
+| missing labels at every hierarchy level | covered (`test_hierarchy_na_labels.py`); still owed WITH hue |
+| duplicate flattened feature names | covered in grouping; still owed end-to-end through `plot()` |
+| unequal trace lengths + auxiliary hue | Task 6 (`aux` co-truncation) |
+| one-row traces, animated precondition ordering | Task 8 |
+| row vs column hierarchy | covered |
+| matplotlib and plotly | Task 9 |
+| static / parallel / serial / window animation | Task 9 |
+| inherited vs explicit forecast grouping | Task 8 |
 
 ## Plan counting discrepancy (not a defect, but the arithmetic is off)
 
