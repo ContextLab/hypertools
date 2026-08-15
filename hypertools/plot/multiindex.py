@@ -53,15 +53,16 @@ itself lives in `hypertools.core.hierarchy`.
 THE COLUMN RULE (1.1) is different and lives in
 `hypertools.core.hierarchy.group_columns`, not here. The innermost COLUMN
 level is the FEATURE axis and every level above it groups, so
-``(Market, Sector, Ticker)`` gives one leaf per sector plus a market mean,
+``(Market, Sector, Measure)`` gives one leaf per sector plus a market mean,
 and ``n_levels`` counts the GROUPING levels only. Everything below this
 docstring -- the style formulas, the ordering, the legend rule -- is shared
-by both axes; only the grouping differs. Three consequences specific to the
+by both axes; only the grouping differs. Two consequences specific to the
 column axis: every group keeps all ``len(df)`` rows (column grouping never
-shortens a trace), feature correspondence across groups is POSITIONAL
-rather than by name, and groups of unequal width are rejected by the usual
-equal-width check rather than silently reconciled. A frame hierarchical on
-BOTH axes is refused outright. See docs/hierarchy.rst for the user-facing
+shortens a trace), and feature correspondence across groups is NOMINAL --
+every group must carry the same innermost labels, later groups are permuted
+into the first group's order, and groups whose labels differ (including
+groups of unequal width) are refused BY NAME rather than silently lined up
+by position. A frame hierarchical on BOTH axes is refused outright. See docs/hierarchy.rst for the user-facing
 comparison table.
 """
 

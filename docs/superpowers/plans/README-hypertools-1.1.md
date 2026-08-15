@@ -138,10 +138,10 @@ in the round-5 exchange. Both sets are recorded under *Standing decisions*.
 | 1 — animation core | landed (`FrameHooks`/`FrameContext`/`on_frame`/`HyperAnimation` all present) |
 | 3 — forecast animation | landed (`forecast_trail=`, per-frame forecasts) |
 | regrouped reveal + forecasts | **landed 2026-08-11**, 10 commits ending `59405545` |
-| 2 — MultiIndex | **IN PROGRESS**: T1 `420ef60c`, T2 `1f6e4d6d`, T3 `7a415d28`, T4 `86db0842`, plus an NA-label grouping fix. T5-T12 not started |
-| 4 — examples and tutorials | not started; Task 2 blocked on MultiIndex T5/T6/T8/T9 |
+| 2 — MultiIndex | **IN PROGRESS**: T1 `420ef60c`, T2 `1f6e4d6d`, T3 `7a415d28`, T4 `86db0842`, NA-label grouping fix `af77f09e`, T5 `5b21e3c6`, plus the v8 nominal-correspondence amendment to T1/T5. T6-T12 not started |
+| 4 — examples and tutorials | not started; Task 2 blocked on MultiIndex T6/T8/T9 (T5 has landed) |
 
-Nothing above is pushed: `dev-1.0` is ~125 commits ahead of `origin/dev-1.0` and CI has not seen
+Nothing above is pushed: `dev-1.0` is ~130 commits ahead of `origin/dev-1.0` and CI has not seen
 any of it since 2026-07-24.
 
 ### Plan 3 — none left; all five settled by shipping
@@ -194,7 +194,10 @@ two claims measurement disproved (the continuous-hue refusal above, and a "Befor
 string), were corrected in code, tests and docs during implementation.
 
 **Consequence for Plan 4 Task 2:** its regrouped-reveal prerequisite is satisfied. Its remaining
-blockers are MultiIndex T1/T2/T5/T6/T8 — T1-T4 have since landed (see below), T5 onward have not.
+blockers are MultiIndex T6/T8 (and T9 for backend parity) — T1-T5 have since landed (see below).
+Plan 4's Market frame must also use **shared per-sector measurements** as its innermost column
+level, not per-sector tickers: cross-group feature correspondence is nominal (Plan 2 *Revision
+note (v8)*), so disjoint ticker names are refused rather than silently stacked by position.
 
 ### Plan 4
 

@@ -1,4 +1,4 @@
-# HyperTools 1.1 — Examples and Tutorials Implementation Plan (v3)
+# HyperTools 1.1 — Examples and Tutorials Implementation Plan (v4)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -9,6 +9,51 @@
 **Tech Stack:** Python 3.12.10, numpy 2.3.5, pandas 3.0.3, matplotlib 3.10.8, plotly 6.8.0, scikit-learn, Pillow 12.1.0, nbconvert 7.17.1, ipykernel 7.3.0, pytest 9.0.2.
 
 ---
+
+## Revision note (v4) — the Market frame's innermost level must be SHARED MEASUREMENTS
+
+Plan 2 *Revision note (v8)* made cross-group feature correspondence **nominal**: `group_columns`
+requires every group to carry the same innermost labels and permutes later groups into the first
+group's order. The Market frame as specified below — `(Market, Sector, Ticker)` over 24 tickers,
+four per sector, **disjoint across sectors** — is exactly the shape that rule refuses, and it is
+refused deliberately. AAPL and XOM are not corresponding variables merely because each is written
+first inside its sector; that they are both dollar-denominated closes does not make position 0
+mean the same thing in both groups, and `align=` cannot repair it after the fact.
+
+**What changes.** Task 2 keeps `fetch_prices` verbatim — the 24 tickers, the 2513 trading days and
+the cache are all verified and stay — and gains a derivation step that turns each sector's four
+price series into the SAME three per-sector measurements:
+
+| level | before (v3) | after (v4) |
+|-|-|-|
+| innermost column level | `Ticker` — `AAPL`, `MSFT`, … (disjoint per sector) | `Measure` — `return`, `volatility`, `momentum` (identical in every sector) |
+| frame shape | 2513 × 24 | 2513 × 18 (6 sectors × 3 measures) |
+| traces drawn | 6 sector + 1 market mean = 7 | **unchanged**: 6 sector + 1 market mean = 7 |
+| tickers' role | the feature axis | the **inputs** the sector measurements are computed from; still listed in the right-hand panel |
+
+Every downstream count in Task 2 — trace count, hierarchy widths, `hue=` nesting (one sequence per
+sector), `predict='Kalman', t=1, forecast_trail=16`, the 210-fit accuracy budget — is stated per
+SECTOR, not per ticker, so none of them changes.
+
+**Two things need the maintainer's sign-off before Task 2 runs**, and are deliberately not decided
+here:
+
+1. **The measure definitions.** The obvious reading of "return, volatility, momentum" is the
+   sector-mean daily log return, its trailing standard deviation, and price over a trailing mean —
+   but the window lengths and whether to equal-weight or cap-weight the four tickers are modelling
+   choices this plan should not make silently.
+2. **Whether the example still tells its story.** The trajectories become sector *measurement*
+   space rather than sector *price* space. That is arguably a better showcase (the three measures
+   genuinely are commensurable across sectors, which is the whole premise of a joint reduction),
+   but it is a different picture from the one v3 described, and the surrounding prose describes
+   price levels in places.
+
+The alternative Plan 2 leaves open — reduce each sector independently and `align=` the resulting
+trajectories — is **not** recommended here: it abandons the single native `hyp.plot(df)` call that
+is the entire point of the example.
+
+---
+
 
 ## Revision note (v3)
 

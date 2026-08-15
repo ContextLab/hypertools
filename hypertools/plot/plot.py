@@ -1123,27 +1123,37 @@ def plot(
         A MultiIndex on the **COLUMNS** (``x.columns.nlevels >= 2``) is
         expanded too, since 1.1, under a DIFFERENT rule: the INNERMOST
         column level is the FEATURE axis and every level above it is the
-        grouping hierarchy. A ``(Market, Sector, Ticker)`` frame therefore
+        grouping hierarchy. A ``(Market, Sector, Measure)`` frame therefore
         groups by ``(Market, Sector)`` -- one leaf per sector, each holding
-        that sector's tickers as its features -- and gains one market mean,
-        for 4 traces. Styling, legend, `linestyle` and the `cluster=`/
+        that sector's measurements as its features -- and gains one market
+        mean, for 4 traces. Styling, legend, `linestyle` and the `cluster=`/
         `color=`/`linewidth=` rules above all apply unchanged, reading
         ``n_levels`` as the number of GROUPING levels (2 here, not 3).
         Unlike the row rule, every group keeps all ``len(x)`` rows: column
         grouping never shortens a trace.
 
-        Two things follow from that rule and are worth stating plainly.
-        **Feature correspondence across groups is POSITIONAL, not by name.**
-        The joint reduction stacks every group, so position *i* is treated
-        as commensurable across them even though Tech's position 0 is AAPL
-        and Energy's is XOM. That is appropriate when groups are parallel
-        measurements of like quantities (prices in one currency) and
-        inappropriate otherwise; reduce per group, or pass `align=`, if you
-        need group-independent axes. **Groups must be equal width:** a
-        hierarchy whose sectors hold different numbers of tickers is
-        expanded happily and then rejected by the usual equal-width check,
-        since the analysis pipeline has no way to compare a 4-feature group
-        with a 2-feature one.
+        One thing follows from that rule and is worth stating plainly.
+        **Feature correspondence across groups is by NAME, not by
+        position.** The innermost labels are feature identities: every group
+        must carry the same feature labels, and groups are permuted into the
+        first group's order before analysis, so reordering the columns
+        within a group changes nothing. Duplicate labels inside one group
+        are permitted and matched by ``(label, occurrence)``. A hierarchy
+        whose groups hold DIFFERENT labels -- one ticker per sector, say --
+        raises ``ValueError`` naming the missing and unexpected features,
+        because arbitrary column positions are not corresponding variables
+        merely by being written in the same slot. Make the innermost level
+        shared measurements (``return``, ``volatility``), reduce each group
+        yourself, or, if position *i* really does mean the same feature in
+        every group, discard the labels deliberately::
+
+            from hypertools.core.hierarchy import group_columns
+            leaves, _ = group_columns(df, feature_correspondence='position')
+            hyp.plot([leaf.to_numpy() for leaf in leaves])
+
+        Note that `align=` does NOT recover discarded feature identity: it
+        aligns the resulting spaces, but by then the reduction has already
+        interpreted arbitrary positions as corresponding inputs.
 
         A frame carrying a hierarchy on **both** axes raises ``ValueError``:
         which one takes precedence is genuinely ambiguous, and before 1.1
@@ -3592,18 +3602,20 @@ def plot(
                 "this release; ignoring hue."
             , stacklevel=external_stacklevel())
             hue = None
+        # NOMINAL correspondence: group_columns has already required that
+        # every group carry the same feature labels and permuted the later
+        # groups into the first group's order. Position therefore MEANS name
+        # by the time the arrays are handed on, and a within-group column
+        # permutation cannot move a trajectory.
         x, _multiindex_meta = group_columns(x)
-        # Feature correspondence across groups is POSITIONAL, not nominal.
-        # Tech's column 0 is AAPL and Energy's is XOM, and the joint
-        # reduction stacks every group, treating position i as commensurable
-        # -- the modelling assumption documented in plot()'s `x` entry.
+        # Hand the pipeline plain arrays rather than the labelled leaves.
         # format_data matches DataFrame features BY COLUMN NAME across
-        # datasets (GH #132), which is right for an arbitrary list of frames
-        # but wrong here: it would reject the market frame outright because
-        # no two sectors share a ticker. The hierarchy has already asserted
-        # that these groups correspond, so hand the pipeline plain arrays
-        # and let position line them up. Ragged groups then reach the
-        # existing equal-width check rather than a name-mismatch error.
+        # datasets (GH #132), which would duplicate the matching just done
+        # -- and would reject the legitimate duplicate-label case (two share
+        # classes of one issuer, a repeated sensor), which is matched here
+        # by (label, occurrence) instead. Ragged groups never reach the
+        # pipeline's equal-width check: unequal widths are already a
+        # feature-label mismatch, reported by name.
         x = [leaf.to_numpy() for leaf in x]
 
     # default axis labels from DataFrame column names (release-1.0 audit,

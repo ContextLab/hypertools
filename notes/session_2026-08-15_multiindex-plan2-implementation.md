@@ -42,6 +42,7 @@ Jeremy chose "Execute Plan 2 (MultiIndex)" when asked.
 | 4 `trace_data`/`trace_metadata` bundle keys | done, 6 tests | `86db0842` |
 | (fix) NA hierarchy labels — review finding 1 | done, 14 tests, mutation-verified | `af77f09e` |
 | 5 column MultiIndex end-to-end in `plot()` | done, 17 tests | `5b21e3c6` |
+| (fix) nominal feature correspondence — review finding 1 | done, 14 tests | *this commit* |
 | 6 continuous hue as per-trace aux | not started | — |
 | 7 hierarchical `hyp.predict` | not started | — |
 | 8 `predict=` over final traces | not started | — |
@@ -135,12 +136,70 @@ construction, so the market frame was rejected outright: *"dataset 1 is
 missing ['AAPL','MSFT','NVDA'] and has unexpected ['BAC','GS','JPM']"*.
 
 The plan had already settled the question in its *Documented modelling
-assumption* — correspondence across groups is **positional**, because the
-joint reduction stacks every group and treats position *i* as commensurable.
-So `plot()` passes `leaf.to_numpy()` into the pipeline. `group_columns`'
-flattened, NAMED leaves are unchanged, so Task 7's predict path still gets
-them; and ragged groups reach the existing equal-width check
-(`plot.py:3650`) instead of a name-mismatch error.
+assumption* — correspondence across groups is **positional** — so `plot()`
+passed `leaf.to_numpy()` into the pipeline.
+
+**That resolution was wrong, and the maintainer's review after Task 5 caught
+it (see the section below).** Deferring to the plan's own documented
+assumption was the right instinct for a collision discovered mid-task, but
+the assumption itself had never been stress-tested: it silently made column
+ORDER part of the statistical model. The current behaviour is nominal —
+`group_columns` matches feature labels across groups and permutes later
+groups into the first group's order — and `plot()` still passes
+`leaf.to_numpy()`, but now position MEANS name by the time it does.
+
+**The lesson worth keeping:** "the plan already decided this" is a reason to
+follow a decision, not evidence that the decision is sound. A modelling
+assumption that no test can distinguish from its opposite is not settled —
+it is unexamined. The permutation-invariance test that would have exposed
+this took four lines and did not exist in Tasks 1–5.
+
+## Review round 2 (maintainer, after Task 5) — nominal correspondence
+
+**Finding (High): positional matching silently makes column order part of
+the statistical model.** Reproduced by the maintainer on two label-
+equivalent frames — *"frames equal after sorting columns: True / group-B
+arrays equal: False / original first row: [3, 4, 5] / reordered first row:
+[5, 4, 3]"* — and reproduced again here at both the `group_columns` level
+and end to end through `hyp.plot`. **ACCEPTED in full.**
+
+Decision, as directed: **nominal by default, positional only by explicit
+opt-in.**
+
+- `group_columns` requires every group to carry the same innermost-label
+  multiset and permutes each later group into the FIRST group's order, so
+  values travel with their labels (`_match_features_by_name`).
+- Duplicates are matched across groups by `(label, occurrence)`
+  (`_feature_keys`), so v6's D3 decision survives intact — no column is
+  dropped, no group merged — while `['temp','temp','flow']` vs
+  `['temp','flow','flow']` is now correctly an error.
+- Missing feature LABELS are matched NA-aware, reusing `_canonical_label`
+  from the round-1 fix. Without it every group after the first would report
+  a missing feature, because `NaN != NaN`.
+- Unequal group widths no longer fall through to the pipeline's generic
+  `same number of columns` message; they are a label mismatch, and the
+  error NAMES the missing and unexpected features.
+- `group_columns(df, feature_correspondence='position')` is the opt-in, and
+  the mismatch error prints it verbatim along with the two-line recipe.
+
+**No public `plot(feature_correspondence=...)` parameter in 1.1** — my
+recommendation, flagged to the maintainer. The escape hatch requires the
+caller to discard the labels in their own code
+(`hyp.plot([leaf.to_numpy() for leaf in leaves])`), which keeps the choice
+visible at the call site instead of hidden in a kwarg, and avoids growing
+`plot()`'s signature for a case with no demonstrated demand. Revisit for
+1.2 if real demand appears.
+
+**Fixture consequence, which is the interesting part.** Every Market
+fixture in this plan — and Plan 4's whole Market example — used per-sector
+TICKERS as the innermost level, which is precisely the shape now refused.
+That is the rule working: four dollar-denominated closes per sector do not
+become corresponding variables by being written in the same slot. All
+fixtures now use shared measurements (`return`, `volatility`, `momentum`)
+and a `ticker_frame` fixture was added to pin the REFUSAL. Plan 4 carries a
+v4 revision note specifying the same change to its data preparation, with
+two items flagged for the maintainer (the measure definitions, and whether
+sector measurement-space still tells the example's story).
 
 ## Ruff counting: use ruff's own summary, not a grep
 

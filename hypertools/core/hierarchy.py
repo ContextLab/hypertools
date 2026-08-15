@@ -10,7 +10,8 @@ Three DIFFERENT rules exist deliberately:
 
 - `group_columns`            -- COLUMN hierarchy, plot AND predict: the
                                 innermost level is the FEATURE axis,
-                                everything above it groups.
+                                everything above it groups, and groups
+                                correspond feature-by-feature BY NAME.
 - `group_rows_for_forecast`  -- ROW hierarchy, predict only: the innermost
                                 level is the TIME axis, everything above it
                                 groups, and the innermost level SURVIVES as
@@ -150,7 +151,76 @@ def reject_hierarchical_in_list(x, caller, axes='columns'):
                 "df.columns = df.columns.map('_'.join)).")
 
 
-def group_columns(df):
+def _feature_keys(labels):
+    """Ordered ``(canonical_label, occurrence)`` keys for one leaf's features.
+
+    The occurrence counter is what lets duplicate feature labels correspond
+    across groups without being name-addressed: a group carrying two
+    ``'temp'`` columns matches another group's two ``'temp'`` columns, first
+    to first and second to second. `_canonical_label` makes a missing
+    feature label match a missing feature label (``NaN != NaN``).
+    """
+    counts, keys = {}, []
+    for label in labels:
+        canon = _canonical_label(label)
+        seen = counts.get(canon, 0)
+        counts[canon] = seen + 1
+        keys.append((canon, seen))
+    return keys
+
+
+def _match_features_by_name(leaves, leaf_keys):
+    """Permute every leaf into the FIRST leaf's feature order.
+
+    Feature labels mean something, so two groups correspond feature-by-
+    feature by NAME. Matching by position instead would quietly make column
+    order part of the statistical model: permuting one group's columns would
+    move that group's trajectory and every mean derived from it, even though
+    the labelled frame holds identical data. Ordering is usually incidental,
+    so that is not a safe default for a labelled DataFrame.
+
+    Reordering moves whole columns, so each group's values stay attached to
+    their own labels. Callers who genuinely mean "slot i is the same feature
+    everywhere" ask for `feature_correspondence='position'` instead.
+    """
+    if len(leaves) < 2:
+        return leaves
+
+    canonical = _feature_keys(leaves[0].columns)
+    canonical_set = set(canonical)
+    matched = [leaves[0]]
+    for leaf, group_key in zip(leaves[1:], leaf_keys[1:]):
+        keys = _feature_keys(leaf.columns)
+        position = {key: i for i, key in enumerate(keys)}
+        # every key is unique by construction, so set equality here IS
+        # multiset equality over the labels -- ['temp', 'temp'] and ['temp']
+        # differ because ('temp', 1) is present in only one of them.
+        if set(keys) != canonical_set:
+            missing = [leaves[0].columns[i] for i, key in enumerate(canonical)
+                       if key not in position]
+            unexpected = [leaf.columns[i] for i, key in enumerate(keys)
+                          if key not in canonical_set]
+            raise ValueError(
+                f"column-hierarchy group {group_key} does not have the same "
+                f"features as the first group {leaf_keys[0]}: missing "
+                f"{list(missing)}, unexpected {list(unexpected)}. The "
+                "innermost column level is the FEATURE axis, and hypertools "
+                "matches features across hierarchy groups BY NAME, so every "
+                "group must carry the same feature labels (duplicates are "
+                "matched by occurrence). Rename the innermost level so the "
+                "groups share feature names -- e.g. shared measurements "
+                "('return', 'volatility') rather than per-group identifiers "
+                "-- or, if slot i really does mean the same feature in every "
+                "group, discard the labels deliberately:\n"
+                "    from hypertools.core.hierarchy import group_columns\n"
+                "    leaves, _ = group_columns("
+                "df, feature_correspondence='position')\n"
+                "    hyp.plot([leaf.to_numpy() for leaf in leaves])")
+        matched.append(leaf.iloc[:, [position[key] for key in canonical]])
+    return matched
+
+
+def group_columns(df, feature_correspondence='name'):
     """Group a column-hierarchical frame into one leaf per group.
 
     The innermost column level is the FEATURE axis; every level above it is
@@ -163,11 +233,25 @@ def group_columns(df):
     caller's full tuples would leave the leaf hierarchical, so `hyp.predict`'s
     per-group recursion would re-detect it and regroup without bound.
 
-    Duplicate flattened labels are permitted and are handled POSITIONALLY --
-    two share classes of one issuer, or a repeated sensor name, are legitimate
-    inputs and nothing downstream is name-addressed. Group labels come from
+    Feature correspondence across groups is NOMINAL by default: every group
+    must carry the same feature labels, and later groups are permuted into
+    the first group's order, so a within-group column permutation cannot
+    change any trajectory or any mean derived from it. Pass
+    ``feature_correspondence='position'`` to state deliberately that slot
+    *i* means the same feature in every group; that is the only way to plot
+    groups with disjoint feature labels, and it makes column order part of
+    the model (see `_match_features_by_name`).
+
+    Duplicate flattened labels are permitted -- two share classes of one
+    issuer, or a repeated sensor name, are legitimate inputs -- and are
+    matched across groups by ``(label, occurrence)``. Group labels come from
     `meta['leaf_keys']`, never from a leaf's columns.
     """
+    if feature_correspondence not in ('name', 'position'):
+        raise ValueError(
+            "feature_correspondence= must be 'name' (match features across "
+            "groups by label) or 'position' (slot i is the same feature in "
+            f"every group); got {feature_correspondence!r}.")
     reject_dual_axis(df)
     if not isinstance(df.columns, pd.MultiIndex) or df.columns.nlevels < 2:
         raise ValueError(
@@ -200,11 +284,15 @@ def group_columns(df):
         leaves.append(leaf)
         leaf_keys.append(key if isinstance(key, tuple) else (key,))
 
+    if feature_correspondence == 'name':
+        leaves = _match_features_by_name(leaves, leaf_keys)
+
     return leaves, {
         'n_levels': len(group_levels),
         'leaf_keys': leaf_keys,
         'level_names': list(df.columns.names[:-1]),
         'axis': 'columns',
+        'feature_correspondence': feature_correspondence,
     }
 
 

@@ -13,8 +13,27 @@ from hypertools.core.hierarchy import (group_columns, group_rows_for_forecast,
                                        reject_hierarchical_in_list)
 
 
+#: The innermost level names SHARED measurements, not per-sector tickers.
+#: Feature correspondence across groups is nominal (v8), so 'Tech/AAPL' and
+#: 'Energy/XOM' are not the same feature merely because each is written
+#: first; 'Tech/return' and 'Energy/return' genuinely are.
+MEASURES = ('return', 'volatility', 'momentum')
+
+
 def market_frame(T=120, seed=0):
-    """rows = trading days, columns = (Market, Sector, Ticker)."""
+    """rows = trading days, columns = (Market, Sector, Measure)."""
+    rng = np.random.default_rng(seed)
+    tuples = [('Market', sector, m)
+              for sector in ('Tech', 'Financials', 'Energy')
+              for m in MEASURES]
+    cols = pd.MultiIndex.from_tuples(tuples,
+                                     names=['Market', 'Sector', 'Measure'])
+    return pd.DataFrame(rng.normal(size=(T, 9)).cumsum(axis=0) + 100.0, columns=cols)
+
+
+def ticker_frame(T=120, seed=0):
+    """The same shape, but with DISJOINT innermost labels per group -- no
+    two sectors share a ticker, so nominal correspondence is impossible."""
     rng = np.random.default_rng(seed)
     tuples = ([('Market', 'Tech', t) for t in ('AAPL', 'MSFT', 'NVDA')]
               + [('Market', 'Financials', t) for t in ('JPM', 'BAC', 'GS')]
@@ -53,8 +72,8 @@ def test_column_leaves_are_flattened_to_the_innermost_feature_level():
     [('Market','Tech','AAPL'), ...], names ['Market','Sector','Ticker']."""
     leaves, _ = group_columns(market_frame())
     assert all(not isinstance(leaf.columns, pd.MultiIndex) for leaf in leaves)
-    assert leaves[0].columns.tolist() == ['AAPL', 'MSFT', 'NVDA']
-    assert leaves[0].columns.name == 'Ticker'
+    assert leaves[0].columns.tolist() == list(MEASURES)
+    assert leaves[0].columns.name == 'Measure'
     assert all(leaf.columns.nlevels == 1 for leaf in leaves)
 
 
@@ -68,7 +87,7 @@ def test_group_columns_does_not_mutate_the_callers_frame():
     before_values = df.to_numpy(copy=True)
     group_columns(df)
     assert df.columns.equals(before)
-    assert list(df.columns.names) == ['Market', 'Sector', 'Ticker']
+    assert list(df.columns.names) == ['Market', 'Sector', 'Measure']
     assert isinstance(df.columns, pd.MultiIndex)
     assert np.array_equal(df.to_numpy(), before_values)
 
@@ -106,29 +125,177 @@ def test_duplicate_tickers_in_different_sectors_are_kept_separate():
 
 def test_duplicate_innermost_feature_names_are_kept_positionally():
     """DECIDED (Revision note (v6) D3): duplicates WITHIN a group are
-    permitted. Flattening can collide two tickers (two share classes, a
-    repeated sensor); everything downstream is positional, so nothing is
-    dropped and rejecting would break legitimate frames. Measured: widths
-    [3, 3], np.asarray -> (20, 3), predict -> (1, 3), plot -> Figure."""
+    permitted. Flattening can collide two labels (two share classes of one
+    issuer, a repeated sensor); nothing downstream is name-addressed, so
+    nothing is dropped and rejecting would break legitimate frames.
+    Measured: widths [3, 3], np.asarray -> (20, 3), predict -> (1, 3),
+    plot -> Figure.
+
+    Under nominal correspondence (v8) duplicates are matched by (label,
+    OCCURRENCE), so each group must still carry the same MULTISET of
+    labels -- see test_duplicate_labels_match_by_occurrence."""
     cols = pd.MultiIndex.from_tuples(
-        [('M', 'Tech', 'AAPL'), ('M', 'Tech', 'AAPL'), ('M', 'Tech', 'NVDA'),
-         ('M', 'Fin', 'JPM'), ('M', 'Fin', 'GS'), ('M', 'Fin', 'BAC')],
-        names=['Market', 'Sector', 'Ticker'])
+        [('Rig', 'North', 'temp'), ('Rig', 'North', 'temp'),
+         ('Rig', 'North', 'flow'),
+         ('Rig', 'South', 'temp'), ('Rig', 'South', 'temp'),
+         ('Rig', 'South', 'flow')],
+        names=['Rig', 'Well', 'Sensor'])
     df = pd.DataFrame(np.random.default_rng(0).normal(size=(20, 6)),
                       columns=cols)
     leaves, meta = group_columns(df)
     assert len(leaves) == 2, 'duplicate names must not merge groups'
     assert [leaf.shape[1] for leaf in leaves] == [3, 3]
-    assert leaves[0].columns.tolist() == ['AAPL', 'AAPL', 'NVDA']
+    assert leaves[0].columns.tolist() == ['temp', 'temp', 'flow']
     assert not leaves[0].columns.is_unique
     assert np.asarray(leaves[0]).shape == (20, 3), 'no column was dropped'
     assert np.allclose(np.asarray(leaves[0]), df.to_numpy()[:, :3])
-    assert meta['leaf_keys'] == [('M', 'Tech'), ('M', 'Fin')]
+    assert meta['leaf_keys'] == [('Rig', 'North'), ('Rig', 'South')]
+
+
+# --- nominal feature correspondence across groups (v8) ----------------------
+#
+# The innermost level is the FEATURE axis, and its labels MEAN something:
+# two groups correspond feature-by-feature by NAME, never by position.
+# Positional matching would quietly make column order part of the
+# statistical model -- permuting one group's columns would move its
+# trajectory and every mean derived from it, even though the labelled frame
+# holds identical data. Position is available only by asking for it.
+
+def test_within_group_column_permutation_does_not_change_the_leaf_values():
+    """The defect this rule fixes, stated directly: two frames that differ
+    only in the ORDER of one group's columns must produce identical leaf
+    values. Measured before the fix: Energy's first row was [3, 4, 5] in
+    one and [5, 4, 3] in the other."""
+    df = market_frame(T=40)
+    permuted = df.iloc[:, [0, 1, 2, 3, 4, 5, 8, 7, 6]]
+    assert not df.columns.equals(permuted.columns), 'the frames must differ'
+    base = [leaf.to_numpy() for leaf in group_columns(df)[0]]
+    other = [leaf.to_numpy() for leaf in group_columns(permuted)[0]]
+    assert len(base) == len(other) == 3
+    for a, b in zip(base, other):
+        assert np.array_equal(a, b)
+
+
+def test_groups_are_reordered_into_the_first_groups_feature_order():
+    """The first group's order is canonical; later groups are permuted into
+    it, keeping their own labels attached to their own data."""
+    cols = pd.MultiIndex.from_tuples(
+        [('M', 'Tech', 'return'), ('M', 'Tech', 'vol'),
+         ('M', 'Energy', 'vol'), ('M', 'Energy', 'return')],
+        names=['Market', 'Sector', 'Measure'])
+    df = pd.DataFrame([[1.0, 2.0, 20.0, 10.0]], columns=cols)
+    leaves, _ = group_columns(df)
+    assert leaves[0].columns.tolist() == ['return', 'vol']
+    assert leaves[1].columns.tolist() == ['return', 'vol']
+    assert leaves[1].to_numpy().tolist() == [[10.0, 20.0]], \
+        'values must travel WITH their label, not stay in place'
+
+
+def test_disjoint_feature_names_raise_naming_both_sides():
+    """A per-sector ticker frame: no two sectors share a feature, so there
+    is no correspondence to honour. The error must name what is missing and
+    what is unexpected rather than saying only that something is wrong."""
+    with pytest.raises(ValueError) as excinfo:
+        group_columns(ticker_frame())
+    message = str(excinfo.value)
+    assert "('Market', 'Financials')" in message, 'names the offending group'
+    assert "('Market', 'Tech')" in message, 'names the reference group'
+    for missing in ('AAPL', 'MSFT', 'NVDA'):
+        assert missing in message
+    for unexpected in ('BAC', 'GS', 'JPM'):
+        assert unexpected in message
+
+
+def test_error_names_the_deliberate_positional_escape_hatch():
+    with pytest.raises(ValueError, match="feature_correspondence='position'"):
+        group_columns(ticker_frame())
+
+
+def test_unequal_group_widths_raise_a_named_feature_error():
+    """Ragged groups used to reach the pipeline's generic 'same number of
+    columns' check. Nominal matching catches them earlier and says WHICH
+    features are involved."""
+    cols = pd.MultiIndex.from_tuples(
+        [('M', 'Tech', m) for m in ('return', 'vol', 'momentum')]
+        + [('M', 'Energy', m) for m in ('return', 'vol')],
+        names=['Market', 'Sector', 'Measure'])
+    df = pd.DataFrame(np.zeros((10, 5)), columns=cols)
+    with pytest.raises(ValueError, match='momentum'):
+        group_columns(df)
+
+
+def test_duplicate_labels_match_by_occurrence():
+    """(label, occurrence) pairs, so a group with two 'temp' columns needs
+    a counterpart with two -- and the SECOND 'temp' of one group lines up
+    with the second of the other."""
+    cols = pd.MultiIndex.from_tuples(
+        [('R', 'North', 'temp'), ('R', 'North', 'temp'), ('R', 'North', 'flow'),
+         ('R', 'South', 'flow'), ('R', 'South', 'temp'), ('R', 'South', 'temp')],
+        names=['Rig', 'Well', 'Sensor'])
+    df = pd.DataFrame([[1.0, 2.0, 3.0, 30.0, 10.0, 20.0]], columns=cols)
+    leaves, _ = group_columns(df)
+    assert leaves[1].columns.tolist() == ['temp', 'temp', 'flow']
+    assert leaves[1].to_numpy().tolist() == [[10.0, 20.0, 30.0]]
+
+
+def test_unequal_duplicate_counts_are_rejected():
+    """Same label SET, different multiset: two 'temp' columns cannot
+    correspond to one."""
+    cols = pd.MultiIndex.from_tuples(
+        [('R', 'North', 'temp'), ('R', 'North', 'temp'), ('R', 'North', 'flow'),
+         ('R', 'South', 'temp'), ('R', 'South', 'flow'), ('R', 'South', 'flow')],
+        names=['Rig', 'Well', 'Sensor'])
+    df = pd.DataFrame(np.zeros((10, 6)), columns=cols)
+    with pytest.raises(ValueError, match='temp'):
+        group_columns(df)
+
+
+@pytest.mark.parametrize('missing', [np.nan, None, pd.NA])
+def test_a_missing_feature_label_matches_a_missing_feature_label(missing):
+    """NA-aware on the FEATURE axis too: `NaN != NaN`, so raw equality would
+    report a missing feature in every group but the first."""
+    cols = pd.MultiIndex.from_tuples(
+        [('M', 'Tech', 'return'), ('M', 'Tech', missing),
+         ('M', 'Energy', missing), ('M', 'Energy', 'return')],
+        names=['Market', 'Sector', 'Measure'])
+    df = pd.DataFrame([[1.0, 2.0, 20.0, 10.0]], columns=cols)
+    leaves, _ = group_columns(df)
+    assert len(leaves) == 2
+    assert leaves[1].to_numpy().tolist() == [[10.0, 20.0]], 'reordered by name'
+
+
+def test_positional_correspondence_is_available_by_explicit_request():
+    """The deliberate opt-in: the caller states that slot i means the same
+    thing in every group, and disjoint labels stop being an error."""
+    leaves, meta = group_columns(ticker_frame(T=40),
+                                 feature_correspondence='position')
+    assert len(leaves) == 3
+    assert leaves[0].columns.tolist() == ['AAPL', 'MSFT', 'NVDA']
+    assert leaves[2].columns.tolist() == ['XOM', 'CVX', 'COP']
+    assert meta['feature_correspondence'] == 'position'
+
+
+def test_positional_correspondence_keeps_the_callers_within_group_order():
+    df = market_frame(T=40)
+    permuted = df.iloc[:, [0, 1, 2, 3, 4, 5, 8, 7, 6]]
+    leaves, _ = group_columns(permuted, feature_correspondence='position')
+    assert leaves[2].columns.tolist() == ['momentum', 'volatility', 'return']
+
+
+def test_nominal_is_the_default_and_is_recorded_in_meta():
+    _, meta = group_columns(market_frame())
+    assert meta['feature_correspondence'] == 'name'
+
+
+def test_unknown_feature_correspondence_is_rejected():
+    with pytest.raises(ValueError, match='feature_correspondence'):
+        group_columns(market_frame(), feature_correspondence='positional')
 
 
 def test_unnamed_levels_are_tolerated():
-    cols = pd.MultiIndex.from_tuples([('a', 'x'), ('a', 'y'), ('b', 'z')])
-    df = pd.DataFrame(np.zeros((5, 3)), columns=cols)
+    cols = pd.MultiIndex.from_tuples([('a', 'x'), ('a', 'y'),
+                                      ('b', 'x'), ('b', 'y')])
+    df = pd.DataFrame(np.zeros((5, 4)), columns=cols)
     leaves, meta = group_columns(df)
     assert len(leaves) == 2
     assert meta['level_names'] == [None]

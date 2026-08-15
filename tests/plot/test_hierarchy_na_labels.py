@@ -36,15 +36,15 @@ MISSING_IDS = ['np.nan', 'None', 'pd.NA']
 
 
 def _col_frame_missing_top(na, T=6):
-    """(Market, Sector, Ticker) with the TOP level missing for every column.
+    """(Market, Sector, Measure) with the TOP level missing for every column.
 
     Two sectors, so the top-level prefix is shared by two leaves -- which is
     what makes a duplicated mean visible.
     """
     cols = pd.MultiIndex.from_tuples(
-        [(na, 'Tech', 'AAPL'), (na, 'Tech', 'MSFT'),
-         (na, 'Energy', 'XOM'), (na, 'Energy', 'CVX')],
-        names=['Market', 'Sector', 'Ticker'])
+        [(na, 'Tech', 'return'), (na, 'Tech', 'volatility'),
+         (na, 'Energy', 'return'), (na, 'Energy', 'volatility')],
+        names=['Market', 'Sector', 'Measure'])
     return pd.DataFrame(np.zeros((T, 4)), columns=cols)
 
 
@@ -91,9 +91,9 @@ def test_missing_intermediate_level_label_makes_one_mean_per_group():
     contains it is what gets deduplicated. Four column levels, so grouping
     is by the first three and prefixes of length 2 carry the NaN."""
     cols = pd.MultiIndex.from_tuples(
-        [('M', np.nan, 'g1', 'AAPL'), ('M', np.nan, 'g2', 'MSFT'),
-         ('M', 'Energy', 'g3', 'XOM')],
-        names=['Market', 'Sector', 'Sub', 'Ticker'])
+        [('M', np.nan, 'g1', 'return'), ('M', np.nan, 'g2', 'return'),
+         ('M', 'Energy', 'g3', 'return')],
+        names=['Market', 'Sector', 'Sub', 'Measure'])
     df = pd.DataFrame(np.zeros((6, 3)), columns=cols)
     leaves, meta = group_columns(df)
     assert len(leaves) == 3 and meta['n_levels'] == 3
@@ -123,8 +123,8 @@ def test_pd_NaT_labels_also_collapse():
     """NaT is a singleton, so this spelling passed even before the fix --
     pinned so it keeps passing for the right reason."""
     cols = pd.MultiIndex.from_tuples(
-        [(pd.NaT, 'Tech', 'AAPL'), (pd.NaT, 'Energy', 'XOM')],
-        names=['Market', 'Sector', 'Ticker'])
+        [(pd.NaT, 'Tech', 'return'), (pd.NaT, 'Energy', 'return')],
+        names=['Market', 'Sector', 'Measure'])
     df = pd.DataFrame(np.zeros((6, 2)), columns=cols)
     leaves, meta = group_columns(df)
     ft = build_hierarchy_traces(_leaves_like(meta), meta)
@@ -149,8 +149,8 @@ def test_first_appearance_order_is_kept_when_a_missing_label_is_interleaved():
     """Ordering is part of the contract: colours and leaf_keys both depend
     on first-appearance order, so a missing label must not jump position."""
     cols = pd.MultiIndex.from_tuples(
-        [('A', 'x', 't1'), (np.nan, 'y', 't2'), ('B', 'z', 't3'),
-         (np.nan, 'w', 't4')],
+        [('A', 'x', 'f'), (np.nan, 'y', 'f'), ('B', 'z', 'f'),
+         (np.nan, 'w', 'f')],
         names=['Top', 'Mid', 'Leaf'])
     df = pd.DataFrame(np.zeros((6, 4)), columns=cols)
     leaves, meta = group_columns(df)
@@ -182,9 +182,9 @@ def test_row_hierarchy_metadata_with_a_missing_label_behaves_identically():
 def test_present_labels_are_completely_unaffected():
     """Regression guard: canonicalisation must be a no-op without NA."""
     cols = pd.MultiIndex.from_tuples(
-        [('M', 'Tech', 'AAPL'), ('M', 'Tech', 'MSFT'),
-         ('M', 'Energy', 'XOM'), ('M', 'Energy', 'CVX')],
-        names=['Market', 'Sector', 'Ticker'])
+        [('M', 'Tech', 'return'), ('M', 'Tech', 'volatility'),
+         ('M', 'Energy', 'return'), ('M', 'Energy', 'volatility')],
+        names=['Market', 'Sector', 'Measure'])
     df = pd.DataFrame(np.zeros((6, 4)), columns=cols)
     leaves, meta = group_columns(df)
     ft = build_hierarchy_traces(_leaves_like(meta), meta)

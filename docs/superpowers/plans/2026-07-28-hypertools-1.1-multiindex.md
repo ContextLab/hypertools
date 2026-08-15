@@ -1,4 +1,4 @@
-# HyperTools 1.1 — MultiIndex Implementation Plan (v7)
+# HyperTools 1.1 — MultiIndex Implementation Plan (v8)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -7,6 +7,24 @@
 **Architecture:** Today one function does two jobs. `build_multiindex_styles` (`multiindex.py:90`) BOTH appends the per-level mean arrays (`multiindex.py:197-229`) AND builds their styles, and forecasts are computed *before* it runs, so a count mismatch is silently swallowed at `plot.py:3999`. This plan therefore splits ownership before adding any feature: **`build_hierarchy_traces` is the one authoritative final-trace builder** (it owns mean construction, unequal-length truncation and its warning), **`build_hierarchy_styles` is style-only** (it consumes trace metadata, never leaves), and **axis-agnostic grouping moves to `hypertools/core/hierarchy.py`** so `hypertools/predict/` never imports from `hypertools/plot/`.
 
 **Tech Stack:** Python 3.10+, pandas 3.0.3, numpy 2.3.5, matplotlib, plotly, `hypertools.predict`, pytest.
+
+---
+
+## Revision note (v8)
+
+Tasks 1–5 were implemented and reviewed by the maintainer, who found **one High defect in the plan's own contract, not in its implementation**: cross-group feature correspondence was specified as **positional**, and Task 5 duly converted labelled leaves to arrays (`plot.py:3595`), bypassing `format_data`'s nominal matching. The consequence, confirmed by the maintainer on two label-equivalent frames: *"frames equal after sorting columns: True / group-B arrays equal: False / original first row: [3, 4, 5] / reordered first row: [5, 4, 3]"*. Column **order** had silently become part of the statistical model, and no test in Tasks 1–5 exposed it.
+
+That is internally consistent but unsafe as a default for a **labelled** DataFrame: AAPL and XOM are not corresponding variables merely because each occupies slot 0 or is denominated in one currency, and their ordering is usually incidental. `align=` does not repair it — it aligns the resulting spaces, but the reduction has already interpreted arbitrary positions as corresponding inputs — so the v7 mitigation wording in `plot()`'s `x` entry overstated what `align=` guarantees.
+
+| # | finding | verified reality (measured) | what changed in v8 |
+|-|-|-|-|
+| **F1** | Cross-group feature correspondence was **positional**, making within-group column order load-bearing. | Reproduced at the `group_columns` level and end to end through `hyp.plot`: permuting one sector's three columns moved that sector's whole trajectory and both derived means. | **Correspondence is NOMINAL by default.** `group_columns` now requires every group to carry the same innermost-label multiset and permutes each later group into the **first** group's order before returning, so values travel with their labels. Pinned by `test_within_group_column_permutation_does_not_change_the_leaf_values` (Task 1) and `test_within_group_column_permutation_does_not_move_the_traces` (Task 5) — the permutation-invariance tests the earlier tasks lacked. |
+| **F2** | Duplicate innermost labels (**D3**, v6) were matched positionally *within* a group, with nothing said about matching them *across* groups. | A group with two `'temp'` columns has no unambiguous name-only counterpart in a group with one. | **D3 stands** — duplicates are still permitted and no column is dropped — but they are matched across groups by **`(label, occurrence)`**: first `'temp'` to first `'temp'`, second to second. A label-multiset mismatch (`['temp','temp','flow']` vs `['temp','flow','flow']`) is an error. |
+| **F3** | Groups of unequal width fell through to the analysis pipeline's generic `same number of columns` error. | Unequal width is a strictly weaker statement than a label mismatch: two 3-wide groups can still be incommensurable. | Unequal widths are now caught earlier, by the same nominal check, and the error **names the missing and unexpected features**. `test_ragged_groups_raise_the_existing_width_error` became `test_ragged_groups_raise_a_named_feature_error` — a strengthened assertion, not a relaxed one. |
+| **F4** | Positional behaviour had no way to be requested deliberately. | Genuinely positional data exists (sensor banks, replicate arrays); silently forbidding it would be as wrong as silently assuming it. | `group_columns(df, feature_correspondence='position')` is the **explicit opt-in**, and the error message for a nominal mismatch prints it verbatim. **No public `plot(feature_correspondence=...)` parameter is added in 1.1**: the escape hatch requires the caller to discard the labels in their own code (`hyp.plot([leaf.to_numpy() for leaf in leaves])`), which keeps the decision visible at the call site rather than hidden in a kwarg. Revisit for 1.2 if real demand appears. |
+| **F5** | The **Market example** (this plan's motivating case, and Plan 4's validation input) used per-sector **tickers** as its innermost level — the exact shape nominal correspondence refuses. | Disjoint tickers per sector: no two sectors share a feature label. | The Market frame's innermost level is now **shared measurements** — `('return', 'volatility', 'momentum')` — for every sector, which is what makes a joint reduction meaningful in the first place. Updated in every fixture (Tasks 1, 5, and the NA-label module) and in Plan 4's data preparation. A `ticker_frame` fixture is kept, and is used to pin the **refusal**. |
+
+**Nothing about the row axis changes.** `expand_multiindex` and `group_rows_for_forecast` are untouched: the row rule's innermost level is time/observations, not features.
 
 ---
 
@@ -246,14 +264,23 @@ Continuous `hue=` over a **row** hierarchy keeps today's warn-and-ignore (`plot.
 
 ## Task 1: Shared grouping in `hypertools/core/hierarchy.py`
 
+> **Executed, then amended by *Revision note (v8)*.** `group_columns` gained
+> the `feature_correspondence` parameter and nominal cross-group matching
+> (`_feature_keys` / `_match_features_by_name`), and `meta` gained
+> `'feature_correspondence'`. The `market_frame` fixture below now names
+> shared measurements; a `ticker_frame` fixture was added to pin the
+> refusal of disjoint labels. The as-shipped tests are the authority:
+> `tests/core/test_hierarchy_grouping.py`.
+
 Define grouping once, for both axes and both consumers, **outside** `hypertools/plot/` so `hypertools/predict/` can import it without depending on plotting (F4). `expand_multiindex` is untouched.
 
 **Rules (these are the contract):**
-- **Column hierarchy (plot and predict):** the innermost column level is the FEATURE axis; every level above it is the grouping hierarchy. `(Market, Sector, Ticker)` groups by `(Market, Sector)`, and **each leaf is actually flattened onto that feature axis** — its columns become the innermost level's values, carrying that level's name (`['AAPL','MSFT','NVDA']`, `.name == 'Ticker'`). Keeping the full tuples would leave the leaf hierarchical, which is exactly the v5 defect (*Revision note (v6)* **D1**).
+- **Column hierarchy (plot and predict):** the innermost column level is the FEATURE axis; every level above it is the grouping hierarchy. `(Market, Sector, Measure)` groups by `(Market, Sector)`, and **each leaf is actually flattened onto that feature axis** — its columns become the innermost level's values, carrying that level's name (`['return','volatility','momentum']`, `.name == 'Measure'`). Keeping the full tuples would leave the leaf hierarchical, which is exactly the v5 defect (*Revision note (v6)* **D1**).
 - **Row hierarchy (plot):** unchanged — one leaf per unique full index tuple (`expand_multiindex`, `multiindex.py:76-81`). Note its leaves keep the full row MultiIndex and are a measured **fixed point**; they must never be fed back into a hierarchy-detecting entry point (**D2**).
 - **Row hierarchy (predict):** the innermost level is the TIME/observation axis; group by every level above it, **dropping only those grouping levels so the innermost survives as the group's own FLAT (single-level) index**, keeping its name and dtype (F5). That single rule satisfies both the datetime-preservation requirement and the flatness invariant; there is no `RangeIndex` fallback.
 - **Leaf flatness is an invariant, not an accident (Contract 11):** every leaf returned by a helper here is non-hierarchical on the axis it was grouped along, on **both** axes, and re-running the helper on a leaf is refused rather than nesting. Grouping **never mutates the caller's frame**.
-- **Duplicate innermost feature labels are permitted positionally** — nothing downstream is name-addressed, and measured, all such columns survive, forecast and plot (**D3**).
+- **Feature correspondence across groups is NOMINAL** (*Revision note (v8)* **F1**) — every group must carry the same innermost-label multiset, and later groups are permuted into the first group's order before analysis, so within-group column order is not part of the model. Groups with different labels (including groups of unequal width) are refused by name; `feature_correspondence='position'` is the explicit opt-in.
+- **Duplicate innermost feature labels are permitted** — nothing downstream is name-addressed, and measured, all such columns survive, forecast and plot (**D3**) — and are matched across groups by `(label, occurrence)` (**F2**).
 - **NA hierarchy labels never drop a group** — `dropna=False` everywhere (F6).
 - **Dual-axis frames** and **hierarchical frames inside lists** are rejected (F7, F8, F10).
 
@@ -285,12 +312,17 @@ from hypertools.core.hierarchy import (group_columns, group_rows_for_forecast,
 
 
 def market_frame(T=120, seed=0):
-    """rows = trading days, columns = (Market, Sector, Ticker)."""
+    """rows = trading days, columns = (Market, Sector, Measure).
+
+    The innermost level names SHARED measurements, not per-sector tickers:
+    feature correspondence across groups is NOMINAL (Revision note (v8) F5).
+    """
     rng = np.random.default_rng(seed)
-    tuples = ([('Market', 'Tech', t) for t in ('AAPL', 'MSFT', 'NVDA')]
-              + [('Market', 'Financials', t) for t in ('JPM', 'BAC', 'GS')]
-              + [('Market', 'Energy', t) for t in ('XOM', 'CVX', 'COP')])
-    cols = pd.MultiIndex.from_tuples(tuples, names=['Market', 'Sector', 'Ticker'])
+    tuples = [('Market', sector, m)
+              for sector in ('Tech', 'Financials', 'Energy')
+              for m in ('return', 'volatility', 'momentum')]
+    cols = pd.MultiIndex.from_tuples(tuples,
+                                     names=['Market', 'Sector', 'Measure'])
     return pd.DataFrame(rng.normal(size=(T, 9)).cumsum(axis=0) + 100.0, columns=cols)
 
 
@@ -730,7 +762,8 @@ def group_columns(df):
     caller's full tuples would leave the leaf hierarchical, so `hyp.predict`'s
     per-group recursion would re-detect it and regroup without bound.
 
-    Duplicate flattened labels are permitted and are handled POSITIONALLY --
+    Duplicate flattened labels are permitted and are matched ACROSS GROUPS
+    by (label, occurrence) --
     two share classes of one issuer, or a repeated sensor name, are legitimate
     inputs and nothing downstream is name-addressed. Group labels come from
     `meta['leaf_keys']`, never from a leaf's columns.
@@ -1468,11 +1501,17 @@ git commit -m "feat(plot): bundle exposes trace_data/trace_metadata; xform_data 
 
 ## Task 5: Column MultiIndex end-to-end in `plot()`
 
+> **Executed, then amended by *Revision note (v8)*.** Correspondence is
+> nominal, so `test_ragged_groups_raise_the_existing_width_error` became
+> `test_ragged_groups_raise_a_named_feature_error`, and permutation-
+> invariance and disjoint-label-refusal tests were added. The as-shipped
+> tests are the authority: `tests/plot/test_column_multiindex.py`.
+
 **Files:** Modify `hypertools/plot/plot.py:2659-2685`; Test `tests/plot/test_column_multiindex.py`
 
 **Interfaces:** Consumes `group_columns`, `reject_dual_axis`, `reject_hierarchical_in_list`, `build_hierarchy_traces`, `build_hierarchy_styles`.
 
-**Documented modelling assumption (must appear in the docstring).** Joint reduction stacks every group, so feature position *i* is treated as commensurable across groups even though Tech's position 0 is AAPL and Energy's is XOM. That is a real assumption, not an accident: it is appropriate when groups are parallel measurements of like quantities (prices in the same currency), and inappropriate otherwise. Users wanting group-independent axes should reduce per group, or pass `align=` to bring groups into a shared space.
+**Documented modelling rule (must appear in the docstring).** Joint reduction stacks every group, so the groups' features must genuinely correspond. Since v8 that correspondence is established BY NAME, not by position: `group_columns` requires the same innermost-label multiset in every group and permutes later groups into the first group's order, so Tech's `return` is stacked with Energy's `return`. Groups with disjoint labels (one ticker per sector) are refused, naming the missing and unexpected features. `align=` does NOT substitute for this — it aligns the resulting spaces, but by then the reduction has already interpreted whatever inputs it was given as corresponding.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1503,10 +1542,11 @@ import hypertools as hyp
 
 def market_frame(T=120, seed=0):
     rng = np.random.default_rng(seed)
-    tuples = ([('Market', 'Tech', t) for t in ('AAPL', 'MSFT', 'NVDA')]
-              + [('Market', 'Financials', t) for t in ('JPM', 'BAC', 'GS')]
-              + [('Market', 'Energy', t) for t in ('XOM', 'CVX', 'COP')])
-    cols = pd.MultiIndex.from_tuples(tuples, names=['Market', 'Sector', 'Ticker'])
+    tuples = [('Market', sector, m)
+              for sector in ('Tech', 'Financials', 'Energy')
+              for m in ('return', 'volatility', 'momentum')]
+    cols = pd.MultiIndex.from_tuples(tuples,
+                                     names=['Market', 'Sector', 'Measure'])
     return pd.DataFrame(rng.normal(size=(T, 9)).cumsum(axis=0) + 100.0, columns=cols)
 
 
@@ -1742,7 +1782,7 @@ Expected: **17 passed**, **6 passed** (Task 4's module must still be green — i
 ```
 Expected: **1 passed**, with no edit to the file. If it fails, `reject_hierarchical_in_list` was called with `axes='both'` on the plot path — fix the call, not the test.
 
-- [ ] **Step 6: Document** the column rule, the ragged-group limitation, the positional-correspondence assumption, the **column-only** list rejection (and that row hierarchies in lists still warn and flatten) and the dual-axis rejection in `plot()`'s `x` entry (`plot.py:616-625`) and the `multiindex.py` module docstring, each linking to `docs/hierarchy.rst` (Task 10).
+- [ ] **Step 6: Document** the column rule, the nominal-correspondence rule and its named-feature error (including the `feature_correspondence='position'` opt-in), the **column-only** list rejection (and that row hierarchies in lists still warn and flatten) and the dual-axis rejection in `plot()`'s `x` entry (`plot.py:616-625`) and the `multiindex.py` module docstring, each linking to `docs/hierarchy.rst` (Task 10).
 
 - [ ] **Step 7: Run the WHOLE suite** — `.venv/bin/python -m pytest -q`. Expected: baseline + 70 (27 + 14 + 6 + 6 + 17).
 
@@ -1800,10 +1840,11 @@ import hypertools as hyp
 
 def market_frame(T=120, seed=0):
     rng = np.random.default_rng(seed)
-    tuples = ([('Market', 'Tech', t) for t in ('AAPL', 'MSFT', 'NVDA')]
-              + [('Market', 'Financials', t) for t in ('JPM', 'BAC', 'GS')]
-              + [('Market', 'Energy', t) for t in ('XOM', 'CVX', 'COP')])
-    cols = pd.MultiIndex.from_tuples(tuples, names=['Market', 'Sector', 'Ticker'])
+    tuples = [('Market', sector, m)
+              for sector in ('Tech', 'Financials', 'Energy')
+              for m in ('return', 'volatility', 'momentum')]
+    cols = pd.MultiIndex.from_tuples(tuples,
+                                     names=['Market', 'Sector', 'Measure'])
     return pd.DataFrame(rng.normal(size=(T, 9)).cumsum(axis=0) + 100.0, columns=cols)
 
 
@@ -2062,9 +2103,11 @@ from hypertools.predict.kalman import Kalman
 
 def col_frame(T=120, seed=0):
     rng = np.random.default_rng(seed)
-    tuples = ([('Market', 'Tech', t) for t in ('AAPL', 'MSFT', 'NVDA')]
-              + [('Market', 'Energy', t) for t in ('XOM', 'CVX', 'COP')])
-    cols = pd.MultiIndex.from_tuples(tuples, names=['Market', 'Sector', 'Ticker'])
+    tuples = [('Market', sector, m)
+              for sector in ('Tech', 'Energy')
+              for m in ('return', 'volatility', 'momentum')]
+    cols = pd.MultiIndex.from_tuples(tuples,
+                                     names=['Market', 'Sector', 'Measure'])
     return pd.DataFrame(rng.normal(size=(T, 6)).cumsum(axis=0) + 100.0, columns=cols)
 
 
@@ -2206,15 +2249,16 @@ def test_grouped_leaves_are_non_hierarchical_so_the_recursion_terminates(
     assert all(np.asarray(f).shape == (2, 3) for f in row_out)
 
 
-def test_duplicate_innermost_names_forecast_positionally():
-    """DECIDED (Revision note (v6) D3): flattening onto the feature axis can
-    collide two innermost labels WITHIN a group; they are kept positionally.
-    Measured: 2 groups, widths [3, 3], one (1, 3) forecast each -- nothing
-    merged, nothing dropped."""
+def test_duplicate_innermost_names_forecast_by_occurrence():
+    """DECIDED (Revision note (v6) D3, refined by (v8) F2): flattening onto
+    the feature axis can collide two innermost labels WITHIN a group; they
+    are kept, and matched across groups by (label, occurrence). Measured:
+    2 groups, widths [3, 3], one (1, 3) forecast each -- nothing merged,
+    nothing dropped."""
     cols = pd.MultiIndex.from_tuples(
-        [('Market', 'Tech', t) for t in ('AAPL', 'AAPL', 'NVDA')]
-        + [('Market', 'Energy', t) for t in ('XOM', 'CVX', 'COP')],
-        names=['Market', 'Sector', 'Ticker'])
+        [('Rig', 'North', s) for s in ('temp', 'temp', 'flow')]
+        + [('Rig', 'South', s) for s in ('temp', 'temp', 'flow')],
+        names=['Rig', 'Well', 'Sensor'])
     df = pd.DataFrame(
         np.random.default_rng(0).normal(size=(120, 6)).cumsum(axis=0) + 100.0,
         columns=cols)
@@ -2486,10 +2530,11 @@ import hypertools as hyp
 
 def market_frame(T=150, seed=0):
     rng = np.random.default_rng(seed)
-    tuples = ([('Market', 'Tech', t) for t in ('AAPL', 'MSFT', 'NVDA')]
-              + [('Market', 'Financials', t) for t in ('JPM', 'BAC', 'GS')]
-              + [('Market', 'Energy', t) for t in ('XOM', 'CVX', 'COP')])
-    cols = pd.MultiIndex.from_tuples(tuples, names=['Market', 'Sector', 'Ticker'])
+    tuples = [('Market', sector, m)
+              for sector in ('Tech', 'Financials', 'Energy')
+              for m in ('return', 'volatility', 'momentum')]
+    cols = pd.MultiIndex.from_tuples(tuples,
+                                     names=['Market', 'Sector', 'Measure'])
     return pd.DataFrame(rng.normal(size=(T, 9)).cumsum(axis=0) + 100.0, columns=cols)
 
 
@@ -2855,9 +2900,11 @@ pytest.importorskip('plotly')
 
 def market_frame(T=60, seed=0):
     rng = np.random.default_rng(seed)
-    tuples = ([('Market', 'Tech', t) for t in ('AAPL', 'MSFT', 'NVDA')]
-              + [('Market', 'Energy', t) for t in ('XOM', 'CVX', 'COP')])
-    cols = pd.MultiIndex.from_tuples(tuples, names=['Market', 'Sector', 'Ticker'])
+    tuples = [('Market', sector, m)
+              for sector in ('Tech', 'Energy')
+              for m in ('return', 'volatility', 'momentum')]
+    cols = pd.MultiIndex.from_tuples(tuples,
+                                     names=['Market', 'Sector', 'Measure'])
     return pd.DataFrame(rng.normal(size=(T, 6)).cumsum(axis=0) + 100.0, columns=cols)
 
 
@@ -3126,16 +3173,16 @@ Expected: 8 failed — `docs/hierarchy.rst` does not exist, and `'one moving pat
 
 Sections, in order, each with a runnable example:
 
-1. **Row versus column semantics.** What each axis means, with the comparison table below. State that a column group's leaf is **flattened onto the feature axis** — its columns become the innermost level's values, keeping that level's name (`(Market, Sector, Ticker)` → `['AAPL', 'MSFT', 'NVDA']`, named `Ticker`) — and that a row forecast group keeps the innermost level as its **flat** index, with its name and dtype intact. Grouping never modifies the frame you passed in.
+1. **Row versus column semantics.** What each axis means, with the comparison table below. State that a column group's leaf is **flattened onto the feature axis** — its columns become the innermost level's values, keeping that level's name (`(Market, Sector, Measure)` → `['return', 'volatility', 'momentum']`, named `Measure`) — and that a row forecast group keeps the innermost level as its **flat** index, with its name and dtype intact. Grouping never modifies the frame you passed in.
 2. **Plotting versus forecasting** — why they diverge, what a `(Sector, day)` frame does in each, and **when `plot(..., predict=)` is defined**: whenever every plotted trace has at least 2 rows, on either axis (Contract 10). For a **column** hierarchy that means whenever the frame itself has at least 2 rows, since every group keeps all of them; for a **row** hierarchy it means every leaf *and* every derived mean, because row expansion draws one trace per unique full index tuple. Show a frame that qualifies (several timepoints per `(cond, subj)`) and both that do not — an innermost level unique per row, and a `T=1` column frame — with the error text of each, noting that the column message does not offer flattening because flattening cannot add a row.
 3. **Hue over a hierarchy** — the two accepted forms, the rejected total-observations form, mean-trace hue, the row-hierarchy exception, forecast colour.
 4. **Mean trace construction** — leaves first then means deepest-last; the exact style formulas; the `n_levels == 1` label rule.
-5. **Limitations** — ragged groups are rejected by the pipeline (`plot.py:2750-2751`); the positional-correspondence assumption of joint reduction; unequal-length row groups are truncated to their overlap, with a warning.
+5. **Limitations** — groups whose innermost labels differ (ragged groups included) are refused by name, since correspondence is nominal; unequal-length row groups are truncated to their overlap, with a warning.
 6. **Dual-axis and list inputs** — dual-axis frames rejected on both entry points; hierarchical frames in lists rejected **asymmetrically** (`hyp.plot` rejects a column hierarchy and still warns-and-flattens a row one; `hyp.predict` rejects either axis), with the exact errors, the reason for the asymmetry and the flattening recipes.
 7. **Return shapes** — the `return_model=True` bundle; `xform_data` (analysed pipeline output) vs `trace_data` (the final pre-center/pre-scale plotted trajectories), **the same object only when no display-only projection occurred**, with forecasts always corresponding to `trace_data`; and `hyp.predict`'s parallel sequences.
 8. **Fitted model behaviour** — the unfitted/fitted ownership table from Task 7.
 9. **Backend parity** — matplotlib and plotly draw the same hierarchy; nothing degrades silently.
-10. **Feature names and duplicates** — flattening onto the feature axis can leave two identical labels inside one group (two share classes of one issuer, a repeated sensor). That is **permitted, and handled positionally**: every column survives, the group is not split or merged, and both plotting and forecasting work normally (measured: widths `[3, 3]`, `np.asarray` → `(20, 3)`, `hyp.predict` → `(1, 3)`, `hyp.plot` → a `Figure`). Duplicates **across** different groups were always fine and stay fine — `('M','Tech','X')` and `('M','Energy','X')` remain two separate leaves. Nothing downstream addresses features by name; if you need them distinguishable, rename the innermost level before plotting.
+10. **Feature names, correspondence and duplicates** — the innermost labels are **feature identities**: every group must carry the same ones, and later groups are permuted into the first group's order before analysis, so reordering a group's columns changes nothing. Groups with different labels — one ticker per sector, say — raise `ValueError` naming the missing and unexpected features; make the innermost level shared measurements (`return`, `volatility`), or, if slot *i* really is the same feature everywhere, opt in deliberately with `group_columns(df, feature_correspondence='position')` and pass the resulting arrays. Note `align=` does **not** substitute for correspondence. Flattening can also leave two identical labels inside one group (two share classes of one issuer, a repeated sensor). That is **permitted**: every column survives, the group is not split or merged, and both plotting and forecasting work normally (measured: widths `[3, 3]`, `np.asarray` → `(20, 3)`, `hyp.predict` → `(1, 3)`, `hyp.plot` → a `Figure`); such labels are matched across groups by `(label, occurrence)`, so each group needs the same *number* of them. Duplicates **across** different groups were always fine and stay fine — `('M','Tech','X')` and `('M','Energy','X')` remain two separate leaves.
 
 The comparison table is normative (reproduce the reviewer's, as an RST `list-table`):
 
@@ -3289,8 +3336,12 @@ Insert directly below `# Changelog` (`CHANGELOG.md:1`), above `## 1.0.1 (unrelea
   traces would all have been unlabelled). Each group's leaf is flattened onto
   the feature axis — its columns become the innermost level's values, keeping
   that level's name — and the frame you passed in is never modified.
-  **Duplicate feature names inside a group are permitted** and handled
-  positionally: no column is dropped and no group is merged.
+  **Feature correspondence across groups is by name**: every group must
+  carry the same innermost labels, later groups are permuted into the first
+  group's order, and mismatches (unequal widths included) are refused by
+  name. **Duplicate feature names inside a group are permitted**, matched
+  across groups by `(label, occurrence)`: no column is dropped and no group
+  is merged.
 - **Continuous `hue=` propagates through a column hierarchy** as a per-trace
   value: a flat sequence is broadcast to every leaf, or pass one sequence
   per leaf. A mean trace takes the element-wise mean of its leaves' hue, and
@@ -3361,14 +3412,15 @@ previously ambiguous or silently lossy.
 - Unequal-length row groups are averaged over their overlapping prefix, with
   one aggregated warning.
 - Joint reduction stacks every group, so feature position *i* is treated as
-  commensurable across groups; reduce per group, or use `align=`, when it
-  is not.
+  established by NAME, so groups with disjoint innermost labels are refused
+  rather than silently stacked; `feature_correspondence='position'` on
+  `group_columns` is the deliberate opt-in.
 - Continuous `hue=` over a **row** hierarchy is still warned-and-ignored;
   only column hierarchies honour it in 1.1.
-- Duplicate innermost feature names inside one group are kept **positionally**
-  rather than rejected or de-duplicated: nothing downstream addresses a
-  feature by name, so all such columns are plotted and forecast. Rename the
-  innermost level first if you need them distinguishable in a legend.
+- Duplicate innermost feature names inside one group are **kept** rather than
+  rejected or de-duplicated, and matched across groups by
+  `(label, occurrence)`: all such columns are plotted and forecast. Rename
+  the innermost level first if you need them distinguishable in a legend.
 - `predict=` needs at least 2 rows per plotted trace, on **either** axis.
   Over a **row** hierarchy this is the binding constraint: expansion draws
   one trace per unique full index tuple, so a frame whose innermost index
@@ -3503,9 +3555,9 @@ All four open product decisions were **resolved by the maintainer at the v3 → 
 
 5. **Cross-plan `return_data=` — RESOLVED: already fixed.** Plan 3 no longer calls the nonexistent `return_data=True`. Verified for v4: `grep -c 'return_data'` → **0** in `2026-07-27-hypertools-1.1-forecast-animation.md` and **0** in `2026-07-28-hypertools-1.1-examples-and-tutorials.md`. Nothing outstanding.
 
-6. **Duplicate innermost feature names inside one group — RESOLVED (v6): permit them, positionally.**
+6. **Duplicate innermost feature names inside one group — RESOLVED (v6): permit them; matched across groups by `(label, occurrence)` since v8.**
    - Flattening a leaf onto the feature axis (Contract 11) can collide two innermost labels. Measured on a group whose flat columns are `['AAPL','AAPL','NVDA']` (`is_unique == False`): `np.asarray` → `(20, 3)` (nothing dropped), `hyp.predict` → `(1, 3)`, `hyp.plot` → a `Figure`, and **2** groups form with widths `[3, 3]` — duplicates do not merge groups. Duplicates **across** groups were already harmless (`test_duplicate_tickers_in_different_sectors_are_kept_separate`).
-   - **Permitting is the evidence-backed choice:** everything downstream is positional, and rejecting would break legitimate frames (two share classes of one issuer, a repeated sensor name). Documented in `docs/hierarchy.rst` §10 and the CHANGELOG, pinned by `test_duplicate_innermost_feature_names_are_kept_positionally` (Task 1) and `test_duplicate_innermost_names_forecast_positionally` (Task 7).
+   - **Permitting is the evidence-backed choice:** nothing downstream is name-addressed, and rejecting would break legitimate frames (two share classes of one issuer, a repeated sensor name). Since v8 the *cross-group* match is by `(label, occurrence)`, so a group with two `'temp'` columns needs a counterpart with two. Documented in `docs/hierarchy.rst` §10 and the CHANGELOG, pinned by `test_duplicate_innermost_feature_names_are_kept_positionally` and `test_duplicate_labels_match_by_occurrence` (Task 1) and `test_duplicate_innermost_names_forecast_by_occurrence` (Task 7).
 
 **Two blockers were also resolved at the same review**; both are implemented, not deferred. See the *Revision note (v4)* table for the reproductions.
 

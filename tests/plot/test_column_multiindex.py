@@ -21,7 +21,25 @@ import pytest
 import hypertools as hyp
 
 
+#: Shared per-sector MEASUREMENTS, not per-sector tickers. Feature
+#: correspondence across hierarchy groups is nominal, so a sector's
+#: 'return' corresponds to another sector's 'return'; AAPL and XOM would
+#: not correspond merely by each being written first.
+MEASURES = ('return', 'volatility', 'momentum')
+
+
 def market_frame(T=120, seed=0):
+    rng = np.random.default_rng(seed)
+    tuples = [('Market', sector, m)
+              for sector in ('Tech', 'Financials', 'Energy')
+              for m in MEASURES]
+    cols = pd.MultiIndex.from_tuples(tuples,
+                                     names=['Market', 'Sector', 'Measure'])
+    return pd.DataFrame(rng.normal(size=(T, 9)).cumsum(axis=0) + 100.0, columns=cols)
+
+
+def ticker_frame(T=120, seed=0):
+    """Disjoint innermost labels -- nominal correspondence is impossible."""
     rng = np.random.default_rng(seed)
     tuples = ([('Market', 'Tech', t) for t in ('AAPL', 'MSFT', 'NVDA')]
               + [('Market', 'Financials', t) for t in ('JPM', 'BAC', 'GS')]
@@ -91,17 +109,52 @@ def test_two_level_column_hierarchy_colours_widths_and_opacities():
     assert len(colours) == 3, 'each leaf is its own top-level group'
 
 
-def test_ragged_groups_raise_the_existing_width_error():
-    """Expansion accepts ragged groups; the analysis pipeline does not
-    (plot.py:2750-2751)."""
+def test_ragged_groups_raise_a_named_feature_error():
+    """Ragged groups used to reach the pipeline's generic 'same number of
+    columns' check (plot.py:2750-2751). Nominal correspondence catches them
+    first and says WHICH feature is unaccounted for."""
     rng = np.random.default_rng(0)
     cols = pd.MultiIndex.from_tuples(
-        [('M', 'Tech', t) for t in ('AAPL', 'MSFT', 'NVDA', 'ORCL')]
-        + [('M', 'Energy', t) for t in ('XOM', 'CVX')],
-        names=['Market', 'Sector', 'Ticker'])
-    df = pd.DataFrame(rng.normal(size=(60, 6)), columns=cols)
-    with pytest.raises(ValueError, match='same number of columns'):
+        [('M', 'Tech', m) for m in ('return', 'volatility', 'momentum')]
+        + [('M', 'Energy', m) for m in ('return', 'volatility')],
+        names=['Market', 'Sector', 'Measure'])
+    df = pd.DataFrame(rng.normal(size=(60, 5)), columns=cols)
+    with pytest.raises(ValueError, match='momentum'):
         hyp.plot(df, '-', show=False)
+
+
+def test_within_group_column_permutation_does_not_move_the_traces():
+    """Feature correspondence is nominal, so column ORDER inside a group is
+    not part of the model: permuting one sector's columns must leave every
+    trajectory -- and every mean derived from them -- untouched."""
+    df = market_frame(T=40)
+    permuted = df.iloc[:, [0, 1, 2, 3, 4, 5, 8, 7, 6]]
+    assert not df.columns.equals(permuted.columns)
+    base = hyp.plot(df, '-', return_model=True, show=False)
+    other = hyp.plot(permuted, '-', return_model=True, show=False)
+    assert len(base['trace_data']) == len(other['trace_data']) == 4
+    for a, b in zip(base['trace_data'], other['trace_data']):
+        assert np.allclose(np.asarray(a), np.asarray(b))
+
+
+def test_disjoint_feature_labels_are_refused_with_both_sides_named():
+    """A per-sector ticker frame has no nominal correspondence to honour.
+    Refusing beats silently treating AAPL and XOM as one feature."""
+    with pytest.raises(ValueError) as excinfo:
+        hyp.plot(ticker_frame(T=40), '-', show=False)
+    message = str(excinfo.value)
+    assert 'AAPL' in message and 'JPM' in message
+    assert "feature_correspondence='position'" in message
+
+
+def test_positional_correspondence_is_reachable_by_grouping_first():
+    """The documented deliberate opt-in, exercised end to end: the caller
+    discards the labels themselves, so nothing is silent."""
+    from hypertools.core.hierarchy import group_columns
+    leaves, _ = group_columns(ticker_frame(T=40),
+                              feature_correspondence='position')
+    fig = hyp.plot([leaf.to_numpy() for leaf in leaves], '-', show=False)
+    assert len(_ax(fig).lines) == 3, 'three sectors, and no mean traces'
 
 
 def test_dual_axis_frame_is_rejected_by_plot():
