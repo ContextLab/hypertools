@@ -27,7 +27,8 @@ Levels are numbered 0 (top/outermost) .. L-1 (leaf/deepest), where L is
   leaf and every mean sharing the same top-level value shares one color.
 - ``label``: only the TOP-level mean (``level_idx == 0``) carries a real
   legend label (``str(top_value)``); every other trace (all leaves, and any
-  intermediate-level means) gets ``'_nolegend_'``.
+  intermediate-level means) gets ``'_nolegend_'``. The ONE exception is
+  ``n_levels == 1`` -- see the one-level example below.
 
 Example (2 levels, (cond, subj)): leaves are (cond, subj) pairs, lw=1,
 alpha=0.7; cond-means (the only non-leaf level, which is also the top level)
@@ -36,6 +37,18 @@ get lw=2, alpha=1.0, and carry the legend label.
 Example (3 levels, (grp, cond, subj)): leaves lw=1, alpha=1/3+0.2=0.5333;
 (grp, cond)-means lw=2, alpha=0.7; grp-means (top level) lw=3, alpha=1.0 and
 carry the legend label.
+
+Example (``n_levels == 1``, reachable from a two-level COLUMN hierarchy such
+as (Group, Feature), where the innermost level is the feature axis): there is
+no non-leaf level, so NO mean is built and every leaf is itself a top-level
+group -- lw=1, alpha=1.0, its own colour, and **its own legend label**.
+Applying the general rule here would leave every trace ``'_nolegend_'`` and
+the legend empty, which is what it did before 1.1 (F11).
+
+Since 1.1 the mean-building and styling halves of this module live in
+`hypertools.plot.hierarchy` (`build_hierarchy_traces` / `build_hierarchy_styles`);
+`build_multiindex_styles` below is a thin shim over that pair, and grouping
+itself lives in `hypertools.core.hierarchy`.
 """
 
 def expand_multiindex(df):

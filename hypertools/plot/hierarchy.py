@@ -190,6 +190,12 @@ def build_hierarchy_styles(traces, palette='hls', linestyle=None,
     Consumes a `FinalTraces`' `keys`, `level_idx` and `is_mean` -- never its
     arrays -- so it structurally cannot construct or append a trace.
 
+    Label rule. Only the TOP-level mean (``level_idx == 0`` and `is_mean`)
+    carries a legend label. When ``meta['n_levels'] == 1`` there IS no mean:
+    each leaf is itself a top-level group, so each carries its own label.
+    Without this, a two-level (Group, Feature) column hierarchy drew several
+    completely unlabelled traces and an empty legend (F11).
+
     Parameters
     ----------
     traces : FinalTraces
@@ -246,7 +252,12 @@ def build_hierarchy_styles(traces, palette='hls', linestyle=None,
         linewidths.append(float(1 + (n_levels - 1 - level)))
         alphas.append(float(min(1.0, 1.0 / (level + 1) + 0.2)))
         colors.append(color_of_top[top_index_of[top_val]])
-        labels.append(str(top_val) if (level == 0 and mean) else '_nolegend_')
+        # Only the TOP-level mean carries a legend label -- except when
+        # n_levels == 1, where there IS no mean and each leaf is itself a
+        # top-level group. Without that exception a (Group, Feature) column
+        # hierarchy drew several completely unlabelled traces (F11).
+        top_level = (level == 0) and (mean or n_levels == 1)
+        labels.append(str(top_val) if top_level else '_nolegend_')
         if linestyles_out is not None:
             linestyles_out.append(per_top_linestyle[top_index_of[top_val]])
 
