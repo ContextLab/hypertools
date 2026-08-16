@@ -248,6 +248,73 @@ All decisions came from the maintainer; everything below was MEASURED on
   and 8), so those two kwargs are the ONLY unexercised part; with them
   removed the prescribed script runs end to end against live data.
 
+> Superseded in places by round 4 below: the 48.7%/700-fit figure and its SE
+> are replaced by a 50.0%/600-fit figure with no interval, and the 116-line /
+> 132-projected / 135-budget numbers are replaced by 124 / 140 / 145.
+
+## Review round 4 (maintainer, on the Plan 4 v4 note) — executability
+
+Verdict on the open narrative item: **ship the chance-level result.** Four
+findings, all accepted; everything below measured 2026-08-15 on live data.
+
+1. **Fatal to executing Task 2 — the loader/builder split still named
+   deleted symbols.** Step 3 prescribed `fetch_prices` / `synthetic_prices`
+   / `data.prices` / `sector_index`, all deleted by the v4 rewrite in the
+   step immediately above it. Rewritten against the real names, with the
+   `Market(regimes, closes, source)` payload, `load_market`, `fixture_data`
+   and `construct_artifact` spelled out. Task 8's fixture table said
+   `Market(prices, source)`; fixed. **The same staleness is a recurring
+   failure mode in this plan** — v2's names survived into v3's split, v3's
+   into v4's — because a rewrite step and its split step are edited
+   separately. Both now carry an explicit "these names are the rewrite's"
+   note listing the dead ones.
+
+2. **The hue was not equal-weighted.** `closes[sector].mean(axis=1)` averages
+   price LEVELS, so a constituent's weight is its share price. Measured
+   inside Technology: **IBM 0.477, MSFT 0.240, ORCL 0.166, AAPL 0.117** — in
+   a figure whose panel says constituents are equally weighted. Not
+   cosmetic: Financials ends at 599 equal-weight vs 657 price-level, largest
+   gap 98 index points. Now `100·exp(cumsum(r) − cumsum(r)[0])` on a shared
+   `sector_returns()` helper feeding measurements, hue and score alike —
+   the maintainer's "better still" suggestion, taken, so equal weight cannot
+   be derived three ways. Verified: 6 sequences × 2454, each starting at
+   exactly 100.0.
+
+3. **Three quantities, not one.** Pooled **52%** over the six sectors' 180
+   fits, cross-sector mean trace **57%** of 30, per sector 37–63% (n=30
+   each, explicitly not a ranking). *Deviation from the review, stated:* the
+   maintainer said "pooled across all 210 fits"; I pooled **180**, the six
+   sectors only. The mean trace is computed from those same six histories,
+   so including it counts the same data twice. The panel and the printed
+   line label all three.
+
+4. **The SE is gone.** Re-measured the large-sample check with the SAME
+   definition as the printed statistic — 100 anchors × 6 sectors = 600 fits
+   — giving **50.0%** (31 s), replacing the earlier 48.7%/700. No interval
+   is quoted anywhere: overlapping 60-session windows, shared anchor dates
+   and correlated sectors make these non-independent trials, so a binomial
+   SE would overstate the precision.
+
+**Also found while checking, not in the review.** v4 raised the market script
+budget 130 → 135 in prose but left `SCRIPT_BUDGETS` at **130** — the enforced
+number contradicted the plan and would have failed
+`test_file_is_within_its_size_budget`. Both are now **145**, and Step 0c's
+measured table carries a note that market's row is no longer a measurement.
+
+**Budget re-measured:** the rewrite is **124** code lines (116 + 8 for the
+shared helper and the three labelled quantities). +16 split overhead still
+INHERITED → projected **140**, script budget **145**, notebook **150**. The
+payload gaining a third field makes +16 a floor, which the plan now says.
+Whole script 13.7 s cached.
+
+**Recorded for later, at the maintainer's request:** the ship-it decision was
+made against measurements with no rendered figure in existence. The plan
+carries a REVISIT block in both *Revision note (v4)* and the *Decisions still
+needed* entry: once Task 2 executes, re-open the question with the demo in
+front of you — is a chance-level headline honest and educational in context,
+or does it read as broken? Check panel legibility at real figure size and
+whether the title carries the story alone.
+
 **Method note worth keeping:** the plan's "docstring-aware metric" is
 PHYSICAL non-blank/non-comment/non-docstring lines, not logical statements
 — an AST logical-statement counter gives 159 where the plan says 191. The
@@ -335,11 +402,16 @@ plan's numbers.
 
 ## Left for the maintainer (carried over, unchanged)
 
-- **Nothing is pushed.** `dev-1.0` is ~120 commits ahead of
-  `origin/dev-1.0`; CI has not seen any of it since 2026-07-24.
+- **Nothing is pushed.** `dev-1.0` is **128** commits ahead of
+  `origin/dev-1.0` (measured 2026-08-15); CI has not seen any of it since
+  2026-07-24.
 - `CHANGELOG.md:460` still says `## 1.0.0 (unreleased)` on this branch
   although 1.0.0 shipped on master 2026-07-24 — `dev-1.0` never picked up
   master's release-time flips. Plan 2 Task 11 creates the `## 1.1.0
   (unreleased)` section; the stale 1.0.0 heading is separate and predates
   this work.
-- 417 pre-existing repo-wide ruff findings, ungated (no lint job in CI).
+- Pre-existing ruff findings, ungated (no lint job in CI). **State the scope
+  when quoting the number**: `ruff check` over the whole repo → **417**;
+  over the code this work touches, `ruff check hypertools tests` → **353**
+  (257 + 96). Both measured 2026-08-15. The per-commit parity checks in this
+  session are set differences at the **353** scope against base `59405545`.
