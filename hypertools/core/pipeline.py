@@ -563,9 +563,16 @@ class Pipeline(BaseEstimator):
         round trip that already worked for a flat frame and for a list of
         arrays now works here too, on the same terms.
 
-        Only a BARE column-hierarchical DataFrame is regrouped: a list (the
-        shape `hyp.plot` itself fits on) is already grouped, so passing one
-        back through must not group it again.
+        Only a BARE column-hierarchical DataFrame is regrouped, and only
+        that shape gets fit-time feature-NAME matching. A **list** is taken
+        as already grouped and is passed through unchanged, matched
+        POSITIONALLY -- that is true whether its members are arrays or
+        labelled DataFrames, because a list is the shape `hyp.plot` itself
+        fits on and its members are the datasets, not something to re-derive
+        groups from. So `pipeline.transform([leaf_a, leaf_b])` never
+        reorders columns by name even if those leaves carry labels; only
+        `pipeline.transform(df)` does. If you want name matching, hand back
+        the frame.
         """
         hierarchy = self.input_hierarchy
         if hierarchy is None:

@@ -7,17 +7,34 @@ trajectory. The order of the GROUPS is a different question and is not
 neutralised: groups become datasets, `reduce` row-stacks every dataset and
 fits ONE model on the stack, so group order is row order in that stack --
 and the default `IncrementalPCA` fits by `partial_fit` over successive
-minibatches, so its fit depends on that order. Measured here: permuting the
-sector BLOCKS of a 40x(4x5) frame moves every trace by ~1.7% of the plotted
-range under `IncrementalPCA` and not at all (1e-14) under `PCA`, and the
-identical asymmetry exists for a plain list of datasets, which is where it
-comes from.
+minibatches, so its fit depends on that order. The identical asymmetry
+exists for a plain list of datasets, which is where it comes from.
 
-That behaviour is DOCUMENTED rather than fixed (a canonical group order
-would move every hierarchy figure that already exists, and changing the
-default reducer would move all of them), so these tests pin it: if it ever
-changes, it must change deliberately, and the guide and docstring must
-change with it.
+**These tests assert the DIRECTION of that asymmetry, never a percentage.**
+An earlier draft pinned the displacement to a 0.1%-25% band and published
+"~1.7%" and "~47%" as though they were contract. They are not: they are
+fixture-, sklearn-, BLAS-, platform- and version-dependent, and for a
+PCA-family embedding a pure sign flip is the same embedding with a large
+raw-coordinate distance. So:
+
+* order sensitivity is asserted as "measurably different", with a threshold
+  far below anything a floating-point difference could reach and no upper
+  bound;
+* order INVARIANCE is asserted on GEOMETRY -- the matrix of pairwise
+  distances between plotted points -- which is invariant to the sign and
+  axis-permutation freedom a PCA-family embedding actually has.
+
+The measured percentages live in
+`notes/session_2026-08-15_multiindex-plan2-implementation.md`, labelled with
+the package versions that produced them, where they can go stale honestly.
+
+The behaviour is DOCUMENTED rather than worked around. The tradeoff is not
+"a canonical order would move every existing figure" -- column-hierarchy
+plotting is new in 1.1, and only order-sensitive reducers would move. It is
+that a canonical order means inventing a total ordering over arbitrary,
+mixed-type, NA-bearing labels, and that it would make a labelled hierarchy
+behave differently from the equivalent list of datasets, which has always
+been positional. `reduce='PCA'` is the explicit remedy.
 
 **Re-applying the bundled pipeline.** `hyp.plot(df, return_model=True)`
 fits its bundled `Pipeline` on the GROUPS of a column-hierarchical frame,
@@ -81,6 +98,27 @@ def _plotted_range(traces):
     return float((stacked.max(axis=0) - stacked.min(axis=0)).max())
 
 
+def _pairwise(traces):
+    """The plotted GEOMETRY: distances between every pair of drawn points.
+
+    Comparing raw coordinates would call a sign flip or an axis swap a
+    difference, and for a PCA-family embedding those are the same embedding
+    -- scikit-learn's component signs are not contractual. Distances are
+    invariant to exactly that freedom, so this is what "the picture did not
+    change" actually means. Points are stacked in sorted KEY order so the
+    matrix does not depend on trace order either.
+    """
+    stacked = np.vstack([traces[key] for key in sorted(traces)])
+    return np.linalg.norm(stacked[:, None, :] - stacked[None, :, :], axis=-1)
+
+
+def _geometry_shift(before, after):
+    """Largest change in any pairwise distance, relative to the diameter."""
+    assert set(before) == set(after), 'the two plots drew different groups'
+    d_before, d_after = _pairwise(before), _pairwise(after)
+    return float(np.abs(d_before - d_after).max() / d_before.max())
+
+
 # --------------------------------------------------------------------------
 # group order
 # --------------------------------------------------------------------------
@@ -117,24 +155,46 @@ def test_a_between_group_block_permutation_moves_the_default_reducer():
                        for measure in MEASURES]]
 
     before = _drawn(frame)                      # default IncrementalPCA
-    shift = _max_shift(before, _drawn(reordered))
-    fraction = shift / _plotted_range(before)
-    assert 1e-3 < fraction < 0.25, (
-        f'block order moved the default-reducer figure by {fraction:.2%} of '
-        'the plotted range; the documented measurement is ~1.7%')
+    after = _drawn(reordered)
+
+    # Measurably different, with no upper bound: HOW different is fixture-,
+    # BLAS- and version-dependent and is not a contract. The floor is ~7
+    # orders of magnitude above float64 noise on this scale, so it cannot
+    # fire on rounding alone.
+    coordinate_shift = _max_shift(before, after) / _plotted_range(before)
+    geometry_shift = _geometry_shift(before, after)
+    assert coordinate_shift > 1e-6, (
+        f'block order left the default-reducer figure unchanged to '
+        f'{coordinate_shift:.3e} of the plotted range. If IncrementalPCA '
+        'has become order-invariant that is good news, but the guide, the '
+        '`x` docstring and the CHANGELOG all say otherwise -- update them '
+        'and this test together.')
+    # ...and it is a genuinely different EMBEDDING, not a sign flip: the
+    # distances between the plotted points change too.
+    assert geometry_shift > 1e-6, (
+        f'coordinates moved but the geometry did not ({geometry_shift:.3e}); '
+        'that is a sign/axis convention change, not an order-dependent fit, '
+        'and the documented caveat would be describing the wrong thing.')
 
 
 def test_an_order_invariant_reducer_is_the_documented_remedy():
-    """`reduce='PCA'` is what the docs tell the user to pass, so pin it."""
+    """`reduce='PCA'` is what the docs tell the user to pass, so pin it.
+
+    Asserted on GEOMETRY, not on raw coordinates. The claim the guide makes
+    is that the EMBEDDING is preserved, and scikit-learn does not promise a
+    stable sign for a principal component -- a flipped axis is the same
+    picture and must not fail this test.
+    """
     frame = _wide_frame()
     reordered = frame[[('Market', sector, measure)
                        for sector in ('Fin', 'Health', 'Energy', 'Tech')
                        for measure in MEASURES]]
-    shift = _max_shift(_drawn(frame, reduce='PCA'),
-                       _drawn(reordered, reduce='PCA'))
-    assert shift < 1e-9, (
-        f'PCA moved a trace by {shift:.3e} under a block permutation; the '
-        'guide recommends it precisely because it does not')
+    shift = _geometry_shift(_drawn(frame, reduce='PCA'),
+                            _drawn(reordered, reduce='PCA'))
+    assert shift < 1e-8, (
+        f'PCA changed the plotted geometry by {shift:.3e} of its diameter '
+        'under a block permutation; the guide recommends it precisely '
+        'because it does not')
 
 
 def test_the_same_order_dependence_exists_for_a_plain_list_of_datasets():
@@ -157,13 +217,14 @@ def test_the_same_order_dependence_exists_for_a_plain_list_of_datasets():
 
     forward = xform([0, 1, 2, 3], 'IncrementalPCA')
     reverse = xform([3, 2, 1, 0], 'IncrementalPCA')
-    assert max(float(np.abs(forward[i] - reverse[i]).max())
-               for i in forward) > 1e-3
+    assert _geometry_shift(forward, reverse) > 1e-6, (
+        'a plain list of datasets used to be order-sensitive under '
+        'IncrementalPCA too; if it no longer is, the "this is not a '
+        'hierarchy problem" claim in the guide needs re-checking')
 
     forward = xform([0, 1, 2, 3], 'PCA')
     reverse = xform([3, 2, 1, 0], 'PCA')
-    assert max(float(np.abs(forward[i] - reverse[i]).max())
-               for i in forward) < 1e-9
+    assert _geometry_shift(forward, reverse) < 1e-8
 
 
 def test_the_group_order_caveat_is_documented_where_a_user_will_meet_it():

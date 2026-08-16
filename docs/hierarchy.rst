@@ -601,9 +601,16 @@ grouping is still what makes the answer meaningful.)
    ...  for a in bundle['pipeline'].transform(market)]
    [(40, 3), (40, 3)]
 
-Features are matched to the fitted pipeline **by name**, on the same terms
-they are matched across groups, so reordering the innermost labels changes
-nothing:
+Name matching applies to a **bare hierarchical frame**, and only to that.
+A *list* is taken as already grouped and is matched positionally -- its
+members ARE the datasets, whether they are arrays or labelled DataFrames --
+so ``pipeline.transform([leaf_a, leaf_b])`` never reorders columns for you.
+That is the same positional contract a list has always had elsewhere in
+hypertools; hand the pipeline the frame if you want the labels honoured.
+
+Given a frame, features are matched to the fitted pipeline **by name**, on
+the same terms they are matched across groups, so reordering the innermost
+labels changes nothing:
 
 .. doctest::
 
@@ -963,29 +970,46 @@ successive minibatches.
    ...     return dict(zip([tuple(k)
    ...                      for k in bundle['trace_metadata']['keys']],
    ...                     bundle['trace_data']))
+   >>> def geometry(traces):
+   ...     # distances between the plotted points: what "the same picture"
+   ...     # means, and immune to a component's sign flipping
+   ...     pts = np.vstack([traces[k] for k in sorted(traces)])
+   ...     return np.linalg.norm(pts[:, None, :] - pts[None, :, :], axis=-1)
    >>> def moved(reducer):
    ...     before, after = drawn(wide, reducer), drawn(reordered, reducer)
-   ...     return max(float(np.abs(before[k] - after[k]).max())
-   ...                for k in before)
-   >>> bool(moved('PCA') < 1e-10)
+   ...     d0, d1 = geometry(before), geometry(after)
+   ...     return float(np.abs(d0 - d1).max() / d0.max())
+   >>> bool(moved('PCA') < 1e-8)             # same embedding
    True
-   >>> bool(moved('IncrementalPCA') > 1e-3)
+   >>> bool(moved('IncrementalPCA') > 1e-6)  # a different one
    True
 
-Measured on that frame, permuting the sector blocks moves every leaf and
-every mean by about **1.7% of the plotted range** under ``IncrementalPCA``
-and about 47% under ``TSNE``; ``PCA``, ``TruncatedSVD``,
-``FactorAnalysis``, ``Isomap`` and ``SpectralEmbedding`` are invariant to
-within 1e-14, as is a within-group column permutation under every one of
-them.
+On that fixture, ``IncrementalPCA`` and ``TSNE`` produced **different
+embeddings** after the blocks were reordered, while ``PCA``,
+``TruncatedSVD``, ``FactorAnalysis``, ``Isomap`` and ``SpectralEmbedding``
+preserved the embedding up to numerical and sign equivalence -- as does a
+within-group column permutation under every one of them.
+
+No percentage is quoted here on purpose. How far a figure moves depends on
+the data, the scikit-learn version, the BLAS build and the platform, and for
+a PCA-family embedding a flipped component sign is the same picture with a
+large raw-coordinate difference. What is contractual is the *direction* of
+the asymmetry, and that is what
+``tests/test_hierarchy_group_order_and_pipeline.py`` pins.
 
 This is a property of the **shared reduction space**, not of hierarchies:
 ``hyp.plot([A, B, C])`` and ``hyp.plot([C, B, A])`` differ in exactly the
-same way, and did before 1.1. It is documented rather than worked around,
-because the only fixes available are to impose a canonical group order --
-which would move every hierarchy figure that already exists -- or to
-change the default reducer, which would move all of them. Pass
-``reduce='PCA'`` when block order must not matter.
+same way, and did before 1.1.
+
+It is documented rather than worked around for two reasons, neither of which
+is "existing figures would move". Imposing a canonical group order would
+mean inventing a total ordering over arbitrary hierarchy labels -- mixed
+types, missing values, tuples of both -- and every choice there is arbitrary.
+And it would make a labelled hierarchy behave differently from the
+equivalent list of datasets, which has always been positional, adding one
+more semantic distinction between two spellings of the same plot. Pass
+``reduce='PCA'`` when block order must not matter; it is an explicit,
+one-word remedy.
 
 
 See also

@@ -545,6 +545,59 @@ that rather than tag, which is what was done — in the plan's checklist table
 and here. The flagship demonstration of everything Tasks 5-9 add still shows
 the flat market.
 
+## Group-order measurements — the numbers, and why they are HERE
+
+**Maintainer review, 2026-08-16 (Medium):** the group-order patch had turned
+measurements into contract. The test required the `IncrementalPCA`
+displacement to stay inside a 0.1%–25% band, and the guide, the `plot`
+docstring and the CHANGELOG published `1.7%`, `47%` and "invariant within
+1e-14". Those are fixture-, sklearn-, BLAS-, platform- and
+version-dependent, and for a PCA-family embedding a **sign flip is the same
+embedding with a large raw-coordinate distance** — so a raw-coordinate
+invariance assertion can fail on a picture that did not change. TSNE's raw
+displacement is the least stable of the lot.
+
+Revised (this commit):
+
+- the public texts say *what* differs, never *how much*: "`IncrementalPCA`
+  and `TSNE` produced different embeddings after block reordering; `PCA`,
+  `TruncatedSVD`, `FactorAnalysis`, `Isomap` and `SpectralEmbedding`
+  preserved the embedding up to numerical and sign equivalence";
+- **order sensitivity** is asserted as "measurably different" with a floor
+  (`> 1e-6`) and NO upper bound;
+- **order invariance** is asserted on GEOMETRY — the matrix of pairwise
+  distances between plotted points, which is invariant to the sign and
+  axis-permutation freedom the embedding actually has — not on raw
+  coordinates. Same change in the guide's doctest.
+
+Both directions were mutation-checked rather than assumed:
+
+| reducer | coord shift | geometry shift | sensitivity asserts | invariance asserts |
+|-|-|-|-|-|
+| `IncrementalPCA` | 1.701e-02 | 4.238e-02 | **True** | False |
+| `PCA` | 5.307e-16 | 5.804e-16 | False | **True** |
+
+i.e. each assertion fails for the reducer it is not about.
+
+**The measured figures, for the record only — not a contract.** Measured
+2026-08-16 on the 40 x (4 blocks x 5 measures) fixture in
+`tests/test_hierarchy_group_order_and_pipeline.py`, with: Python 3.12.10,
+scikit-learn 1.8.0, numpy 2.3.5 (Accelerate BLAS), scipy 1.17.0,
+pandas 3.0.3, matplotlib 3.10.8, macOS/arm64. Block permutation moved the
+figure by **1.70% of the plotted range** under `IncrementalPCA` (**4.24%**
+measured as geometry) and ~47% under `TSNE`; `PCA` and the other
+order-invariant reducers moved by ~5e-16. Expect these to drift with any of
+those versions — that is exactly why they are not in the API docs.
+
+**Also corrected: the rationale was overstated.** The texts said a canonical
+group order "would move every hierarchy figure that already exists". Not
+literally true — column-hierarchy plotting is new and unreleased, and only
+order-SENSITIVE reductions would move at all. The real tradeoff, now
+stated: a canonical order means inventing a total ordering over arbitrary,
+mixed-type, NA-bearing labels, and it would make a labelled hierarchy behave
+differently from the equivalent list of datasets, which has always been
+positional. `reduce='PCA'` remains the explicit remedy.
+
 ## Adversarial sweep and fixes (2026-08-16)
 
 After the three fix commits (`bb4ad30c`, `e52dd861`, `6f07c213`) landed, a

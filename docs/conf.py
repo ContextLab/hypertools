@@ -110,6 +110,8 @@ extensions = ['sphinx.ext.autodoc',
     # builder -- the extension is here so the directive renders instead of
     # raising "Unknown directive type", which -W turns into a build failure.
     'sphinx.ext.doctest',
+    # (see doctest_global_setup below -- running `-b doctest` from the repo
+    # root used to litter it with the files those examples write)
     'sphinx_gallery.gen_gallery',
     # renders the .. video:: directives sphinx-gallery emits for
     # matplotlib animations (matplotlib_animations = (True, 'mp4'))
@@ -118,6 +120,28 @@ extensions = ['sphinx.ext.autodoc',
 
 # allow nbsphinx errors for missing optional dependencies
 nbsphinx_allow_errors = True
+
+# Run every doctest in a scratch directory. Several examples legitimately
+# WRITE files with relative names -- `hyp.save(x, 'data.pkl')` in
+# hypertools/io/save.py, and the figure dumps a couple of plotting examples
+# produce -- so `sphinx -b doctest` launched from the repo root left
+# data.csv, data.pkl and hypertools_fig_00*.{png,html} lying in it,
+# untracked, for the next `git add -A` to sweep up. Changing the examples to
+# write to a temp path would make the docs teach a worse idiom than the one
+# users actually want, so the BUILDER moves instead of the docs. Only the
+# doctest builder reads these hooks; the html build is unaffected.
+doctest_global_setup = '''
+import os as _os, tempfile as _tempfile
+_doctest_cwd = _os.getcwd()
+_doctest_scratch = _tempfile.mkdtemp(prefix='hypertools-doctest-')
+_os.chdir(_doctest_scratch)
+'''
+
+doctest_global_cleanup = '''
+import os as _os, shutil as _shutil
+_os.chdir(_doctest_cwd)
+_shutil.rmtree(_doctest_scratch, ignore_errors=True)
+'''
 
 # numpydoc auto-inserts a "Methods" autosummary (with :toctree:) into every
 # documented class's page by default, pointing at per-method stub pages

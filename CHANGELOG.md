@@ -356,19 +356,22 @@ input too.
   features within a group is. Groups become datasets, `reduce=` row-stacks
   every dataset and fits one model on the stack, so group order is row order
   in that stack -- and a reducer whose fit depends on it embeds a
-  block-reordered frame differently. Measured on a 40-row frame of 4 sector
-  blocks x 5 measures: permuting the blocks moved every leaf and every mean
-  by ~1.7% of the plotted range under the default `IncrementalPCA` (which
-  fits by `partial_fit` over successive minibatches) and ~47% under `TSNE`,
-  while `PCA`, `TruncatedSVD`, `FactorAnalysis`, `Isomap` and
-  `SpectralEmbedding` were invariant to within 1e-14. This is a property of
-  the shared reduction space rather than of hierarchies -- `hyp.plot([A, B,
-  C])` and `hyp.plot([C, B, A])` differ the same way, and did before 1.1 --
-  so it is documented (`hyp.plot`'s `x` entry, docs/hierarchy.rst) and
-  pinned by a test rather than worked around: imposing a canonical group
-  order would move every hierarchy figure that already exists, and changing
-  the default reducer would move all of them. Pass `reduce='PCA'` when block
-  order must not matter.
+  block-reordered frame differently. On a 40-row frame of 4 sector blocks x
+  5 measures, reordering the blocks produced a different embedding under the
+  default `IncrementalPCA` (which fits by `partial_fit` over successive
+  minibatches) and under `TSNE`, while `PCA`, `TruncatedSVD`,
+  `FactorAnalysis`, `Isomap` and `SpectralEmbedding` preserved it up to
+  numerical and sign equivalence. No displacement figure is published here:
+  it depends on the data, the scikit-learn version, the BLAS build and the
+  platform, and a flipped component sign is the same embedding. This is a
+  property of the shared reduction space rather than of hierarchies --
+  `hyp.plot([A, B, C])` and `hyp.plot([C, B, A])` differ the same way, and
+  did before 1.1 -- so it is documented (`hyp.plot`'s `x` entry,
+  docs/hierarchy.rst) and pinned by a test rather than worked around. A
+  canonical group order would mean inventing a total ordering over
+  arbitrary, mixed-type, NA-bearing labels, and would make a labelled
+  hierarchy behave differently from the equivalent positional list of
+  datasets. Pass `reduce='PCA'` when block order must not matter.
 - Continuous `hue=` over a **row** hierarchy is still warned-and-ignored;
   only column hierarchies honour it in 1.1.
 - An **animated** forecast under a continuous `hue=` wears the colour of the

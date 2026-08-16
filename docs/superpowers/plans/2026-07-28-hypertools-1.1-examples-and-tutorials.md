@@ -116,13 +116,17 @@ direction gives 49.9% and **momentum** 51.6% (100 anchors × 7 traces each). The
 with signal to switch to. The prescribed docstring therefore states the ~50% result plainly and
 frames the trajectory picture — not a directional edge — as what the figure has to offer.
 
-**Maintainer decision, 2026-08-15: ship it.** A gallery should demonstrate the feature honestly
-rather than manufacture a successful prediction — the visualization is useful as a regime-space
-depiction, the overlay demonstrates the API without implying financial alpha, the null result
-discourages cherry-picking horizons and targets, and the 600-fit check confirms the headline is not
-hiding an effect. Two presentation conditions came with it and are implemented above: the
-**visualization, not the accuracy, is the title and the visual headline**, and per-sector
-percentages are **explicitly labelled as descriptive n=30 estimates**.
+**Maintainer decision, 2026-08-15, re-affirmed 2026-08-16: ship it.** A gallery should demonstrate
+the feature honestly rather than manufacture a successful prediction — the visualization is useful as
+a regime-space depiction, the overlay demonstrates the API without implying financial alpha, the null
+result discourages cherry-picking horizons and targets, and the 600-fit check confirms the headline is
+not hiding an effect. Three presentation conditions came with it and are implemented above: the
+**visualization, not the accuracy, is the title and the visual headline**; per-sector percentages are
+**explicitly labelled as descriptive n=30 estimates**, never a ranking, because the measured spread is
+sampling noise; and the docstring carries **one concise sentence that the forecast is illustrative of
+the API, not a trading signal**. "No directional edge" is educationally valuable precisely because the
+stated purpose is trajectory visualization rather than predictive alpha — so say the purpose, and let
+the number be what it is.
 
 > **Revisit before the release is finalised.** This decision was made against measurements, not
 > against a rendered figure. Once Task 2 actually executes and the animation exists, re-open the
@@ -1242,7 +1246,8 @@ things: each sector's own 30-anchor rate (a small, noisy, descriptive
 sample -- do NOT rank sectors by it), the cross-sector mean trace's
 30-anchor rate, and the pooled rate over all 180 sector fits. (Scoring
 lives HERE, not in hypertools, because what counts as a hit is a research
-decision, not a plotting one.)
+decision, not a plotting one.) **The forecast is here to illustrate the
+API, not as a trading signal.**
 
 **Nothing is smoothed.** A centred smoother would pull future observations
 into the displayed history and therefore into the forecast fit -- measured,

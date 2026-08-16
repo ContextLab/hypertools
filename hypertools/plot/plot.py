@@ -1295,19 +1295,24 @@ def plot(
         whose fit depends on row order therefore embeds a block-reordered
         frame differently -- including the DEFAULT
         ``reduce='IncrementalPCA'``, which fits by `partial_fit` over
-        successive minibatches. Measured on a 40-row frame of 4 sector
-        blocks x 5 measures, permuting the BLOCKS moved every leaf and every
-        mean by 1.7% of the plotted range under ``IncrementalPCA`` and 47%
-        under ``TSNE``, while ``PCA``, ``TruncatedSVD``, ``FactorAnalysis``,
-        ``Isomap`` and ``SpectralEmbedding`` were invariant to within
-        1e-14 (a within-group column permutation is exactly invariant under
-        all of them, per the rule above). This is a property of the shared
-        reduction space rather than of hierarchies -- ``hyp.plot([A, B, C])``
-        and ``hyp.plot([C, B, A])`` differ the same way, and did before 1.1
-        -- so it is DOCUMENTED, not silently worked around: choosing a
-        canonical group order would change every hierarchy figure that
-        already exists. Pass ``reduce='PCA'`` when block order must not
-        matter.
+        successive minibatches. On a 40-row frame of 4 sector blocks x 5
+        measures, permuting the BLOCKS gave a DIFFERENT embedding under
+        ``IncrementalPCA`` and ``TSNE``, while ``PCA``, ``TruncatedSVD``,
+        ``FactorAnalysis``, ``Isomap`` and ``SpectralEmbedding`` preserved
+        it up to numerical and sign equivalence (a within-group column
+        permutation is exactly invariant under all of them, per the rule
+        above). No displacement percentage is quoted because it depends on
+        the data, the scikit-learn version and the platform, and a flipped
+        component sign is the same embedding.
+
+        This is a property of the shared reduction space rather than of
+        hierarchies -- ``hyp.plot([A, B, C])`` and ``hyp.plot([C, B, A])``
+        differ the same way, and did before 1.1 -- so it is DOCUMENTED, not
+        silently worked around. A canonical group order would mean inventing
+        a total ordering over arbitrary, mixed-type, NA-bearing labels, and
+        would make a labelled hierarchy behave differently from the
+        equivalent positional list of datasets. Pass ``reduce='PCA'`` when
+        block order must not matter.
 
         A **continuous** `hue=` is carried THROUGH a column hierarchy rather
         than superseded by it (since 1.1; a row hierarchy still warns and
@@ -2485,6 +2490,7 @@ def plot(
         portable across backends; every other field is identical across
         backends.
 
+        >>> import numpy as np
         >>> import hypertools as hyp
         >>> data = [np.cumsum(np.random.default_rng(0).standard_normal(
         ...     (20, 3)), axis=0)]
