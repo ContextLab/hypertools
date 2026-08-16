@@ -103,7 +103,7 @@ forecasting -- which is the one place the two consumers genuinely diverge.
 
 For forecasting, a row group's innermost level survives as that group's
 **flat** index, with its name and dtype intact -- so a datetime innermost
-level comes back as a ``DatetimeIndex`` and ``t`` may be a future
+level is forecast against a ``DatetimeIndex`` and ``t`` may be a future
 ``Timestamp``:
 
 .. doctest::
@@ -123,6 +123,24 @@ level comes back as a ``DatetimeIndex`` and ``t`` may be a future
    'DatetimeIndex'
    >>> forecasts[0].index[-1]
    Timestamp('2024-02-05 00:00:00')
+
+The name travels with the *group*, not with the forecast. ``hyp.predict``
+builds a fresh horizon index for what it returns, and that index is
+unnamed -- on flat input too, so this is not a hierarchy rule:
+
+.. doctest::
+
+   >>> from hypertools.core.hierarchy import group_rows_for_forecast
+   >>> groups, keys = group_rows_for_forecast(daily)
+   >>> keys[0], groups[0].index.name, type(groups[0].index).__name__
+   (('Tech',), 'date', 'DatetimeIndex')
+   >>> forecasts[0].index.name is None
+   True
+   >>> flat = daily.loc['Tech']
+   >>> flat.index.name
+   'date'
+   >>> hyp.predict(flat, model='Kalman', t=2).index.name is None
+   True
 
 
 Plotting versus forecasting
@@ -379,8 +397,34 @@ overlapping prefix, because averaging assumes members line up by row
 position at each timepoint.
 
 **Some kwargs are refused, and some are ignored.** ``cluster=`` and
-``n_clusters=`` raise ``ValueError`` (both would fight the hierarchy's
-colour assignment -- reset the index first if you want to cluster);
+``n_clusters=`` raise ``ValueError`` on **either** axis -- both would fight
+the hierarchy's colour assignment -- and the remedy differs by axis, which
+is why the two messages differ. ``df.reset_index(drop=True)`` flattens a
+ROW hierarchy, but it does not touch a column ``MultiIndex``, so a column
+hierarchy needs ``df.columns = df.columns.map('_'.join)`` instead:
+
+.. doctest::
+
+   >>> for frame in (market, trials):
+   ...     try:
+   ...         hyp.plot(frame, cluster='KMeans', n_clusters=2)
+   ...     except ValueError as error:
+   ...         print(error)
+   cluster=/n_clusters= is not compatible with a column-MultiIndex DataFrame: MultiIndex grouping already assigns colors by the top-level column index and would conflict with cluster-based grouping. Flatten the columns (df.columns = df.columns.map('_'.join)) before clustering, or drop cluster=/n_clusters= to use the MultiIndex grouping.
+   cluster=/n_clusters= is not compatible with a row-MultiIndex DataFrame (GH #95): MultiIndex grouping already assigns colors by the top-level index and would conflict with cluster-based grouping. Reset the index (df.reset_index(drop=True)) before clustering, or drop cluster=/n_clusters= to use the MultiIndex grouping.
+
+Taking the row remedy to a column hierarchy therefore leaves the call
+refused, with the same message:
+
+.. doctest::
+
+   >>> try:
+   ...     hyp.plot(market.reset_index(drop=True), cluster='KMeans',
+   ...              n_clusters=2)
+   ... except ValueError as error:
+   ...     print(str(error).split(':')[0])
+   cluster=/n_clusters= is not compatible with a column-MultiIndex DataFrame
+
 ``color=``/``colors=`` and ``linewidth=`` are ignored with a
 ``UserWarning``, since the hierarchy owns them. A ``linestyle=`` **list**
 must have exactly one entry per top-level group. And ``predict=`` with
@@ -690,6 +734,23 @@ The usual fix is to make the innermost level shared **measurements**
 (``return``, ``volatility``) rather than per-group identifiers, moving the
 identifiers up a level where they belong.
 
+`hypertools.predict` groups the frame the same way, so it inherits the
+whole rule -- the refusal and the permutation alike. Before 1.1 it had no
+grouping to disagree with and forecast the flattened frame instead:
+
+.. doctest::
+
+   >>> try:
+   ...     hyp.predict(by_ticker, model='Kalman', t=2)
+   ... except ValueError as error:
+   ...     print(str(error).split('. ')[0])
+   column-hierarchy group ('Energy',) does not have the same features as the first group ('Tech',): missing ['AAPL', 'MSFT', 'NVDA'], unexpected ['XOM', 'CVX', 'BP']
+   >>> [list(f.columns) for f in hyp.predict(permuted, model='Kalman', t=2)]
+   [['return', 'volatility'], ['return', 'volatility']]
+
+That message's escape-hatch snippet is spelled for `hypertools.plot`; from
+`hypertools.predict`, take the same first step and forecast the leaves.
+
 The escape hatch, and what it costs
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -709,6 +770,9 @@ positional hierarchy plotting**:
    2
    >>> bundle['trace_metadata'] is None
    True
+   >>> [f.shape for f in hyp.predict(
+   ...     [leaf.to_numpy() for leaf in leaves], model='Kalman', t=2)]
+   [(2, 3), (2, 3)]
 
 That is **not** equivalent to ``hyp.plot(df)``. It draws a plain list of
 datasets, so there are no per-level mean traces (2 traces, not 3), no

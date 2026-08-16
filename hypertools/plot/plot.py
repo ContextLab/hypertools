@@ -187,7 +187,7 @@ def _forecast_style_from(src_line, alpha_scale=FORECAST_ALPHA_SCALE,
     differs only in transparency: ``alpha = observed_alpha * alpha_scale``
     (an unset alpha is matplotlib's "opaque", i.e. 1.0). See
     `hypertools.plot.forecast.FORECAST_ALPHA_SCALE` for why, and for the
-    pre-1.0.1 always-dashed/always-0.6 rule this replaced.
+    pre-1.1.0 always-dashed/always-0.6 rule this replaced.
 
     This is the ONE place matplotlib forecast styling is decided: the static
     overlay (`_draw_forecast_overlays`, which also serves ``animate='spin'``)
@@ -1901,7 +1901,7 @@ def plot(
         so the default is 0.5). Per-dataset styling carries through dataset
         by dataset, e.g. ``alpha=[1.0, 0.4]`` gives forecasts at
         ``[0.5, 0.2]``, and a dotted dataset gets a dotted forecast. Both
-        backends apply the identical rule. (Before 1.0.1 every forecast was
+        backends apply the identical rule. (Before 1.1.0 every forecast was
         drawn dashed at a hard-coded alpha of 0.6 regardless of how its data
         was drawn.) The drawn overlay prepends the last observed row so the
         trace connects to the trajectory (`t + 1` drawn vertices); the forecast
@@ -2838,7 +2838,7 @@ def plot(
         overlays drawn by `predict=` are smoothed the same way.
 
         Pass ``antialias=False`` to draw raw straight segments between
-        consecutive samples (the pre-1.0.1 behavior).
+        consecutive samples (the pre-1.1.0 behavior).
 
         Animated plots (both backends, any `animate` style): the density
         is computed ONCE from the FULL dataset and drawn as a static
@@ -6851,8 +6851,9 @@ def _measurement_renderer(fig):
     defers the animation's real "first draw" start to the next NON-
     measurement draw instead of firing it here.
 
-    Without this guard (release-1.0.1 QC, found while verifying the 3-D
-    title-margin fix's "neighbours"): a measurement draw here is often
+    Without this guard (release QC for the patch line that shipped as
+    1.1.0, found while verifying the 3-D title-margin fix's
+    "neighbours"): a measurement draw here is often
     `fig`'s first draw ever, since `hyp.plot(..., show=False)` never draws
     the canvas itself -- and an unguarded first draw silently ran
     `FuncAnimation._init_draw()` -> a real, premature frame-0 update

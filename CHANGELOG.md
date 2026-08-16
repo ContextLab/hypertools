@@ -8,7 +8,7 @@ plus per-level means (the row axis has done this since 1.0); `hyp.predict`
 forecasts a hierarchy one group at a time with explicit model ownership; and
 `predict=` forecasts every plotted trajectory, derived means included.
 
-Four previously-accepted inputs are now **rejected** -- see *Changed /
+Five previously-accepted inputs are now **rejected** -- see *Changed /
 validation*. One of them (duplicate timestamps) is not hierarchy-specific
 and reaches flat `hyp.predict` callers.
 
@@ -65,7 +65,13 @@ and reaches flat `hyp.predict` callers.
   Column hierarchies group by every level above the innermost (feature)
   level; row hierarchies group by every level above the innermost (time)
   level and **keep that level as each group's flat index**, with its name
-  and dtype intact, so a datetime-like `t` works per group.
+  and dtype intact, so a datetime-like `t` works per group. (That name
+  belongs to the group, not to the result: the returned forecast's horizon
+  index is unnamed, as it is on flat input.)
+
+  On the column axis `hyp.predict` inherits the plot path's **NAME-based
+  feature correspondence** in full -- including its refusals; see *Changed
+  / validation*.
 
   **Model ownership is explicit.** A name/class/dict spec is stateless, so
   every group constructs its own model; an **unfitted** instance is
@@ -128,7 +134,7 @@ and reaches flat `hyp.predict` callers.
   row versus column semantics, the plot/predict divergence, hue forms, mean
   construction, limitations, dual-axis and list inputs, return shapes, the
   unfitted/fitted ownership table, backend parity and feature
-  correspondence. All 126 of its examples are executed by the test suite
+  correspondence. All 138 of its examples are executed by the test suite
   rather than merely read. `docs/pipeline_order.rst` gains hierarchy
   expansion and mean construction as a side branch, in the prose and in the
   regenerated diagram: expansion runs before `format_data`/`analyze`, so
@@ -155,6 +161,20 @@ previously ambiguous or silently lossy.
   ROW-hierarchical frame inside a list passed to `hyp.plot` keeps its
   documented warn-and-flatten behaviour, unchanged in 1.1. Hierarchy
   expansion is defined for a bare frame only.
+
+- **`hyp.predict` now rejects a column hierarchy whose groups do not name
+  the same features.** Grouping the frame gives `hyp.predict` the plot
+  path's NAME-based feature correspondence, refusals included: groups
+  carrying different -- or differently many -- innermost labels raise an
+  error naming the missing and unexpected features. Before 1.1 there was no
+  grouping to disagree with, so such a frame was flattened into one wide
+  series and forecast (measured on columns `[('Mkt', 'Tech', 'ret'),
+  ('Mkt', 'Tech', 'vol'), ('Mkt', 'Energy', 'ret'), ('Mkt', 'Energy',
+  'flow')]`: a single `(2, 4)` forecast came back). Groups that share their
+  labels in a **different order** are still accepted, and come back
+  permuted into the FIRST group's feature order, so values travel with
+  their labels rather than with their column positions (measured: permuted
+  and unpermuted frames give element-wise equal forecasts).
 
 - **`hyp.predict` now rejects a time-like index with duplicate entries --
   including on FLAT input.** This one is not hierarchy-specific: the check
@@ -245,8 +265,12 @@ input too.
 
 ### Documented limitations
 
-- Ragged groups (unequal feature counts per group) are rejected, by an error
-  naming the missing and unexpected features.
+- Ragged groups (unequal feature counts per group) are rejected by both
+  entry points, by an error naming the missing and unexpected features. That
+  error's escape-hatch remedy is spelled for `hyp.plot`, so a `hyp.predict`
+  caller has to translate it: group with `group_columns(df,
+  feature_correspondence='position')` and forecast the leaves
+  (`hyp.predict([leaf.to_numpy() for leaf in leaves], model, t)`, verified).
 - Unequal-length row groups are averaged over their overlapping prefix, with
   one aggregated warning.
 - Feature correspondence across groups is established by NAME, so groups
@@ -287,7 +311,10 @@ items under **Changed** below alter how existing figures LOOK.
 > 1.0.1 was never published on its own. These changes were developed as a
 > patch release and now ship as part of 1.1.0, which is what `pyproject.toml`
 > declares; they are kept in their own section because they are separable
-> from the hierarchy work above.
+> from the hierarchy work above. Because 1.0.1 is not a version anyone can
+> install, every guide and docstring that dates one of these behaviours dates
+> it to **1.1.0**; this heading is the only place the shipped package names
+> the patch line.
 
 ### New features
 

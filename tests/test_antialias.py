@@ -236,7 +236,7 @@ def test_predict_forecast_overlay_is_antialiased_and_toggleable():
 
     def fc_len(fig):
         # forecast artists identify THEMSELVES (`_hyp_forecast_role`);
-        # linestyle is not a discriminator -- since 1.0.1 a forecast inherits
+        # linestyle is not a discriminator -- since 1.1.0 a forecast inherits
         # its observed trace's linestyle, so it is solid here.
         fc = [l for l in fig.axes[0].get_lines()
               if getattr(l, '_hyp_forecast_role', None) == 'static']

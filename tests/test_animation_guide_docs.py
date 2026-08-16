@@ -1,6 +1,7 @@
 """The animation guide (docs/animation.rst) exists, is reachable, and
 covers every animation feature 1.1 documents."""
 import pathlib
+import re
 
 import pytest
 
@@ -98,26 +99,77 @@ def test_animation_guide_documents_artist_lifetime_for_both_backends():
     assert 'every style on matplotlib, is per-frame' not in text
 
 
+#: Every way the guide dates a behaviour change. The capture group is the
+#: version the sentence claims; `1.0` in ``alpha=[1.0, 0.4]`` or "matplotlib's
+#: opaque, i.e. 1.0" is deliberately NOT reachable by these prefixes.
+_VERSION_CLAIM = re.compile(
+    r'(?:new in|As of|Before|versionadded::|versionchanged::)\s+'
+    r'(\d+\.\d+(?:\.\d+)?)', re.IGNORECASE)
+
+
 def test_animation_guide_version_claims_match_the_package_version():
-    """Minor finding (whole-branch review): the guide said 'new in 1.1'
-    (x2), 'As of 1.1' and 'Before 1.1' -- but CHANGELOG.md's own section
-    for this work is "## 1.0.1 (unreleased)" and `hypertools.__version__`
-    / pyproject.toml agree on 1.0.1. There is no 1.1 release on this
-    branch; these features shipped in 1.0.1, so the guide -- not the
-    version -- was wrong."""
+    """Every "new in X" in the guide must name the version that ships it.
+
+    History: the guide first said 'new in 1.1' while the package declared
+    1.0.1, so this test pinned it to 1.0.1. That premise is now retired --
+    `pyproject.toml` declares 1.1.0, `hypertools.__version__` reports 1.1.0,
+    and CHANGELOG.md states outright that "1.0.1 was never published on its
+    own ... now ship as part of 1.1.0". A guide dating features to 1.0.1
+    therefore points users at a release that will never exist.
+
+    So the assertion is no longer against a hard-coded string: it is against
+    `hypertools.__version__`, which is the one number a reader can check with
+    `pip show`. Whatever the package calls itself, the guide must agree."""
     import hypertools as hyp
 
     text = GUIDE.read_text()
-    stale = [s for s in ('new in 1.1', 'As of 1.1', 'Before 1.1') if s in text]
-    assert not stale, (
-        f"docs/animation.rst still claims {stale}, but CHANGELOG.md and "
-        f"hypertools.__version__ ({hyp.__version__}) agree these features "
-        "are 1.0.1, not 1.1")
+    claimed = sorted(set(_VERSION_CLAIM.findall(text)))
+    assert claimed, (
+        'sanity check: the guide must date at least one behaviour change, '
+        'or this test asserts nothing')
+    assert claimed == [hyp.__version__], (
+        f'docs/animation.rst dates features to {claimed}, but the package '
+        f'is {hyp.__version__}. Retarget the guide (or the version); a '
+        'version a user cannot install is not a useful date.')
 
     changelog = (DOCS.parent / 'CHANGELOG.md').read_text()
-    assert '## 1.0.1' in changelog, (
-        "sanity check: CHANGELOG.md's own unreleased section must still "
-        "say 1.0.1 for the assertion above to mean anything")
+    assert f'## {hyp.__version__}' in changelog, (
+        "sanity check: CHANGELOG.md must carry a section for the declared "
+        "version for the assertion above to mean anything")
+    if '## 1.0.1' in changelog:
+        assert '1.0.1 was never published' in changelog, (
+            'CHANGELOG.md still keeps a `## 1.0.1` section, so it must keep '
+            'saying that 1.0.1 never shipped -- otherwise a reader who finds '
+            'these features there is never told which release carries them')
+
+
+def test_no_shipped_module_or_guide_dates_a_behaviour_to_the_patch_line():
+    """The retired patch number must not leak back into what users read.
+
+    `1.0.1` was developed as a patch release and folded into 1.1.0 without
+    ever being published, so a docstring or guide saying "new in 1.0.1" (or
+    "pre-1.0.1", or "since 1.0.1") sends a reader to a version they cannot
+    install and cannot diff against. CHANGELOG.md is deliberately exempt: it
+    keeps a `## 1.0.1` section precisely to say that the release never
+    happened.
+
+    The forecast-style contract is what made this worth pinning -- it was
+    dated 1.0.1 in `plot.forecast`, `plot.plot`, `plot.plotly_backend` and
+    `docs/animation.rst` at once, so a single stale site is easy to leave
+    behind.
+    """
+    repo = DOCS.parent
+    shipped = sorted(repo.glob('hypertools/**/*.py')) + sorted(
+        DOCS.glob('*.rst'))
+    offenders = []
+    for path in shipped:
+        rel = path.relative_to(repo)
+        for number, line in enumerate(path.read_text().splitlines(), 1):
+            if '1.0.1' in line:
+                offenders.append(f'{rel}:{number}: {line.strip()}')
+    assert not offenders, (
+        '1.0.1 was never published (see CHANGELOG.md); date these to the '
+        'release that actually carries them:\n' + '\n'.join(offenders))
 
 
 def test_animation_guide_gives_both_failure_modes_not_just_persistence():

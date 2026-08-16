@@ -58,7 +58,7 @@ def test_spin_still_draws_the_static_overlay():
     solid = _solid(ax)
     assert len(static) == 3
     for fc, src in zip(static, solid):
-        # 1.0.1: inherits the observed trace's style, at half its alpha
+        # 1.1.0: inherits the observed trace's style, at half its alpha
         assert fc.get_linestyle() == src.get_linestyle()
         assert fc.get_alpha() == pytest.approx(0.5)
         assert fc.get_label() == '_nolegend_'

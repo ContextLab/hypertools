@@ -13,7 +13,7 @@ Style and order are independent
 -------------------------------
 
 ``animate=`` names a *style*; ``order=`` names the *ordering*. They are
-orthogonal, which is new in 1.0.1:
+orthogonal, which is new in 1.1.0:
 
 .. code-block:: python
 
@@ -34,7 +34,7 @@ Trails
 ------
 
 ``chemtrails=``, ``precog=`` and ``bullettime=`` leave a visible history
-behind (or ahead of) the moving head. As of 1.0.1 they compose with a serial
+behind (or ahead of) the moving head. As of 1.1.0 they compose with a serial
 reveal on **both** backends:
 
 .. code-block:: python
@@ -60,7 +60,7 @@ annotations.
 Per-dataset styling
 -------------------
 
-``color=``, ``linewidth=`` and -- new in 1.0.1 -- ``alpha=`` accept one value
+``color=``, ``linewidth=`` and -- new in 1.1.0 -- ``alpha=`` accept one value
 per dataset:
 
 .. code-block:: python
@@ -375,8 +375,8 @@ a dotted dataset gets a dotted forecast. Both backends apply the identical
 rule (on plotly, colour/width/dash with the alpha baked into the ``rgba(...)``
 line colour and echoed in ``meta['hyp_forecast_alpha']``).
 
-.. versionchanged:: 1.0.1
-   Before 1.0.1 every forecast was drawn ``linestyle='--'`` at a hard-coded
+.. versionchanged:: 1.1.0
+   Before 1.1.0 every forecast was drawn ``linestyle='--'`` at a hard-coded
    ``alpha=0.6``, whatever its data looked like -- so a forecast of a dotted,
    hairline or already-translucent dataset read as a *different* series rather
    than as its continuation.
@@ -391,7 +391,7 @@ Animated forecasts under ``hue=``/``cluster=``
 When ``hue=`` or ``cluster=`` splits a trajectory into per-category runs, each
 run is drawn as its own trace, but the reveal still follows the **dataset**:
 one run finishes as the next begins, so the trajectory sweeps once and changes
-colour as it crosses a category boundary. (Before 1.0.1 every run advanced
+colour as it crosses a category boundary. (Before 1.1.0 every run advanced
 at once, so one trajectory animated in several places simultaneously.) A forecast
 is fit per dataset from exactly the observations on screen, so it means the
 same thing it does without ``hue=``:
@@ -564,7 +564,7 @@ about what a morph means, not a gap to be filled later.
 Migrating from ``_func``/``_args``
 ----------------------------------
 
-Before 1.0.1 the only way to run code per frame was to monkeypatch
+Before 1.1.0 the only way to run code per frame was to monkeypatch
 matplotlib's private ``FuncAnimation._func`` and read ``_args``. That
 reached into matplotlib internals, worked on one backend only, and broke
 whenever the private signature changed. Replace it:

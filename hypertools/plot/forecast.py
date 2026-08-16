@@ -58,10 +58,10 @@ DEFAULT_MIN_HISTORY = 2
 
 #: A forecast is drawn at this fraction of its OBSERVED trace's alpha.
 #:
-#: Maintainer decision (1.0.1): a forecast should read as the same series
+#: Maintainer decision (1.1.0): a forecast should read as the same series
 #: projected forward, so it inherits its observed trace's identity --
 #: colour, linestyle AND linewidth -- and differs ONLY in transparency.
-#: This deliberately replaces the pre-1.0.1 rule (always ``linestyle='--'``
+#: This deliberately replaces the pre-1.1.0 rule (always ``linestyle='--'``
 #: at a hard-coded ``alpha=0.6`` regardless of how the data was drawn),
 #: under which a forecast of a dotted, hairline or already-translucent
 #: dataset looked like a different series rather than its continuation.

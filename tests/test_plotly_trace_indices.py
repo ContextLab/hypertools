@@ -55,7 +55,7 @@ def test_trace_layout_data_forecast_trail_cube():
     assert len(fig.data) == 7
 
     # forecast traces identify THEMSELVES via meta['hyp_forecast_role'] --
-    # `dash` cannot serve, because since 1.0.1 a forecast INHERITS its
+    # `dash` cannot serve, because since 1.1.0 a forecast INHERITS its
     # observed trace's dash (here: solid, like the data it continues).
     role = [(tr.meta or {}).get('hyp_forecast_role') for tr in fig.data]
     x_lens = [len(tr.x) if tr.x is not None else 0 for tr in fig.data]

@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """A forecast inherits the style of the observed trace it continues.
 
-Maintainer contract (1.0.1): a forecast should read as the SAME series
+Maintainer contract (1.1.0): a forecast should read as the SAME series
 projected forward, so it takes its observed trace's colour, linestyle AND
 linewidth, and differs only in transparency -- ``forecast_alpha =
 observed_alpha * 0.5``, with an unset alpha counting as matplotlib's opaque
-1.0. This deliberately REPLACES the pre-1.0.1 rule (always
+1.0. This deliberately REPLACES the pre-1.1.0 rule (always
 ``linestyle='--'`` at a hard-coded ``alpha=0.6``).
 
 Both backends express the one policy
@@ -127,7 +127,7 @@ def test_plotly_alpha_parity_with_matplotlib():
 @pytest.mark.parametrize('linestyle', ['-', ':', '-.', '--'])
 def test_forecast_inherits_observed_linestyle(linestyle):
     """A SOLID observed line gives a solid forecast; a dotted one gives a
-    dotted forecast. Pre-1.0.1 every one of these came out '--'."""
+    dotted forecast. Pre-1.1.0 every one of these came out '--'."""
     fig = hyp.plot(_walk(7), predict='Kalman', t=6, linestyle=linestyle,
                    show=False)
     ax = fig.axes[0]

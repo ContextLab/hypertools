@@ -2691,7 +2691,7 @@ def _forecast_style_from(tkwargs, fmt_str, alpha=None, override=None,
     FORECAST_ALPHA_SCALE``, with an unset alpha counting as fully opaque.
     The dash comes from the same `_resolve_fmt` call the observed trace is
     built with, so a solid dataset yields a solid forecast and a dotted one a
-    dotted forecast (pre-1.0.1 every forecast was ``dash='dash'`` at a
+    dotted forecast (pre-1.1.0 every forecast was ``dash='dash'`` at a
     hard-coded 0.6 opacity, regardless of how the data was drawn).
 
     Parameters

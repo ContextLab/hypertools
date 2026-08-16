@@ -20,7 +20,7 @@ def _walk(seed, n=30, d=3, offset=0.0):
 def _forecasts(ax, role=None):
     """Forecast artists identify THEMSELVES via `_hyp_forecast_role`.
 
-    Linestyle is NOT a discriminator: since 1.0.1 a forecast INHERITS its
+    Linestyle is NOT a discriminator: since 1.1.0 a forecast INHERITS its
     observed trace's linestyle (so a solid dataset's forecast is solid), and
     user data drawn with fmt='--' was always dashed too. See docs/animation.rst
     ("Identifying forecast artists").
@@ -59,7 +59,7 @@ def _legend_labels(fig):
 def test_predict_adds_one_forecast_per_dataset_styled_like_its_source(ndims):
     """A forecast is the same series projected forward, so it inherits its
     observed trace's colour, linestyle AND linewidth, differing only in
-    transparency (observed * 0.5). Replaces the pre-1.0.1 contract, under
+    transparency (observed * 0.5). Replaces the pre-1.1.0 contract, under
     which every forecast was dashed at a hard-coded alpha=0.6."""
     a = _walk(1, d=max(ndims, 2))
     b = _walk(2, d=max(ndims, 2), offset=5.0)
