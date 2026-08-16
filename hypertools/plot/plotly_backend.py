@@ -901,12 +901,35 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         if ndims >= 3 and symbol not in _SYMBOLS_3D:
             symbol = _SYMBOL_3D_FALLBACK.get(symbol, 'circle')
 
-        # multicolored lines: per-point colors along each trajectory
+        # multicolored lines: per-point colors along each trajectory.
+        #
+        # TWO serializations, because the two backends treat this trace's
+        # `alpha=` differently and parity is stated against matplotlib, not
+        # against internal consistency:
+        #  * LINES carry it. `plot._apply_multicolor_lines` replaces the line
+        #    artist with a collection whose segment colours gain a 4th
+        #    channel from `tkwargs['alpha']` -- an alpha left on the
+        #    discarded artist is simply lost -- so the per-point colours are
+        #    the only place the alpha can live here either. Serializing them
+        #    through `_rgb_string` (which drops the 4th channel) with no
+        #    trace `opacity` is why a hierarchy's 0.7 leaves, and a plain
+        #    `hue=` + `alpha=`, rendered fully opaque on plotly alone.
+        #  * MARKERS do not. `plot._apply_multicolor_markers` scatters
+        #    `c=ci` -- the raw hue colours, with no alpha folded in
+        #    (measured: every facecolor's 4th channel is 1.0 under
+        #    `alpha=0.7`). Baking it in here would make plotly the ONLY
+        #    backend dimming a hue-coloured marker.
         trace_point_colors = None
+        trace_line_colors = None
         if point_colors is not None and i < len(point_colors) \
                 and point_colors[i] is not None:
             trace_point_colors = [
                 _rgb_string(c) for c in np.asarray(point_colors[i])]
+            _pt_alpha = tkwargs.get('alpha')
+            trace_line_colors = (
+                trace_point_colors if _pt_alpha is None else
+                [_to_plotly_color(c, _pt_alpha)
+                 for c in np.asarray(point_colors[i])])
 
         # surface= (GH #109) keep_points=False: hide this dataset's own
         # line/marker trace so only its surface shows.
@@ -967,8 +990,18 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 draw_arr = draw_arr.copy()
                 grid = np.linspace(0, arr.shape[0] - 1, draw_arr.shape[0])
                 draw_arr[enclosed_mask[np.round(grid).astype(int)]] = np.nan
-            trace_point_colors = _aa_resample_colors(
-                trace_point_colors, arr.shape[0], draw_arr.shape[0])
+            # both serializations follow the SAME resampling, so the line
+            # and marker colour arrays stay index-aligned with each other
+            # and with the drawn vertices
+            _n_orig, _n_dense = arr.shape[0], draw_arr.shape[0]
+            if trace_line_colors is trace_point_colors:
+                trace_point_colors = trace_line_colors = _aa_resample_colors(
+                    trace_point_colors, _n_orig, _n_dense)
+            else:
+                trace_point_colors = _aa_resample_colors(
+                    trace_point_colors, _n_orig, _n_dense)
+                trace_line_colors = _aa_resample_colors(
+                    trace_line_colors, _n_orig, _n_dense)
 
         common = dict(
             mode=mode,
@@ -993,7 +1026,7 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         if ndims >= 3:
             if trace_point_colors is not None:
                 # Scatter3d supports per-point line colors natively
-                common['line'] = dict(color=trace_point_colors, width=width,
+                common['line'] = dict(color=trace_line_colors, width=width,
                                       dash=dash)
                 common['marker'] = dict(color=trace_point_colors,
                                         size=msize, symbol=symbol)
@@ -1005,7 +1038,7 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 # 2D Scatter has no per-point line colors; draw short
                 # segment traces instead (grouped under one legend entry)
                 traces.extend(_segment_traces_2d(
-                    go, draw_arr, trace_point_colors, width, dash, name,
+                    go, draw_arr, trace_line_colors, width, dash, name,
                     trace_index=i))
                 continue
             if trace_point_colors is not None:
@@ -1018,9 +1051,19 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
             if trace_point_colors is not None and 'lines' in mode:
                 pts = np.column_stack([xs, draw_arr[:, 0]])
                 traces.extend(_segment_traces_2d(
-                    go, pts, trace_point_colors, width, dash, name,
+                    go, pts, trace_line_colors, width, dash, name,
                     trace_index=i))
                 continue
+            if trace_point_colors is not None:
+                # the 1-D marker branch used to fall through to the single
+                # `color`, so a marker-only continuous hue drew all 60 points
+                # in ONE palette colour here while matplotlib's
+                # `_apply_multicolor_markers` scattered them per point
+                # (`ax.scatter(np.arange(n), xi[:, 0], c=ci, ...)`) -- the
+                # same per-point colours the 2-D and 3-D branches above
+                # already pass on.
+                common['marker'] = dict(color=trace_point_colors,
+                                        size=msize, symbol=symbol)
             traces.append(go.Scatter(x=xs, y=draw_arr[:, 0], **common))
 
     n_data_traces = len(traces) - n_surface_traces_2d - n_density_traces_2d

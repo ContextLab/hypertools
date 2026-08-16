@@ -267,14 +267,18 @@ def _draw_forecast_overlays(ax, raw_forecasts, antialias=True,
         # seam-prepended first point and the final point stay exact, so it
         # still joins the trajectory).
         fc = np.asarray(fc)
+        # rows BEFORE smoothing: a 1-D plot puts the row index on x, so the
+        # forecast spans `n_rows - 1` row units no matter how many vertices
+        # it is drawn with (see the 1-D branch below).
+        _fc_rows = fc.shape[0]
         if antialias:
             fc = _interp_static_line(fc)
         # `owner` maps forecast -> the RUN it continues, when hue=/cluster=
         # regrouped the traces. Without it, forecast i continues trace i.
         _src = owner[i] if owner is not None and i < len(owner) else i
+        _src_line = src_lines[_src] if _src < len(src_lines) else None
         style = _forecast_style_from(
-            src_lines[_src] if _src < len(src_lines) else None,
-            override=overrides[i] if overrides is not None else None)
+            _src_line, override=overrides[i] if overrides is not None else None)
         d = fc.shape[1] if fc.ndim > 1 else 1
         _before = len(artists)
         if d >= 3:
@@ -284,7 +288,26 @@ def _draw_forecast_overlays(ax, raw_forecasts, antialias=True,
             artists.extend(ax.plot(
                 fc[:, 0], fc[:, 1], label='_nolegend_', **style))
         else:
-            artists.extend(ax.plot(fc[:, 0], label='_nolegend_', **style))
+            # 1-D: x is the ROW INDEX, so the forecast has to be drawn over
+            # the rows FOLLOWING its source run -- and it starts AT that
+            # run's last drawn x, because the forecast array has the seam
+            # observation prepended. Passing no x at all let matplotlib
+            # default to `0..len(fc)-1`, painting every forecast back over
+            # the START of the plot (measured: a 60-row frame drew its
+            # forecast at x 0..3 while the observed line ran 0..59), and made
+            # matplotlib disagree with plotly, which has always built this x
+            # from the observed run's offset (`plotly_backend._aa_x(step,
+            # arr.shape[0] - 1, ...)`). `linspace` rather than `arange`: the
+            # antialiased curve has ~900 vertices spanning the same
+            # `_fc_rows - 1` row units, which is exactly what `_aa_x`'s
+            # `start + arange(n) / step` computes on the plotly side.
+            _x0 = (float(np.asarray(_src_line.get_xdata())[-1])
+                   if _src_line is not None
+                   and len(np.asarray(_src_line.get_xdata())) else 0.0)
+            _xs = _x0 + np.linspace(0.0, float(max(_fc_rows - 1, 0)),
+                                    fc.shape[0])
+            artists.extend(ax.plot(_xs, fc[:, 0], label='_nolegend_',
+                                   **style))
         _artist_dataset.extend((i, _a) for _a in artists[_before:])
     # role tag (see hypertools/plot/forecast.py): forecast artists must be
     # identifiable WITHOUT guessing from linestyle -- user data drawn with
@@ -7577,9 +7600,30 @@ def _apply_multicolor_markers(ax, xform, point_colors, kwargs_list,
     (F02-004); otherwise the default circle is drawn."""
     # as in `_apply_multicolor_lines`: replace the DATA artists, keep the
     # tagged forecast overlays
+    _kept_forecasts = []
     for line in list(ax.lines):
         if getattr(line, '_hyp_forecast_role', None) is None:
             line.remove()
+        else:
+            _kept_forecasts.append(line)
+
+    # ...and, as in `_apply_multicolor_lines`, re-anchor each kept forecast
+    # on the colour its own trace ENDS in (F14). This loop used to exist only
+    # on the line path, so a MARKER-only fmt drew the forecast in the
+    # per-dataset palette colour of an artist that was just removed -- and
+    # since plotly anchors unconditionally (`_hue_anchor_color`, applied at
+    # every trace's build regardless of fmt), the two backends drew the same
+    # forecast in different colours for exactly `fmt='o'` (measured, at every
+    # `ndims`: matplotlib rgb(59,82,139) vs plotly rgb(72,38,119) for the
+    # first trace of a viridis column hierarchy). Same dataset-tag keying and
+    # same reason as the line path: position breaks as soon as anything
+    # reorders or filters the forecasts (`forecast_cluster=`, a per-dataset
+    # refusal).
+    for _fi, _fc_line in enumerate(_kept_forecasts):
+        _ds = getattr(_fc_line, '_hyp_forecast_dataset', _fi)
+        if (_ds is not None and _ds < len(point_colors)
+                and len(point_colors[_ds])):
+            _fc_line.set_color(point_colors[_ds][-1])
 
     marker = None
     if fmt is not None and not isinstance(fmt, (list, tuple, np.ndarray)):

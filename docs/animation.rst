@@ -541,6 +541,13 @@ carrier -- none of which is named. Both tags are the trace's index in the
 drawn data, so a callback can pair a trace with its source without counting
 positions.
 
+A multicoloured trace also carries its ``alpha=`` **inside** those per-point
+colours, on both backends: matplotlib folds it into the segment colours of the
+collection that replaces the line artist (an alpha left on the discarded
+artist would simply be lost), and plotly serialises the line's colour array as
+``rgba(...)`` for the same reason. Per-point **marker** colours carry no alpha
+on either backend -- a hue-coloured scatter is drawn at full opacity.
+
 What ``animate='morph'`` does
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
