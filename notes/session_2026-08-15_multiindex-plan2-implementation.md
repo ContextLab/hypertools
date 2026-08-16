@@ -53,7 +53,7 @@ Jeremy chose "Execute Plan 2 (MultiIndex)" when asked.
 | (fix) honour `legend=`, false `names=` error, plotly sentinel | done, 21 tests | `bb4ad30c` |
 | (fix) true duplicate-mismatch message, aux validation, warning blame | done | `e52dd861` |
 | (fix) re-appliable bundled pipeline; group-order caveat pinned | done, 23 tests | `6f07c213` |
-| (fix) adversarial sweep: colorbar under `legend=False`, `legend=` containers, caller-supplied `pipeline=` | done, 37 tests, all mutation-verified | `1e5c737a` |
+| (fix) adversarial sweep: colorbar under `legend=False`, `legend=` containers, caller-supplied `pipeline=` | done, 37 tests, all mutation-verified | `5b15d3dc` |
 
 **Plan 2 is COMPLETE.** It is **not releasable**, and that is a Plan 4
 dependency, not a defect here: see *Task 12 as EXECUTED* below and
@@ -552,7 +552,7 @@ completeness critic and an adversarial user swept the finished branch. Four
 Critical/Important findings were routed here. **All four reproduced**, so
 none was declined; two of them are the same defect reported twice.
 
-### What was fixed (`1e5c737a`)
+### What was fixed (`5b15d3dc`)
 
 1. **`colorbar=True` + `legend=False` under a hierarchy lost the group
    names AND the leaf filter.** A *regression* introduced by `bb4ad30c`,
