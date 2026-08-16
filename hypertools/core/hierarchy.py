@@ -211,11 +211,17 @@ def _match_features_by_name(leaves, leaf_keys):
                 "groups share feature names -- e.g. shared measurements "
                 "('return', 'volatility') rather than per-group identifiers "
                 "-- or, if slot i really does mean the same feature in every "
-                "group, discard the labels deliberately:\n"
+                "group, group them yourself and discard the labels "
+                "deliberately:\n"
                 "    from hypertools.core.hierarchy import group_columns\n"
                 "    leaves, _ = group_columns("
                 "df, feature_correspondence='position')\n"
-                "    hyp.plot([leaf.to_numpy() for leaf in leaves])")
+                "    hyp.plot([leaf.to_numpy() for leaf in leaves])\n"
+                "That is a LOWER-LEVEL escape hatch, not positional "
+                "column-hierarchy plotting: it draws a plain list of "
+                "datasets, so there are no per-level mean traces, no "
+                "hierarchy linewidth/alpha/legend styling and no "
+                "trace_metadata.")
         matched.append(leaf.iloc[:, [position[key] for key in canonical]])
     return matched
 

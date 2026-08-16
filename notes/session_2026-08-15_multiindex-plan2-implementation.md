@@ -201,6 +201,59 @@ v4 revision note specifying the same change to its data preparation, with
 two items flagged for the maintainer (the measure definitions, and whether
 sector measurement-space still tells the example's story).
 
+## Review round 3 (maintainer, after the nominal fix) — escape hatch + Market
+
+**Finding: the positional escape hatch is not hierarchy-equivalent. ACCEPTED.**
+`hyp.plot([leaf.to_numpy() for leaf in leaves])` plots a plain LIST, so it
+loses the per-level means, the hierarchy linewidth/alpha/legend styling,
+`trace_metadata`, and later the hierarchical hue and forecast behaviour.
+Measured side by side on the same shape: 3 traces vs 4, `trace_metadata`
+`None` vs populated, matplotlib's default 1.5 width for every line vs the
+level-derived {1.0, 2.0}, `alpha` unset vs {0.7, 1.0}. Both the error
+message and `plot()`'s `x` entry now say so explicitly. **There is no
+hierarchy-preserving positional mode in 1.1** — that is what would justify
+a public parameter, if it is ever asked for.
+
+### The Market example, rebuilt in regime space (Plan 4 v4)
+
+All decisions came from the maintainer; everything below was MEASURED on
+2026-08-15 against live data, not projected.
+
+- **Adjusted** closes (`indicators.adjclose`), equal-weighted constituents.
+  `return` = mean constituent daily log return; `volatility` = trailing
+  20-session sd; `momentum` = trailing 60-session sum.
+- **2514** adjusted closes (2016-08-15 → 2026-08-14) → **2454 × 18** after
+  dropping the 60 leading rows. `range=10y` SLIDES, so v3's "2513" was never
+  a constant — the verify step must re-measure rather than assert.
+- **Centred smoothing removed.** Verified the claim rather than taking it on
+  trust: `uniform_filter1d(size=11)` spreads an impulse at t=50 over 45..55
+  with **45% of its weight landing before t=50** — five sessions of
+  lookahead into the history the forecast is fit on.
+- **`normalize=None, reduce=None, ndims=3`**, and the payoff is checkable:
+  `trace_data[0]` equals the sector's own leaf EXACTLY, so the panel's
+  `return` component and the picture's first coordinate are the same number.
+- **210 fits in 11.1 s**; whole script 13 s cached; static plot 0.3 s.
+- **The forecast has no directional edge**: 52% at 210 fits, **48.7% at 700**
+  (SE 1.9 pp). Before accepting that I measured the alternatives —
+  volatility-change direction 49.9%, momentum-change 51.6%, both at 700
+  fits. There is nothing with more signal to switch to, so the example
+  states ~50% plainly. **Flagged to the maintainer as the one open item**:
+  shipping a gallery example whose headline number is "no better than
+  chance" is honest, but it is a narrative call.
+- Budget: the rewrite measures **116** code lines (metric validated by
+  reproducing v3's 191 for the file on disk). The **+16 split overhead is
+  INHERITED, not re-measured** → projected 132, budget 130 → **135**. That
+  projection is flagged in the plan as the one unmeasured number.
+- `hue=` and `predict=` over a column hierarchy are still guarded (Tasks 6
+  and 8), so those two kwargs are the ONLY unexercised part; with them
+  removed the prescribed script runs end to end against live data.
+
+**Method note worth keeping:** the plan's "docstring-aware metric" is
+PHYSICAL non-blank/non-comment/non-docstring lines, not logical statements
+— an AST logical-statement counter gives 159 where the plan says 191. The
+way to be sure is to reproduce a number the plan already records before
+trusting a counter on new code.
+
 ## Ruff counting: use ruff's own summary, not a grep
 
 Earlier parity checks used `grep -c '^[A-Z][0-9]'`, which UNDERCOUNTS. The

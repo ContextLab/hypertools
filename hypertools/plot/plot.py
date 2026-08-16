@@ -1145,15 +1145,23 @@ def plot(
         merely by being written in the same slot. Make the innermost level
         shared measurements (``return``, ``volatility``), reduce each group
         yourself, or, if position *i* really does mean the same feature in
-        every group, discard the labels deliberately::
+        every group, group them yourself and discard the labels
+        deliberately::
 
             from hypertools.core.hierarchy import group_columns
             leaves, _ = group_columns(df, feature_correspondence='position')
             hyp.plot([leaf.to_numpy() for leaf in leaves])
 
-        Note that `align=` does NOT recover discarded feature identity: it
-        aligns the resulting spaces, but by then the reduction has already
-        interpreted arbitrary positions as corresponding inputs.
+        That last recipe is a LOWER-LEVEL escape hatch, not positional
+        column-hierarchy plotting, and it is **not** equivalent to
+        ``hyp.plot(df)``: it draws a plain list of datasets, so there are no
+        per-level mean traces, no hierarchy linewidth/alpha/legend styling
+        and no ``trace_metadata`` in the return bundle. There is no
+        hierarchy-preserving positional mode in 1.1.
+
+        Note also that `align=` does NOT recover discarded feature identity:
+        it aligns the resulting spaces, but by then the reduction has
+        already interpreted arbitrary positions as corresponding inputs.
 
         A frame carrying a hierarchy on **both** axes raises ``ValueError``:
         which one takes precedence is genuinely ambiguous, and before 1.1

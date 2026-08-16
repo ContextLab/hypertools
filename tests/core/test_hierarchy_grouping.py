@@ -211,6 +211,19 @@ def test_error_names_the_deliberate_positional_escape_hatch():
         group_columns(ticker_frame())
 
 
+def test_error_says_the_escape_hatch_is_not_hierarchy_plotting():
+    """The recipe plots a plain LIST of datasets. It is a lower-level
+    escape hatch, not positional column-hierarchy plotting: no per-level
+    mean traces, no hierarchy styling, no trace_metadata. Presenting it as
+    equivalent to `hyp.plot(df)` would be false advertising."""
+    with pytest.raises(ValueError) as excinfo:
+        group_columns(ticker_frame())
+    message = str(excinfo.value)
+    assert 'plain list of datasets' in message
+    for lost in ('mean', 'trace_metadata'):
+        assert lost in message
+
+
 def test_unequal_group_widths_raise_a_named_feature_error():
     """Ragged groups used to reach the pipeline's generic 'same number of
     columns' check. Nominal matching catches them earlier and says WHICH

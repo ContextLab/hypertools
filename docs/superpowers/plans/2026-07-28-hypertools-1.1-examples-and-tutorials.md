@@ -10,47 +10,113 @@
 
 ---
 
-## Revision note (v4) — the Market frame's innermost level must be SHARED MEASUREMENTS
+## Revision note (v4) — the Market example moves from ticker/price space to REGIME space
 
-Plan 2 *Revision note (v8)* made cross-group feature correspondence **nominal**: `group_columns`
-requires every group to carry the same innermost labels and permutes later groups into the first
-group's order. The Market frame as specified below — `(Market, Sector, Ticker)` over 24 tickers,
-four per sector, **disjoint across sectors** — is exactly the shape that rule refuses, and it is
-refused deliberately. AAPL and XOM are not corresponding variables merely because each is written
-first inside its sector; that they are both dollar-denominated closes does not make position 0
-mean the same thing in both groups, and `align=` cannot repair it after the fact.
+Plan 2 *Revision note (v8)* made cross-group feature correspondence **nominal**. The Market frame
+as v3 specified it — `(Market, Sector, Ticker)` over 24 tickers, four per sector, **disjoint across
+sectors** — is exactly the shape that rule refuses, and it is refused deliberately: AAPL and XOM are
+not corresponding variables merely because each is written first inside its sector, and `align=`
+cannot repair it after the fact. The maintainer's direction was to rebuild the example in
+measurement space rather than work around the rule, and to fix three further defects the rebuild
+exposed. **Everything below was measured on 2026-08-15 against real data, not projected.**
 
-**What changes.** Task 2 keeps `fetch_prices` verbatim — the 24 tickers, the 2513 trading days and
-the cache are all verified and stay — and gains a derivation step that turns each sector's four
-price series into the SAME three per-sector measurements:
+### The frame
 
-| level | before (v3) | after (v4) |
+| level | v3 | v4 |
 |-|-|-|
 | innermost column level | `Ticker` — `AAPL`, `MSFT`, … (disjoint per sector) | `Measure` — `return`, `volatility`, `momentum` (identical in every sector) |
-| frame shape | 2513 × 24 | 2513 × 18 (6 sectors × 3 measures) |
-| traces drawn | 6 sector + 1 market mean = 7 | **unchanged**: 6 sector + 1 market mean = 7 |
+| prices | raw closes | **adjusted** closes, so splits and distributions do not manufacture returns |
+| weighting | n/a | **equal weight** across each sector's four constituents |
+| `return` | — | mean constituent daily **log** return |
+| `volatility` | — | trailing **20**-session standard deviation of that sector return |
+| `momentum` | — | trailing **60**-session cumulative log return (rolling sum) |
+| frame shape | 2513 × 24 (claimed) | **2454 × 18, measured** — see below |
+| traces drawn | 6 sector + 1 mean = 7 | **unchanged**: 6 sector + 1 cross-sector mean = 7, each `(2454, 3)` |
 | tickers' role | the feature axis | the **inputs** the sector measurements are computed from; still listed in the right-hand panel |
 
-Every downstream count in Task 2 — trace count, hierarchy widths, `hue=` nesting (one sequence per
-sector), `predict='Kalman', t=1, forecast_trail=16`, the 210-fit accuracy budget — is stated per
-SECTOR, not per ticker, so none of them changes.
+Equal weighting is chosen over cap weighting because it is transparent and reproducible from the
+price data alone: cap weighting would need a market-cap source and historical constituent weights,
+importing survivorship and provenance problems without teaching more hypertools.
 
-**Two things need the maintainer's sign-off before Task 2 runs**, and are deliberately not decided
-here:
+**The row count is no longer a fixed number, and v3's `2513` was never stable.** `range=10y` is a
+*sliding* window, so the fetched length depends on the run date; measured 2026-08-15 it is **2514**
+adjusted closes (2016-08-15 → 2026-08-14), not the 2513 v3 recorded on 2026-08-02. The 60-session
+momentum window then drops exactly **60** leading rows — dropped, never back-filled, since filling
+would put unobservable values in front of the forecast — leaving **2454 × 18** (2016-11-08 →
+2026-08-14). The offline synthetic path measures **2500 → 2440** by the same arithmetic. Task 2's
+verify step must **re-measure and record** this rather than asserting a constant.
 
-1. **The measure definitions.** The obvious reading of "return, volatility, momentum" is the
-   sector-mean daily log return, its trailing standard deviation, and price over a trailing mean —
-   but the window lengths and whether to equal-weight or cap-weight the four tickers are modelling
-   choices this plan should not make silently.
-2. **Whether the example still tells its story.** The trajectories become sector *measurement*
-   space rather than sector *price* space. That is arguably a better showcase (the three measures
-   genuinely are commensurable across sectors, which is the whole premise of a joint reduction),
-   but it is a different picture from the one v3 described, and the surrounding prose describes
-   price levels in places.
+### Three defects the rebuild fixes
 
-The alternative Plan 2 leaves open — reduce each sector independently and `align=` the resulting
-trajectories — is **not** recommended here: it abandons the single native `hyp.plot(df)` call that
-is the entire point of the example.
+1. **Centred smoothing removed entirely.** v3 passed
+   `manip={'model': 'Smooth', 'kwargs': {'kernel': 'boxcar', 'kernel_width': 11}}`, which
+   hypertools implements with `scipy.ndimage.uniform_filter1d` — **centred**. Measured: an impulse
+   at *t*=50 spreads across 45…55 and **45% of its weight lands at indices before 50**, i.e. five
+   sessions of lookahead folded into the displayed history and therefore into an animated forecast
+   fit. In an example whose whole question is *does the forecast work*, that invalidates the
+   answer. It is removed, not replaced with a causal smoother: the derived measures are already
+   smooth (a 20- and a 60-session window), so there is nothing left for it to do.
+
+2. **The score now measures the forecast the figure actually draws.** v3 plotted one object and
+   scored a *separate univariate price index* — a parallel calculation the reader could not check
+   against the picture. v4 fits each sector's own 3-column `(return, volatility, momentum)`
+   history, reads the forecast's **`return`** component, and counts whether its sign matches the
+   realised next-day sector return; the cross-sector mean trace is scored the same way. The 210-fit
+   budget (7 traces × 30 anchors) is unchanged.
+
+3. **`normalize=None, reduce=None, ndims=3`.** Three measurements into three components is not a
+   reduction, and normalising would move the zero the return-direction score is read against.
+   With both off, the correspondence between panel and picture is **exact, and verified**:
+   `trace_data[0]` equals the sector's own leaf element-for-element (`np.allclose(...) is True`).
+   hypertools' final display scaling still fits the trajectories into the cube.
+
+### Measured cost and result
+
+| quantity | measured 2026-08-15 |
+|-|-|
+| adjusted closes fetched | 24/24 tickers, 2514 sessions, 9.6 s cold (cached thereafter) |
+| static `hyp.plot(..., normalize=None, reduce=None, ndims=3)` | **0.3 s**, 7 traces of `(2454, 3)` |
+| scoring loop, 7 traces × 30 anchors | **210 Kalman fits in 11.1 s** (v3 measured 7.3 s for the same shape on 1-column series; 3 columns cost more) |
+| whole script, cached data | **13 s** |
+| next-day return-direction accuracy, 210 fits | **52% overall**; per sector 37%–63% |
+| the same at 700 fits (100 anchors), for a usable sample | **48.7%**, binomial SE 1.9 pp at *p*=0.5 |
+
+**The forecast has no directional edge, and the example must say so.** At 700 fits the result is
+indistinguishable from a coin flip, and the per-sector spread at 30 anchors (37%–63%) is entirely
+sampling noise — SE is 9 pp there. This was checked against the obvious alternatives before
+accepting it: scoring the **volatility** component's next-day change direction gives 49.9%, and
+**momentum** 51.6%, both at 700 fits. There is no component with signal to switch to. The prescribed
+docstring therefore states the ~50% result plainly and frames the trajectory picture — not a
+directional edge — as what the figure has to offer. **This is the one item still open for the
+maintainer:** publishing a gallery example whose headline number is "no better than chance" is
+defensible and honest, but it is a narrative call, not a technical one.
+
+### Narrative
+
+The story is *six sectors moving through shared return–risk–momentum regime space, with a heavier
+cross-sector mean trajectory and forecasts of where each regime heads next*. The top-level trace is
+called the **cross-sector mean** (or *market-average regime*) and never "market volatility": the
+mean of six sector volatilities is not the volatility of an aggregated market portfolio. `hue`
+remains an equal-weight cumulative performance index starting at 100 — economic context alongside
+the three spatial coordinates — reindexed onto the regime frame so its length matches. The
+right-hand panel lists each sector's constituent tickers, its next-day return-direction accuracy,
+and a line stating that constituents are equally weighted.
+
+### Budget
+
+The prescribed rewrite below measures **116 code lines** by the plan's own metric (physical,
+non-blank, non-comment, non-docstring — validated by reproducing v3's `191` for the file as it
+stands). v3's rewrite measured 110, so the derivation costs +6 net after `manip=` is deleted. The
+`+16` split overhead is **inherited from v3's measurement, not re-measured**, giving a projected
+**132**; the script budget therefore moves **130 → 135** and the notebook **135 → 140**. Task 2's
+measure step must re-measure the split and record the real number.
+
+### What is still blocked
+
+The prescribed call passes `hue=` and `predict=` over a column hierarchy, and both are still
+guarded (`MultiIndex` Tasks 6 and 8). Verified 2026-08-15: with those three kwargs removed the
+script runs end to end against live data — fetch, derivation, plot, scoring loop and panel all
+work. **They are the only unexercised parts of this task.**
 
 ---
 
@@ -952,7 +1018,7 @@ Audit classification (unchanged, still accurate for the parts this task rewrites
 
 **The `forecast_trail=` prerequisite is satisfied; the separate regrouped-reveal prerequisite REMAINS.** This task's call is a `hue=`-regrouped, animated, forecast-carrying trajectory, so it also needs [`2026-08-03-hypertools-1.1-regrouped-reveal-and-forecasts.md`](2026-08-03-hypertools-1.1-regrouped-reveal-and-forecasts.md) — Tasks 1–3 and 5–7 — implemented with its focused tests green. That plan is *not* Plan 3, and Plan 3's landing does not imply it. Do not start this task until it is in.
 
-**AFTER (contracted budget):** script **≤ 130 code lines**; notebook **≤ 135** (= 130 + 5); **zero** defect markers. **Measured, not projected** (2026-08-04): the rewrite above is **110** code lines and the split takes it to **126** (+16). The budget is that 126 rounded up to the next multiple of 5, so the 4 lines of headroom are a stated allowance for wording differences and nothing more.
+**AFTER (contracted budget):** script **≤ 135 code lines**; notebook **≤ 140** (= 135 + 5); **zero** defect markers. **Re-measured 2026-08-15** for the regime-space rewrite (*Revision note (v4)*): the rewrite below is **116** code lines (v3's was 110; the measure derivation costs +6 net once `manip=` goes). The `+16` split overhead is **inherited from the 2026-08-04 measurement and NOT re-measured**, giving a projected **132**, rounded up to 135. The measure step must re-measure the split and replace this projection with the real number — it is the one figure in this task that is not measured.
 
 The notebook budget is DERIVED, not written down: `script_budget + NOTEBOOK_OVERHEAD` (Contract 6b), so it can never again be set below its own script's. No ratio floor — ratio is reported, never gated (Contract 6a).
 
@@ -966,11 +1032,13 @@ The notebook budget is DERIVED, not written down: `script_budget + NOTEBOOK_OVER
 | hand-built `ScalarMappable` + `fig.colorbar` + `set_label` (`:297-301`, class **B**) | `colorbar={'label': ...}` (`plot.py:1189`) |
 | `fig.text(...)` title (`:303-304`, class **B**) | `title=` (`plot.py:1209`) |
 | `_wrapped` + `ani._func = _wrapped` + `ani._args[1][0]` (`:199-213`, `:323-356`, class **C**) | nothing — there is no per-frame work left |
-| a hand-thinned single equal-weight index over 5 FRED series | a `(Market, Sector, Ticker)` column MultiIndex over **24 tickers**, expanded natively into 6 sector traces + 1 market-mean trace, each with its own forecast |
+| a hand-thinned single equal-weight index over 5 FRED series | a `(Market, Sector, Measure)` column MultiIndex over the three measurements 24 equally-weighted tickers reduce to, expanded natively into 6 sector traces + 1 cross-sector-mean trace, each with its own forecast (*Revision note (v4)*) |
+| `manip={'model': 'Smooth', 'kwargs': {'kernel': 'boxcar', 'kernel_width': 11}}` (class **B**) | nothing — `uniform_filter1d` is CENTRED (measured: 45% of an impulse's weight lands earlier, five sessions of lookahead), which would invalidate the forecast question the example asks (*Revision note (v4)*) |
+| `normalize='across', reduce='IncrementalPCA'` | `normalize=None, reduce=None, ndims=3` — three measurements into three components is not a reduction, and normalising moves the zero the return score is read against. Verified: `trace_data[0]` then equals the sector's own leaf exactly (*Revision note (v4)*) |
 
-**Data.** Verified today: 24/24 tickers from `https://query1.finance.yahoo.com/v8/finance/chart/<TICKER>?range=10y&interval=1d` (User-Agent header required), 2513 trading days each, 2016-07-28 → 2026-07-28. Six sectors × 4 tickers gives **equal widths**, required by the `_widths` check in `plot()`. `yfinance` 1.5.1 is installed but the raw chart endpoint is used directly, so the example has no extra dependency.
+**Data.** Verified 2026-08-15: 24/24 tickers from `https://query1.finance.yahoo.com/v8/finance/chart/<TICKER>?range=10y&interval=1d` (User-Agent header required), reading `indicators.adjclose` — **adjusted** closes, so a split does not read as a -50% day. Measured **2514** sessions each, 2016-08-15 → 2026-08-14; `range=10y` slides, so that count is run-date dependent and v3's `2513` (measured 2026-08-02) was never a constant. Deriving the three shared measures drops the 60 leading rows of the momentum window, giving a **2454 × 18** frame. Every sector carries the same three feature labels, which is what nominal correspondence requires (Plan 2 *Revision note (v8)*) and also what makes the `_widths` check trivially satisfied. `yfinance` 1.5.1 is installed but the raw chart endpoint is used directly, so the example has no extra dependency.
 
-**Accuracy readout.** Per Contract 5 this lives in the example. Budget measured: `hyp.predict(..., model='Kalman', t=1)` on a **60-row** rolling window, **30** anchors, **7** series (6 sectors + the market mean) = **210 fits in 7.3 s**. A 250-row window costs 30.7 s for the same loop, and the whole current example runs in 6.2 s — so 60/30 is the budget, and it is stated in the module docstring.
+**Accuracy readout.** Per Contract 5 this lives in the example, and per *Revision note (v4)* it scores the forecast the figure actually draws: each sector's own 3-column history, the forecast's `return` component, against the realised next-day sector return. Budget re-measured 2026-08-15: `hyp.predict(..., model='Kalman', t=1)` on a **60-row** rolling window, **30** anchors, **7** traces (6 sectors + the cross-sector mean) = **210 fits in 11.1 s** (3 columns per fit, against v3's 1), and the whole script runs in **13 s** on cached data. The result is **52% at 210 fits and 48.7% at 700** — no directional edge, which the docstring states plainly rather than hiding. Volatility (49.9%) and momentum (51.6%) were measured as alternatives and have no more signal.
 
 **Files:** rewrite `examples/animate_market_forecast.py`; rewrite `docs/tutorials/market_forecast.ipynb`; create `scripts/execute_tutorial.py`.
 
@@ -1081,43 +1149,60 @@ Replace the body of `examples/animate_market_forecast.py` (reconciling against w
 # -*- coding: utf-8 -*-
 """
 ==========================================================================
-A market, sector by sector: one hierarchy, one hue, one forecast per line
+Six sectors through return-risk-momentum space, and where each heads next
 ==========================================================================
 
-Twenty-four large-cap stocks, grouped into six sectors, plotted as a single
-hierarchical DataFrame. The columns carry a ``(Market, Sector, Ticker)``
-``MultiIndex``, and that is the whole layout instruction: ``hyp.plot``
-expands the innermost level into features and every level above it into the
-drawn hierarchy, so each **sector** becomes one trajectory and the whole
-**market** becomes a second-level mean trajectory drawn heavier on top --
-the classic bold-means / faint-leaves picture, with no index bookkeeping in
-this file at all.
+Twenty-four large-cap stocks, grouped into six sectors and summarised by
+the three measurements every sector shares -- ``return``, ``volatility``
+and ``momentum`` -- plotted as a single hierarchical DataFrame. The columns
+carry a ``(Market, Sector, Measure)`` ``MultiIndex``, and that is the whole
+layout instruction: ``hyp.plot`` reads the innermost level as the feature
+axis and every level above it as the drawn hierarchy, so each **sector**
+becomes one trajectory through regime space and the **cross-sector mean**
+becomes a second-level trajectory drawn heavier on top -- the classic
+bold-means / faint-leaves picture, with no index bookkeeping in this file.
 
-Each line is coloured continuously by its own **price index** (a `hue` that
-mirrors the hierarchy: one value sequence per sector, with the market mean
-taking the element-wise mean of its sectors), and each line carries **its
-own next-day forecast** (``predict='Kalman', t=1``), redrawn every frame
-from the history revealed so far and left behind as a fading fan
-(``forecast_trail=16``). The camera makes one slow quarter-turn
-(``rotations=0.25``) over the clip while ``chemtrails=True`` keeps the
+**Why measurements and not tickers.** hypertools matches features across
+hierarchy groups by NAME: AAPL and XOM are not the same variable merely
+because each is written first inside its sector, so a
+``(Market, Sector, Ticker)`` frame is refused, and rightly. ``return``,
+``volatility`` and ``momentum`` do mean the same thing in every sector,
+which is what makes ONE joint reduction over all six of them meaningful.
+All four constituents of a sector are weighted equally.
+
+Each line is coloured continuously by its own equal-weight **performance
+index** (a `hue` that mirrors the hierarchy: one value sequence per sector,
+with the cross-sector mean taking the element-wise mean of its sectors),
+and each line carries **its own next-day forecast** (``predict='Kalman',
+t=1``), redrawn every frame from the history revealed so far and left
+behind as a fading fan (``forecast_trail=16``). The camera makes one slow
+quarter-turn (``rotations=0.25``) while ``chemtrails=True`` keeps the
 traversed path glowing faintly behind each head.
 
-**Does the forecast actually work?** The panel on the right says so, per
-sector and overall, and it is computed HERE rather than in hypertools:
-forecast scoring is a research decision, not a plotting one. Each series is
-walked forward over its last 30 trading days, refitting on a trailing
-60-day window, and a "hit" is a next-day step predicted with the right
-sign. Measured cost of that loop: 210 Kalman fits, ~7 s. 50% is a coin
-flip; a single linear-Gaussian filter on a near-random-walk price series
-should not be expected to beat it by much, and reporting whatever it
-actually scores is the point.
+**Does the forecast work? Not at this horizon -- and that is the finding.**
+The panel on the right scores the forecast the figure actually draws: each
+sector's three-column history is refit on a trailing 60-session window at
+30 anchors, and a "hit" is a next-day return whose sign the forecast got
+right. Measured on the ten years below: **210 Kalman fits in ~11 s**, and
+about **50%** correct -- a coin flip. That is the honest result for
+next-day direction on daily equity data, and it is worth printing rather
+than hiding: the trajectory picture is what this figure has to offer, not
+a directional edge. (Scoring lives HERE, not in hypertools, because what
+counts as a hit is a research decision, not a plotting one.)
 
-**Data & graceful degradation.** Ten years of daily closes are pulled from
-Yahoo Finance's chart endpoint and cached on disk (verified 2026-07-28:
-24/24 tickers, 2513 trading days, 2016-07-28 to 2026-07-28). If the network
-is unavailable the example falls back to a synthetic basket with the same
-sector structure, so it always renders -- the technique (hierarchy -> hue ->
-chemtrails -> per-trace forecast) is identical either way.
+**Nothing is smoothed.** A centred smoother would pull future observations
+into the displayed history and therefore into the forecast fit -- measured,
+``uniform_filter1d(size=11)`` puts 45% of an observation's weight on
+earlier positions, five sessions of lookahead -- which would quietly
+invalidate the very question the panel asks.
+
+**Data & graceful degradation.** Ten years of ADJUSTED daily closes are
+pulled from Yahoo Finance's chart endpoint and cached on disk; adjusted
+closes are used so that splits and distributions do not manufacture
+returns. If the network is unavailable the example falls back to a
+synthetic basket with the same sector structure, so it always renders --
+the technique (hierarchy -> hue -> chemtrails -> per-trace forecast) is
+identical either way.
 """
 
 # Code source: Contextual Dynamics Laboratory
@@ -1138,8 +1223,7 @@ os.makedirs(CACHE, exist_ok=True)
 
 MARKET = 'Market'
 RANGE = '10y'
-# six sectors x FOUR tickers each: equal per-group widths, which the
-# analysis pipeline requires (unequal widths raise before the pipeline runs)
+# six sectors x four EQUALLY WEIGHTED tickers each
 SECTORS = {
     'Technology': ['AAPL', 'MSFT', 'ORCL', 'IBM'],
     'Financials': ['JPM', 'BAC', 'GS', 'AXP'],
@@ -1148,80 +1232,99 @@ SECTORS = {
     'Consumer': ['KO', 'PG', 'WMT', 'MCD'],
     'Industrials': ['BA', 'CAT', 'GE', 'HON'],
 }
-COLUMN_NAMES = ['Market', 'Sector', 'Ticker']
+COLUMN_NAMES = [MARKET, 'Sector', 'Measure']
+VOL_WINDOW, MOM_WINDOW = 20, 60
+WINDOW, N_SCORED = 60, 30
 
 
-def fetch_prices(sectors=SECTORS):
-    """Daily closes with a ``(Market, Sector, Ticker)`` column MultiIndex,
-    or ``None`` if anything (network, parsing) goes wrong."""
+def fetch_closes(sectors=SECTORS):
+    """Adjusted daily closes per (sector, ticker), or ``None`` if anything
+    (network, parsing) goes wrong. Adjusted, not raw: a split would
+    otherwise read as a -50% day."""
     try:
         series = {}
         for sector, tickers in sectors.items():
             for ticker in tickers:
-                dest = os.path.join(CACHE, f'yahoo_{ticker}_{RANGE}.json')
+                dest = os.path.join(CACHE, f'yahoo_adj_{ticker}_{RANGE}.json')
                 if not (os.path.exists(dest) and os.path.getsize(dest) > 0):
                     url = ('https://query1.finance.yahoo.com/v8/finance/chart/'
                            f'{ticker}?range={RANGE}&interval=1d')
                     req = urllib.request.Request(
-                        url, headers={'User-Agent': 'hypertools-gallery/1.1'})
-                    with urllib.request.urlopen(req, timeout=30) as response:
-                        payload = response.read()
-                    with open(dest, 'wb') as handle:
-                        handle.write(payload)
-                result = json.load(open(dest))['chart']['result'][0]
-                series[(MARKET, sector, ticker)] = pd.Series(
-                    result['indicators']['quote'][0]['close'],
-                    index=pd.to_datetime(result['timestamp'], unit='s'))
-        return _framed(series)
+                        url, headers={'User-Agent': 'Mozilla/5.0'})
+                    with urllib.request.urlopen(req, timeout=30) as resp:
+                        payload = resp.read()
+                    with open(dest, 'wb') as f:
+                        f.write(payload)
+                with open(dest) as f:
+                    result = json.load(f)['chart']['result'][0]
+                stamps = pd.to_datetime(result['timestamp'], unit='s')
+                series[(sector, ticker)] = pd.Series(
+                    result['indicators']['adjclose'][0]['adjclose'],
+                    index=stamps.normalize()).astype(float)
+        return pd.DataFrame(series).sort_index().ffill().dropna()
     except Exception:
         return None
 
 
-def synthetic_prices(sectors=SECTORS, n_days=2513, seed=0):
-    """Fallback: a market factor + per-sector factors + idiosyncratic noise,
-    laid out with exactly the same column hierarchy."""
+def synthetic_closes(days=2500, seed=0):
+    """Same sector structure, so the figure renders offline."""
     rng = np.random.default_rng(seed)
-    index = pd.bdate_range(end=pd.Timestamp('today').normalize(),
-                           periods=n_days)
-    market = np.cumsum(rng.standard_normal(n_days)) * 0.4
-    series = {}
-    for s, (sector, tickers) in enumerate(sectors.items()):
-        factor = np.cumsum(rng.standard_normal(n_days)) * (0.3 + 0.05 * s)
-        for k, ticker in enumerate(tickers):
-            idio = np.cumsum(rng.standard_normal(n_days)) * (0.2 + 0.05 * k)
-            series[(MARKET, sector, ticker)] = pd.Series(
-                40.0 * np.exp(0.02 * (market + factor + idio) / 10),
-                index=index)
-    return _framed(series)
+    index = pd.date_range('2016-08-15', periods=days, freq='B')
+    columns = [(sector, t) for sector, ts in SECTORS.items() for t in ts]
+    drift = rng.normal(0.0003, 0.0002, size=(1, len(columns)))
+    steps = rng.normal(0, 0.013, size=(days, len(columns))) + drift
+    return pd.DataFrame(100.0 * np.exp(steps.cumsum(axis=0)),
+                        index=index, columns=pd.MultiIndex.from_tuples(columns))
 
 
-def _framed(series):
-    prices = pd.DataFrame(series).ffill().dropna()
-    prices.columns = pd.MultiIndex.from_tuples(prices.columns,
-                                               names=COLUMN_NAMES)
-    return prices
+def regime_frame(closes):
+    """(Market, Sector, Measure) -- the three shared measurements.
+
+    ``return`` is the mean constituent daily log return (equal weight),
+    ``volatility`` its trailing 20-session standard deviation, ``momentum``
+    its trailing 60-session sum. Every window is BACKWARD-looking, and the
+    leading incomplete window is dropped rather than back-filled: filling
+    it would put unobservable values in front of the forecast.
+    """
+    log_returns = np.log(closes).diff()
+    columns = {}
+    for sector in SECTORS:
+        sector_return = log_returns[sector].mean(axis=1)
+        columns[(MARKET, sector, 'return')] = sector_return
+        columns[(MARKET, sector, 'volatility')] = (
+            sector_return.rolling(VOL_WINDOW).std())
+        columns[(MARKET, sector, 'momentum')] = (
+            sector_return.rolling(MOM_WINDOW).sum())
+    frame = pd.DataFrame(columns).dropna()
+    frame.columns = pd.MultiIndex.from_tuples(frame.columns,
+                                              names=COLUMN_NAMES)
+    return frame
 
 
-prices = fetch_prices()
-source = 'Yahoo Finance daily closes'
-if prices is None:
-    prices, source = synthetic_prices(), 'synthetic basket (offline fallback)'
-print(f'market data: {prices.shape[0]} days x {prices.shape[1]} tickers '
-      f'in {len(SECTORS)} sectors ({source})')
+closes = fetch_closes()
+source = 'Yahoo Finance adjusted daily closes'
+if closes is None:
+    closes, source = synthetic_closes(), 'synthetic basket (offline fallback)'
+regimes = regime_frame(closes)
+print(f'market data: {regimes.shape[0]} sessions x {len(SECTORS)} sectors '
+      f'x 3 measures, from {closes.shape[1]} tickers ({source})')
 
 # hue mirrors the hierarchy: ONE value sequence per sector leaf, each as long
-# as the frame. The market-mean trace takes the element-wise mean of its
-# sectors automatically, so nothing here computes it.
-sector_index = [(prices[MARKET][sector].mean(axis=1)
-                 / prices[MARKET][sector].mean(axis=1).iloc[0] * 100.0
-                 ).to_numpy() for sector in SECTORS]
+# as the frame. The cross-sector mean trace takes the element-wise mean of
+# its sectors automatically, so nothing here computes it.
+performance = [(closes[sector].mean(axis=1).loc[regimes.index]
+                / closes[sector].mean(axis=1).loc[regimes.index].iloc[0] * 100.0
+                ).to_numpy() for sector in SECTORS]
 
 # THE hypertools call. The DataFrame's column MultiIndex IS the layout: six
-# sector traces plus a heavier market-mean trace, each coloured by its own
-# price index and each carrying its own next-day Kalman forecast, redrawn
-# per frame and trailed. Widths/opacities come from the hierarchy, so no
-# linewidth= is passed: with a MultiIndex, plot() warns and ignores it
-# (documented in plot()'s docstring under the MultiIndex kwarg rules).
+# sector traces plus a heavier cross-sector mean, each coloured by its own
+# performance index and each carrying its own next-day Kalman forecast,
+# redrawn per frame and trailed. Widths/opacities come from the hierarchy,
+# so no linewidth= is passed. normalize/reduce are OFF on purpose: three
+# measurements into three components is not a reduction, and normalising
+# would move the zero the return-direction score is read against -- so the
+# plotted coordinates ARE the measurements (verified: trace_data[0] equals
+# the sector's own leaf exactly).
 duration, fps = 8, 20
 # BIND THE WRAPPER, do not unpack. `HyperAnimation` subclasses `tuple`
 # (`hyper_animation.py:45`), so `fig, ani = hyp.plot(...)` succeeds and throws
@@ -1229,39 +1332,37 @@ duration, fps = 8, 20
 # `.figure`, no `.on_frame()` and no `.n_frames`. Contract 8, and the reason
 # `construct_artifact` can `return anim` at all.
 anim = hyp.plot(
-    prices, '-',
-    hue=sector_index, palette='plasma',
-    colorbar={'label': 'sector price index (start = 100)'},
-    manip={'model': 'Smooth', 'kwargs': {'kernel': 'boxcar',
-                                         'kernel_width': 11}},
-    normalize='across', reduce='IncrementalPCA', ndims=3,
+    regimes, '-',
+    hue=performance, palette='plasma',
+    colorbar={'label': 'sector performance index (start = 100)'},
+    normalize=None, reduce=None, ndims=3,
     predict='Kalman', t=1, forecast_trail=16,
     animate=True, chemtrails=True, rotations=0.25,
-    title='many markets as one path',
+    title='six sectors, one regime space',
     duration=duration, frame_rate=fps, size=(11, 6.5), show=False)
 
 # --- does the forecast work? scored HERE, not in the library -----------------
-# Walk each series forward over its last N_SCORED days, refitting on a
-# trailing WINDOW-day history, and count next-day steps predicted with the
-# right sign. Measured: 7 series x 30 anchors = 210 Kalman fits, ~7 s.
-WINDOW, N_SCORED = 60, 30
+# Exactly the forecast the figure draws: each sector's own 3-column history,
+# refit on a trailing WINDOW-session window at N_SCORED anchors, scored on
+# whether the forecast's `return` component has the realised sign.
+# Measured: 7 traces x 30 anchors = 210 Kalman fits, ~11 s.
 
 
-def directional_accuracy(y):
-    hits = 0
-    for a in range(len(y) - N_SCORED, len(y)):
-        history = y[a - WINDOW:a].reshape(-1, 1)
-        step = (float(np.asarray(hyp.predict(history, model='Kalman', t=1))[0, 0])
-                - float(history[-1, 0]))
-        hits += int(step * (y[a] - y[a - 1]) > 0)
+def direction_hits(history, realised):
+    anchors = np.linspace(WINDOW, len(history) - 2, N_SCORED).astype(int)
+    hits = sum(int(np.sign(np.asarray(hyp.predict(history[a - WINDOW:a],
+                                                  model='Kalman', t=1))[-1, 0])
+                   == np.sign(realised[a])) for a in anchors)
     return 100.0 * hits / N_SCORED
 
 
-market_curve = np.mean(sector_index, axis=0)
-scores = {sector: directional_accuracy(curve)
-          for sector, curve in zip(SECTORS, sector_index)}
-scores[MARKET] = directional_accuracy(market_curve)
-print('next-day direction correct: '
+histories = [regimes[MARKET][sector].to_numpy() for sector in SECTORS]
+realised = [regimes[(MARKET, sector, 'return')].to_numpy() for sector in SECTORS]
+scores = {sector: direction_hits(h, r)
+          for sector, h, r in zip(SECTORS, histories, realised)}
+scores[MARKET] = direction_hits(np.mean(histories, axis=0),
+                                np.mean(realised, axis=0))
+print('next-day return direction correct: '
       + ', '.join(f'{name} {pct:.0f}%' for name, pct in scores.items()))
 
 # --- which tickers make up which sector, and how each one scored -------------
@@ -1274,10 +1375,11 @@ for row, (sector, tickers) in enumerate(SECTORS.items()):
              va='top', fontsize=11.5, fontweight='bold', color='#1a1a1a')
     fig.text(0.66, y - 0.042, '  '.join(tickers), ha='left', va='top',
              fontsize=9.5, color='#666')
-fig.text(0.66, 0.055, f'whole market   {scores[MARKET]:.0f}%', ha='left',
+fig.text(0.66, 0.055, f'cross-sector mean   {scores[MARKET]:.0f}%', ha='left',
          va='top', fontsize=11.5, fontweight='bold', color='#1a1a1a')
-fig.text(0.66, 0.015, 'next-day direction, last 30 sessions (50% = coin flip)',
-         ha='left', va='top', fontsize=8.5, color='#8a8a8a', style='italic')
+fig.text(0.66, 0.015, 'next-day return direction, equal-weighted sectors '
+         '(50% = coin flip)', ha='left', va='top', fontsize=8.5,
+         color='#8a8a8a', style='italic')
 ```
 
 - [ ] **Step 3: Split the loader from the figure builder (Contract 4 / Task 8 Step 0b)**
@@ -1296,7 +1398,7 @@ Produce exactly these four names in `examples/animate_market_forecast.py`:
 
 | name | signature | notes |
 |-|-|-|
-| payload | `class Market(NamedTuple)` with fields `prices, source` | `prices` is the `(Market, Sector, Ticker)`-columned DataFrame the rewrite builds; `source` records which path was used. **No `dates` field** — the dates are already `prices.index`, and a second copy could disagree with it. |
+| payload | `class Market(NamedTuple)` with fields `regimes, closes, source` | `regimes` is the `(Market, Sector, Measure)`-columned DataFrame the rewrite builds; `closes` is the adjusted-close frame it was derived from, which the `hue=` performance index still needs; `source` records which path was used. **No `dates` field** — the dates are already `regimes.index`, and a second copy could disagree with it. |
 | loader | `load_market(sectors=SECTORS) -> Market` | the ONLY code here that may touch the network: `fetch_prices(sectors)`, falling back to `synthetic_prices(sectors)` |
 | fixture | `fixture_data() -> Market` | `synthetic_prices(SECTORS)` alone, never `fetch_prices` — no network, no committed bytes |
 | builder | `construct_artifact(data: Market) -> HyperAnimation` | everything else, reading `data.prices` / `data.source` instead of module globals. **Returns the wrapper, never the unpacked pair** (Contract 8) |
@@ -1387,7 +1489,7 @@ print('title:', repr(ax.get_title()))
 PY
 ```
 
-Expected: `axes: 2` (the 3-D box plus the colorbar), **7 drawn traces** (6 sectors + 1 market mean) plus their forecast artists, **at least two distinct linewidths** (the MultiIndex contract is `linewidth = 1 + (L - 1 - level_idx)`, so the market mean is wider than a sector), and `title: 'many markets as one path'`. This snippet uses `ani._func` **only as a test probe**, exactly as the sibling plans' tests do; it never enters the example.
+Expected: `axes: 2` (the 3-D box plus the colorbar), **7 drawn traces** (6 sectors + 1 cross-sector mean) plus their forecast artists, **at least two distinct linewidths** (the MultiIndex contract is `linewidth = 1 + (L - 1 - level_idx)`, so the cross-sector mean is wider than a sector), and `title: 'six sectors, one regime space'`. This snippet uses `ani._func` **only as a test probe**, exactly as the sibling plans' tests do; it never enters the example.
 
 - [ ] **Step 6: Rewrite the notebook in lockstep**
 
@@ -1398,19 +1500,21 @@ Rewrite `docs/tutorials/market_forecast.ipynb` so its code cells are the script'
 | 0 | code | the existing Colab install cell — **unchanged** |
 | 1 | markdown | title + the script's docstring, as prose |
 | 2 | markdown | `## 1. Imports and a disk cache` |
-| 3 | code | imports, `CACHE`, `MARKET`, `RANGE`, `SECTORS`, `COLUMN_NAMES` |
-| 4 | markdown | `## 2. Fetch 24 tickers into a (Market, Sector, Ticker) frame` |
-| 5 | code | `fetch_prices`, `synthetic_prices`, `_framed`, the dispatch and `print` |
-| 6 | markdown | `## 3. The hierarchy IS the layout` — explain that the column MultiIndex replaces every hand-built group list, and that hue mirrors the hierarchy |
-| 7 | code | the `sector_index` comprehension |
-| 8 | markdown | `## 4. One call: hierarchy, hue, chemtrails, and a forecast per trace` |
-| 9 | code | the `hyp.plot(...)` call |
-| 10 | markdown | `## 5. Scoring the forecast — deliberately NOT a library job` |
-| 11 | code | `WINDOW`, `N_SCORED`, `directional_accuracy`, `scores`, the `print` |
-| 12 | markdown | `## 6. Which tickers make up which sector` |
-| 13 | code | the side-panel block |
-| 14 | markdown | `## 7. Display the animation` |
-| 15 | code | `from IPython.display import HTML` / `HTML(ani.to_jshtml())` |
+| 3 | code | imports, `CACHE`, `MARKET`, `RANGE`, `SECTORS`, `COLUMN_NAMES`, the window constants |
+| 4 | markdown | `## 2. Fetch 24 tickers' ADJUSTED closes` — say why adjusted, and why tickers cannot be the feature axis |
+| 5 | code | `fetch_closes`, `synthetic_closes`, the dispatch |
+| 6 | markdown | `## 3. Three measurements every sector shares` — equal weighting, the 20- and 60-session windows, and why the leading window is dropped rather than filled |
+| 7 | code | `regime_frame`, the call, and the `print` |
+| 8 | markdown | `## 4. The hierarchy IS the layout` — the column MultiIndex replaces every hand-built group list, and hue mirrors the hierarchy |
+| 9 | code | the `performance` comprehension |
+| 10 | markdown | `## 5. One call: hierarchy, hue, chemtrails, and a forecast per trace` — including why `normalize`/`reduce` are off |
+| 11 | code | the `hyp.plot(...)` call |
+| 12 | markdown | `## 6. Scoring the forecast — deliberately NOT a library job`, and reporting ~50% honestly |
+| 13 | code | `direction_hits`, `histories`, `realised`, `scores`, the `print` |
+| 14 | markdown | `## 7. Which tickers make up which sector` |
+| 15 | code | the side-panel block |
+| 16 | markdown | `## 8. Display the animation` |
+| 17 | code | `from IPython.display import HTML` / `HTML(ani.to_jshtml())` |
 
 - [ ] **Step 7: Execute the notebook and check the code stayed in lockstep**
 
@@ -1422,7 +1526,7 @@ Rewrite `docs/tutorials/market_forecast.ipynb` so its code cells are the script'
 
 (`scripts/measure_native_ratio.py` is created in Task 8 Step 1; if you are working tasks in order, do that step first — it is standalone.)
 
-Expected: both files inside budget (**≤ 130 / ≤ 135 code lines**) -- the rewrite measures 110 and the split 126, both measured. If either is missed, cut presentation code. **Do not predict an output-cell count here** — v2 guessed `7/8` and every one of its five per-task guesses was wrong. Record the measured visible-output INDEX SET from this run into `EXPECTED_VISIBLE_OUTPUTS` (Task 8), which names the offending cell when it drifts. **Ordering:** that dict lives in `tests/test_examples_are_native.py`, which Task 8 Step 2 creates — so **do Task 8 Steps 0–2 before Tasks 2–6**, exactly as you must for `scripts/measure_native_ratio.py`. Step **0** is in that list for a reason the earlier revision missed: every task's split step verifies itself with `anim.n_frames`, and Task 5's confirmation step drives `draw_frame(i)` — neither exists on `HyperAnimation` until Task 8 Step 0 adds them (`hyper_animation.py` today exposes only `figure`, `animation` and `on_frame`, verified 2026-08-04). Both are pure additions with no dependency on the rewrites. If you genuinely run Task 8 last instead, then Tasks 2–6 have nowhere to record anything and Task 8 Step 3's five reds become the to-do list; pick one of those two procedures and do not half-do both.
+Expected: both files inside budget (**≤ 135 / ≤ 140 code lines**) -- the rewrite measures 116 (measured 2026-08-15); the split's 132 is PROJECTED from v3's +16 and must be re-measured here. If either is missed, cut presentation code. **Do not predict an output-cell count here** — v2 guessed `7/8` and every one of its five per-task guesses was wrong. Record the measured visible-output INDEX SET from this run into `EXPECTED_VISIBLE_OUTPUTS` (Task 8), which names the offending cell when it drifts. **Ordering:** that dict lives in `tests/test_examples_are_native.py`, which Task 8 Step 2 creates — so **do Task 8 Steps 0–2 before Tasks 2–6**, exactly as you must for `scripts/measure_native_ratio.py`. Step **0** is in that list for a reason the earlier revision missed: every task's split step verifies itself with `anim.n_frames`, and Task 5's confirmation step drives `draw_frame(i)` — neither exists on `HyperAnimation` until Task 8 Step 0 adds them (`hyper_animation.py` today exposes only `figure`, `animation` and `on_frame`, verified 2026-08-04). Both are pure additions with no dependency on the rewrites. If you genuinely run Task 8 last instead, then Tasks 2–6 have nowhere to record anything and Task 8 Step 3's five reds become the to-do list; pick one of those two procedures and do not half-do both.
 
 - [ ] **Step 8: Commit**
 
@@ -4651,7 +4755,7 @@ and add an `.. image::` line to each of the five sections of `docs/tutorials.rst
 ```rst
 .. image:: _static/thumbnails/sphx_glr_animate_market_forecast_thumb.gif
    :width: 400
-   :alt: Six sector trajectories and a market mean, each with its own next-day forecast
+   :alt: Six sector trajectories through return-risk-momentum space and a cross-sector mean, each with its own next-day forecast
 ```
 
 Expected: five new thumbnails, each **under 1.1 MB** (the largest existing one, `sphx_glr_plot_story_trajectories_thumb.gif`, is 1 065 855 bytes).
@@ -4755,7 +4859,7 @@ Flagged rather than invented. Each states the options and the exact change to sw
 | Prerequisites, per task | A per-task table naming the *specific* tasks of Plans 1–3 each rewrite needs (e.g. Market ← MultiIndex T1/T2/T5/T6/T8 + Forecast T3/T4/T5 + Animation-core T1) and *why*, including the two tasks (1 and 7) that have none and can start immediately. |
 | Task 1 is library work, TDD, justified API, no largest-cluster bug | Task 1: **19** real tests written before the implementation; the API choice (one function + **two** interception points — `_get_palette`'s string branch at `colors.py:305-306` and `_seaborn_palette_arg` at `plot.py:113`) is justified against the consumers each serves; the ordering rule is `frac × chroma` with a documented achromatic fallback, and `test_a_vivid_minority_colour_beats_the_muted_background` asserts the exact colour (`0.863, 0.078, 0.078`) the buggy rule fails to produce. Both states were **run**: red = `ValueError: 'image:...' is not a valid palette name`, green = the prototype's measured output. |
 | Tasks 2–6 rewrite one example + its notebook each, in lockstep | Each task rewrites both, in one commit, and specifies the notebook's full cell table. Lockstep is enforced mechanically by `tests/test_examples_are_native.py`, which scans `.py` **and** `.ipynb`. |
-| Market = MultiIndex showcase, per-sector + market forecasts, colour by price, ticker panel, accuracy overall + per sector in the tutorial, `t=1` | Task 2: `(Market, Sector, Ticker)` columns over 24 verified tickers; 6 sector traces + 1 market-mean trace with hierarchy-derived widths; `hue=` nested one sequence per sector (MultiIndex T6 form 2); `predict='Kalman', t=1, forecast_trail=16`; a right-hand panel listing each sector's tickers and score; the accuracy loop is example code with a **measured** 210-fit / 7.3 s budget. |
+| Market = MultiIndex showcase, per-sector + cross-sector-mean forecasts, colour by performance index, ticker panel, accuracy overall + per sector in the tutorial, `t=1` | Task 2: `(Market, Sector, Measure)` columns derived from 24 verified tickers, equally weighted; 6 sector traces + 1 cross-sector-mean trace with hierarchy-derived widths; `hue=` nested one sequence per sector (MultiIndex T6 form 2); `predict='Kalman', t=1, forecast_trail=16`; `normalize=None, reduce=None, ndims=3` so panel and picture correspond exactly; a right-hand panel listing each sector's tickers, its score and the equal-weighting note; the accuracy loop is example code with a **measured** 210-fit / 11.1 s budget (*Revision note (v4)*). |
 | Weather = the paper figure, nearly all native, a handful of lines | Task 3: one `hyp.plot` call, verified end to end today (0.3 s, no warnings, 2 axes, 879 distinct colours at frame 150); the 70-line second panel and the 26-line hand-built hierarchy are deleted; budget ≤ 75 code lines (56 pre-split, 73 split — measured). |
 | Paintings = full `text` displayed, native embeddings, native palette, names via `labels=` | Task 4: the side panel renders `PAINTINGS[name]['text']` (not `blurb`); `vectorizer='all-MiniLM-L6-v2', semantic=None, corpus=None`; `color=[image_palette(path)[0] ...]` from Task 1; `labels=` nested, one non-None entry per cloud at its middle window — the per-observation semantics verified on real annotations. |
 | Conversation = native text, `animate='serial'` + `chemtrails`, per-segment titles | Task 5: list-of-lists of strings in; `animate=True, order='serial', chemtrails=True`; `title=[one per turn]`. The collision I feared (categorical hue collapsing 28 turns and breaking per-dataset titles) was **measured and disproved**: 6 datasets stay 6 datasets with a 3-entry legend. |

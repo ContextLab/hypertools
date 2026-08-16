@@ -157,6 +157,31 @@ def test_positional_correspondence_is_reachable_by_grouping_first():
     assert len(_ax(fig).lines) == 3, 'three sectors, and no mean traces'
 
 
+def test_the_positional_recipe_is_not_hierarchy_plotting():
+    """It is a LOWER-LEVEL escape hatch: a plain list of datasets. Pinning
+    what it LOSES, so the docs cannot drift into calling it equivalent to
+    hyp.plot(df) -- measured against the nominal path on the same shape."""
+    from hypertools.core.hierarchy import group_columns
+    leaves, _ = group_columns(ticker_frame(T=40),
+                              feature_correspondence='position')
+    flat = hyp.plot([leaf.to_numpy() for leaf in leaves], '-',
+                    return_model=True, show=False)
+    nested = hyp.plot(market_frame(T=40), '-', return_model=True, show=False)
+
+    assert len(nested['trace_data']) == 4 and len(flat['trace_data']) == 3, \
+        'the hierarchy path builds a market mean; the flat path does not'
+    assert nested['trace_metadata'] is not None
+    assert flat['trace_metadata'] is None, 'no hierarchy metadata'
+
+    flat_lines, nested_lines = _ax(flat['fig']).lines, _ax(nested['fig']).lines
+    assert {round(float(ln.get_linewidth()), 3) for ln in flat_lines} == {1.5}, \
+        "matplotlib's default width for every line, not a level-derived one"
+    assert {round(float(ln.get_linewidth()), 3)
+            for ln in nested_lines} == {1.0, 2.0}, 'level-derived widths'
+    assert [ln.get_alpha() for ln in flat_lines] == [None] * 3, \
+        'no level-derived opacity'
+
+
 def test_dual_axis_frame_is_rejected_by_plot():
     idx = pd.MultiIndex.from_product([['a', 'b'], range(30)])
     cols = pd.MultiIndex.from_tuples([('M', 'Tech'), ('M', 'Energy')])
