@@ -1799,6 +1799,41 @@ git commit -m "feat(plot): column MultiIndex frames expand into per-group traces
 
 ## Task 6: Continuous hue as a per-trace auxiliary value
 
+> **EXECUTED 2026-08-15, then amended by the corrections below.** Four things
+> in Step 1 as written did not survive contact with the code, and one defect
+> outside this task's scope had to be fixed for its tests to be satisfiable.
+> Measured, not projected:
+>
+> 1. **`_collections(ax)` as written counts SIX collections too many.** The
+>    3-D bounding cube is drawn as six `Line3DCollection` wireframe faces
+>    (`matplotlib_backend.py`, `_draw_cube`), so "the `LineCollection`s on the
+>    axes" is not the list of data artists — measured, a no-hue hierarchy plot
+>    already has 6 of them before any hue is involved.
+>    `_apply_multicolor_lines` now tags each collection it creates with
+>    `_hyp_trace_index` (the same device as the existing `_hyp_forecast_role`
+>    tag on forecast lines), and the helper filters and orders on that tag.
+>    Task 8 needs the same handle to find a trace's final colour.
+> 2. **`get_segments()` is empty before a draw** on a `Line3DCollection`: it
+>    returns the PROJECTED 2-D segments, and nothing has projected them yet.
+>    `test_hue_and_data_are_co_truncated` calls `fig.canvas.draw()` first, and
+>    asserts the segment count is non-zero so it cannot pass vacuously.
+> 3. **`test_colorbar_renders_for_a_continuous_hue_over_a_hierarchy` passed
+>    BEFORE the implementation** — `colorbar=True` produced a second axes even
+>    while the hue was being warned about and dropped, so `len(fig.axes) == 2`
+>    proved nothing. It now also asserts the colorbar's limits equal the range
+>    of the concatenated aux (leaves AND means), which is the actual claim.
+> 4. **A 2-measure fixture is not 3-D.** The NA-label case below uses three
+>    measures so `_ax` finds a `zaxis`.
+>
+> **Defect found and fixed here, not in this task's scope as written:**
+> `_apply_multicolor_lines` never read `alpha` from its per-trace kwargs, so a
+> continuous hue silently rendered fully opaque however `alpha=` was spelled
+> — the artists carrying the alpha are the very `Line2D`s it removes. That is
+> also the channel a hierarchy's level-derived alphas need, so
+> `test_hierarchy_still_sets_exact_alphas_under_a_continuous_hue` is
+> unsatisfiable without fixing it. Two regression tests for the plain
+> (non-hierarchy) case were added to `tests/plot/test_per_dataset_alpha.py`.
+
 The blocker is structural: the MultiIndex branch (`plot.py:3038-3060`) wins the `if/elif` chain outright — its own comment says it *"always wins the cluster/hue/nested_groups chain below"* — so the continuous-colour path at `plot.py:3460` never runs. Hue must be classified **before** the branch and carried through `FinalTraces.aux`, with the hierarchy contributing width/alpha/label only.
 
 **Scope.** Continuous hue over a **column** hierarchy only. Over a **row** hierarchy, `plot.py:2678-2684`'s warn-and-ignore is unchanged (Global Constraints: row plotting semantics do not change; pinned by `tests/test_multiindex.py:306`). See *Decisions (resolved)* #2.
@@ -2041,13 +2076,14 @@ Expected: every column-hierarchy test FAILS — after Task 5, a column-hierarchi
    - `_apply_multicolor_lines` (`plot.py:5094`) sets each **segment** to `(ci[:-1] + ci[1:]) / 2.0`, the midpoint of its endpoints' colours;
    - with `antialias=False` no re-interpolation happens, so a trace of `len(df)` rows yields `len(df) - 1` segments. Task 6's `test_mean_trace_hue_is_the_mean_of_its_leaves` asserts exactly these RGBA values.
 4. **Expose the auxiliary values in the bundle.** Add `'aux'` to `trace_metadata` (Task 4/5): the per-trace auxiliary arrays as `build_hierarchy_traces` produced them — one per trace, in trace order, co-truncated with the data — or `None` when no continuous hue was given. This is what lets a test assert the mean-of-leaves rule on the numbers rather than only through the colormap.
-5. **Apply hierarchical `linewidth`/`alpha`/`label` after colour preparation**, dropping `_mi_style['colors']` on this path only.
+5. **Apply hierarchical `linewidth`/`alpha`/`label` after colour preparation**, dropping `_mi_style['colors']` on this path only. *(Implemented: `mpl_kwargs['color']` is simply not set under a continuous hue rather than set and then overwritten — a flat colour the collections replace is dead state a later reader would take for the real colours. `legend` also stays whatever the caller passed instead of being bound to the hierarchy labels, matching the existing continuous-hue rule that a colorbar, not a legend, is the key.)*
+   **The hue is validated against the INPUT frame's rows, so the analysis pipeline can invalidate it between validation and use** (`manip='Resample'`, a smoother that trims edges). A per-leaf length check runs immediately before `build_hierarchy_traces` and raises naming the stage, rather than letting the aux arrays silently describe different observations than the trace does.
 6. Record `ft.aux[i][-1]`'s resolved RGBA per trace as `_forecast_colors`, for Task 8.
 7. Categorical hue and row-hierarchy hue: unchanged (*Decisions (resolved)* #2).
 
-- [ ] **Step 4: Run and confirm pass** — `.venv/bin/python -m pytest tests/plot/test_multiindex_hue.py -v` → **15 passed**.
+- [x] **Step 4: Run and confirm pass** — `.venv/bin/python -m pytest tests/plot/test_multiindex_hue.py -v` → **20 passed**, not the 15 written above. The extra 5 are the adversarial-matrix cases owed against this task: NA hierarchy labels under a hue (parametrized over `np.nan`/`None`/`pd.NA`, so the NA-aware grouping key cannot silently regress into one group per leaf), duplicate innermost feature names reaching the hue path, and the aux co-truncation rule asserted directly on `build_hierarchy_traces`. That last one is a UNIT test on purpose: a column hierarchy is a column slice of one frame, so its groups cannot have unequal-length members, and a `plot()`-level test of Contract 6 would be unreachable rather than merely awkward.
 
-- [ ] **Step 5: Run the WHOLE suite** — `.venv/bin/python -m pytest -q`. Expected: baseline + 85 (70 + 15).
+- [x] **Step 5: Run the WHOLE suite** — `.venv/bin/python -m pytest -q`. **Measured: 3331 → 3353** (+22: 20 here, plus the 2 continuous-hue alpha regressions in `tests/plot/test_per_dataset_alpha.py`). Note the plan's "baseline + 85 (70 + 15)" arithmetic is a DELTA carried forward from earlier tasks; per Global Constraints, recompute rather than carry it.
 
 - [ ] **Step 6: Document** the two accepted hue forms, the mean-trace derivation rule, the rejected total-observations form, the forecast-colour rule, and the row-hierarchy exception in `plot()`'s `hue` entry, linking to `docs/hierarchy.rst`.
 

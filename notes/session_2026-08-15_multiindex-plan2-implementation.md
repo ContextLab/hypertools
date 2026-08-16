@@ -43,7 +43,7 @@ Jeremy chose "Execute Plan 2 (MultiIndex)" when asked.
 | (fix) NA hierarchy labels — review finding 1 | done, 14 tests, mutation-verified | `af77f09e` |
 | 5 column MultiIndex end-to-end in `plot()` | done, 17 tests | `5b21e3c6` |
 | (fix) nominal feature correspondence — review finding 1 | done, 14 tests | *this commit* |
-| 6 continuous hue as per-trace aux | not started | — |
+| 6 continuous hue as per-trace aux | done, 22 tests | *this commit* |
 | 7 hierarchical `hyp.predict` | not started | — |
 | 8 `predict=` over final traces | not started | — |
 | 9 matplotlib/plotly parity | not started | — |
@@ -332,7 +332,54 @@ slip in Task 5: an added `np.asarray` registered as a NEW `F405`, because
 flagged (~190 of them). `leaf.to_numpy()` avoids the reference. Parity is
 **353 at base `59405545`, 353 now**.
 
-## Task 6 design notes (NEXT — the piece Plan 4 Task 2 needs most)
+## Task 6 as EXECUTED (2026-08-15) — what the design notes below missed
+
+The design below was right about the structure and wrong about four
+observable details. Everything here is measured.
+
+- **`ax.collections` is not a list of data artists.** The 3-D bounding cube
+  is SIX `Line3DCollection` wireframe faces (`matplotlib_backend._draw_cube`),
+  so the plan's `_collections()` helper counted 6 too many — a no-hue
+  hierarchy plot already has them. Fixed by TAGGING: `_apply_multicolor_lines`
+  sets `coll._hyp_trace_index = i`, mirroring the existing
+  `_hyp_forecast_role` tag on forecast lines, and the test helper filters and
+  sorts on it. Task 8 needs the same handle for forecast colours.
+- **`Line3DCollection.get_segments()` returns `[]` until a draw** — it
+  projects the private 3-D segments. The co-truncation test calls
+  `fig.canvas.draw()` first and asserts a non-zero segment count so it cannot
+  pass vacuously.
+- **One of the plan's own tests passed BEFORE the implementation.**
+  `colorbar=True` produced a second axes even while the hue was being dropped,
+  so `len(fig.axes) == 2` proved nothing. Strengthened to assert the
+  colorbar's limits equal the concatenated aux range.
+- **A defect outside the task made one of its tests unsatisfiable.**
+  `_apply_multicolor_lines` never read `alpha` from its per-trace kwargs, so
+  EVERY continuous-hue plot rendered fully opaque however `alpha=` was
+  spelled — the artists carrying the alpha are the `Line2D`s it removes. The
+  hierarchy's level-derived alphas need that same channel. Fixed, with two
+  regressions for the plain non-hierarchy case in
+  `tests/plot/test_per_dataset_alpha.py`.
+
+Also added, unprompted by the plan: the hue is validated against the INPUT
+frame's rows, so a row-count-changing pipeline stage (`manip='Resample'`)
+could invalidate it between validation and use. A per-leaf length check
+before `build_hierarchy_traces` raises naming the stage.
+
+Adversarial-matrix items discharged here: NA hierarchy labels WITH hue
+(parametrized over `np.nan`/`None`/`pd.NA`), duplicate innermost feature
+names end-to-end through `plot()`, and aux co-truncation under unequal-length
+members. The last is a UNIT test on `build_hierarchy_traces` on purpose: a
+column hierarchy slices ONE frame, so unequal member lengths are unreachable
+through `plot()`, and a `plot()`-level test would be vacuous rather than
+merely awkward.
+
+Measured: focused module **20 passed**; suite **3331 → 3353**; ruff set
+difference vs `59405545` **empty both directions** (141 = 141 unique
+`(file, code, message)` keys; the raw count moves 353 → 373 because 20 more
+lines use `np.` under the pre-existing `import *`, which is the same key
+repeated, not a new finding).
+
+## Task 6 design notes (as written BEFORE execution — kept for the record)
 
 **The structural blocker.** `plot()`'s hue handling is an `elif` arm of the
 same chain the hierarchy branch wins (`if _multiindex_meta is not None:` at
@@ -362,7 +409,10 @@ require the caller to predict how many means expansion creates.
 
 **Task 5 leaves two temporary guards for Task 6/8 to lift:** the column
 branch currently warns-and-ignores `hue=`, and raises on `predict=`. Both
-are deliberate intermediate states, not oversights.
+are deliberate intermediate states, not oversights. *(The hue guard is
+LIFTED as of Task 6 — a continuous hue is carried through, and only a
+categorical one still warns and defers. The `predict=` guard remains, for
+Task 8.)*
 
 ## Reviewer's adversarial matrix (to fold into Tasks 6/8/9)
 
@@ -370,9 +420,9 @@ Requested in review round 1, item 4. Covered so far / still owed:
 
 | case | state |
 |-|-|
-| missing labels at every hierarchy level | covered (`test_hierarchy_na_labels.py`); still owed WITH hue |
-| duplicate flattened feature names | covered in grouping; still owed end-to-end through `plot()` |
-| unequal trace lengths + auxiliary hue | Task 6 (`aux` co-truncation) |
+| missing labels at every hierarchy level | **covered, incl. WITH hue** (`test_multiindex_hue.py`, parametrized over `np.nan`/`None`/`pd.NA`) |
+| duplicate flattened feature names | **covered end-to-end** through `plot()` under a hue (`test_multiindex_hue.py`) |
+| unequal trace lengths + auxiliary hue | **covered** as a unit test on `build_hierarchy_traces` — unreachable through a column `plot()`, which slices one frame |
 | one-row traces, animated precondition ordering | Task 8 |
 | row vs column hierarchy | covered |
 | matplotlib and plotly | Task 9 |

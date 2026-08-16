@@ -664,6 +664,84 @@ def _validate_title(title, style=None, order=None, n_datasets=None):
     return titles
 
 
+def _hierarchy_hue_per_leaf(hue, n_rows, n_leaves):
+    """Normalize a hue argument to ONE value sequence per hierarchy leaf.
+
+    Only two forms are accepted, and both are stated relative to the INPUT
+    frame rather than to the drawn figure:
+
+    1. a flat sequence of ``n_rows`` values -- shared row-wise values,
+       broadcast to every leaf;
+    2. ``n_leaves`` sequences of ``n_rows`` values -- per-leaf values.
+
+    A flat array sized to the TOTAL DRAWN observations is deliberately
+    NOT accepted. It is indistinguishable from form 1 whenever a frame has
+    as many rows as the figure has points, and it would require the caller
+    to predict how many mean traces the expansion is going to create --
+    which is exactly the bookkeeping a column hierarchy exists to remove.
+
+    Returns
+    -------
+    (per_leaf, reason)
+        `per_leaf` is a list of `n_leaves` float arrays of length `n_rows`
+        when the hue is CONTINUOUS. When it is categorical (or a matrix of
+        mixture proportions), `per_leaf` is None and `reason` is a phrase
+        naming the kind, for the caller's warning: those forms regroup the
+        traces, so they would destroy the very leaves the hierarchy names.
+    """
+    expected = (
+        f"hue over a column hierarchy must be a flat sequence of {n_rows} "
+        f"row values (broadcast to every trace), or one hue sequence per "
+        f"leaf ({n_leaves} sequences of {n_rows} values)")
+
+    # A sequence of sequences is detected WITHOUT np.asarray: unequal-length
+    # per-leaf sequences build a ragged array, which numpy either refuses or
+    # turns into an object array -- and that case has to reach its own
+    # "every sequence must be length N" error, not a shape error.
+    if isinstance(hue, (list, tuple)):
+        nested = bool(len(hue)) and all(np.ndim(el) >= 1 for el in hue)
+        flat_array = None
+    else:
+        flat_array = np.asarray(hue)
+        nested = flat_array.ndim == 2 and flat_array.shape[0] == n_leaves
+
+    if nested:
+        seqs = [np.asarray(el) for el in hue]
+        if len(seqs) != n_leaves:
+            raise ValueError(
+                f"one hue sequence per leaf is required ({n_leaves} "
+                f"leaves), got {len(seqs)}. {expected}.")
+        wrong = sorted({len(s) for s in seqs if len(s) != n_rows})
+        if wrong:
+            raise ValueError(
+                f"every per-leaf hue sequence must have length {n_rows} "
+                f"(one value per row of the frame); got length(s) "
+                f"{wrong}. {expected}.")
+        values = np.concatenate([np.asarray(s).ravel() for s in seqs])
+    else:
+        flat = flat_array if flat_array is not None else np.asarray(hue)
+        if flat.ndim != 1:
+            raise ValueError(
+                f"{expected}; got an array of shape {flat.shape}.")
+        if flat.shape[0] != n_rows:
+            raise ValueError(f"{expected}; got {flat.shape[0]} values.")
+        seqs = [flat] * n_leaves
+        values = flat
+
+    # Categorical stays categorical: same rule as the flat-input classifier
+    # below (non-numeric, or integer/bool with few enough distinct values
+    # that adjacent labels would map to indistinguishable palette samples).
+    n_unique = len(np.unique(values))
+    if not np.issubdtype(values.dtype, np.number):
+        return None, "a categorical hue"
+    if ((np.issubdtype(values.dtype, np.integer)
+         or np.issubdtype(values.dtype, np.bool_))
+            and n_unique <= 12 and n_unique < values.shape[0]):
+        return None, "a categorical (small-cardinality integer) hue"
+
+    return [np.asarray(s, dtype=np.float64) for s in seqs], None
+
+
 def _validate_alpha(alpha, n_datasets):
     """`alpha=` is a scalar applied to every dataset, or one value per
     dataset. Returns a list of `n_datasets` floats, or None.
@@ -1102,7 +1180,9 @@ def plot(
         a mismatched length raises ``ValueError``. Any `color`/`colors`/
         `linewidth` kwarg is ignored (with a ``UserWarning``) since
         MultiIndex grouping owns those. `hue=` is superseded with a
-        ``UserWarning`` (MultiIndex grouping takes precedence); `cluster=`/
+        ``UserWarning`` (MultiIndex grouping takes precedence) -- on the
+        COLUMN axis a CONTINUOUS hue is instead carried through the
+        hierarchy, described below; `cluster=`/
         `n_clusters=` raise ``ValueError`` (both would fight the MultiIndex
         color assignment) -- reset the index first
         (``df.reset_index(drop=True)``) to cluster instead. `predict=` also
@@ -1158,6 +1238,33 @@ def plot(
         per-level mean traces, no hierarchy linewidth/alpha/legend styling
         and no ``trace_metadata`` in the return bundle. There is no
         hierarchy-preserving positional mode in 1.1.
+
+        A **continuous** `hue=` is carried THROUGH a column hierarchy rather
+        than superseded by it (since 1.1; a row hierarchy still warns and
+        ignores). Two forms are accepted, both stated relative to the input
+        frame rather than to the drawn figure:
+
+        * a flat sequence of ``len(x)`` values -- shared row-wise values,
+          broadcast to every trace;
+        * one sequence per leaf, each of ``len(x)`` values -- per-leaf
+          values.
+
+        A mean trace takes the **element-wise mean of its members' hue**,
+        computed by the same operation that averages their data, so an
+        auxiliary value can never drift out of step with the trace it
+        describes. Colours are mapped over the concatenation of every
+        trace's values, leaves and means together, so one scale spans the
+        figure and a `colorbar=` reads against all of it. The hierarchy
+        still sets linewidth, alpha and labels; only its colours step aside.
+        The per-trace values are returned as ``trace_metadata['aux']``.
+
+        A flat array sized to the TOTAL DRAWN observations is **rejected**,
+        not reinterpreted: it is indistinguishable from the first form
+        whenever a frame has as many rows as the figure has points, and it
+        would require the caller to predict how many mean traces the
+        expansion creates. A CATEGORICAL hue still defers to the grouping
+        with a ``UserWarning``, because it regroups traces and the named
+        leaves would stop existing.
 
         Note also that `align=` does NOT recover discarded feature identity:
         it aligns the resulting spaces, but by then the reduction has
@@ -1373,6 +1480,13 @@ def plot(
         one hue sub-sequence per dataset, each matching that dataset's length
         (e.g. ``hyp.plot([d0, d1], hue=[h0, h1])``); it is flattened to one
         value (or matrix row) per observation.
+
+        Over a **column MultiIndex** the same nesting means one sequence per
+        LEAF (each of ``len(x)`` values), and a flat sequence of ``len(x)``
+        values is broadcast to every trace; a mean trace's hue is the
+        element-wise mean of its members'. A flat array sized to the total
+        DRAWN observations is rejected, and a categorical hue still defers
+        to the grouping. See `x` for the full rule.
 
         A 2D matrix hue with MORE than 3 columns (or any matrix, if
         `color_reduce=` is given) is first reduced to 3 columns and mapped
@@ -3546,6 +3660,10 @@ def plot(
     reject_dual_axis(x)
 
     _multiindex_meta = None
+    # per-leaf continuous hue values for a COLUMN hierarchy (Task 6); None
+    # for every other input, including a categorical hue that was warned
+    # about and dropped.
+    _mi_hue_per_leaf = None
     if isinstance(x, pd.DataFrame) and x.index.nlevels >= 2:
         if cluster is not None or n_clusters is not None:
             raise ValueError(
@@ -3598,24 +3716,34 @@ def plot(
                 "using predict=, or drop predict= to use the MultiIndex "
                 "grouping."
             )
-        if hue is not None:
-            # TEMPORARY, replaced by real support in Plan 2 Task 6, which
-            # carries a continuous hue through the hierarchy as a per-trace
-            # auxiliary value. Warning rather than silently dropping it is
-            # the honest intermediate state: the styling branch below would
-            # otherwise overwrite the colours with no explanation.
-            warnings.warn(
-                "x has a column MultiIndex: MultiIndex grouping (group "
-                "traces + per-level averages) takes precedence over hue= in "
-                "this release; ignoring hue."
-            , stacklevel=external_stacklevel())
-            hue = None
         # NOMINAL correspondence: group_columns has already required that
         # every group carry the same feature labels and permuted the later
         # groups into the first group's order. Position therefore MEANS name
         # by the time the arrays are handed on, and a within-group column
         # permutation cannot move a trajectory.
         x, _multiindex_meta = group_columns(x)
+        if hue is not None:
+            # Classify hue HERE, before the MultiIndex branch below wins the
+            # cluster/hue/nested_groups chain outright. A CONTINUOUS hue is
+            # normalised to one value sequence per leaf and carried through
+            # `FinalTraces.aux`, so a mean trace's colour is derived from
+            # its members' hue by the same operation that derives its data.
+            # A categorical hue still defers: it REGROUPS traces, so the
+            # leaves the hierarchy names would stop existing.
+            _mi_hue_per_leaf, _mi_hue_reason = _hierarchy_hue_per_leaf(
+                hue, len(x[0]), len(_multiindex_meta['leaf_keys']))
+            if _mi_hue_per_leaf is None:
+                warnings.warn(
+                    "x has a column MultiIndex: MultiIndex grouping (group "
+                    "traces + per-level averages) takes precedence over "
+                    f"{_mi_hue_reason}, which would regroup the traces; "
+                    "ignoring hue. A CONTINUOUS hue is supported -- one "
+                    "value per row, or one sequence per leaf."
+                , stacklevel=external_stacklevel())
+            # Either way `hue` itself is consumed here: what survives is
+            # `_mi_hue_per_leaf`, which the branch below hands to the trace
+            # builder as auxiliary values.
+            hue = None
         # Hand the pipeline plain arrays rather than the labelled leaves.
         # format_data matches DataFrame features BY COLUMN NAME across
         # datasets (GH #132), which would duplicate the matching just done
@@ -4129,7 +4257,25 @@ def plot(
         # truncation warning); a SEPARATE, array-blind function styles it.
         # Before 1.1 a single function did both, so any second caller
         # appended every mean twice.
-        _ft = build_hierarchy_traces(xform, _multiindex_meta)
+        if _mi_hue_per_leaf is not None:
+            # The hue was validated against the INPUT frame's rows; the
+            # analysis pipeline is what could have changed that count
+            # (manip='Resample', a smoother that trims edges). Say which
+            # stage broke the correspondence rather than letting the aux
+            # arrays silently describe the wrong observations.
+            _bad = [(i, len(a), len(xi))
+                    for i, (a, xi) in enumerate(zip(_mi_hue_per_leaf, xform))
+                    if len(a) != len(xi)]
+            if _bad:
+                raise ValueError(
+                    "hue= has one value per row of the input frame, but the "
+                    "analysis pipeline changed the row count before "
+                    f"plotting: leaf {_bad[0][0]} has {_bad[0][1]} hue "
+                    f"value(s) for {_bad[0][2]} plotted observation(s). "
+                    "Resample or smooth the hue values the same way, or "
+                    "drop the row-count-changing stage.")
+        _ft = build_hierarchy_traces(xform, _multiindex_meta,
+                                     aux=_mi_hue_per_leaf)
         _mi_style = build_hierarchy_styles(
             _ft, palette=palette, linestyle=linestyle, linestyles=linestyles)
         xform = _ft.arrays
@@ -4145,13 +4291,31 @@ def plot(
         # recompute: the means were appended after the earlier pass, so the
         # cached lengths no longer cover every trace.
         pre_interp_lengths = [len(xi) for xi in xform]
-        mpl_kwargs["color"] = _mi_style["colors"]
+        if _mi_hue_per_leaf is None:
+            mpl_kwargs["color"] = _mi_style["colors"]
+        else:
+            # The hierarchy contributes width/alpha/label only: colour comes
+            # from the hue, mapped over the CONCATENATION of every trace's
+            # aux (leaves AND means) so one scale spans the whole figure.
+            # `_mi_style['colors']` is dropped on this path only -- setting
+            # it would give each line artist a flat colour that the
+            # per-segment collections then replace, i.e. dead state that a
+            # later reader would reasonably take for the real colours.
+            multicolor_hue = np.concatenate(
+                [np.asarray(a, dtype=np.float64).ravel() for a in _ft.aux])
+            multicolor_hue_is_rgb = False
+            if legend is True:
+                warnings.warn("legend is not supported for continuous or "
+                              "matrix-valued hue; ignoring legend.",
+                              stacklevel=external_stacklevel())
+                legend = None
         mpl_kwargs["linewidth"] = _mi_style["linewidths"]
         mpl_kwargs["alpha"] = _mi_style["alphas"]
         if _mi_style["linestyles"] is not None:
             mpl_kwargs["linestyle"] = _mi_style["linestyles"]
         mpl_kwargs["label"] = _mi_style["labels"]
-        legend = _mi_style["labels"]
+        if _mi_hue_per_leaf is None:
+            legend = _mi_style["labels"]
 
     # find cluster and reshape if cluster=/n_clusters= was given
     # (n_clusters= alone defaults to KMeans, matching the docstring)
@@ -6968,6 +7132,16 @@ def _apply_multicolor_lines(ax, xform, line_colors, kwargs_list):
             pts = xi[:, :3] if is_3d else xi[:, :2]
         segments = np.stack([pts[:-1], pts[1:]], axis=1)
         seg_colors = (ci[:-1] + ci[1:]) / 2.0
+        # Per-trace opacity has to travel WITH the colours: these
+        # collections replace the line artists, so an `alpha` left on the
+        # discarded `Line2D` is simply lost. That is how a hierarchy's
+        # level-derived alphas -- and a plain `hue=` + `alpha=` -- silently
+        # rendered fully opaque before 1.1.
+        _alpha = tkwargs.get('alpha')
+        if _alpha is not None:
+            seg_colors = np.column_stack(
+                [seg_colors[:, :3],
+                 np.full(len(seg_colors), float(_alpha))])
         if is_3d:
             coll = Line3DCollection(segments, colors=seg_colors,
                                     linewidths=lw)
@@ -6976,6 +7150,13 @@ def _apply_multicolor_lines(ax, xform, line_colors, kwargs_list):
             coll = LineCollection(segments, colors=seg_colors,
                                   linewidths=lw)
             ax.add_collection(coll)
+        # Tag which TRACE this collection draws. `ax.collections` is not a
+        # list of data artists -- the 3-D bounding cube is six
+        # `Line3DCollection` wireframe faces (`matplotlib_backend.py`,
+        # `_draw_cube`), so "the LineCollections on the axes" counts 6 more
+        # than there are traces. Same purpose as the `_hyp_forecast_role`
+        # tag on forecast lines.
+        coll._hyp_trace_index = i
 
 
 def _make_title_updater(titles, axes):

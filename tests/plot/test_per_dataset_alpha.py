@@ -387,3 +387,38 @@ def test_cluster_still_wins_over_depth_fading_with_valid_alpha():
               if a is not None]
     assert alphas
     assert set(np.round(alphas, 6)) <= {0.2, 0.4, 0.6}
+
+
+def test_alpha_reaches_the_collections_a_continuous_hue_draws():
+    """A continuous hue REPLACES the line artists with per-segment
+    collections (`_apply_multicolor_lines`), so an `alpha` left on the
+    discarded `Line2D` is simply lost -- measured: every segment came out
+    fully opaque however `alpha=` was spelled.
+
+    Fixed alongside Plan 2 Task 6, which needs the same channel to carry a
+    column hierarchy's LEVEL-derived alphas through the hue path.
+    """
+    from matplotlib.collections import LineCollection
+
+    fig = hyp.plot(_datasets(n=2), '-', hue=np.linspace(0, 1, 40),
+                   alpha=[0.2, 0.8], show=False)
+    colls = [c for c in _ax(fig).collections
+             if isinstance(c, LineCollection)
+             and getattr(c, '_hyp_trace_index', None) is not None]
+    assert len(colls) == 2, 'one collection per drawn trace'
+    got = [np.asarray(c.get_colors())[:, 3].max()
+           for c in sorted(colls, key=lambda c: c._hyp_trace_index)]
+    assert got == pytest.approx([0.2, 0.8])
+
+
+def test_a_scalar_alpha_also_reaches_a_continuous_hue():
+    """Sibling of the above for the scalar spelling."""
+    from matplotlib.collections import LineCollection
+
+    fig = hyp.plot(_datasets(n=2), '-', hue=np.linspace(0, 1, 40),
+                   alpha=0.35, show=False)
+    colls = [c for c in _ax(fig).collections
+             if isinstance(c, LineCollection)
+             and getattr(c, '_hyp_trace_index', None) is not None]
+    assert [np.asarray(c.get_colors())[:, 3].max()
+            for c in colls] == pytest.approx([0.35, 0.35])
