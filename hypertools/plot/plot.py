@@ -1190,10 +1190,14 @@ def plot(
         FINAL trace -- every leaf AND every derived mean, a mean forecast
         from its own averaged trajectory -- so the returned
         ``predict['forecasts']`` lines up 1:1 with ``trace_data``. It needs
-        at least 2 rows per trace and raises ``ValueError`` otherwise, which
-        for this axis means a frame whose innermost index level is unique
+        at least 2 rows per trace and raises ``ValueError`` otherwise --
+        typically for this axis because the innermost index level is unique
         per row: expansion draws one trace per unique FULL index tuple, so
-        such a frame yields one-row traces (and one-row means). Row
+        such a frame yields one-row traces (and one-row means). The check
+        runs on the PLOTTED trajectories, so a row-count-changing analysis
+        stage (``manip='Resample'``, a smoother that trims edges) can
+        trigger it too; the ``ValueError`` distinguishes the two causes and
+        names the one that applies. Row
         averaging assumes member leaves align by row POSITION at each
         timepoint; leaves of unequal length are averaged over their
         overlapping prefix (the shortest member's length), with a single
@@ -1217,10 +1221,14 @@ def plot(
         grouping never shortens a trace.
 
         `predict=` works on this axis too, per FINAL trace exactly as
-        described above. Because grouping never shortens a trace, the >=
-        2-rows-per-trace requirement can only fail when the INPUT frame has
-        fewer than 2 rows, and the ``ValueError`` says so; flattening the
-        columns is deliberately not suggested, since it cannot add a row.
+        described above. Grouping never shortens a trace, so the >=
+        2-rows-per-trace requirement fails here for one of exactly two
+        reasons, and the ``ValueError`` names whichever applies: the INPUT
+        frame has fewer than 2 rows (flattening the columns is deliberately
+        not suggested for that case, since it cannot add a row), or a
+        row-count-changing analysis stage -- ``manip='Resample'``, a
+        smoother that trims edges -- shortened the trajectory between the
+        input and the plot.
 
         One thing follows from that rule and is worth stating plainly.
         **Feature correspondence across groups is by NAME, not by
@@ -3776,6 +3784,18 @@ def plot(
         # feature-label mismatch, reported by name.
         x = [leaf.to_numpy() for leaf in x]
 
+    # Each leaf's row count BEFORE manip/normalize/reduce/align run. Read
+    # only by the >= 2-rows-per-trace precondition far below, which
+    # necessarily runs on the POST-pipeline arrays and so cannot otherwise
+    # tell "the grouping/input gave this trace one row" from "a row-count-
+    # changing stage (manip='Resample', a smoother that trims edges)
+    # shortened it". Without it both axis messages stated something false
+    # about the user's frame -- "the input itself has only one observation"
+    # of a 30-row frame -- and offered a remedy that could not work. Same
+    # quantity the sibling hue-length check above compares against.
+    _mi_input_rows = (None if _multiindex_meta is None
+                      else [len(xi) for xi in x])
+
     # default axis labels from DataFrame column names (release-1.0 audit,
     # F08-plot-inputs-016): when a SINGLE DataFrame with named (non-default,
     # non-duplicate) columns is passed, remember its df2mat-transformed
@@ -4332,18 +4352,44 @@ def plot(
             # NOT gated on the axis. A column hierarchy cannot SHORTEN a
             # trace, but it cannot lengthen one either: measured, a T=1
             # frame gives leaves of (1, 3) and a mean of (1, 3), so gating
-            # on 'rows' would let it reach that internal error. The axis
-            # selects only the remediation sentence -- a row hierarchy's
-            # short traces come from the expansion rule (so flattening or
-            # moving to the column axis fixes it), a column hierarchy's
-            # come from the input itself (so flattening cannot help and is
-            # deliberately not offered).
+            # on 'rows' would let it reach that internal error.
+            #
+            # WHICH remedy is offered depends on what actually made the
+            # trace short, and that is NOT decided by the axis alone: this
+            # loop sees post-pipeline arrays, so a row-count-changing stage
+            # is a third cause. Compare each trace against its PRE-pipeline
+            # length (`_mi_input_rows`) and name the stage when they differ;
+            # the axis then selects between the two grouping/input cases --
+            # a row hierarchy's short traces come from the expansion rule
+            # (so flattening or moving to the column axis fixes it), a
+            # column hierarchy's come from the input itself (so flattening
+            # cannot help and is deliberately not offered).
+            _n_leaves = len(_multiindex_meta['leaf_keys'])
             for _i, _arr in enumerate(_ft.arrays):
                 _rows = np.asarray(_arr).shape[0]
                 if _rows >= 2:
                     continue
                 _plural = "row" if _rows == 1 else "rows"
-                if _mi_axis == 'rows':
+                # Leaves come first and in leaf order (FinalTraces.arrays),
+                # so a leaf maps straight onto its own input length. A mean
+                # is the elementwise average over its members' overlapping
+                # prefix, i.e. exactly `min` of their post-pipeline lengths
+                # -- so once every leaf has cleared >= 2 rows above, no mean
+                # can be short and this branch is unreachable. `min` over
+                # all leaves is the conservative stand-in: it can only
+                # UNDER-state the input length, so it never blames the
+                # pipeline wrongly.
+                _input_rows = (_mi_input_rows[_i] if _i < _n_leaves
+                               else min(_mi_input_rows))
+                if _rows != _input_rows:
+                    _remedy = (
+                        "The analysis pipeline changed the row count before "
+                        f"plotting: this trace went from {_input_rows} row(s) "
+                        f"in the input frame to {_rows}. Forecasting needs at "
+                        "least 2 observations (rows) to estimate how the data "
+                        "change over time; resample or smooth to at least 2 "
+                        "rows, or drop the row-count-changing stage.")
+                elif _mi_axis == 'rows':
                     _remedy = (
                         "Row-MultiIndex expansion draws one trace per unique "
                         "FULL index tuple, so a frame whose innermost index "
@@ -4354,11 +4400,11 @@ def plot(
                         "to the COLUMN axis, where every group keeps all of "
                         "the frame's rows.")
                 else:
-                    _observations = ("one observation" if _rows == 1
-                                     else f"{_rows} observations")
+                    _observations = ("one observation" if _input_rows == 1
+                                     else f"{_input_rows} observations")
                     _remedy = (
                         "A column MultiIndex groups FEATURES, so every group "
-                        f"keeps all {_rows} of the frame's rows -- the "
+                        f"keeps all {_input_rows} of the frame's rows -- the "
                         f"input itself has only {_observations}. Forecasting "
                         "needs at least 2 observations (rows) to estimate "
                         "how the data change over time; pass a frame with "

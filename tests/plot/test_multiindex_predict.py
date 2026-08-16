@@ -24,6 +24,7 @@ artist is solid and `_dashed(ax)` returns []. The helpers below use the
 repo's own idiom instead (tests/plot/test_predict_integration.py:20-31):
 forecast artists identify THEMSELVES through `_hyp_forecast_role`.
 """
+import itertools
 import warnings
 
 import matplotlib
@@ -228,33 +229,86 @@ def test_predict_composes_with_a_continuous_hue():
 
 def test_forecast_takes_the_final_observed_hue_colour():
     """F14, matplotlib half. A forecast under a continuous hue continues in
-    the colour its source trace ended on."""
+    the colour its source trace ended on -- ITS OWN trace, not a neighbour's.
+
+    The three leaf ramps END at three different hue values (0.0 / 0.25 /
+    1.0), so the derived mean ends at their average (0.4167) and all FOUR
+    final colours differ. That is what makes the pairing assertion below
+    order-SENSITIVE. The plan's version gave every leaf the same
+    `np.linspace(0, 1, len(df))`, which made all four traces end on
+    [0.9744 0.9036 0.1302]; the loop then compared one colour with itself
+    four times and every permutation of the pairing passed. Measured here,
+    the closest two of the four end colours differ by 0.164 per channel --
+    8x the 0.02 match tolerance -- so a swap cannot slip through. The
+    `assert_pairwise_distinct` guard keeps it that way if the ramps are ever
+    edited.
+
+    Both sides are keyed by the artist's own DATASET tag rather than by list
+    position, matching what `_apply_multicolor_lines` pairs on
+    (plot.py: `_hyp_forecast_dataset`).
+    """
     df = market_frame()
+    T = len(df)
     fig = hyp.plot(df, '-', predict='Kalman', t=1, palette='viridis',
-                   hue=[np.linspace(0, 1, len(df)) for _ in range(3)],
+                   hue=[np.linspace(0.6, 0.0, T),
+                        np.linspace(0.0, 0.25, T),
+                        np.linspace(0.4, 1.0, T)],
                    show=False)
     ax = _ax(fig)
     colls = _trace_collections(ax)
-    forecasts = _forecasts(ax)
+    forecasts = sorted(_forecasts(ax),
+                       key=lambda ln: ln._hyp_forecast_dataset)
     assert len(colls) == len(forecasts) == 4
-    for coll, fc in zip(colls, forecasts):
-        last = np.asarray(coll.get_colors())[-1][:3]
+    assert [c._hyp_trace_index for c in colls] == [0, 1, 2, 3]
+    assert [ln._hyp_forecast_dataset for ln in forecasts] == [0, 1, 2, 3]
+
+    last_colors = [np.asarray(coll.get_colors())[-1][:3] for coll in colls]
+    for a, b in itertools.combinations(last_colors, 2):
+        assert not np.allclose(a, b, atol=0.05), \
+            'the four traces must END on different colours, or the pairing ' \
+            'below is satisfied by any permutation'
+
+    for last, fc in zip(last_colors, forecasts):
         assert np.allclose(matplotlib.colors.to_rgb(fc.get_color()), last,
                            atol=0.02)
 
 
-def test_predict_with_hierarchy_and_animation_via_on_frame():
+@pytest.mark.parametrize('frame_of', [market_frame,
+                                      lambda: multirow_row_frame(n_time=20)],
+                         ids=['column-axis', 'row-axis'])
+def test_predict_with_hierarchy_and_animation_via_on_frame(frame_of):
     """Assertions go through the PUBLIC on_frame hook (animation-core Task
-    7), not through ani._args."""
+    7), not through ani._args.
+
+    COUNTS ARE NOT ENOUGH. The animated schedule re-forecasts from
+    `analyze_histories`, which is per-trace; if that list is rotated by one
+    the counts are all still right and every animated forecast simply
+    detaches from its own trace. Measured with a one-step rotation inserted
+    after the hierarchy branch's `_compute_forecasts(_ft.arrays)`, this
+    module's other 16 tests all still passed while the forecast/trace gaps
+    went 0.0 -> 0.64 / 0.51 / 0.26 / 0.35. So the anchoring is asserted on
+    COORDINATES here, exactly as the static path does in
+    `test_forecasts_anchor_on_their_own_trace`, and on both axes -- the row
+    axis reaches this code through a different expansion rule.
+    """
+    df = frame_of()
+    n_traces = 4 if df.columns.nlevels >= 2 else 8
     seen = []
-    fig, ani = hyp.plot(market_frame(), '-', predict='Kalman', t=1,
+    fig, ani = hyp.plot(df, '-', predict='Kalman', t=1,
                         animate=True, duration=2, frame_rate=4,
                         on_frame=seen.append, show=False)
     for f in range(8):
         ani._func(f, *ani._args)          # harness only; never asserted on
     assert len(seen) == 8
-    assert len(seen[-1].datasets) == 4
-    assert len(_forecasts(_ax(fig))) == 4
+    assert len(seen[-1].datasets) == n_traces
+    ax = _ax(fig)
+    observed, forecasts = _observed(ax), _forecasts(ax)
+    assert len(observed) == len(forecasts) == n_traces
+    for line, fc in zip(observed, forecasts):
+        drawn = np.array(line.get_data_3d())
+        assert np.allclose(np.array(fc.get_data_3d())[:, 0], drawn[:, -1],
+                           atol=1e-6), \
+            'an animated forecast must start where ITS OWN trace ended'
 
 
 def test_return_model_bundle_has_one_model_and_forecast_per_trace():
@@ -362,6 +416,58 @@ def test_animated_one_row_hierarchy_still_raises_the_precondition():
     with pytest.raises(ValueError, match='at least 2 rows per trace'):
         hyp.plot(one_row_row_frame(), '-', predict='Kalman', t=1,
                  animate=True, duration=2, frame_rate=4, show=False)
+
+
+@pytest.mark.parametrize(
+    'frame_of, forbidden',
+    [(lambda: market_frame(T=30), 'pass a frame with more rows'),
+     (lambda: multirow_row_frame(n_time=10), 'reset_index(drop=True)')],
+    ids=['column-axis', 'row-axis'])
+def test_a_row_count_changing_stage_is_blamed_instead_of_the_grouping(
+        frame_of, forbidden):
+    """Contract 10's check runs on `_ft.arrays`, i.e. AFTER manip/normalize/
+    reduce/align. So a short trace is not necessarily the grouping's or the
+    input's doing -- `manip='Resample'` with `n_samples=1` shortens a trace
+    the input had 30 (column) or 10 (row) rows for.
+
+    Both axis-specific messages used to be emitted unconditionally, and both
+    then asserted something FALSE about the user's data and offered a remedy
+    that cannot work: the column text said "the input itself has only one
+    observation" of a 30-row frame, and the row text blamed an
+    innermost level that "is unique per row" when it repeats 10x. The repo's
+    own idiom for this is the sibling hue-length check (plot.py, "the
+    analysis pipeline changed the row count before plotting"), and that is
+    what the trace-length check must say when the INPUT was long enough.
+    """
+    with pytest.raises(ValueError) as excinfo:
+        hyp.plot(frame_of(), '-', predict='Kalman', t=2,
+                 manip={'model': 'Resample', 'args': [],
+                        'kwargs': {'n_samples': 1}},
+                 show=False)
+    message = str(excinfo.value)
+    assert 'at least 2 rows per trace' in message
+    assert 'analysis pipeline changed the row count' in message
+    assert 'drop the row-count-changing stage' in message
+    assert forbidden not in message, \
+        'the pipeline shortened this trace -- the axis remedy cannot help'
+    assert 'the input itself has only' not in message
+    assert 'unique per row' not in message
+
+
+def test_a_genuinely_short_input_still_blames_the_input_not_the_pipeline():
+    """The other side of the branch: a row-count-PRESERVING manip stage on a
+    T=1 column frame must still get the input-is-short message, so adding the
+    pipeline branch did not simply relabel every failure."""
+    df = market_frame(T=1)
+    with warnings.catch_warnings():
+        warnings.filterwarnings('ignore',
+                                message='Cannot reduce a single observation')
+        with pytest.raises(ValueError) as excinfo:
+            hyp.plot(df, '-', predict='Kalman', t=1,
+                     manip='ZScore', show=False)
+    message = str(excinfo.value)
+    assert 'the input itself has only one observation' in message
+    assert 'analysis pipeline changed the row count' not in message
 
 
 def test_one_row_row_hierarchy_still_plots_without_predict():
