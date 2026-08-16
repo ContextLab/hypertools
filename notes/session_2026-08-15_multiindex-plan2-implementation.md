@@ -49,10 +49,15 @@ Jeremy chose "Execute Plan 2 (MultiIndex)" when asked.
 | 9 matplotlib/plotly parity | done, 14 → 23 tests (plan said 12) | `c9b91293`, review `a309f49e`, triage `b48c2848` |
 | 10 `docs/hierarchy.rst` guide | done, 12 tests (plan said 8), 138 executed doctests | `f2a7a2b1`, fixes `cdae7096` |
 | 11 CHANGELOG 1.1.0 section | done, 9 tests (plan said 6) | `b0076f8f`, fixes `cdae7096` |
-| 12 verification | done, no new tests — all six gates green | *this commit* |
+| 12 verification | done, no new tests — all six gates green | `3a4ce8e0` |
+| (fix) honour `legend=`, false `names=` error, plotly sentinel | done, 21 tests | `bb4ad30c` |
+| (fix) true duplicate-mismatch message, aux validation, warning blame | done | `e52dd861` |
+| (fix) re-appliable bundled pipeline; group-order caveat pinned | done, 23 tests | `6f07c213` |
+| (fix) adversarial sweep: colorbar under `legend=False`, `legend=` containers, caller-supplied `pipeline=` | done, 37 tests, all mutation-verified | `1e5c737a` |
 
 **Plan 2 is COMPLETE.** It is **not releasable**, and that is a Plan 4
-dependency, not a defect here: see *Task 12 as EXECUTED* below.
+dependency, not a defect here: see *Task 12 as EXECUTED* below and
+*Adversarial sweep and fixes (2026-08-16)*.
 
 ## Defects found in the plan's own listings (fixed in the code)
 
@@ -540,6 +545,172 @@ that rather than tag, which is what was done — in the plan's checklist table
 and here. The flagship demonstration of everything Tasks 5-9 add still shows
 the flat market.
 
+## Adversarial sweep and fixes (2026-08-16)
+
+After the three fix commits (`bb4ad30c`, `e52dd861`, `6f07c213`) landed, a
+completeness critic and an adversarial user swept the finished branch. Four
+Critical/Important findings were routed here. **All four reproduced**, so
+none was declined; two of them are the same defect reported twice.
+
+### What was fixed (`1e5c737a`)
+
+1. **`colorbar=True` + `legend=False` under a hierarchy lost the group
+   names AND the leaf filter.** A *regression* introduced by `bb4ad30c`,
+   never released. That commit made the hierarchy's
+   `legend = _mi_style["labels"]` install conditional on
+   `legend is not False` — correct for the legend, but `_build_colorbar_info`
+   reads the colorbar's group names off that SAME list, and relies on its
+   `'_nolegend_'` entries to collapse leaves and intermediate means down to
+   the top-level groups. With `legend=False` it got `None` and fell through
+   to `labels = [i + 1 for i in range(n_groups)]`.
+
+   Measured at `6f07c213`, 3-level column frame (US/EU x tech/fin x a,b,c),
+   matplotlib colorbar tick labels: default `['US', 'EU']`,
+   `legend=False` `['1' ... '6']`. Same on plotly (`marker.colorbar.ticktext`)
+   and under `animate=True`. On a ROW hierarchy the COUNT is the loud part:
+   the reporter's 3-level frame (G1/G2 x s1/s2 x 10 rows = 40 leaves + 4
+   subject means + 2 group means) went from **2 segments to 46**. The
+   regression test here uses the 2-level version of the same shape (4 leaves
+   + 2 group means, so 2 -> 6), which fails identically and runs in
+   milliseconds.
+
+   Fixed by giving the colorbar its own `_mi_colorbar_labels`, set
+   unconditionally in the hierarchy branch and threaded into
+   `_build_colorbar_info` as `hierarchy_labels=`, ranked below the user's
+   `legend` list and above `hue_group_labels`. `legend=False -> legend = None`
+   still happens, so nothing leaks back into the drawn legend (asserted).
+   The colorbar is the colour key for the drawn groups, not a second legend.
+
+2. **`legend=` as an ndarray/Series/Index mislabelled every trace** —
+   *pre-existing*, not a regression (the reporter states it reproduces
+   identically at `3a4ce8e0`; I measured it at `6f07c213` only), but at the
+   exact site the fix pass edited. All three are accepted by the type check and by
+   `bb4ad30c`'s new `_legend_user_list`, but the per-trace length check and
+   the label assignment tested `list`/`tuple` only, so the whole container
+   became EACH artist's label: two traces both named `['a' 'b']`, plus two
+   matplotlib "Passing label as a length 2 sequence" warnings. The hierarchy
+   path handled all four containers correctly, so the two paths disagreed
+   about the same accepted input.
+
+   Fixing it turned up one more case the reviewers did not report and I
+   measured myself: a **tuple** legend labels the traces correctly but misses
+   `_build_colorbar_info`'s narrower `isinstance(legend, list)` test, so
+   `legend=('A', 'B'), colorbar=True` drew a colorbar reading `['1', '2']`.
+
+   Fixed by normalising every accepted container to a plain list where it is
+   type-checked. A 0-d array (`np.array('a')`) is not iterable, so it becomes
+   ONE label — the same thing the existing `isinstance(legend, str)` wrap does
+   with `legend='a'`, which then reports the length mismatch instead of
+   silently broadcasting one label over every trace (measured before:
+   `['a', 'a']`).
+
+3. **A caller-supplied `pipeline=` was bundled without `input_hierarchy`.**
+   `6f07c213` recorded the column grouping only on the pipeline `plot()`
+   builds for itself. `plot.py`'s `if pipeline is not None: bundle_pipeline =
+   pipeline` handed the caller's object back untouched, so
+   `bundle['pipeline'].transform(df)` still raised the exact pre-1.1.0
+   scikit-learn error the `return_model` docstring says it no longer raises:
+   measured `ValueError: X has 15 features, but IncrementalPCA is expecting 5
+   features as input`.
+
+   Fixed by hoisting `_bundle_hierarchy` above the branch and recording it on
+   the passed-in pipeline too — **in place**, because the bundle hands back
+   that same object by design (the docstring says so and
+   `tests/test_cross_module_kwargs.py:194` asserts the identity). Two guards
+   make that safe, both commented at the site: an `input_hierarchy` the
+   caller's pipeline ALREADY carries belongs to its own fit and is left
+   alone, and the recorded `n_features` is not a guess — the `analyze(raw,
+   pipeline=pipeline)` call that drew the figure already pushed those same
+   groups through every fitted step, so a width disagreement would have
+   raised there first.
+
+### Nothing was declined
+
+All four reproduced on the first attempt with the reporters' own repro
+shapes. Findings 1 and 2 in the routed list are the same defect (column
+frame vs. 30x12 frame), fixed once.
+
+### Tests
+
+37 new tests, every one proven red-then-green by MUTATION (break the fix,
+watch the test fail, restore):
+
+| file | tests | mutation result |
+|-|-|-|
+| `tests/plot/test_colorbar_group_names.py` (new) | 7 | 6 failed with the fix broken; the 7th pins the paths that were already right and correctly passes both ways |
+| `tests/plot/test_legend_containers.py` (new) | 27 | 10 failed with the fix broken (the `list`/`tuple` params pass both ways, which is the point) |
+| `tests/test_hierarchy_group_order_and_pipeline.py` (appended) | 3 | 1 failed with the fix broken; the other two pin the "leave an existing record alone" and "record nothing off-hierarchy" branches |
+
+Also documented: `CHANGELOG.md` (one amended bullet, two new bug-fix
+bullets) and `docs/hierarchy.rst` (the `legend=False`/colorbar sentence, plus
+a new executed doctest for the caller-supplied pipeline).
+
+### Every gate MEASURED on the committed tree
+
+| gate | result |
+|-|-|
+| focused (3 files) | **60 passed** in 3.26s |
+| neighbours `tests/plot tests/core tests/predict` | **1033 passed** in 173.16s |
+| full suite `.venv/bin/python -m pytest -q` | **3572 passed, 13 skipped, 2 deselected in 717.88s** — 0 failed, 0 errors, **no "warnings summary" section** (`grep -c 'warnings summary'` → 0) |
+| ruff parity vs `59405545` | **141 keys each side, `comm` empty in BOTH directions**; raw count 380 (see the ruff note below) |
+| docs `sphinx -b html -W -E -a` | **build succeeded**, zero warnings (`-W` makes any warning an error) |
+| `git status --short` / `git worktree list` | clean / main checkout only |
+
+**The full suite caught a real thing on the first run** and is worth
+remembering: `tests/test_packaging_artifacts.py::
+test_sdist_contains_only_tracked_files_plus_allowlist` FAILED with *"2
+untracked file(s) leaked into the sdist"* because the two new test files were
+not yet `git add`ed. Not a flake and not a test to work around — the gate is
+doing its job. `git add` first, then run the suite.
+
+### OPEN ITEMS — the maintainer must decide these
+
+None of these is a defect in this branch's implementation; each is a
+product decision that this work surfaced and did not have standing to make.
+
+1. **`hyp.predict`'s duplicate-timestamp rejection is GLOBAL, and that is
+   wider than the plan's Compatibility table.** Verified 2026-08-16 on an
+   input with **no MultiIndex on either axis** (`df.index.nlevels == 1`,
+   `df.columns.nlevels == 1`, a 5-row frame with one repeated
+   `DatetimeIndex` entry): `hyp.predict(df, model='Kalman', t=2)` raises
+   *"the dataset index has 1 duplicated entry ... so the forecast horizon is
+   ill-defined"*. `CHANGELOG.md:12` already warns that this one "is not
+   hierarchy-specific and reaches flat `hyp.predict` callers", so the fact is
+   recorded — the DECISION (accept the wider blast radius in a minor release,
+   or narrow the check to hierarchical inputs) is not made.
+2. **F14 vs Decision R3: animated forecasts under a continuous hue wear the
+   PALETTE colour, not the hue anchor, on BOTH backends.** The static overlay
+   takes the trace's final observed hue colour; the animated one takes the
+   colour of the run drawing the head. The backends agree frame for frame —
+   it is static vs. animated that disagree. Recorded in *Documented
+   limitations* as "an open product decision rather than a defect"; it is
+   still open.
+3. **`_to_plotly_color` now ROUNDS instead of truncating.** The two plotly
+   colour helpers disagreed (one truncated each channel, one rounded), so
+   `rgb(219,95,87)` on matplotlib came out `rgb(219,94,86)` on plotly and an
+   anchored forecast could not equal the colour it was copied from. Both
+   round now — which is a **user-visible change to the colour strings in
+   exported HTML**, up to 1/255 per channel. Correct, but it moves bytes in
+   anything a user has saved and diffed.
+4. **Plan 4 Task 2 is still unlanded, so 1.1 is NOT releasable.** Nothing in
+   the tree demonstrates a column hierarchy end to end:
+   `docs/tutorials/market_forecast.ipynb` contains **0**
+   `MultiIndex.from_tuples`, and `examples/animate_market_forecast.py`
+   contains **0** `MultiIndex` references (re-confirmed 2026-08-16). The
+   flagship demonstration of everything Tasks 5-9 add still shows the flat
+   market.
+5. **In-place mutation of a caller's `Pipeline`.** Fix 3 above writes
+   `input_hierarchy` onto the object the caller passed to `pipeline=`. This
+   follows from two promises that were already in the docstring (the bundle
+   returns that same object; that object re-applies to a hierarchical frame),
+   and it matches what the auto-built path already records — but it IS a
+   visible side effect on an argument, now documented in both the `pipeline=`
+   and `return_model` docstring entries. Worth an explicit nod.
+6. **The reducer/pipeline agent's own `concerns` were not available to this
+   agent.** I had no channel to that agent's structured output, so if it
+   raised concerns beyond the three findings routed to me, they are NOT
+   captured here and must be collected from its report before sign-off.
+
 ## Standing constraints in force
 
 - `.venv/bin/python` is mandatory (system numpy breaks matplotlib).
@@ -564,10 +735,12 @@ the flat market.
   (`test_changelog_top_version_matches_pyproject`) forced.
 - Pre-existing ruff findings, ungated (no lint job in CI). **State the scope
   when quoting the number**: `ruff check` over the whole repo → **441**;
-  over the code this work touches, `ruff check hypertools tests` → **377**.
-  Both measured 2026-08-16 (they were 417 / 353 on 2026-08-15). **The raw
-  count moving is expected and is not a regression** — `plot.py` takes `np`
-  from a star import, so every added `np.` line repeats a pre-existing
-  `F405`. The gate is the SET difference of `(file, code, message)` keys
-  against base `59405545`, which is **empty in both directions, 141 keys
-  each side**, re-measured at `cdae7096`.
+  over the code this work touches, `ruff check hypertools tests` → **380**
+  (was 377 at `cdae7096`, 353 on 2026-08-15). **The raw count moving is
+  expected and is not a regression** — `plot.py` takes `np` and `pd` from a
+  star import, so every added `np.`/`pd.` line repeats a pre-existing
+  `F405`; the +3 at this commit is exactly the `np.ndarray`/`pd.Series`/
+  `pd.Index` mentions in the new `legend=` container normalisation. The gate
+  is the SET difference of `(file, code, message)` keys against base
+  `59405545`, which is **empty in both directions, 141 keys each side**,
+  re-measured on the committed tree of the adversarial-sweep fixes.

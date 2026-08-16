@@ -436,7 +436,9 @@ the hierarchy has no opinion about. A **list** renames the top-level groups
 (one entry per unique top-level value, in first-appearance order, exactly
 like ``linestyle=``); ``legend=False`` suppresses the automatic legend; and
 ``legend=True`` (or omitting it) labels the groups with the index values
-themselves:
+themselves. ``legend=False`` suppresses the *legend* only -- ``colorbar=True``
+still shows one named segment per top-level group, because the colorbar is
+the colour key for the drawn groups rather than a second legend:
 
 .. doctest::
 
@@ -626,6 +628,26 @@ passed through as though the grouping had never mattered:
    ... except ValueError as error:
    ...     print(str(error).split('. ')[0])
    this Pipeline was fit on the 3-feature groups of a column-hierarchical DataFrame, but the data given here has [6] feature(s) per dataset
+
+A pipeline you fitted yourself and passed in via ``pipeline=`` is handed back
+in the bundle -- it is the same object -- and it re-applies on the same
+terms: plotting a hierarchical frame records that frame's grouping on it,
+unless it already carries one of its own.
+
+.. doctest::
+
+   >>> leaves, _ = group_columns(market)
+   >>> _, mine = hyp.analyze([leaf.to_numpy() for leaf in leaves],
+   ...                       reduce='PCA', ndims=3, return_model=True)
+   >>> mine.input_hierarchy is None
+   True
+   >>> reused = hyp.plot(market, pipeline=mine, return_model=True)
+   >>> reused['pipeline'] is mine
+   True
+   >>> mine.input_hierarchy['n_features']
+   3
+   >>> [np.asarray(a).shape for a in mine.transform(market)]
+   [(40, 3), (40, 3)]
 
 Bundled forecasts always correspond to ``trace_data``, so ``forecasts[i]``
 equals ``hyp.predict(trace_data[i], model=..., t=t)`` for every ``i`` --

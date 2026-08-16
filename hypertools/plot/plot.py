@@ -1812,7 +1812,11 @@ def plot(
         left at its default) -- passing both raises `ValueError` naming the
         conflicting kwarg(s). `resample=` is still applied (as sugar, before
         `pipeline.transform` runs) since it is not one of the stage kwargs
-        the fitted `Pipeline` itself covers (default: None).
+        the fitted `Pipeline` itself covers. When `x` is a COLUMN-
+        hierarchical frame, that grouping is recorded on the passed-in
+        `Pipeline` itself (unless it already carries one), so the object
+        `return_model=True` hands back re-applies to such a frame -- see
+        `return_model` (default: None).
 
     reduce : str, dict, class, instance, or fitted Reducer
         Decomposition/manifold learning model to use (default:
@@ -2916,7 +2920,11 @@ def plot(
         raised scikit-learn's "X has 20 features, but IncrementalPCA is
         expecting 5 features" -- or, when the reduce stage was a no-op
         because each group already had <= `ndims` columns, silently returned
-        the ungrouped frame). Feature correspondence is BY NAME there too:
+        the ungrouped frame). A pipeline the caller passed in via `pipeline=`
+        has that grouping recorded ON IT (in place -- it is the same object
+        the bundle hands back) when it does not already carry one of its
+        own, so it re-applies on the same terms. Feature correspondence is
+        BY NAME there too:
         the frame's innermost column labels are matched to the ones the
         pipeline was fit on, so reordering them is harmless and naming
         different measurements raises. ``models`` holds the
@@ -3159,6 +3167,29 @@ def plot(
             f"legend= must be True/False, a label string, or a list of "
             f"labels (one per drawn trace/group); got "
             f"{type(legend).__name__}: {legend!r}.")
+
+    # ...and every non-list container the check above ACCEPTS is normalised
+    # to a plain list right here, so the label handling downstream (all of
+    # which tests `isinstance(legend, (list, tuple))`, or just `list`) sees
+    # one type. Measured on `hyp.plot([A, B], legend=<container>)`:
+    # ndarray/Series/Index skipped the per-trace length check at
+    # "legend= was given as a list of length ..." below and were handed to
+    # matplotlib WHOLE as each artist's label, so both traces came out
+    # named "['a' 'b']" / "Index(['a', 'b'], dtype='str')" plus two
+    # "Passing label as a length 2 sequence" UserWarnings; a tuple labelled
+    # the traces correctly but missed `_build_colorbar_info`'s
+    # `isinstance(legend, list)` branch, so `legend=('A', 'B'),
+    # colorbar=True` drew a colorbar reading ['1', '2']. The hierarchy path
+    # already accepted all four containers correctly, so the two paths
+    # disagreed about the same accepted input.
+    # A 0-d ndarray (`np.array('a')`) is not iterable, so it becomes a
+    # ONE-label list -- the same thing the `isinstance(legend, str)` wrap
+    # above does with `legend='a'`, which then reports the length mismatch
+    # instead of silently broadcasting that one label over every trace.
+    if isinstance(legend, (tuple, np.ndarray, pd.Series, pd.Index)):
+        legend = ([legend.item()]
+                  if isinstance(legend, np.ndarray) and legend.ndim == 0
+                  else list(legend))
 
     # Did the CALLER pass legend= as an explicit list of labels? Recorded
     # HERE, while `legend` still holds exactly what was passed in (the
@@ -4305,6 +4336,10 @@ def plot(
     # entries of a partially-labeled hue; F02-013), so legend=True and the
     # discrete colorbar can label every trace without a length mismatch.
     hue_group_labels = None
+    # A MultiIndex hierarchy's per-trace labels, kept for the colorbar
+    # alone so that `legend=False` cannot un-name it (set in the hierarchy
+    # branch below; stays None on every other input).
+    _mi_colorbar_labels = None
     # HUMAN-readable name per drawn group, parallel to
     # `hue_group_labels` but never carrying matplotlib's
     # `'_nolegend_'` sentinel -- see `_regroup_categorical_lines`.
@@ -4603,16 +4638,31 @@ def plot(
         if _mi_style["linestyles"] is not None:
             mpl_kwargs["linestyle"] = _mi_style["linestyles"]
         mpl_kwargs["label"] = _mi_style["labels"]
-        if _mi_hue_per_leaf is None and legend is not False:
-            # `legend is not False` keeps the explicit opt-out alive: this
-            # assignment used to run unconditionally, so it handed the
-            # legend block below a non-empty label list and
-            # `hyp.plot(df, legend=False)` drew a legend anyway. Every
-            # OTHER value still resolves to the hierarchy's own per-trace
-            # labels -- for a user list those are the renamed ones
-            # `build_hierarchy_styles` just produced, so the drawn legend
-            # says what the caller asked for.
-            legend = _mi_style["labels"]
+        if _mi_hue_per_leaf is None:
+            # The COLORBAR's copy of the hierarchy's per-trace labels, kept
+            # in its own variable because it must survive `legend=False`:
+            # the colorbar is the colour key for the drawn groups, not a
+            # legend, so opting out of the legend must not change which
+            # groups it names. `_build_colorbar_info` reads BOTH the group
+            # names AND the '_nolegend_' entries that collapse leaves and
+            # intermediate means down to the top-level groups off this
+            # list; when the `legend is not False` guard below was the only
+            # thing installing it, `colorbar=True, legend=False` lost both
+            # at once and fell through to `labels = [i + 1 ...]`. Measured
+            # on a 3-level column frame (US/EU x tech/fin x a,b,c),
+            # matplotlib AND plotly: ticks ['US', 'EU'] -> ['1'..'6']; on a
+            # ROW hierarchy (40 leaves + 6 means) 2 segments -> 46.
+            _mi_colorbar_labels = _mi_style["labels"]
+            if legend is not False:
+                # `legend is not False` keeps the explicit opt-out alive:
+                # this assignment used to run unconditionally, so it handed
+                # the legend block below a non-empty label list and
+                # `hyp.plot(df, legend=False)` drew a legend anyway. Every
+                # OTHER value still resolves to the hierarchy's own
+                # per-trace labels -- for a user list those are the renamed
+                # ones `build_hierarchy_styles` just produced, so the drawn
+                # legend says what the caller asked for.
+                legend = _mi_style["labels"]
 
     # find cluster and reshape if cluster=/n_clusters= was given
     # (n_clusters= alone defaults to KMeans, matching the docstring)
@@ -5516,7 +5566,8 @@ def plot(
     # point density) -- shared by both the matplotlib and plotly backends.
     colorbar_info = _build_colorbar_info(
         colorbar, hue, multicolor_hue, cluster, n_clusters, xform,
-        mpl_kwargs, legend, palette, hue_group_labels=hue_group_labels)
+        mpl_kwargs, legend, palette, hue_group_labels=hue_group_labels,
+        hierarchy_labels=_mi_colorbar_labels)
 
     # interpolate if its a line plot. animate='morph' treats every dataset
     # as a POINT CLOUD (Hungarian-matched to its neighbors in `morph.py`),
@@ -6695,8 +6746,57 @@ def plot(
         # this pipeline is fit, mirroring how format_data itself is not a
         # step either), so reusing this pipeline on new data does not
         # re-apply resample=.
+        #
+        # A COLUMN hierarchy is fit on the frame's GROUPS, not on the frame
+        # -- `raw` is one dataset per group, each as wide as one group --
+        # so record that, or re-applying the bundled pipeline to the very
+        # frame that produced it fails inside scikit-learn ("X has 20
+        # features, but IncrementalPCA is expecting 5") and, when the
+        # reduce stage was a no-op (every leaf already <= ndims columns),
+        # silently returns the UNGROUPED frame. See
+        # `Pipeline._regroup_hierarchical_input`. A ROW hierarchy is
+        # deliberately not recorded: its leaves keep the full row
+        # MultiIndex (they re-expand to themselves), and its pipeline
+        # already round-trips -- every leaf has the frame's own width.
+        # Computed BEFORE the pipeline= branch because it applies to a
+        # caller-supplied pipeline too: that one is handed back in the
+        # bundle under the same documented promise, and without the record
+        # `bundle['pipeline'].transform(df)` still raised the exact
+        # pre-1.1.0 scikit-learn error the `return_model` docstring says it
+        # no longer raises (measured: "X has 15 features, but
+        # IncrementalPCA is expecting 5 features as input").
+        _bundle_hierarchy = None
+        if (_multiindex_meta is not None
+                and _multiindex_meta.get('axis') == 'columns'
+                and raw):
+            _bundle_hierarchy = {
+                'axis': 'columns',
+                'n_features': int(raw[0].shape[1]),
+                'feature_correspondence': _multiindex_meta.get(
+                    'feature_correspondence', 'name'),
+                'feature_labels': _mi_feature_labels,
+            }
         if pipeline is not None:
             bundle_pipeline = pipeline
+            if (_bundle_hierarchy is not None
+                    and pipeline.input_hierarchy is None):
+                # Recorded IN PLACE, on the caller's own object, because
+                # the bundle hands back that same object by design (the
+                # docstring says so, and `test_cross_module_kwargs.py:194`
+                # asserts the identity). What is recorded is the grouping
+                # the pipeline was just APPLIED under -- which is the only
+                # grouping the bundled pipeline could have to reproduce --
+                # and its width is not a guess: `analyze(raw,
+                # pipeline=pipeline)` above already pushed these same
+                # `raw[0].shape[1]`-wide groups through every fitted step.
+                # An input_hierarchy the caller's pipeline ALREADY carries
+                # belongs to its own fit and is left alone; it cannot
+                # disagree about `n_features`, since a mismatch there would
+                # have raised in `_regroup_hierarchical_input` during that
+                # analyze() call, long before this bundle was built.
+                from ..core.pipeline import _validate_input_hierarchy
+                pipeline.input_hierarchy = _validate_input_hierarchy(
+                    _bundle_hierarchy)
         elif raw is not None:
             from ..core.pipeline import build_pipeline
             # the cluster stage reuses the EXACT resolved spec the
@@ -6715,28 +6815,8 @@ def plot(
             # fit-once-reusable `Pipeline` object (see the `pipeline=`
             # discussion above) without threading a Pipeline out of every
             # internal code path that can produce `xform_data`.
-            # A COLUMN hierarchy is fit on the frame's GROUPS, not on the
-            # frame -- `raw` is one dataset per group, each as wide as one
-            # group -- so record that, or re-applying the bundled pipeline
-            # to the very frame that produced it fails inside scikit-learn
-            # ("X has 20 features, but IncrementalPCA is expecting 5") and,
-            # when the reduce stage was a no-op (every leaf already <=
-            # ndims columns), silently returns the UNGROUPED frame. See
-            # `Pipeline._regroup_hierarchical_input`. A ROW hierarchy is
-            # deliberately not recorded: its leaves keep the full row
-            # MultiIndex (they re-expand to themselves), and its pipeline
-            # already round-trips -- every leaf has the frame's own width.
-            _bundle_hierarchy = None
-            if (_multiindex_meta is not None
-                    and _multiindex_meta.get('axis') == 'columns'
-                    and raw):
-                _bundle_hierarchy = {
-                    'axis': 'columns',
-                    'n_features': int(raw[0].shape[1]),
-                    'feature_correspondence': _multiindex_meta.get(
-                        'feature_correspondence', 'name'),
-                    'feature_labels': _mi_feature_labels,
-                }
+            # `_bundle_hierarchy` (the COLUMN-hierarchy record) is computed
+            # above the pipeline= branch, since it applies to both.
             bundle_pipeline = build_pipeline(manip=manip, normalize=normalize,
                                              reduce=reduce, ndims=ndims,
                                              align=align, cluster=cluster_spec,
@@ -6807,7 +6887,7 @@ def plot(
 
 def _build_colorbar_info(colorbar, hue, multicolor_hue, cluster, n_clusters,
                          xform, mpl_kwargs, legend, palette,
-                         hue_group_labels=None):
+                         hue_group_labels=None, hierarchy_labels=None):
     """Resolve `colorbar=` into a backend-agnostic color-mapping dict, or
     None if no colorbar was requested (GH #100).
 
@@ -6819,9 +6899,11 @@ def _build_colorbar_info(colorbar, hue, multicolor_hue, cluster, n_clusters,
       (same palette, same `mat2colors` default `n_bins`).
     - ``'discrete'``: ``colors`` ((n, 3) array, ORDER matching the drawn
       groups) and ``labels`` (tick labels, from `legend` if it is a list,
-      else from `hue_group_labels` -- the categorical hue's category names,
-      known whether or not the user ALSO asked for a legend (F02-007) --
-      else ``1..n``).
+      else from `hierarchy_labels` -- a MultiIndex hierarchy's per-trace
+      labels, which reach here even under `legend=False` -- else from
+      `hue_group_labels` -- the categorical hue's category names, known
+      whether or not the user ALSO asked for a legend (F02-007) -- else
+      ``1..n``).
     Both kinds also carry the user-facing ``label``/``ticks``/``location``
     overrides (from the `colorbar` dict; see `plot`'s docstring).
 
@@ -6883,6 +6965,12 @@ def _build_colorbar_info(colorbar, hue, multicolor_hue, cluster, n_clusters,
 
     if isinstance(legend, list):
         labels = list(legend)
+    elif (hierarchy_labels is not None
+            and len(hierarchy_labels) == n_groups):
+        # MultiIndex hierarchy under legend=False: `legend` is None here,
+        # but the group names (and the '_nolegend_' entries the filter
+        # below needs) are still known -- see `_mi_colorbar_labels`.
+        labels = list(hierarchy_labels)
     elif (hue_group_labels is not None
             and len(hue_group_labels) == n_groups):
         # categorical hue: the category names are known even without

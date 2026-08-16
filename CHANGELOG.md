@@ -282,6 +282,9 @@ input too.
   the same convention `linestyle=` already used; any other length raises
   `ValueError` naming both counts), and `legend=False` suppresses the
   automatic legend. `legend=True`/omitted still labels by index value.
+  `legend=False` suppresses the LEGEND only: `colorbar=True` still names one
+  segment per top-level group, since the colorbar is the colour key for the
+  drawn groups rather than a legend.
 
 - **`names=` ALONE raised "pass dataset names via names= OR a legend= list,
   not both"** on a hierarchy -- factually false, since the overwrite above
@@ -307,6 +310,28 @@ input too.
   rounded -- so the same colour came out `rgb(219,95,87)` on matplotlib and
   `rgb(219,94,86)` on plotly, and an anchored forecast could not equal the
   per-point colour it was copied from. Both round now.
+
+- **`legend=` as an ndarray/Series/Index mislabelled every trace.** All
+  three are accepted label containers, but the per-trace length check and
+  the label assignment tested for `list`/`tuple` only, so the whole
+  container was handed to matplotlib as EACH artist's label -- two traces
+  both named `['a' 'b']`, plus a matplotlib "Passing label as a length 2
+  sequence" warning -- while the hierarchy path handled the same containers
+  correctly. A `tuple` labelled the traces but missed the colorbar's
+  narrower `list` test, so `legend=('A', 'B'), colorbar=True` drew a
+  colorbar reading `1`, `2`. Every accepted container is now normalised to a
+  list where it is type-checked, so one rule covers them all; a 0-d array
+  (`np.array('a')`) counts as ONE label, exactly as `legend='a'` does.
+
+- **A caller-supplied `pipeline=` came back from a hierarchical plot unable
+  to re-apply.** `hyp.plot(df, pipeline=p, return_model=True)` hands `p`
+  itself back in the bundle, but only the pipeline `plot()` builds for
+  itself recorded the column grouping -- so `bundle['pipeline'].transform(df)`
+  still raised the pre-1.1.0 scikit-learn error (`X has 15 features, but
+  IncrementalPCA is expecting 5 features as input`) that `return_model`'s
+  documentation says it no longer raises. The grouping is now recorded on
+  the passed-in pipeline too (in place, on the same object the bundle
+  returns), unless it already carries one of its own.
 
 ### Documented limitations
 

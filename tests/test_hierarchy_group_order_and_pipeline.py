@@ -360,3 +360,76 @@ def test_a_malformed_input_hierarchy_is_rejected_at_construction(
     with pytest.raises(error) as excinfo:
         Pipeline(['PCA'], input_hierarchy=spec)
     assert fragment in str(excinfo.value)
+
+
+# --------------------------------------------------------------------------
+# a CALLER-SUPPLIED pipeline is bundled under the same promise
+# --------------------------------------------------------------------------
+# The recording above covered only the pipeline `plot()` builds for itself.
+# A `pipeline=` the caller passed in is handed straight back in the bundle,
+# so `return_model`'s promise ("calling bundle['pipeline'].transform(df) on
+# a column-hierarchical frame groups it first") covered it too -- but with
+# no `input_hierarchy` attached it still raised the exact pre-1.1.0 error
+# that promise names: "X has 15 features, but IncrementalPCA is expecting 5
+# features as input".
+
+def _user_pipeline(frame, **kwargs):
+    """A pipeline the USER fitted, on the frame's groups, outside plot()."""
+    leaves, _meta = group_columns(frame)
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore')
+        _xform, pipeline = hyp.analyze(
+            [leaf.to_numpy() for leaf in leaves], reduce='IncrementalPCA',
+            ndims=3, return_model=True, **kwargs)
+    return pipeline
+
+
+def test_a_caller_supplied_pipeline_is_bundled_with_the_grouping_recorded():
+    """The reported repro: `bundle['pipeline'].transform(df)` raised."""
+    frame = _wide_frame()
+    pipeline = _user_pipeline(frame)
+    assert pipeline.input_hierarchy is None
+
+    bundle = _bundle(frame, pipeline=pipeline)
+    # the docstring's identity promise is unchanged -- it is recorded IN
+    # PLACE, on that same object
+    assert bundle['pipeline'] is pipeline
+    assert pipeline.input_hierarchy == {
+        'axis': 'columns',
+        'n_features': len(MEASURES),
+        'feature_correspondence': 'name',
+        'feature_labels': list(MEASURES),
+    }
+
+    out = bundle['pipeline'].transform(frame)
+    assert isinstance(out, list) and len(out) == len(SECTORS)
+    for reference, produced in zip(bundle['xform_data'], out):
+        assert np.allclose(np.asarray(reference), np.asarray(produced))
+
+
+def test_a_caller_supplied_pipelines_own_hierarchy_record_is_left_alone():
+    """An `input_hierarchy` the caller's pipeline already carries belongs to
+    its OWN fit, so plot() must not overwrite it with the frame it happened
+    to be applied to here. (Its `n_features` cannot disagree: a mismatch
+    would have raised in `_regroup_hierarchical_input` during the analyze()
+    call that drew the figure, long before the bundle was built.)"""
+    frame = _wide_frame()
+    pipeline = _user_pipeline(frame)
+    # written directly, as a pipeline restored from an earlier session would
+    # carry it -- positional correspondence, and no recorded feature labels
+    own = {'axis': 'columns', 'n_features': len(MEASURES),
+           'feature_correspondence': 'position', 'feature_labels': None}
+    pipeline.input_hierarchy = own
+
+    assert _bundle(frame, pipeline=pipeline)['pipeline'].input_hierarchy \
+        == own
+
+
+def test_nothing_is_recorded_on_a_caller_supplied_pipeline_off_hierarchy():
+    """Only the column-hierarchy path records anything, on this branch too."""
+    frame = _wide_frame()
+    pipeline = _user_pipeline(frame)
+    arrays = [np.cumsum(np.random.default_rng(s).standard_normal((40, 5)),
+                        axis=0) for s in range(len(SECTORS))]
+    assert _bundle(arrays, pipeline=pipeline)['pipeline'].input_hierarchy \
+        is None
