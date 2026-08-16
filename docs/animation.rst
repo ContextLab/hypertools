@@ -431,7 +431,7 @@ still *computed* -- ``return_model=True`` reports them:
     bundle = hyp.plot(data, 'o', predict='Kalman', t=10, hue=categories,
                       animate=True, return_model=True)
 
-    bundle['predict']['forecasts']    # the fit -- one array per dataset
+    bundle['predict']['forecasts']    # the fit -- one array per drawn trace
     bundle['predict']['drawn']        # False
     bundle['predict']['draw_reason']  # why the figure has none
 
@@ -457,9 +457,14 @@ Everything they do not name stays inherited.
    * - ``forecast_palette=``
      - the same, in a palette of its own
    * - ``forecast_hue=``
-     - a grouping you supply, one value per dataset
+     - a grouping you supply, one value per forecast (see below)
    * - ``forecast_cluster=``
      - which forecasts are heading to the same place
+
+``forecast_hue=`` and ``forecast_fmt=`` take one value per *drawn trace*,
+which is one per input dataset until a hierarchical (MultiIndex) ``x=``
+regroups the data: ``plot()`` forecasts every final trace, so a hierarchy
+wants one value per leaf group **plus** one per derived mean.
 
 ``forecast_fmt=`` sets the line/marker style, in the same format-string
 grammar as ``fmt``, and changes nothing else:

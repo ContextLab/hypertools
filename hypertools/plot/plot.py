@@ -2245,11 +2245,17 @@ def plot(
         independently of the observed data (default: `None` -- inherit).
         Requires `predict=`; without it, `ValueError`.
 
-        One value per DATASET, not per observation: a forecast is a single
+        One value per FORECAST, not per observation: a forecast is a single
         trace. Datasets sharing a value share a colour, drawn from
         `forecast_palette=`. Mutually exclusive with `forecast_cluster=`
         (both decide the same thing), exactly as `hue=` and `cluster=` are
         for the observed data.
+
+        There is one forecast per DRAWN TRACE, which is one per input
+        dataset until a hierarchical (MultiIndex) `x=` regroups the data:
+        `plot()` forecasts every FINAL trace, so a hierarchy needs one value
+        per leaf group PLUS one per derived mean. The same unit applies to
+        `forecast_fmt=` and to `forecast_palette=`'s no-grouping case.
 
     forecast_cluster : str, class, instance, dict, or None
         Colour each forecast by WHERE IT IS PREDICTED TO END UP: the forecast
@@ -2271,7 +2277,10 @@ def plot(
         `reduce=`/`align=` -- so the grouping matches the geometry on screen
         rather than a pre-reduction one the viewer cannot see. With fewer
         than two forecasts it warns and inherits: every partition of a
-        single point is the same partition.
+        single point is the same partition. The endpoints clustered are
+        those of the DRAWN traces' forecasts, so a hierarchical (MultiIndex)
+        `x=` clusters its derived means' endpoints alongside its leaves'
+        (see `forecast_hue=`).
 
         In an ANIMATION the groups are resolved ONCE, from the full-history
         forecasts (the ones `return_model=True` returns), and stay fixed for
@@ -2299,13 +2308,16 @@ def plot(
 
         With `forecast_hue=` or `forecast_cluster=`, one colour per group.
         With NEITHER, there is no forecast grouping to colour by, so it is
-        spent one colour per dataset.
+        spent one colour per forecast (see `forecast_hue=` on what counts as
+        one for a hierarchical `x=`).
 
     forecast_fmt : str, sequence of str, or None
         Line/marker style for the forecast overlays, in the same format-string
         grammar as `fmt` (default: `None` -- inherit the observed style).
         Requires `predict=`; without it, `ValueError`. One string, or one per
-        dataset.
+        FORECAST -- which for a hierarchical (MultiIndex) `x=` means one per
+        leaf group PLUS one per derived mean, not one per input dataset (see
+        `forecast_hue=`).
 
         Overrides ONLY the style: a dotted forecast of a red trace is still
         red, unless a colour is also given (via `forecast_palette=`,

@@ -142,8 +142,12 @@ def test_leaf_forecasts_match_hyp_predict_on_xform_data_when_spaces_coincide():
     three components leaves `xform_data` in the higher-dimensional space
     while `trace_data` is projected for display, and then this comparison is
     meaningless. The guard below is the condition, asserted rather than
-    assumed; `tests/plot/test_hierarchy_bundle.py` covers the diverging
-    case, where forecasts follow `trace_data`.
+    assumed; the diverging case is
+    `test_hierarchy_forecasts_follow_trace_data_when_the_spaces_diverge`
+    below. (`tests/plot/test_hierarchy_bundle.py` covers it too, but for
+    FLAT input only -- its own docstring says so, and the cross-reference
+    this docstring used to make sent readers to a module that never builds a
+    MultiIndex.)
     """
     out = hyp.plot(market_frame(), '-', predict='Kalman', t=2,
                    return_model=True, show=False)
@@ -162,6 +166,87 @@ def test_leaf_forecasts_match_hyp_predict_on_xform_data_when_spaces_coincide():
         assert np.allclose(np.asarray(got, dtype=float),
                            np.asarray(want, dtype=float),
                            rtol=1e-6, atol=1e-6)
+
+
+def test_hierarchy_forecasts_follow_trace_data_when_the_spaces_diverge():
+    """Contract 5's OTHER half, for a HIERARCHY (review of the Task 7/8
+    commits found no test anywhere covering it: the flat version lives in
+    tests/plot/test_hierarchy_bundle.py, which is flat-input-only, and no
+    hierarchy test passed `n_components` at all).
+
+    With `reduce=` pinning 5 components, the analysed space (`xform_data`,
+    5-D) and the plotted space (`trace_data`, 3-D) genuinely differ, so
+    "forecasts follow the plotted trajectories" and "forecasts follow the
+    analysed ones" make DIFFERENT predictions -- which is what makes this
+    worth asserting. The divergence is verified from the shapes before the
+    equality is checked, so a frame that accidentally reduced to 3-D would
+    fail here rather than pass vacuously."""
+    rng = np.random.default_rng(0)
+    cols = pd.MultiIndex.from_tuples(
+        [('Market', sector, f'm{i}')
+         for sector in ('Tech', 'Financials', 'Energy') for i in range(6)],
+        names=['Market', 'Sector', 'Measure'])
+    df = pd.DataFrame(rng.normal(size=(60, 18)).cumsum(axis=0) + 100.0,
+                      columns=cols)
+    # asking for 5 components while the display path allows 3 legitimately
+    # warns (twice: analyze() applies the spec, then the display reducer).
+    # Asserted rather than left to leak -- this suite is held to zero
+    # unasserted warnings (same handling as tests/plot/test_hierarchy_
+    # bundle.py:21-26).
+    with pytest.warns(UserWarning,
+                      match='Unequal values passed to dims and n_components'):
+        out = hyp.plot(df, '-', predict='Kalman', t=2, return_model=True,
+                       reduce={'model': 'PCA', 'args': [],
+                               'kwargs': {'n_components': 5}},
+                       show=False)
+
+    assert len(out['xform_data']) == 3, 'three leaves, one per sector'
+    assert all(np.asarray(x).shape[1] == 5 for x in out['xform_data'])
+    assert len(out['trace_data']) == 4, '3 leaves + 1 derived mean'
+    assert all(np.asarray(tr).shape[1] == 3 for tr in out['trace_data']), \
+        'the two spaces must DIFFER for this test to mean anything'
+
+    forecasts = out['predict']['forecasts']
+    assert len(forecasts) == 4
+    assert all(np.asarray(f).shape == (2, 3) for f in forecasts), \
+        'forecasts in the analysed 5-D space would be (2, 5)'
+    for trace, forecast in zip(out['trace_data'], forecasts):
+        direct = np.asarray(hyp.predict(np.asarray(trace), model='Kalman',
+                                        t=2), dtype=float)
+        assert np.allclose(np.asarray(forecast, dtype=float), direct,
+                           rtol=1e-6, atol=1e-6)
+
+
+def test_forecast_override_length_errors_count_traces_not_datasets():
+    """Task 8 lifted the refusal that made `forecast_hue=`/`forecast_fmt=`
+    unreachable with a hierarchy, so their unit is now the FINAL TRACE --
+    one per leaf AND one per derived mean. Their messages still said
+    "dataset(s)", so a user counting three sectors read "got 3 value(s) for
+    4 dataset(s)" with nothing to explain the fourth (review of the Task 7/8
+    commits). `fmt=`'s own mismatch message had already been made
+    hierarchy-aware; these now match it."""
+    df = market_frame()
+    assert len(hyp.plot(df, '-', predict='Kalman', t=1, return_model=True,
+                        show=False)['trace_data']) == 4, \
+        'three sector leaves plus one mean -- the count the messages explain'
+
+    with pytest.raises(ValueError) as hue_err:
+        hyp.plot(df, '-', predict='Kalman', t=1,
+                 forecast_hue=['a', 'b', 'c'], show=False)
+    assert 'one value per FORECAST' in str(hue_err.value)
+    assert '3 value(s) for 4 forecast(s)' in str(hue_err.value)
+    assert 'one per leaf group PLUS one per derived mean' in str(hue_err.value)
+
+    with pytest.raises(ValueError) as fmt_err:
+        hyp.plot(df, '-', predict='Kalman', t=1,
+                 forecast_fmt=['-', '--', ':'], show=False)
+    assert 'one per FORECAST; got 3 for 4 forecast(s)' in str(fmt_err.value)
+    assert 'one per leaf group PLUS one per derived mean' in str(fmt_err.value)
+
+    # one value per FINAL TRACE is what is actually accepted
+    hyp.plot(df, '-', predict='Kalman', t=1,
+             forecast_hue=['a', 'b', 'c', 'd'],
+             forecast_fmt=['-', '--', ':', '-.'], show=False)
 
 
 def test_forecasts_are_not_silently_dropped():
@@ -311,14 +396,35 @@ def test_predict_with_hierarchy_and_animation_via_on_frame(frame_of):
             'an animated forecast must start where ITS OWN trace ended'
 
 
-def test_return_model_bundle_has_one_model_and_forecast_per_trace():
-    out = hyp.plot(market_frame(), '-', predict='Kalman', t=1,
+@pytest.mark.parametrize('frame_of, n_traces',
+                         [(market_frame, 4),
+                          (lambda: multirow_row_frame(n_time=10), 8)],
+                         ids=['column-axis', 'row-axis'])
+def test_return_model_bundle_has_one_forecast_per_trace(frame_of, n_traces):
+    """RENAMED (review of the Task 7/8 commits): it promised a per-trace
+    MODEL and never asserted one, because there is none -- `plot()`'s bundle
+    carries the single `model` SPEC it was given (a str here), and
+    `out['models']` has no 'predict' entry. Task 7's per-group model
+    ownership is `hyp.predict`'s, pinned in
+    tests/predict/test_predict_multiindex.py.
+
+    STRENGTHENED to assert the invariant the name now claims: the bundle's
+    exact key set, and that the forecasts were actually DRAWN. A hierarchy
+    that fell into the null-out/warn arm would still report the right
+    counts, so `drawn`/`draw_reason` are what distinguish "one forecast per
+    trace, on screen" from "computed and dropped"."""
+    out = hyp.plot(frame_of(), '-', predict='Kalman', t=1,
                    return_model=True, show=False)
-    assert len(out['trace_data']) == 4
-    assert len(out['predict']['forecasts']) == 4
+    assert set(out['predict']) == {'model', 'params', 'forecasts', 'drawn',
+                                   'draw_reason'}
+    assert len(out['trace_data']) == n_traces
+    assert len(out['predict']['forecasts']) == n_traces
     assert out['predict']['params'] == {'t': 1}
     assert out['predict']['model'] == 'Kalman'
-    assert len(out['trace_metadata']['keys']) == 4
+    assert out['predict']['drawn'] is True
+    assert out['predict']['draw_reason'] is None
+    assert len(out['trace_metadata']['keys']) == n_traces
+    assert len(_forecasts(_ax(out['fig']))) == n_traces
 
 
 # --- Contract 10: the >= 2-row precondition, on BOTH axes -------------------
@@ -343,6 +449,21 @@ def test_row_hierarchy_with_multi_row_leaves_forecasts_every_trace():
     assert len(out['predict']['forecasts']) == 8
     ax = _ax(out['fig'])
     assert len(_observed(ax)) == 8 and len(_forecasts(ax)) == 8
+
+    # Contract 5 NUMERICALLY on the ROW axis (review of the Task 7/8
+    # commits): every other numeric check in this module runs on a
+    # `market_frame` COLUMN hierarchy, and the row path differs materially
+    # -- its leaves arrive as DataFrames and are coerced, and its means are
+    # averaged over the members' shortest prefix. Counts alone (8 == 8)
+    # cannot tell a mean forecast taken from the wrong trajectory.
+    assert out['trace_metadata']['is_mean'][-1] is True, \
+        'the row-axis derived means must be in the compared set'
+    for trace, forecast in zip(out['trace_data'],
+                               out['predict']['forecasts']):
+        direct = np.asarray(hyp.predict(np.asarray(trace), model='Kalman',
+                                        t=2), dtype=float)
+        assert np.allclose(np.asarray(forecast, dtype=float), direct,
+                           rtol=1e-6, atol=1e-6)
 
 
 def test_row_hierarchy_with_one_row_leaves_raises_naming_the_trace():

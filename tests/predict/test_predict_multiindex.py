@@ -237,10 +237,26 @@ def test_duplicate_innermost_names_forecast_by_occurrence():
 
 
 def test_flat_frame_return_type_is_unchanged():
+    """A no-regression guard, NOT a feature test: it passes on the parent
+    commit too (measured in review of the Task 7 commit -- of this module's
+    25 tests it was the only one that did). STRENGTHENED to earn its place
+    by pinning the flat/hierarchical CONTRAST, which nothing else did: flat
+    `return_model=True` yields ONE ``(forecast, model)`` pair, where the
+    hierarchical path yields two parallel LISTS
+    (`test_return_model_yields_parallel_sequences`). A flat frame that
+    accidentally took the grouping branch would return a 1-element list and
+    still satisfy the original three assertions' shapes."""
     flat = pd.DataFrame(np.random.default_rng(0).normal(size=(80, 4)).cumsum(0))
     out = hyp.predict(flat, model='Kalman', t=3)
     assert not isinstance(out, list)
     assert np.asarray(out).shape == (3, 4)
+
+    forecast, model = hyp.predict(flat, model='Kalman', t=3, return_model=True)
+    assert not isinstance(forecast, list) and not isinstance(model, list)
+    assert np.asarray(forecast).shape == (3, 4)
+    assert isinstance(model, Kalman) and model.is_fitted
+    assert np.allclose(np.asarray(forecast), np.asarray(out),
+                       rtol=1e-6, atol=1e-6)
 
 
 def test_horizon_is_respected_per_group():
@@ -249,10 +265,24 @@ def test_horizon_is_respected_per_group():
 
 
 def test_groups_come_back_in_input_order():
+    """STRENGTHENED (review of the Task 7/8 commits): as written this was
+    `test_group_forecast_matches_forecasting_that_group_alone` again with
+    looser tolerances -- it checked out[0] only, so it said nothing about
+    ORDER. `col_frame`'s sectors are ('Tech', 'Energy'), whose SORTED order
+    is the reverse, so a `groupby(sort=True)`-style implementation returns
+    the same two forecasts transposed; pin both positions AND the negative,
+    or the pairing is satisfied by any permutation."""
     df = col_frame()
     out = hyp.predict(df, model='Kalman', t=1)
-    alone = hyp.predict(df['Market']['Tech'], model='Kalman', t=1)
-    assert np.allclose(np.asarray(out[0]), np.asarray(alone))
+    alone = [np.asarray(hyp.predict(df['Market'][s], model='Kalman', t=1))
+             for s in ('Tech', 'Energy')]
+    assert not np.allclose(alone[0], alone[1]), \
+        'the two groups must forecast differently for order to be observable'
+    assert len(out) == 2
+    for got, want in zip(out, alone):
+        assert np.allclose(np.asarray(got), want, rtol=1e-6, atol=1e-6)
+    assert not np.allclose(np.asarray(out[0]), alone[1]), \
+        'the groups came back in sorted (Energy, Tech) order'
 
 
 # --- model ownership --------------------------------------------------------
@@ -431,3 +461,66 @@ def test_group_with_too_little_history_raises_naming_the_group():
     df = pd.DataFrame(np.zeros((2, 3)), index=idx)
     with pytest.raises(ValueError, match='Tech|Energy'):
         hyp.predict(df, model='Kalman', t=1)
+
+
+@pytest.mark.parametrize('frame_of', [col_frame, row_frame],
+                         ids=['column-axis', 'row-axis'])
+@pytest.mark.parametrize('kwargs, pattern', [
+    ({'model': 'Kalman', 't': 0}, r'must be >= 1; got 0'),
+    ({'model': 'Kalman', 't': None}, r'must be a positive integer'),
+    ({'model': 'Kalman', 't': 1.5}, r'not a float'),
+    ({'model': 'Kalmann', 't': 1}, r"unknown predict model 'Kalmann'"),
+    ({'model': {'kwargs': {}}, 't': 1}, r"must include a 'model' key"),
+])
+def test_whole_call_argument_errors_are_not_blamed_on_a_group(frame_of,
+                                                              kwargs, pattern):
+    """`t` and `model=` describe the WHOLE CALL, so their errors must not
+    carry a group's name.
+
+    Every check on them ran inside the per-group recursion, so a caller who
+    typed `t=0` was told "group ('Tech',): t (forecast horizon) must be >= 1"
+    -- measured on all four spellings before the fix -- and went looking for
+    a problem in that group's data. The prefix is now reserved for failures
+    that really are one group's (too little history, duplicated times), as
+    `test_group_with_too_little_history_raises_naming_the_group` still pins.
+    """
+    with pytest.raises(ValueError, match=pattern) as excinfo:
+        hyp.predict(frame_of(), **kwargs)
+    assert not str(excinfo.value).startswith('group '), \
+        f'a whole-call mistake was blamed on a group: {excinfo.value}'
+
+
+def test_only_valueerrors_are_prefixed_with_the_group_key():
+    """The DOCSTRING's promise, pinned against what the loop actually does.
+
+    It read "Per-group errors are re-raised prefixed with the group's key"
+    without qualification, but the loop catches `ValueError` alone (see the
+    `except ValueError` in `predict`'s group loop), so a TypeError escaped
+    with a message indistinguishable from the flat path's -- doc and code
+    disagreed. Both halves are asserted here so they cannot drift apart
+    again: whichever way a future change goes, this test moves with it."""
+    doc = hyp.predict.__doc__
+    assert 'per-group `ValueError`' in doc, \
+        'the docstring must scope the group-key promise to ValueError'
+    assert 'Other exception types propagate unchanged' in doc
+
+    # the promised half: a per-group ValueError IS named
+    idx = pd.MultiIndex.from_tuples([('Tech', 0), ('Energy', 0)],
+                                    names=['Sector', 'day'])
+    with pytest.raises(ValueError) as caught:
+        hyp.predict(pd.DataFrame(np.zeros((2, 3)), index=idx),
+                    model='Kalman', t=1)
+    assert str(caught.value).startswith('group ('), caught.value
+
+    # the excluded half: a TypeError raised while a group is being forecast
+    # (`Kalman(bogus=3)`) reaches the caller exactly as the flat path raises
+    # it. That is the right message HERE -- a bad constructor kwarg is the
+    # caller's, not a group's -- but it is not the prefixed one, which is
+    # precisely what the unqualified docstring claimed.
+    with pytest.raises(TypeError, match='bogus') as typed:
+        hyp.predict(col_frame(), model='Kalman', t=1, bogus=3)
+    assert not str(typed.value).startswith('group ')
+    with pytest.raises(TypeError, match='bogus') as flat:
+        hyp.predict(col_frame()['Market']['Tech'], model='Kalman', t=1,
+                    bogus=3)
+    assert str(typed.value) == str(flat.value)

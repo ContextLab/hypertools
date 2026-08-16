@@ -600,6 +600,20 @@ def trail_alpha(age, n_retained, live_alpha=None, floor=None):
 # dash / opacity vocabulary.
 # ---------------------------------------------------------------------------
 
+#: Appended to every "wrong number of values" message below. `plot()` fits one
+#: forecast per DRAWN TRACE, which is one per input dataset until a
+#: hierarchical `x=` regroups the data -- then the leaves AND the derived
+#: means each get one (Task 8 lifted the refusal that used to make that
+#: combination impossible). The messages said "dataset(s)" throughout, so a
+#: user counting their three sectors read "got 3 value(s) for 4 dataset(s)"
+#: and had no way to learn where the fourth came from; `fmt=`'s own mismatch
+#: message (plot.py) already spells this out and these now match it.
+_FORECAST_COUNT_NOTE = (
+    "There is one forecast per DRAWN TRACE, which is one per input dataset "
+    "unless a hierarchical (MultiIndex) x= regrouped the data -- then it is "
+    "one per leaf group PLUS one per derived mean.")
+
+
 def _forecast_label_colors(labels, palette):
     """One RGB tuple per dataset, from `labels` (one per DATASET).
 
@@ -670,7 +684,8 @@ def _resolve_fmt_list(fmt, n_datasets):
         if len(fmts) != n_datasets:
             raise ValueError(
                 f"forecast_fmt= must be one format string, or one per "
-                f"dataset; got {len(fmts)} for {n_datasets} dataset(s).")
+                f"FORECAST; got {len(fmts)} for {n_datasets} forecast(s). "
+                f"{_FORECAST_COUNT_NOTE}")
     for f in fmts:
         _validate_fmt(f)
     return fmts
@@ -744,8 +759,11 @@ def resolve_forecast_overrides(n_datasets, forecasts=None, *, hue=None,
     Parameters
     ----------
     n_datasets : int
-        How many forecasts there are -- one per INPUT dataset, whatever the
-        observed data was regrouped into.
+        How many forecasts there are -- one per DRAWN TRACE. That is one per
+        INPUT dataset for flat input, whatever the observed data was
+        regrouped into by `hue=`/`cluster=`; for a hierarchical (MultiIndex)
+        `x=` it is one per leaf group PLUS one per derived mean, since
+        `plot()` forecasts every final trace.
     forecasts : list of numpy.ndarray or None
         The forecast paths, in the space they are DRAWN in. Only
         `forecast_cluster=` needs them: it clusters their ENDPOINTS, and
@@ -845,9 +863,10 @@ def resolve_forecast_overrides(n_datasets, forecasts=None, *, hue=None,
                 "hue= to colour the observed data per observation.")
         if len(labels) != n_datasets:
             raise ValueError(
-                f"forecast_hue= must have exactly one value per dataset (a "
+                f"forecast_hue= must have exactly one value per FORECAST (a "
                 f"forecast is one trace, not one value per observation); got "
-                f"{len(labels)} value(s) for {n_datasets} dataset(s).")
+                f"{len(labels)} value(s) for {n_datasets} forecast(s). "
+                f"{_FORECAST_COUNT_NOTE}")
         # every "no label here" spelling becomes ONE sentinel, so missing
         # labels form a single unlabeled group rather than one group per
         # distinct NaN object (`colors.is_missing_label` -- the same

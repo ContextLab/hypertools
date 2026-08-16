@@ -117,9 +117,17 @@ def _normalize_data(data):
     return _coerce_dataset(data)
 
 
-@dw.decorate.funnel
-def _wrangled_predict(data, model='Kalman', t=10, return_model=False, **kwargs):
-    """Funnel-wrapped core of `predict` (see its docstring)."""
+def _validate_horizon(t):
+    """Check `t` (the forecast horizon) and return it normalized.
+
+    Split out of `_wrangled_predict` so the HIERARCHICAL path can run it
+    ONCE, before the per-group loop: `t` describes the whole call, and
+    routing its errors through the recursion made `hyp.predict(hier_df,
+    t=0)` say "group ('Tech',): t (forecast horizon) must be >= 1", which
+    sends a reader looking for a problem in that group's data (review of the
+    Task 7/8 commits). Idempotent, so `_wrangled_predict` re-running it on
+    each group is free.
+    """
     # validate the forecast horizon (QC 2026-07: a numeric t<=0 silently
     # returned an empty (0, n_features) forecast). t may ALSO be a target
     # datetime/Timestamp (forecast up to that time), which passes through.
@@ -145,7 +153,24 @@ def _wrangled_predict(data, model='Kalman', t=10, return_model=False, **kwargs):
     elif isinstance(t, (float, np.floating)):
         raise ValueError(f"t (forecast horizon) must be an integer number of "
                          f"steps or a target datetime, not a float; got {t!r}")
+    return t
 
+
+def _resolve_forecaster_spec(model, kwargs):
+    """Normalize a `model=` spec into what `unpack_model` resolves it to.
+
+    Returns `(resolved, kwargs)` where `resolved` is a class, a
+    ``{'model': cls, ...}`` dict, or an already-constructed forecaster --
+    deliberately BEFORE construction, so the hierarchical path can re-use
+    this as a pre-flight validation of the SPEC (which describes the whole
+    call) without building a forecaster it would throw away, and without
+    reaching a `Chronos`-style constructor twice.
+
+    Split out of `_wrangled_predict` for the same reason as
+    `_validate_horizon`: an unknown model name is the caller's mistake, not
+    a group's, and it used to be reported as "group ('Tech',): unknown
+    predict model 'Kalmann'" (review of the Task 7/8 commits).
+    """
     if isinstance(model, dict) and 'kwargs' not in model and 'args' not in model:
         # {'model': ..., 'params': {...}} form: unpack before handing the
         # inner model spec to unpack_model (which only auto-unpacks the
@@ -193,6 +218,20 @@ def _wrangled_predict(data, model='Kalman', t=10, return_model=False, **kwargs):
             "AutoRegressor: model={'model': 'AutoRegressor', 'kwargs': "
             "{'model': <regressor>}}.") from e
 
+    # `unpack_model` hands an UNRESOLVABLE name straight back as a string;
+    # raised here rather than in the construction dispatch below so the
+    # pre-flight validation sees it too.
+    if isinstance(resolved, str):
+        raise ValueError(f'unknown predict model {resolved!r}; {_spec_help()}')
+    return resolved, kwargs
+
+
+@dw.decorate.funnel
+def _wrangled_predict(data, model='Kalman', t=10, return_model=False, **kwargs):
+    """Funnel-wrapped core of `predict` (see its docstring)."""
+    t = _validate_horizon(t)
+    resolved, kwargs = _resolve_forecaster_spec(model, kwargs)
+
     if isinstance(resolved, type):
         resolved = resolved(**kwargs)
     elif isinstance(resolved, dict):
@@ -203,8 +242,6 @@ def _wrangled_predict(data, model='Kalman', t=10, return_model=False, **kwargs):
         # F16-predict-010).
         resolved = cls(*resolved.get('args', []),
                        **{**resolved.get('kwargs', {}), **kwargs})
-    elif isinstance(resolved, str):
-        raise ValueError(f'unknown predict model {resolved!r}; {_spec_help()}')
     elif kwargs:
         # an already-constructed instance cannot absorb constructor kwargs;
         # warn instead of silently ignoring them (QC 2026-07 red-team).
@@ -274,9 +311,16 @@ def predict(data, model='Kalman', t=10, return_model=False, **kwargs):
         Each group is forecast by a RECURSIVE `predict` call. That
         terminates because grouping FLATTENS each group on the axis it
         grouped along, so no group can be re-detected as hierarchical
-        (`hypertools.core.hierarchy`'s one invariant). Per-group errors are
-        re-raised prefixed with the group's key, so a group that is too
-        short to forecast says which one it was.
+        (`hypertools.core.hierarchy`'s one invariant). Arguments that
+        describe the WHOLE call -- `t` and the `model=` spec -- are checked
+        ONCE before that loop, so a bad horizon or an unknown model name is
+        reported plainly instead of being blamed on the first group. What
+        the loop prefixes with the group's key is a per-group `ValueError`
+        (the type every data-shaped rejection raises: too short a history,
+        duplicated times), so a group that is too short to forecast says
+        which one it was. Other exception types propagate unchanged; a
+        group's WARNINGS, however, are always re-emitted with its key,
+        whatever the group failed with.
 
         A frame with a MultiIndex on BOTH axes raises (which hierarchy wins
         is undefined), and so does a hierarchical frame nested inside a
@@ -410,6 +454,26 @@ def predict(data, model='Kalman', t=10, return_model=False, **kwargs):
             # still works per group (hypertools/core/hierarchy.py's
             # `group_rows_for_forecast`).
             groups, keys = group_rows_for_forecast(data)
+
+        # WHOSE mistake is it? `t` and the `model=` spec describe the WHOLE
+        # CALL, but every check on them used to run inside the per-group
+        # recursion, so `hyp.predict(hier_df, t=0)` reported "group
+        # ('Tech',): t (forecast horizon) must be >= 1" and a misspelled name
+        # reported "group ('Tech',): unknown predict model 'Kalmann'" --
+        # blaming a group for an argument it had no part in (review of the
+        # Task 7/8 commits). Validate both HERE, once, so those errors reach
+        # the caller unprefixed; the `group {key}:` prefix below then means
+        # what it says: something about THAT group's data.
+        t = _validate_horizon(t)
+        # VALIDATION ONLY -- the result is discarded, because each group
+        # constructs (or deep-copies) its own forecaster below. Its warnings
+        # are suppressed for the same reason: the real per-group calls emit
+        # them, prefixed, and a pre-flight copy would double every one (the
+        # deprecated ``{'model': ..., 'params': {...}}`` spec warns here).
+        # `dict(kwargs)` because the deprecated form merges into `kwargs`.
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')
+            _resolve_forecaster_spec(model, dict(kwargs))
 
         # TERMINATION (Contract 11): every group above is flat on the axis it
         # was grouped along -- flat columns, or the innermost level as a flat
