@@ -18,6 +18,7 @@ forecaster returned by an earlier ``predict(..., return_model=True)`` call
 can be passed back as ``model=`` on NEW data without re-estimating its
 learned parameters.
 """
+import copy
 import numbers
 import warnings
 
@@ -236,6 +237,38 @@ def predict(data, model='Kalman', t=10, return_model=False, **kwargs):
         Degenerate inputs (None, a scalar, empty data, fewer than 2 rows)
         raise a clear error instead of returning meaningless forecasts.
 
+        HIERARCHICAL input (1.1). A BARE DataFrame carrying a MultiIndex on
+        one axis is split into groups and forecast one group at a time (see
+        ``docs/hierarchy.rst``):
+
+        - a COLUMN MultiIndex groups by every level ABOVE the innermost one;
+          the innermost level is the FEATURE axis, so each group keeps all
+          `len(data)` observations. A ``(Market, Sector, Measure)`` frame
+          gives one forecast per sector, each with the three Measure columns.
+        - a ROW MultiIndex groups by every level ABOVE the innermost one;
+          the innermost level is the TIME axis and SURVIVES as each group's
+          index (it is dropped from the grouping levels, not reset), so a
+          datetime innermost level keeps its `DatetimeIndex` and `t` may be a
+          future `Timestamp`. Because the index survives, a group whose times
+          are out of order raises the usual "not sorted in ascending order"
+          warning with its group name prepended, and a group with DUPLICATED
+          times raises a `ValueError` naming it (the horizon is ill-defined
+          when several observations share one position on the time axis).
+          Integer-indexed panels, whose innermost level is unique, are not
+          affected.
+
+        Each group is forecast by a RECURSIVE `predict` call. That
+        terminates because grouping FLATTENS each group on the axis it
+        grouped along, so no group can be re-detected as hierarchical
+        (`hypertools.core.hierarchy`'s one invariant). Per-group errors are
+        re-raised prefixed with the group's key, so a group that is too
+        short to forecast says which one it was.
+
+        A frame with a MultiIndex on BOTH axes raises (which hierarchy wins
+        is undefined), and so does a hierarchical frame nested inside a
+        list/tuple -- the hierarchy determines the whole group list, which
+        cannot be reconciled with a caller-supplied list of datasets.
+
     model : str, dict, class, or Forecaster instance
         Which forecaster to use (default: 'Kalman'). A string is one of
         `FORECASTERS`' names (Kalman, GaussianProcess, AutoRegressor, ARIMA,
@@ -259,6 +292,20 @@ def predict(data, model='Kalman', t=10, return_model=False, **kwargs):
         entries; GaussianProcess, AutoRegressor, and Laplace raise a clear
         `ValueError` (fill missing values first, e.g. with `hyp.impute`).
 
+        Ownership on HIERARCHICAL input, where one model is needed per
+        group. The caller's instance is never mutated either way, and
+        ``return_model=True`` returns one distinct object per group:
+
+        - a name, a class, a dict spec, or an UNFITTED instance: one
+          independent model is FITTED PER GROUP. An unfitted instance is
+          deep-copied per group, so the caller's object is never fitted and
+          later groups do not fall onto the `predict_new` path just because
+          an earlier group fitted the shared object.
+        - an ALREADY-FITTED instance: its learned parameters are REUSED on
+          every group (via `predict_new`), each through an independent deep
+          copy -- the reuse promised above, applied group-wise rather than
+          refitting.
+
     t : int or datetime-like
         Forecast horizon (see `hypertools.predict.common.resolve_t`). A
         datetime-like `t` at or before the data's last timestamp truncates
@@ -270,7 +317,9 @@ def predict(data, model='Kalman', t=10, return_model=False, **kwargs):
     return_model : bool
         If True, also return the fitted (or reused) Forecaster instance, so
         it can be passed back as `model=` on future calls with new data
-        (default: False).
+        (default: False). On hierarchical input this returns PARALLEL
+        SEQUENCES -- ``([f0, f1, ...], [m0, m1, ...])``, mirroring the flat
+        ``(forecast, model)`` shape -- rather than a list of pairs.
 
     **kwargs
         Passed through to the forecaster's constructor when `model`
@@ -284,6 +333,9 @@ def predict(data, model='Kalman', t=10, return_model=False, **kwargs):
     -------
     forecasts (and the fitted Forecaster if return_model=True). Lists in,
     lists out: a single input dataset returns a single forecast DataFrame.
+    A hierarchical DataFrame (see `data`) returns a LIST of forecasts, one
+    per group in input order -- or, with ``return_model=True``, the parallel
+    ``([f0, f1, ...], [m0, m1, ...])`` pair described there.
 
     Examples
     --------
@@ -294,7 +346,103 @@ def predict(data, model='Kalman', t=10, return_model=False, **kwargs):
     >>> forecast = hyp.predict(x, model='Kalman', t=5)
     >>> forecast.shape
     (5, 3)
+
+    One forecast per group of a column hierarchy (the innermost level is
+    the feature axis, so every group keeps all 3 measures):
+
+    >>> import pandas as pd
+    >>> columns = pd.MultiIndex.from_tuples(
+    ...     [(sector, measure) for sector in ('Tech', 'Energy')
+    ...      for measure in ('open', 'close', 'volume')],
+    ...     names=['Sector', 'Measure'])
+    >>> df = pd.DataFrame(np.cumsum(
+    ...     np.random.default_rng(0).standard_normal((40, 6)), axis=0),
+    ...     columns=columns)
+    >>> [f.shape for f in hyp.predict(df, model='Kalman', t=5)]
+    [(5, 3), (5, 3)]
     """
     data = _normalize_data(data)
+
+    # imported INSIDE the function on purpose: `predict` re-enters itself
+    # once per group below, and a function-level import resolves each name on
+    # `hypertools.core.hierarchy` at CALL time -- which is what lets
+    # tests/predict/test_predict_multiindex.py's observing wrappers (patched
+    # onto that module) see the calls. A module-level import would bind the
+    # originals once and the wrappers would never run.
+    from ..core.hierarchy import (group_columns, group_rows_for_forecast,
+                                  reject_dual_axis, reject_hierarchical_in_list)
+    # this block runs AFTER `_normalize_data` (the plan leaves the order
+    # open): the degenerate-input checks have to come first, or a frame with
+    # a column MultiIndex but zero columns would group into ZERO leaves and
+    # return an empty LIST of forecasts instead of `_normalize_data`'s clear
+    # "no observations" error. `reject_hierarchical_in_list` accepts a list
+    # or a tuple, so it is indifferent to `_normalize_data`'s tuple->list
+    # conversion either way.
+    reject_hierarchical_in_list(data, caller='hyp.predict', axes='both')
+    if isinstance(data, pd.DataFrame) and (data.index.nlevels >= 2
+                                           or data.columns.nlevels >= 2):
+        reject_dual_axis(data)
+        if data.columns.nlevels >= 2:
+            # `group_columns` returns (leaves, META); the group LABELS live in
+            # meta['leaf_keys']. Unpacking it as `keys` would label each group
+            # with a dict key ('n_levels', 'leaf_keys', ...) in the messages
+            # below. Labels come from the grouping key, NEVER from a leaf's
+            # columns -- flattening (Contract 11) removes the tuples anyway.
+            groups, _meta = group_columns(data)
+            keys = _meta['leaf_keys']
+        else:
+            # NOT `expand_multiindex`: the innermost row level is the TIME
+            # axis and survives as each group's index, so a datetime-like `t`
+            # still works per group (hypertools/core/hierarchy.py's
+            # `group_rows_for_forecast`).
+            groups, keys = group_rows_for_forecast(data)
+
+        # TERMINATION (Contract 11): every group above is flat on the axis it
+        # was grouped along -- flat columns, or the innermost level as a flat
+        # index -- so the recursive `predict(group, ...)` below cannot
+        # re-detect it as hierarchical. Never route `expand_multiindex`
+        # leaves through here: those keep their row MultiIndex and re-expand
+        # to themselves, so the recursion would not terminate.
+        forecasts, models = [], []
+        for key, group in zip(keys, groups):
+            # OWNERSHIP: an UNFITTED instance is deep-copied so each group
+            # fits independently and the caller's object is never fitted (and
+            # later groups never fall onto `predict_new`); a FITTED instance
+            # is deep-copied so each group reuses the same learned parameters
+            # via `predict_new` (:216-219) without the groups sharing mutable
+            # state. A name/class/dict SPEC is stateless -- `_wrangled_predict`
+            # constructs a fresh forecaster from it per call -- so copying it
+            # would only obscure that.
+            group_model = (model if isinstance(model, (str, dict, type))
+                           else copy.deepcopy(model))
+            with warnings.catch_warnings(record=True) as caught:
+                # `catch_warnings` SUPPRESSES what it records, so everything
+                # captured here must be re-emitted below or it is silently
+                # lost; 'always' defeats the __warningregistry__ dedup that
+                # would otherwise drop the 2nd..nth group's copy of an
+                # identical warning.
+                warnings.simplefilter('always')
+                try:
+                    result = predict(group, model=group_model, t=t,
+                                     return_model=True, **kwargs)
+                    failure = None
+                except ValueError as err:
+                    result, failure = None, err
+            # re-emitted OUTSIDE the context (inside it they would just be
+            # re-captured), and BEFORE re-raising, so warnings a failing group
+            # issued on its way to the error still reach the caller. F8: the
+            # group name is prepended; the category is preserved so a
+            # DeprecationWarning does not silently become a UserWarning.
+            for w in caught:
+                warnings.warn(f'group {key}: {w.message}', w.category,
+                              stacklevel=external_stacklevel())
+            if failure is not None:
+                raise ValueError(f'group {key}: {failure}') from failure
+            forecasts.append(result[0])
+            models.append(result[1])
+        # PARALLEL SEQUENCES, mirroring the flat shape (forecast, model)
+        # rather than a list of (forecast, model) pairs.
+        return (forecasts, models) if return_model else forecasts
+
     return _wrangled_predict(data, model=model, t=t, return_model=return_model,
                              **kwargs)

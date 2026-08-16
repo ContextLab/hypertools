@@ -2099,6 +2099,67 @@ git commit -m "feat(plot): continuous hue propagates through column hierarchies 
 
 ## Task 7: Hierarchical `hyp.predict` with explicit model ownership
 
+> **EXECUTED 2026-08-16, then amended by the corrections below.** Every
+> "measured" claim in this section's preamble reproduced exactly at
+> `ea5d9b5e` (column input → one `(1, 6)` frame; row input and a
+> row-hierarchical frame in a list → `TypeError: cannot perform __sub__ with
+> this index type: MultiIndex`), and the extracted 22-test module ran
+> **21 failed, 1 passed** before any implementation. Corrections, measured:
+>
+> 1. **The duplicate-timestamp check cannot be unconditional.** Step 3's
+>    "add the `index.is_unique` check beside the existing monotonicity
+>    check" fires BEFORE `_infer_step` (`predict/common.py:44-46`), whose
+>    *"all observations share one timestamp"* message
+>    `tests/test_predict_audit_fixes.py:183-187` pins for an all-identical
+>    `DatetimeIndex`. An unconditional raise there changes that message and
+>    fails that test. Implemented as a BRANCH instead: a non-unique
+>    `DatetimeIndex` with `nunique() == 1` re-raises the existing wording;
+>    everything else gets the new duplicate message. The audit test is
+>    unchanged.
+> 2. **The duplicate check is a GLOBAL compatibility change**, not a
+>    hierarchy-only one — `resolve_t` runs for flat inputs too. Measured at
+>    `ea5d9b5e`: `hyp.predict(df_with_duplicated_DatetimeIndex, t=1)`
+>    succeeded (returning `(1, 3)` with only the monotonicity warning); it
+>    now raises. The *Compatibility changes* table (L194-200) does not list
+>    this — **Task 11 must add it to the CHANGELOG.**
+> 3. **`test_unsorted_times_warn_naming_the_group` did not test its own
+>    name.** `match='not sorted in ascending order'` is satisfied by the
+>    UNPREFIXED warning `predict/common.py` has raised since 1.0, so it
+>    verified nothing about F8's group prefix; it failed only because the
+>    surrounding call raised `TypeError`. STRENGTHENED to assert exactly one
+>    such warning and that it starts with `"group ('Tech',): "` (verified to
+>    fail when the prefix is removed from the implementation).
+> 4. **`test_flat_frame_return_type_is_unchanged` PASSED before the
+>    implementation.** It is a legitimate no-regression guard rather than a
+>    broken test, and is kept as written — but it asserts nothing about this
+>    feature.
+> 5. **`test_duplicate_times_raise_naming_the_group` leaked an unasserted
+>    warning.** Its Tech group is also non-monotonic, so it warns on the way
+>    to the error. STRENGTHENED with an enclosing `pytest.warns`, which also
+>    pins that per-group warnings are re-emitted BEFORE the re-raise —
+>    `warnings.catch_warnings(record=True)` SUPPRESSES whatever is not
+>    re-emitted, so this fails loudly instead of silently swallowing them.
+> 6. **Three tests ADDED (22 → 25)**, each covering a rule this section
+>    states but nothing pinned: a class/dict spec fits one independent model
+>    per group (only the `str` branch was exercised); a per-group warning
+>    keeps its CATEGORY through the re-emission (verified to fail when
+>    `w.category` is dropped — a `DeprecationWarning` silently became a
+>    `UserWarning`); and grouping does not mutate the caller's frame
+>    (Contract 11) end-to-end through `hyp.predict`.
+> 7. **Step 5's guard command names a file that does not exist.**
+>    `tests/test_predict.py` — the predict suite is `tests/predict` plus
+>    `tests/test_predict_audit_fixes.py` (146 passed).
+> 8. **Placement, left open by Step 3:** the block runs AFTER
+>    `_normalize_data(data)`. A frame with a column MultiIndex but zero
+>    columns would otherwise group into ZERO leaves and return an empty LIST
+>    of forecasts instead of the clear "no observations" error.
+> 9. **Line-number drift** (each verified): `predict/common.py:103-109` is
+>    actually 104-110; `predict/common.py:256` is 254; `predict.py:271-275`
+>    is 270-274. `predict.py:216-219` and `:245-249` are exact.
+> 10. **Known gap, deliberately not widened here:** Step 3 wraps only
+>    `ValueError`, so a per-group `TypeError` (unknown kwargs) or
+>    `NotFittedError` still escapes without a group name.
+
 `hyp.predict(row_multiindex_df)` raises `TypeError: cannot perform __sub__ with this index type: MultiIndex` today (measured); a column-hierarchical frame silently flattens all tickers into one series (measured: `(1, 6)` for a 6-ticker frame).
 
 **Return contract (must be documented):**
@@ -2468,11 +2529,11 @@ At the top of `predict()`, before model dispatch:
 
 Wrap the per-group call in `warnings.catch_warnings(record=True)` and re-emit each captured warning with `f"group {key}: {msg}"`, so `predict/common.py:103-109`'s monotonicity warning names its group (F8). Duplicate timestamps within a group raise a `ValueError` naming the group — add the `index.is_unique` check beside the existing monotonicity check in `predict/common.py`.
 
-- [ ] **Step 4: Run and confirm pass** — `.venv/bin/python -m pytest tests/predict/test_predict_multiindex.py -v` → **22 passed**.
+- [x] **Step 4: Run and confirm pass** — `.venv/bin/python -m pytest tests/predict/test_predict_multiindex.py -v` → **22 passed** *(EXECUTED: **25 passed**, see correction 6 above)*.
 
-- [ ] **Step 5: Guard the predict suite** — `.venv/bin/python -m pytest tests/predict tests/test_predict.py -q`.
+- [x] **Step 5: Guard the predict suite** — ~~`.venv/bin/python -m pytest tests/predict tests/test_predict.py -q`~~ *(`tests/test_predict.py` does not exist)*: `.venv/bin/python -m pytest tests/predict tests/test_predict_audit_fixes.py -q` → **146 passed**.
 
-- [ ] **Step 6: Run the WHOLE suite** — `.venv/bin/python -m pytest -q`. Expected: baseline + 107 (85 + 22).
+- [x] **Step 6: Run the WHOLE suite** — `.venv/bin/python -m pytest -q`. Expected: baseline + 107 (85 + 22) *(EXECUTED: measured baseline 3353 + 25 = **3378 passed**; the "85" was a carry-forward, recomputed per Global Constraints)*.
 
 - [ ] **Step 7: Document** the grouping rule, the leaf-flatness invariant that makes the per-group recursion terminate (Contract 11), the return shape, the unfitted-vs-fitted ownership table, and the datetime-horizon behaviour in `predict()`'s docstring (beside `model=`, `predict.py:224-250`, and `return_model`, `predict.py:271-275`), linking to `docs/hierarchy.rst`.
 

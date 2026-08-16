@@ -77,6 +77,13 @@ def resolve_t(data, t):
       less than one full step ahead rounds up to a single step). A
       tz-naive ``t`` on tz-aware data is localized to the data's timezone.
 
+    An index that is not sorted ascending WARNS (forecasts continue from the
+    last row regardless), and one carrying DUPLICATE entries raises a
+    `ValueError`: the horizon is ill-defined when several observations share
+    one position on the time axis. This is checked for every input, flat or
+    grouped (hypertools 1.1; `hyp.predict` names the offending group when
+    the input was hierarchical).
+
     Parameters
     ----------
     data : pandas.DataFrame
@@ -108,6 +115,29 @@ def resolve_t(data, t):
             'continue from the LAST row. If your data are newest-first, sort '
             'them (e.g. df.sort_index()) before forecasting.',
             stacklevel=external_stacklevel())
+
+    # duplicate observation times make the horizon ill-defined: `_infer_step`
+    # would take the (zero-length) gap between the repeats out of the running
+    # and forecast on a step that no longer describes the data, and a
+    # datetime-like `t` would truncate to an ambiguous position (1.1 plan,
+    # Decisions #4: "preserve, warn, reject duplicates" -- legitimate
+    # integer-indexed panels, whose indices ARE unique, are not affected).
+    if len(index) > 1 and not index.is_unique:
+        if isinstance(index, pd.DatetimeIndex) and index.nunique() == 1:
+            # the fully-degenerate case keeps `_infer_step`'s long-standing
+            # wording, which tests/test_predict_audit_fixes.py:183 pins --
+            # this check runs BEFORE _infer_step, so raising the generic
+            # duplicate message here would silently retire that message.
+            raise ValueError('cannot infer a timestep: all observations '
+                             'share one timestamp')
+        duplicated = index[index.duplicated()].unique()
+        raise ValueError(
+            f'the dataset index has {len(duplicated)} duplicated '
+            f'entr{"y" if len(duplicated) == 1 else "ies"} (e.g. '
+            f'{duplicated[0]!r}), so the forecast horizon is ill-defined: '
+            'several observations share one position on the time axis. '
+            'Aggregate the repeats (e.g. df.groupby(level=-1).mean()) or '
+            'give them distinct times before forecasting.')
 
     if isinstance(t, (int, np.integer)) and not isinstance(t, bool):
         n_steps = int(t)
