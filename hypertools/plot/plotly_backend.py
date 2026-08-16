@@ -714,6 +714,18 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     without guessing from `dash` (user data drawn with `fmt='--'` is dashed
     too) -- the plotly half of matplotlib's `_hyp_forecast_role` artist tag.
 
+    The OBSERVED data traces are tagged the same way, with
+    ``meta['hyp_trace_index']`` -- the index into `data` of the trajectory
+    they draw, and the plotly half of matplotlib's `coll._hyp_trace_index`
+    (`plot._apply_multicolor_lines`). It exists for the same reason: neither
+    `fig.data` nor `ax.collections` is a list of data artists. `fig.data`
+    also carries the black wireframe cube, 2-D density/surface layers, the
+    forecast overlays above and the colorbar's phantom trace, and NONE of
+    those is named, so counting "traces with a `name`" or "all but the last"
+    is wrong as soon as any of them is present. Under a continuous `hue=` in
+    2-D the tag is also what identifies the many one-segment traces
+    (`_segment_traces_2d`) as ONE trajectory.
+
     `colorbar_info` (GH #100): optional dict from
     `hypertools.plot.plot._build_colorbar_info` (``kind='continuous'`` with
     ``vmin``/``vmax``/``palette``, or ``kind='discrete'`` with
@@ -967,6 +979,16 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
             visible=not hide_points,
             line=dict(color=color, width=width, dash=dash),
             marker=dict(color=color, size=msize, symbol=symbol),
+            # WHICH trace of `data` this draws -- the plotly half of
+            # matplotlib's `coll._hyp_trace_index` tag
+            # (`plot._apply_multicolor_lines`), and for the same reason:
+            # `fig.data` is not a list of data traces. It also carries the
+            # black wireframe cube, 2-D density/surface layers, forecast
+            # overlays and an invisible colorbar carrier, none of which is
+            # named, so "the traces with a name" or "all but the last"
+            # miscounts as soon as any of those is present. Tagged
+            # positively so a decoration added later cannot leak in.
+            meta=dict(hyp_trace_index=i),
         )
         if ndims >= 3:
             if trace_point_colors is not None:
@@ -983,7 +1005,8 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 # 2D Scatter has no per-point line colors; draw short
                 # segment traces instead (grouped under one legend entry)
                 traces.extend(_segment_traces_2d(
-                    go, draw_arr, trace_point_colors, width, dash, name))
+                    go, draw_arr, trace_point_colors, width, dash, name,
+                    trace_index=i))
                 continue
             if trace_point_colors is not None:
                 common['marker'] = dict(color=trace_point_colors,
@@ -995,7 +1018,8 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
             if trace_point_colors is not None and 'lines' in mode:
                 pts = np.column_stack([xs, draw_arr[:, 0]])
                 traces.extend(_segment_traces_2d(
-                    go, pts, trace_point_colors, width, dash, name))
+                    go, pts, trace_point_colors, width, dash, name,
+                    trace_index=i))
                 continue
             traces.append(go.Scatter(x=xs, y=draw_arr[:, 0], **common))
 
@@ -1036,7 +1060,14 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 tkwargs, fmt[src],
                 override=(forecast_overrides[i]
                           if forecast_overrides is not None
-                          and i < len(forecast_overrides) else None))
+                          and i < len(forecast_overrides) else None),
+                # a continuous `hue=` draws this run in MANY colours, so the
+                # forecast takes the one it starts from (matplotlib parity;
+                # see `_hue_anchor_color`). `src` -- the run holding the
+                # dataset's last observation -- is the right index into
+                # `point_colors` for the same reason it is the right index
+                # into `kwargs_list`/`data`.
+                anchor_color=_hue_anchor_color(point_colors, src))
             fc_common = dict(mode='lines', showlegend=False,
                              hoverinfo='skip',
                              line=fc_line,
@@ -2606,7 +2637,8 @@ def _resolve_fmt(fmt_str, tkwargs):
     return mode, symbol, dash, marker_char
 
 
-def _forecast_style_from(tkwargs, fmt_str, alpha=None, override=None):
+def _forecast_style_from(tkwargs, fmt_str, alpha=None, override=None,
+                         anchor_color=None):
     """Style a forecast trace to match the observed trace it continues.
 
     The plotly twin of `hypertools.plot.plot._forecast_style_from`, sharing
@@ -2635,6 +2667,13 @@ def _forecast_style_from(tkwargs, fmt_str, alpha=None, override=None):
         matplotlib side applies, resolved once and translated here into
         plotly's dash/rgba vocabulary. Sparse: only the aspects it names
         replace the inherited ones.
+    anchor_color : tuple of float, optional
+        The source trace's FINAL per-point colour, from `_hue_anchor_color`,
+        when a continuous `hue=` gave that trace many colours. It replaces
+        `tkwargs['color']` (which is then only plotly's per-dataset palette
+        fallback, not a colour the trace is actually drawn in) and is still
+        overruled by an explicit `forecast_color=`, so the precedence reads
+        override > anchor > inherited, exactly as on matplotlib.
 
     Returns
     -------
@@ -2662,7 +2701,9 @@ def _forecast_style_from(tkwargs, fmt_str, alpha=None, override=None):
     if alpha is None:
         alpha = forecast_alpha(tkwargs.get('alpha'))
     width = float(tkwargs.get('linewidth') or DEFAULT_LINEWIDTH_PT) * PT_TO_PX
-    color = override.get('color', tkwargs.get('color'))
+    color = override.get(
+        'color',
+        anchor_color if anchor_color is not None else tkwargs.get('color'))
     line = dict(color=_to_plotly_color(color, alpha), width=width, dash=dash)
     return line, alpha
 
@@ -2791,26 +2832,67 @@ def _rgb_string(c):
     return f'rgb({r},{g},{b})'
 
 
-def _segment_traces_2d(go, pts, colors, width, dash, name):
+def _segment_traces_2d(go, pts, colors, width, dash, name, trace_index=None):
     """Per-segment colored 2D line, emitted as one small trace per segment
-    (plotly's 2D Scatter lines accept only a single color per trace)."""
+    (plotly's 2D Scatter lines accept only a single color per trace).
+
+    Every segment carries the SAME ``meta['hyp_trace_index']`` as the
+    trajectory it is a piece of, so a reader counting data traces by that tag
+    sees one trace rather than ``len(pts) - 1`` of them."""
     segs = []
     for j in range(len(pts) - 1):
         segs.append(go.Scatter(
             x=pts[j:j + 2, 0], y=pts[j:j + 2, 1], mode='lines',
             line=dict(color=colors[j], width=width, dash=dash),
             showlegend=False, hoverinfo='skip',
+            meta=(None if trace_index is None
+                  else dict(hyp_trace_index=trace_index)),
             legendgroup=name or 'multicolor'))
     return segs
 
 
 def _to_plotly_color(color, alpha=None):
+    # ROUNDS each channel, like `_rgb_string`. These are the module's two
+    # colour serializers and they must agree: a forecast whose colour is
+    # anchored to its source trace's final per-point colour
+    # (`_hue_anchor_color`) goes through THIS function while the trace's own
+    # per-point strings go through `_rgb_string`, so truncating here made the
+    # "same" colour print one channel unit darker (measured on viridis's last
+    # stop: 0.9932*255 -> rgb(253,...) rounded vs rgb(252,...) truncated).
     if color is None:
         return None
     import matplotlib.colors as mcolors
     r, g, b = mcolors.to_rgb(color)
     a = 1.0 if alpha is None else float(alpha)
-    return f'rgba({int(r * 255)},{int(g * 255)},{int(b * 255)},{a})'
+    return (f'rgba({int(round(r * 255))},{int(round(g * 255))},'
+            f'{int(round(b * 255))},{a})')
+
+
+def _hue_anchor_color(point_colors, src):
+    """The single colour a forecast inherits from a MULTI-coloured trace.
+
+    A continuous `hue=` gives the observed trace one colour per point, so
+    "the same colour as its trace" resolves to the colour where the forecast
+    begins: the source run's LAST per-point colour. The matplotlib twin is
+    the `_kept_forecasts` loop in `plot._apply_multicolor_lines`, which
+    anchors on `line_colors[dataset][-1]` -- without this, plotly styled the
+    forecast from `kwargs_list[src]['color']`, which under a continuous hue
+    is the per-dataset PALETTE fallback `plot.py` fills in for plotly
+    (`plot.py`, "if 'color' not in mpl_kwargs"). Measured on a 3-trace column
+    hierarchy with `hue=linspace(0,1)` and `palette='viridis'`: the observed
+    traces all ended at rgb(253,231,37) while their forecasts drew
+    rgb(59,82,139)/rgb(33,145,140)/rgb(94,201,97) -- seaborn's 3-colour
+    viridis cycle, unrelated to the hue.
+
+    Returns None (leaving the inherited single colour in place) when this
+    trace has no per-point colours, which is every non-continuous-hue plot.
+    """
+    if point_colors is None or src is None or src >= len(point_colors):
+        return None
+    pc = point_colors[src]
+    if pc is None or len(pc) == 0:
+        return None
+    return tuple(float(v) for v in np.asarray(pc[-1], dtype=np.float64)[:3])
 
 
 def _trace_name(legend, tkwargs, i):

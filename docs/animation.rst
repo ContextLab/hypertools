@@ -530,6 +530,17 @@ Note that forecast artists are deliberately **not** in
 ``FrameContext.artists``: that sequence has cardinality assumptions (one entry
 per drawn dataset) that a variable number of forecast overlays would violate.
 
+The *observed* trajectories are tagged the same way, and for the same reason:
+neither ``ax.collections`` nor ``fig.data`` is a list of data artists. On
+matplotlib a multicoloured (continuous ``hue=``) trace is a
+``Line3DCollection`` carrying ``collection._hyp_trace_index``, alongside the
+six wireframe collections that draw the bounding cube; on plotly every data
+trace carries ``trace.meta['hyp_trace_index']``, alongside the cube trace, any
+density/surface layer, the forecast overlays and the ``colorbar=True``
+carrier -- none of which is named. Both tags are the trace's index in the
+drawn data, so a callback can pair a trace with its source without counting
+positions.
+
 What ``animate='morph'`` does
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
