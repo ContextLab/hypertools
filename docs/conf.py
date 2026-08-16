@@ -104,6 +104,12 @@ extensions = ['sphinx.ext.autodoc',
     'numpydoc',
     'sphinx.ext.autosummary',
     'sphinx.ext.viewcode',
+    # provides the `.. doctest::` directive docs/hierarchy.rst uses for its
+    # worked examples. Those examples are EXECUTED by
+    # tests/test_docs_hierarchy_guide.py (via doctest.testfile), not by this
+    # builder -- the extension is here so the directive renders instead of
+    # raising "Unknown directive type", which -W turns into a build failure.
+    'sphinx.ext.doctest',
     'sphinx_gallery.gen_gallery',
     # renders the .. video:: directives sphinx-gallery emits for
     # matplotlib animations (matplotlib_animations = (True, 'mp4'))

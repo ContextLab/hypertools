@@ -105,6 +105,14 @@ Predict
 
   predict
 
+A bare DataFrame carrying a MultiIndex on one axis is split into groups and
+forecast one group at a time: a **column** MultiIndex groups by every level
+above the innermost one (the innermost level is the feature axis, so every
+group keeps all of the frame's observations), while a **row** MultiIndex
+also groups by the outer levels but treats the innermost one as the time
+axis, which survives as each group's index. The result is a list of
+forecasts, one per group -- see :doc:`hierarchy`.
+
 Plot
 ------------------
 
@@ -114,6 +122,14 @@ Plot
   plot
   HyperAnimation
   FrameContext
+
+Hierarchical (MultiIndex) frames are expanded into one trace per group plus
+a derived mean at every level above the leaves. The two axes are read
+differently -- a **row** MultiIndex draws one trace per unique full index
+tuple, whereas a **column** MultiIndex makes its innermost level the feature
+axis and groups by everything above it -- and ``predict=`` then forecasts
+every final trace, leaves and means alike. See :doc:`hierarchy` for the
+comparison table, the feature-correspondence rule and the return shapes.
 
 Set interactive backend
 ------------------------

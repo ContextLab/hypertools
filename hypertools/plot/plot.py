@@ -1326,6 +1326,10 @@ def plot(
         with no warning at all. The asymmetry is deliberate: the row
         behaviour is documented and depended upon, the column one was not.
 
+        See docs/hierarchy.rst for the user-facing guide to all of the
+        above: the per-axis comparison table, worked examples of each rule,
+        and the return shapes.
+
     fmt : str or list of strings
         A list of format strings.  All matplotlib format strings are
         supported, including color letters (e.g. ``'ro-'`` draws red
@@ -1936,7 +1940,7 @@ def plot(
         (``df.reset_index(drop=True)``) or move the grouping to the columns;
         a COLUMN hierarchy keeps all of the frame's rows in every group, so a
         short trace means the input itself has fewer than 2 observations and
-        only more data helps (default: None).
+        only more data helps. See docs/hierarchy.rst (default: None).
 
     t : int or datetime-like
         Forecast horizon passed to `predict` (see
@@ -2891,6 +2895,7 @@ def plot(
         ``trace_metadata`` is ``None`` for non-hierarchical input. For a
         hierarchy it describes every entry of ``trace_data`` positionally:
         ``{'keys', 'level_idx', 'is_mean', 'axis', 'level_names', 'aux'}``.
+        See docs/hierarchy.rst.
 
         ``predict`` also carries ``'drawn'`` (bool) and ``'draw_reason'``
         (``None``, or a sentence naming the limitation). The forecasts are

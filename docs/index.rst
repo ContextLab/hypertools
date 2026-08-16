@@ -33,9 +33,11 @@ Some key features of HyperTools are:
    shared response model) and mixture-model ("soft") clustering
 5. Timeseries forecasting (``hypertools.predict``) and missing-data
    imputation (``hypertools.impute``)
-6. Support for Numpy arrays, Pandas DataFrames (including MultiIndex),
-   text, and (mixed) lists, with loaders for local files, URLs, and
-   hosted datasets
+6. Support for Numpy arrays, Pandas DataFrames -- including hierarchical
+   frames, where a **row MultiIndex** groups observations into leaf
+   trajectories and a **column MultiIndex** groups features into per-group
+   trajectories (see :doc:`hierarchy`) -- text, and (mixed) lists, with
+   loaders for local files, URLs, and hosted datasets
 7. Applying topic models and other text vectorization methods to text
    data
 
@@ -45,6 +47,7 @@ Some key features of HyperTools are:
 
    api
    pipeline_order
+   hierarchy
    animation
    tutorials
    auto_examples/index

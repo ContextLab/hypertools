@@ -17,7 +17,10 @@ called it from (GH #153, GH #138).
   :align: center
   :alt: Flowchart of the canonical hypertools pipeline order: load/format
     (impute) -> manip -> normalize -> reduce -> align -> cluster (hue) ->
-    plot/animate -> predict (overlay)
+    plot/animate -> predict (overlay), with a side branch showing the two
+    hierarchy-only operations for a MultiIndex DataFrame: hierarchy
+    expansion feeding into the chain just after load/format, and mean trace
+    construction hanging off cluster, just before plot/animate
 
 The canonical order
 --------------------
@@ -25,13 +28,49 @@ The canonical order
 ::
 
     load/format (impute happens here)
+      -> [hierarchy expansion, if x is a hierarchical DataFrame]
       -> manip
       -> normalize
       -> reduce
       -> align
       -> cluster (hue)
+           \-> [hierarchy: mean trace construction + hue propagation]
       -> plot/animate
-      -> predict overlays
+      -> predict overlays (one per plotted trajectory, when the
+                           shape allows it -- see below)
+
+The two bracketed steps run **only** for a hierarchical (MultiIndex)
+DataFrame; every other input goes straight down the linear chain.
+
+Where hierarchy expansion fits
+-------------------------------
+
+The hierarchy operations sit deliberately *outside* the linear chain, so
+they are drawn as a side branch rather than as ordinary stages. See
+:doc:`hierarchy` for what each one does and how the two axes differ.
+
+- **Expansion happens before format/analyze.** A hierarchical frame is
+  split into its leaf datasets first, so every leaf then goes through the
+  *identical* canonical pipeline -- the same manip, the same normalize, the
+  same reduce and align fits. A leaf is not a special kind of dataset; it is
+  just a dataset.
+
+- **Mean traces are built after reduce/align**, in the plotted space, from
+  the already-transformed leaves. That is why they appear in ``trace_data``
+  and never in ``xform_data``: they are presentation artifacts of the
+  drawing step, not analysed input datasets. Averaging in the plotted space
+  is also what makes a mean sit where the eye expects it -- between its
+  members on screen.
+
+- **Hue is co-propagated at that same point.** A continuous ``hue=`` carried
+  through a column hierarchy is averaged by the same operation, over the
+  same overlapping row range, that averages the data, so an auxiliary value
+  can never drift out of step with the trace it describes.
+
+- **Forecasting runs last, over the final traces.** ``predict=`` on a
+  hierarchy forecasts every final trace -- each leaf and each derived mean,
+  a mean forecast computed from its own averaged trajectory. It therefore
+  needs at least 2 rows in every final trace, and raises otherwise.
 
 Why this order
 ----------------

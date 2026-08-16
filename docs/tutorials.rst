@@ -156,6 +156,15 @@ A market as one moving path: chemtrails and a live forecast
 Decades of weather: bold means, faint cities, temperature colormaps
 -------------------------------------------------------------------
 
+The bold-means / faint-leaves *hierarchy*: cities grouped by hemisphere,
+each hemisphere drawn as a bold mean loop over its faint member cities.
+This notebook builds that structure as an explicit **list** of loops rather
+than as a row-MultiIndex DataFrame, deliberately -- a row hierarchy colours
+by group and ignores a continuous ``hue=``, which would cost it the
+per-point temperature colouring. See :doc:`hierarchy` for what the
+MultiIndex path does instead, on each axis, and for the column-axis rule
+that *does* carry a continuous hue through the grouping.
+
 .. toctree::
   :maxdepth: 2
 
