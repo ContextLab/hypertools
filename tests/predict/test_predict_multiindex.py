@@ -116,9 +116,48 @@ def test_duplicate_times_raise_naming_the_group():
     # happens BEFORE the re-raise -- `warnings.catch_warnings` swallows
     # whatever is not re-emitted, so a naive implementation loses it
     # silently -- and keeps the suite's zero-unasserted-warnings property.
+    # STRENGTHENED again (review of the Task 7 commit): `match="Tech"` is
+    # satisfied by ANY ValueError whose text contains the group name, so it
+    # could not tell the intended duplicate-timestamp rejection from an
+    # over-broad check that also rejects legitimate frames. Assert the
+    # message's SUBSTANCE as well as the group name.
     with pytest.warns(UserWarning, match='not sorted in ascending order'):
-        with pytest.raises(ValueError, match="Tech"):
+        with pytest.raises(ValueError,
+                           match=r"group \('Tech',\).*duplicated entr.*ill-defined"):
             hyp.predict(df, model='Kalman', t=1)
+
+
+# The two tests below are FLAT, not hierarchical, and live here on purpose:
+# the duplicate-timestamp rejection above is implemented in `resolve_t`, which
+# every input reaches, so this task changed flat behaviour too. Pinning both
+# sides of that scope beside the hierarchical test keeps the decision (and its
+# limits) visible to whoever revisits the check.
+
+def test_a_flat_frame_with_duplicated_timestamps_is_rejected():
+    """COMPATIBILITY CHANGE, pinned deliberately rather than left implicit:
+    measured at ea5d9b5e (before Task 7), this frame forecast fine, returning
+    (1, 3) with only the monotonicity warning. It now raises, because the
+    horizon is as ill-defined here as it is inside a group."""
+    idx = pd.DatetimeIndex(
+        sorted(list(pd.date_range('2020-01-01', periods=5)) * 2))
+    df = pd.DataFrame(
+        np.random.default_rng(0).normal(size=(10, 3)).cumsum(0), index=idx)
+    with pytest.raises(ValueError, match=r'duplicated entr.*ill-defined'):
+        hyp.predict(df, model='Kalman', t=1)
+
+
+def test_a_flat_frame_with_a_duplicated_integer_index_still_forecasts():
+    """The OTHER side of that scope (*Decisions (resolved)* #4: "legitimate
+    integer-indexed panels are not rejected"). `pd.concat([run_a, run_b])`
+    yields a 0..n-1, 0..n-1 index; nothing about the horizon is ambiguous
+    there (step 1, continue from the last row), so 1.0's behaviour stands."""
+    rng = np.random.default_rng(0)
+    stacked = pd.concat([pd.DataFrame(rng.normal(size=(30, 3)).cumsum(0)),
+                         pd.DataFrame(rng.normal(size=(30, 3)).cumsum(0))])
+    # the stacked index is non-monotonic, which warns (unchanged since 1.0)
+    with pytest.warns(UserWarning, match='not sorted in ascending order'):
+        out = hyp.predict(stacked, model='Kalman', t=1)
+    assert np.asarray(out).shape == (1, 3)
 
 
 def test_group_forecast_matches_forecasting_that_group_alone():
@@ -279,11 +318,20 @@ def test_a_class_or_dict_spec_fits_one_model_per_group():
     or a DICT spec is passed through un-copied because it is stateless, and
     that each group is fitted independently from it. Only the `str` branch
     was pinned, so a blanket `copy.deepcopy(model)` -- or a spec accidentally
-    shared as one constructed instance -- passed every prescribed test."""
+    shared as one constructed instance -- passed every prescribed test.
+
+    EXTENDED (review of the Task 7 commit): a dict spec is NOT always
+    stateless. `{'model': <instance>}` is an accepted spec form (the same one
+    `tests/test_pipeline_analyze_hardening.py:92` uses for `cluster=`), and
+    passing it through un-copied broke all three ownership promises at once:
+    the caller's instance was fitted, every group shared it, and groups 2..n
+    fell onto `predict_new` instead of being fitted independently."""
     df = col_frame()
     alone = [np.asarray(hyp.predict(df['Market'][s], model='Kalman', t=1))
              for s in ('Tech', 'Energy')]
-    for spec in (Kalman, {'model': 'Kalman', 'kwargs': {}}):
+    caller_instance = Kalman()
+    for spec in (Kalman, {'model': 'Kalman', 'kwargs': {}},
+                 {'model': caller_instance}):
         forecasts, models = hyp.predict(df, model=spec, t=1,
                                         return_model=True)
         assert models[0] is not models[1], f'{spec!r} shared one model'
@@ -291,6 +339,9 @@ def test_a_class_or_dict_spec_fits_one_model_per_group():
         for got, want in zip(forecasts, alone):
             assert np.allclose(np.asarray(got), want, rtol=1e-6, atol=1e-6), \
                 f'{spec!r} did not fit each group independently'
+    assert not caller_instance.is_fitted, \
+        "the caller's instance was fitted through the dict spec"
+    assert all(m is not caller_instance for m in models)
 
 
 def test_a_per_group_warning_keeps_its_category():
@@ -309,6 +360,28 @@ def test_a_per_group_warning_keeps_its_category():
     assert len(messages) == 2, f'one per group expected; got {messages}'
     assert all(m.startswith('group (') for m in messages), messages
     assert all('deprecated' in m for m in messages), messages
+
+
+def test_warnings_survive_a_group_that_fails_with_a_non_valueerror():
+    """ADDED (review of the Task 7 commit): `warnings.catch_warnings(record=
+    True)` SUPPRESSES what it records, so anything not re-emitted is lost.
+    The re-emission ran after the `with` block and only `ValueError` was
+    caught, so a group that warned and then failed with a TypeError (here the
+    deprecated ``params`` spec, warning on its way to `Kalman(bogus=1)`'s
+    TypeError) silently dropped the warning that the FLAT path emits."""
+    spec = {'model': 'Kalman', 'params': {'bogus': 1}}
+    with pytest.warns(DeprecationWarning) as rec:
+        with pytest.raises(TypeError, match='bogus'):
+            hyp.predict(col_frame(), model=dict(spec), t=1)
+    messages = [str(w.message) for w in rec
+                if issubclass(w.category, DeprecationWarning)]
+    assert len(messages) == 1, f'the failing group warns once; got {messages}'
+    assert messages[0].startswith("group ('Market', 'Tech'): "), messages[0]
+
+    # the flat control: the same spec on one group's frame warns identically
+    with pytest.warns(DeprecationWarning, match='deprecated'):
+        with pytest.raises(TypeError, match='bogus'):
+            hyp.predict(col_frame()['Market']['Tech'], model=dict(spec), t=1)
 
 
 def test_grouping_does_not_mutate_the_callers_frame():

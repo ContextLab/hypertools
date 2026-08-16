@@ -245,17 +245,31 @@ def predict(data, model='Kalman', t=10, return_model=False, **kwargs):
           the innermost level is the FEATURE axis, so each group keeps all
           `len(data)` observations. A ``(Market, Sector, Measure)`` frame
           gives one forecast per sector, each with the three Measure columns.
+          Feature correspondence across groups is NOMINAL (the shared rule in
+          `hypertools.core.hierarchy.group_columns`, which the plotting path
+          needs so per-level means are meaningful): every group must carry the
+          SAME innermost labels -- duplicates matched by (label, occurrence)
+          -- so a frame whose groups name different features (different
+          sensors per rig) or have different widths raises a `ValueError`
+          instead of forecasting; if the groups really are incommensurable,
+          slice them yourself and forecast one flat frame per group. When
+          groups share labels in a DIFFERENT order, later groups are permuted
+          into the first group's order, so a group's forecast columns follow
+          that order rather than its own.
         - a ROW MultiIndex groups by every level ABOVE the innermost one;
           the innermost level is the TIME axis and SURVIVES as each group's
           index (it is dropped from the grouping levels, not reset), so a
           datetime innermost level keeps its `DatetimeIndex` and `t` may be a
           future `Timestamp`. Because the index survives, a group whose times
           are out of order raises the usual "not sorted in ascending order"
-          warning with its group name prepended, and a group with DUPLICATED
-          times raises a `ValueError` naming it (the horizon is ill-defined
+          warning with its group name prepended, and a group whose TIME index
+          (`DatetimeIndex`/`TimedeltaIndex`/`PeriodIndex`) has DUPLICATED
+          entries raises a `ValueError` naming it (the horizon is ill-defined
           when several observations share one position on the time axis).
-          Integer-indexed panels, whose innermost level is unique, are not
-          affected.
+          That rejection is `resolve_t`'s, so it applies to FLAT time-indexed
+          input too -- a change from 1.0, which forecast such frames.
+          Integer-indexed panels are not affected, whether or not their index
+          repeats (a stacked ``pd.concat([run_a, run_b])`` still forecasts).
 
         Each group is forecast by a RECURSIVE `predict` call. That
         terminates because grouping FLATTENS each group on the axis it
@@ -410,32 +424,49 @@ def predict(data, model='Kalman', t=10, return_model=False, **kwargs):
             # later groups never fall onto `predict_new`); a FITTED instance
             # is deep-copied so each group reuses the same learned parameters
             # via `predict_new` (:216-219) without the groups sharing mutable
-            # state. A name/class/dict SPEC is stateless -- `_wrangled_predict`
+            # state. A NAME or a CLASS is stateless -- `_wrangled_predict`
             # constructs a fresh forecaster from it per call -- so copying it
-            # would only obscure that.
-            group_model = (model if isinstance(model, (str, dict, type))
+            # would only obscure that. A DICT spec is NOT: `{'model':
+            # <instance>}` is an accepted form (:149-166 unpacks it), and
+            # passing dicts through un-copied fitted the caller's instance,
+            # shared one model across every group, and dropped groups 2..n
+            # onto `predict_new` -- all three promises above at once (review
+            # of this task's first commit). Deep-copying a stateless dict is
+            # behaviourally identical (measured: `copy.deepcopy({'model':
+            # 'Kalman', 'kwargs': {}})` compares equal), so `dict` left the
+            # passthrough rather than growing a "does it hold an instance?"
+            # special case.
+            group_model = (model if isinstance(model, (str, type))
                            else copy.deepcopy(model))
-            with warnings.catch_warnings(record=True) as caught:
-                # `catch_warnings` SUPPRESSES what it records, so everything
-                # captured here must be re-emitted below or it is silently
-                # lost; 'always' defeats the __warningregistry__ dedup that
-                # would otherwise drop the 2nd..nth group's copy of an
-                # identical warning.
-                warnings.simplefilter('always')
-                try:
+            caught = []
+            try:
+                with warnings.catch_warnings(record=True) as caught:
+                    # `catch_warnings` SUPPRESSES what it records, so
+                    # everything captured here must be re-emitted below or it
+                    # is silently lost; 'always' defeats the
+                    # __warningregistry__ dedup that would otherwise drop the
+                    # 2nd..nth group's copy of an identical warning.
+                    warnings.simplefilter('always')
                     result = predict(group, model=group_model, t=t,
                                      return_model=True, **kwargs)
-                    failure = None
-                except ValueError as err:
-                    result, failure = None, err
-            # re-emitted OUTSIDE the context (inside it they would just be
-            # re-captured), and BEFORE re-raising, so warnings a failing group
-            # issued on its way to the error still reach the caller. F8: the
-            # group name is prepended; the category is preserved so a
-            # DeprecationWarning does not silently become a UserWarning.
-            for w in caught:
-                warnings.warn(f'group {key}: {w.message}', w.category,
-                              stacklevel=external_stacklevel())
+                failure = None
+            except ValueError as err:
+                result, failure = None, err
+            finally:
+                # a `finally`, not straight-line code after the `try`: only
+                # ValueError is caught (the plan leaves other types
+                # un-prefixed on purpose), so a TypeError/NotFittedError used
+                # to propagate past the re-emission and take the group's
+                # warnings with it -- the flat path emits them, the
+                # hierarchical one lost them. Re-emitted OUTSIDE the
+                # `catch_warnings` context (inside it they would just be
+                # re-captured) and BEFORE any exception leaves this block.
+                # F8: the group name is prepended; the category is preserved
+                # so a DeprecationWarning does not silently become a
+                # UserWarning.
+                for w in caught:
+                    warnings.warn(f'group {key}: {w.message}', w.category,
+                                  stacklevel=external_stacklevel())
             if failure is not None:
                 raise ValueError(f'group {key}: {failure}') from failure
             forecasts.append(result[0])

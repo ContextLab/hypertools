@@ -196,6 +196,7 @@ Findings **20, 21, 22, 23** are owned by no other plan and are Tasks 10-11 here.
 | Dual-axis frames | accepted; row path wins, column hierarchy ignored | *(untested)* | `ValueError` (F7) |
 | **Column**-hierarchical frame inside a list, **plot** | silently flattens to 1 line, no warning | *(untested)* | `ValueError`, bare-frame-only (F10). Purely additive — nothing pinned it. |
 | Hierarchical frame inside a list, **predict** | row: opaque `TypeError: cannot perform __sub__ with this index type: MultiIndex`; column: forecasts the flattened frame | *(untested)* | `ValueError` naming the element and the axis (Task 7) |
+| **Any** time-indexed input to **predict** (flat included) whose `DatetimeIndex`/`TimedeltaIndex`/`PeriodIndex` has DUPLICATE entries | forecasts, using a step inferred from the surviving non-zero gaps (measured at `ea5d9b5e`: a 10-row frame on 5 repeated days returned `(1, 3)` with only the monotonicity warning) | *(untested)* | `ValueError` (*"…duplicated entries…the forecast horizon is ill-defined"*), because `resolve_t` — not the group loop — owns the check, exactly as Task 7 Step 3 specifies. **Not** a change for non-time indexes: a stacked `pd.concat([run_a, run_b])` panel (index `0..n-1` twice) still forecasts, per *Decisions (resolved)* #4. Pinned by `test_a_flat_frame_with_duplicated_timestamps_is_rejected` and `test_a_flat_frame_with_a_duplicated_integer_index_still_forecasts` (Task 7) |
 | `predict=` with expansion, **column** hierarchy whose frame has ≥ 2 rows | `ValueError: predict= is not supported with MultiIndex expansion in this release` (`plot.py:2669-2677`) | *(untested on the column axis)* | supported; one forecast per pre-center/pre-scale plotted trajectory (Task 8) |
 | `predict=` with expansion, **row** hierarchy whose every leaf and mean has ≥ 2 rows | same blanket `ValueError` | `tests/test_multiindex.py:479` (`test_predict_plus_multiindex_raises`) — its frame `_make_2level_df()` has **8 leaves of (10, 3)** and draws **10** traces | supported; **that test is rewritten** as `test_predict_plus_multiindex_forecasts_every_trace` (10 solid, 10 dashed) — Task 8 Step 5 |
 
@@ -2159,6 +2160,66 @@ git commit -m "feat(plot): continuous hue propagates through column hierarchies 
 > 10. **Known gap, deliberately not widened here:** Step 3 wraps only
 >    `ValueError`, so a per-group `TypeError` (unknown kwargs) or
 >    `NotFittedError` still escapes without a group name.
+>
+> **AMENDED 2026-08-16 after a three-reviewer audit of that commit.** Five
+> defects, each reproduced before it was fixed:
+>
+> 11. **A dict spec holding an INSTANCE broke all three ownership
+>     promises.** Step 3's `isinstance(model, (str, dict, type))` passthrough
+>     assumed a dict spec is stateless, but `{'model': <instance>}` is an
+>     accepted form (`predict.py:149-166`; the same shape
+>     `tests/test_pipeline_analyze_hardening.py:92` uses for `cluster=`).
+>     Measured: the caller's `Kalman()` came back `is_fitted == True`, both
+>     groups shared ONE model object, and group 2's forecast did not match an
+>     independently fitted Energy forecast. Fixed by dropping `dict` from the
+>     passthrough — deep-copying a stateless spec is behaviourally identical
+>     — and `test_a_class_or_dict_spec_fits_one_model_per_group` gained the
+>     instance-in-a-dict case (the only dict form where this is observable).
+> 12. **Per-group warnings were lost whenever a group failed with anything
+>     other than `ValueError`.** Step 3's re-emission loop sat AFTER the
+>     `with warnings.catch_warnings(record=True)` block, so correction 10's
+>     "known gap" silently extended to warnings: measured with
+>     `{'model': 'Kalman', 'params': {'bogus': 1}}` (warns, then raises
+>     `TypeError`), the FLAT path emitted the DeprecationWarning and the
+>     hierarchical path emitted nothing. Fixed by re-emitting in a `finally`.
+>     Correction 10 itself stands: non-`ValueError`s still carry no group
+>     name. New test:
+>     `test_warnings_survive_a_group_that_fails_with_a_non_valueerror`.
+> 13. **The duplicate check was too broad by dtype** (correction 2's global
+>     scope was right; its *reach* was not). `index.is_unique` was tested for
+>     EVERY index dtype, so `pd.concat([run_a, run_b])` — index `0..n-1`
+>     twice — began raising where 1.0 forecast fine, contradicting
+>     *Decisions (resolved)* #4's "legitimate integer-indexed panels are not
+>     rejected" and arguing about a "time axis" that a positional index does
+>     not have. Scoped to `DatetimeIndex`/`TimedeltaIndex`/`PeriodIndex`; a
+>     datetime-like `t` on a non-time index already raises separately.
+> 14. **The remaining (time-indexed) compatibility change is now in the
+>     plan, not only in Task 11's CHANGELOG** — *Compatibility changes*
+>     (L194-201) gained a row, with both sides of the scope pinned by
+>     `test_a_flat_frame_with_duplicated_timestamps_is_rejected` and
+>     `test_a_flat_frame_with_a_duplicated_integer_index_still_forecasts`.
+>     `test_duplicate_times_raise_naming_the_group` was strengthened from
+>     `match="Tech"` (satisfied by ANY ValueError naming the group — it could
+>     not detect the over-breadth above) to the message's substance.
+> 15. **`_infer_step`'s all-identical-timestamp branch had become dead
+>     code**: correction 1 copied its message into `resolve_t`, so
+>     `tests/test_predict_audit_fixes.py:186` pinned a duplicated string
+>     literal (measured with a spy: `_infer_step` was never called). The
+>     degenerate `DatetimeIndex` case is now handed to `_infer_step`, which
+>     owns the message; `test_all_identical_timestamps_message_comes_from_
+>     live_infer_step` pins that.
+> 16. **Not changed, recorded instead:** the column path calls
+>     `group_columns(data)` with its default `feature_correspondence='name'`,
+>     a rule that exists for PLOTTING. Consequences, both measured: groups
+>     naming different features (or of different widths) raise instead of
+>     forecasting, and groups sharing labels in a different order come back
+>     permuted into the first group's order. That is what Step 3's code
+>     prescribes, and *Decisions (resolved)* #6 cites Task 7's
+>     `test_duplicate_innermost_names_forecast_by_occurrence` as pinning the
+>     nominal `(label, occurrence)` match through `hyp.predict`, so the
+>     behaviour is left alone and both consequences are now documented in
+>     `predict()`'s docstring. Whether independent per-group forecasts should
+>     require cross-group correspondence at all is a maintainer decision.
 
 `hyp.predict(row_multiindex_df)` raises `TypeError: cannot perform __sub__ with this index type: MultiIndex` today (measured); a column-hierarchical frame silently flattens all tickers into one series (measured: `(1, 6)` for a 6-ticker frame).
 
@@ -2514,8 +2575,10 @@ At the top of `predict()`, before model dispatch:
             # fits independently and the caller's object is never fitted; a
             # FITTED instance is deep-copied so each group reuses the same
             # learned parameters via predict_new (predict.py:216-219)
-            # without the groups sharing mutable state.
-            group_model = (model if isinstance(model, (str, dict, type))
+            # without the groups sharing mutable state. `dict` is NOT in the
+            # passthrough (correction 11): `{'model': <instance>}` is an
+            # accepted spec form, so a dict can carry fitted state.
+            group_model = (model if isinstance(model, (str, type))
                            else copy.deepcopy(model))
             try:
                 result = predict(group, model=group_model, t=t,
@@ -2527,7 +2590,7 @@ At the top of `predict()`, before model dispatch:
         return (forecasts, models) if return_model else forecasts
 ```
 
-Wrap the per-group call in `warnings.catch_warnings(record=True)` and re-emit each captured warning with `f"group {key}: {msg}"`, so `predict/common.py:103-109`'s monotonicity warning names its group (F8). Duplicate timestamps within a group raise a `ValueError` naming the group — add the `index.is_unique` check beside the existing monotonicity check in `predict/common.py`.
+Wrap the per-group call in `warnings.catch_warnings(record=True)` and re-emit each captured warning with `f"group {key}: {msg}"` **from a `finally`** (correction 12 — the loop must run even when the group fails with a non-`ValueError`, or `catch_warnings` swallows what it recorded), so `predict/common.py:103-109`'s monotonicity warning names its group (F8). Duplicate timestamps within a group raise a `ValueError` naming the group — add the `index.is_unique` check beside the existing monotonicity check in `predict/common.py`, **guarded on a time-like index** (`DatetimeIndex`/`TimedeltaIndex`/`PeriodIndex`; correction 13) so duplicated positional indexes keep 1.0's behaviour.
 
 - [x] **Step 4: Run and confirm pass** — `.venv/bin/python -m pytest tests/predict/test_predict_multiindex.py -v` → **22 passed** *(EXECUTED: **25 passed**, see correction 6 above)*.
 
