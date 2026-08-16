@@ -212,6 +212,73 @@ def _name_steps(entries):
     return named
 
 
+def _validate_input_hierarchy(spec):
+    """Check a `Pipeline(input_hierarchy=)` spec, or pass `None` through.
+
+    Validated at construction rather than at `transform` time because a
+    malformed spec here is silent until someone re-applies the pipeline,
+    which may be a session (or a `hyp.save`/`load` round trip) later.
+    """
+    if spec is None:
+        return None
+    if not isinstance(spec, dict):
+        raise TypeError(
+            f"input_hierarchy must be a dict or None; got "
+            f"{type(spec).__name__} ({spec!r}).")
+    axis = spec.get('axis')
+    if axis != 'columns':
+        raise ValueError(
+            "input_hierarchy['axis'] must be 'columns' (the only hierarchy "
+            "axis whose grouping a Pipeline can reproduce on new data -- a "
+            "ROW hierarchy's plot expansion keeps the full MultiIndex on "
+            f"each leaf, so it is not re-derivable); got {axis!r}.")
+    n_features = spec.get('n_features')
+    if not (isinstance(n_features, int) and not isinstance(n_features, bool)
+            and n_features > 0):
+        raise ValueError(
+            "input_hierarchy['n_features'] must be a positive int (the "
+            "width of the leaves every step was fit on); got "
+            f"{n_features!r}.")
+    correspondence = spec.get('feature_correspondence', 'name')
+    if correspondence not in ('name', 'position'):
+        raise ValueError(
+            "input_hierarchy['feature_correspondence'] must be 'name' or "
+            f"'position'; got {correspondence!r}.")
+    labels = spec.get('feature_labels')
+    if labels is not None:
+        labels = list(labels)
+        if len(labels) != n_features:
+            raise ValueError(
+                "input_hierarchy['feature_labels'] must have one entry per "
+                f"feature ({n_features}); got {len(labels)}.")
+    return {'axis': axis, 'n_features': n_features,
+            'feature_correspondence': correspondence,
+            'feature_labels': labels}
+
+
+def _dataset_widths(data):
+    """Feature counts of `data`, as a list -- one entry per dataset.
+
+    Returns `None` for anything whose width is not knowable here (text, a
+    ragged/object list, a 1-D array), so the caller skips the check rather
+    than guessing.
+    """
+    import numpy as np
+    import pandas as pd
+
+    def _width(item):
+        """One dataset's feature count, or `None` if it is not knowable."""
+        if isinstance(item, pd.DataFrame):
+            return item.shape[1]
+        if isinstance(item, np.ndarray) and item.ndim == 2:
+            return item.shape[1]
+        return None
+
+    items = list(data) if isinstance(data, (list, tuple)) else [data]
+    widths = [_width(item) for item in items]
+    return None if any(w is None for w in widths) else widths
+
+
 class _DispatchStep:
     """Wrap a stage dispatcher (`hyp.manip`/`hyp.normalize`/`hyp.reduce`/
     `hyp.align`/`hyp.cluster`) as a fit/transform step that genuinely
@@ -331,6 +398,20 @@ class Pipeline(BaseEstimator):
         is keyed by name and a duplicate would silently shadow earlier
         steps.
 
+    input_hierarchy : dict or None
+        Records that this pipeline's steps were fit on the LEAVES of a
+        column-hierarchical DataFrame rather than on the frame itself, so
+        `fit_transform`/`transform` can reproduce that grouping when handed
+        a bare hierarchical frame. `hyp.plot(df, return_model=True)` sets it
+        for a column-`MultiIndex` `df`; nothing else does, so no other
+        pipeline changes behaviour. Keys: ``'axis'`` (only ``'columns'`` is
+        defined), ``'n_features'`` (each leaf's width -- what every step was
+        fit on), ``'feature_correspondence'`` (the `group_columns` rule that
+        produced the leaves) and ``'feature_labels'`` (those leaves'
+        innermost column labels, so features can be matched BY NAME on
+        re-application, exactly as they are across groups; optional). See
+        `_regroup_hierarchical_input` and `_fit_feature_order`.
+
     Attributes
     ----------
     steps : list of (str, object)
@@ -364,7 +445,7 @@ class Pipeline(BaseEstimator):
     >>> out2 = pipe.transform(other_x)  # doctest: +SKIP
     """
 
-    def __init__(self, steps):
+    def __init__(self, steps, input_hierarchy=None):
         # up-front validation (2026-07 audit F21-010): a non-list `steps`
         # (e.g. Pipeline('PCA')) used to iterate the string character by
         # character, and malformed tuple steps were stored silently only to
@@ -398,6 +479,7 @@ class Pipeline(BaseEstimator):
                     "nested Pipeline")
             entries.append((name, model))
         self.steps = _name_steps(entries)
+        self.input_hierarchy = _validate_input_hierarchy(input_hierarchy)
         self._is_fitted = False
 
     @property
@@ -415,6 +497,109 @@ class Pipeline(BaseEstimator):
         self.fit_transform(data)
         return self
 
+    def _fit_feature_order(self, leaves):
+        """Column order that puts `leaves` back into the FIT-TIME feature order.
+
+        `group_columns` matches features across the groups of ONE frame, by
+        name, into its FIRST group's order -- which is a property of the
+        frame being grouped, not of the fit. A fitted step is positional, so
+        without this a frame whose groups list the same features in a
+        different order transformed to different coordinates, even though
+        `hyp.plot` draws the two frames identically (measured: the
+        within-group permutation this feature exists to make harmless moved
+        every re-applied trace). Matching to the recorded labels makes
+        `transform` nominal in the same sense `hyp.plot` is.
+
+        Returns `None` when no reordering applies (positional
+        correspondence, or a pipeline recorded before labels were kept).
+        """
+        hierarchy = self.input_hierarchy
+        labels = hierarchy.get('feature_labels')
+        if labels is None or hierarchy['feature_correspondence'] != 'name':
+            return None
+
+        from .hierarchy import _describe_feature, _feature_keys
+        from collections import Counter
+        # every leaf shares one order here: 'name' correspondence has
+        # already permuted leaves[1:] into leaves[0]'s order.
+        keys = _feature_keys(leaves[0].columns)
+        target = _feature_keys(labels)
+        position = {key: i for i, key in enumerate(keys)}
+        if set(keys) != set(target):
+            fit_totals = Counter(canon for canon, _ in target)
+            new_totals = Counter(canon for canon, _ in keys)
+            missing = [_describe_feature(labels[i], key[1],
+                                         fit_totals[key[0]])
+                       for i, key in enumerate(target)
+                       if key not in position]
+            unexpected = [_describe_feature(leaves[0].columns[i], key[1],
+                                            new_totals[key[0]])
+                          for i, key in enumerate(keys)
+                          if key not in set(target)]
+            raise ValueError(
+                "this Pipeline was fit on column-hierarchy groups whose "
+                f"features are {[str(label) for label in labels]}, but the "
+                f"frame given here has groups missing [{', '.join(missing)}] "
+                f"and carrying unexpected [{', '.join(unexpected)}]. "
+                "Features correspond BY NAME across hierarchy groups and "
+                "across a fit/transform pair alike, so the innermost column "
+                "level must name the same measurements it was fit on "
+                "(reordering them is fine). Fit a new pipeline if this frame "
+                "measures something else.")
+        return [position[key] for key in target]
+
+    def _regroup_hierarchical_input(self, data):
+        """Re-derive the leaf list this pipeline was fit on, from `data`.
+
+        A pipeline built by `hyp.plot(df, return_model=True)` for a
+        column-hierarchical `df` was fit on the GROUPS of that frame (one
+        dataset per group, each `n_features` wide), never on the frame's
+        full width -- so without this hook, re-applying it to the very frame
+        that produced it failed inside scikit-learn ("X has 20 features, but
+        IncrementalPCA is expecting 5 features as input"), and, in the case
+        where the reduce stage was a no-op because each leaf already had
+        <= ndims columns, it silently returned the UNGROUPED, unreduced
+        frame instead. `input_hierarchy` records the grouping, so the
+        round trip that already worked for a flat frame and for a list of
+        arrays now works here too, on the same terms.
+
+        Only a BARE column-hierarchical DataFrame is regrouped: a list (the
+        shape `hyp.plot` itself fits on) is already grouped, so passing one
+        back through must not group it again.
+        """
+        hierarchy = self.input_hierarchy
+        if hierarchy is None:
+            return data
+
+        import pandas as pd
+        if isinstance(data, pd.DataFrame) and data.columns.nlevels >= 2:
+            from .hierarchy import group_columns
+            correspondence = hierarchy['feature_correspondence']
+            leaves, _meta = group_columns(
+                data, feature_correspondence=correspondence)
+            order = self._fit_feature_order(leaves)
+            # hand on plain arrays, exactly as `hyp.plot` does when it feeds
+            # the pipeline its leaves -- so fit and transform see the same
+            # KIND of input, not merely the same shapes (plot.py: "Hand the
+            # pipeline plain arrays rather than the labelled leaves").
+            data = [leaf.to_numpy()[:, order] if order is not None
+                    else leaf.to_numpy() for leaf in leaves]
+
+        widths = _dataset_widths(data)
+        expected = hierarchy['n_features']
+        if widths is not None and any(w != expected for w in widths):
+            raise ValueError(
+                f"this Pipeline was fit on the {expected}-feature groups of "
+                "a column-hierarchical DataFrame, but the data given here "
+                f"has {sorted(set(widths))} feature(s) per dataset. Pass a "
+                "frame with the SAME column hierarchy (its innermost level "
+                f"is the feature axis, so each group must still be {expected}"
+                " features wide), or the equivalent list of per-group "
+                "arrays. To analyse the flattened frame instead, fit a new "
+                "pipeline on it (df.columns = df.columns.map('_'.join); "
+                "hyp.plot(df, return_model=True)).")
+        return data
+
     def fit_transform(self, data):
         """Fit and apply every step in order, feeding each step's output to
         the next. Refits every step, even if some were already fitted.
@@ -423,8 +608,12 @@ class Pipeline(BaseEstimator):
         scikit-learn steps therefore operate on a single array/DataFrame.
         For multi-dataset (list) inputs, use `hyp.apply_model(...,
         stack=True)` or the dispatcher kwargs (`reduce=`, `align=`, ...) --
-        a raw step fed a list raises a TypeError explaining this."""
-        out = data
+        a raw step fed a list raises a TypeError explaining this.
+
+        When `input_hierarchy` is set, a bare column-hierarchical DataFrame
+        is grouped into its leaves first (see
+        `_regroup_hierarchical_input`)."""
+        out = self._regroup_hierarchical_input(data)
         for name, model in self.steps:
             step_input = out
             try:
@@ -442,10 +631,15 @@ class Pipeline(BaseEstimator):
         have no out-of-sample method) are RE-FIT on `data` via
         `fit_predict`, with a UserWarning making the re-fit explicit; steps
         with none of the three methods (e.g. TSNE) raise a TypeError, since
-        they cannot be applied to held-out data at all."""
+        they cannot be applied to held-out data at all.
+
+        When `input_hierarchy` is set, a bare column-hierarchical DataFrame
+        is grouped into its leaves first, so the pipeline `hyp.plot` hands
+        back for a hierarchical frame re-applies to that frame (see
+        `_regroup_hierarchical_input`)."""
         if not self._is_fitted:
             raise NotFittedError('Pipeline must be fit before transform')
-        out = data
+        out = self._regroup_hierarchical_input(data)
         for name, model in self.steps:
             step_input = out
             try:
@@ -505,7 +699,7 @@ class Pipeline(BaseEstimator):
 
 def build_pipeline(manip=None, normalize=None, reduce=None, ndims=None,
                     align=None, cluster=None, order=CANONICAL_ORDER,
-                    random_state=None):
+                    random_state=None, input_hierarchy=None):
     """Assemble a `Pipeline` from the cross-module stage kwargs (#138), in
     canonical order (#153).
 
@@ -530,6 +724,11 @@ def build_pipeline(manip=None, normalize=None, reduce=None, ndims=None,
         Stage names in the order they should run (default: `CANONICAL_ORDER`
         = `('manip', 'normalize', 'reduce', 'align', 'cluster')`).
 
+    input_hierarchy : dict or None
+        Forwarded to `Pipeline` unchanged; see its docstring. Set by
+        `hyp.plot` when the pipeline is fit on the GROUPS of a
+        column-hierarchical DataFrame rather than on a frame directly.
+
     Returns
     -------
     Pipeline
@@ -549,7 +748,7 @@ def build_pipeline(manip=None, normalize=None, reduce=None, ndims=None,
         if spec is None or (stage == 'normalize' and spec is False):
             continue
         steps.append((stage, _make_stage_step(stage, spec, ndims, random_state)))
-    return Pipeline(steps)
+    return Pipeline(steps, input_hierarchy=input_hierarchy)
 
 
 class _StageCall:

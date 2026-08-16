@@ -231,6 +231,21 @@ input too.
   per-trace kwargs, and the artists carrying the alpha are exactly the
   `Line2D`s it removes and replaces with a colour-graded collection.
 
+- **The `return_model=True` pipeline could not be re-applied to a
+  column-hierarchical frame.** Its steps are fit on the frame's GROUPS, each
+  as wide as one group, so `bundle['pipeline'].transform(df)` failed inside
+  scikit-learn (`X has 20 features, but IncrementalPCA is expecting 5
+  features as input`) -- and, when the reduce stage was a no-op because every
+  group already had `<= ndims` columns, it silently returned the UNGROUPED,
+  unreduced frame. The pipeline now records the grouping (`Pipeline(...,
+  input_hierarchy=)`) and reproduces it, returning one array per group, so
+  the round trip that already worked for a flat frame and for a list of
+  arrays works here on the same terms. Features are matched to the fitted
+  steps BY NAME, like they are across groups, so reordering the innermost
+  labels is harmless; a frame naming different measurements, and a flattened
+  frame, are refused by a hypertools error naming the cause instead of being
+  passed through.
+
 - **plotly discarded the per-trace alpha under a continuous `hue=`** for the
   same figures, from the other direction: the colour serializer drops the
   4th channel and nothing set the trace `opacity`, so a hue plot that
@@ -312,6 +327,23 @@ input too.
   `trace_metadata` is `None`. There is no public
   `plot(feature_correspondence=...)` in 1.1, so opting out stays visible at
   the call site.
+- The order of the **groups** is not neutralised the way the order of
+  features within a group is. Groups become datasets, `reduce=` row-stacks
+  every dataset and fits one model on the stack, so group order is row order
+  in that stack -- and a reducer whose fit depends on it embeds a
+  block-reordered frame differently. Measured on a 40-row frame of 4 sector
+  blocks x 5 measures: permuting the blocks moved every leaf and every mean
+  by ~1.7% of the plotted range under the default `IncrementalPCA` (which
+  fits by `partial_fit` over successive minibatches) and ~47% under `TSNE`,
+  while `PCA`, `TruncatedSVD`, `FactorAnalysis`, `Isomap` and
+  `SpectralEmbedding` were invariant to within 1e-14. This is a property of
+  the shared reduction space rather than of hierarchies -- `hyp.plot([A, B,
+  C])` and `hyp.plot([C, B, A])` differ the same way, and did before 1.1 --
+  so it is documented (`hyp.plot`'s `x` entry, docs/hierarchy.rst) and
+  pinned by a test rather than worked around: imposing a canonical group
+  order would move every hierarchy figure that already exists, and changing
+  the default reducer would move all of them. Pass `reduce='PCA'` when block
+  order must not matter.
 - Continuous `hue=` over a **row** hierarchy is still warned-and-ignored;
   only column hierarchies honour it in 1.1.
 - An **animated** forecast under a continuous `hue=` wears the colour of the

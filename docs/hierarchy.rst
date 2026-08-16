@@ -586,6 +586,47 @@ as two distinct lists:
 Neither is what the artists hold: those are centered, scaled and (unless
 ``antialias=False``) PCHIP-upsampled afterwards.
 
+The bundle's ``pipeline`` re-applies to the frame that produced it. A
+hierarchy's steps are fit on the frame's **groups** -- each as wide as one
+group, not as the frame -- so the pipeline remembers the grouping and
+reproduces it, returning one array per group. (``market``'s groups are
+already 3 columns wide, so no reduction was needed for them at all; the
+grouping is still what makes the answer meaningful.)
+
+.. doctest::
+
+   >>> [np.asarray(a).shape
+   ...  for a in bundle['pipeline'].transform(market)]
+   [(40, 3), (40, 3)]
+
+Features are matched to the fitted pipeline **by name**, on the same terms
+they are matched across groups, so reordering the innermost labels changes
+nothing:
+
+.. doctest::
+
+   >>> shuffled = market[[('Market', sector, measure)
+   ...                    for sector in ('Tech', 'Energy')
+   ...                    for measure in ('momentum', 'return',
+   ...                                    'volatility')]]
+   >>> all(bool(np.allclose(a, b)) for a, b in
+   ...     zip(bundle['pipeline'].transform(market),
+   ...         bundle['pipeline'].transform(shuffled)))
+   True
+
+Handing it a **flattened** frame instead is refused by name, rather than
+passed through as though the grouping had never mattered:
+
+.. doctest::
+
+   >>> flat = market.copy()
+   >>> flat.columns = ['_'.join(label) for label in market.columns]
+   >>> try:
+   ...     bundle['pipeline'].transform(flat)
+   ... except ValueError as error:
+   ...     print(str(error).split('. ')[0])
+   this Pipeline was fit on the 3-feature groups of a column-hierarchical DataFrame, but the data given here has [6] feature(s) per dataset
+
 Bundled forecasts always correspond to ``trace_data``, so ``forecasts[i]``
 equals ``hyp.predict(trace_data[i], model=..., t=t)`` for every ``i`` --
 including the means, each forecast from its own averaged trajectory rather
@@ -865,6 +906,64 @@ separate leaves that both happen to carry a feature called ``X``:
    >>> leaves, meta = group_columns(shared_names)
    >>> meta['leaf_keys']
    [('Market', 'Tech'), ('Market', 'Energy')]
+
+.. _hierarchy-group-order:
+
+Group order, which is a different question
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Everything above is about correspondence **within** a group. The order of
+the **groups** is a separate matter, and it is *not* neutralised: groups
+become datasets, ``reduce=`` row-stacks every dataset and fits **one**
+model on the stack (that is what makes the space shared), so group order is
+row order in that stack. A reducer whose fit depends on row order will
+embed a block-reordered frame differently -- and the default,
+``IncrementalPCA``, is one of them, because it fits by ``partial_fit`` over
+successive minibatches.
+
+.. doctest::
+
+   >>> blocks = pd.MultiIndex.from_tuples(
+   ...     [('Market', sector, measure)
+   ...      for sector in ('Tech', 'Energy', 'Health', 'Fin')
+   ...      for measure in ('return', 'volatility', 'momentum', 'spread',
+   ...                      'turnover')],
+   ...     names=['Market', 'Sector', 'Measure'])
+   >>> wide = pd.DataFrame(
+   ...     np.cumsum(np.random.default_rng(0).standard_normal((40, 20)),
+   ...               axis=0),
+   ...     columns=blocks)
+   >>> reordered = wide[[(top, sector, measure)
+   ...                   for sector in ('Fin', 'Health', 'Energy', 'Tech')
+   ...                   for top, _, measure in blocks[:5]]]
+   >>> def drawn(frame, reducer):
+   ...     bundle = hyp.plot(frame, reduce=reducer, return_model=True)
+   ...     return dict(zip([tuple(k)
+   ...                      for k in bundle['trace_metadata']['keys']],
+   ...                     bundle['trace_data']))
+   >>> def moved(reducer):
+   ...     before, after = drawn(wide, reducer), drawn(reordered, reducer)
+   ...     return max(float(np.abs(before[k] - after[k]).max())
+   ...                for k in before)
+   >>> bool(moved('PCA') < 1e-10)
+   True
+   >>> bool(moved('IncrementalPCA') > 1e-3)
+   True
+
+Measured on that frame, permuting the sector blocks moves every leaf and
+every mean by about **1.7% of the plotted range** under ``IncrementalPCA``
+and about 47% under ``TSNE``; ``PCA``, ``TruncatedSVD``,
+``FactorAnalysis``, ``Isomap`` and ``SpectralEmbedding`` are invariant to
+within 1e-14, as is a within-group column permutation under every one of
+them.
+
+This is a property of the **shared reduction space**, not of hierarchies:
+``hyp.plot([A, B, C])`` and ``hyp.plot([C, B, A])`` differ in exactly the
+same way, and did before 1.1. It is documented rather than worked around,
+because the only fixes available are to impose a canonical group order --
+which would move every hierarchy figure that already exists -- or to
+change the default reducer, which would move all of them. Pass
+``reduce='PCA'`` when block order must not matter.
 
 
 See also

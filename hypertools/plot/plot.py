@@ -1287,6 +1287,28 @@ def plot(
         and no ``trace_metadata`` in the return bundle. There is no
         hierarchy-preserving positional mode in 1.1.
 
+        That rule is about correspondence WITHIN a group. The order of the
+        GROUPS themselves is still the order you wrote them, and it reaches
+        the analysis pipeline: groups become datasets, and `reduce=`
+        row-stacks every dataset and fits ONE model on the stack (a single
+        shared space), so group order IS row order in that stack. A reducer
+        whose fit depends on row order therefore embeds a block-reordered
+        frame differently -- including the DEFAULT
+        ``reduce='IncrementalPCA'``, which fits by `partial_fit` over
+        successive minibatches. Measured on a 40-row frame of 4 sector
+        blocks x 5 measures, permuting the BLOCKS moved every leaf and every
+        mean by 1.7% of the plotted range under ``IncrementalPCA`` and 47%
+        under ``TSNE``, while ``PCA``, ``TruncatedSVD``, ``FactorAnalysis``,
+        ``Isomap`` and ``SpectralEmbedding`` were invariant to within
+        1e-14 (a within-group column permutation is exactly invariant under
+        all of them, per the rule above). This is a property of the shared
+        reduction space rather than of hierarchies -- ``hyp.plot([A, B, C])``
+        and ``hyp.plot([C, B, A])`` differ the same way, and did before 1.1
+        -- so it is DOCUMENTED, not silently worked around: choosing a
+        canonical group order would change every hierarchy figure that
+        already exists. Pass ``reduce='PCA'`` when block order must not
+        matter.
+
         A **continuous** `hue=` is carried THROUGH a column hierarchy rather
         than superseded by it (since 1.1; a row hierarchy still warns and
         ignores). Two forms are accepted, both stated relative to the input
@@ -2886,7 +2908,18 @@ def plot(
         object passed in, if any; `None` when `transform=` was used, since
         then there is no raw data to have fit one on) -- pass it back in as
         `hyp.plot(new_data, pipeline=bundle['pipeline'])` to reuse these
-        exact fitted parameters (GH #227), ``models`` holds the
+        exact fitted parameters (GH #227). For a COLUMN-hierarchical frame
+        the pipeline is fit on the frame's GROUPS, each as wide as ONE
+        group, so it also remembers that grouping: calling
+        ``bundle['pipeline'].transform(df)`` on a column-hierarchical frame
+        groups it first and returns one array per group (before 1.1.0 this
+        raised scikit-learn's "X has 20 features, but IncrementalPCA is
+        expecting 5 features" -- or, when the reduce stage was a no-op
+        because each group already had <= `ndims` columns, silently returned
+        the ungrouped frame). Feature correspondence is BY NAME there too:
+        the frame's innermost column labels are matched to the ones the
+        pipeline was fit on, so reordering them is harmless and naming
+        different measurements raises. ``models`` holds the
         reduce/align/cluster/impute specs, and ``predict`` is ``None`` unless
         `predict` was set, in which case it is
         ``{'model': ..., 'params': {'t': t}, 'forecasts': [...]}`` (one
@@ -3783,6 +3816,9 @@ def plot(
     # for every other input, including a categorical hue that was warned
     # about and dropped.
     _mi_hue_per_leaf = None
+    # innermost-level (feature) labels of a COLUMN hierarchy's leaves, kept
+    # for the return_model bundle's pipeline; None on every other input.
+    _mi_feature_labels = None
     if isinstance(x, pd.DataFrame) and x.index.nlevels >= 2:
         if cluster is not None or n_clusters is not None:
             raise ValueError(
@@ -3860,6 +3896,14 @@ def plot(
         # by (label, occurrence) instead. Ragged groups never reach the
         # pipeline's equal-width check: unequal widths are already a
         # feature-label mismatch, reported by name.
+        #
+        # Keep the labels first, though: they are the ONLY record of what
+        # each analysed column means once the leaves become bare arrays,
+        # and the `return_model=True` bundle's pipeline needs them to match
+        # features by name on re-application too (see
+        # `Pipeline._fit_feature_order`). Every leaf shares this order --
+        # `group_columns` permuted them into the first leaf's.
+        _mi_feature_labels = list(x[0].columns)
         x = [leaf.to_numpy() for leaf in x]
 
     # Each leaf's row count BEFORE manip/normalize/reduce/align run. Read
@@ -6671,9 +6715,32 @@ def plot(
             # fit-once-reusable `Pipeline` object (see the `pipeline=`
             # discussion above) without threading a Pipeline out of every
             # internal code path that can produce `xform_data`.
+            # A COLUMN hierarchy is fit on the frame's GROUPS, not on the
+            # frame -- `raw` is one dataset per group, each as wide as one
+            # group -- so record that, or re-applying the bundled pipeline
+            # to the very frame that produced it fails inside scikit-learn
+            # ("X has 20 features, but IncrementalPCA is expecting 5") and,
+            # when the reduce stage was a no-op (every leaf already <=
+            # ndims columns), silently returns the UNGROUPED frame. See
+            # `Pipeline._regroup_hierarchical_input`. A ROW hierarchy is
+            # deliberately not recorded: its leaves keep the full row
+            # MultiIndex (they re-expand to themselves), and its pipeline
+            # already round-trips -- every leaf has the frame's own width.
+            _bundle_hierarchy = None
+            if (_multiindex_meta is not None
+                    and _multiindex_meta.get('axis') == 'columns'
+                    and raw):
+                _bundle_hierarchy = {
+                    'axis': 'columns',
+                    'n_features': int(raw[0].shape[1]),
+                    'feature_correspondence': _multiindex_meta.get(
+                        'feature_correspondence', 'name'),
+                    'feature_labels': _mi_feature_labels,
+                }
             bundle_pipeline = build_pipeline(manip=manip, normalize=normalize,
                                              reduce=reduce, ndims=ndims,
-                                             align=align, cluster=cluster_spec)
+                                             align=align, cluster=cluster_spec,
+                                             input_hierarchy=_bundle_hierarchy)
             # this refit re-resolves the SAME reduce spec the figure was
             # drawn with, so any spec-conflict warning it emits (e.g.
             # "Unequal values passed to dims and n_components" when a
