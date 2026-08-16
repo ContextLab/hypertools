@@ -42,14 +42,17 @@ Jeremy chose "Execute Plan 2 (MultiIndex)" when asked.
 | 4 `trace_data`/`trace_metadata` bundle keys | done, 6 tests | `86db0842` |
 | (fix) NA hierarchy labels — review finding 1 | done, 14 tests, mutation-verified | `af77f09e` |
 | 5 column MultiIndex end-to-end in `plot()` | done, 17 tests | `5b21e3c6` |
-| (fix) nominal feature correspondence — review finding 1 | done, 14 tests | *this commit* |
-| 6 continuous hue as per-trace aux | done, 22 tests | *this commit* |
-| 7 hierarchical `hyp.predict` | not started | — |
-| 8 `predict=` over final traces | not started | — |
-| 9 matplotlib/plotly parity | not started | — |
-| 10 `docs/hierarchy.rst` guide | not started | — |
-| 11 CHANGELOG 1.1.0 section | not started | — |
-| 12 verification | not started | — |
+| (fix) nominal feature correspondence — review finding 1 | done, 14 tests | `c5662249` |
+| 6 continuous hue as per-trace aux | done, 22 tests (20 focused + 2 alpha regressions) | `ea5d9b5e` |
+| 7 hierarchical `hyp.predict` | done, 25 tests (plan said 22) | `c51d274d`, fix `c5fb889c` |
+| 8 `predict=` over final traces | done, 17 tests | `5238d6bc`, fix `5c2f29e9` |
+| 9 matplotlib/plotly parity | done, 14 → 23 tests (plan said 12) | `c9b91293`, review `a309f49e`, triage `b48c2848` |
+| 10 `docs/hierarchy.rst` guide | done, 12 tests (plan said 8), 138 executed doctests | `f2a7a2b1`, fixes `cdae7096` |
+| 11 CHANGELOG 1.1.0 section | done, 9 tests (plan said 6) | `b0076f8f`, fixes `cdae7096` |
+| 12 verification | done, no new tests — all six gates green | *this commit* |
+
+**Plan 2 is COMPLETE.** It is **not releasable**, and that is a Plan 4
+dependency, not a defect here: see *Task 12 as EXECUTED* below.
 
 ## Defects found in the plan's own listings (fixed in the code)
 
@@ -441,27 +444,130 @@ every downstream "baseline + N" figure in the plan is a `def test_` count,
 not a collected-test count. Recomputing per task rather than carrying the
 plan's numbers.
 
+## Tasks 7-12 as EXECUTED by the ultracode run (2026-08-16)
+
+Tasks 7-11 were implemented by dispatched subagents, one per task, each
+under the same rule: **run every test the plan prescribes BEFORE
+implementing; if it passes already it does not test the feature, so
+strengthen it until it fails and report that.** That rule paid for itself in
+every single task. The per-task detail lives in the commit bodies and in the
+plan's own EXECUTED notes; what follows is the pattern.
+
+### The plan's prescribed tests were defective in every task
+
+| task | what the prescribed tests got wrong |
+|-|-|
+| 7 | `test_flat_frame_return_type_is_unchanged` PASSED before the feature existed (it is a no-regression guard, not coverage); `test_unsorted_times_warn_naming_the_group` did not test its own claim; one test leaked an unasserted warning. 22 prescribed → **25** shipped. |
+| 8 | the prescribed `_solid`/`_dashed` helpers **cannot work at all** — `_forecast_style_from` makes a forecast INHERIT its source linestyle, so under `fmt='-'` `_dashed(ax)` is always `[]`, and 9 of 17 tests depended on them; one test's `zip` paired **cube wireframe faces** with forecasts; two more passed before implementation and were strengthened first. |
+| 9 | the block was **9 failed / 3 passed and could not have passed as written**: `_data_traces` filtered `name != 'cube'` but the cube trace is unnamed; `t.line.dash` selects every line (plotly spells solid `dash='solid'`); the F14 colour test compared an `rgba()` slice against an `rgb()` slice, which can never be equal; points vs pixels; `antialias=True` ignored; and `test_colorbar_renders_on_plotly` was **vacuous** (plotly instantiates a `ColorBar` on every trace). |
+| 10 | `test_api_rst_links_the_guide`'s `X or Y` made its real clause dead, and `count('hierarchy') >= 2` was met by any two mentions anywhere. |
+| 11 | 3 of 6 could not detect what they claim: `_section()` bounded a section at `\n## `, which cannot match `\n### `, so every "Changed / validation says X" assertion could be satisfied by text under *Documented limitations*; `assert 'list' in changed.lower()` is satisfied by "listed"; and nothing executed anything. 6 → **9**. |
+
+Two tests were proven inert by **mutation** rather than argument, which is
+the part worth keeping: Task 8's `test_forecast_takes_the_final_observed_hue_colour`
+gave every leaf the SAME hue ramp, so all four traces ended in one colour and
+`zip(colls, forecasts)` compared a colour against itself four times — an
+off-by-one in `_hyp_forecast_dataset` left all 17 tests green. And Task 8's
+animated path was asserted by COUNTS only: rotating `analyze_histories` by one
+detached every animated forecast from its trace (gaps 0.0 → 0.641/0.512/…)
+with the whole module still passing.
+
+### Four defects found outside the plan's scope, fixed anyway
+
+1. **Contract 10's message blamed the grouping for what the PIPELINE did**
+   (`5c2f29e9`): a 30-row frame under `manip='Resample', n_samples=1` was told
+   *"the input itself has only one observation … pass a frame with more rows"*.
+   Fixed by capturing each leaf's PRE-pipeline row count.
+2. **Under a continuous `hue=`, plotly discarded per-trace alpha entirely**
+   (`a309f49e`) — hierarchy level alphas and plain `alpha=` both rendered fully
+   opaque, on the backend the maintainer requires to be identical.
+3. **With `ndims=1`, matplotlib drew the `predict=` overlay at x = 0..t**
+   (`a309f49e`), painting every forecast back over the START of the plot. The
+   seam VALUE was right, which is how it survived; only x was wrong.
+4. **14 sites still dated behaviours to a release that was never published**
+   (`cdae7096`), and a test actively FORBADE correcting them.
+
+One reported finding was **declined with evidence** rather than "fixed":
+`cluster=` does not make the backends draw different coordinates —
+`Line3D.get_xdata()` returns PROJECTED coordinates once a figure is drawn, and
+`cluster=` triggers a draw. Read through `get_data_3d()` the vertex multisets
+are equal. A fix for a non-defect is a regression.
+
+### Task 12 as EXECUTED — every gate MEASURED at `cdae7096`
+
+| gate | result |
+|-|-|
+| full suite `.venv/bin/python -m pytest -q` | **3465 passed, 13 skipped, 2 deselected in 705.10s** — 0 failed, 0 errors, **no "warnings summary" section** |
+| delta vs the 3406 baseline at `5c2f29e9` | **+59** (Tasks 9-11); vs the plan's true base `59405545` (3331) the whole plan is **+134**, not the plan's projected +151 |
+| five publication gates | **47 passed, 2 skipped** (the skips are the release-gated cases at `test_notebook_install_gate.py:125,144`) |
+| `tests/plot tests/core tests/predict` | **952 passed** |
+| docs `sphinx -b html -W -E -a` | **build succeeded**, 0 warnings; `hierarchy.html` built and linked 14x/3x/2x from index/api/tutorials |
+| `predict → plot` layering | **`[]`** |
+| exactly one mean-construction site | **`hypertools/plot/hierarchy.py:171`**, only |
+| ruff set-difference vs `59405545` | **empty in both directions**, 141 keys each side |
+| `git status --short` / `git worktree list` | empty / main checkout only |
+
+Nothing needed fixing, so Step 6's "re-run everything after any fix" did not
+fire; all six gates ran against one unmodified tree.
+
+**Three plan-text corrections Task 12 itself needed:**
+
+1. **Tasks 9 and 10 shipped with no EXECUTED note and not one ticked step.**
+   Their commits record measured gates in their bodies, but nothing reached
+   the plan, so at HEAD the file read as though plotly parity and the guide
+   had not started. Backfilled from those commit bodies, each number
+   attributed to its sha and labelled as commit evidence, not
+   re-measurement. **This is the same failure mode round 4 already named** —
+   "a rewrite step and its split step are edited separately" — recurring
+   one level up, in the plan's own bookkeeping.
+2. **Step 2's "40 passed" is a `def test_` count, not a collected count.**
+   13+8+4+4+11 = 40 functions is right; parametrisation makes it 49
+   collected, so a green run is **47 passed / 2 skipped**. Same class of
+   error as the *Plan counting discrepancy* section above.
+3. **Step 4's layering one-liner has an operator-precedence bug**:
+   `'.plot' in src and 'hypertools.plot' in src or 'from ..plot' in src`
+   binds as `(A and B) or C`. It was re-run as written AND with a regex over
+   every `import`/`from` line under `hypertools/predict/` — both `[]`, so the
+   empty result is not an artifact of the precedence.
+
+### The one thing that is RED, and it is not this plan's
+
+**Plan 4 has not landed, so 1.1 is not releasable from this tree.** Measured:
+`docs/tutorials/market_forecast.ipynb` exists but contains **0**
+`MultiIndex.from_tuples`, and `examples/animate_market_forecast.py` contains
+**0** `MultiIndex` references. Task 12 Step 2a's own instruction is to record
+that rather than tag, which is what was done — in the plan's checklist table
+and here. The flagship demonstration of everything Tasks 5-9 add still shows
+the flat market.
+
 ## Standing constraints in force
 
 - `.venv/bin/python` is mandatory (system numpy breaks matplotlib).
 - **Never `git stash`** in this repo (documented data-loss hazard) — use
   `git show <ref>:<path>` or a worktree.
-- No subagents, no workflows (session constraint).
+- ~~No subagents, no workflows (session constraint).~~ **Lifted on 2026-08-16:**
+  Tasks 7-12 were run as one dispatched subagent per task (the "ultracode"
+  run). Tasks 1-6 were inline, which is why the note above them reads that way.
 - Zero-warning suite; ruff parity against the base commit; docs build under
   `sphinx -W`.
 
 ## Left for the maintainer (carried over, unchanged)
 
-- **Nothing is pushed.** `dev-1.0` is **128** commits ahead of
-  `origin/dev-1.0` (measured 2026-08-15); CI has not seen any of it since
-  2026-07-24.
-- `CHANGELOG.md:460` still says `## 1.0.0 (unreleased)` on this branch
-  although 1.0.0 shipped on master 2026-07-24 — `dev-1.0` never picked up
-  master's release-time flips. Plan 2 Task 11 creates the `## 1.1.0
-  (unreleased)` section; the stale 1.0.0 heading is separate and predates
-  this work.
+- **Nothing is pushed.** `dev-1.0` is **140** commits ahead of
+  `origin/dev-1.0` (measured 2026-08-16, was 128 on 2026-08-15); CI has not
+  seen any of it since 2026-07-24.
+- ~~`CHANGELOG.md:460` still says `## 1.0.0 (unreleased)`~~ **FIXED** in
+  Task 11 (`b0076f8f`): the heading is now `## 1.0.0 (2026-07-24)`, verified
+  byte-identical to `git show master:CHANGELOG.md` apart from the date. The
+  same commit created `## 1.1.0 (unreleased)` and moved `pyproject.toml`
+  1.0.1 → 1.1.0, which an existing gate
+  (`test_changelog_top_version_matches_pyproject`) forced.
 - Pre-existing ruff findings, ungated (no lint job in CI). **State the scope
-  when quoting the number**: `ruff check` over the whole repo → **417**;
-  over the code this work touches, `ruff check hypertools tests` → **353**
-  (257 + 96). Both measured 2026-08-15. The per-commit parity checks in this
-  session are set differences at the **353** scope against base `59405545`.
+  when quoting the number**: `ruff check` over the whole repo → **441**;
+  over the code this work touches, `ruff check hypertools tests` → **377**.
+  Both measured 2026-08-16 (they were 417 / 353 on 2026-08-15). **The raw
+  count moving is expected and is not a regression** — `plot.py` takes `np`
+  from a star import, so every added `np.` line repeats a pre-existing
+  `F405`. The gate is the SET difference of `(file, code, message)` keys
+  against base `59405545`, which is **empty in both directions, 141 keys
+  each side**, re-measured at `cdae7096`.

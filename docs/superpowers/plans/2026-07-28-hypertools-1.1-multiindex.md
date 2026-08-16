@@ -3063,7 +3063,35 @@ The existing `test_plot_2level_plotly_parity` (`tests/test_multiindex.py:336`) a
 
 **Files:** Modify `hypertools/plot/plotly_backend.py`; Test `tests/plot/test_multiindex_plotly.py`
 
-- [ ] **Step 1: Write the failing test**
+> **EXECUTED 2026-08-16 in `c9b91293` + `a309f49e`, plus the Task 7-8 triage
+> commit `b48c2848`.** The steps below were ticked retroactively during Task 12,
+> which found this task had shipped with every box unticked and no EXECUTED
+> note; the numbers are the ones MEASURED in those commit bodies, attributed to
+> their shas, not re-measured here. What the task got wrong, in brief (the
+> commit messages carry the full measurements):
+>
+> 1. **The prescribed test block was 9 failed / 3 passed and could not have
+>    passed as written** (`c9b91293`): `_data_traces` filtered `name != 'cube'`
+>    but the cube trace is UNNAMED; `t.line.dash` selects every line because
+>    plotly spells solid `dash='solid'`; the F14 colour test compared an
+>    `rgba(...)` slice against an `rgb(...)` slice, which can never be equal,
+>    and gave both leaves the same hue so a mis-pairing passed;
+>    `[1.0, 1.0, 2.0]` are matplotlib POINTS while plotly's `line.width` is
+>    pixels; `len(t.line.color) == len(df)` ignores `antialias=True`; and
+>    `test_colorbar_renders_on_plotly` was VACUOUS (plotly instantiates a
+>    `ColorBar` on every trace — `marker.showscale` is the discriminator).
+> 2. **Step 3's `_forecast_colors` does not exist** — Task 6 implemented F14 as
+>    `_apply_multicolor_lines` anchoring on `line_colors[dataset][-1]`, so the
+>    plotly side needed a new `_hue_anchor_color`, not a consumer of a symbol
+>    the plan invented.
+> 3. **Step 4's "12 passed" became 14** (`c9b91293`), then **23** after the
+>    review commit `a309f49e` added the alpha, marker-forecast, 1-D-seam and
+>    row-hierarchy-on-plotly cases.
+> 4. **Step 5's "baseline + 137 (125 + 12)" is a carry-forward** and does not
+>    reconcile; measured absolutely instead: **3420** at `c9b91293`, **3429**
+>    at `a309f49e`, **3443** at `b48c2848`.
+
+- [x] **Step 1: Write the failing test** *(EXECUTED at `c9b91293`: written with the six corrections in note 1; 14 tests, all failing before the change.)*
 
 ```python
 # tests/plot/test_multiindex_plotly.py
@@ -3232,22 +3260,22 @@ def test_dual_axis_frame_is_rejected_on_plotly():
         _plot(df, '-', show=False)
 ```
 
-- [ ] **Step 2: Run and confirm failure**
+- [x] **Step 2: Run and confirm failure** *(EXECUTED at `c9b91293`: all 14 failed before the change; red/green re-proved by mutation afterwards — disabling `anchor_color` fails exactly the two forecast-hue tests, restoring truncation in `_to_plotly_color` fails exactly the three colour tests.)*
 
 Run: `.venv/bin/python -m pytest tests/plot/test_multiindex_plotly.py -v`
 Expected: the column-hierarchy, hue, forecast and bundle tests FAIL; the dual-axis test passes (rejection is backend-independent, in `plot()`).
 
 > `_plot()` restores the backend in a `finally`, the pattern `tests/test_multiindex.py:336` and `tests/test_backend_state_safety.py` already use. If a shared fixture exists by the time this runs, prefer it.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement** *(EXECUTED at `c9b91293`, extended at `a309f49e`. Measured first: the geometry and styling ALREADY crossed correctly; what did not was the continuous-hue forecast colour, the two disagreeing colour serializers, the missing "which traces are DATA" handle (now `meta['hyp_trace_index']`), and — from the review — per-trace alpha under a hue, the marker-only forecast anchor, and matplotlib's 1-D forecast x-offset.)*
 
 Whatever `plotly_backend.py` needs to consume `FinalTraces` + the style dict + `_forecast_colors`: per-trace `line.width`, alpha baked into the `rgba()` string, `name`/`showlegend` from the labels, a per-point colour list for a continuous hue, and one dashed trace per plotted trajectory with the final observed colour. **No `NotImplementedError` is acceptable here** — every one of these is Python-side data preparation that plotly already supports (the row path proves it).
 
-- [ ] **Step 4: Run and confirm pass** — **12 passed**.
+- [x] **Step 4: Run and confirm pass** — ~~**12 passed**~~ *(EXECUTED: **14 passed** at `c9b91293`, **23 passed** at `a309f49e`, **63 passed** across the focused set at `b48c2848`.)*
 
-- [ ] **Step 5: Run the WHOLE suite** — `.venv/bin/python -m pytest -q`. Expected: baseline + 137 (125 + 12).
+- [x] **Step 5: Run the WHOLE suite** — ~~baseline + 137 (125 + 12)~~ *(EXECUTED, measured absolutely per Global Constraints: **3420** at `c9b91293`, **3429** at `a309f49e`, **3443** at `b48c2848`, each 13 skipped / 2 deselected with no warnings summary; ruff parity empty both ways and the `-W -E -a` docs build succeeded at each.)*
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit** *(EXECUTED: `c9b91293`, then `a309f49e` for the nine review findings, then `b48c2848` for the Tasks 7-8 Minor triage.)*
 
 ```bash
 git add hypertools/plot/plotly_backend.py tests/plot/test_multiindex_plotly.py
@@ -3262,7 +3290,45 @@ Docstrings alone are not sufficient for these semantics (F22), the row-plot/row-
 
 **Files:** Create `docs/hierarchy.rst`; Modify `docs/index.rst`, `docs/api.rst`, `docs/tutorials.rst`, `docs/pipeline_order.rst`, `scripts/round17_evidence/pipeline_order_diagram.py`, `docs/_static/pipeline_order.svg`; Test `tests/test_docs_hierarchy_guide.py`
 
-- [ ] **Step 1: Write the failing test**
+> **EXECUTED 2026-08-16 in `f2a7a2b1`, corrected by `cdae7096`.** Backfilled
+> during Task 12, which found this task had shipped with no EXECUTED note and
+> no ticked step; the numbers below are the ones MEASURED in those two commit
+> bodies, attributed to their shas, not re-measured here. Three places the task
+> was wrong about the tree, and two later corrections:
+>
+> 1. **Step 4's market-section retitle could not be written.** It asks
+>    `docs/tutorials.rst` to describe the market notebook as a hierarchy, but
+>    `docs/tutorials/market_forecast.ipynb` contains **0** MultiIndex
+>    constructions — that rewrite is Plan 4 Task 2 Step 5, which has not
+>    landed. Writing the synopsis would have made `tutorials.rst` describe a
+>    notebook that does not exist. The plan's `assert 'one moving path' not in
+>    tut` was **replaced, not dropped**, by a two-way guard: while the notebook
+>    is flat the old title is REQUIRED, and the moment it gains a MultiIndex
+>    the test fails naming Plan 4 Task 2 and the synopsis to write. The
+>    hierarchy link went to the WEATHER section instead, which genuinely is the
+>    bold-means/faint-leaves tutorial.
+> 2. **`.. doctest::` needs `sphinx.ext.doctest`, absent from `docs/conf.py`** —
+>    without it the `-W` build failed with 22 "Unknown directive type" errors.
+> 3. **The plan's own `test_api_rst_links_the_guide` could not fail.**
+>    `':doc:`hierarchy`' in api or 'hierarchy' in api` makes the first clause
+>    dead, and `count('hierarchy') >= 2` is met by any two mentions anywhere.
+>    Replaced with a test requiring a real `:doc:` link inside BOTH the Predict
+>    and Plot sections; mutation-verified.
+> 4. **Two prose claims were measured false while writing** and corrected
+>    before shipping: the reason `xform_data`/`trace_data` are distinct lists
+>    (an `n_levels == 1` hierarchy has no means, equal lengths, equal contents,
+>    and they are *still* distinct), and the forecast-colour-at-the-anchor
+>    claim, which was verified with disjoint per-leaf hues rather than asserted.
+> 5. **`cdae7096` then found four more**, two of them in this guide: the
+>    Limitations section gave the ROW remedy for a refusal that fires on BOTH
+>    axes (`reset_index(drop=True)` does not clear a column MultiIndex), and
+>    "a datetime innermost level comes back as a DatetimeIndex … with its name
+>    intact" was false of the object shown (`forecasts[0].index.name is None`;
+>    the name survives on the GROUP, and `hyp.predict` builds a fresh unnamed
+>    horizon index on FLAT input too). The guide grew 126 → **138** executed
+>    examples.
+
+- [x] **Step 1: Write the failing test** *(EXECUTED at `f2a7a2b1`: written with the corrections in notes 1 and 3.)*
 
 ```python
 # tests/test_docs_hierarchy_guide.py
@@ -3349,12 +3415,12 @@ def test_pipeline_order_documents_the_hierarchy_branch():
     assert 'mean trace' in po.lower()
 ```
 
-- [ ] **Step 2: Run and confirm failure**
+- [x] **Step 2: Run and confirm failure** *(EXECUTED at `f2a7a2b1`. Note the prescribed reason is half wrong: `docs/hierarchy.rst` genuinely did not exist, but `'one moving path'` is the title the notebook still legitimately carries — see note 1 — so the guard was inverted rather than satisfied.)*
 
 Run: `.venv/bin/python -m pytest tests/test_docs_hierarchy_guide.py -v`
 Expected: 8 failed — `docs/hierarchy.rst` does not exist, and `'one moving path'` **is** currently in `docs/tutorials.rst:148`.
 
-- [ ] **Step 3: Write `docs/hierarchy.rst`**
+- [x] **Step 3: Write `docs/hierarchy.rst`** *(EXECUTED at `f2a7a2b1`: ten sections, **126** executed doctests — **138** after `cdae7096` — every claim measured against the code at `b48c2848` before it was written, and `test_every_doctest_in_the_guide_runs` mutation-proven (changing the linewidth formula, or disabling nominal correspondence, each fail it).)*
 
 Sections, in order, each with a runnable example:
 
@@ -3377,7 +3443,7 @@ The comparison table is normative (reproduce the reviewer's, as an RST `list-tab
 | Row MultiIndex, predict | time/observation | all outer levels | n/a — `hyp.predict` groups by the outer levels instead |
 | Column MultiIndex, plot/predict | feature name | all outer levels | whenever the frame has at least 2 rows — every group keeps all of them |
 
-- [ ] **Step 4: Register and link it**
+- [x] **Step 4: Register and link it** *(EXECUTED at `f2a7a2b1`, except the market-section retitle — see note 1; the link went to the weather section, which is genuinely the hierarchy tutorial. Verified in the built HTML at Task 12 Step 3: `hierarchy.html` is referenced **14x** from `index.html`, **3x** from `api.html`, **2x** from `tutorials.html`.)*
 
 - `docs/index.rst:41-48` — add `hierarchy` to the toctree, after `pipeline_order`.
 - `docs/index.rst:35-36` — replace *"Pandas DataFrames (including MultiIndex)"* with a formulation naming both axes and linking the guide, e.g. *"Pandas DataFrames, including hierarchical frames — a **row MultiIndex** groups observations into leaf trajectories, a **column MultiIndex** groups features into per-group trajectories (see :doc:`hierarchy`)"*.
@@ -3385,7 +3451,7 @@ The comparison table is normative (reproduce the reviewer's, as an RST `list-tab
 - `docs/tutorials.rst:148-149` — retitle the market section away from *"one moving path"* to the hierarchy framing, and add a synopsis sentence naming sectors-as-leaves, the market mean, price hue and per-trace forecasts, with `:doc:`../hierarchy`` — **coordinate with Plan 4 Task 8 Step 6**, which adds the thumbnail to the same section; whichever lands second keeps both edits.
 - Every docstring changed in Tasks 4-8 gains `See docs/hierarchy.rst`.
 
-- [ ] **Step 5: Add the hierarchy side branch to `pipeline_order.rst` and regenerate the SVG**
+- [x] **Step 5: Add the hierarchy side branch to `pipeline_order.rst` and regenerate the SVG** *(EXECUTED at `f2a7a2b1`. SVG regenerated **59 106 → 79 580 bytes**; two rendering defects fixed rather than shipped — one branch arrow drew backwards (both are now built explicitly, verified by rendering to PNG and looking at it), and the `predict (overlay)` box had its right edge clipped by `xlim`, a defect this script had been shipping since round17. Placement verified against `plot.py`, not asserted: expansion at `:3766`/`:3789` runs before `format_data` (`:3867`) and `analyze` (`:3950`); mean construction at `:4459` runs after the display reduce (`:4083`), which is why means reach `trace_data` and never `xform_data`.)*
 
 The new operations sit **outside** the linear chain, so document them as a side branch rather than pretending mean construction is an ordinary stage:
 
@@ -3410,14 +3476,14 @@ ls -la docs/_static/pipeline_order.svg
 ```
 Expected: the SVG is rewritten (its mtime changes; it was 59 106 bytes before). Update the `:alt:` text at `docs/pipeline_order.rst:18-20` to mention the hierarchy branch — an unchanged alt text describing a diagram that changed is a documentation defect.
 
-- [ ] **Step 6: Run and confirm pass** — `.venv/bin/python -m pytest tests/test_docs_hierarchy_guide.py -v` → **8 passed**.
+- [x] **Step 6: Run and confirm pass** — ~~**8 passed**~~ *(EXECUTED at `f2a7a2b1`: **12 passed** — the extra four come from note 3's replacement api-link test and the tutorials two-way guard. Full suite **3455 passed** at that commit.)*
 
-- [ ] **Step 7: Build the docs to the RTD-parity standard**
+- [x] **Step 7: Build the docs to the RTD-parity standard** *(EXECUTED at `f2a7a2b1`: `sphinx -b html -W -E -a` **succeeded with 0 warnings**, which also proves Step 4's toctree registration; re-run and re-confirmed at Task 12 Step 3.)*
 
 Run: `cd docs && MPLBACKEND=Agg ../.venv/bin/python -m sphinx -b html -W -E -a . _build/html 2>&1 | tail -30`
 Expected: build succeeds with **0 warnings** (the bar the 1.0 release gate enforces). A new page not in any toctree is a Sphinx warning, so this also proves Step 4 landed.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit** *(EXECUTED: `f2a7a2b1`, with the guide's four measured corrections following in `cdae7096`.)*
 
 ```bash
 git add docs/hierarchy.rst docs/index.rst docs/api.rst docs/tutorials.rst \
@@ -3695,14 +3761,51 @@ git commit -m "docs(1.1): CHANGELOG 1.1.0 section incl. validation/compatibility
 
 `make html` alone is not enough (F24). This plan changes `docs/`, `CHANGELOG.md` and a committed SVG, all of which the repo's existing release/publication machinery inspects.
 
-- [ ] **Step 1: Run the FULL suite**
+> **EXECUTED 2026-08-16 at `cdae7096`.** All six gates run in ONE tree, nothing
+> re-run because nothing needed fixing. What this task's own text got wrong:
+>
+> 1. **Tasks 9 and 10 shipped with no EXECUTED note and not one ticked step**,
+>    unlike Tasks 6, 7, 8 and 11, each of which wrote its corrections back.
+>    Their commits (`c9b91293`, `a309f49e`, `b48c2848`, `f2a7a2b1`) do record
+>    measured gates in their bodies, but nothing reached the plan, so at HEAD
+>    the file still read as though plotly parity and the guide had not started
+>    — the exact failure mode this plan warns about elsewhere (*"a rewrite step
+>    and its split step are edited separately"*). Backfilled here from those
+>    commit bodies, each number attributed to its sha: that is **commit
+>    evidence, not a re-measurement**, and it is labelled as such. (Steps in
+>    Tasks 1-5 are also still unticked; they are left alone — this task only
+>    fixes the two tasks that recorded *nothing*.)
+> 2. **Step 1's "+151" does not reconcile**, as the plan's own note warns.
+>    Measured absolutely: **3465 passed** vs the **3406** baseline at
+>    `5c2f29e9` = **+59** for Tasks 9-11. Against the plan's true base
+>    `59405545` (3331) the plan's whole span is **+134**, not +151 — the
+>    per-block counts are `def test_` counts, and several blocks shipped with
+>    more tests than prescribed (Task 7: 22 → 25; Task 11: 6 → 9) while
+>    parametrisation moves the collected total independently.
+> 3. **Step 2's "40 passed" is a `def test_` count, not a collected count.**
+>    Measured **47 passed, 2 skipped** (49 collected). The 13+8+4+4+11 = 40
+>    functions are correct; parametrisation adds 9, and the 2 skips are the
+>    release-gated cases in `tests/test_notebook_install_gate.py:125,144`
+>    (`HYPERTOOLS_REQUIRE_RELEASE=1`), which are *supposed* to skip off a
+>    master/tag build. A green run here is 47/2, not 40/0.
+> 4. **Step 4's layering command has a precedence bug.** `'.plot' in src and
+>    'hypertools.plot' in src or 'from ..plot' in src` binds as
+>    `(A and B) or C`, so a bare `from ..plot import x` is the only two-token
+>    form it reliably catches. Re-run as written (`[]`) *and* with a regex over
+>    every `import`/`from` line in `hypertools/predict/` (also `[]`), so the
+>    empty result is not an artifact of the operator precedence.
+> 5. **Step 2a's dependency is UNMET and this is the finding, not a failure.**
+>    Plan 4 has not landed: `grep -c 'MultiIndex.from_tuples'
+>    docs/tutorials/market_forecast.ipynb` → **0**, and
+>    `examples/animate_market_forecast.py` has **0** `MultiIndex` references.
+>    Per this step's own instruction, recorded rather than tagged: **1.1 is
+>    not releasable from this tree.**
 
-Run: `.venv/bin/python -m pytest -q`
-Expected: baseline + **151**, 13 skipped, 0 failed — that is **150** in this plan's new modules (27 + 14 + 6 + 6 + 17 + 15 + 22 + 17 + 12 + 8 + 6) plus **+1** net in `tests/test_multiindex.py`, which goes from **29** to **30** (`:479` rewritten in place, one new one-row test added; `:453` and `:306` untouched).
+- [x] **Step 1: Run the FULL suite** — ~~baseline + **151**~~ *(EXECUTED: `.venv/bin/python -m pytest -q` → **3465 passed, 13 skipped, 2 deselected in 705.10s**, zero failures, zero errors, no "warnings summary" section. That is **+59** over the 3406 baseline at `5c2f29e9`; see correction 2 for why +151 does not reconcile.)*
 
 > If any block's contents drift during implementation, do not carry these numbers forward — recompute each one by counting `def test_` in the block, and reconcile the total before Step 6.
 
-- [ ] **Step 2: Run the publication gates explicitly**
+- [x] **Step 2: Run the publication gates explicitly** — *(EXECUTED: **47 passed, 2 skipped in 1.07s**, not the prescribed 40 — see correction 3.)*
 
 ```bash
 .venv/bin/python -m pytest tests/test_release_notebook_check.py \
@@ -3713,22 +3816,22 @@ Expected: **13 + 8 + 4 + 4 + 11 = 40 passed.** These are the gates the reviewer 
 
 > Plan 4 Task 8 owns the notebook/gallery side of this (executed outputs, the five launch thumbnails, the native-ratio gate). This step covers **this plan's** docs changes only.
 
-- [ ] **Step 2a: Confirm the Plan 4 release dependency**
+- [x] **Step 2a: Confirm the Plan 4 release dependency** — *(EXECUTED: **UNMET**. `docs/tutorials/market_forecast.ipynb` exists but contains **0** `MultiIndex.from_tuples`; `examples/animate_market_forecast.py` exists but contains **0** `MultiIndex` references. Plan 4 Task 2 has not landed, so the last three rows of the checklist below are RED and **this plan is not releasable from this tree** — recorded here, as this step instructs, instead of tagging.)*
 
 **[Plan 4 — examples and tutorials](2026-07-28-hypertools-1.1-examples-and-tutorials.md) is an explicit release dependency of this plan.** This plan deliberately does *not* rewrite the market example or the market tutorial (see *Cross-plan scope*): those are the flagship demonstration of everything Tasks 5-9 add, and 1.1 must not ship the capability without them. **Neither plan is releasable alone.**
 
 Publication-gate checklist — all must be true in the same tree before 1.1 is tagged:
 
-| gate | owner | check |
-|-|-|-|
-| Full suite green (this plan's 151) | this plan | Step 1 |
-| Five publication gates green | this plan | Step 2 |
-| 0-warning docs build, `hierarchy.rst` built and linked | this plan | Step 3 |
-| `predict → plot` layering clean | this plan | Step 4 |
-| Exactly one mean-construction site | this plan | Step 5 |
-| `docs/tutorials/market_forecast.ipynb` rewritten around the column hierarchy, executed, ≤ 120 code lines, ≥ 24% native | **Plan 4** Task 2 Step 5 | Plan 4 Task 8 |
-| `examples/animate_market_forecast.py` rewritten in the same commit, ≤ 115 code lines, ≥ 26% native, runs headless | **Plan 4** Task 2 Step 2 | Plan 4 Task 8 |
-| Five launch thumbnails generated; gallery/notebook gates green | **Plan 4** Task 8 Steps 3-9 | Plan 4 Task 8 |
+| gate | owner | check | measured 2026-08-16 @ `cdae7096` |
+|-|-|-|-|
+| Full suite green (~~this plan's 151~~ **+59 over `5c2f29e9`**) | this plan | Step 1 | **GREEN** — 3465 passed, 13 skipped, 2 deselected, 0 failed |
+| Five publication gates green | this plan | Step 2 | **GREEN** — 47 passed, 2 release-gated skips |
+| 0-warning docs build, `hierarchy.rst` built and linked | this plan | Step 3 | **GREEN** — build succeeded, 0 warnings; linked from index/api/tutorials |
+| `predict → plot` layering clean | this plan | Step 4 | **GREEN** — `[]` |
+| Exactly one mean-construction site | this plan | Step 5 | **GREEN** — `plot/hierarchy.py:171` only |
+| `docs/tutorials/market_forecast.ipynb` rewritten around the column hierarchy, executed, ≤ 120 code lines, ≥ 24% native | **Plan 4** Task 2 Step 5 | Plan 4 Task 8 | **RED** — 0 `MultiIndex.from_tuples` |
+| `examples/animate_market_forecast.py` rewritten in the same commit, ≤ 115 code lines, ≥ 26% native, runs headless | **Plan 4** Task 2 Step 2 | Plan 4 Task 8 | **RED** — 0 `MultiIndex` references |
+| Five launch thumbnails generated; gallery/notebook gates green | **Plan 4** Task 8 Steps 3-9 | Plan 4 Task 8 | gates green, thumbnails owned by Plan 4 |
 
 ```bash
 # Plan 4's gate, run from this tree, after both plans have landed:
@@ -3739,7 +3842,11 @@ test -f docs/tutorials/market_forecast.ipynb && \
 ```
 Expected: green, and a non-zero count — the tutorial genuinely uses a column hierarchy. **If Plan 4 has not landed, this plan is not releasable**; record that here rather than tagging.
 
-- [ ] **Step 3: Build the docs to RTD parity**
+> **RECORDED, not tagged (2026-08-16):** the count is **0**. This plan's own
+> five gates are green in this tree; Plan 4's three are not. 1.1 stays untagged
+> until Plan 4 Task 2 and Task 8 land in the same tree and this step is re-run.
+
+- [x] **Step 3: Build the docs to RTD parity** — *(EXECUTED: `MPLBACKEND=Agg .venv/bin/python -m sphinx -b html -W -E -a docs /tmp/docsbuild` → **build succeeded**, 0 warnings. `hierarchy.html` built; `grep -c 'hierarchy.html'` → **14** in `index.html`, **3** in `api.html`, **2** in `tutorials.html`. Built to `/tmp/docsbuild` rather than `docs/_build/html` so the check leaves `git status --short` empty; the builder and flags are identical.)*
 
 ```bash
 cd docs && MPLBACKEND=Agg ../.venv/bin/python -m sphinx -b html -W -E -a . _build/html 2>&1 | tail -30
@@ -3753,11 +3860,11 @@ grep -c 'hierarchy.html' docs/_build/html/api.html
 ```
 Expected: `guide built`, and a non-zero count from both.
 
-- [ ] **Step 4: Confirm the layering rule still holds**
+- [x] **Step 4: Confirm the layering rule still holds** — *(EXECUTED: `predict -> plot imports: []`, and `[]` again from a regex over every `import`/`from` line under `hypertools/predict/` — see correction 4 on why the prescribed one-liner alone is not sufficient evidence.)*
 
 Run the `predict -> plot` import check from Task 1 Step 5 again. Expected: `[]`.
 
-- [ ] **Step 5: Confirm no mean is built twice**
+- [x] **Step 5: Confirm no mean is built twice** — *(EXECUTED: exactly one line, `hypertools/plot/hierarchy.py:171: arrays.append(np.mean(stacked, axis=0))`.)*
 
 ```bash
 .venv/bin/python -c "
@@ -3770,11 +3877,11 @@ assert hits.count(chr(10)) == 0, 'more than one mean-construction site'
 ```
 Expected: exactly one line, in `hypertools/plot/hierarchy.py`.
 
-- [ ] **Step 6: Re-run everything after any fix**
+- [x] **Step 6: Re-run everything after any fix** — *(EXECUTED: **nothing needed fixing**, so nothing was re-run. Steps 1-5 all ran against the same unmodified tree at `cdae7096` with `git status --short` empty throughout; the only edits in this task are to this plan file and the session note, neither of which is imported, built or asserted by any gate — verified: the two test files mentioning a plan path, `tests/test_meshutil.py:52` and `tests/plot/test_multiindex_predict.py:19`, cite it in prose comments only, and `docs/superpowers/` is not a sphinx source. Two gates beyond this task's list were also run: `tests/plot tests/core tests/predict` → **952 passed**, and ruff set-difference parity vs `59405545` → **empty in both directions, 141 keys each side**.)*
 
 Per the repo rule (*"repeat **all** checks if any changes were made to fix any of the checks"*): if Steps 2-5 changed anything, re-run Steps 1, 2, 2a, 3, 4 and 5 in order and confirm all six are green **in the same tree**.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add -A
