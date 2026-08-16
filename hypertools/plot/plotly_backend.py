@@ -2939,12 +2939,30 @@ def _hue_anchor_color(point_colors, src):
 
 
 def _trace_name(legend, tkwargs, i):
+    """This trace's plotly `name`, or None when it has no legend entry.
+
+    `'_nolegend_'` (and any other leading-underscore label) is
+    MATPLOTLIB's convention for "keep this artist out of the legend" --
+    `plot.py` uses it for every hierarchy leaf, every intermediate mean,
+    every unnamed hue group, forecasts and trails. plotly has no such
+    convention: a name is just text, so passing the sentinel through made
+    it the trace's actual name -- rendered in hover labels ("_nolegend_"
+    beside the cursor on every leaf of a MultiIndex plot) and written into
+    exported HTML, where a plain list of arrays leaves `name=None`.
+    Normalising to None here fixes both while keeping the sentinel's
+    meaning: `showlegend` at the call site already excludes a `None` name,
+    so exactly the same traces stay out of the legend (its own
+    `startswith('_')` test is kept as a belt-and-braces guard for any
+    future caller that sets `name` without coming through here).
+    """
     label = tkwargs.get('label')
     if label is not None:
-        return str(label)
-    if isinstance(legend, (list, tuple)) and i < len(legend):
-        return str(legend[i])
-    return None
+        name = str(label)
+    elif isinstance(legend, (list, tuple)) and i < len(legend):
+        name = str(legend[i])
+    else:
+        return None
+    return None if name.startswith('_') else name
 
 
 def _camera_eye(elev, azim, r=1.95):

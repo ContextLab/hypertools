@@ -425,9 +425,44 @@ refused, with the same message:
    ...     print(str(error).split(':')[0])
    cluster=/n_clusters= is not compatible with a column-MultiIndex DataFrame
 
-``color=``/``colors=`` and ``linewidth=`` are ignored with a
-``UserWarning``, since the hierarchy owns them. A ``linestyle=`` **list**
-must have exactly one entry per top-level group. And ``predict=`` with
+``color=``/``colors=`` and ``linewidth=`` (and ``alpha=``) are ignored with
+a ``UserWarning``, since the hierarchy owns them. A ``linestyle=`` **list**
+must have exactly one entry per top-level group.
+
+``legend=`` is the one overridden kwarg that is *honoured* rather than
+warned away -- colour, width and alpha encode the hierarchy's structure, so
+a caller's value would contradict the drawing, but legend text names groups
+the hierarchy has no opinion about. A **list** renames the top-level groups
+(one entry per unique top-level value, in first-appearance order, exactly
+like ``linestyle=``); ``legend=False`` suppresses the automatic legend; and
+``legend=True`` (or omitting it) labels the groups with the index values
+themselves:
+
+.. doctest::
+
+   >>> style = build_hierarchy_styles(
+   ...     traces, legend_labels=['Group one', 'Group two'])
+   >>> style['labels']
+   ['Group one', 'Group two']
+   >>> try:
+   ...     build_hierarchy_styles(traces, legend_labels=['only one'])
+   ... except ValueError as error:
+   ...     print(str(error).split(';')[0])
+   legend= has 1 entries but there are 2 unique top-level MultiIndex value(s) (['G1', 'G2'])
+
+``names=`` (per-INPUT-DATASET legend entries) does *not* apply to a
+hierarchy: there is one input frame, drawn as leaves plus derived means, so
+passing it raises ``ValueError`` pointing at ``legend=[...]`` instead:
+
+.. doctest::
+
+   >>> try:
+   ...     hyp.plot(market, names=['a', 'b', 'c'])
+   ... except ValueError as error:
+   ...     print(str(error).split('.')[0])
+   names= assigns one name per input dataset, but x has a column MultiIndex, so the drawn traces are hierarchy groups (2 leaf trajectory/ies + 1 derived per-level mean(s)), not input datasets
+
+And ``predict=`` with
 ``animate='morph'`` raises ``NotImplementedError``: a morph interpolates
 between point clouds and so has no time axis to forecast along.
 

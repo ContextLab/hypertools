@@ -257,6 +257,36 @@ input too.
   through; the 1-D one fell back to the single trace colour, so all points
   came out identical while matplotlib scattered them per point.
 
+- **A hierarchy silently discarded `legend=[...]`, and `legend=False`.**
+  The `MultiIndex` branch overwrote `legend` with the hierarchy's own labels
+  unconditionally, so a caller's list vanished without a word (while every
+  SIBLING kwarg the hierarchy overrides -- `color`/`colors`, `linewidth`,
+  `alpha` -- warns) and an explicit opt-out still drew a legend. `legend=` is
+  now HONOURED under a hierarchy: a list **renames the top-level groups**
+  (one entry per unique top-level index value, in first-appearance order --
+  the same convention `linestyle=` already used; any other length raises
+  `ValueError` naming both counts), and `legend=False` suppresses the
+  automatic legend. `legend=True`/omitted still labels by index value.
+
+- **`names=` ALONE raised "pass dataset names via names= OR a legend= list,
+  not both"** on a hierarchy -- factually false, since the overwrite above
+  had already put the hierarchy's labels into `legend` before the conflict
+  check read it. The conflict now tracks what the CALLER passed. `names=`
+  itself (one name per INPUT dataset) does not apply to a hierarchy -- one
+  frame is drawn as leaves plus derived per-level means -- so it raises the
+  same shape of instructive `ValueError` the categorical-`hue` regrouping
+  guard raises, pointing at `legend=[...]`. This also closes a narrow path
+  (column hierarchy + continuous `hue=`) where `names=` used to slip through
+  and label leaves and means with per-dataset names.
+
+- **matplotlib's `'_nolegend_'` sentinel leaked into plotly trace names.**
+  It is matplotlib's convention for "keep this artist out of the legend";
+  plotly has no such convention, so every hierarchy leaf (and every unnamed
+  hue group, forecast and trail) was NAMED `_nolegend_` -- rendered in hover
+  labels and written into exported HTML, where a plain list of arrays leaves
+  `name=None`. Any leading-underscore label now becomes `name=None`; which
+  traces appear in the legend is unchanged.
+
 - **plotly and matplotlib serialized colours differently.** plotly's two
   colour helpers disagreed -- one truncated each channel where the other
   rounded -- so the same colour came out `rgb(219,95,87)` on matplotlib and

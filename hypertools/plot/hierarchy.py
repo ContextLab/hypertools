@@ -193,7 +193,7 @@ def build_hierarchy_traces(leaf_arrays, meta, aux=None):
 
 
 def build_hierarchy_styles(traces, palette='hls', linestyle=None,
-                           linestyles=None):
+                           linestyles=None, legend_labels=None):
     """Per-trace color/linewidth/alpha/linestyle/label from trace METADATA.
 
     Consumes a `FinalTraces`' `keys`, `level_idx` and `is_mean` -- never its
@@ -219,6 +219,15 @@ def build_hierarchy_styles(traces, palette='hls', linestyle=None,
         its entry for every one of its traces (leaves and means alike).
         Raises ``ValueError`` on a length mismatch. A scalar (or None) is
         left untouched -- the caller's existing scalar-broadcast handles it.
+    legend_labels : list or None
+        A caller-supplied replacement for the legend text, ONE entry per
+        unique top-level index value in ``unique_top`` order (the same
+        per-top-level-group convention `linestyles` already uses). Only the
+        labelled traces are affected -- everything else keeps
+        ``'_nolegend_'`` -- so the legend still has exactly ``n_top``
+        entries. ``None`` (the default) keeps the index values themselves.
+        Raises ``ValueError`` on a length mismatch, naming ``legend=``
+        because that is the `hyp.plot` kwarg a user reaches this through.
 
     Returns
     -------
@@ -261,6 +270,25 @@ def build_hierarchy_styles(traces, palette='hls', linestyle=None,
             )
         per_top_linestyle = list(resolved_linestyle)
 
+    # legend=[...] under a hierarchy renames the top-level GROUPS, so it is
+    # sized like `linestyles` (one entry per unique top-level value), not
+    # like the drawn-trace count a flat `legend=` list uses -- the leaves
+    # and the intermediate means are unlabelled by the rule below, so a
+    # per-trace list would be mostly sentinel padding the caller cannot see
+    # the need for. Checked here, where `n_top`/`unique_top` are known.
+    per_top_label = None
+    if legend_labels is not None:
+        per_top_label = list(legend_labels)
+        if len(per_top_label) != n_top:
+            raise ValueError(
+                f"legend= has {len(per_top_label)} entries but there are "
+                f"{n_top} unique top-level MultiIndex value(s) "
+                f"({unique_top!r}); under a MultiIndex hierarchy legend= "
+                "labels the top-level groups, so pass exactly one entry "
+                "per group (in first-appearance order), or legend=True to "
+                "use the index values themselves."
+            )
+
     colors, linewidths, alphas, labels = [], [], [], []
     linestyles_out = [] if per_top_linestyle is not None else None
 
@@ -275,7 +303,12 @@ def build_hierarchy_styles(traces, palette='hls', linestyle=None,
         # top-level group. Without that exception a (Group, Feature) column
         # hierarchy drew several completely unlabelled traces (F11).
         top_level = (level == 0) and (mean or n_levels == 1)
-        labels.append(str(top_val) if top_level else '_nolegend_')
+        if not top_level:
+            labels.append('_nolegend_')
+        elif per_top_label is None:
+            labels.append(str(top_val))
+        else:
+            labels.append(str(per_top_label[top_i]))
         if linestyles_out is not None:
             linestyles_out.append(per_top_linestyle[top_i])
 

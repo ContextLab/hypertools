@@ -1201,8 +1201,15 @@ def plot(
         length MUST equal the number of unique top-level index values (one
         style per top-level group, applied to every trace in that group);
         a mismatched length raises ``ValueError``. Any `color`/`colors`/
-        `linewidth` kwarg is ignored (with a ``UserWarning``) since
-        MultiIndex grouping owns those. `hue=` is superseded with a
+        `linewidth`/`alpha` kwarg is ignored (with a ``UserWarning``) since
+        MultiIndex grouping owns those. `legend=` is the one overridden
+        kwarg that is HONOURED rather than warned away: a list renames the
+        top-level groups (one entry per unique top-level value, in
+        first-appearance order -- see `legend` below) and ``legend=False``
+        suppresses the automatic legend. `names=` (per-INPUT-DATASET
+        entries) does not apply -- one frame is drawn as leaves plus
+        derived means -- and raises ``ValueError`` pointing at `legend=`.
+        `hue=` is superseded with a
         ``UserWarning`` (MultiIndex grouping takes precedence) -- on the
         COLUMN axis a CONTINUOUS hue is instead carried through the
         hierarchy, described below; `cluster=`/
@@ -1558,7 +1565,11 @@ def plot(
         Incompatible with a CATEGORICAL `hue` (which regroups the data by
         category, so the drawn traces are no longer the named datasets);
         that combination raises ``ValueError`` -- label the hue categories
-        with ``legend=[...]`` instead.
+        with ``legend=[...]`` instead. Incompatible with a MultiIndex
+        HIERARCHY for the same reason (one input frame, drawn as leaves
+        plus derived per-level means); that combination also raises
+        ``ValueError`` -- name the top-level groups with ``legend=[...]``
+        or flatten the hierarchy.
 
     labels : list
         A list of point labels: exactly one entry per OBSERVATION (row)
@@ -1594,6 +1605,18 @@ def plot(
         item); the list must have exactly one entry per drawn dataset/
         group (``ValueError`` naming legend otherwise). A bare string is
         treated as a single-entry list (valid only for a single dataset).
+
+        Under a MultiIndex HIERARCHY the drawn traces are leaves plus
+        derived per-level means, and only the TOP-level groups carry a
+        legend entry -- so there a list RENAMES those groups: one entry
+        per unique top-level index value, in first-appearance order (the
+        same convention ``linestyles=`` uses), with any other length
+        raising ``ValueError``. ``legend=False`` suppresses the
+        hierarchy's automatic legend; ``True``/omitted labels the groups
+        with the index values themselves. On a column hierarchy combined
+        with a continuous or matrix-valued `hue` any legend is dropped
+        with a ``UserWarning`` (that path colors by value, so there are
+        no discrete groups to name).
 
     colorbar : bool or dict
         If True, draws a colorbar reflecting the color mapping in use
@@ -3104,6 +3127,21 @@ def plot(
             f"labels (one per drawn trace/group); got "
             f"{type(legend).__name__}: {legend!r}.")
 
+    # Did the CALLER pass legend= as an explicit list of labels? Recorded
+    # HERE, while `legend` still holds exactly what was passed in (the
+    # string wrap above has already run, so legend='a' counts as a list of
+    # one). Every later reader must consult this flag rather than
+    # re-testing `isinstance(legend, list)`: the MultiIndex branch below
+    # installs the hierarchy's own per-trace labels INTO `legend`, so from
+    # that point on "legend is a list" no longer means "the user passed
+    # one". Two user-visible bugs came from exactly that confusion --
+    # `legend=[...]` was overwritten without a word (while every sibling
+    # kwarg the hierarchy overrides warns), and `names=` ALONE raised
+    # "pass dataset names via names= OR a legend= list, not both" on a
+    # call that never mentioned legend=.
+    _legend_user_list = isinstance(
+        legend, (list, tuple, np.ndarray, pd.Series, pd.Index))
+
     # animate= dict form (GH #154 resolution): unpacked into the flat
     # animation kwargs HERE, at the very top of the function, before
     # anything else runs -- so every downstream code path (all of which
@@ -4459,8 +4497,26 @@ def plot(
             # holds by construction rather than by coincidence.
             bundle_forecasts, raw_forecasts, analyze_histories = \
                 _compute_forecasts(_ft.arrays)
+        # legend=[...] under a hierarchy RENAMES the top-level groups
+        # rather than being discarded: the labelled traces are exactly the
+        # top-level ones, so the caller's entries land on them one-for-one
+        # (in `unique_top` first-appearance order, the same convention
+        # `linestyles=` uses) and the leaves/intermediate means stay
+        # unlabelled. This is the one hierarchy-overridden kwarg that is
+        # HONOURED instead of warned away -- color/linewidth/alpha encode
+        # the hierarchy's structure (which group, which level), so a
+        # caller's value would contradict the drawing, whereas legend text
+        # names groups the hierarchy has no opinion about.
+        # ...except on the continuous-hue path just below, which drops the
+        # legend entirely (with a warning): renaming groups whose legend is
+        # about to be discarded would only leave the caller's entries in
+        # `legend` at top-level-group length for the per-trace length check
+        # further down to reject.
+        _mi_legend_labels = (list(legend) if _legend_user_list
+                             and _mi_hue_per_leaf is None else None)
         _mi_style = build_hierarchy_styles(
-            _ft, palette=palette, linestyle=linestyle, linestyles=linestyles)
+            _ft, palette=palette, linestyle=linestyle, linestyles=linestyles,
+            legend_labels=_mi_legend_labels)
         xform = _ft.arrays
         # Contract 5: `trace_data` is the pre-center/pre-scale plotted
         # trajectory list, which for a hierarchy includes the derived means
@@ -4487,7 +4543,13 @@ def plot(
             multicolor_hue = np.concatenate(
                 [np.asarray(a, dtype=np.float64).ravel() for a in _ft.aux])
             multicolor_hue_is_rgb = False
-            if legend is True:
+            if legend is True or _legend_user_list:
+                # a legend LIST is dropped here for the same reason
+                # legend=True is -- it used to survive to the per-trace
+                # length check below and raise "legend= was given as a list
+                # of length 2, but there are 6 dataset(s)/group(s)", which
+                # blames the caller's length for a legend that this path
+                # cannot draw at any length.
                 warnings.warn("legend is not supported for continuous or "
                               "matrix-valued hue; ignoring legend.",
                               stacklevel=external_stacklevel())
@@ -4497,7 +4559,15 @@ def plot(
         if _mi_style["linestyles"] is not None:
             mpl_kwargs["linestyle"] = _mi_style["linestyles"]
         mpl_kwargs["label"] = _mi_style["labels"]
-        if _mi_hue_per_leaf is None:
+        if _mi_hue_per_leaf is None and legend is not False:
+            # `legend is not False` keeps the explicit opt-out alive: this
+            # assignment used to run unconditionally, so it handed the
+            # legend block below a non-empty label list and
+            # `hyp.plot(df, legend=False)` drew a legend anyway. Every
+            # OTHER value still resolves to the hierarchy's own per-trace
+            # labels -- for a user list those are the renamed ones
+            # `build_hierarchy_styles` just produced, so the drawn legend
+            # says what the caller asked for.
             legend = _mi_style["labels"]
 
     # find cluster and reshape if cluster=/n_clusters= was given
@@ -5324,11 +5394,42 @@ def plot(
                 f"{_ng} hue group(s)), so per-dataset names cannot apply. "
                 "Label the hue groups with legend=[...] (one entry per "
                 "group, in first-appearance order) instead, or drop hue=.")
+        if _multiindex_meta is not None:
+            # Same shape of mistake as the hue case above, and for the same
+            # reason: a hierarchy draws one trace per leaf PLUS one per
+            # per-level mean, none of which is an input dataset (there is
+            # exactly one input frame). Before this branch the caller got
+            # either "names must have one entry per dataset (6)" -- a count
+            # that names nothing they passed -- or, when the counts
+            # happened to coincide, the flatly false "pass dataset names
+            # via names= OR a legend= list, not both" on a call with no
+            # legend= at all (the MultiIndex branch had already written the
+            # hierarchy's labels into `legend`).
+            _n_leaves = len(_multiindex_meta['leaf_keys'])
+            _n_means = len(xform) - _n_leaves
+            # the flatten remedy differs by AXIS, exactly as the cluster=
+            # messages above do: df.reset_index(drop=True) does not touch a
+            # column MultiIndex, so offering it there sends the caller
+            # round the same error again.
+            _flatten = ("df.reset_index(drop=True)" if _mi_axis == 'rows'
+                        else "df.columns = df.columns.map('_'.join)")
+            raise ValueError(
+                "names= assigns one name per input dataset, but x has "
+                f"{_mi_which}, so the drawn traces are hierarchy groups "
+                f"({_n_leaves} leaf trajectory/ies + {_n_means} derived "
+                "per-level mean(s)), not input datasets. Label the "
+                "top-level groups with legend=[...] (one entry per unique "
+                "top-level index value, in first-appearance order) "
+                f"instead, or flatten the hierarchy ({_flatten}).")
         if len(names) != len(xform):
             raise ValueError(
                 f"names must have one entry per dataset ({len(xform)}); got "
                 f"{len(names)}")
-        if isinstance(legend, (list, tuple)):
+        if _legend_user_list:
+            # `_legend_user_list`, not `isinstance(legend, list)`: several
+            # branches above REPLACE `legend` with an internally-derived
+            # label list, and testing the current value made this fire on
+            # calls that only ever passed names=.
             raise ValueError(
                 "pass dataset names via names= OR a legend= list, not both")
         legend = names
