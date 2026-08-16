@@ -263,6 +263,64 @@ def test_unequal_duplicate_counts_are_rejected():
         group_columns(df)
 
 
+def _duplicate_count_mismatch_message():
+    """('A': temp, temp, rh) vs ('B': temp, rh) -- B has a 'temp', just not
+    a second one."""
+    cols = pd.MultiIndex.from_tuples(
+        [('A', 'temp'), ('A', 'temp'), ('A', 'rh'),
+         ('B', 'temp'), ('B', 'rh')],
+        names=['group', 'sensor'])
+    df = pd.DataFrame(np.zeros((4, 5)), columns=cols)
+    with pytest.raises(ValueError) as excinfo:
+        group_columns(df)
+    return str(excinfo.value)
+
+
+def test_a_duplicate_mismatch_message_names_the_OCCURRENCE():
+    """Matching is by (label, occurrence), so a message printing the label
+    alone is FALSE for duplicates: it said `missing ['temp']` about a group
+    that plainly has a 'temp' column. What B lacks is the SECOND one."""
+    message = _duplicate_count_mismatch_message()
+    assert "missing ['temp' (occurrence 2 of 2)]" in message
+    assert "missing ['temp']" not in message, \
+        'the old wording contradicted the frame it described'
+
+
+def test_the_occurrence_wording_counts_within_the_list_it_came_from():
+    """B's 'temp' is unaccounted for in neither direction -- it MATCHES A's
+    first one -- so nothing is unexpected and the occurrence count quoted is
+    A's, the list the missing feature came from."""
+    message = _duplicate_count_mismatch_message()
+    assert 'unexpected []' in message
+    assert 'occurrence 2 of 2' in message and 'occurrence 1 of' not in message
+
+
+def test_an_unexpected_duplicate_is_described_from_its_own_group():
+    """The mirror image: B carries the extra 'temp', so the occurrence and
+    the total both count B's columns, not A's."""
+    cols = pd.MultiIndex.from_tuples(
+        [('A', 'temp'), ('A', 'rh'),
+         ('B', 'temp'), ('B', 'temp'), ('B', 'temp'), ('B', 'rh')],
+        names=['group', 'sensor'])
+    df = pd.DataFrame(np.zeros((4, 6)), columns=cols)
+    with pytest.raises(ValueError) as excinfo:
+        group_columns(df)
+    message = str(excinfo.value)
+    assert 'missing []' in message
+    assert ("unexpected ['temp' (occurrence 2 of 3), "
+            "'temp' (occurrence 3 of 3)]") in message
+
+
+def test_labels_that_do_not_repeat_render_exactly_as_before():
+    """Regression guard: `docs/hierarchy.rst:766` transcribes this message
+    for a duplicate-free frame, so that spelling must not move."""
+    with pytest.raises(ValueError) as excinfo:
+        group_columns(ticker_frame())
+    message = str(excinfo.value)
+    assert "missing ['AAPL', 'MSFT', 'NVDA']" in message
+    assert 'occurrence' not in message.split('. The innermost')[0]
+
+
 @pytest.mark.parametrize('missing', [np.nan, None, pd.NA])
 def test_a_missing_feature_label_matches_a_missing_feature_label(missing):
     """NA-aware on the FEATURE axis too: `NaN != NaN`, so raw equality would

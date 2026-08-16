@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from ..core.hierarchy import _canonical_key, _canonical_label
+from ..core.model import external_stacklevel
 from .colors import get_palette_colors
 
 
@@ -82,10 +83,12 @@ def build_hierarchy_traces(leaf_arrays, meta, aux=None):
         Grouping metadata from `expand_multiindex` or
         `hypertools.core.hierarchy.group_columns`.
     aux : list of array-like, or None
-        One per-observation auxiliary array per leaf (hue values today).
-        Means get the mean of their members' aux, sliced to the same
-        overlap as the data, so an auxiliary value can never drift out of
-        step with the trace it describes (Contract 6).
+        One per-observation auxiliary array per leaf (hue values today);
+        exactly one per leaf, checked here and again against the finished
+        trace list by `FinalTraces.assert_consistent`. Means get the mean of
+        their members' aux, sliced to the same overlap as the data, so an
+        auxiliary value can never drift out of step with the trace it
+        describes (Contract 6).
 
     Returns
     -------
@@ -125,6 +128,23 @@ def build_hierarchy_traces(leaf_arrays, meta, aux=None):
             f"build_hierarchy_traces got {len(leaf_arrays)} leaf array(s) "
             f"but expected {n_leaves} (one per unique MultiIndex "
             "combination)."
+        )
+    if aux is not None and len(aux) != n_leaves:
+        # Contract 6 up front, in the same named shape as the leaf check
+        # and as `FinalTraces.assert_consistent`. `assert_consistent` itself
+        # cannot catch this: it compares against the FINISHED trace count,
+        # and an aux list must be one per LEAF on the way in. Measured
+        # without this: one aux for two leaves raised a bare `IndexError:
+        # list index out of range` from the mean loop below, and THREE for
+        # two leaves raised nothing at all -- it returned a `FinalTraces`
+        # whose `aux` outnumbered its `arrays`, so every per-trace consumer
+        # downstream read auxiliary values off by one.
+        raise ValueError(
+            f"hierarchy leaf/aux mismatch: {n_leaves} leaf array(s) but "
+            f"{len(aux)} aux. Auxiliary per-observation values (hue today) "
+            "describe one leaf each, so exactly one must be supplied per "
+            "leaf; the means' aux is derived here "
+            "(hypertools/plot/hierarchy.py)."
         )
 
     # Coerce on the way in -- see the Notes above. Do NOT write
@@ -184,12 +204,26 @@ def build_hierarchy_traces(leaf_arrays, meta, aux=None):
             f"averaged over the overlapping prefix of {min_len} row(s)"
             for group_name, lengths, min_len in _unequal_length_groups
         )
+        # Attribute this to the USER's call site like every sibling
+        # hierarchy warning in plot.py -- measured, the default stacklevel
+        # blamed this `warnings.warn` line in this file, which tells a caller
+        # nothing about which of their frames is ragged. `external_stacklevel`
+        # lives in `core/model.py`, so importing it does not point `plot/`
+        # at anything `predict/` is forbidden to reach (Contract 9).
         warnings.warn(
-            f"MultiIndex group(s) with unequal-length members: {details}."
+            f"MultiIndex group(s) with unequal-length members: {details}.",
+            stacklevel=external_stacklevel()
         )
 
-    return FinalTraces(arrays=arrays, keys=keys, level_idx=level_idx,
-                       is_mean=is_mean, aux=aux_out, meta=meta)
+    final = FinalTraces(arrays=arrays, keys=keys, level_idx=level_idx,
+                        is_mean=is_mean, aux=aux_out, meta=meta)
+    # The call site Contract 6 promises. It holds by construction given the
+    # per-leaf check above (every mean appends to both lists together), so
+    # it is a cheap standing guard on the mean loop rather than input
+    # validation -- if a future edit appends a mean without its aux, the
+    # named error fires here instead of a silent off-by-one downstream.
+    final.assert_consistent(aux=final.aux)
+    return final
 
 
 def build_hierarchy_styles(traces, palette='hls', linestyle=None,

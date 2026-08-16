@@ -34,6 +34,8 @@ Grouping never mutates the caller's frame.
 See docs/hierarchy.rst for the user-facing comparison table.
 """
 
+from collections import Counter
+
 import pandas as pd
 
 #: Stand-in for ANY missing hierarchy label during comparison and indexing.
@@ -169,6 +171,27 @@ def _feature_keys(labels):
     return keys
 
 
+def _describe_feature(label, occurrence, total):
+    """Render one feature label for the mismatch message below.
+
+    Matching is on ``(label, occurrence)``, so a message that prints the
+    LABEL alone is false whenever that label repeats: measured, a group
+    carrying ``['temp', 'temp', 'rh']`` against one carrying
+    ``['temp', 'rh']`` reported ``missing ['temp']`` -- about a group that
+    plainly HAS a 'temp' column. What it lacks is a SECOND one, and only the
+    occurrence says so.
+
+    `total` is how many times the label occurs in the list this entry came
+    from (the first group's for a missing feature, the offending group's for
+    an unexpected one), so the reader can see which of the two lists the
+    count is counting. A label that occurs once renders exactly as it did
+    before -- `repr`, so `docs/hierarchy.rst`'s transcript is unchanged.
+    """
+    if total == 1:
+        return repr(label)
+    return f"{label!r} (occurrence {occurrence + 1} of {total})"
+
+
 def _match_features_by_name(leaves, leaf_keys):
     """Permute every leaf into the FIRST leaf's feature order.
 
@@ -196,14 +219,24 @@ def _match_features_by_name(leaves, leaf_keys):
         # multiset equality over the labels -- ['temp', 'temp'] and ['temp']
         # differ because ('temp', 1) is present in only one of them.
         if set(keys) != canonical_set:
-            missing = [leaves[0].columns[i] for i, key in enumerate(canonical)
+            # Render the OCCURRENCE whenever a label repeats -- the keys are
+            # (label, occurrence) pairs, so printing labels alone makes the
+            # message untrue for duplicates (see `_describe_feature`).
+            canonical_totals = Counter(canon for canon, _ in canonical)
+            leaf_totals = Counter(canon for canon, _ in keys)
+            missing = [_describe_feature(leaves[0].columns[i], key[1],
+                                         canonical_totals[key[0]])
+                       for i, key in enumerate(canonical)
                        if key not in position]
-            unexpected = [leaf.columns[i] for i, key in enumerate(keys)
+            unexpected = [_describe_feature(leaf.columns[i], key[1],
+                                            leaf_totals[key[0]])
+                          for i, key in enumerate(keys)
                           if key not in canonical_set]
             raise ValueError(
                 f"column-hierarchy group {group_key} does not have the same "
                 f"features as the first group {leaf_keys[0]}: missing "
-                f"{list(missing)}, unexpected {list(unexpected)}. The "
+                f"[{', '.join(missing)}], unexpected "
+                f"[{', '.join(unexpected)}]. The "
                 "innermost column level is the FEATURE axis, and hypertools "
                 "matches features across hierarchy groups BY NAME, so every "
                 "group must carry the same feature labels (duplicates are "

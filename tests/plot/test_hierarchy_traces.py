@@ -114,6 +114,50 @@ def test_aux_is_none_when_no_aux_is_supplied():
     assert ft.aux is None
 
 
+@pytest.mark.parametrize('n_aux', [1, 2, 4], ids=['too_few', 'one_short',
+                                                  'too_many'])
+def test_too_few_or_too_many_aux_arrays_raise_the_named_error(n_aux):
+    """Contract 6 promises `assert_consistent`'s NAMED error for aux, and
+    the count has to be checked before the mean loop reads it. Measured
+    before this check: 1 aux for 3 leaves raised a bare `IndexError: list
+    index out of range` from the mean loop, and 4 raised nothing at all --
+    it returned a `FinalTraces` whose `aux` outnumbered its `arrays`."""
+    with pytest.raises(ValueError, match='leaf/aux mismatch'):
+        build_hierarchy_traces(_leaves(3), COL_META,
+                               aux=[np.arange(5.0)] * n_aux)
+
+
+def test_aux_count_error_reports_both_counts():
+    with pytest.raises(ValueError, match=r'3 leaf array\(s\) but 1 aux'):
+        build_hierarchy_traces(_leaves(3), COL_META, aux=[np.arange(5.0)])
+
+
+def test_a_returned_FinalTraces_is_self_consistent_on_aux():
+    """The `assert_consistent(aux=...)` call site Contract 6 names: every
+    trace, leaves AND derived means, has exactly one aux entry."""
+    ft = build_hierarchy_traces(_leaves(3), COL_META,
+                                aux=[np.arange(5.0)] * 3)
+    assert len(ft.aux) == len(ft.arrays) == 4
+    ft.assert_consistent(aux=ft.aux)
+
+
+def test_the_unequal_length_warning_blames_the_CALLER():
+    """Every sibling hierarchy warning uses `external_stacklevel()`; this
+    one did not, so it was attributed to `plot/hierarchy.py`'s own
+    `warnings.warn` line, which tells a caller nothing about which of their
+    frames is ragged. Same attribution idiom as
+    `tests/test_h1_validation_warnings.py:246`."""
+    leaves = _leaves(3)
+    leaves[2] = leaves[2][:3]
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter('always')
+        build_hierarchy_traces(leaves, COL_META)
+    unequal = [w for w in caught if 'unequal-length' in str(w.message)]
+    assert len(unequal) == 1
+    assert unequal[0].filename == __file__, \
+        f'blamed {unequal[0].filename}, not the caller'
+
+
 def test_assert_consistent_names_the_offending_sequence():
     ft = build_hierarchy_traces(_leaves(3), COL_META)
     with pytest.raises(ValueError, match='forecasts'):
