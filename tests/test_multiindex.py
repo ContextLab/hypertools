@@ -476,10 +476,54 @@ def test_list_with_multiindex_df_warns_and_flattens():
     plt.close(fig2)
 
 
-def test_predict_plus_multiindex_raises():
+def test_predict_plus_multiindex_forecasts_every_trace():
+    """1.1 forecasts a row hierarchy whose LEAVES have enough history.
+
+    This used to be `test_predict_plus_multiindex_raises`: forecasts were
+    computed one-per-leaf BEFORE the per-level mean traces were appended, so
+    the leaf count could not match the final trace count and `predict=` was
+    refused outright. 1.1 computes one forecast per FINAL trace instead --
+    leaves and derived means alike -- so the leaf rule no longer conflicts
+    with forecasting; what remains is a shape requirement (Contract 10:
+    every final trace needs >= 2 rows), which this frame satisfies.
+
+    `_make_2level_df()` repeats each (cond, subj) tuple n_time=10 times, so
+    `expand_multiindex` gives 8 leaves of shape (10, 3) and the plot draws
+    10 traces (8 leaves + 2 top-level means), every one of them 10 rows.
+    Forecast artists are found by their `_hyp_forecast_role` tag, not by
+    linestyle: a forecast INHERITS its source line's linestyle
+    (plot.py `_forecast_style_from`), so both sets are solid here.
+    """
     df = _make_2level_df()
-    with pytest.raises(ValueError, match="predict="):
-        hyp.plot(df, predict='Kalman', show=False)
+    fig = hyp.plot(df, '-', predict='Kalman', t=2, show=False)
+    ax = fig.axes[0]
+    observed = [ln for ln in ax.lines
+                if getattr(ln, '_hyp_forecast_role', None) is None]
+    forecasts = [ln for ln in ax.lines
+                 if getattr(ln, '_hyp_forecast_role', None) is not None]
+    assert len(observed) == 10
+    assert len(forecasts) == 10
+    plt.close(fig)
+
+
+def test_predict_plus_one_row_row_hierarchy_raises():
+    """Contract 10's other side: a row hierarchy whose innermost level is
+    UNIQUE PER ROW yields one-row leaves (and one-row means), which cannot
+    be forecast at all. The message is about the DATA and the expansion
+    rule -- not the pre-1.1 blanket refusal, and not `predict`'s internal
+    single-observation error."""
+    idx = pd.MultiIndex.from_tuples(
+        [('cond1', s) for s in range(3)] + [('cond2', s) for s in range(3)],
+        names=['cond', 'subj'])
+    df = pd.DataFrame(np.random.default_rng(0).normal(size=(6, 4)), index=idx)
+
+    with pytest.raises(ValueError) as excinfo:
+        hyp.plot(df, '-', predict='Kalman', t=1, show=False)
+    message = str(excinfo.value)
+    assert 'at least 2 rows per trace' in message
+    assert 'unique FULL index tuple' in message
+    assert 'reset_index(drop=True)' in message
+    assert 'not supported with MultiIndex expansion' not in message
 
 
 def test_multiindex_colorbar_shows_only_top_level_segments():

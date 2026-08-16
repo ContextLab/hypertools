@@ -1185,11 +1185,15 @@ def plot(
         hierarchy, described below; `cluster=`/
         `n_clusters=` raise ``ValueError`` (both would fight the MultiIndex
         color assignment) -- reset the index first
-        (``df.reset_index(drop=True)``) to cluster instead. `predict=` also
-        raises ``ValueError`` when combined with MultiIndex expansion:
-        forecasts are computed one-per-leaf BEFORE the per-level mean
-        traces are appended, so the leaf count no longer matches the final
-        trace count -- reset the index first to use `predict=`. Row
+        (``df.reset_index(drop=True)``) to cluster instead. `predict=` is
+        supported since 1.1 (it used to raise): one forecast is computed per
+        FINAL trace -- every leaf AND every derived mean, a mean forecast
+        from its own averaged trajectory -- so the returned
+        ``predict['forecasts']`` lines up 1:1 with ``trace_data``. It needs
+        at least 2 rows per trace and raises ``ValueError`` otherwise, which
+        for this axis means a frame whose innermost index level is unique
+        per row: expansion draws one trace per unique FULL index tuple, so
+        such a frame yields one-row traces (and one-row means). Row
         averaging assumes member leaves align by row POSITION at each
         timepoint; leaves of unequal length are averaged over their
         overlapping prefix (the shortest member's length), with a single
@@ -1211,6 +1215,12 @@ def plot(
         ``n_levels`` as the number of GROUPING levels (2 here, not 3).
         Unlike the row rule, every group keeps all ``len(x)`` rows: column
         grouping never shortens a trace.
+
+        `predict=` works on this axis too, per FINAL trace exactly as
+        described above. Because grouping never shortens a trace, the >=
+        2-rows-per-trace requirement can only fail when the INPUT frame has
+        fewer than 2 rows, and the ``ValueError`` says so; flattening the
+        columns is deliberately not suggested, since it cannot add a row.
 
         One thing follows from that rule and is worth stating plainly.
         **Feature correspondence across groups is by NAME, not by
@@ -1875,8 +1885,27 @@ def plot(
         ``to_jshtml()`` replays render identically. NOT supported with
         ``animate='morph'`` (including the per-dataset morph list form),
         which interpolates between point CLOUDS and so has no time axis to
-        forecast along; that combination raises ``NotImplementedError``
-        (default: None).
+        forecast along; that combination raises ``NotImplementedError``.
+
+        For a **hierarchical** `x` (a row or column MultiIndex; see `x`) the
+        unit is the FINAL TRACE rather than the input dataset: one forecast
+        per leaf AND one per derived per-level mean, a mean forecast from its
+        own averaged trajectory rather than from an average of its members'
+        forecasts. ``predict['forecasts'][i]`` in the ``return_model=True``
+        bundle therefore equals ``hyp.predict(trace_data[i], model, t)`` for
+        every ``i``. Forecasting needs history, so EVERY final trace -- both
+        axes, leaves and means alike -- must have at least 2 rows; the first
+        that does not raises ``ValueError`` naming the trace, its hierarchy
+        key and its row count, before any model is fitted (and, for an
+        animated plot, before the per-frame forecast schedule is built, since
+        a one-row trace can never reach 2 rows at any frame). The remedy
+        differs by axis: a ROW hierarchy draws one trace per unique FULL
+        index tuple, so an innermost level that is unique per row yields
+        one-row traces -- drop the hierarchy
+        (``df.reset_index(drop=True)``) or move the grouping to the columns;
+        a COLUMN hierarchy keeps all of the frame's rows in every group, so a
+        short trace means the input itself has fewer than 2 observations and
+        only more data helps (default: None).
 
     t : int or datetime-like
         Forecast horizon passed to `predict` (see
@@ -2791,10 +2820,14 @@ def plot(
         reduce/align/cluster/impute specs, and ``predict`` is ``None`` unless
         `predict` was set, in which case it is
         ``{'model': ..., 'params': {'t': t}, 'forecasts': [...]}`` (one
-        forecast array per input dataset, in the analyzed/plotted --
-        pre-center/scale -- space). Each bundled forecast has exactly `t`
-        rows, matching what ``hyp.predict(xform_data, model=..., t=t)``
-        returns.
+        forecast array per input dataset -- or, for a HIERARCHICAL input, one
+        per FINAL TRACE, i.e. per leaf and per derived per-level mean, each
+        mean forecast from its own averaged trajectory -- in the
+        analyzed/plotted, pre-center/scale, space). Each bundled forecast has
+        exactly `t` rows, matching what ``hyp.predict(xform_data,
+        model=..., t=t)`` returns. A hierarchy additionally requires at least
+        2 rows in EVERY final trace, on either axis, and raises otherwise;
+        see `predict`.
 
         ``xform_data`` vs ``trace_data``. ``xform_data`` is the analysed
         pipeline output, one entry per analysed INPUT dataset.
@@ -3674,15 +3707,12 @@ def plot(
                 "(df.reset_index(drop=True)) before clustering, or drop "
                 "cluster=/n_clusters= to use the MultiIndex grouping."
             )
-        if predict is not None:
-            raise ValueError(
-                "predict= is not supported with MultiIndex expansion in "
-                "this release: forecasts are computed one-per-leaf before "
-                "the per-level mean traces are appended, so the leaf count "
-                "no longer matches the final trace count. Reset the index "
-                "(df.reset_index(drop=True)) before using predict=, or "
-                "drop predict= to use the MultiIndex grouping."
-            )
+        # predict= used to be refused here because forecasts were computed
+        # one-per-leaf BEFORE the per-level means were appended. 1.1 computes
+        # them over the FINAL trace list instead (see the `_multiindex_meta
+        # is not None` branch below), so the counts cannot disagree. What
+        # replaces the blanket refusal is the narrower >= 2-rows-per-trace
+        # precondition raised there.
         if hue is not None:
             warnings.warn(
                 "x has a row MultiIndex (GH #95): MultiIndex grouping "
@@ -3706,16 +3736,8 @@ def plot(
                 "or drop cluster=/n_clusters= to use the MultiIndex "
                 "grouping."
             )
-        if predict is not None:
-            raise ValueError(
-                "predict= is not supported with MultiIndex expansion in "
-                "this release: forecasts are computed one-per-leaf before "
-                "the per-level mean traces are appended, so the leaf count "
-                "no longer matches the final trace count. Flatten the "
-                "columns (df.columns = df.columns.map('_'.join)) before "
-                "using predict=, or drop predict= to use the MultiIndex "
-                "grouping."
-            )
+        # predict= is supported on this axis too (1.1); see the note on the
+        # deleted row-axis refusal above.
         # NOMINAL correspondence: group_columns has already required that
         # every group carry the same feature labels and permuted the later
         # groups into the first group's order. Position therefore MEANS name
@@ -4073,27 +4095,42 @@ def plot(
     # `raw_forecasts` is the seam-prepended working copy that gets the
     # SAME center/scale transform as `xform` below, so the drawn forecast
     # trace lines up with the drawn (centered/scaled) data.
+    #
+    # A HIERARCHY is the one exception to "before any reshaping", and it is
+    # the reason this is a function rather than straight-line code (1.1
+    # Task 8). Its drawn traces are the leaves PLUS the derived per-level
+    # means, so "one forecast per input dataset" would be one short per
+    # mean -- which is exactly what the pre-1.1 blanket refusal said. The
+    # MultiIndex branch below therefore calls this on `FinalTraces.arrays`
+    # instead, once the final trace list exists; a mean is forecast from its
+    # OWN averaged trajectory. Every other input keeps the historical
+    # placement, because `_forecast_owner`/`DatasetRevealSchedule` below are
+    # defined in terms of INPUT DATASETS and a blanket move past the
+    # cluster/hue chain would silently redefine them.
+    def _compute_forecasts(datasets):
+        from ..predict.predict import predict as _predictor
+        _fc = _predictor(datasets, model=predict, t=t)
+        if not isinstance(_fc, list):
+            _fc = [_fc]
+        return (
+            [np.asarray(fc, dtype=float) for fc in _fc],
+            [np.vstack([np.asarray(xi[-1:]), np.asarray(fc)])
+             for xi, fc in zip(datasets, _fc)],
+            # ANALYZE-space copies for the animated per-frame schedule (see
+            # hypertools/plot/forecast.py). Taken HERE, beside raw_forecasts,
+            # so they keep the same 1:1 correspondence the regrouping guard
+            # below checks -- and BEFORE `_interp_anim_line` resamples
+            # `xform` onto the frame grid, because `t` is measured in RAW
+            # analyze-space samples, not frame-grid rows.
+            [np.array(xi, dtype=float, copy=True) for xi in datasets],
+        )
+
     raw_forecasts = None
     bundle_forecasts = None
     analyze_histories = None
-    if predict is not None:
-        from ..predict.predict import predict as _predictor
-        _fc = _predictor(xform, model=predict, t=t)
-        if not isinstance(_fc, list):
-            _fc = [_fc]
-        bundle_forecasts = [np.asarray(fc, dtype=float) for fc in _fc]
-        raw_forecasts = [
-            np.vstack([np.asarray(xi[-1:]), np.asarray(fc)])
-            for xi, fc in zip(xform, _fc)
-        ]
-        # ANALYZE-space copies for the animated per-frame schedule (see
-        # hypertools/plot/forecast.py). Taken HERE, beside raw_forecasts, so
-        # they keep the same 1:1 dataset correspondence the regrouping guard
-        # below checks -- and BEFORE `_interp_anim_line` resamples `xform`
-        # onto the frame grid, because `t` is measured in RAW analyze-space
-        # samples, not frame-grid rows.
-        analyze_histories = [np.array(xi, dtype=float, copy=True)
-                             for xi in xform]
+    if predict is not None and _multiindex_meta is None:
+        bundle_forecasts, raw_forecasts, analyze_histories = \
+            _compute_forecasts(xform)
 
     # per-point colors for multicolored lines (set by the hue branch below;
     # computed after interpolation). Dataset lengths are captured now so hue
@@ -4231,6 +4268,11 @@ def plot(
     # append them. cluster=/n_clusters= were already rejected and hue=
     # already squelched (with a warning) above, so this always wins the
     # cluster/hue/nested_groups chain below.
+    #
+    # The hierarchy's final trace list, or None for every other input. Read
+    # again far below, where it turns the forecast/trace count guard into an
+    # assertion, so it must exist on every path.
+    _ft = None
     if _multiindex_meta is not None:
         _mi_axis = _multiindex_meta.get('axis', 'rows')
         _mi_which = ("a row MultiIndex (GH #95)" if _mi_axis == 'rows'
@@ -4276,6 +4318,61 @@ def plot(
                     "drop the row-count-changing stage.")
         _ft = build_hierarchy_traces(xform, _multiindex_meta,
                                      aux=_mi_hue_per_leaf)
+        if predict is not None:
+            # Contract 10, checked over EVERY final trace -- leaves AND
+            # derived means, on BOTH axes -- immediately after the trace
+            # list exists and before anything calls into `hyp.predict` or
+            # (further below) builds a `ForecastSchedule`. Raising here is
+            # what makes the message about the user's DATA; letting it fall
+            # through would surface `predict/common.py`'s internal
+            # "cannot forecast from a single observation" shape error,
+            # which says nothing about the hierarchy that produced the
+            # one-row trace.
+            #
+            # NOT gated on the axis. A column hierarchy cannot SHORTEN a
+            # trace, but it cannot lengthen one either: measured, a T=1
+            # frame gives leaves of (1, 3) and a mean of (1, 3), so gating
+            # on 'rows' would let it reach that internal error. The axis
+            # selects only the remediation sentence -- a row hierarchy's
+            # short traces come from the expansion rule (so flattening or
+            # moving to the column axis fixes it), a column hierarchy's
+            # come from the input itself (so flattening cannot help and is
+            # deliberately not offered).
+            for _i, _arr in enumerate(_ft.arrays):
+                _rows = np.asarray(_arr).shape[0]
+                if _rows >= 2:
+                    continue
+                _plural = "row" if _rows == 1 else "rows"
+                if _mi_axis == 'rows':
+                    _remedy = (
+                        "Row-MultiIndex expansion draws one trace per unique "
+                        "FULL index tuple, so a frame whose innermost index "
+                        "level is unique per row yields one-row traces (and "
+                        "one-row per-level means). Either drop the hierarchy "
+                        "so the frame is one trajectory "
+                        "(df.reset_index(drop=True)), or move the grouping "
+                        "to the COLUMN axis, where every group keeps all of "
+                        "the frame's rows.")
+                else:
+                    _observations = ("one observation" if _rows == 1
+                                     else f"{_rows} observations")
+                    _remedy = (
+                        "A column MultiIndex groups FEATURES, so every group "
+                        f"keeps all {_rows} of the frame's rows -- the "
+                        f"input itself has only {_observations}. Forecasting "
+                        "needs at least 2 observations (rows) to estimate "
+                        "how the data change over time; pass a frame with "
+                        "more rows.")
+                raise ValueError(
+                    "plot(..., predict=...) needs at least 2 rows per trace, "
+                    f"but trace {_i} {_ft.keys[_i]} has {_rows} {_plural}. "
+                    + _remedy)
+            # One forecast per FINAL trace, computed from the same
+            # pre-center/pre-scale arrays that become `trace_data` below --
+            # so Contract 5's `forecasts[i] == hyp.predict(trace_data[i])`
+            # holds by construction rather than by coincidence.
+            bundle_forecasts, raw_forecasts, analyze_histories = \
+                _compute_forecasts(_ft.arrays)
         _mi_style = build_hierarchy_styles(
             _ft, palette=palette, linestyle=linestyle, linestyles=linestyles)
         xform = _ft.arrays
@@ -5342,7 +5439,16 @@ def plot(
     #: model result, and discarding it to make the bundle mirror the figure
     #: would throw away the very thing `return_model=` exists to hand back.
     _forecast_draw_reason = None
-    if raw_forecasts is not None and len(raw_forecasts) != len(xform):
+    if _ft is not None:
+        # A HIERARCHY's forecasts were computed over `FinalTraces.arrays`
+        # itself, so a count mismatch is not a legitimate regrouping (there
+        # is none -- the MultiIndex branch wins the cluster/hue chain) but a
+        # bug in this file. Assert rather than drop: the pre-1.1 guard
+        # nulled `raw_forecasts` on any mismatch, which is precisely how a
+        # missing per-trace forecast would become invisible.
+        _ft.assert_consistent(raw_forecasts=raw_forecasts,
+                              bundle_forecasts=bundle_forecasts)
+    elif raw_forecasts is not None and len(raw_forecasts) != len(xform):
         # A forecast belongs to a DATASET and is anchored at that dataset's
         # last observation, so after regrouping it belongs to whichever run
         # holds that observation -- which is also the trace it visually
