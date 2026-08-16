@@ -1,9 +1,293 @@
 # Changelog
 
+## 1.1.0 (unreleased)
+
+Hierarchical (`MultiIndex`) DataFrames become a first-class input. A frame
+whose **columns** carry a hierarchy now expands into one trace per group
+plus per-level means (the row axis has done this since 1.0); `hyp.predict`
+forecasts a hierarchy one group at a time with explicit model ownership; and
+`predict=` forecasts every plotted trajectory, derived means included.
+
+Four previously-accepted inputs are now **rejected** -- see *Changed /
+validation*. One of them (duplicate timestamps) is not hierarchy-specific
+and reaches flat `hyp.predict` callers.
+
+### Added
+
+- **A column MultiIndex frame expands into one trace per group.** The
+  innermost column level is the feature axis; every level above it groups,
+  so a `(Market, Sector, Ticker)` frame draws one trajectory per sector plus
+  a heavier market-mean trajectory. Widths, opacities, colours and legend
+  labels follow the same documented formulas as row expansion. Unlike the
+  row rule, every group keeps all `len(df)` rows -- column grouping never
+  shortens a trace. A two-level `(Group, Feature)` hierarchy has no
+  aggregate mean, so **every leaf is treated as top-level and carries its
+  own legend label**; previously such traces would all have been
+  `'_nolegend_'` and the legend empty. Each group's leaf is flattened onto
+  the feature axis -- its columns become the innermost level's values,
+  keeping that level's name -- and the frame you passed in is never
+  modified.
+
+  **Feature correspondence across groups is by NAME.** Every group must
+  carry the same innermost labels; later groups are permuted into the first
+  group's order, so values travel with their labels and a permuted group
+  plots identically. Mismatches -- unequal widths included -- are refused by
+  an error that names the missing and unexpected features, rather than
+  falling through to the pipeline's generic equal-width message. Positional
+  matching would make column ORDER part of the statistical model (measured:
+  permuting one group's columns moved that group's trajectory and every mean
+  derived from it, on label-equivalent frames), which is not a safe default
+  for a labelled frame. **Duplicate feature names inside a group are
+  permitted**, matched across groups by `(label, occurrence)`: no column is
+  dropped and no group is merged.
+
+- **Continuous `hue=` propagates through a column hierarchy** as a per-trace
+  value: a flat sequence of `len(df)` values is broadcast to every leaf, or
+  pass one sequence per leaf. A flat array sized to the TOTAL DRAWN
+  observations is rejected rather than reinterpreted -- it would require the
+  caller to predict how many mean traces expansion creates. A mean trace
+  takes the element-wise mean of its leaves' hue, and hue is truncated by
+  the same operation that truncates the data. A **static** forecast overlay
+  takes the final observed hue colour of its source trace (see *Documented
+  limitations* for the animated case). Categorical hue still defers to the
+  grouping, with a warning: it regroups traces, so the named leaves would
+  stop existing.
+
+- **`hyp.predict` accepts hierarchical frames.** A bare frame with a
+  MultiIndex on one axis is split into groups and forecast group by group,
+  returning parallel sequences (`[f0, f1, ...]`, or `([f0, ...], [m0, ...])`
+  with `return_model=True`). Before this, a column-hierarchical frame was
+  silently flattened into ONE wide series (measured: a 6-ticker frame
+  returned a single `(1, 6)` forecast) and a row-hierarchical one died with
+  `TypeError: cannot perform __sub__ with this index type: MultiIndex` deep
+  inside pandas.
+
+  Column hierarchies group by every level above the innermost (feature)
+  level; row hierarchies group by every level above the innermost (time)
+  level and **keep that level as each group's flat index**, with its name
+  and dtype intact, so a datetime-like `t` works per group.
+
+  **Model ownership is explicit.** A name/class/dict spec is stateless, so
+  every group constructs its own model; an **unfitted** instance is
+  deep-copied per group and each copy fits independently (the caller's
+  object is never fitted, and later groups never fall onto `predict_new`
+  because an earlier group fitted a shared object); a **fitted** instance is
+  deep-copied and replays its learned parameters. The caller's instance is
+  never mutated either way, and the caller's frame is never mutated by the
+  grouping.
+
+  Per-group warnings are re-emitted with the group key prepended, preserving
+  the warning category, and per-group `ValueError`s are re-raised the same
+  way. Arguments that describe the WHOLE call -- the horizon `t` and the
+  `model=` spec -- are validated once, before the group loop, so a bad
+  horizon or a misspelled model name is no longer reported as though one
+  group's data were at fault.
+
+- **`predict=` works with hierarchies**, forecasting every plotted
+  trajectory including per-level means; a mean is forecast from its own
+  averaged trajectory, not from the average of its leaves' forecasts, and
+  `bundle['predict']['forecasts'][i] == hyp.predict(bundle['trace_data'][i],
+  model, t)` for every `i`. It works with `animate=` too, where each frame's
+  forecast is fit from exactly the rows that frame has revealed.
+
+  Every plotted trace needs at least 2 rows, on **either** axis, and
+  `plot()` says so directly instead of failing deep inside the forecaster.
+  For a **column** hierarchy that holds whenever the frame itself has at
+  least 2 rows, since every group keeps all of them. For a **row** hierarchy
+  every expanded leaf and every derived mean must clear it; because row
+  expansion draws one trace per unique full index tuple, a frame whose
+  innermost index level is unique per row yields one-row traces. The check
+  necessarily runs on the trajectories as PLOTTED, so when a row-count-
+  changing analysis stage (`manip='Resample'`, an aggregating `reduce=`) is
+  what made a trace short, the message names that stage instead of blaming
+  the input or the grouping.
+
+- **`return_model=True` now also returns `trace_data` and `trace_metadata`**
+  describing every plotted trajectory. `trace_data` holds the final
+  pre-center/pre-scale trajectories -- the drawn artists are centered,
+  scaled and (by default) antialiased copies of them, so they hold neither
+  array. `xform_data` is unchanged: it remains the analysed pipeline output
+  for the input datasets, one entry per analysed dataset, and derived means
+  never enter it. The two are the same object only when no display-only
+  projection occurred; a `reduce=` spec pinning more than three components
+  makes them differ (`n_components=5` leaves `xform_data` 5-D while
+  `trace_data` is 3-D). **Bundled forecasts always correspond to
+  `trace_data`.**
+
+- **Full plotly parity** for all of the above: trace counts and order,
+  widths, opacities, legend labels, continuous hue, the colorbar, per-trace
+  forecasts on both axes, and animated hierarchy forecasts. Data traces now
+  carry `meta['hyp_trace_index']` -- the plotly half of matplotlib's
+  `coll._hyp_trace_index` -- so a caller can tell the data traces apart from
+  the wireframe cube, density/surface layers, forecast overlays and the
+  colorbar's phantom trace. It is propagated to the per-segment 2-D traces,
+  so a multicoloured 2-D line still reads as ONE trajectory. Documented in
+  `docs/animation.rst` beside the forecast tags.
+
+- **New guide:** *Hierarchical DataFrames* (`docs/hierarchy.rst`), covering
+  row versus column semantics, the plot/predict divergence, hue forms, mean
+  construction, limitations, dual-axis and list inputs, return shapes, the
+  unfitted/fitted ownership table, backend parity and feature
+  correspondence. All 126 of its examples are executed by the test suite
+  rather than merely read. `docs/pipeline_order.rst` gains hierarchy
+  expansion and mean construction as a side branch, in the prose and in the
+  regenerated diagram: expansion runs before `format_data`/`analyze`, so
+  every leaf gets the identical canonical pipeline, while mean construction
+  runs after the display reduce -- which is why means reach `trace_data` and
+  never `xform_data`.
+
+### Changed / validation
+
+These turn previously-accepted input into rejected input. Each was
+previously ambiguous or silently lossy.
+
+- **Frames carrying a hierarchy on BOTH axes are now rejected** with a clear
+  error (`x has both a row and a column MultiIndex ...`). Before 1.1 such a
+  frame followed the row path and its column hierarchy was silently ignored;
+  1.1 declines to guess which one takes precedence.
+
+- **A COLUMN-hierarchical DataFrame nested inside a list is now rejected**
+  by `hyp.plot`; before 1.1 it was flattened to a single line, silently.
+  `hyp.predict` rejects a hierarchical frame in a list on **either** axis,
+  where it previously raised `TypeError: cannot perform __sub__ with this
+  index type: MultiIndex` from deep inside pandas (row axis) or forecast the
+  flattened frame (column axis). **This is deliberately asymmetric:** a
+  ROW-hierarchical frame inside a list passed to `hyp.plot` keeps its
+  documented warn-and-flatten behaviour, unchanged in 1.1. Hierarchy
+  expansion is defined for a bare frame only.
+
+- **`hyp.predict` now rejects a time-like index with duplicate entries --
+  including on FLAT input.** This one is not hierarchy-specific: the check
+  lives in `resolve_t`, which runs for every input, so a plain
+  `DataFrame`/`Series` on a `DatetimeIndex`, `TimedeltaIndex` or
+  `PeriodIndex` with repeated stamps now raises `ValueError: the dataset
+  index has N duplicated entries ... the forecast horizon is ill-defined`.
+  Before 1.1 it forecast, using a step inferred from the surviving non-zero
+  gaps (measured on a 5-row frame with one repeated day: `(1, 3)` returned).
+  Several observations sharing one position on the time axis make the
+  horizon undefined; aggregate the repeats
+  (`df.groupby(level=-1).mean()`) or give them distinct times.
+  **Non-time indexes are unaffected:** a stacked `pd.concat([run_a, run_b])`
+  panel whose index runs `0..n-1` twice still forecasts.
+
+- **`predict=` with a MultiIndex frame no longer raises blanketly.** It
+  previously raised `ValueError: predict= is not supported with MultiIndex
+  expansion in this release` for every hierarchy; it now forecasts every
+  plotted trajectory. A hierarchy whose traces are shorter than 2 rows still
+  raises -- on either axis, since a forecast needs at least two observations
+  -- but the message now names the offending trace and its row count, and
+  explains the cause: a row-count-changing analysis stage, the
+  one-trace-per-index-tuple rule for a row hierarchy, or a
+  single-observation input for a column one.
+
+- **Hierarchy groups whose label is missing (NaN) are no longer dropped, and
+  a missing label is ONE group.** Grouping uses `dropna=False`, so a group
+  with a NaN level label is kept and drawn rather than silently
+  disappearing. Because `nan != nan` and pandas mints a separate NaN object
+  per group key, keeping them was not enough on its own: a two-sector frame
+  with a missing Market label produced two duplicate means and two `'nan'`
+  legend entries. Labels are now canonicalised NA-aware (`np.nan`, `None`
+  and `pd.NA` all normalise to one sentinel) for prefix grouping, top-level
+  uniqueness and style lookup, on both axes. The original label values are
+  preserved in the returned keys and in the legend; the sentinel is never
+  user-visible.
+
+- **`forecast_hue=`, `forecast_cluster=`, `forecast_n_clusters=`,
+  `forecast_palette=` and `forecast_fmt=` count FINAL TRACES, not input
+  datasets.** They were unreachable with a hierarchy until `predict=` was;
+  now that they are, their unit is every plotted trajectory -- leaves AND
+  derived means -- so a three-sector frame needs four values, not three.
+  The length errors count forecasts and say why the count exceeds the number
+  of datasets. Nothing changes for flat input, where the two counts
+  coincide.
+
+### Bug fixes
+
+Each of these was found while building the above, and each affects FLAT
+input too.
+
+- **Every continuous-hue matplotlib plot rendered fully opaque**, whatever
+  `alpha=` was set to. `_apply_multicolor_lines` never read alpha from its
+  per-trace kwargs, and the artists carrying the alpha are exactly the
+  `Line2D`s it removes and replaces with a colour-graded collection.
+
+- **plotly discarded the per-trace alpha under a continuous `hue=`** for the
+  same figures, from the other direction: the colour serializer drops the
+  4th channel and nothing set the trace `opacity`, so a hue plot that
+  matplotlib drew at `alpha=0.7` rendered fully opaque on plotly. Line
+  colours now carry the alpha; **marker** colours deliberately do not,
+  because matplotlib's per-point marker colours carry none either, and
+  parity is stated against matplotlib.
+
+- **With `ndims=1`, matplotlib drew the `predict=` overlay at x = 0..t**
+  instead of continuing the observed series: the overlay was plotted with no
+  x, so it defaulted to `0..len(forecast)-1` and painted every forecast back
+  over the START of the plot. Measured: forecast x `0..3` while its observed
+  line ran `0..59`. The forecast VALUES were right, which is how it
+  survived -- every other forecast test reads 3-D coordinates. Both backends
+  now draw the continuation.
+
+- **A marker-only `fmt` (e.g. `'o'`) with `hue=` and `predict=` drew the
+  forecast in a different colour on each backend.** The final-observed-hue
+  anchor was applied on matplotlib's line path only, and on plotly for every
+  `fmt`. It is now on both paths on both backends.
+
+- **plotly's 1-D marker branch drew a continuous hue in one flat colour.**
+  The 2-D and 3-D branches already passed the per-point colour array
+  through; the 1-D one fell back to the single trace colour, so all points
+  came out identical while matplotlib scattered them per point.
+
+- **plotly and matplotlib serialized colours differently.** plotly's two
+  colour helpers disagreed -- one truncated each channel where the other
+  rounded -- so the same colour came out `rgb(219,95,87)` on matplotlib and
+  `rgb(219,94,86)` on plotly, and an anchored forecast could not equal the
+  per-point colour it was copied from. Both round now.
+
+### Documented limitations
+
+- Ragged groups (unequal feature counts per group) are rejected, by an error
+  naming the missing and unexpected features.
+- Unequal-length row groups are averaged over their overlapping prefix, with
+  one aggregated warning.
+- Feature correspondence across groups is established by NAME, so groups
+  with disjoint innermost labels are refused rather than silently stacked.
+  `feature_correspondence='position'` on `group_columns` is the deliberate
+  opt-in, and it is not a positional hierarchy mode: passing its arrays to
+  `hyp.plot` gives a plain list of datasets -- no per-level means, no
+  hierarchy styling (matplotlib's default line width on every trace), and
+  `trace_metadata` is `None`. There is no public
+  `plot(feature_correspondence=...)` in 1.1, so opting out stays visible at
+  the call site.
+- Continuous `hue=` over a **row** hierarchy is still warned-and-ignored;
+  only column hierarchies honour it in 1.1.
+- An **animated** forecast under a continuous `hue=` wears the colour of the
+  run drawing the head, which is the per-dataset palette colour, not the
+  trace's final observed hue colour that the static overlay takes. Both
+  backends agree frame for frame; it is the static and animated paths that
+  differ, and reconciling them is an open product decision rather than a
+  defect.
+- Duplicate innermost feature names inside one group are **kept** rather
+  than rejected or de-duplicated, and matched across groups by
+  `(label, occurrence)`: all such columns are plotted and forecast. Rename
+  the innermost level first if you need them distinguishable in a legend.
+- `predict=` needs at least 2 rows per plotted trace, on **either** axis.
+  Over a **row** hierarchy this is the binding constraint: expansion draws
+  one trace per unique full index tuple, so a frame whose innermost index
+  level is unique per row cannot be forecast; flatten it
+  (`df.reset_index(drop=True)`) or move the grouping to the column axis.
+  Over a **column** hierarchy every group keeps all of the frame's rows, so
+  it bites only when the frame itself has a single row -- and flattening
+  cannot help, so the error does not suggest it.
+
 ## 1.0.1 (unreleased)
 
 Small, additive plotting features and fixes. Public APIs are unchanged; two
 items under **Changed** below alter how existing figures LOOK.
+
+> 1.0.1 was never published on its own. These changes were developed as a
+> patch release and now ship as part of 1.1.0, which is what `pyproject.toml`
+> declares; they are kept in their own section because they are separable
+> from the hierarchy work above.
 
 ### New features
 
@@ -457,7 +741,27 @@ items under **Changed** below alter how existing figures LOOK.
   error now fires fail-fast and names the real reason (the style has no
   serial ordering to name segments by).
 
-## 1.0.0 (unreleased)
+- **Kalman forecasts no longer diverge from a near-saturated fit.**
+  `hyp.predict(x, model='Kalman', t=...)` could return values up to 1e7
+  times the range of the data they were meant to continue (measured: 19 of
+  432 fits on 40x3 drifting random walks exceeded 100x the data range). The
+  delay-embedded transition operator was estimated by unconstrained least
+  squares with nothing checking that it was non-explosive, and rolling a
+  linear-Gaussian model forward with no observations is exactly
+  `mean <- A @ mean`, so the forecast grows as `rho(A)**t`. When the number
+  of predictors approaches the number of usable windows the fit is
+  ill-conditioned and `rho` ran as high as 4.16.
+
+- **A singleton-`hue=` warning now names the category the caller passed.**
+  It read `hue category '_nolegend_' has only one observation ...` --
+  matplotlib's sentinel for "keep this artist out of the legend", which
+  `_regroup_categorical_lines` assigns to every REPEAT run of a category so
+  each category gets exactly one legend entry. Any singleton run after the
+  first of its category was therefore reported under a name the caller never
+  supplied and could not go looking for. The warning now reads the real
+  per-run category names.
+
+## 1.0.0 (2026-07-24)
 
 HyperTools 1.0 is a ground-up modernization of the toolbox. The familiar
 one-call API (`plot`, `analyze`, `reduce`, `align`, `cluster`, `normalize`,

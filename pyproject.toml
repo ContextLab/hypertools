@@ -5,7 +5,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hypertools"
-version = "1.0.1"
+# the 1.1 line: this branch's unreleased work now includes the hierarchy
+# features AND four rejections of previously-accepted input (CHANGELOG 1.1.0,
+# "Changed / validation"), which cannot ship as a patch release. The version
+# and the top CHANGELOG heading are held equal by
+# tests/test_release_readiness_gate.py::test_changelog_top_version_matches_pyproject.
+version = "1.1.0"
 description = "A python package for visualizing and manipulating high-dimensional data"
 readme = "readme.md"
 # PEP 639 SPDX expression (the `license = { text = ... }` table form is

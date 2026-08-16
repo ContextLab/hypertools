@@ -3436,7 +3436,69 @@ The tree's top section is `## 1.0.1 (unreleased)` (`CHANGELOG.md:3`); there is n
 
 **Files:** Modify `CHANGELOG.md`; Test `tests/test_changelog_1_1.py`
 
-- [ ] **Step 1: Write the failing test**
+> **EXECUTED 2026-08-16, with amendments.** The section was written from
+> `git log 59405545..HEAD` and the commits' own EXECUTED notes, not from the
+> prose block below, because several things shipped differently from it.
+> Everything asserted was measured at `f2a7a2b1`. Corrections:
+>
+> 1. **The prose block's *Documented limitations* still described POSITIONAL
+>    feature correspondence** ("joint reduction stacks every group, so feature
+>    position *i* is treated as…", a half-edited sentence). `c5662249` made
+>    correspondence NOMINAL, permuting later groups into the first group's
+>    order and refusing disjoint labels by name. The shipped section says so,
+>    and records that `feature_correspondence='position'` is not a positional
+>    hierarchy mode: measured (`442285af`), passing its arrays to `hyp.plot`
+>    gives 3 traces instead of 4, `trace_metadata` `None`, and matplotlib's
+>    default width on every line.
+> 2. **The FOURTH compatibility change was missing.** Task 7's own note
+>    flagged it for this task: `resolve_t` owns the duplicate-index check, so
+>    it runs for FLAT inputs too. Reproduced here in both directions — at
+>    `ea5d9b5e`, `hyp.predict(flat 5-row frame on a DatetimeIndex with one
+>    repeated day, model='Kalman', t=1)` returned `(1, 3)`; at `f2a7a2b1` the
+>    same call raises `ValueError: the dataset index has 1 duplicated entry
+>    …`. It is now a first-class entry under *Changed / validation*, pinned by
+>    a documentation test AND an executed one.
+> 3. **`## 1.0.0 (unreleased)` was stale** (`CHANGELOG.md:460` before this
+>    commit): 1.0.0 shipped to master on 2026-07-24 and `dev-1.0` never picked
+>    up the release-time flip. `git show master:CHANGELOG.md` carries
+>    `## 1.0.0 (2026-07-24)` and the two sections are otherwise byte-identical
+>    (verified by diff), so the heading was corrected here rather than left
+>    claiming a shipped release is unreleased.
+> 4. **`pyproject.toml` had to move to 1.1.0**, which this task did not
+>    anticipate. `tests/test_release_readiness_gate.py::test_changelog_top_
+>    version_matches_pyproject` requires the FIRST `## X.Y.Z (...)` heading to
+>    equal the project version, so creating a 1.1.0 section on top of a tree
+>    declaring 1.0.1 fails an existing gate. Bumping is also what semver
+>    requires: this section rejects four previously-accepted inputs, which
+>    cannot ship in a patch release. **Follow-up for the maintainer** (not
+>    done here, it belongs to Plan 1/3's deliverables): ~10 sites still say
+>    "since 1.0.1"/"pre-1.0.1" (`hypertools/plot/forecast.py:61,64`,
+>    `plot.py:190,1904,2841`, `plotly_backend.py:2694`, plus test docstrings),
+>    and `tests/test_animation_guide_docs.py::test_animation_guide_version_
+>    claims_match_the_package_version` forbids "new in 1.1"/"As of 1.1" in
+>    `docs/animation.rst` on the premise that those features are 1.0.1. Both
+>    assertions still pass, but the premise no longer holds once 1.0.1 is
+>    never published.
+> 5. **Two landed fixes were undocumented anywhere** and were added to the
+>    1.0.1 section's *Bug fixes*: `d6a2ccdb` (Kalman forecasts diverging from
+>    a near-saturated fit) and `bf17bb7d` (the singleton-hue warning naming
+>    matplotlib's `'_nolegend_'` sentinel instead of the caller's category).
+>    Every other `feat`/`fix` commit since `aab82600` was checked against the
+>    file and is represented.
+> 6. **Three of the six prescribed tests could not detect what they claim.**
+>    `_section()` bounded a section at the next `\n## `, which does not match
+>    `\n### `, so `_section(text, '### Changed / validation')` swallowed
+>    *Documented limitations* and every "Changed says X" assertion could be
+>    satisfied by text under Limitations; it now stops at the next
+>    same-or-higher heading. `assert 'list' in changed.lower()` is satisfied
+>    by "listed"; it asserts the real claim now. And nothing executed anything
+>    — `test_the_documented_duplicate_time_rejection_actually_happens` runs
+>    `hyp.predict` so the entry cannot drift from the code (it is the one test
+>    that passes before the CHANGELOG edit, because it tests the shipped code;
+>    mutation-proven: disabling the `resolve_t` branch fails it). 6 tests
+>    became **9**.
+
+- [x] **Step 1: Write the failing test** *(EXECUTED: written with the three strengthenings in correction 6, and 3 tests added — the duplicate-time entry, its executed counterpart, and the stale `## 1.0.0 (unreleased)` heading — for **9**.)*
 
 ```python
 # tests/test_changelog_1_1.py
@@ -3497,12 +3559,12 @@ def test_added_documents_every_new_capability():
         assert phrase in added, f'missing {phrase!r}'
 ```
 
-- [ ] **Step 2: Run and confirm failure**
+- [x] **Step 2: Run and confirm failure** *(EXECUTED: **8 failed, 1 passed**. The one that passes is `test_the_documented_duplicate_time_rejection_actually_happens`, which tests the SHIPPED code rather than the file; mutation-proven instead — disabling the `resolve_t` duplicate branch fails it.)*
 
 Run: `.venv/bin/python -m pytest tests/test_changelog_1_1.py -v`
 Expected: 6 failed — `## 1.1.0 (unreleased)` is absent.
 
-- [ ] **Step 3: Write the section**
+- [x] **Step 3: Write the section** *(EXECUTED: written from the commits, not from the block below — see corrections 1, 2, 3 and 5. `### Bug fixes` was added as a fourth heading for six defects the hierarchy work uncovered that also affect FLAT input.)*
 
 Insert directly below `# Changelog` (`CHANGELOG.md:1`), above `## 1.0.1 (unreleased)`:
 
@@ -3618,9 +3680,9 @@ previously ambiguous or silently lossy.
   cannot help, so the error does not suggest it.
 ```
 
-- [ ] **Step 4: Run and confirm pass** — **6 passed**.
+- [x] **Step 4: Run and confirm pass** — ~~**6 passed**~~ *(EXECUTED: **9 passed**.)*
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add CHANGELOG.md tests/test_changelog_1_1.py
