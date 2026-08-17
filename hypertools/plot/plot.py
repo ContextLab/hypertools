@@ -131,9 +131,21 @@ def _seaborn_palette_arg(palette, n_colors):
     `Colormap` (F02-011); seaborn handles the first two natively but not a
     Colormap INSTANCE, so that one is pre-sampled to `n_colors` RGB tuples
     via `get_palette_colors` (the same resolution `mat2colors`/the colorbar
-    use, keeping every path's colors identical)."""
+    use, keeping every path's colors identical).
+
+    An ``'image:<path>'`` string is the same kind of case: seaborn has no
+    idea what it means and raises "is not a valid palette name", so it is
+    pre-resolved through `get_palette_colors` too. This is the SECOND
+    interception `palette=` needs -- every call site below hands its palette
+    straight to seaborn without going through `colors._get_palette`, so
+    intercepting only there would leave `sns.set_palette` (and so EVERY
+    matplotlib plot call) raising on an image palette."""
     from matplotlib.colors import Colormap
-    if isinstance(palette, Colormap):
+
+    from .colors import IMAGE_PALETTE_PREFIX
+    if isinstance(palette, Colormap) or (
+            isinstance(palette, str)
+            and palette.startswith(IMAGE_PALETTE_PREFIX)):
         return [tuple(c) for c in get_palette_colors(palette, n_colors)]
     return palette
 
@@ -1521,6 +1533,15 @@ def plot(
         `hue` mapping, hypertools samples only ~5/6 of its hue circle so
         the minimum and maximum hue values stay visually distinguishable;
         categorical palettes are used as-is.
+        A palette string of the form ``'image:<path>'`` extracts colors from
+        a LOCAL image file instead (``palette='image:starry_night.jpg'``):
+        six anchor colors, ordered most visually salient first, so a
+        painting's vivid subject leads and its muted background follows.
+        For a continuous ``hue`` those anchors are blended into a gradient
+        exactly as any short color list is. See
+        ``hypertools.plot.colors.image_palette`` for the extraction itself
+        (and to choose a different number of colors). hypertools never
+        downloads the image: fetch and cache it yourself, then pass the path.
 
     hue : list, numpy array, pandas Series/Index/Categorical, or 2D matrix
         Values used to color the plot, one per observation, matched to the

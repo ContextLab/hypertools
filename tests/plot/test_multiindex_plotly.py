@@ -585,11 +585,11 @@ def test_animated_hue_forecast_holds_its_anchor_on_every_matplotlib_FRAME():
     hues = [np.linspace(0.0, 1.0, len(df)), np.linspace(9.0, 10.0, len(df))]
     tails = _hue_tails(df, hues, predict='Kalman', t=1)
 
-    fig, ani = _mpl(df, '-', hue=hues, **ANIM_HUE_KW)
-    n_frames = ani._save_count
+    anim = _mpl(df, '-', hue=hues, **ANIM_HUE_KW)
+    fig, n_frames = anim.figure, anim.n_frames
     assert n_frames >= 3, 'need distinct early/middle/final frames'
     for frame in (0, n_frames // 2, n_frames - 1):
-        ani._func(frame, *ani._args)
+        anim.draw_frame(frame)
         for role in ('live', 'trail'):
             drawn = _mpl_forecasts(fig, role=role)
             assert drawn, f'no {role} forecast artists to check'
@@ -643,13 +643,14 @@ def test_animated_hue_forecast_frames_AGREE_across_the_two_backends():
     """
     df = market_frame()
     hues = [np.linspace(0.0, 1.0, len(df)), np.linspace(9.0, 10.0, len(df))]
-    fig, ani = _mpl(df, '-', hue=hues, **ANIM_HUE_KW)
+    anim = _mpl(df, '-', hue=hues, **ANIM_HUE_KW)
+    fig = anim.figure
     ply = _plot(df, '-', hue=hues, **ANIM_HUE_KW)
-    assert ani._save_count == len(ply.frames), (
+    assert anim.n_frames == len(ply.frames), (
         'the backends disagree about the frame COUNT, so a per-frame colour '
         'comparison would be comparing different moments')
     for k in (0, len(ply.frames) // 2, len(ply.frames) - 1):
-        ani._func(k, *ani._args)
+        anim.draw_frame(k)
         mpl = {ds: _mpl_rgb(a.get_color())
                for ds, a in _mpl_forecasts(fig, role='live').items()}
         plotly = {ds: c for (ds, age), c
@@ -714,8 +715,9 @@ def test_explicit_forecast_colour_still_BEATS_the_hue_anchor_when_animated():
     kw = dict(ANIM_HUE_KW, forecast_hue=['a', 'b', 'c'],
               forecast_palette='Reds')
 
-    fig, ani = _mpl(df, '-', hue=hues, **kw)
-    ani._func(ani._save_count - 1, *ani._args)
+    anim = _mpl(df, '-', hue=hues, **kw)
+    fig = anim.figure
+    anim.draw_frame(anim.n_frames - 1)
     mpl = {ds: _mpl_rgb(a.get_color())
            for ds, a in _mpl_forecasts(fig, role='live').items()}
 

@@ -76,6 +76,49 @@ class HyperAnimation(tuple):
         alive."""
         return self[1]
 
+    @property
+    def n_frames(self):
+        """How many frames this animation draws.
+
+        `hyp.plot` always hands `FuncAnimation` an int frame count --
+        `max(1, round(frame_rate * duration))` for parallel/serial/spin, and
+        `sum(segment_frame_counts(...))` for a morph -- so this is exact
+        rather than an estimate. Reading it is the supported alternative to
+        matplotlib's private `_save_count`.
+        """
+        return int(self[1]._save_count)
+
+    @property
+    def n_segments(self):
+        """Hold/transition segments for ``animate='morph'``; ``None``
+        otherwise.
+
+        `n` clouds give ``2n - 1`` segments: `n` holds interleaved with
+        `n - 1` transitions, beginning and ending on a hold. There is NO
+        implicit closing transition back to the first cloud -- a caller who
+        wants the animation to loop seamlessly appends ``clouds[0]``
+        themselves, as ``examples/animate_morph_zoo.py`` does (5 shapes plus
+        the repeat = 6 clouds = 11 segments). Measured against
+        ``morph.segment_frame_counts``: 2 clouds -> 3, 3 -> 5, 5 -> 9.
+        """
+        return getattr(self[1], '_hyp_morph_segments', None)
+
+    def draw_frame(self, frame):
+        """Render frame `frame`, and return `self` so calls chain.
+
+        The supported way to drive an animation from a test or a script
+        without reaching into `FuncAnimation._func`/`._args`. Frames are
+        idempotent and order-independent by contract (see `FrameContext`),
+        so any index may be drawn at any time.
+        """
+        if not 0 <= frame < self.n_frames:
+            raise IndexError(
+                f'frame {frame} is out of range; this animation has '
+                f'{self.n_frames} frames, so valid indices are 0 and '
+                f'{self.n_frames - 1}')
+        self[1]._func(frame, *self[1]._args)
+        return self
+
     def on_frame(self, callback):
         """Register `callback` to run after every drawn frame.
 

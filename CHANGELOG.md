@@ -143,6 +143,26 @@ and reaches flat `hyp.predict` callers.
   runs after the display reduce -- which is why means reach `trace_data` and
   never `xform_data`.
 
+- **A plot can take its colours from an image.**
+  `hypertools.plot.colors.image_palette(image, n_colors=6)` extracts a
+  palette from a LOCAL image -- a path, a PIL image, or an `(H, W, 3)` array
+  -- ordered most visually salient first. Salience is
+  `pixel_fraction * chroma`, so a painting's vivid subject leads and its
+  muted background follows but is kept; ordering by pixel share alone (the
+  obvious "largest k-means cluster" rule) returns the background, which is
+  the whole reason this helper exists. A greyscale image has no colour to be
+  salient about, so it falls back to population order. The same extraction
+  is reachable declaratively from any plotting call as
+  `palette='image:<path>'`, on both backends and on every colour path
+  (categorical, continuous, matrix hue, and the colorbar): a categorical hue
+  pulls one anchor per category, so the number of groups is not capped, and
+  a continuous hue blends six anchors into a gradient exactly as any short
+  colour list is blended. An image with fewer distinct colours than there
+  are categories is interpolated up rather than cycled, so no two categories
+  share a colour; a single-colour image raises instead of inventing them.
+  hypertools never downloads the image -- fetch and cache it yourself, then
+  pass the path.
+
 ### Changed / validation
 
 These turn previously-accepted input into rejected input. Each was

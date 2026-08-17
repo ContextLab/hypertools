@@ -2070,6 +2070,14 @@ def _draw(
                 blit=False,
                 repeat=False,
             )
+            # `HyperAnimation.n_segments` reads this. Tagged HERE, beside the
+            # `sum(frame_counts)` that becomes `_save_count`, so the segment
+            # count and the frame count can never describe different
+            # schedules. The 2-D morph branch below carries the same tag --
+            # tagging only one makes `n_segments` silently None for half of
+            # all morphs, which reads as "not a morph" rather than as an
+            # error.
+            line_ani._hyp_morph_segments = len(frame_counts)
 
         return fig, ax, x, line_ani
 
@@ -2492,6 +2500,8 @@ def _draw(
                 blit=False,
                 repeat=False,
             )
+            # the 2-D half of the `n_segments` tag -- see the 3-D branch above
+            line_ani._hyp_morph_segments = len(frame_counts)
 
         return fig, ax, x, line_ani
 

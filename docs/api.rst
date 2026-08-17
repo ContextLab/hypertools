@@ -131,6 +131,15 @@ axis and groups by everything above it -- and ``predict=`` then forecasts
 every final trace, leaves and means alike. See :doc:`hierarchy` for the
 comparison table, the feature-correspondence rule and the return shapes.
 
+Colors
+------------------
+
+.. autofunction:: hypertools.plot.colors.image_palette
+
+.. autofunction:: hypertools.plot.colors.get_palette_colors
+
+.. autofunction:: hypertools.plot.colors.continuous_colormap
+
 Set interactive backend
 ------------------------
 

@@ -57,6 +57,11 @@ dependencies = [
     # require numpy<2).
     "pandas>=2.2.2",
     "seaborn>=0.13.0",
+    # Pillow is already a hard requirement of matplotlib>=3.9 (`pillow>=8`),
+    # so this adds no install weight -- but hypertools now imports PIL
+    # itself (hypertools/plot/colors.py: image_palette / palette='image:...'),
+    # and a library that imports a package declares it.
+    "pillow>=8",
     "matplotlib>=3.9.0",     # 3.8.x requires numpy<2; 3.9.0 supports numpy 2
     "scipy>=1.13.0",
     "numpy>=2.0.0",
