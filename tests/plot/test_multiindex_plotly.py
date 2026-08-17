@@ -478,24 +478,23 @@ def test_hierarchy_with_animated_prediction():
 
 
 def test_animated_forecast_hue_colour_is_the_SAME_on_both_backends():
-    """Characterization, and the parity claim for the case F14 does not
-    reach.
+    """F14 now reaches ANIMATED forecasts too, identically on both backends.
 
     F14 ("a forecast overlay under a continuous hue takes the final observed
-    hue colour of its source trace") is implemented for the STATIC overlay on
-    both backends -- `test_plotly_and_matplotlib_agree_on_the_forecast_hue_
-    colour` above. An ANIMATED forecast is governed by a different, already
-    resolved rule: *Decision R3*, "the colour a live/retained forecast wears
-    is the HEAD RUN's, which changes from frame to frame"
-    (`plot._update_forecasts._run_colour`, `plotly_backend`'s
-    `forecast_frame_colors`). Under a continuous hue the head run's own line
-    artist carries the per-dataset PALETTE colour, so that is what both
-    backends draw -- and the two rules genuinely conflict, since R3's colour
-    is per-frame while F14's is a fixed tail. Which one wins for animated
-    hue is an owner decision, recorded in the plan's *Decisions (resolved)*
-    #7; until it is made, this test pins the behaviour on BOTH backends so
-    the divergence between the static and animated paths is visible and
-    cannot change silently on one backend only.
+    hue colour of its source trace") was implemented for the STATIC overlay
+    first (`test_plotly_and_matplotlib_agree_on_the_forecast_hue_colour`
+    above), while an animated forecast kept *Decision R3*'s per-frame
+    head-run colour. Under a continuous hue that head run's line artist
+    carries the per-dataset PALETTE colour -- a colour nothing visible is
+    drawn in -- so the animated forecast continued a colour its trajectory
+    never had, and a paused animation disagreed with the static plot of the
+    same call.
+
+    Resolved in favour of the hue anchor (maintainer decision, 2026-08-16),
+    narrowly: only under a CONTINUOUS hue. Decision R3 still governs
+    CATEGORICAL regrouping, where the run colour is what the viewer sees.
+    This test pins both halves of the resolution -- the two backends agree,
+    AND they agree with the static rule.
     """
     df = market_frame()
     hues = [np.linspace(0.0, 1.0, len(df)), np.linspace(9.0, 10.0, len(df))]
@@ -510,16 +509,16 @@ def test_animated_forecast_hue_colour_is_the_SAME_on_both_backends():
     assert sorted(mpl) == sorted(ply) == [0, 1, 2]
     assert mpl == ply, f'matplotlib {mpl} vs plotly {ply}'
 
-    # ...and it is NOT the static rule: stated positively so that the day
-    # F14 is extended to animations, this test fails and points at the
-    # decision rather than silently agreeing with either outcome.
+    # ...and it IS the static rule now. The two paths described the same
+    # figure differently before this landed; if they ever diverge again,
+    # this is the assertion that says so.
     static_kw = dict(kw, animate=False)
     del static_kw['duration'], static_kw['frame_rate']
     static = {ds: _mpl_rgb(ln.get_color())
               for ds, ln in _mpl_forecasts(_mpl(df, '-', **static_kw)).items()}
-    assert mpl != static, (
-        'the animated forecast now matches the static hue-tail rule (F14); '
-        'if that was intentional, resolve Decisions #7 and update this test')
+    assert mpl == static, (
+        f'animated {mpl} vs static {static}: under a continuous hue both '
+        'must take the final observed hue colour of the source trace (F14)')
 
 
 def test_dual_axis_frame_is_rejected_on_plotly():

@@ -116,7 +116,18 @@ def _geometry_shift(before, after):
     """Largest change in any pairwise distance, relative to the diameter."""
     assert set(before) == set(after), 'the two plots drew different groups'
     d_before, d_after = _pairwise(before), _pairwise(after)
-    return float(np.abs(d_before - d_after).max() / d_before.max())
+    diameter = d_before.max()
+    # A degenerate embedding (every point coincident) would divide by zero
+    # and hand back nan/inf, which compares False against every threshold --
+    # so an order-sensitivity assertion would fail reporting "not different
+    # enough" when the real problem is that the fixture collapsed. Say the
+    # real cause instead. The fixtures here are safely non-degenerate; this
+    # exists so a FUTURE one that is not fails legibly.
+    assert diameter > 0, (
+        'the reference embedding is a single point, so a relative geometry '
+        'change is undefined -- the fixture, not the reducer, is what needs '
+        'looking at')
+    return float(np.abs(d_before - d_after).max() / diameter)
 
 
 # --------------------------------------------------------------------------
@@ -494,3 +505,85 @@ def test_nothing_is_recorded_on_a_caller_supplied_pipeline_off_hierarchy():
                         axis=0) for s in range(len(SECTORS))]
     assert _bundle(arrays, pipeline=pipeline)['pipeline'].input_hierarchy \
         is None
+
+
+# --------------------------------------------------------------------------
+# a caller-supplied pipeline that ALREADY carries a hierarchy record
+# --------------------------------------------------------------------------
+# Reported in review: plot() converts the leaves to bare arrays before the
+# pipeline sees them, and a list is positional by contract, so the fit-time
+# feature NAMES were never consulted while plotting. A frame of the same
+# width but different measurements plotted happily against a pipeline fit on
+# something else, and only `bundle['pipeline'].transform(that_same_frame)`
+# noticed -- contradicting the round-trip `return_model` documents.
+
+def _renamed_frame(measures, seed=0):
+    """`_wide_frame`'s shape with different innermost labels."""
+    columns = pd.MultiIndex.from_tuples(
+        [('Market', sector, measure)
+         for sector in SECTORS for measure in measures],
+        names=['Market', 'Sector', 'Measure'])
+    values = np.cumsum(
+        np.random.default_rng(seed).standard_normal((40, len(columns))),
+        axis=0)
+    return pd.DataFrame(values, columns=columns)
+
+
+def _fitted_on_wide_frame():
+    """A pipeline carrying a NOMINAL record of `_wide_frame`'s measures."""
+    pipeline = _bundle(_wide_frame())['pipeline']
+    assert pipeline.input_hierarchy['feature_correspondence'] == 'name'
+    assert [str(label) for label
+            in pipeline.input_hierarchy['feature_labels']] == list(MEASURES)
+    return pipeline
+
+
+def test_a_nominal_record_rejects_a_frame_measuring_something_else():
+    """Same width, different measurements -> refused AT plot(), not later."""
+    other = _renamed_frame(('alpha', 'beta', 'gamma', 'delta', 'epsilon'),
+                           seed=1)
+    with pytest.raises(ValueError, match='fit on column-hierarchy groups'):
+        hyp.plot(other, pipeline=_fitted_on_wide_frame(), show=False)
+
+
+def test_a_nominal_record_accepts_the_same_measures_in_another_order():
+    """...and puts them BACK into fit-time order, which is the whole point.
+
+    The fitted steps are positional; `group_columns` orders features by
+    THIS frame's first group. Feeding the frame's order to a pipeline fit on
+    another produced silently wrong coordinates -- measured at ~21 units on
+    this fixture with the reordering removed, not a rounding difference.
+    """
+    frame = _wide_frame()
+    shuffled = frame[[('Market', sector, measure)
+                      for sector in SECTORS
+                      for measure in ('turnover', 'return', 'spread',
+                                      'momentum', 'volatility')]]
+    pipeline = _fitted_on_wide_frame()
+    straight = _bundle(frame, pipeline=pipeline)['trace_data']
+    permuted = _bundle(shuffled, pipeline=pipeline)['trace_data']
+    for a, b in zip(straight, permuted):
+        assert np.allclose(np.asarray(a), np.asarray(b)), (
+            'a column permutation moved the figure through a supplied '
+            'pipeline; the leaves are not being restored to fit-time order')
+
+
+def test_a_positional_record_lets_a_same_width_frame_mean_anything():
+    """`feature_correspondence='position'` is exactly the opt-out."""
+    pipeline = _fitted_on_wide_frame()
+    pipeline.input_hierarchy = dict(pipeline.input_hierarchy,
+                                    feature_correspondence='position')
+    other = _renamed_frame(('alpha', 'beta', 'gamma', 'delta', 'epsilon'),
+                           seed=1)
+    bundle = _bundle(other, pipeline=pipeline)
+    assert len(bundle['trace_data']) == len(SECTORS) + 1
+
+
+def test_a_matching_frame_still_round_trips_through_a_supplied_pipeline():
+    """The positive control: validation must not break the working case."""
+    frame = _wide_frame()
+    bundle = _bundle(frame, pipeline=_fitted_on_wide_frame())
+    out = bundle['pipeline'].transform(frame)
+    assert len(out) == len(SECTORS)
+    for reference, produced in zip(bundle['xform_data'], out):
+        assert np.allclose(np.asarray(reference), np.asarray(produced))

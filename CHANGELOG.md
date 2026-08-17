@@ -147,6 +147,19 @@ and reaches flat `hyp.predict` callers.
 These turn previously-accepted input into rejected input. Each was
 previously ambiguous or silently lossy.
 
+- **A `pipeline=` that already carries a column-hierarchy record is checked
+  against the frame being plotted**, while the leaves still have labels.
+  `hyp.plot` hands the pipeline bare arrays, and a list is positional by
+  contract, so the fit-time feature NAMES were never consulted during
+  plotting: a frame of the same width but different measurements plotted
+  happily against a pipeline fit on something else, and only
+  `bundle['pipeline'].transform(that_same_frame)` noticed -- contradicting
+  the round-trip `return_model=` documents. Under `'name'` correspondence a
+  mismatch now raises at the `plot()` call, naming the missing and
+  unexpected features; the leaves are also restored to FIT-time order, since
+  the fitted steps are positional and the frame's own order otherwise
+  produced silently wrong coordinates. `feature_correspondence='position'`
+  is unaffected -- opting out of nominal matching is what it is for.
 - **Frames carrying a hierarchy on BOTH axes are now rejected** with a clear
   error (`x has both a row and a column MultiIndex ...`). Before 1.1 such a
   frame followed the row path and its column hierarchy was silently ignored;
@@ -374,12 +387,15 @@ input too.
   datasets. Pass `reduce='PCA'` when block order must not matter.
 - Continuous `hue=` over a **row** hierarchy is still warned-and-ignored;
   only column hierarchies honour it in 1.1.
-- An **animated** forecast under a continuous `hue=` wears the colour of the
-  run drawing the head, which is the per-dataset palette colour, not the
-  trace's final observed hue colour that the static overlay takes. Both
-  backends agree frame for frame; it is the static and animated paths that
-  differ, and reconciling them is an open product decision rather than a
-  defect.
+- A forecast under a continuous `hue=` takes its source trajectory's **final
+  observed hue colour**, in the animated case as well as the static one, on
+  both backends. (Animated forecasts briefly wore the per-dataset palette
+  colour instead -- the colour of the hidden artist driving the reveal,
+  which nothing visible is drawn in, so the forecast appeared to continue a
+  colour its trajectory never had and a paused animation disagreed with the
+  static plot of the same call.) A **categorical** regrouping is unchanged:
+  there the live forecast still takes the colour of the run drawing the
+  head, which is what the viewer actually sees.
 - Duplicate innermost feature names inside one group are **kept** rather
   than rejected or de-duplicated, and matched across groups by
   `(label, occurrence)`: all such columns are plotted and forecast. Rename

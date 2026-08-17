@@ -1179,7 +1179,11 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                     tkwargs, fmt[_src], alpha=alpha,
                     override=(forecast_overrides[i]
                               if forecast_overrides is not None
-                              and i < len(forecast_overrides) else None))
+                              and i < len(forecast_overrides) else None),
+                    # same anchor the STATIC branch above takes: under a
+                    # continuous hue the run's own `line.color` is the
+                    # per-dataset palette colour, which nothing is drawn in.
+                    anchor_color=_hue_anchor_color(point_colors, _src))
                 fc_common = dict(
                     mode='lines', showlegend=False, hoverinfo='skip',
                     line=fc_line,
@@ -1204,7 +1208,15 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 _ov = (forecast_overrides[i]
                        if forecast_overrides is not None
                        and i < len(forecast_overrides) else None)
-                _pinned = isinstance(_ov, dict) and _ov.get('color') is not None
+                # A continuous hue pins it too: the forecast's identity is
+                # the hue value where its trajectory ENDS, which does not
+                # change from frame to frame. Decision R3's per-frame
+                # head-run colour stays correct for CATEGORICAL regrouping,
+                # where the run colour is what the viewer actually sees.
+                # Same rule, same reason, as matplotlib's `_override_colour`.
+                _pinned = (
+                    (isinstance(_ov, dict) and _ov.get('color') is not None)
+                    or _hue_anchor_color(point_colors, _src) is not None)
                 forecast_frame_colors.append({} if _pinned else {
                     _r: _forecast_style_from(
                         kwargs_list[_r] or {}, fmt[_r],

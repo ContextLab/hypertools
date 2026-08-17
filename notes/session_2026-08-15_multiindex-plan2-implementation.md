@@ -598,6 +598,66 @@ mixed-type, NA-bearing labels, and it would make a labelled hierarchy behave
 differently from the equivalent list of datasets, which has always been
 positional. `reduce='PCA'` remains the explicit remedy.
 
+## Maintainer review round 6 (2026-08-16) — pipeline validation + F14
+
+**Finding 1 (Important): a hierarchy-aware `pipeline=` could plot
+incompatible features, then fail to re-apply. REPRODUCED, fixed.**
+`plot()` converts hierarchical leaves to bare arrays BEFORE handing them to
+the pipeline, and a list is positional by contract, so fit-time feature
+names were never consulted while plotting. Measured at `393e64a3`: a
+pipeline recording nominal features `['x','y','z']` plotted an `a,b,c` frame
+of the same width without complaint, and only
+`bundle['pipeline'].transform(that_same_frame)` raised — contradicting the
+round-trip `return_model=` documents.
+
+Fixed by validating against a SUPPLIED pipeline's existing record while the
+labels still exist, through `Pipeline._fit_feature_order` — the one
+implementation of the rule, which raises under `'name'` correspondence and
+returns `None` under `'position'`.
+
+**The reorder half mattered as much as the rejection**, and the review did
+not name it: `group_columns` orders features by THIS frame's first group,
+while the fitted steps are positional and expect FIT-time order. Measured by
+mutation — with the reordering removed, the same frame plotted **~21 units**
+off, not a rounding difference. Silently wrong coordinates, the exact defect
+nominal correspondence exists to remove, one fit/transform pair over.
+
+Four boundary tests as requested, plus that one:
+nominal + different names → rejected at `plot()`; same names reordered →
+succeeds AND gives identical coordinates; positional + different names →
+succeeds; matching frame → round-trip succeeds.
+
+**Finding 5 (product decision): animated continuous-hue forecasts now take
+the hue anchor.** Ruled in favour of F14 over Decision R3, narrowly. The
+palette colour is the hidden reveal artist's dataset colour — nothing
+visible is drawn in it — so the animated forecast continued a colour its
+trajectory never had, and a paused animation disagreed with the static plot
+of the same call. Backend parity did not cure that; both backends were
+wrong together.
+
+Implemented by treating a continuous hue as a colour PIN, reusing the
+mechanism `forecast_hue=`/`forecast_cluster=`/`forecast_palette=` already
+had (`plot.py`'s `_override_colour`, `plotly_backend`'s
+`forecast_frame_colors`), plus `anchor_color=` threaded into both
+`_forecast_style_from` twins. **Categorical regrouping is untouched** —
+there the run-reveal colour is what the viewer sees.
+
+Verified after the change: matplotlib animated == static == the hue tails
+`(0.2819,0.1509,0.4654)` / `(0.9744,0.9036,0.1302)`; plotly animated
+`rgba(72,38,119,0.5)` / `rgba(248,230,33,0.5)`, the same anchors at forecast
+alpha. `test_animated_forecast_hue_colour_is_the_SAME_on_both_backends` was
+rewritten from pinning the DISAGREEMENT to pinning the agreement, in both
+directions.
+
+**Three decisions recorded CLOSED** (plan *Decisions (resolved)*): global
+duplicate-timestamp rejection stays global; `_to_plotly_color` rounding is
+kept; in-place `input_hierarchy` recording on a caller-supplied pipeline is
+kept — the missing piece was validation, not the mutation.
+
+**Also:** `_geometry_shift` now asserts a non-degenerate reference diameter,
+so a future collapsed fixture reports its real cause instead of producing
+nan/inf and failing as "not different enough".
+
 ## Adversarial sweep and fixes (2026-08-16)
 
 After the three fix commits (`bb4ad30c`, `e52dd861`, `6f07c213`) landed, a

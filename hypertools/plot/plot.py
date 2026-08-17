@@ -179,7 +179,7 @@ def _apply_forecast_override(style, override):
 
 
 def _forecast_style_from(src_line, alpha_scale=FORECAST_ALPHA_SCALE,
-                         override=None):
+                         override=None, anchor_color=None):
     """Style a forecast to match the observed trace it continues.
 
     A forecast is the SAME series projected forward, so it inherits its
@@ -206,6 +206,14 @@ def _forecast_style_from(src_line, alpha_scale=FORECAST_ALPHA_SCALE,
         This dataset's `forecast_*=` override
         (`forecast.resolve_forecast_overrides`). Sparse: only the aspects it
         names replace the inherited ones.
+    anchor_color : RGB(A) tuple or None
+        Under a CONTINUOUS `hue=` the observed trace has many colours, so
+        "the same colour as its trace" resolves to the colour where the
+        forecast starts: the final observed point's hue colour. Passed here
+        (rather than read off `src_line`) because the line artist carries
+        the per-dataset palette colour, which is a colour nothing visible is
+        drawn in. A `forecast_*=` override still wins over it. Plotly's twin
+        takes the same argument, so both backends anchor identically.
 
     Returns
     -------
@@ -215,7 +223,7 @@ def _forecast_style_from(src_line, alpha_scale=FORECAST_ALPHA_SCALE,
     """
     if src_line is None:
         return _apply_forecast_override(
-            dict(color=None, linestyle='-',
+            dict(color=anchor_color, linestyle='-',
                  linewidth=plt.rcParams['lines.linewidth'],
                  alpha=forecast_alpha(None, alpha_scale)),
             override)
@@ -228,7 +236,8 @@ def _forecast_style_from(src_line, alpha_scale=FORECAST_ALPHA_SCALE,
         # the two backends identical in this corner too.
         linestyle = '-'
     return _apply_forecast_override(
-        dict(color=src_line.get_color(),
+        dict(color=(src_line.get_color() if anchor_color is None
+                    else anchor_color),
              linestyle=linestyle,
              linewidth=src_line.get_linewidth(),
              alpha=forecast_alpha(src_line.get_alpha(), alpha_scale)),
@@ -3940,6 +3949,34 @@ def plot(
         # features by name on re-application too (see
         # `Pipeline._fit_feature_order`). Every leaf shares this order --
         # `group_columns` permuted them into the first leaf's.
+        if pipeline is not None and getattr(
+                pipeline, 'input_hierarchy', None) is not None:
+            # A caller-supplied pipeline that ALREADY carries a hierarchy
+            # record must be checked against THIS frame while the labels
+            # still exist. One line below, the leaves become bare arrays,
+            # and a list is positional by contract -- so without this the
+            # fit-time feature names are never consulted during plotting,
+            # and a frame of the same WIDTH but different measurements
+            # plotted happily against a pipeline fit on something else.
+            # `bundle['pipeline'].transform(that_same_frame)` then raised
+            # the nominal mismatch, contradicting the round-trip the
+            # `return_model` docstring promises.
+            #
+            # `_fit_feature_order` is the one implementation of that rule:
+            # it raises the missing/unexpected-feature error under 'name'
+            # correspondence, and returns None under 'position' (where a
+            # same-width frame IS allowed to mean something else -- that is
+            # what opting out of nominal matching buys).
+            _fit_order = pipeline._fit_feature_order(x)
+            if _fit_order is not None:
+                # Reordering matters as much as rejecting. `group_columns`
+                # permutes into THIS frame's first group's order, which is a
+                # property of the frame; the fitted steps are positional and
+                # expect the FIT-time order. Feeding them the frame's order
+                # transformed correct-looking coordinates that were silently
+                # wrong -- the same defect nominal correspondence exists to
+                # remove, one fit/transform pair over.
+                x = [leaf.iloc[:, _fit_order] for leaf in x]
         _mi_feature_labels = list(x[0].columns)
         x = [leaf.to_numpy() for leaf in x]
 
@@ -6360,13 +6397,28 @@ def plot(
                     # trace, alpha halved), from the SAME helper -- so a
                     # paused animation is indistinguishable from the static
                     # plot and the two paths cannot drift.
+                    # Under a CONTINUOUS hue the observed trace has many
+                    # colours and `_src_lines[_fc_src]` is the HIDDEN
+                    # single-colour artist that drives the reveal -- its
+                    # palette colour is drawn nowhere. Anchor on the final
+                    # observed hue colour instead, exactly as the static
+                    # overlay does (`_apply_multicolor_lines`). Before this,
+                    # a paused animation and a static plot of the same call
+                    # showed the forecast in different colours, and the
+                    # animated one continued a colour its trajectory never
+                    # visibly had.
+                    _fc_anchor = None
+                    if (line_colors is not None and _fc_src < len(line_colors)
+                            and len(line_colors[_fc_src])):
+                        _fc_anchor = tuple(line_colors[_fc_src][-1])
                     _fc_style = _forecast_style_from(
                         _src_lines[_fc_src] if _fc_src < len(_src_lines)
                         else None,
                         override=(_forecast_overrides[_i]
                                   if _forecast_overrides is not None
                                   and _i < len(_forecast_overrides)
-                                  else None))
+                                  else None),
+                        anchor_color=_fc_anchor)
                     # trails FIRST, so the live forecast draws on top of its
                     # own fan rather than under it
                     _row = []
@@ -6417,11 +6469,17 @@ def plot(
                 # an explicit grouping is resolved once from the full-history
                 # forecasts and must stay fixed for every frame, so it wins
                 # over the per-frame head-run colour below.
+                # A CONTINUOUS hue pins it too, for the same reason: the
+                # forecast's identity is the hue value where its trajectory
+                # ends, which does not change frame to frame. Decision R3's
+                # per-frame head-run colour remains correct for CATEGORICAL
+                # regrouping, where the run colour is what the viewer sees.
                 _override_colour = [
-                    bool(_forecast_overrides is not None
-                         and _i < len(_forecast_overrides)
-                         and isinstance(_forecast_overrides[_i], dict)
-                         and _forecast_overrides[_i].get('color') is not None)
+                    bool((_forecast_overrides is not None
+                          and _i < len(_forecast_overrides)
+                          and isinstance(_forecast_overrides[_i], dict)
+                          and _forecast_overrides[_i].get('color') is not None)
+                         or line_colors is not None)
                     for _i in range(len(raw_forecasts))]
 
                 def _update_forecasts(ctx, _sched=forecast_schedule,
