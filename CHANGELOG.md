@@ -47,9 +47,10 @@ and reaches flat `hyp.predict` callers.
   observations is rejected rather than reinterpreted -- it would require the
   caller to predict how many mean traces expansion creates. A mean trace
   takes the element-wise mean of its leaves' hue, and hue is truncated by
-  the same operation that truncates the data. A **static** forecast overlay
-  takes the final observed hue colour of its source trace (see *Documented
-  limitations* for the animated case). Categorical hue still defers to the
+  the same operation that truncates the data. A forecast overlay takes the
+  final observed hue colour of its source trace, static and animated alike
+  and on both backends (see *Documented limitations* for how this differs
+  from a categorical regrouping). Categorical hue still defers to the
   grouping, with a warning: it regroups traces, so the named leaves would
   stop existing.
 

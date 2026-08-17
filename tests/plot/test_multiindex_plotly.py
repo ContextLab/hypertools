@@ -521,6 +521,218 @@ def test_animated_forecast_hue_colour_is_the_SAME_on_both_backends():
         'must take the final observed hue colour of the source trace (F14)')
 
 
+def _hue_tails(df, hues, **kw):
+    """The colour each observed trajectory ENDS in -- the anchor itself.
+
+    Read off plotly's per-point `line.color` array, i.e. a colour the figure
+    is demonstrably drawn in, rather than recomputed from the palette here.
+    A test that derives the expectation the same way the implementation does
+    cannot catch the implementation being wrong.
+    """
+    tails = [_rgb(t.line.color[-1]) for t in _data_traces(
+        _plot(df, '-', hue=hues, palette='viridis', antialias=False,
+              show=False, **kw))]
+    assert len(set(tails)) == len(tails), (
+        'the source trajectories must end in DISTINCT colours or a forecast '
+        f'paired with the wrong source would pass unnoticed (got {tails})')
+    return tails
+
+
+def _plotly_frame_forecast_colours(fig, k):
+    """{(dataset, age) -> the colour in EFFECT for that forecast at frame k}.
+
+    A plotly frame updates only what it names: a payload whose `line.color`
+    is unset leaves the base trace's colour standing. So "the colour at frame
+    k" is the frame's own value when it has one and the base trace's
+    otherwise -- reading only one of the two would miss half the ways this
+    can regress.
+    """
+    frame = fig.frames[k]
+    out = {}
+    for pos, tidx in enumerate(frame.traces):
+        meta = (fig.data[tidx].meta or {})
+        if meta.get('hyp_forecast_role') is None:
+            continue
+        update = frame.data[pos]
+        colour = getattr(getattr(update, 'line', None), 'color', None)
+        if colour is None:
+            colour = fig.data[tidx].line.color
+        out[(meta['hyp_dataset'], meta['hyp_forecast_age'])] = _rgb(colour)
+    return out
+
+
+ANIM_HUE_KW = dict(palette='viridis', predict='Kalman', t=1, antialias=False,
+                   animate=True, duration=2, frame_rate=4, forecast_trail=3,
+                   show=False)
+
+
+def test_animated_hue_forecast_holds_its_anchor_on_every_matplotlib_FRAME():
+    """The half of the hue-anchor rule that only a DRIVEN frame can see.
+
+    Setting the initial colour and *keeping* it are two separate mechanisms:
+    the build site styles the artist through `_forecast_style_from(...,
+    anchor_color=)`, and `_update_forecasts._run_colour` then repaints it
+    every frame from the head RUN unless `_override_colour` pins it. A
+    regression in the second leaves the constructed figure perfectly correct
+    and the animation wrong from frame 1 on -- which is exactly what the
+    previous test read, because it never advanced the animation.
+
+    Frames are driven at the START, the MIDDLE and the END: the run that
+    owns the head changes as the reveal progresses, so a per-frame repaint
+    shows up as drift between them, not as a single wrong value.
+    """
+    df = market_frame()
+    hues = [np.linspace(0.0, 1.0, len(df)), np.linspace(9.0, 10.0, len(df))]
+    tails = _hue_tails(df, hues, predict='Kalman', t=1)
+
+    fig, ani = _mpl(df, '-', hue=hues, **ANIM_HUE_KW)
+    n_frames = ani._save_count
+    assert n_frames >= 3, 'need distinct early/middle/final frames'
+    for frame in (0, n_frames // 2, n_frames - 1):
+        ani._func(frame, *ani._args)
+        for role in ('live', 'trail'):
+            drawn = _mpl_forecasts(fig, role=role)
+            assert drawn, f'no {role} forecast artists to check'
+            for ds, art in drawn.items():
+                assert _mpl_rgb(art.get_color()) == tails[ds], (
+                    f'frame {frame}: the {role} forecast for trace {ds} is '
+                    f'{_mpl_rgb(art.get_color())}, but that trajectory ends '
+                    f'at {tails[ds]} -- the anchor did not survive the frame '
+                    'update')
+
+    # ...and the final frame really draws them, so none of the above passed
+    # by inspecting artists that were never given data.
+    live = _mpl_forecasts(fig, role='live')
+    assert any(np.asarray(a.get_data_3d()).size for a in live.values()), (
+        'no live forecast carries any data at the final frame')
+
+
+def test_animated_hue_forecast_holds_its_anchor_in_every_plotly_FRAME():
+    """The plotly half, read out of `fig.frames` rather than `fig.data`.
+
+    Same two mechanisms, different spelling: `forecast_frame_colors[spec]` is
+    the precomputed per-run colour map a frame would repaint with, and the
+    continuous-hue anchor makes it `{}` so no frame names a colour at all.
+    Checking the base traces alone (as the earlier test did) cannot tell an
+    empty map from a populated one.
+
+    EVERY frame is checked, not a sample: the frames are already built when
+    `plot()` returns, so there is nothing to drive and no cost to totality.
+    """
+    df = market_frame()
+    hues = [np.linspace(0.0, 1.0, len(df)), np.linspace(9.0, 10.0, len(df))]
+    tails = _hue_tails(df, hues, predict='Kalman', t=1)
+
+    fig = _plot(df, '-', hue=hues, **ANIM_HUE_KW)
+    assert len(fig.frames) >= 3
+    for k in range(len(fig.frames)):
+        colours = _plotly_frame_forecast_colours(fig, k)
+        assert colours, f'frame {k} updates no forecast trace'
+        for (ds, age), colour in colours.items():
+            assert colour == tails[ds], (
+                f'frame {k}: forecast (dataset {ds}, age {age}) is {colour}, '
+                f'but its trajectory ends at {tails[ds]}')
+
+
+def test_animated_hue_forecast_frames_AGREE_across_the_two_backends():
+    """The parity statement over frames, not over the constructed figure.
+
+    Stated separately from the two tests above because they could both stay
+    green while the backends disagreed about WHICH frames exist or which
+    dataset each forecast belongs to.
+    """
+    df = market_frame()
+    hues = [np.linspace(0.0, 1.0, len(df)), np.linspace(9.0, 10.0, len(df))]
+    fig, ani = _mpl(df, '-', hue=hues, **ANIM_HUE_KW)
+    ply = _plot(df, '-', hue=hues, **ANIM_HUE_KW)
+    assert ani._save_count == len(ply.frames), (
+        'the backends disagree about the frame COUNT, so a per-frame colour '
+        'comparison would be comparing different moments')
+    for k in (0, len(ply.frames) // 2, len(ply.frames) - 1):
+        ani._func(k, *ani._args)
+        mpl = {ds: _mpl_rgb(a.get_color())
+               for ds, a in _mpl_forecasts(fig, role='live').items()}
+        plotly = {ds: c for (ds, age), c
+                  in _plotly_frame_forecast_colours(ply, k).items() if age == 0}
+        assert mpl == plotly, f'frame {k}: matplotlib {mpl} vs plotly {plotly}'
+
+
+def test_a_continuous_hue_animation_is_NEVER_regrouped_into_runs():
+    """The structural invariant the anchor rests on, pinned on its own.
+
+    Measured 2026-08-16: a continuous hue does not regroup, so
+    `len(analyze_histories) == len(xform)` and `plot()` builds no
+    `DatasetRevealSchedule` -- which is what makes the per-frame head-run
+    recolour (Decision R3) inert here rather than merely overridden. The
+    `_pinned`/`_override_colour` continuous-hue clauses on both backends
+    state the same policy at the site that decides it, and are unreachable
+    while this invariant holds.
+
+    A CATEGORICAL hue over the same data is the contrast case: it splits
+    each dataset into contiguous runs, which is precisely the regrouping
+    that brings the reveal schedule -- and R3 -- into play. Without that
+    half, this test would pass on a build that never regrouped anything.
+
+    If this test ever fails, the invariant moved: re-read those two clauses
+    before assuming the anchor still holds across frames.
+    """
+    df = market_frame()
+    hues = [np.linspace(0.0, 1.0, len(df)), np.linspace(9.0, 10.0, len(df))]
+    kw = dict(predict='Kalman', t=1, antialias=False, animate=True,
+              duration=2, frame_rate=4, show=False)
+    continuous = _plot(df, '-', hue=hues, palette='viridis', **kw)
+    assert len(_data_traces(continuous)) == 3, (
+        '2 sector leaves + 1 mean, one drawn trace each: a continuous hue '
+        'colours them per point and must not split them into runs')
+    live = [t for t in _forecast_traces(continuous)
+            if (t.meta or {})['hyp_forecast_role'] == 'live']
+    assert len(live) == 3, 'one live forecast per final trace, not per run'
+
+    # positional slices, not `df[('Market', sector)]`: the frame's columns
+    # are not lexsorted, and label indexing into it emits a pandas
+    # PerformanceWarning that this suite treats as a failure
+    flat = [df.iloc[:, :3].to_numpy(dtype=float),
+            df.iloc[:, 3:].to_numpy(dtype=float)]
+    categorical = _plot(flat, '-', hue=[['a'] * 30 + ['b'] * 30] * 2, **kw)
+    assert len(_data_traces(categorical)) > len(flat), (
+        'a CATEGORICAL hue must regroup into contiguous runs -- without '
+        'that contrast this test cannot tell "no regrouping happened" from '
+        '"regrouping never happens"')
+
+
+def test_explicit_forecast_colour_still_BEATS_the_hue_anchor_when_animated():
+    """Precedence: override > anchor > inherited, on both backends, animated.
+
+    The anchor was added underneath an override mechanism that already
+    existed, and the natural way to implement "a continuous hue pins the
+    colour" is a branch that also swallows `forecast_hue=`. That failure is
+    invisible to every test above, all of which pass no override.
+    """
+    df = market_frame()
+    hues = [np.linspace(0.0, 1.0, len(df)), np.linspace(9.0, 10.0, len(df))]
+    tails = _hue_tails(df, hues, predict='Kalman', t=1)
+    kw = dict(ANIM_HUE_KW, forecast_hue=['a', 'b', 'c'],
+              forecast_palette='Reds')
+
+    fig, ani = _mpl(df, '-', hue=hues, **kw)
+    ani._func(ani._save_count - 1, *ani._args)
+    mpl = {ds: _mpl_rgb(a.get_color())
+           for ds, a in _mpl_forecasts(fig, role='live').items()}
+
+    ply = _plot(df, '-', hue=hues, **kw)
+    last = len(ply.frames) - 1
+    plotly = {ds: c for (ds, age), c
+              in _plotly_frame_forecast_colours(ply, last).items() if age == 0}
+
+    assert mpl == plotly, f'matplotlib {mpl} vs plotly {plotly}'
+    assert len(set(mpl.values())) == 3, (
+        f'forecast_hue= named three groups but drew {set(mpl.values())}')
+    for ds, colour in mpl.items():
+        assert colour != tails[ds], (
+            f'forecast {ds} wears the hue anchor {tails[ds]} despite an '
+            'explicit forecast_hue=/forecast_palette=')
+
+
 def test_dual_axis_frame_is_rejected_on_plotly():
     idx = pd.MultiIndex.from_product([['a', 'b'], range(20)])
     cols = pd.MultiIndex.from_tuples([('M', 'T'), ('M', 'E')])

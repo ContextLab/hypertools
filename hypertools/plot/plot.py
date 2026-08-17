@@ -6474,6 +6474,17 @@ def plot(
                 # ends, which does not change frame to frame. Decision R3's
                 # per-frame head-run colour remains correct for CATEGORICAL
                 # regrouping, where the run colour is what the viewer sees.
+                # `line_colors is not None` is DEFENSIVE, not load-bearing:
+                # measured 2026-08-16, a continuous hue never regroups, so
+                # `_reveal` above is None and `_run_colour` already returns
+                # None on every frame. What actually gives an animated
+                # continuous-hue forecast the anchor colour is the
+                # `anchor_color=` at its build site. The clause states the
+                # policy where the policy is decided, so that widening
+                # `_reveal` to non-regrouped animations cannot silently
+                # reintroduce the palette repaint; the invariant it rests on
+                # is pinned by `test_a_continuous_hue_animation_is_NEVER_
+                # regrouped_into_runs`.
                 _override_colour = [
                     bool((_forecast_overrides is not None
                           and _i < len(_forecast_overrides)

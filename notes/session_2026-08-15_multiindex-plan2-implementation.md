@@ -824,6 +824,62 @@ product decision that this work surfaced and did not have standing to make.
    raised concerns beyond the three findings routed to me, they are NOT
    captured here and must be collected from its report before sign-off.
 
+## Maintainer review round 7 (2026-08-16) — status drift + the frame tests
+
+**Finding 1 (Important): the plan-set README and Plan 4 still declared
+finished prerequisites blocked. Reconciled.** These are the entry point for
+agentic execution, so a stale "blocked" reads as an instruction to stop.
+Updated: the execution table now runs through `d14d07ce` with a commit per
+MultiIndex task, Plans 1–3 and the regrouped-reveal plan are marked landed,
+Plan 4 is marked ready-to-execute with Task 2 as the release blocker, and
+"What is still blocked" became a dated *prerequisites now satisfied* note.
+The historical review rows are kept as history and labelled resolved rather
+than deleted. Plan 4's Market call is now described by its real mechanism —
+**continuous hue as a per-trace auxiliary value**, not categorical row
+regrouping — in all four places that had it wrong.
+
+**Finding 2 (Medium): the animated hue-anchor test did not drive frames.
+Fixed, and the fix found something.** Five tests added to
+`tests/plot/test_multiindex_plotly.py`:
+
+| test | what it pins |
+|-|-|
+| `..._on_every_matplotlib_FRAME` | drives frames 0 / middle / last, checks live AND trail artists, asserts the final frame actually carries data |
+| `..._in_every_plotly_FRAME` | every frame's payload, colour-in-effect = frame value if set else base trace |
+| `..._frames_AGREE_across_the_two_backends` | frame COUNT parity first, then per-frame colours |
+| `..._is_NEVER_regrouped_into_runs` | the structural invariant below, with a categorical contrast case so it cannot pass vacuously |
+| `test_explicit_forecast_colour_still_BEATS_the_hue_anchor...` | precedence override > anchor, animated, both backends |
+
+Source endpoints are distinct by assertion (`_hue_tails` refuses to return a
+non-distinct set), so a cross-source mis-pairing cannot pass.
+
+**What the mutation checks found: the `_pinned` / `_override_colour`
+continuous-hue clauses added in `d14d07ce` are UNREACHABLE.** Removing each
+one changed nothing, on either backend. Measured cause: `plot()` builds a
+`DatasetRevealSchedule` only when regrouping changed the trace count
+(`len(analyze_histories) != len(xform)`), and a continuous hue never
+regroups — verified by spying on `DatasetRevealSchedule.__init__`
+(continuous hue → not built; categorical hue → built) and by
+`cluster=` refusing to coexist with it at all ("cluster overrides hue,
+ignoring hue" on flat data; a hard `ValueError` on a column hierarchy). So
+Decision R3's per-frame repaint is *inert* under continuous hue, not
+*overridden*.
+
+What IS load-bearing is the `anchor_color=` at each backend's build site —
+mutation-verified independently: nulling matplotlib's fails the matplotlib
+frame test and the parity test; nulling plotly's fails the plotly frame test
+and the parity test.
+
+Disposition: the two clauses are kept as defensive policy statements at the
+site that decides the policy, with comments that now say plainly they are
+unreachable today and why, and the invariant they rest on is pinned by its
+own test — so widening `_reveal` to non-regrouped animations trips a test
+instead of silently reintroducing the palette repaint. This corrects what
+round 6's own note implied about which half of `d14d07ce` does the work.
+
+**Finding 3–5:** the reviewer's assessment of the pipeline repair and the
+closed decisions matches the tree; nothing to do.
+
 ## Standing constraints in force
 
 - `.venv/bin/python` is mandatory (system numpy breaks matplotlib).

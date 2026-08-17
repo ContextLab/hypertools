@@ -1213,7 +1213,12 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 # change from frame to frame. Decision R3's per-frame
                 # head-run colour stays correct for CATEGORICAL regrouping,
                 # where the run colour is what the viewer actually sees.
-                # Same rule, same reason, as matplotlib's `_override_colour`.
+                # Same rule, same reason, as matplotlib's `_override_colour`
+                # -- including that this half is DEFENSIVE: a continuous hue
+                # never regroups, so `forecast_reveal` is None and
+                # `_forecast_frame_data` never consults this map at all
+                # (measured 2026-08-16). The anchor an animated forecast
+                # actually wears comes from `anchor_color=` above.
                 _pinned = (
                     (isinstance(_ov, dict) and _ov.get('color') is not None)
                     or _hue_anchor_color(point_colors, _src) is not None)

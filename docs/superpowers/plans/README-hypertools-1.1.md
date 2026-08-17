@@ -68,9 +68,17 @@ was not ceremony — each review found defects that would have failed on first e
 reading the absence of a row as the absence of a review. It lists reviews that produced a **standalone
 audit file** under `notes/audit/`. Plan 1's later maintainer rounds (6–13) were delivered
 conversationally and are recorded in `notes/session_*.md` instead, so its true round count is far
-higher than its rows above. As of 2026-07-31 every plan has now been reviewed at least once, and
-Plans 3 and 4 carry **unaddressed fatal findings** — neither is implementation-ready. Check
+higher than its rows above. As of 2026-07-31 every plan had been reviewed at least once, and
+Plans 3 and 4 carried **unaddressed fatal findings** — neither was implementation-ready then. Check
 `notes/audit/` and the session notes together before claiming anything about a plan's review history.
+
+> **Both of those are resolved (2026-08-16).** Plan 3's eight defects were addressed in its **v3**,
+> and Plan 3 has since been **executed and landed** — see *Execution status* below. Plan 4's two
+> v1 Fatals were fixed in **v2**, its four v2 Fatals in **v3**, and the Market example was rebuilt
+> in **v4** across the round-4 and round-5 maintainer exchanges (`442285af`, `1e49e12c`); its
+> *Decisions* section carries no open items. Plan 4 is **ready to execute** — what remains is
+> execution, not revision. The rows above are kept as the historical record of what each review
+> found, not as a current statement of readiness.
 
 The recurring defect was writing tests that *looked* correct without tracing whether they could
 actually pass. Three examples, all caught by review rather than by reading:
@@ -131,17 +139,37 @@ one-line change. **These want a maintainer call before execution.**
 **Plans 1 and 2 have none left** — Plan 2's four were resolved in the round-3 review, Plan 1's four
 in the round-5 exchange. Both sets are recorded under *Standing decisions*.
 
-## Execution status (updated 2026-08-15)
+## Execution status (updated 2026-08-16, through `d14d07ce`)
 
 | plan | state |
 |-|-|
-| 1 — animation core | landed (`FrameHooks`/`FrameContext`/`on_frame`/`HyperAnimation` all present) |
-| 3 — forecast animation | landed (`forecast_trail=`, per-frame forecasts) |
+| 1 — animation core | **landed** (`FrameHooks`/`FrameContext`/`on_frame`/`HyperAnimation` all present) |
+| 3 — forecast animation | **landed** (`forecast_trail=`, per-frame forecasts) |
 | regrouped reveal + forecasts | **landed 2026-08-11**, 10 commits ending `59405545` |
-| 2 — MultiIndex | **IN PROGRESS**: T1 `420ef60c`, T2 `1f6e4d6d`, T3 `7a415d28`, T4 `86db0842`, NA-label grouping fix `af77f09e`, T5 `5b21e3c6`, plus the v8 nominal-correspondence amendment to T1/T5. T6-T12 not started |
-| 4 — examples and tutorials | not started; Task 2 blocked on MultiIndex T6/T8/T9 (T5 has landed) |
+| 2 — MultiIndex | **COMPLETE, all 12 tasks.** T1 `420ef60c`, T2 `1f6e4d6d`, T3 `7a415d28`, T4 `86db0842`, NA-label grouping fix `af77f09e`, T5 `5b21e3c6`, nominal correspondence `c5662249`, T6 `ea5d9b5e`, T7 `c51d274d`+`c5fb889c`, T8 `5238d6bc`+`5c2f29e9`, T9 `c9b91293`+`a309f49e`+`b48c2848`, T10 `f2a7a2b1`, T11 `b0076f8f`+`cdae7096`, T12 `3a4ce8e0`; maintainer review rounds since: `bb4ad30c`, `e52dd861`, `6f07c213`, `5b15d3dc`, `393e64a3`, `d14d07ce` |
+| 4 — examples and tutorials | **NOT STARTED — and this is the release blocker.** No task is blocked any more; every prerequisite below is satisfied |
 
-Nothing above is pushed: `dev-1.0` is ~130 commits ahead of `origin/dev-1.0` and CI has not seen
+### Prerequisites now satisfied (2026-08-16)
+
+Every dependency Plan 4 was waiting on is in the tree. Verified against `d14d07ce`, not from memory:
+
+- **Continuous `hue=` through a column hierarchy** — `ea5d9b5e` (Plan 2 T6). It reaches the traces
+  as a per-trace auxiliary value; it is **not** discarded, and it is **not** categorical row
+  regrouping. Earlier text in these plans described the Market call as a regrouped-lines plot; that
+  was wrong about the mechanism. A continuous `hue=` colours one line artist per trace through a
+  `LineCollection` overlay **without changing the trace count**, which is why the Market forecasts
+  draw at all.
+- **`predict=` over the final traces of a hierarchy** — `5238d6bc` (Plan 2 T8), on top of
+  hierarchical `hyp.predict` (`c51d274d`).
+- **Regrouped reveal + animated regrouped forecasts** — landed 2026-08-11, `59405545`.
+- **matplotlib/plotly parity** for all of the above — `c9b91293`, `a309f49e`, plus the animated
+  continuous-hue forecast anchor in `d14d07ce`.
+- **`forecast_trail=`** — `90a63a1a`, plotly parity `bb6fcb18`.
+
+Gate at `d14d07ce`: full suite **3576 passed / 13 skipped / 2 deselected / 0 failed**, `sphinx -b
+doctest` 251 passed, `sphinx -b html -W -E -a` clean, ruff diagnostic-key parity with the base.
+
+Nothing above is pushed: `dev-1.0` is ~146 commits ahead of `origin/dev-1.0` and CI has not seen
 any of it since 2026-07-24.
 
 ### Plan 3 — none left; all five settled by shipping
@@ -193,11 +221,13 @@ ruff at parity with the base commit (353 → 353). Seven defects in that plan's 
 two claims measurement disproved (the continuous-hue refusal above, and a "Before 1.1" version
 string), were corrected in code, tests and docs during implementation.
 
-**Consequence for Plan 4 Task 2:** its regrouped-reveal prerequisite is satisfied. Its remaining
-blockers are MultiIndex T6/T8 (and T9 for backend parity) — T1-T5 have since landed (see below).
-Plan 4's Market frame must also use **shared per-sector measurements** as its innermost column
-level, not per-sector tickers: cross-group feature correspondence is nominal (Plan 2 *Revision
-note (v8)*), so disjoint ticker names are refused rather than silently stacked by position.
+**Consequence for Plan 4 Task 2 (updated 2026-08-16):** it has **no remaining blockers**. The
+regrouped-reveal prerequisite was satisfied on 2026-08-11, and MultiIndex T6/T8/T9 — the last
+three named here — landed in `ea5d9b5e`, `5238d6bc` and `c9b91293`. Plan 4's Market frame must
+still use **shared per-sector measurements** as its innermost column level, not per-sector tickers:
+cross-group feature correspondence is nominal (Plan 2 *Revision note (v8)*), so disjoint ticker
+names are refused rather than silently stacked by position. Plan 4 v4 already prescribes exactly
+that frame.
 
 ### Plan 4
 
