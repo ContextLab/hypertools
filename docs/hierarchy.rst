@@ -339,11 +339,32 @@ The rules, in full:
 * a **non-finite** entry draws that observation neutral grey and warns. A
   mean is the element-wise mean of its members, so one ``NaN`` greys the
   leaf *and every ancestor mean* at that row;
-* more than **3 columns**, or any explicit ``color_reduce=``, switches to
-  the literal-RGB route instead -- the matrix is reduced to three min-max
-  scaled channels used directly as *(r, g, b)*. That is how you supply
-  per-observation RGB under a hierarchy, and it means exactly what it means
-  on a flat plot.
+* by default the **width decides**: more than 3 columns, or any explicit
+  ``color_reduce=``, switches to the literal-RGB route instead -- the matrix
+  is reduced to three min-max scaled channels used directly as *(r, g, b)*.
+  That is how you supply per-observation RGB under a hierarchy, and it means
+  exactly what it means on a flat plot.
+
+Past three components that default fights the idea it is meant to serve. One
+primary per leaf is the whole point, and a market with six sectors needs six
+columns -- which the width rule sends to the reducer, ignoring ``palette=``
+entirely. Say which you meant with ``hue_mode=``:
+
+.. doctest::
+
+   >>> six = [np.eye(6)[i] * np.ones((len(market), 1)) for i in range(2)]
+   >>> palette = ['#d92b2b', '#e8c72a', '#2f5fd0',
+   ...            '#e87a2a', '#3aa35a', '#8a4fd0']
+   >>> bundle = hyp.plot(market, hue=six, palette=palette,
+   ...                   hue_mode='mixture', return_model=True)
+   >>> [a.shape for a in bundle['trace_metadata']['aux']]
+   [(40, 6), (40, 6), (40, 6)]
+
+The default is left width-based on purpose: flipping it would silently
+repaint every existing figure that passes a wide matrix hue. ``hue_mode``
+is the opt-in, ``hue_mode='rgb'`` forces the other branch for a narrow
+matrix, and combining ``hue_mode='mixture'`` with ``color_reduce=`` raises
+rather than picking a winner.
 
 
 Mean trace construction

@@ -712,15 +712,55 @@ def _validate_title(title, style=None, order=None, n_datasets=None):
     return titles
 
 
-def _matrix_hue_wants_rgb(hue_array, color_reduce):
+HUE_MODES = ('mixture', 'rgb')
+
+
+def _matrix_hue_wants_rgb(hue_array, color_reduce, hue_mode=None):
     """Is this matrix hue literal RGB rather than palette mixture weights?
 
-    The rule, in one place because two call sites need to agree: a matrix
-    with MORE than 3 columns, or any matrix when `color_reduce=` is given
-    explicitly. A <=3-column matrix with no `color_reduce=` keeps the
-    palette-blend path -- mixture proportions, one weight per palette entry.
+    In one place because two call sites need to agree.
+
+    `hue_mode=` decides it outright when given. Otherwise the AUTOMATIC rule
+    applies, unchanged since before `hue_mode` existed: a matrix with more
+    than 3 columns, or any matrix when `color_reduce=` is given, is RGB; a
+    <=3-column matrix with no `color_reduce=` is mixture weights.
+
+    The automatic rule is kept as the default because changing it would
+    silently repaint every existing figure with a wide matrix hue. But it
+    cannot be the ONLY rule, because it contradicts what mixture weights are
+    for: one palette colour per component, one component per leaf. A market
+    with six sectors needs six columns, and the automatic rule sends exactly
+    that to the reducer -- measured on the Market candidate, whose 4-colour
+    palette was ignored outright and whose blue-intended leaves drew red.
+    `hue_mode='mixture'` is how a caller says "these are weights, however
+    many there are"; `hue_mode='rgb'` forces the other branch for a narrow
+    matrix.
     """
+    if hue_mode is not None:
+        return hue_mode == 'rgb'
     return np.asarray(hue_array).shape[1] > 3 or color_reduce is not None
+
+
+def _validate_hue_mode(hue_mode, color_reduce, hue=None):
+    """`hue_mode=` is only meaningful for a MATRIX hue, and only one of
+    `hue_mode='mixture'` / `color_reduce=` can be honoured at once."""
+    if hue_mode is None:
+        return
+    if hue is None:
+        raise ValueError(
+            f"hue_mode={hue_mode!r} says how to interpret a 2-D hue MATRIX "
+            f"-- as palette mixture weights or as literal RGB -- but no "
+            f"hue= was given.")
+    if hue_mode not in HUE_MODES:
+        raise ValueError(
+            f"hue_mode= must be one of {HUE_MODES} or None (choose "
+            f"automatically); got {hue_mode!r}.")
+    if hue_mode == 'mixture' and color_reduce is not None:
+        raise ValueError(
+            "hue_mode='mixture' blends the hue matrix through palette= and "
+            "color_reduce= reduces it to literal RGB channels; they cannot "
+            "both apply. Drop color_reduce=, or pass hue_mode='rgb' to "
+            "reduce.")
 
 
 def _matrix_hue_to_rgb(hue_array, color_reduce):
@@ -796,11 +836,17 @@ def _hierarchy_hue_per_leaf(hue, n_rows, n_leaves):
       NaN greys the leaf AND every ancestor mean at that row;
     * every per-leaf matrix must have the same width -- they share one
       palette;
-    * MORE than 3 columns, or any explicit `color_reduce=`, switches to the
-      literal-RGB route instead (`_matrix_hue_wants_rgb`), exactly as on a
-      flat plot. That is how a caller supplies per-observation RGB under a
-      hierarchy. The reduction runs on the concatenation, which already
-      holds the derived means: mean-then-reduce, on one shared scale.
+    * BY DEFAULT the width decides: more than 3 columns, or any explicit
+      `color_reduce=`, switches to the literal-RGB route instead
+      (`_matrix_hue_wants_rgb`), exactly as on a flat plot. That is how a
+      caller supplies per-observation RGB under a hierarchy. The reduction
+      runs on the concatenation, which already holds the derived means:
+      mean-then-reduce, on one shared scale.
+    * `hue_mode='mixture'` overrides that width rule and blends however
+      many columns there are. It is what a hierarchy of more than three
+      leaves actually needs -- the width rule and the one-primary-per-leaf
+      idea contradict each other past three components, and the width rule
+      wins silently.
 
     The mean is what makes matrix hue worth supporting here: the mean of
     mixture weights is itself a mixture weight, so giving each leaf one
@@ -1194,6 +1240,7 @@ def plot(
     palette="hls",
     hue=None,
     color_reduce=None,
+    hue_mode=None,
     labels=None,
     names=None,
     legend=None,
@@ -1707,9 +1754,29 @@ def plot(
         DRAWN observations is rejected, and a categorical hue still defers
         to the grouping. See `x` for the full rule.
 
-        A 2D matrix hue with MORE than 3 columns (or any matrix, if
-        `color_reduce=` is given) is first reduced to 3 columns and mapped
-        directly to (r, g, b) -- see `color_reduce`.
+        A 2D matrix hue is MIXTURE WEIGHTS by default when it has at most 3
+        columns, and literal RGB when it has more (or when `color_reduce=`
+        is given) -- see `color_reduce`. Pass `hue_mode=` to say which you
+        meant instead of relying on the width.
+
+    hue_mode : {'mixture', 'rgb'} or None
+        How to interpret a 2D matrix `hue` (default: None -- choose by
+        width, the historical rule described under `color_reduce`).
+
+        ``'mixture'`` blends each row through `palette` as weights, one
+        palette colour per COLUMN, whatever the width. This is what a
+        hierarchy needs to make its own colour scheme: give each leaf one
+        primary and every derived mean comes out the blend of its children,
+        with nothing computing it. Six sectors need six columns, and the
+        automatic rule would send exactly that to the reducer instead.
+
+        ``'rgb'`` reduces the matrix to 3 min-max scaled channels used
+        directly as (r, g, b), which is what a wide matrix does by default.
+
+        Only meaningful for a matrix hue; anything else raises, as does
+        combining ``'mixture'`` with `color_reduce=`. The default is left
+        width-based deliberately: changing it would silently repaint every
+        existing figure that passes a wide matrix hue.
 
     color_reduce : str, dict, class, instance, or None
         How to reduce an arbitrary high-dimensional matrix `hue` to the 3
@@ -3479,6 +3546,10 @@ def plot(
                 "animate='morph'. For extra camera rotations, pass "
                 "rotations= instead.")
 
+    # fail-fast on hue_mode= for the same reason title= fails fast here: a
+    # typo or a contradictory pair should not survive the reduce pipeline.
+    _validate_hue_mode(hue_mode, color_reduce, hue)
+
     # fail-fast on title= BEFORE the analyze/reduce pipeline (the same
     # precedent _validate_extra_kwargs sets) and before resolve_font() and the
     # plot_stream() return both consume it. Cited by SYMBOL, not line number:
@@ -4813,8 +4884,17 @@ def plot(
             # are what the hierarchy exists to produce) and it is the right
             # one: it keeps every trace on one shared color scale.
             multicolor_hue_is_rgb = False
+            # the hierarchy path resolves its hue well before the flat
+            # path's ndim check, so `hue_mode=` has to be validated here too
+            if hue_mode is not None and multicolor_hue.ndim != 2:
+                raise ValueError(
+                    f"hue_mode={hue_mode!r} says how to interpret a 2-D hue "
+                    f"MATRIX -- as palette mixture weights or as literal RGB "
+                    f"-- but the per-leaf hue is "
+                    f"{multicolor_hue.ndim}-dimensional. Drop hue_mode=, or "
+                    f"pass one weight ROW per row for every leaf.")
             if multicolor_hue.ndim == 2 and _matrix_hue_wants_rgb(
-                    multicolor_hue, color_reduce):
+                    multicolor_hue, color_reduce, hue_mode):
                 multicolor_hue = _matrix_hue_to_rgb(multicolor_hue,
                                                     color_reduce)
                 multicolor_hue_is_rgb = True
@@ -5176,6 +5256,15 @@ def plot(
                 f"hue has {_hue_len} entr{'y' if _hue_len == 1 else 'ies'} but "
                 f"the data has {n_obs} observations; hue must have exactly one "
                 "value (or one row, for a matrix hue) per observation.")
+        _hue_ndim = None if hue_array is None else hue_array.ndim
+        if hue_mode is not None and _hue_ndim != 2:
+            raise ValueError(
+                f"hue_mode={hue_mode!r} says how to interpret a 2-D hue "
+                f"MATRIX -- as palette mixture weights or as literal RGB -- "
+                f"but hue= is "
+                + ("not set" if hue_array is None
+                   else f"{_hue_ndim}-dimensional")
+                + ". Drop hue_mode=, or pass a matrix hue.")
         hue_is_matrix = (hue_array is not None and hue_array.ndim == 2
                          and np.issubdtype(hue_array.dtype, np.number)
                          and hue_array.shape[0] == n_obs)
@@ -5203,7 +5292,9 @@ def plot(
         # whether or not the frame has a hierarchy (they did not: measured,
         # color_reduce= changed a flat figure's colours and was silently
         # ignored under a hierarchy).
-        if hue_is_matrix and _matrix_hue_wants_rgb(hue_array, color_reduce):
+        if hue_is_matrix and _matrix_hue_wants_rgb(hue_array,
+                                                   color_reduce,
+                                                   hue_mode):
             hue_array = _matrix_hue_to_rgb(hue_array, color_reduce)
             multicolor_hue_is_rgb = True
 

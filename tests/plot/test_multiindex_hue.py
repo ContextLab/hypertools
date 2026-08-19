@@ -644,3 +644,139 @@ def test_ANIMATED_matrix_hue_keeps_the_MEAN_BETWEEN_ITS_CHILDREN():
     assert first < mean_hue < second, (
         f'the mean trace ({mean_hue:.1f} deg) does not blend its leaves '
         f'({first:.1f} and {second:.1f} deg) on a drawn frame')
+
+
+# --------------------------------------------------------------------------
+# `hue_mode=`: the width rule and the one-primary-per-leaf idea contradict
+# each other past three components, and the width rule used to win silently.
+# --------------------------------------------------------------------------
+
+SIX = ['#d92b2b', '#e8c72a', '#2f5fd0', '#e87a2a', '#3aa35a', '#8a4fd0']
+
+
+def test_a_WIDE_mixture_is_blended_through_the_PALETTE_when_asked():
+    """The case that motivated matrix hue and that the width rule broke.
+
+    A hierarchy with more than three leaves needs more than three palette
+    components -- one primary each is the entire idea. Measured on the
+    Market candidate (6 leaves, a 4-colour palette): the automatic rule sent
+    it to the reducer, `palette=` was ignored outright, and leaves intended
+    blue drew pure red. `hue_mode='mixture'` blends it.
+    """
+    df = market_frame()
+    n = len(df)
+    weights = [np.zeros((n, 6)) for _ in range(3)]
+    for leaf in range(3):
+        weights[leaf][:, leaf * 2] = 1.0        # palette entries 0, 2, 4
+    drawn = _drawn(hyp.plot(df, '-', hue=weights, palette=SIX,
+                            hue_mode='mixture', show=False))
+    for leaf in range(3):
+        want = np.asarray(mcolors.to_rgb(SIX[leaf * 2]))
+        got = np.median(drawn[leaf], axis=0)
+        assert np.allclose(got, want, atol=0.02), (
+            f'leaf {leaf} drew {np.round(got, 3)}, not its palette primary '
+            f'{SIX[leaf * 2]} ({np.round(want, 3)})')
+
+
+def test_the_WIDTH_RULE_is_still_the_default_on_both_paths():
+    """Backward compatibility, asserted rather than assumed.
+
+    Flipping the default would silently repaint every existing figure that
+    passes a wide matrix hue, so `hue_mode=None` must keep choosing by
+    width -- identically to an explicit `hue_mode='rgb'`.
+    """
+    df = market_frame()
+    n = len(df)
+    rng = np.random.default_rng(11)
+    wide = [rng.random((n, 6)) for _ in range(3)]
+    auto = _drawn(hyp.plot(df, '-', hue=wide, palette=SIX, show=False))
+    forced = _drawn(hyp.plot(df, '-', hue=wide, palette=SIX,
+                             hue_mode='rgb', show=False))
+    for index in auto:
+        assert np.allclose(auto[index], forced[index]), (
+            f'trace {index}: the automatic wide-matrix route stopped '
+            'matching hue_mode="rgb"')
+    # and a NARROW matrix still defaults to mixture
+    narrow = _leaf_weights(n, k=3)
+    auto3 = _drawn(hyp.plot(df, '-', hue=narrow, palette=SIX[:3], show=False))
+    mixed3 = _drawn(hyp.plot(df, '-', hue=narrow, palette=SIX[:3],
+                             hue_mode='mixture', show=False))
+    for index in auto3:
+        assert np.allclose(auto3[index], mixed3[index])
+
+
+def test_hue_mode_rgb_FORCES_the_reduction_on_a_narrow_matrix():
+    """The other direction: a 3-column matrix that really is RGB-ish."""
+    df = market_frame()
+    n = len(df)
+    narrow = _leaf_weights(n, k=3)
+    palette = ['#8a2be2', '#ff8c00', '#00ced1']       # not r/g/b
+    blended = _drawn(hyp.plot(df, '-', hue=narrow, palette=palette,
+                              show=False))
+    as_rgb = _drawn(hyp.plot(df, '-', hue=narrow, palette=palette,
+                             hue_mode='rgb', show=False))
+    assert not np.allclose(blended[0], as_rgb[0]), (
+        "hue_mode='rgb' had no effect on a 3-column matrix")
+
+
+def test_a_WIDE_mixture_still_needs_ONE_COLOUR_PER_COLUMN():
+    """`hue_mode='mixture'` does not relax the palette requirement -- a
+    sixth component with no sixth colour is still an error, not a silent
+    wrap-around."""
+    df = market_frame()
+    n = len(df)
+    weights = [np.ones((n, 6)) for _ in range(3)]
+    with pytest.raises(ValueError, match='at least 6 colors'):
+        hyp.plot(df, '-', hue=weights, palette=SIX[:4], hue_mode='mixture',
+                 show=False)
+
+
+@pytest.mark.parametrize('bad', ['mixtur', 'RGB', 'weights', True, 3])
+def test_an_unrecognised_hue_mode_RAISES_rather_than_falling_back(bad):
+    """Falling back to the automatic rule on a typo would draw a figure
+    that silently ignores what the caller asked for -- the failure mode
+    this whole kwarg exists to end."""
+    df = market_frame()
+    with pytest.raises(ValueError, match='hue_mode='):
+        hyp.plot(df, '-', hue=_leaf_weights(len(df)), palette=SIX[:3],
+                 hue_mode=bad, show=False)
+
+
+def test_mixture_and_color_reduce_CANNOT_BOTH_APPLY():
+    """One blends through the palette, the other replaces the palette with
+    reduced channels. Picking a winner silently is how `color_reduce=` came
+    to be ignored under a hierarchy in the first place."""
+    df = market_frame()
+    with pytest.raises(ValueError, match='cannot'):
+        hyp.plot(df, '-', hue=_leaf_weights(len(df)), palette=SIX[:3],
+                 hue_mode='mixture', color_reduce='PCA', show=False)
+
+
+@pytest.mark.parametrize('hue_kind', ['none', 'continuous', 'per_leaf_1d'])
+def test_hue_mode_without_a_MATRIX_hue_raises(hue_kind):
+    """It says how to read a 2-D matrix. With no matrix there is nothing for
+    it to say, and accepting it would imply it had done something."""
+    df = market_frame()
+    n = len(df)
+    hue = {'none': None,
+           'continuous': np.linspace(0.0, 1.0, n),
+           'per_leaf_1d': [np.linspace(0.0, 1.0, n)] * 3}[hue_kind]
+    with pytest.raises(ValueError, match='hue_mode='):
+        hyp.plot(df, '-', hue=hue, palette=SIX[:3], hue_mode='rgb',
+                 show=False)
+
+
+def test_a_WIDE_mixture_MEAN_is_still_the_mean_of_its_children():
+    """The property the whole feature is for, at a width the automatic rule
+    would have reduced away."""
+    df = market_frame()
+    n = len(df)
+    weights = [np.zeros((n, 6)) for _ in range(3)]
+    weights[0][:, 0] = 1.0
+    weights[1][:, 1] = 1.0
+    weights[2][:, 1] = 1.0
+    bundle = hyp.plot(df, '-', hue=weights, palette=SIX, hue_mode='mixture',
+                      return_model=True, show=False)
+    aux = bundle['trace_metadata']['aux']
+    assert aux[-1].shape == (n, 6), 'the mean kept its weight columns'
+    assert np.allclose(aux[-1], (aux[0] + aux[1] + aux[2]) / 3)
