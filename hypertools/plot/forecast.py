@@ -285,6 +285,43 @@ class DisplayTransform:
         return 2.0 * ((centred - self.offset) / self.scale) - 1.0
 
 
+def project_schedule_cost(timings, remaining_rows):
+    """Project the seconds still to come from fits already TIMED.
+
+    `timings` maps a revealed-history length to the seconds its fit took
+    (one entry per length, already pooled); `remaining_rows` is the history
+    length of every fit still to do. Returns
+    ``(projected_seconds, per_row, setup, (short, long))``.
+
+    A fit costs roughly ``setup + per_row * rows`` -- measured ~30 ms at
+    60x3 and ~220 ms at 500x3 -- so both terms have to come out of the data:
+
+    * a constant per fit is an order of magnitude wrong on exactly the
+      schedules this exists to warn about, because `todo` is ordered by
+      GROWING revealed history and the earliest fits are the cheapest there
+      will ever be (measured on a gallery figure: 12.9 s projected against
+      176 s spent, 13.6x low);
+    * a pure per-row rate over-projects a small schedule, because the first
+      fit also carries one-off setup.
+
+    Two points separate the constant from the slope, and they must be at
+    DIFFERENT lengths -- which is the whole reason this takes a mapping
+    keyed by length rather than a list of samples. See
+    `ForecastSchedule.__init__` for the ordering that makes that a live
+    hazard rather than a hypothetical one.
+    """
+    if len(timings) < 2:
+        raise ValueError(
+            f"projecting a schedule needs timed fits at two DIFFERENT "
+            f"history lengths; got {sorted(timings)}")
+    short, long = min(timings), max(timings)
+    per_row = (timings[long] - timings[short]) / (long - short)
+    per_row = max(per_row, 0.0)          # noise can invert two samples
+    setup = max(timings[long] - per_row * long, 0.0)
+    projected = sum(setup + per_row * rows for rows in remaining_rows)
+    return projected, per_row, setup, (short, long)
+
+
 class ForecastSchedule:
     """Every forecast an animation will ever draw, computed before drawing.
 
@@ -339,36 +376,66 @@ class ForecastSchedule:
         self._paths.clear()
 
         warned = slow_warning_seconds is None
+        # Seconds keyed by revealed-history LENGTH, for fits that really
+        # ran. A mapping rather than a list of samples, because the slope
+        # needs two DIFFERENT lengths -- see the sampling comment below.
+        timings = {}
+        spent = 0.0                  # wall clock actually spent so far
+        self.projection = None       # filled in when a projection is made
         for n_done, (i, r) in enumerate(todo):
             start = time.perf_counter()
             path = forecast_from_history(self.histories[i][list(r)],
                                          self.model, self.t,
                                          min_history=self.min_history)
             elapsed = time.perf_counter() - start
+            spent += elapsed
             if path is not None:
                 self.n_fits += 1
             self._paths[(i, r)] = path
-            # Project off the first REAL fit, not the first ITEM. The earliest
-            # (dataset, count) pairs are histories shorter than min_history,
-            # where forecast_from_history returns None without fitting
-            # anything -- timing one of those projects 0.0 s for a job that
-            # may take minutes, which is worse than not warning at all.
-            if not warned and path is not None:
-                # Project from a MEASURED fit rather than a hard-coded
-                # per-fit constant: cost scales hard with history length and
-                # width (~30 ms at 60x3, ~220 ms at 500x3 measured), so a
-                # constant would be an order of magnitude wrong on exactly
-                # the datasets this warning exists for.
-                projected = elapsed * (len(todo) - n_done)
-                if projected > slow_warning_seconds:
+            # Time only REAL fits. The earliest (dataset, count) pairs are
+            # histories shorter than min_history, where forecast_from_history
+            # returns None without fitting anything -- timing one of those
+            # projects 0.0 s for a job that may take minutes, which is worse
+            # than not warning at all.
+            if path is not None:
+                timings.setdefault(len(r), []).append(elapsed)
+            # Wait for two DISTINCT history lengths. `todo` is ordered by
+            # FRAME and then by DATASET, so every dataset is fitted at one
+            # revealed length before any of them moves on: measured on a
+            # 3-dataset parallel schedule, the first three entries all
+            # reveal 7 rows. Sampling "the first two timed fits" therefore
+            # drew both points at the SAME length, the slope divided by a
+            # zero row difference and was clamped to 0, and the estimator
+            # silently collapsed back into the constant-per-fit projection
+            # it exists to replace -- with nothing failing, because a
+            # factor-of-ten tolerance covers the difference on small data.
+            if not warned and len(timings) >= 2:
+                pooled = {rows: float(np.median(times))
+                          for rows, times in timings.items()}
+                remaining = [len(rows) for _, rows in todo[n_done + 1:]]
+                projected, per_row, setup, lengths = project_schedule_cost(
+                    pooled, remaining)
+                total = spent + projected
+                timed = sum(len(times) for times in timings.values())
+                # Recorded so a test can show the SLOPE path ran, rather
+                # than only that some number came out the other end.
+                self.projection = {
+                    'lengths': lengths, 'per_row': per_row, 'setup': setup,
+                    'spent': spent, 'remaining': projected, 'total': total,
+                    'timed_fits': timed,
+                }
+                if total > slow_warning_seconds:
                     warnings.warn(
                         f"predict= over this animation needs {len(todo)} "
                         f"forecast fits (one per distinct revealed history "
-                        f"length), projected at roughly {projected:.1f} s "
-                        f"before the first frame can be drawn. That is a "
-                        f"rough figure extrapolated from one timed fit, so "
-                        f"treat it as an order of magnitude rather than a "
-                        f"countdown. Every fit is kept: sampling the "
+                        f"length), projected at roughly {total:.1f} s in "
+                        f"total before the first frame can be drawn: "
+                        f"{spent:.1f} s already spent on {timed} timed fits "
+                        f"and about {projected:.1f} s still to come. That "
+                        f"projection is extrapolated from fits timed at two "
+                        f"history lengths ({lengths[0]} and {lengths[1]} "
+                        f"rows), so treat it as an order of magnitude rather "
+                        f"than a countdown. Every fit is kept: sampling the "
                         f"reveal instead would change what is plotted. To "
                         f"speed it up, shorten the series or lower "
                         f"frame_rate/duration; to silence this notice, pass "

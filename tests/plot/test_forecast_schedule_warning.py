@@ -14,7 +14,9 @@ import warnings
 import numpy as np
 import pytest
 
-from hypertools.plot.forecast import ForecastSchedule
+import hypertools as hyp
+from hypertools.plot.forecast import (ForecastSchedule,
+                                      project_schedule_cost)
 
 
 def _walk(rows, dims=3, seed=0):
@@ -144,3 +146,139 @@ def test_the_projection_comes_from_a_real_fit():
     assert seconds > 0.0, (
         'projected 0 s while really doing work -- the timed fit was one of '
         'the below-min_history no-ops, not a real fit')
+
+
+def test_the_projection_is_within_an_order_of_magnitude_of_the_real_cost():
+    """The notice has to be usable as an estimate, not merely present.
+
+    It projected `first_fit_time * fits_remaining`. `todo` is ordered by
+    GROWING revealed history and a Kalman fit costs ~linearly in rows, so
+    the first real fit is the cheapest one there will ever be: the estimate
+    was low by the ratio of the mean history length to the shortest. On a
+    real gallery figure it projected 12.9 s for a schedule that took 176 s
+    -- 13.6x low -- and the example ended up passing
+    `slow_warning_seconds=None` to suppress a number that wrong.
+
+    Projecting per ROW instead makes it an estimate again. This asserts an
+    order of magnitude, not a tight bound: the point is that a caller can
+    act on it, and a tolerance tight enough to be flaky on a loaded machine
+    would be a worse test than none.
+    """
+    import re
+    import time
+
+    data = [np.random.default_rng(s).normal(size=(150, 3)).cumsum(axis=0)
+            for s in range(3)]
+    start = time.perf_counter()
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter('always')
+        hyp.plot(data, '-', predict='Kalman', t=1, animate=True,
+                 duration=2, frame_rate=8, slow_warning_seconds=0.0,
+                 show=False)
+    actual = time.perf_counter() - start
+
+    notices = [str(w.message) for w in caught
+               if 'forecast fits' in str(w.message)]
+    assert len(notices) == 1, f'expected one projection notice, got {notices}'
+    projected = float(re.search(r'roughly ([\d.]+) s', notices[0]).group(1))
+
+    # the schedule dominates this call (measured: the same plot without
+    # predict= is ~1% of it), so the wall clock is a fair yardstick
+    assert projected > actual / 10, (
+        f'projected {projected:.1f} s for a call that took {actual:.1f} s -- '
+        'the estimate is low by more than an order of magnitude')
+    assert projected < actual * 10, (
+        f'projected {projected:.1f} s for a call that took {actual:.1f} s -- '
+        'the estimate is high by more than an order of magnitude')
+
+
+def test_project_schedule_cost_separates_the_SETUP_from_the_SLOPE():
+    """The arithmetic, on timings chosen so the answer is checkable by hand.
+
+    A fit that takes 0.5 s at 100 rows and 0.9 s at 300 rows costs
+    0.002 s/row with 0.3 s of one-off setup. Ten more fits at 200 rows must
+    therefore project 10 * (0.3 + 0.4) = 7.0 s. Neither degenerate model
+    gets this right: a constant per fit says 9.0 s and a pure per-row rate
+    says 4.0 s.
+    """
+    projected, per_row, setup, lengths = project_schedule_cost(
+        {100: 0.5, 300: 0.9}, [200] * 10)
+    assert per_row == pytest.approx(0.002)
+    assert setup == pytest.approx(0.3)
+    assert lengths == (100, 300)
+    assert projected == pytest.approx(7.0)
+
+
+def test_project_schedule_cost_REFUSES_a_single_history_length():
+    """Two points at the same length cannot separate constant from slope.
+
+    Returning a silent zero slope here is exactly the failure this module
+    had: it looks like a linear estimator and behaves like a constant one.
+    """
+    with pytest.raises(ValueError, match='two DIFFERENT history lengths'):
+        project_schedule_cost({100: 0.5}, [200, 300])
+
+
+def test_a_noisy_pair_cannot_project_a_NEGATIVE_cost():
+    """A longer fit that happens to time faster must not imply a refund."""
+    projected, per_row, setup, _ = project_schedule_cost(
+        {100: 0.9, 300: 0.5}, [200] * 4)
+    assert per_row == 0.0
+    assert setup == pytest.approx(0.5)
+    assert projected == pytest.approx(2.0)
+
+
+def test_the_projection_is_sampled_at_TWO_DIFFERENT_history_lengths():
+    """The specific bug: `todo` is ordered by frame and THEN by dataset.
+
+    With more than one dataset, every dataset is fitted at one revealed
+    length before any of them advances -- measured, the first three entries
+    of a 3-dataset parallel schedule all reveal 7 rows. Taking "the first
+    two timed fits" therefore sampled one length twice, so the row
+    difference was zero, the slope was clamped to 0, and the projection
+    collapsed into the constant-per-fit estimate it replaced. Nothing
+    failed, because an order-of-magnitude tolerance hides the difference on
+    small data.
+
+    Asserting on the RECORDED sample lengths is what makes that visible:
+    under the old rule these two numbers were equal.
+    """
+    data = [np.random.default_rng(s).normal(size=(150, 3)).cumsum(axis=0)
+            for s in range(3)]
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore')
+        schedule = ForecastSchedule.for_parallel(
+            data, [150] * 3, model='Kalman', t=1, n_frames=24,
+            slow_warning_seconds=0.0)
+
+    projection = schedule.projection
+    assert projection is not None, 'no projection was ever made'
+    short, long = projection['lengths']
+    assert short != long, (
+        f'both timing samples came from a {short}-row history, so the '
+        'per-row slope is unidentifiable and the estimator is constant')
+    assert projection['timed_fits'] >= 2
+    assert projection['per_row'] >= 0.0
+    assert np.isfinite(projection['per_row'])
+    # and the reported total really is spent + remaining, not one of them
+    assert projection['total'] == pytest.approx(
+        projection['spent'] + projection['remaining'])
+
+
+def test_the_warning_reports_the_TOTAL_not_just_what_is_left():
+    """It claims a time "before the first frame can be drawn", so the number
+    it quotes has to include the fits it already did to make the estimate --
+    otherwise the sentence and the figure disagree."""
+    import re
+    with pytest.warns(UserWarning) as record:
+        ForecastSchedule.for_parallel(
+            [_walk(120)], [120], model='Kalman', t=3, n_frames=120,
+            slow_warning_seconds=0.0)
+    msg = ' '.join(str(w.message) for w in record)
+    total = float(re.search(r'roughly ([\d.]+) s in total', msg).group(1))
+    spent = float(re.search(r'([\d.]+) s already spent', msg).group(1))
+    left = float(re.search(r'about ([\d.]+) s still to come', msg).group(1))
+    assert total == pytest.approx(spent + left, abs=0.15), msg
+    # and it must no longer claim a single timed fit
+    assert 'one timed fit' not in msg, msg
+    assert 'two history lengths' in msg, msg
