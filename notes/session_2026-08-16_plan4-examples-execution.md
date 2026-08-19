@@ -53,6 +53,45 @@ horizon the example draws.** Market should become the hierarchy showcase
 with no forecast-skill claim; the prediction story moves to data with real
 temporal structure. Awaiting the maintainer's sign-off before the rewrite.
 
+## Review round 9 (2026-08-19)
+
+| commit | unit |
+|-|-|
+| `d41fc265` | explicit `import numpy as np` in plot.py — ruff 186 → 28, zero net-new keys |
+| `dfc8e7db` | `hue_mode=` — mixture vs RGB said outright instead of inferred from width |
+| `1d220643` | acceptance rule hardened (positive + exact block set) + study made self-contained |
+
+**`hue_mode=` exists because the previous commit broke its own use case.**
+Mixture weights are one palette colour per column, one column per leaf —
+but the routing rule sent any matrix wider than 3 columns to the RGB
+reducer, so at most three leaves could ever get a primary. Measured on the
+Market candidate (6 leaves, 4-colour palette): `palette=` was ignored and
+leaves intended blue drew pure red. The width rule is now the DEFAULT, not
+the only rule; flipping the default would silently repaint existing figures.
+
+**The Market artifact was discarded**, not committed: the script, notebook
+and GIF are preserved under the session scratchpad
+(`scratchpad/discarded_market_artifact/`). Discarding it broke the
+committed study, which imported the example's universe and fetcher — fixed
+by lifting both in, because evidence must not depend on the artifact it
+judges.
+
+**Two library limits measured while prototyping the replacement**, both
+relevant to any 2-D Market composition:
+
+* `hyp.plot` draws in a NORMALIZED unit box (`xlim == [-1.1, 1.1]` whatever
+  the data) and removes ticks by design. `xlabel=`/`ylabel=` are native and
+  do render, so an axis can say what it IS but never what it equals.
+* each call normalizes ITS OWN inputs, so N calls give N private scales.
+  Small multiples are only comparable if every panel is passed the same
+  data and differentiated by hue — verified: all six panels then share one
+  limit tuple exactly.
+
+**Prototype verdict:** the single fixed 2-D panel still tangles and its
+labels collide (`PROTO_A2_single_panel.png`). The small multiples are
+legible (`PROTO_B2_small_multiples.png`) and are the composition to take
+forward, pending the maintainer's approval. No GIF was rendered.
+
 ## The reds: 39 → **31** (2026-08-18)
 
 `tests/test_examples_are_native.py` collects **139**: **103 pass, 31 fail,
