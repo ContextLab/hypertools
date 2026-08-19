@@ -1,4 +1,4 @@
-# HyperTools 1.1 — Examples and Tutorials Implementation Plan (v4)
+# HyperTools 1.1 — Examples and Tutorials Implementation Plan (v5)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -7,6 +7,155 @@
 **Architecture:** One library task first (Task 1: palette-from-image), because two example rewrites consume it and it is the last orphaned feature from the audit. Then five example rewrites, each *paired with its notebook in the same task and the same commit* — a script fixed without its notebook leaves the defect published, because `nbsphinx_execute = 'never'` (`docs/conf.py:131`) ships the committed notebook verbatim. Then the fifteen older tutorials, grouped by the recurring fix so each step is one reviewable diff. Finally a verification task that makes the improvement **permanent**: a committed measurement script, a real pytest module that fails if any defect marker reappears, the full suite, every example executed, every notebook re-executed, and a zero-warning docs build.
 
 **Tech Stack:** Python 3.12.10, numpy 2.3.5, pandas 3.0.3, matplotlib 3.10.8, plotly 6.8.0, scikit-learn, Pillow 12.1.0, nbconvert 7.17.1, ipykernel 7.3.0, pytest 9.0.2.
+
+---
+
+## Revision note (v5) — the Market example loses its forecast claim, and Task 2's acceptance criteria are rewritten
+
+*v4* decided to **ship** a chance-level forecast, on the reasoning that a gallery should
+demonstrate a feature honestly rather than manufacture a successful prediction. It attached a
+condition to that decision, quoted here because it is the condition being discharged:
+
+> **Revisit before the release is finalised.** This decision was made against measurements, not
+> against a rendered figure. Once Task 2 actually executes and the animation exists, re-open the
+> question with the demo in front of you.
+
+Task 2 executed, the animation existed, and the question was re-opened — twice, first on the
+figure and then on the claim. **Both answers are negative, and the second is the one that changes
+this plan.** The rendered figure was rejected on legibility by the maintainer over three review
+rounds. Then a preregistered study
+([`notes/market_representation_study_2026-08-17.md`](../../../notes/market_representation_study_2026-08-17.md),
+run by [`scripts/market_representation_study.py`](../../../scripts/market_representation_study.py))
+asked the prior question v4 never asked: not *how accurate is the forecast*, but *does any
+specification earn a forecast claim at all*.
+
+### The evidence that retires the claim
+
+The rule was written down before the numbers: a claim survives only if it beats **every** trivial
+baseline on the same measure, with the same sign in **both** evaluation-anchor blocks, at **t=1** —
+the horizon an animated example draws. (Two *evaluation-anchor* blocks: the models' fitted
+histories still expand from the start of the series and therefore overlap, so this splits *where*
+each forecast is scored, not what it was fitted on. It is not two independent samples, and the
+earlier phrase "two non-overlapping halves of the sample" read too strongly.)
+
+Applied mechanically, **three** specifications passed, all on `drawdown` at h=1 — so v4's
+successor claim that "nothing passes" was itself too broad and is retracted in the study notes:
+
+| spec | block1 | block2 | best trivial baseline |
+|-|-|-|-|
+| D1 Kalman | +0.241 | +0.151 | -0.504 / -0.040 |
+| D1 Laplace | +0.234 | +0.070 | -0.504 / -0.040 |
+| D2 Kalman | +0.227 | +0.206 | -0.442 / -0.159 |
+
+The study had **pre-committed** to auditing those passes against a parameter-free competitor,
+because `drawdown` is bounded above at zero and recovers, so "predict full recovery"
+(change = `-drawdown[t]`) needs no model at all. That rule beats the models in **10 of 12** cells,
+including **all three survivors**. The one cell a model wins is a single block, which fails the
+same both-blocks clause the rule already applies. Every trivial baseline on `drawdown` is
+*anti*-correlated with the realised change (down to -0.504) — persistence predicts "keep falling"
+exactly when a recovery is likeliest — so clearing that bar is nearly free.
+
+**No specification earns a forecast claim on any measure at the horizon the example draws.**
+
+v4's own alternatives check pointed the same way and was read too charitably: volatility scored
+49.9% and momentum 51.6% on 600 fits each. v4 concluded "there is no component with signal to
+switch to, so state the ~50% result plainly". The correct conclusion is stronger — a number with no
+signal should not be presented as a finding at all, however honestly it is labelled.
+
+### What Task 2 becomes
+
+**Market is the MultiIndex / hierarchy showcase, with no forecast and no score.** Removed, not
+softened:
+
+- the walk-forward scoring loop, `WINDOW = 60`, `N_SCORED = 30`, and the measured 7.3 s budget for it
+- the three separately labelled accuracy quantities (per-sector n=30, cross-sector-mean, pooled)
+  and every panel row that carries them
+- the printed accuracy line, and the docstring sentence framing the forecast as illustrative —
+  there is nothing left for it to qualify
+- the ~50% headline, the 37–63% per-sector spread, and the instruction to label them as descriptive
+
+`predict=` may appear **only** as API mechanics — drawn, unscored, and unclaimed — or not at all.
+The plan's preference is *not at all*: a forecast an example draws but says nothing about invites
+the reader to judge it by eye, which is the same claim made less accountably.
+
+Contract 5 (*"forecast scoring stays out of the library ... Task 2's per-sector and overall accuracy
+is example code, and is budgeted and timed"*) is unchanged as a **library** rule and moot for
+Market: there is no accuracy code left to budget.
+
+### Acceptance criteria for the replacement
+
+Each is checkable, and the ones marked *(gate)* are enforced by
+`tests/test_examples_are_native.py` rather than by review.
+
+1. **No forecast-skill claim** anywhere in the script, notebook, docstring, figure text, or gallery
+   caption. No accuracy number, no per-sector ranking, no "beats"/"predicts" language about markets.
+2. **A static composition is approved before any animation is rendered**, and reviewed at
+   *documentation display width* — not at full PNG resolution, which is not the size that decides
+   legibility. Evidence lives in `notes/evidence/plan4-market-prototypes/`.
+3. **Every drawn trace comes from one `hyp.plot` call** over a column MultiIndex, and the
+   hierarchy's colour is the mean-of-children arithmetic (`hue=` matrix weights, `hue_mode=
+   'mixture'`) rather than a lookup table. This is the thing the example exists to show.
+4. **Panels, if the composition uses them, are geometrically comparable** — each `hyp.plot` call
+   normalizes its own inputs, so every panel is passed the same complete frame and differentiated
+   only by hue. Asserted, not eyeballed: one shared limit tuple across panels.
+5. *(gate)* **Within its size budget**, re-measured after the design settles. The budget is
+   re-measured once, not renegotiated to fit an interim design.
+6. *(gate)* **No defect markers and no private-API reaches** (Contract 3).
+7. *(gate)* **`EXPECTED_VISIBLE_OUTPUTS['market_forecast']` recorded from a real execution** of the
+   replacement notebook — never guessed ahead of the artifact, and never carried over from a
+   discarded one (both mistakes have now been made once each).
+8. *(gate)* **Produces its stated artifact**, degrades offline through a deterministic synthetic
+   fallback, and exits 0.
+
+### Where the prediction story goes — MEASURED, and the answer is "nowhere yet"
+
+The maintainer's direction was to move the successful-prediction story to data with genuine
+temporal structure, suggesting seasonal weather, motion, or sensor data. Weather is the candidate
+the gallery already has, so it was tested first, under the **same preregistered rule**, written
+down before the run: [`scripts/weather_forecast_study.py`](../../../scripts/weather_forecast_study.py).
+
+Six cities × 420 months × four measures, real open-meteo archive, `t=1`, two evaluation-anchor
+blocks, six baselines — the four the Market study used plus **`seasonal_naive`** (the same calendar
+month's change a year earlier) and **`climatology`** (the historical mean for the target month).
+Those two are *baselines* here rather than a post-hoc audit precisely because the data's annual
+cycle makes the trivial competitor obvious in advance; the Market study had to carry its
+parameter-free competitor separately only because that competitor became obvious after seeing which
+measure passed.
+
+| model | block | temperature | precipitation | humidity | windspeed |
+|-|-|-|-|-|-|
+| Kalman | 1 | +0.697 | +0.440 | +0.221 | +0.238 |
+| Kalman | 2 | +0.903 | **+0.651** | +0.583 | **+0.468** |
+| ARIMA | 1 | +0.687 | +0.595 | +0.372 | +0.404 |
+| ARIMA | 2 | +0.642 | +0.579 | +0.359 | +0.208 |
+| *best baseline* | 1 | *+0.940* | *+0.729* | *+0.710* | *+0.773* |
+| *best baseline* | 2 | *+0.935* | *+0.631* | *+0.656* | *+0.382* |
+
+`climatology` is the strongest baseline in **every one of the eight cells**. Kalman beats it on
+precipitation and windspeed — in **block 2 only**, which fails the both-blocks clause the rule
+already applies. **Nothing survives. Weather does not earn a forecast claim either.**
+
+**But it fails for the opposite reason to Market, and the difference decides what to do next.** On
+Market the surviving numbers were an artifact: every trivial baseline was *anti*-correlated (down
+to -0.504), so clearing the bar was nearly free, and a parameter-free recovery rule then beat the
+models outright. Here the models are genuinely, strongly correlated with what happens next —
+temperature at **r = +0.90** — and lose only to a baseline that is handed the calendar. That is a
+true and demonstrable statement about the API: *the forecast tracks the seasonal cycle*. What it is
+not is evidence of **skill**, because knowing the month is cheaper and better.
+
+So the plan does **not** name a carrier on intuition. See *Decisions still needed*, entry
+**"Which example carries the prediction story"**. Motion and sensor data are untested; the study
+script generalises to either, and whichever is proposed must clear the same rule before any example
+claims skill. Until one does, `predict=` appears in the gallery as **mechanics only**.
+
+### Budget
+
+**The 145 / 150 figures in *Revision note (v4)* are void.** They were projected, then measured, on a
+rewrite that has since been discarded; the committed file measures **191 code lines** and its
+notebook **187** (re-measured 2026-08-19). Removing the scoring loop and panel subtracts; a
+small-multiples composition may add. Task 2's measure step re-measures and records the real number
+**once**, after the composition is approved, and the budget is renegotiated there per Contract 6 —
+never the code trimmed to flatter it.
 
 ---
 
@@ -349,6 +498,10 @@ files changes:
    ```
 
    `NOTEBOOK_OVERHEAD` is measured, not guessed: the largest install cell across the five is 3 code lines, plus a 2-line display cell (`from IPython.display import HTML` + `HTML(ani.to_jshtml())`). One number is chosen per task — the script budget — and the notebook's follows. Verified against the prescribed content with each file's own MEASURED split included (2026-08-04): market 128 ≤ 135, weather 75 ≤ 80, paintings 137 ≤ 145, conversation 108 ≤ 115, morph 45 ≤ 50. Still tight, and a notebook budget can never again be set below its script's.
+
+   **Market's budget is VOID as of *Revision note (v5)* — 145 and 150 were measured on a
+   rewrite that was then discarded; re-measure after the replacement composition is
+   approved.** The superseded reasoning follows.
 
    **Market's numbers moved twice after that, and are now projected rather than measured.** Its script budget is **145** and its notebook **150** (*Revision note (v4)*): the regime-space rewrite measures **124** code lines, and the `+16` split overhead is inherited from the 2026-08-04 measurement above rather than re-measured against the new file, giving a **projected 140**. Task 2's measure step re-measures the split and records the real number; if it lands above 145 the budget is renegotiated there, per this contract, and never the code trimmed to flatter it.
 
@@ -1080,6 +1233,11 @@ Audit classification (unchanged, still accurate for the parts this task rewrites
 
 **One correction to how this task's own call has been described.** It is an *animated, forecast-carrying* trajectory with a **continuous** `hue=` over a **column** hierarchy — not a `hue=`-**regrouped** one. Continuous hue is a per-trace auxiliary value drawn as a `LineCollection` overlay; it does **not** change the trace count, which is precisely why one forecast per sector trace survives. Row regrouping (`_regroup_categorical_lines`) is a different mechanism and is not in play here.
 
+> **Superseded by *Revision note (v5)*.** This paragraph budgets a rewrite that no longer
+> exists, and its line counts are for a forecast-and-scoring example this task no longer
+> builds. The committed file measures **191** and its notebook **187** (2026-08-19); the
+> replacement is re-measured once its composition is approved.
+
 **AFTER (contracted budget):** script **≤ 145 code lines**; notebook **≤ 150** (= 145 + 5); **zero** defect markers. **Re-measured 2026-08-15** for the regime-space rewrite (*Revision note (v4)*): the rewrite below is **124** code lines (v3's was 110; the measure derivation costs +6 net once `manip=` goes, and the shared `sector_returns()` helper plus the three separately labelled accuracy quantities a further +8). The `+16` split overhead is **inherited from the 2026-08-04 measurement and NOT re-measured**, giving a projected **140**, rounded up to 145. The measure step must re-measure the split and replace this projection with the real number — it is the one figure in this task that is not measured, and the payload gaining a third field makes the inherited +16 a floor rather than an estimate.
 
 The notebook budget is DERIVED, not written down: `script_budget + NOTEBOOK_OVERHEAD` (Contract 6b), so it can never again be set below its own script's. No ratio floor — ratio is reported, never gated (Contract 6a).
@@ -1663,6 +1821,30 @@ git commit -m "docs(gallery): market example is a column-MultiIndex showcase wit
 ---
 
 ## Task 3: Weather — the paper figure, nearly all native
+
+> **DEFECT FOUND 2026-08-19, and Step 1's rewrite must fix it.** The current fetcher fires six
+> `archive-api.open-meteo.com` requests back to back with no spacing and no retry, and the archive
+> API **rate-limits**: measured on a cold cache, the last three cities returned `HTTP 429 Too Many
+> Requests`. `fetch_city_months` catches every exception and returns `None`, so those three cities
+> silently become `synthetic_city_months(...)` output while the other three stay real — and the
+> figure is then a **blend of real and fabricated cities**, reduced together in one
+> `hyp.reduce` call. The single `print` says `synthetic (offline fallback)` for the whole run,
+> which is not false but is not the fact either: it cannot distinguish "no network" from "five real
+> cities and one invented one".
+>
+> This was found by [`scripts/weather_forecast_study.py`](../../../scripts/weather_forecast_study.py),
+> whose first run answered a question about real weather with fabricated weather for exactly this
+> reason. Two fixes, both required:
+>
+> 1. **Retry on 429 with backoff** (measured: 1/2/4/8 s clears five of six; the sixth needed ~30 s).
+> 2. **Report per city, and never mix silently.** Either all six come from the archive or the run
+>    says which ones did not. A rewrite that keeps `except Exception: return None` must at minimum
+>    name the exception it swallowed, per Contract 4's spirit — a fallback the reader cannot see
+>    firing is indistinguishable from a fetch that worked.
+>
+> Contract 4 stays as written (a fetcher still degrades rather than raising); what changes is that
+> degrading is announced accurately.
+
 
 > **v3: THE SCRIPT HALF IS PARTIALLY LANDED.** `d730a085` migrated this file off `ani._func` onto `anim.on_frame(...)`, and changed `fig, ani =` to `anim` + `anim.figure`. Read the file on disk first (`git show d730a085~1:examples/animate_weather_decades.py` for the pre-migration state) and reconcile rather than overwrite.
 
@@ -4947,6 +5129,28 @@ git commit -m "test(docs): gate examples and tutorials on native ratio + defect 
 > **These entries are deliberately UNNUMBERED — cite them by name.** Five instances of citation drift in this plan set traced to numeric references going stale under reordering; the README's and animation-core's lists were de-numbered for the same reason.
 
 Flagged rather than invented. Each states the options and the exact change to switch; the plan implements the option marked **(implemented)** so it stays runnable end to end.
+
+- **Which example carries the prediction story.** Plan 4 was written around a Market forecast
+  example; *Revision note (v5)* retires that claim on measured evidence, and the obvious
+  replacement does not survive either. Both results are from preregistered rules applied
+  mechanically, not from judgement calls:
+   - Market — three specifications passed the rule, and the audit the study pre-committed to killed
+     all three (a parameter-free "predict full recovery" rule beat the models in **10 of 12** cells).
+   - Weather — `climatology` is the strongest baseline in **all eight** cells; the one model that
+     beats it does so in a single block.
+   - **(implemented)** no example claims forecast skill. `predict=` is drawn as API mechanics or
+     omitted, and the gallery says nothing about accuracy anywhere. This is runnable today and is
+     what Tasks 2–6 build against.
+   - *Alternative A:* test **motion** or **sensor** data with
+     [`scripts/weather_forecast_study.py`](../../../scripts/weather_forecast_study.py)'s rule — the
+     baselines and the verdict function are the reusable part — and if a specification clears it in
+     both blocks at `t=1`, that example carries the story and states the measured result.
+   - *Alternative B:* keep weather and make the honest weaker claim — *the forecast tracks the
+     seasonal cycle* (**r = +0.90** on temperature, measured) — while stating plainly that a
+     month-of-year lookup does better. Defensible and educational, but it is a claim about
+     tracking, not skill, and the wording would have to survive a reader who only reads the figure.
+   - **Needs:** the maintainer's call on whether the gallery ships with **no** successful-prediction
+     story at all, which is where the evidence currently points.
 
 - **Where `image_palette` is exported.** `hypertools/__init__.py` carries a curated `__all__` (`__init__.py:46-52`) and adding a name to it is a public-API decision.
    - **(implemented)** `hypertools.plot.colors.image_palette`, beside the two existing public palette helpers (`get_palette_colors`, `continuous_colormap`), documented in a new `docs/api.rst` **Colors** section, plus the declarative `palette='image:<path>'` spelling that needs no import at all.
