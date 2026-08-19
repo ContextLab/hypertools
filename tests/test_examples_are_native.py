@@ -88,21 +88,23 @@ NOTEBOOK_OVERHEAD = 5
 #: `test_file_is_within_its_size_budget` failing is still an instruction, not
 #: a licence to trim the split.
 SCRIPT_BUDGETS = {
-    # market's was PROJECTED (140), then MEASURED at 145 on 2026-08-17. The
-    # +16 split overhead the projection inherited was wrong twice over --
-    # measured +18 on the v4 rewrite as first landed, and +21 once the
-    # rewrite gained the loader's offline degrade, the atomic cache write
-    # and the per-measure display scaling.
+    # market's was PROJECTED (140), then MEASURED at 145 on 2026-08-17 --
+    # both numbers taken on a REWRITE that has since been DISCARDED (its
+    # representation was rejected; see
+    # `notes/market_representation_study_2026-08-17.md`). Every measurement
+    # in this comment's earlier versions -- 145, then 148 -- described a
+    # file that is no longer in the tree, which is exactly the failure mode
+    # a budget comment must not have: a limit checked against one artifact
+    # while the gate measures another.
     #
-    # RE-MEASURED 2026-08-18: **148**, so this gate is RED and correctly so.
-    # Threading `sectors=` through the five sites that had closed over the
-    # module-level SECTORS cost the three lines, and the earlier comment
-    # here still claimed the file sat exactly on 145 -- a measurement that
-    # had stopped being true. The budget is deliberately NOT raised to
-    # cover it: the representation is still under review, and moving a
-    # limit to fit an interim design is how a budget stops meaning
-    # anything. Re-measure and reset this number once the rewrite settles.
-    'examples/animate_market_forecast.py': 145,   # 148 measured -> OVER by 3
+    # RE-MEASURED 2026-08-19 against what is actually committed -- the
+    # ORIGINAL, un-rewritten example -- at **191**. That is the pre-Task-2
+    # number, and this gate is red for the same reason the other four
+    # scripts are: the rewrite has not happened yet. The budget stays at
+    # 145 because it is a TARGET for the replacement, not a description of
+    # HEAD; moving a limit to fit an interim design is how a budget stops
+    # meaning anything. Re-measure once the replacement lands.
+    'examples/animate_market_forecast.py': 145,   # 191 measured -> OVER by 46
     'examples/animate_weather_decades.py': 75,    # 73 measured -> 75
     'examples/animate_painting_embeddings.py': 140,  # 135 measured -> 140
     'examples/animate_conversation.py': 110,      # 106 measured -> 110
@@ -1024,25 +1026,20 @@ def _code_cells(stem):
 #:
 #: Install-cell indices are filtered out of both sides before comparing.
 EXPECTED_VISIBLE_OUTPUTS = {
-    # MEASURED 2026-08-17 from a real `scripts/execute_tutorial.py` run,
-    # and RE-MEASURED from a second one the same day that reported
-    # `6/9 code cells produced output` (indices are into the CODE cells,
-    # install cell included as 0 and filtered out on both sides below).
-    # 3/5/6 are the three `print`s -- `471 weekly bars x 6 sectors x 3
-    # measures`, `120 frames`, and the accuracy line -- 7 is the side-panel
-    # cell, whose last expression is `fig` so the fully-revealed frame
-    # renders inline as an `execute_result` carrying `image/png`, and 8 is
-    # the `saved market_forecast.gif` line. 1/2/4 are pure definitions and
-    # assignments and legitimately emit nothing.
+    # DELIBERATELY EMPTY. It held `'market_forecast': {3, 5, 6, 7, 8}`,
+    # measured 2026-08-17 from two real `scripts/execute_tutorial.py` runs
+    # -- of a notebook that was then DISCARDED along with the rest of the
+    # rejected Market rewrite. The committed notebook emits on {2, 4, 5, 6},
+    # so the recorded set described a file that no longer exists and the
+    # gate failed for a reason unrelated to Task 2's actual state.
     #
-    # The 6th emitting cell in that count is the INSTALL cell (index 0),
-    # which nbclient does run: `%pip install ... git+https://...` would
-    # replace this repo's EDITABLE hypertools with a snapshot of the remote
-    # branch, so the re-measurement ran with `PIP_DRY_RUN=1` and the cell
-    # was restored to the unexecuted state every launch notebook ships it
-    # in. `_is_install_cell` filters index 0 out of both sides here, so the
-    # recorded set is unaffected either way.
-    'market_forecast': {3, 5, 6, 7, 8},
+    # The entry is REMOVED rather than re-measured against the committed
+    # notebook: that notebook is itself scheduled for replacement, so
+    # re-measuring would just pin a second doomed artifact. With no entry,
+    # `test_the_right_cells_carry_visible_output` fails with "no measured
+    # index set recorded", which is the same honest unresolved red the
+    # other four launch notebooks show. Record a set here only after the
+    # replacement notebook has been executed for real.
 }
 
 
