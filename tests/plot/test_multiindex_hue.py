@@ -302,3 +302,49 @@ def test_aux_is_truncated_with_its_data_when_members_are_unequal():
     assert [len(a) for a in ft.aux] == [10, 6, 6]
     # the mean aux is the mean of the SAME 6-row slices the data used
     assert np.allclose(ft.aux[-1], (np.arange(6.0) + 4.0) / 2.0)
+
+
+def test_ANIMATED_continuous_hue_collections_carry_the_trace_tag():
+    """`_hyp_trace_index` on the animated path, not just the static one.
+
+    `_apply_multicolor_lines` (static) tags every collection it creates;
+    `_apply_multicolor_animation` did not, so an animated continuous-hue
+    figure carried ZERO tagged artists and there was no supported way to
+    tell its data collections from the 3-D bounding cube -- which is SIX
+    `Line3DCollection` wireframe faces sitting in the same `ax.collections`
+    list. Measured while auditing a gallery figure: an extent computed over
+    `ax.collections` reported the CUBE's extent (a constant 1.00 fill)
+    rather than the data's, and nothing in the public surface said so.
+
+    Head and trail collections both belong to a trace, so both are tagged
+    and `_hyp_trace_role` says which is which -- the same shape as
+    `_hyp_forecast_role` on forecast artists.
+    """
+    df = market_frame()                       # 3 sector leaves + 1 mean
+    hues = [np.linspace(k, k + 1.0, len(df)) for k in (0.0, 5.0, 9.0)]
+    anim = hyp.plot(df, '-', hue=hues, palette='viridis', animate=True,
+                    chemtrails=True, duration=2, frame_rate=4, show=False)
+    ax = anim.figure.axes[0]
+    tagged = [c for c in ax.collections
+              if getattr(c, '_hyp_trace_index', None) is not None]
+    heads = [c for c in tagged if c._hyp_trace_role == 'head']
+    trails = [c for c in tagged if c._hyp_trace_role == 'trail']
+
+    assert sorted(c._hyp_trace_index for c in heads) == [0, 1, 2, 3], (
+        'one tagged HEAD collection per final trace (3 leaves + 1 mean)')
+    assert sorted(c._hyp_trace_index for c in trails) == [0, 1, 2, 3], (
+        'chemtrails=True draws one trail per trace, and a trail belongs to '
+        'the same trace its head does')
+    # ...and the cube is still NOT tagged, which is the whole reason the tag
+    # exists. Measured: the six wireframe faces are added by the FIRST frame
+    # draw, not at construction (8 collections before, 14 after), so the
+    # discriminating half of this test needs a driven frame -- checking it
+    # on the freshly-built figure would assert against a cube that does not
+    # exist yet and pass for the wrong reason.
+    anim.draw_frame(0)
+    untagged = [c for c in ax.collections
+                if getattr(c, '_hyp_trace_index', None) is None]
+    assert len(untagged) == 6, (
+        f'expected the six untagged bounding-cube faces, got {len(untagged)}')
+    assert len([c for c in ax.collections
+                if getattr(c, '_hyp_trace_index', None) is not None]) == 8

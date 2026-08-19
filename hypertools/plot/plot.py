@@ -7793,7 +7793,7 @@ def _apply_multicolor_animation(ax, xform, line_colors, kwargs_list,
             return np.column_stack([np.arange(xi.shape[0]), xi[:, 0]])
         return xi[:, :3] if is_3d else xi[:, :2]
 
-    def _make_collection(i, alpha=None):
+    def _make_collection(i, alpha=None, role='head'):
         if is_3d:
             coll = Line3DCollection([], linewidths=_linewidth(i),
                                     alpha=alpha)
@@ -7808,10 +7808,22 @@ def _apply_multicolor_animation(ax, xform, line_colors, kwargs_list,
         # match the line artists' unclipping (see animate_plot3D's
         # axes-box slicing fix)
         coll.set_clip_on(False)
+        # Which TRACE this collection draws -- the same tag the STATIC path
+        # sets (`_apply_multicolor_lines`), for the same reason: the 3-D
+        # bounding cube is six `Line3DCollection` wireframe faces, so
+        # `ax.collections` is not a list of data artists and an untagged
+        # figure gives a reader no way to tell them apart. Without it an
+        # ANIMATED continuous-hue figure carried zero tagged artists while
+        # the static plot of the same call carried one per trace.
+        # `_hyp_trace_role` distinguishes the head window from its trail,
+        # mirroring `_hyp_forecast_role` on forecast artists.
+        coll._hyp_trace_index = i
+        coll._hyp_trace_role = role
         return coll
 
     head_colls = [_make_collection(i) for i in range(n)]
-    trail_colls = {i: _make_collection(i, alpha=0.3) for i in trail_lines}
+    trail_colls = {i: _make_collection(i, alpha=0.3, role='trail')
+                   for i in trail_lines}
 
     for artist in head_lines + list(trail_lines.values()):
         artist.set_visible(False)
