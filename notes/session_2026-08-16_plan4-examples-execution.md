@@ -69,12 +69,26 @@ Market candidate (6 leaves, 4-colour palette): `palette=` was ignored and
 leaves intended blue drew pure red. The width rule is now the DEFAULT, not
 the only rule; flipping the default would silently repaint existing figures.
 
-**The Market artifact was discarded**, not committed: the script, notebook
-and GIF are preserved under the session scratchpad
-(`scratchpad/discarded_market_artifact/`). Discarding it broke the
-committed study, which imported the example's universe and fetcher — fixed
-by lifting both in, because evidence must not depend on the artifact it
-judges.
+**The Market artifact was discarded**, not committed. Its script, notebook
+and GIF were copied to a SESSION-SCOPED scratchpad —
+`/private/tmp/claude-501/-Users-jmanning-hypertools/7e6531b3-.../scratchpad/discarded_market_artifact/`
+— which is outside the repository and does not survive the session. Treat
+the artifact as GONE: it is not recoverable from this note, and nothing
+depends on recovering it (its representation was rejected, so what matters
+is the measurements, which are in
+`notes/market_representation_study_2026-08-17.md`). The earlier version of
+this paragraph wrote that path relative, as `scratchpad/…`, which resolves
+to nothing from the repo root and read as a promise of recoverability the
+tree could not keep.
+
+The prototypes ARE preserved, because a visual decision cannot be reviewed
+from prose: `notes/evidence/plan4-market-prototypes/` holds both PNGs and
+the script that makes them (3 s, live data with a synthetic fallback, and
+it re-asserts the shared-normalization property on the way past).
+
+Discarding the artifact broke the committed study, which imported the
+example's universe and fetcher — fixed by lifting both in, because evidence
+must not depend on the artifact it judges.
 
 **Two library limits measured while prototyping the replacement**, both
 relevant to any 2-D Market composition:
@@ -92,23 +106,88 @@ labels collide (`PROTO_A2_single_panel.png`). The small multiples are
 legible (`PROTO_B2_small_multiples.png`) and are the composition to take
 forward, pending the maintainer's approval. No GIF was rendered.
 
-## The reds: 39 → **31** (2026-08-18)
+## Review round 10 (2026-08-19) — RESUME HERE
 
-`tests/test_examples_are_native.py` collects **139**: **103 pass, 31 fail,
-5 skip**. Down from 39 because Task 1 and Task 8 Steps 0–2 landed and the
-Market notebook came inside its budget.
+The maintainer's round 10 found no code defects. Both High findings were
+about **process integrity**: the plan, the gate, the recorded measurements
+and the actual files had drifted apart when the Market rewrite was
+discarded after its measurements had already been written down. Both were
+verified by measurement and corrected in this session:
+
+| finding | verified as | disposition |
+|-|-|-|
+| recorded gate state ≠ repository gate state | **confirmed exactly** — 191/145 and 187/150, not the recorded 148 | budget comment corrected; `EXPECTED_VISIBLE_OUTPUTS['market_forecast']` REMOVED (it described a discarded notebook and was failing against `{2, 4, 5, 6}`); reds table re-measured at 42 |
+| scratchpad evidence unavailable | **half right, and the half that matters is right** — the assets exist, but at an absolute session-scoped path outside the repo, which no reader can reach | prototypes + generator now TRACKED at `notes/evidence/plan4-market-prototypes/`; the discarded artifact is declared gone rather than implied recoverable |
+
+### What is NOT done — the resume list
+
+The maintainer's sequence, steps 1–3 complete:
+
+1. ~~correct the session record's Market measurements and red-count~~ **done**
+2. ~~correct the gate so it describes HEAD~~ **done**
+3. ~~recover and track the prototype PNGs + generation script~~ **done**
+4. **Formally revise Plan 4's Market and prediction requirements** — NEXT.
+   The plan still prescribes a Market forecast story. This note recording
+   that the study rejected it is an execution-note deviation, not a revised
+   specification; without the revision, Task 2 could be called complete
+   while failing the plan that defines completion. The revision must state:
+   the forecast claim was rejected by the preregistered study plus the
+   post-hoc recovery audit; the replacement's acceptance criteria; WHICH
+   example carries the prediction story instead (maintainer's suggestions:
+   seasonal weather, motion, sensor data); and any budget change if the new
+   composition changes the loader/builder split.
+5. review `PROTO_B2_small_multiples.png` at documentation display width —
+   not full-resolution PNG size, which is not the size that decides it
+6. approve a static composition BEFORE building any animation
+7. implement the new Market script, no scoring claims
+8. generate + execute the notebook, then record its REAL output cells in
+   `EXPECTED_VISIBLE_OUTPUTS` (it is empty again, deliberately)
+9. re-measure budgets and update the reds table ONCE, after the design settles
+10. Tasks 3–7, then the publication and full-suite gates
+
+Still open from round 9's sequence: harden `scripts/execute_tutorial.py`
+(argparse, create the output directory, reject output collisions) — it is
+currently DELETED from the tree and lives only in the session scratchpad,
+so it must be rewritten, not restored.
+
+### Checks that were re-run after these edits
+
+`tests/test_examples_are_native.py` (42 red, unchanged and every red
+accounted for above), the sdist tracked-files guard (5 passed — the newly
+tracked evidence files are the thing that guard exists to catch), and
+`ruff check` on both touched files, clean.
+
+## The reds: **42** (re-measured 2026-08-19)
+
+`tests/test_examples_are_native.py` collects **139**: **92 pass, 42 fail,
+5 skip**.
+
+**This supersedes a "39 → 31" table that was wrong in both directions.**
+Those 31 were counted against the Market rewrite, which was then discarded;
+the tree went back to the un-rewritten example and notebook, and the count
+went back UP. It landed at 42 rather than the original 39 because two of
+the gate's own records had been updated to describe the rewrite and were
+not reverted with it — the budget comment (145 "measured", then 148) and
+`EXPECTED_VISIBLE_OUTPUTS['market_forecast'] = {3, 5, 6, 7, 8}`. The second
+is the one that mattered: the committed notebook emits on `{2, 4, 5, 6}`,
+so that test failed by comparing HEAD against a file that no longer
+existed. Both are corrected; the market entry is REMOVED rather than
+re-measured, since the committed notebook is itself due for replacement and
+re-measuring would only pin a second doomed artifact.
 
 | test | n | note |
 |-|-|-|
-| `test_no_defect_marker_in_the_launch_examples` | 10 | Tasks 3–7 |
-| `test_file_is_within_its_size_budget` | 6 | **market 148/145 is the one that is Task 2's own**; the other five are un-rewritten |
-| `test_the_right_cells_carry_visible_output` | 4 | `EXPECTED_VISIBLE_OUTPUTS` still empty for the un-rewritten |
+| `test_no_defect_marker_in_the_launch_examples` | 18 | Tasks 2–7; market contributes 6 again now that the un-rewritten file is back |
+| `test_file_is_within_its_size_budget` | 7 | market **191/145**, weather 195/75, paintings 146/140, conversation 165/110, market.ipynb **187/150**, weather.ipynb 194/80, conversation_shape.ipynb 176/115 |
+| `test_the_right_cells_carry_visible_output` | 5 | `EXPECTED_VISIBLE_OUTPUTS` is empty again — all five say "no measured index set recorded" |
+| `test_examples_produce_their_stated_artifact` | 5 | Step 0b's split, Tasks 2–6 |
 | `test_older_tutorials_dropped_their_hand_rolled_helpers` | 4 | Task 7 |
-| `test_examples_produce_their_stated_artifact` | 4 | Step 0b's split, Tasks 3–6 |
-| `test_every_allowlisted_reach_is_still_present_and_still_explained` | 1 | conversation's `ani._args`; deliberate, explained at `test_examples_are_native.py:173` — Task 4's to-do, NOT to be silenced by re-adding a dead entry |
 | `test_analyze_tutorial_actually_plots`, `test_reduce_tutorial_mentions_describe` | 2 | Task 7 |
+| `test_every_allowlisted_reach_is_still_present_and_still_explained` | 1 | conversation's `ani._args`; deliberate, Task 4's to-do — NOT to be silenced by re-adding a dead entry |
 
-Regenerate with
+Every one of the 42 is an un-rewritten example. **Nothing in this table is
+Task 2's own any more**: with the rewrite discarded, Task 2 has produced
+library commits and evidence, and no artifact. Regenerate with
 `.venv/bin/python -m pytest tests/test_examples_are_native.py -q --tb=no -rf`.
 
 ## The original 39 deliberate reds (historical — superseded by the table above)
