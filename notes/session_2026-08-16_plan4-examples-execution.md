@@ -19,11 +19,60 @@ Task 8 last — was rejected because every task's measure step writes into
 | T8 S1 | `scripts/measure_native_ratio.py` | **DONE** |
 | T8 S2 | `tests/test_examples_are_native.py` (the gate) | **DONE — deliberately RED** |
 | T1 | native palette-from-image | **DONE** |
-| T2 | Market — the MultiIndex showcase | next; the release blocker |
+| T2 | Market — the MultiIndex showcase | **IN PROGRESS** — library work done and committed; the artifact itself is NOT settled (see below) |
 | T3–T7 | weather, paintings, conversation, morph, 15 older tutorials | pending |
 | T8 S3–S7 | run the gate, re-measure, headless run, notebook figures, full suite | pending |
 
-## The 39 deliberate reds
+## Status, 2026-08-18/19 (maintainer review round 8)
+
+Task 2 is partly executed. Everything that is a LIBRARY fix has landed as its
+own commit; the Market artifact deliberately has not, because the evidence now
+says its forecast framing is wrong and the representation is still under review.
+
+| commit | unit |
+|-|-|
+| `3fe1c6a5` | tag animated multicolor collections with their trace |
+| `6da372b4` | matrix hue through a column hierarchy, contract pinned + documented |
+| `9615c382` | forecast projection sampled at two DISTINCT history lengths |
+| `9d630c9f` | study: horizon-aware window baseline; rule applied in code |
+| `fd46b7db` | correct the stale Market budget claim (gate stays red) |
+
+**Deliberately uncommitted:** `examples/animate_market_forecast.py`,
+`docs/tutorials/market_forecast.{ipynb,gif}`, `scripts/execute_tutorial.py`.
+The staged GIF/notebook publish an artifact whose own supporting study now
+says it should carry no forecast claim; committing them would ship two
+contradictory conclusions in one tree.
+
+**The editorial decision, and the evidence for it.** Applied in code, the
+preregistered rule passes three specifications, all `drawdown` at h=1 — so
+the earlier flat claim that "nothing passes" was too broad and is retracted
+in the study notes. But the drawdown audit those notes pre-committed to
+kills all three: a parameter-free "predict full recovery" rule beats the
+models in 10 of 12 cells. **No specification earns a forecast claim at the
+horizon the example draws.** Market should become the hierarchy showcase
+with no forecast-skill claim; the prediction story moves to data with real
+temporal structure. Awaiting the maintainer's sign-off before the rewrite.
+
+## The reds: 39 → **31** (2026-08-18)
+
+`tests/test_examples_are_native.py` collects **139**: **103 pass, 31 fail,
+5 skip**. Down from 39 because Task 1 and Task 8 Steps 0–2 landed and the
+Market notebook came inside its budget.
+
+| test | n | note |
+|-|-|-|
+| `test_no_defect_marker_in_the_launch_examples` | 10 | Tasks 3–7 |
+| `test_file_is_within_its_size_budget` | 6 | **market 148/145 is the one that is Task 2's own**; the other five are un-rewritten |
+| `test_the_right_cells_carry_visible_output` | 4 | `EXPECTED_VISIBLE_OUTPUTS` still empty for the un-rewritten |
+| `test_older_tutorials_dropped_their_hand_rolled_helpers` | 4 | Task 7 |
+| `test_examples_produce_their_stated_artifact` | 4 | Step 0b's split, Tasks 3–6 |
+| `test_every_allowlisted_reach_is_still_present_and_still_explained` | 1 | conversation's `ani._args`; deliberate, explained at `test_examples_are_native.py:173` — Task 4's to-do, NOT to be silenced by re-adding a dead entry |
+| `test_analyze_tutorial_actually_plots`, `test_reduce_tutorial_mentions_describe` | 2 | Task 7 |
+
+Regenerate with
+`.venv/bin/python -m pytest tests/test_examples_are_native.py -q --tb=no -rf`.
+
+## The original 39 deliberate reds (historical — superseded by the table above)
 
 `tests/test_examples_are_native.py` collects **139**: 93 pass, **39 fail**, 7 skip
 (2 `PRIVATE_API_EXCEPTIONS` + 5 opt-in smoke). Every failure is an un-rewritten
