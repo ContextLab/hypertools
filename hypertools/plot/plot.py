@@ -12,7 +12,11 @@ import inspect
 import os
 import warnings
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
+# `np` also arrives via the star import below; naming it explicitly is
+# what makes every `np.` reference in this file resolvable to a reader
+# and to a linter, instead of 186 F405 "may be undefined" findings.
 from .._shared.helpers import *
 from .._shared.params import default_params
 from ..core.model import external_stacklevel
