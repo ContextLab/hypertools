@@ -69,7 +69,7 @@ NOTEBOOK_OVERHEAD = 5
 #: what made two of them unattainable.
 #:
 #:      file            rewrite   split   overhead
-#:      market            110      126      +16
+#:      market            124      145      +21   (re-measured 2026-08-17)
 #:      weather            56       73      +17
 #:      paintings         112      135      +23   (two fetch sites)
 #:      conversation       88      106      +18
@@ -88,10 +88,21 @@ NOTEBOOK_OVERHEAD = 5
 #: `test_file_is_within_its_size_budget` failing is still an instruction, not
 #: a licence to trim the split.
 SCRIPT_BUDGETS = {
-    # market's is PROJECTED, not measured: Revision note (v4) replaces the
-    # file the 126 was measured on (the rewrite is 124, +16 inherited -> 140).
-    # Task 2's measure step re-measures the split and corrects this number.
-    'examples/animate_market_forecast.py': 145,   # 140 projected -> 145
+    # market's was PROJECTED (140), then MEASURED at 145 on 2026-08-17. The
+    # +16 split overhead the projection inherited was wrong twice over --
+    # measured +18 on the v4 rewrite as first landed, and +21 once the
+    # rewrite gained the loader's offline degrade, the atomic cache write
+    # and the per-measure display scaling.
+    #
+    # RE-MEASURED 2026-08-18: **148**, so this gate is RED and correctly so.
+    # Threading `sectors=` through the five sites that had closed over the
+    # module-level SECTORS cost the three lines, and the earlier comment
+    # here still claimed the file sat exactly on 145 -- a measurement that
+    # had stopped being true. The budget is deliberately NOT raised to
+    # cover it: the representation is still under review, and moving a
+    # limit to fit an interim design is how a budget stops meaning
+    # anything. Re-measure and reset this number once the rewrite settles.
+    'examples/animate_market_forecast.py': 145,   # 148 measured -> OVER by 3
     'examples/animate_weather_decades.py': 75,    # 73 measured -> 75
     'examples/animate_painting_embeddings.py': 140,  # 135 measured -> 140
     'examples/animate_conversation.py': 110,      # 106 measured -> 110
@@ -142,15 +153,27 @@ def test_notebook_budgets_are_derived_not_written_down():
 #: inline rationale in the source. Anything NOT listed here still fails, so
 #: a new reach cannot creep in, and each of these was reviewed rather than
 #: assumed. Landed in `d730a085` with measurements.
-PRIVATE_API_EXCEPTIONS = {
-    ('examples/animate_market_forecast.py', r'ani\._args'):
-        'one-time readback of the fully-revealed ANTIALIASED on-screen line; '
-        'ctx.datasets is the pre-antialiasing array at a coarser resolution '
-        'and fits a measurably different slope (~2-8%, checked empirically)',
-    ('examples/animate_market_forecast.py', r'hypertools\._shared'):
-        'PCHIP smoothing has no public re-export; reimplementing it here '
-        'would risk drifting from what hyp.plot actually draws',
-}
+#:
+#: **It is now EMPTY, which is the goal state.** Both entries belonged to
+#: `examples/animate_market_forecast.py`, and Task 2's rewrite removed the
+#: code they covered: the `ani._args` readback of the drawn line existed only
+#: to recover plot's own reduce->drawn affine by hand, which `predict=`/`t=`
+#: replaced, and the `hypertools._shared` import pulled in `antialias_line`
+#: for a hand-drawn forecast fan that `forecast_trail=16` replaced. Verified
+#: 2026-08-17: neither pattern appears in `examples/animate_market_forecast.py`
+#: any more, and the empty case is asserted rather than skipped by
+#: `test_every_allowlisted_reach_is_still_present_and_still_explained`.
+#:
+#: **That test is RED right now, and correctly so.** Emptying this dict turns
+#: on its empty-case branch, which scans EVERY gated file -- and
+#: `docs/tutorials/conversation_shape.ipynb` still does `lines = ani._args[1]`
+#: and `[... for a in ani._args[0]]` (cell 9), with no inline rationale within
+#: `RATIONALE_WINDOW` lines (measured 2026-08-17). Its green before market's
+#: rewrite was a FALSE green: the two market entries made the test take the
+#: allowlist branch, which only ever looked at the market file, so
+#: conversation's reach was never examined. The failure names Task 4's file
+#: and is its to-do, not something to be silenced by re-adding a dead entry.
+PRIVATE_API_EXCEPTIONS = {}
 
 #: Every one of these was found in the launch examples or the older
 #: tutorials and removed. Each maps to the native API that replaced it.
@@ -1001,7 +1024,25 @@ def _code_cells(stem):
 #:
 #: Install-cell indices are filtered out of both sides before comparing.
 EXPECTED_VISIBLE_OUTPUTS = {
-    # 'market_forecast': {2, 5, 6, 7},   <- fill in from the measured run
+    # MEASURED 2026-08-17 from a real `scripts/execute_tutorial.py` run,
+    # and RE-MEASURED from a second one the same day that reported
+    # `6/9 code cells produced output` (indices are into the CODE cells,
+    # install cell included as 0 and filtered out on both sides below).
+    # 3/5/6 are the three `print`s -- `471 weekly bars x 6 sectors x 3
+    # measures`, `120 frames`, and the accuracy line -- 7 is the side-panel
+    # cell, whose last expression is `fig` so the fully-revealed frame
+    # renders inline as an `execute_result` carrying `image/png`, and 8 is
+    # the `saved market_forecast.gif` line. 1/2/4 are pure definitions and
+    # assignments and legitimately emit nothing.
+    #
+    # The 6th emitting cell in that count is the INSTALL cell (index 0),
+    # which nbclient does run: `%pip install ... git+https://...` would
+    # replace this repo's EDITABLE hypertools with a snapshot of the remote
+    # branch, so the re-measurement ran with `PIP_DRY_RUN=1` and the cell
+    # was restored to the unexecuted state every launch notebook ships it
+    # in. `_is_install_cell` filters index 0 out of both sides here, so the
+    # recorded set is unaffected either way.
+    'market_forecast': {3, 5, 6, 7, 8},
 }
 
 
