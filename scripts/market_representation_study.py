@@ -46,19 +46,18 @@ draws. Otherwise the example shows forecasts without scoring them.
 """
 
 import argparse
-import importlib.util
+import json
 import os
 import sys
+import tempfile
 import time
+import urllib.request
 
 import numpy as np
 import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import hypertools as hyp                                          # noqa: E402
-
-EXAMPLE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                       'examples', 'animate_market_forecast.py')
 
 # D2's universe: fixed by a STRUCTURAL rule (the two largest US listings in
 # each of three sectors, by market capitalisation, as of the plan's writing),
@@ -70,18 +69,90 @@ D2_SECTORS = {
     'Energy': ['XOM', 'CVX'],
 }
 DRAWN_HORIZON = 1       # steps -- the example draws predict=..., t=1
+#: the blocks a claim must survive, by NAME. Checked as an exact set, not a
+#: count: two rows both labelled 'block1' are one block scored twice, and
+#: 'block1' plus a typo'd 'blokc2' is a claim tested on half the sample.
+EXPECTED_BLOCKS = ('block1', 'block2')
 VOL_WINDOW = 6          # months
 CUM_WINDOW = 12         # months -- "cumulative return over a fixed recent window"
 DD_WINDOW = 24          # months -- running peak for the drawdown
 MEASURES = ('cum_return', 'drawdown', 'volatility')
 
 
-def _example():
-    """Import the gallery example for its cache-backed fetcher ONLY."""
-    spec = importlib.util.spec_from_file_location('_market_example', EXAMPLE)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+#: The universe and the fetcher are LIFTED from the gallery example rather
+#: than imported from it. The study is the evidence that decides what the
+#: example should BE, so it must not depend on the example existing in any
+#: particular form -- when the artifact was discarded pending a redesign,
+#: an `import` here took the evidence down with it. Reproducing a recorded
+#: result cannot require the artifact the result was used to judge.
+CACHE = os.path.join(tempfile.gettempdir(), 'hypertools_gallery_cache')
+RANGE = '10y'
+#: six sectors x four EQUALLY WEIGHTED tickers each
+SECTORS = {
+    'Technology': ['AAPL', 'MSFT', 'ORCL', 'IBM'],
+    'Financials': ['JPM', 'BAC', 'GS', 'AXP'],
+    'Healthcare': ['JNJ', 'PFE', 'MRK', 'ABT'],
+    'Energy': ['XOM', 'CVX', 'COP', 'SLB'],
+    'Consumer': ['KO', 'PG', 'WMT', 'MCD'],
+    'Industrials': ['BA', 'CAT', 'GE', 'HON'],
+}
+
+
+def fetch_closes(sectors=SECTORS):
+    """Adjusted daily closes per (sector, ticker), or ``None`` if anything
+    (network, parsing) goes wrong. Adjusted, not raw: a split would
+    otherwise read as a -50% day."""
+    # the offline check is OUTSIDE the try, so it raises instead of being
+    # caught and quietly downgraded to the synthetic fallback: a test that
+    # sets HYPERTOOLS_OFFLINE is asserting that no fetch happened, and a
+    # swallowed exception would make a real fetch look the same as a refused
+    # one. `load_market` catches it and degrades; nothing else calls this.
+    if os.environ.get('HYPERTOOLS_OFFLINE'):
+        raise RuntimeError('HYPERTOOLS_OFFLINE is set: refusing to fetch')
+    os.makedirs(CACHE, exist_ok=True)
+    try:
+        series = {}
+        for sector, tickers in sectors.items():
+            for ticker in tickers:
+                dest = os.path.join(CACHE, f'yahoo_adj_{ticker}_{RANGE}.json')
+                if not os.path.exists(dest):
+                    url = ('https://query1.finance.yahoo.com/v8/finance/chart/'
+                           f'{ticker}?range={RANGE}&interval=1d')
+                    req = urllib.request.Request(
+                        url, headers={'User-Agent': 'Mozilla/5.0'})
+                    with urllib.request.urlopen(req, timeout=30) as resp:
+                        payload = resp.read()
+                    with open(dest + '.part', 'wb') as f:
+                        f.write(payload)
+                    # rename, so an interrupted download can never leave a
+                    # truncated cache file that every later run would trust
+                    os.replace(dest + '.part', dest)
+                with open(dest) as f:
+                    result = json.load(f)['chart']['result'][0]
+                stamps = pd.to_datetime(result['timestamp'], unit='s')
+                series[(sector, ticker)] = pd.Series(
+                    result['indicators']['adjclose'][0]['adjclose'],
+                    index=stamps.normalize()).astype(float)
+        # NO ffill: a stale ticker would be padded flat and then contribute
+        # exactly zero return while its peers moved, silently breaking the
+        # equal-weight claim. Dropping the row instead makes it visible.
+        return pd.DataFrame(series).sort_index().dropna()
+    except Exception:
+        return None
+
+
+def synthetic_closes(sectors=SECTORS, days=2500, seed=0):
+    """Same sector structure -- the REQUESTED one -- so the figure renders
+    offline. Takes `sectors` for the same reason `fetch_closes` does: a
+    caller who asks for three sectors must not silently get six back when
+    the network is down."""
+    rng = np.random.default_rng(seed)
+    index = pd.date_range('2016-08-15', periods=days, freq='B')
+    columns = [(sector, t) for sector, ts in sectors.items() for t in ts]
+    drift = rng.normal(0.0003, 0.0002, size=(1, len(columns)))
+    steps = rng.normal(0, 0.013, size=(days, len(columns))) + drift
+    return pd.DataFrame(100.0 * np.exp(steps.cumsum(axis=0)),
+                        index=index, columns=pd.MultiIndex.from_tuples(columns))
 
 
 def monthly_levels(closes):
@@ -371,6 +442,19 @@ def verdict(rows, drawn_horizon=DRAWN_HORIZON):
     in BOTH time blocks, and does so at a horizon the example actually
     draws. Evaluated in code rather than read off the table by eye, because
     a rule applied by inspection is a rule that can be applied leniently.
+
+    Two clauses are read STRICTLY, because reading them loosely admits
+    claims the rule plainly does not intend:
+
+    * "keeps the same sign" is read as POSITIVE, and the comparison is
+      `score > max(0, best_baseline)`. Taken literally an all-NEGATIVE set
+      keeps its sign too, so a model correlating -0.10 with the outcome
+      passed against a -0.50 baseline -- consistently wrong, and merely
+      less wrong than the trivial competition. That supports no forecast
+      claim at all, and it is live rather than hypothetical here: every
+      trivial baseline on `drawdown` is anti-correlated.
+    * "in BOTH time blocks" is read as an EXACT block set. A count check
+      accepted one block scored twice, or a renamed block, as coverage.
     """
     claims = {}
     for row in rows:
@@ -389,18 +473,27 @@ def verdict(rows, drawn_horizon=DRAWN_HORIZON):
             claims.setdefault(key, []).append(
                 (row['block'], row['pearson'][j], best[measure]))
 
-    print(f'\n--- acceptance rule (beats every baseline, same sign, both '
-          f'blocks, h={drawn_horizon} as drawn) ---')
+    print(f'\n--- acceptance rule (POSITIVE, beats every baseline, in each '
+          f'of {len(EXPECTED_BLOCKS)} blocks, h={drawn_horizon} as drawn) ---')
     survivors = []
     for key in sorted(claims):
         entries = claims[key]
-        blocks = {block for block, _, _ in entries}
-        scores = [score for _, score, _ in entries]
-        beats = all(np.isfinite(score) and np.isfinite(base) and score > base
+        # EXACT block set. `len(blocks) > 1` accepted a duplicated block, a
+        # renamed one, or three rows covering two blocks -- none of which is
+        # the out-of-sample test the rule describes.
+        blocks = [block for block, _, _ in entries]
+        covered = sorted(blocks) == sorted(EXPECTED_BLOCKS)
+        # `score > max(0, base)`, not merely `score > base`. Every trivial
+        # baseline on `drawdown` is anti-correlated, so "beats every
+        # baseline" alone let a model at -0.10 pass against a baseline at
+        # -0.50: consistently WRONG, merely less wrong than the trivial
+        # competition, and no support for a positive forecast claim. The old
+        # sign clause permitted it explicitly by accepting an all-negative
+        # set as "the same sign".
+        beats = all(np.isfinite(score) and np.isfinite(base)
+                    and score > max(0.0, base)
                     for _, score, base in entries)
-        same_sign = (all(score > 0 for score in scores)
-                     or all(score < 0 for score in scores))
-        if len(blocks) > 1 and beats and same_sign:
+        if covered and beats:
             survivors.append((key, entries))
     if survivors:
         for key, entries in survivors:
@@ -410,7 +503,7 @@ def verdict(rows, drawn_horizon=DRAWN_HORIZON):
     else:
         print(f'  NOTHING PASSES: 0 of {len(claims)} '
               f'(representation, model, horizon, measure) specifications '
-              f'beat every baseline with a consistent sign in both blocks.')
+              f'are POSITIVE and beat every baseline in both blocks.')
         print('  Under the rule as written, the example may not claim a '
               'forecast result.')
     return survivors
@@ -475,12 +568,11 @@ def main():
     parser.add_argument('--anchors', type=int, default=14)
     opts = parser.parse_args()
 
-    example = _example()
-    universe = dict(D2_SECTORS) if opts.quick else example.SECTORS
-    closes = example.fetch_closes(universe)
+    universe = dict(D2_SECTORS) if opts.quick else SECTORS
+    closes = fetch_closes(universe)
     source = 'live/cached Yahoo'
     if closes is None:
-        closes = example.synthetic_closes(universe)
+        closes = synthetic_closes(universe)
         source = 'SYNTHETIC (network unavailable -- results are not evidence)'
     print(f'universe: {len(universe)} sectors, {closes.shape[1]} tickers '
           f'({source}); {closes.shape[0]} daily closes')

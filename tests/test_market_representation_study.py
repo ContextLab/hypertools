@@ -28,8 +28,8 @@ import pytest
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from scripts.market_representation_study import (       # noqa: E402
-    CUM_WINDOW, MEASURES, d1_frame, d2_frame, leaf_arrays, leaf_levels,
-    monthly_levels, scale_per_measure, window_dropout)
+    CUM_WINDOW, DRAWN_HORIZON, MEASURES, d1_frame, d2_frame, leaf_arrays,
+    leaf_levels, monthly_levels, scale_per_measure, verdict, window_dropout)
 
 SECTORS = {'Alpha': ['a1', 'a2'], 'Beta': ['b1', 'b2'], 'Gamma': ['g1']}
 
@@ -137,3 +137,137 @@ def test_leaf_levels_are_in_the_SAME_ORDER_as_the_frame_leaves(kind):
         assert np.allclose(series[position].reindex(frame.index).to_numpy(),
                            aligned, equal_nan=True), (
             f'leaf {position} ({key}) is backed by the wrong level series')
+
+
+# --------------------------------------------------------------------------
+# The acceptance rule itself. `verdict()` decides whether a gallery figure
+# may claim predictive skill, so its loopholes are not academic -- a rule
+# that admits a wrong-signed model would have licensed exactly the claim
+# this study exists to refuse.
+# --------------------------------------------------------------------------
+
+def _row(block, model, pearson, baselines, horizon=DRAWN_HORIZON,
+         representation='D2 stock hierarchy'):
+    """One `evaluate()` result, in the shape `verdict()` consumes.
+
+    Real dicts with real numbers -- the arithmetic under test is the rule,
+    not the forecasting, so the scores are stated rather than fitted.
+    """
+    return {
+        'label': f'{representation} {block}', 'model': model,
+        'horizon': horizon, 'representation': representation, 'block': block,
+        'n': 84, 'seconds': 0.0,
+        'pearson': list(pearson), 'spearman': [0.0] * len(MEASURES),
+        'baselines': {name: list(values) for name, values in baselines.items()},
+        'audit_reversion': [0.0] * len(MEASURES),
+    }
+
+
+def _uniform(value):
+    return [value] * len(MEASURES)
+
+
+def test_a_CONSISTENTLY_NEGATIVE_model_does_NOT_pass(capsys):
+    """The loophole: "keeps the same sign" is true of an all-negative set.
+
+    A model correlating -0.10 with the outcome, against baselines at -0.50,
+    beat every baseline and held its sign in both blocks. It is
+    consistently WRONG and merely less wrong than the trivial competition;
+    it supports no forecast claim at all. This is not hypothetical on the
+    axis that matters -- every trivial baseline on `drawdown` measured
+    negative, down to -0.504.
+    """
+    rows = [_row(block, 'Kalman', _uniform(-0.10),
+                 {'persistence': _uniform(-0.50), 'zero': _uniform(np.nan)})
+            for block in ('block1', 'block2')]
+    assert verdict(rows) == []
+    assert 'NOTHING PASSES' in capsys.readouterr().out
+
+
+def test_a_model_that_merely_TIES_ZERO_does_not_pass():
+    """`score > max(0, base)` is strict: exactly 0.0 is not a claim."""
+    rows = [_row(block, 'Kalman', _uniform(0.0),
+                 {'persistence': _uniform(-0.50)})
+            for block in ('block1', 'block2')]
+    assert verdict(rows) == []
+
+
+def test_a_POSITIVE_model_that_beats_every_baseline_DOES_pass():
+    """The control. A rule that refuses everything is not a rule -- if the
+    tests above passed only because `verdict` never returns anything, they
+    would prove nothing.
+    """
+    rows = [_row(block, 'Kalman', _uniform(0.42),
+                 {'persistence': _uniform(0.10), 'window_dropout': _uniform(0.31)})
+            for block in ('block1', 'block2')]
+    survivors = verdict(rows)
+    assert len(survivors) == len(MEASURES), (
+        f'expected one surviving claim per measure, got {survivors}')
+    for key, _entries in survivors:
+        assert key[1] == 'Kalman' and key[2] == DRAWN_HORIZON
+
+
+def test_a_MISSING_BLOCK_does_not_pass():
+    """Half the sample is not an out-of-sample test."""
+    rows = [_row('block1', 'Kalman', _uniform(0.42),
+                 {'persistence': _uniform(0.10)})]
+    assert verdict(rows) == []
+
+
+def test_ONE_BLOCK_SCORED_TWICE_does_not_pass():
+    """A count check (`len(blocks) > 1`) accepted this: two rows, two
+    entries, one block. The claim was never tested out of sample."""
+    rows = [_row('block1', 'Kalman', _uniform(0.42),
+                 {'persistence': _uniform(0.10)}) for _ in range(2)]
+    assert verdict(rows) == []
+
+
+def test_an_UNEXPECTED_BLOCK_NAME_does_not_pass():
+    """A typo'd or renamed block silently changes what was tested."""
+    rows = [_row(block, 'Kalman', _uniform(0.42),
+                 {'persistence': _uniform(0.10)})
+            for block in ('block1', 'blokc2')]
+    assert verdict(rows) == []
+
+
+def test_an_EXTRA_block_does_not_pass():
+    """Exactly the expected set: adding a third block means the rule was
+    applied to a different design than the one preregistered."""
+    rows = [_row(block, 'Kalman', _uniform(0.42),
+                 {'persistence': _uniform(0.10)})
+            for block in ('block1', 'block2', 'block3')]
+    assert verdict(rows) == []
+
+
+def test_a_result_at_the_WRONG_HORIZON_does_not_pass():
+    """"...at a horizon the example actually draws". The example draws
+    t=1; five of the eight apparent passes were at h=3."""
+    rows = [_row(block, 'Kalman', _uniform(0.42),
+                 {'persistence': _uniform(0.10)}, horizon=DRAWN_HORIZON + 2)
+            for block in ('block1', 'block2')]
+    assert verdict(rows) == []
+
+
+def test_a_NON_FINITE_score_does_not_pass():
+    """A nan correlation is an absent result, not a win."""
+    rows = [_row(block, 'Kalman', _uniform(np.nan),
+                 {'persistence': _uniform(-0.50)})
+            for block in ('block1', 'block2')]
+    assert verdict(rows) == []
+
+
+def test_the_LIVE_verdict_still_refuses_every_drawdown_survivor():
+    """The three specifications that passed the loose rule were positive,
+    so the hardening must NOT be what refuses them -- the drawdown audit
+    is. Pinned so a later reader does not conclude the rule was tightened
+    until it produced the desired answer.
+    """
+    rows = [_row(block, 'Kalman', [0.05, score, 0.05],
+                 {'persistence': [0.9, base, 0.9]})
+            for block, score, base in (('block1', 0.227, -0.442),
+                                       ('block2', 0.206, -0.159))]
+    survivors = verdict(rows)
+    drawdown = [key for key, _ in survivors if key[3] == 'drawdown']
+    assert drawdown, (
+        'the real drawdown numbers stopped passing the RULE; they are '
+        'supposed to pass it and be refused by the audit instead')
