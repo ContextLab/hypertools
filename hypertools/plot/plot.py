@@ -708,6 +708,55 @@ def _validate_title(title, style=None, order=None, n_datasets=None):
     return titles
 
 
+def _matrix_hue_wants_rgb(hue_array, color_reduce):
+    """Is this matrix hue literal RGB rather than palette mixture weights?
+
+    The rule, in one place because two call sites need to agree: a matrix
+    with MORE than 3 columns, or any matrix when `color_reduce=` is given
+    explicitly. A <=3-column matrix with no `color_reduce=` keeps the
+    palette-blend path -- mixture proportions, one weight per palette entry.
+    """
+    return np.asarray(hue_array).shape[1] > 3 or color_reduce is not None
+
+
+def _matrix_hue_to_rgb(hue_array, color_reduce):
+    """Reduce a matrix hue to 3 min-max scaled columns used AS (r, g, b)."""
+    rgb = np.asarray(hue_array, dtype=np.float64)
+    if rgb.shape[1] > 3:
+        # more than 3 columns: reduce to 3 (default IncrementalPCA;
+        # color_reduce accepts any hyp.reduce spec). A <=3-column matrix
+        # is NOT reduced -- hyp.reduce(ndims=3) can't synthesize more
+        # dimensions than the input has, and doing so crashed for k<=3
+        # (QC 2026-07 red-team); its columns are used directly instead.
+        from ..reduce.reduce import reduce as _color_reducer
+        try:
+            rgb = np.asarray(
+                _color_reducer(rgb, reduce=(color_reduce or 'IncrementalPCA'),
+                               ndims=3),
+                dtype=np.float64)
+        except ValueError as exc:
+            # name the kwarg the user actually passed (the underlying error
+            # says 'reduce', which the user never typed; release-1.0 audit,
+            # F02-008) and collapse any whitespace runs from wrapped lines
+            raise ValueError(
+                f"color_reduce={color_reduce!r} failed to reduce the matrix "
+                f"hue to 3 color channels: "
+                f"{' '.join(str(exc).split())}") from exc
+        if rgb.ndim == 3 and rgb.shape[0] == 1:
+            rgb = rgb[0]
+    # min-max each column to [0, 1]
+    lo = rgb.min(axis=0, keepdims=True)
+    hi = rgb.max(axis=0, keepdims=True)
+    span = np.where((hi - lo) > 0, hi - lo, 1.0)
+    rgb = np.clip((rgb - lo) / span, 0.0, 1.0)
+    # pad to exactly 3 channels (a 1- or 2-column matrix given with an
+    # explicit color_reduce=): fill the missing channel(s) with a neutral
+    # 0.5 so the present columns still drive the color.
+    if rgb.shape[1] < 3:
+        rgb = np.hstack([rgb, np.full((rgb.shape[0], 3 - rgb.shape[1]), 0.5)])
+    return rgb
+
+
 def _hierarchy_hue_per_leaf(hue, n_rows, n_leaves):
     """Normalize a hue argument to ONE value sequence per hierarchy leaf.
 
@@ -724,14 +773,44 @@ def _hierarchy_hue_per_leaf(hue, n_rows, n_leaves):
     to predict how many mean traces the expansion is going to create --
     which is exactly the bookkeeping a column hierarchy exists to remove.
 
+    A per-leaf sequence may be 2-D, in which case it is a MATRIX hue: one
+    row of MIXTURE WEIGHTS per observation, blended through the palette.
+    The contract, all of it measured rather than assumed:
+
+    * rows are NORMALIZED to sum to 1 by `mat2colors`, so only the ratio
+      between components is visible -- halving every weight in a row draws
+      the identical colour. A second quantity therefore needs its own
+      palette entry (e.g. a black one for "darker = larger"); it cannot ride
+      on the total magnitude;
+    * negative entries have no colour meaning, so `mat2colors` shifts each
+      row by its own minimum -- a signed matrix is coloured by within-row
+      CONTRAST, not by absolute value;
+    * the palette must supply at least one colour per COLUMN; a shorter one
+      raises, a longer one simply leaves components unused;
+    * a non-finite entry colours that observation neutral grey and warns.
+      Because a derived mean is the element-wise mean of its children, one
+      NaN greys the leaf AND every ancestor mean at that row;
+    * every per-leaf matrix must have the same width -- they share one
+      palette;
+    * MORE than 3 columns, or any explicit `color_reduce=`, switches to the
+      literal-RGB route instead (`_matrix_hue_wants_rgb`), exactly as on a
+      flat plot. That is how a caller supplies per-observation RGB under a
+      hierarchy. The reduction runs on the concatenation, which already
+      holds the derived means: mean-then-reduce, on one shared scale.
+
+    The mean is what makes matrix hue worth supporting here: the mean of
+    mixture weights is itself a mixture weight, so giving each leaf one
+    primary makes every sector come out a secondary and the market a
+    tertiary, with nothing computing them.
+
     Returns
     -------
     (per_leaf, reason)
-        `per_leaf` is a list of `n_leaves` float arrays of length `n_rows`
-        when the hue is CONTINUOUS. When it is categorical (or a matrix of
-        mixture proportions), `per_leaf` is None and `reason` is a phrase
-        naming the kind, for the caller's warning: those forms regroup the
-        traces, so they would destroy the very leaves the hierarchy names.
+        `per_leaf` is a list of `n_leaves` float arrays -- length `n_rows`
+        for a CONTINUOUS hue, `(n_rows, k)` for a MATRIX hue. When the hue
+        is categorical, `per_leaf` is None and `reason` is a phrase naming
+        the kind, for the caller's warning: that form regroups the traces,
+        so it would destroy the very leaves the hierarchy names.
     """
     expected = (
         f"hue over a column hierarchy must be a flat sequence of {n_rows} "
@@ -761,6 +840,33 @@ def _hierarchy_hue_per_leaf(hue, n_rows, n_leaves):
                 f"every per-leaf hue sequence must have length {n_rows} "
                 f"(one value per row of the frame); got length(s) "
                 f"{wrong}. {expected}.")
+        # A 2-D per-leaf entry is a MATRIX hue: one row of mixture weights
+        # per observation, blended through the palette. It is kept AS a
+        # matrix rather than ravelled -- ravelling passes the length check
+        # above (the first dimension IS n_rows) and then reinterprets each
+        # row's k weights as k consecutive CONTINUOUS values, which drew
+        # every trace across ~220 degrees of hue instead of holding one.
+        #
+        # The per-level mean is what makes this worth supporting: a mean
+        # trace takes the ELEMENT-WISE MEAN of its children's aux, and the
+        # mean of mixture weights is itself a mixture weight. So giving the
+        # leaves one primary each makes every sector come out a secondary
+        # and the market a tertiary, with nothing computing them.
+        ndims = {np.ndim(s) for s in seqs}
+        if len(ndims) > 1:
+            raise ValueError(
+                f"per-leaf hue sequences must all have the same shape: got "
+                f"a mix of {sorted(ndims)}-dimensional entries. Pass one "
+                f"value per row for every leaf, or one weight ROW per row "
+                f"for every leaf. {expected}.")
+        if ndims == {2}:
+            widths = sorted({np.asarray(s).shape[1] for s in seqs})
+            if len(widths) > 1:
+                raise ValueError(
+                    f"every per-leaf hue MATRIX must have the same number "
+                    f"of columns (they are blended through one shared "
+                    f"palette); got width(s) {widths}. {expected}.")
+            return [np.asarray(s, dtype=np.float64) for s in seqs], None
         values = np.concatenate([np.asarray(s).ravel() for s in seqs])
     else:
         flat = flat_array if flat_array is not None else np.asarray(hue)
@@ -4683,9 +4789,31 @@ def plot(
             # it would give each line artist a flat colour that the
             # per-segment collections then replace, i.e. dead state that a
             # later reader would reasonably take for the real colours.
-            multicolor_hue = np.concatenate(
-                [np.asarray(a, dtype=np.float64).ravel() for a in _ft.aux])
+            # `np.concatenate` on the observation axis: a 1-D aux gives the
+            # flat vector this has always produced, and a 2-D (matrix) aux
+            # keeps its weight columns, which `_multicolor_line_colors`
+            # already blends through `mat2colors`. `ravel()` here would
+            # destroy the matrix form -- the same bug the per-leaf
+            # normalizer had.
+            _aux = [np.asarray(a, dtype=np.float64) for a in _ft.aux]
+            multicolor_hue = np.concatenate(_aux, axis=0)
+            # Same RGB rule as the flat path (`_matrix_hue_wants_rgb`), so
+            # `hue=` and `color_reduce=` do not change meaning just because
+            # the frame has a column hierarchy. Measured before this: a
+            # 5-column hue became RGB on a flat plot and mixture weights
+            # under a hierarchy, and color_reduce= was silently dropped.
+            #
+            # The reduction runs on the CONCATENATION, which already
+            # contains the derived mean rows -- mean-then-reduce, not
+            # reduce-then-mean. That is the only order available (the means
+            # are what the hierarchy exists to produce) and it is the right
+            # one: it keeps every trace on one shared color scale.
             multicolor_hue_is_rgb = False
+            if multicolor_hue.ndim == 2 and _matrix_hue_wants_rgb(
+                    multicolor_hue, color_reduce):
+                multicolor_hue = _matrix_hue_to_rgb(multicolor_hue,
+                                                    color_reduce)
+                multicolor_hue_is_rgb = True
             if legend is True or _legend_user_list:
                 # a legend LIST is dropped here for the same reason
                 # legend=True is -- it used to survive to the per-trace
@@ -5066,52 +5194,13 @@ def plot(
                              and hue_array.shape[0] == n_obs
                              and not _hue_int_categorical)
 
-        # arbitrary matrix hue -> RGB: when the hue matrix has MORE than 3
-        # columns, or color_reduce= is explicitly given, reduce it to 3 columns
-        # (default 'IncrementalPCA'; color_reduce accepts any hyp.reduce spec)
-        # and min-max each column to [0, 1] so the three reduced dimensions map
-        # directly to (r, g, b). Those per-observation rows are then used AS
-        # colors. A <=3-column matrix with no color_reduce= keeps the
-        # palette-blend path (mixture proportions etc.).
-        if hue_is_matrix and (hue_array.shape[1] > 3 or color_reduce is not None):
-            _rgb = np.asarray(hue_array, dtype=np.float64)
-            if _rgb.shape[1] > 3:
-                # more than 3 columns: reduce to 3 (default IncrementalPCA;
-                # color_reduce accepts any hyp.reduce spec). A <=3-column matrix
-                # is NOT reduced -- hyp.reduce(ndims=3) can't synthesize more
-                # dimensions than the input has, and doing so crashed for k<=3
-                # (QC 2026-07 red-team); its columns are used directly instead.
-                from ..reduce.reduce import reduce as _color_reducer
-                try:
-                    _rgb = np.asarray(
-                        _color_reducer(
-                            _rgb,
-                            reduce=(color_reduce or 'IncrementalPCA'),
-                            ndims=3),
-                        dtype=np.float64)
-                except ValueError as exc:
-                    # name the kwarg the user actually passed (the
-                    # underlying error says 'reduce', which the user never
-                    # typed; release-1.0 audit, F02-008) and collapse any
-                    # whitespace runs from wrapped source lines
-                    raise ValueError(
-                        f"color_reduce={color_reduce!r} failed to reduce "
-                        "the matrix hue to 3 color channels: "
-                        f"{' '.join(str(exc).split())}") from exc
-                if _rgb.ndim == 3 and _rgb.shape[0] == 1:
-                    _rgb = _rgb[0]
-            # min-max each column to [0, 1]
-            _lo = _rgb.min(axis=0, keepdims=True)
-            _hi = _rgb.max(axis=0, keepdims=True)
-            _span = np.where((_hi - _lo) > 0, _hi - _lo, 1.0)
-            _rgb = np.clip((_rgb - _lo) / _span, 0.0, 1.0)
-            # pad to exactly 3 channels (a 1- or 2-column matrix given with an
-            # explicit color_reduce=): fill the missing channel(s) with a
-            # neutral 0.5 so the present columns still drive the color.
-            if _rgb.shape[1] < 3:
-                _rgb = np.hstack(
-                    [_rgb, np.full((_rgb.shape[0], 3 - _rgb.shape[1]), 0.5)])
-            hue_array = _rgb
+        # arbitrary matrix hue -> RGB. Shared with the column-hierarchy
+        # path below so that `hue=` and `color_reduce=` mean the SAME thing
+        # whether or not the frame has a hierarchy (they did not: measured,
+        # color_reduce= changed a flat figure's colours and was silently
+        # ignored under a hierarchy).
+        if hue_is_matrix and _matrix_hue_wants_rgb(hue_array, color_reduce):
+            hue_array = _matrix_hue_to_rgb(hue_array, color_reduce)
             multicolor_hue_is_rgb = True
 
         # set when a categorical INTEGER/boolean hue needs its groups

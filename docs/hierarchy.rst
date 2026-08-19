@@ -300,6 +300,52 @@ existing. And a **row** hierarchy still warns and ignores ``hue=``
 altogether; ``trace_metadata['aux']`` is ``None`` in both cases.
 
 
+Matrix hue: one blend per observation
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A per-leaf sequence may be **2-D**. Then each row is a set of **mixture
+weights** over the palette, and the observation is drawn in the blend those
+weights describe. This is the form that lets the hierarchy's own arithmetic
+choose the colours: a mean trace averages its members' weights, and the mean
+of mixture weights is itself a mixture weight -- so give each leaf one
+*primary* and every parent comes out a *secondary* without anything
+computing it.
+
+.. doctest::
+
+   >>> weights = [np.tile([1.0, 0.0, 0.0], (len(market), 1)),   # Tech: red
+   ...            np.tile([0.0, 1.0, 0.0], (len(market), 1))]   # Energy: yellow
+   >>> bundle = hyp.plot(market, hue=weights,
+   ...                   palette=['#d92b2b', '#e8c72a', '#2f5fd0'],
+   ...                   return_model=True)
+   >>> aux = bundle['trace_metadata']['aux']
+   >>> [a.shape for a in aux]
+   [(40, 3), (40, 3), (40, 3)]
+   >>> aux[2][0]                       # the mean of one red and one yellow
+   array([0.5, 0.5, 0. ])
+
+The rules, in full:
+
+* weights are **normalized to sum to 1**, so only the ratio between
+  components shows. Halving every weight in a row draws the identical
+  colour -- a second quantity needs its own palette entry (a black one, say,
+  for "darker = larger"), it cannot ride on the total magnitude;
+* **negative** entries have no colour meaning, so each row is shifted by its
+  own minimum: a signed matrix is coloured by within-row *contrast*;
+* the palette must supply at least one colour **per column**. A shorter
+  palette raises; a longer one leaves components unused;
+* every per-leaf matrix must have the **same width** -- they share one
+  palette;
+* a **non-finite** entry draws that observation neutral grey and warns. A
+  mean is the element-wise mean of its members, so one ``NaN`` greys the
+  leaf *and every ancestor mean* at that row;
+* more than **3 columns**, or any explicit ``color_reduce=``, switches to
+  the literal-RGB route instead -- the matrix is reduced to three min-max
+  scaled channels used directly as *(r, g, b)*. That is how you supply
+  per-observation RGB under a hierarchy, and it means exactly what it means
+  on a flat plot.
+
+
 Mean trace construction
 ------------------------
 
