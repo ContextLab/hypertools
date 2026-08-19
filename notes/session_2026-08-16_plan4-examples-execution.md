@@ -126,7 +126,25 @@ The maintainer's sequence, steps 1–3 complete:
 1. ~~correct the session record's Market measurements and red-count~~ **done**
 2. ~~correct the gate so it describes HEAD~~ **done**
 3. ~~recover and track the prototype PNGs + generation script~~ **done**
-4. **Formally revise Plan 4's Market and prediction requirements** — NEXT.
+4. ~~formally revise Plan 4's Market and prediction requirements~~ **done**
+   — *Revision note (v5)*, `22413692`. It retires the forecast claim with
+   the evidence, lists eight acceptance criteria for the replacement (five
+   gate-enforced), voids the 145/150 budget, and records a Task 3 defect
+   the weather study surfaced. **The carrier question is NOT closed, and
+   the reason is measured:** weather was tested under the same
+   preregistered rule (`scripts/weather_forecast_study.py`, `c2a211c7`)
+   and does not earn the claim either — `climatology` is the strongest
+   baseline in all eight cells, and the one model that beats it does so in
+   a single block. It fails for the OPPOSITE reason to Market, which is
+   what makes it a decision rather than a dead end: Market's survivors
+   were artifacts of anti-correlated baselines, whereas the weather models
+   genuinely track what happens next (temperature **r=+0.90**) and lose
+   only to a baseline handed the calendar. Recorded as the open decision
+   *"Which example carries the prediction story"*, with the implemented
+   option being that no example claims skill. **This needs the
+   maintainer's call.**
+
+   *Superseded — the original wording of this step:*
    The plan still prescribes a Market forecast story. This note recording
    that the study rejected it is an execution-note deviation, not a revised
    specification; without the revision, Task 2 could be called complete
