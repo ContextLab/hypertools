@@ -5164,11 +5164,18 @@ Flagged rather than invented. Each states the options and the exact change to sw
      baselines and the verdict function are the reusable part — and if a specification clears it in
      both blocks at `t=1`, that example carries the story and states the measured result.
    - *Alternative B:* keep weather and make the honest weaker claim — *the forecast tracks the
-     seasonal cycle* (**r = +0.90** on temperature, measured) — while stating plainly that a
+     seasonal cycle* (**r = +0.89** on temperature, measured) — while stating plainly that a
      month-of-year lookup does better. Defensible and educational, but it is a claim about
      tracking, not skill, and the wording would have to survive a reader who only reads the figure.
-   - **Needs:** the maintainer's call on whether the gallery ships with **no** successful-prediction
-     story at all, which is where the evidence currently points.
+   - **DECIDED, review round 11 (2026-08-19):** ship 1.1 with **no example claiming forecast
+     skill** — the implemented option. Weather may still demonstrate `predict=` as mechanics, and
+     the documentation may explain in **prose** that the forecast tracks seasonality while
+     climatology does better; that explanation must not become a visual headline. **Alternative A
+     is closed for 1.1**: testing motion and sensor data now would turn Plan 4 into an open-ended
+     search for a favourable benchmark. A successful-prediction showcase can be added later, under
+     a separately reviewed study.
+   - The weather numbers quoted above are the corrected, city-scale-free run; **r = +0.89** on
+     temperature under `pooled_scaled`. The conclusion holds under all three aggregations.
 
 - **Where `image_palette` is exported.** `hypertools/__init__.py` carries a curated `__all__` (`__init__.py:46-52`) and adding a name to it is a public-API decision.
    - **(implemented)** `hypertools.plot.colors.image_palette`, beside the two existing public palette helpers (`get_palette_colors`, `continuous_colormap`), documented in a new `docs/api.rst` **Colors** section, plus the declarative `palette='image:<path>'` spelling that needs no import at all.
