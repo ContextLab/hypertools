@@ -404,11 +404,19 @@ the new test files being untracked at collection time. It passes once they are
    panel. Panels laid out in the data share one normalization BY
    CONSTRUCTION, which is criterion 4 satisfied structurally.
 
-Two backend behaviours any multi-panel animated example must handle, both
-measured here: the animated backend **re-applies its axis styling every
-frame** (so decoration goes through `on_frame`), and it **draws its frame
-box as an axes patch**, not as spines -- cropping the view leaves its left
-and right edges crossing the figure as two mystery vertical rules.
+One backend behaviour a multi-panel animated example must handle: it
+**draws its frame box as an axes patch**, not as spines, so cropping the
+view leaves its left and right edges crossing the figure as two vertical
+rules. `frame_kwargs={'visible': False}` is the documented knob.
+
+**CORRECTED in round 13 (2026-08-20):** this note also claimed the backend
+"re-applies its axis styling every frame". FALSE -- inferred from those two
+rules surviving a `save()`, which the frame box explains on its own.
+Measured: limits, spines and patch visibility all survive `draw_frame` AND
+`save`. `on_frame` is for decoration that must CHANGE per frame (the head
+dots), not for styling that has to persist. The claim had reached the plan,
+this note, the evidence README, the prototype's comments, the library
+docstring and a commit message; all six are corrected.
 
 ### The knot was in the data
 
@@ -427,3 +435,59 @@ the hierarchy MEANS, not in how it looks. Table in the plan's *Animated or
 static* section. E needs no workaround at all and animates in one call; D3
 keeps the market mean as the shared reference and cannot animate without
 new API.
+
+
+## Review round 13 (2026-08-20) -- E SELECTED
+
+| finding | disposition |
+|-|-|
+| **1 (High)** Plan v5 contradicts E's architecture | criteria 3 and 4 rewritten as **two alternative contracts** -- multi-axes (a) and tiled-one-call (b); a worker following the old text would have rejected E |
+| **2 (High)** E changes what the hierarchy MEANS | recorded formally: Market now shows **sector -> ticker**, and a top-level `Market` parent **must not** be added back (offsets are applied before the means, so a global parent would average layout translations) |
+| **3 (Medium)** "comparable" overclaims | criterion 4 now separates same-units/same-gain (yes), same local box (yes), cross-panel distance (**no**); the figure carries the caption saying so |
+| **4 (Medium)** layout plumbing dominates | dead colour-keyed cells removed; decoration in one `decorate_panels`; identity by the library's **labels + order**, proven by the mean identity, not by colour; the affine probe kept but re-explained as annotation placement |
+| **5 (Medium)** `animate=` silently ignoring `ax=` | **fixed in the library**: `ValueError`, 13 tests, docstring |
+| **6 (Medium)** the gate is necessary but insufficient | `_assert_tiled_composition` added with 8 checks, plus `tests/test_tiled_composition_gate.py` -- 7 tests that exercise it against a conforming composition and 5 real mutations |
+| **7 (Low)** visual polish | darker/heavier parents (2.6 vs 0.9), head dots via `on_frame`, caption, mid-frame kept as evidence |
+
+### A claim of mine that was WRONG, and is now corrected everywhere
+
+Round 13's evidence commit asserted that the animated backend **re-applies
+its axis styling on every frame**. It does not. That was an inference from
+two vertical rules surviving a `save()` -- and the library's own frame box
+(an axes PATCH, exposed publicly as `frame_kwargs`) explains those by
+itself. Measured directly: axis limits, spine visibility and patch
+visibility all survive `draw_frame` AND `save`.
+
+The claim had reached six places: the plan, this note, the evidence README,
+the prototype's comments, the new `hyp.plot` docstring, and a commit
+message. All are corrected. `on_frame` is for decoration that must CHANGE
+per frame -- the head dots -- not for styling that merely has to persist.
+
+The gate keeps a view-stability assertion, but now as a REGRESSION check
+with an honest comment, and its self-test mutates an `on_frame` callback
+rather than pretending the backend resets anything.
+
+### What the tiled gate can and cannot prove
+
+It cannot detect a per-panel RESCALE of the source data: a panel scaled up
+by 3 renders identically to a panel whose data legitimately spans 3x as
+much, and no property of the figure separates them. Pooled per-measure
+scaling is therefore held BY CONSTRUCTION (one call, one frame, one divisor
+computed once) and criterion 4 records that. The gate's box-size check is a
+LAYOUT claim -- panels get the same room -- and is worded as one.
+
+### The animated hierarchy contract, and the trap in checking it
+
+`hyp.plot` resamples each trace along its OWN arc length, and the sample
+count depends on the frame (measured: 980 points at the last frame of a
+90-frame reveal over 12 rows; a static draw of the same data gives 1101 =
+11 x 100 + 1). So the mean of several drawn paths is NOT the drawn mean
+between vertices -- whole-path comparison shows a ~2e-3 residual that means
+nothing, and on an animated figure the vertices are not at predictable
+indices either.
+
+What IS exact on a fully revealed trace is its ENDPOINTS. The gate asserts
+the identity there (`< 1e-9`) and then requires each parent to be at least
+20x closer to its own leaves than to any other panel's. On a static draw
+the vertex check is exact: **4.44e-16**, against **1.62e+00** for a
+mis-attributed control.

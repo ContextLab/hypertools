@@ -93,28 +93,48 @@ reviewer reads the script and the rendered figure.
 2. **A static composition is approved before any animation is rendered**, and reviewed at
    *documentation display width* — not at full PNG resolution, which is not the size that decides
    legibility. Evidence lives in `notes/evidence/plan4-market-prototypes/`.
-3. **Every drawn data trajectory comes from a `hyp.plot` call over the complete column-MultiIndex
-   frame.** Manual artists may annotate endpoints and may restyle or hide artists the library
-   created, but no trajectory is ever computed or drawn by hand. A six-panel composition therefore
-   makes at least six calls, each over the *same* frame — which is also what keeps the panels
-   comparable, since each call normalizes its own input.
+3. **Every drawn data trajectory comes from a `hyp.plot` call.** Manual artists may annotate and
+   may restyle or hide artists the library created, but no trajectory is ever computed or drawn by
+   hand. *(Revised, review round 13 — the old wording mandated "at least six calls over the same
+   complete frame", which prototype E does not do and a worker following it would have rejected E
+   or rebuilt D3.)* Two compositions satisfy this, and a composition must satisfy **one** of them
+   completely:
+
+   **(a) Multi-axes.** One `hyp.plot` call per panel, each receiving the *same complete frame* and
+   differing only by hue. Comparability comes from every call normalizing identical input.
+   *Constraint: static only* — an animated call owns its own figure and refuses `ax=` (see below).
+
+   **(b) Tiled, one call.** A single `hyp.plot` call receives every trace, with each panel group
+   translated into its own region of one shared coordinate box. Then: the per-measure scaling is
+   pooled once over the complete frame; every panel gets the same local scale and the same box
+   dimensions; the translations are **layout only** and carry no data meaning; and the panels'
+   boxes do not overlap, with every path inside the box it belongs to. This is what makes one
+   animation possible at all.
 
    **The hierarchy must be native in discovery, geometry and style**: leaves found from the column
    MultiIndex, the parent's path computed as the mean of its children, and the parent drawn in the
-   hierarchy's own heavier style. **Its colour need not be.** *(Revised, review round 12.)* The
-   original wording required the parent's colour to fall out of `hue_mode='mixture'` weight
-   averaging, and that requirement is unsatisfiable in this composition: a mixture parent's colour
-   is the *mean* of its children's, a mean lies in the convex hull of what it averages, so a parent
-   can never be darker than its darkest leaf. Five pale peers force a pale mean — measured
-   parent-vs-peer luminance gap **0.088**, against **0.76** once the colour is assigned directly.
-   Requiring it was hiding the example's own subject. Matrix hue keeps its own documentation and
-   tests; Market does not have to demonstrate every hierarchy feature at once.
-4. *(gate)* **Panels, if the composition uses them, are geometrically comparable** — each
-   `hyp.plot` call normalizes its own inputs, so every panel is passed the same complete frame and
-   differentiated only by hue. Asserted, not eyeballed: one shared limit tuple across panels, and
-   one pooled per-measure scaling computed once over the complete frame. The assertion belongs in
-   `tests/test_examples_are_native.py`, not only in the prototype generator, and lands with the
-   script (Step 7 of the resume sequence).
+   hierarchy's own heavier style. **Its colour need not be.** *(Revised, review round 12.)* A
+   mixture parent's colour is the *mean* of its children's, a mean lies in the convex hull of what
+   it averages, so a parent can never be darker than its darkest leaf — five pale peers force a
+   pale mean (measured luminance gap **0.088**, against **0.76** once assigned directly).
+
+   The hierarchy contract is exactly checkable, and the check has one trap: `hyp.plot` draws each
+   trace as a linear interpolation with **100 sub-steps per segment**, resampled along each trace's
+   own arc length, so the mean of several drawn paths is not the drawn mean *between* vertices.
+   Compare **at the data vertices** (every 100th point), where it is exact: measured **4.4e-16**,
+   against **1.6e+00** for a deliberately mis-attributed control.
+
+4. *(gate)* **Panels are comparable in the ways the composition actually delivers — and the caption
+   says which.** *(Revised, review round 13.)* For (a): one shared limit tuple across every call.
+   For (b), tiled coordinates give **the same units and the same gain everywhere** (so lengths,
+   directions and shapes are comparable across panels) and **the same local box** (so each panel is
+   read against its own rectangle) — but **not a shared origin**. A distance measured from one
+   panel to another is layout, not data, and the figure must say so in a visible caption, e.g.
+   *"same cumulative-return (x) and drawdown (y) scale in every panel; panel positions are layout
+   only"*. Asserted, not eyeballed: pooled per-measure scaling computed once over the complete
+   frame, identical box dimensions, non-overlapping boxes, and every path inside its own box. The
+   assertions land in `tests/test_examples_are_native.py` with the script.
+
 5. *(gate)* **Within its size budget**, re-measured after the design settles. The budget is
    re-measured once, not renegotiated to fit an interim design.
 6. *(gate)* **No defect markers and no private-API reaches** (Contract 3).
@@ -134,7 +154,13 @@ happened:
 - [ ] the gallery title and docstring stop describing a forecast.
 - [ ] `EXPECTED_VISIBLE_OUTPUTS['market_forecast']` recorded from a real execution (criterion 7).
 - [ ] the notebook's display expectations match whatever the composition actually emits.
-- [ ] criterion 4's shared-limit assertion lands in the gate with the script.
+- [ ] criterion 4's assertions land in the gate with the script — for the tiled composition that
+      is pooled scaling, identical box dimensions, non-overlapping boxes, and containment, **not**
+      the shared-limit tuple that only applies to a multi-axes composition.
+- [ ] the example and its notebook stop being called `*_forecast` where compatibility permits, and
+      at minimum no displayed prose (title, gallery caption, docstring, axis labels) says
+      "forecast". Renaming the FILES touches the gallery index, the tutorial notebook, both budget
+      tables, `STATED_ARTIFACT`, and the release notebook checker — costed at implementation time.
 
 **If the composition carries a workaround, it is quarantined** *(round 12, finding 4)*. A gallery
 example teaches by example, so a reader must not infer that duplicating every hierarchy plot and
@@ -149,10 +175,16 @@ Round 12 asked whether Market should go static, on the grounds that six panels �
 calls is twelve animations and one `HyperAnimation` owns one schedule. The premise is right; two of
 the three facts underneath it are not what they appeared to be, and the third settles the question.
 
-1. **`ax=` is IGNORED when `animate=` is set.** An animated call builds its own figure and leaves
-   the passed axes empty (`out.figure is fig` → `False`). So panels cannot be composed into one
-   figure through `ax=` at all — this, not the schedule count, is the real blocker, and it also
-   makes the two-call dark-mean workaround impossible in an animated plot.
+1. **`ax=` was silently IGNORED when `animate=` is set.** An animated call builds its own figure
+   and leaves the passed axes empty (`out.figure is fig` → `False`), across all eight modes. So
+   panels cannot be composed into one figure through `ax=` at all — this, not the schedule count,
+   is the real blocker, and it also makes the two-call dark-mean workaround impossible in an
+   animated plot.
+
+   *Fixed in the library (review round 13, finding 5):* that combination now raises a `ValueError`
+   naming the fix, `hyp.plot`'s `ax` docstring says animated plots own their figure, and
+   `tests/plot/test_animation_owns_its_figure.py` pins it across every mode plus the static path
+   that must keep working. Multi-axes animation support stays a later API project.
 2. **`HyperAnimation.draw_frame(i)` is public**, and documented as *"the supported way to drive an
    animation from a test or a script"*, with frames idempotent and order-independent by contract.
    Twelve animations really can be stepped in lockstep — but they live on twelve separate figures,
@@ -169,16 +201,22 @@ moves, and the evidence no longer argues against it. The artifact stays a GIF, a
 entry keeps `min_frames` (lowered to a floor the composition can reach) while `predicts=True` is
 removed.
 
-Two facts about the animated backend that any multi-panel example must handle, both measured:
+One fact about the animated backend that a multi-panel example must handle: it **draws a frame box
+as a patch on the axes** (not as the axes spines), so cropping the view to a panel grid leaves that
+box's left and right edges crossing the figure as two vertical rules. It is a documented public
+knob — `frame_kwargs={'visible': False}` — and the prototype uses it.
 
-- It **re-applies its axis styling on every frame**, so decoration applied once is undone by the
-  next frame. `on_frame` is the supported hook; the prototype re-applies its panel styling there.
-- It **draws a frame box as a patch on the axes** (not the axes spines). Cropping the view to a
-  panel grid leaves its left and right edges crossing the figure as two mystery vertical rules
-  unless that patch is hidden too.
+**CORRECTION (this round).** An earlier version of this section claimed the backend "re-applies its
+axis styling on every frame", and that is **false**. It was inferred from those two rules surviving
+a `save()`, which the frame box explains on its own. Measured directly: axis limits, spine
+visibility and patch visibility all survive both `draw_frame` and `save`. `on_frame` is for
+decoration that must CHANGE with the frame — the prototype uses it for the dot riding the head of
+each mean — not for styling that merely has to persist.
 
-What is still open is the *composition*, because the two candidates differ in what the hierarchy
-means, not merely in how it looks:
+**E is SELECTED** *(review round 13)*. It is more legible at documentation width, it animates, its
+hierarchy styling is native, and it needs no workaround at all. The two candidates differed in what
+the hierarchy *means*, not merely in how it looks — so selecting E is a decision about the example's
+data story, recorded here rather than left implicit:
 
 | | **D3** (static) | **E** (animated) |
 |-|-|-|
@@ -189,9 +227,28 @@ means, not merely in how it looks:
 | workaround | `draw_hierarchy_mean` (hidden artists) | **none** |
 | animation | impossible without new API | one call, one `.save()` |
 
-E needs no workaround at all *because* the panels moved into the data: colour-by-top-level-group
-stops being an obstacle and becomes the right behaviour. It loses the market mean as a shared
-reference and gains six automatic parents. **Needs: the maintainer's pick.**
+E needs no workaround *because* the panels moved into the data: colour-by-top-level-group stops
+being an obstacle and becomes the right behaviour.
+
+**What Market now demonstrates is a sector → ticker hierarchy, not a market → sector one.** The
+bold line in each panel is **that sector's mean**, computed from the four stocks drawn beside it.
+There is no market mean in the figure, and **a top-level `Market` parent must not be added back**:
+the panel offsets are applied *before* the hierarchy computes its means, so a global parent would
+average six arbitrary layout translations and be geometrically meaningless. Sector means stay valid
+precisely because all four children of a sector receive the *same* translation. This is a
+correctness constraint on the composition, not a stylistic preference.
+
+The prose that ships with the figure therefore has to say, in the caption and the docstring:
+
+- each panel has its own local coordinate system, on one shared scale;
+- absolute positions *between* panels are layout, not market data;
+- what is comparable across panels is trajectory geometry — length, direction, shape — and the
+  common scale, not position;
+- the bold line is that **sector's** mean, and it is computed by the hierarchy, not by the example.
+
+Measured on the prototype: 6 panels, 4 leaves + 1 parent each, one call, one animation, 90 frames;
+every parent equal to the mean of its own four leaves at the data vertices to **4.4e-16** (control:
+1.6e+00); identical box dimensions; no two boxes overlapping; every path inside its own box.
 
 ### Where the prediction story goes — MEASURED, and the answer is "nowhere yet"
 

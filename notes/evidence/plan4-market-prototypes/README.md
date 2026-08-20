@@ -11,7 +11,7 @@ cannot be reviewed from a sentence saying one image is legible.
 | `PROTO_D_small_multiples.png` | C, plus a **dark hierarchy mean** |
 | `PROTO_D2_small_multiples.png` | D at 21 months, mean restrained — round 12's prescription, followed |
 | `PROTO_D3_small_multiples.png` | the knot diagnosed: 5 years at 6-month strides — **static candidate** |
-| `PROTO_E_animated.gif` + `PROTO_E_lastframe.png` | six panels, **one call, one animation** — animated candidate |
+| `PROTO_E_animated.gif`, `PROTO_E_midframe.png`, `PROTO_E_lastframe.png` | six panels, **one call, one animation** — **SELECTED** (round 13) |
 | `make_prototypes.py` | regenerates all of them, ~90 s (E renders 90 frames) |
 
 ### The knot was in the data, not the styling
@@ -162,14 +162,40 @@ that sector's mean, automatically computed and automatically heavier. **No hue m
 call, no hidden artists.** Measured: 6 colours, `[1.0, 1.0, 1.0, 1.0, 2.0]` linewidths per panel,
 90 frames, 0.87 MB.
 
-Two things the animated backend does that any multi-panel example must handle:
+One thing the animated backend does that a multi-panel example must handle: it **draws a frame box
+as a patch on the axes** (not as the spines), whose left and right edges cross the figure as two
+vertical rules once the view is cropped to the panel grid. `frame_kwargs={'visible': False}` is the
+documented knob for it.
 
-- it **re-applies its axis styling every frame**, so decoration applied once is undone by the next
-  one — `on_frame` is the supported hook, and the prototype re-applies its styling there;
-- it **draws a frame box as a patch on the axes** (not the spines), whose left and right edges
-  cross the figure as two mystery vertical rules once the view is cropped to the panel grid.
+**Correction.** This file previously also claimed the backend "re-applies its axis styling every
+frame". That was **wrong** — an inference from those two rules surviving a `save()`, which the
+frame box explains by itself. Measured: limits, spines and patches all survive `draw_frame` *and*
+`save`. `on_frame` is used here for the one thing that genuinely must change per frame, the dot
+riding the head of each sector mean.
 
 The grid geometry is recovered from the affine transform `hyp.plot` applied, read off a **static**
 draw of the same frame: an animated last frame stops a hair short of the full path, which biased
 the two dimensions differently and made one gain look 7% larger than the other. Off the static
 draw, the two gains agree exactly (0.2851 / 0.2851) — one gain, per-dimension centring, confirmed.
+
+
+### E, as selected (round 13)
+
+Refinements from finding 7, all display-side: parent means darkened to 62% of the panel colour and
+drawn at **2.6** against the leaves' **0.9**; a dot rides the head of each mean through the public
+`on_frame` hook, so the direction of the reveal reads in a still as well as in motion; leaves at
+alpha 0.55; and a caption the tiling owes the reader — *"same cumulative-return (x) and drawdown
+(y) scale in every panel; panel positions are layout only"*. The **mid-frame** is kept as evidence
+alongside the last frame: with the reveal in progress the means are the most legible thing in the
+figure, which the finished frame understates.
+
+What the plumbing does now, after finding 4:
+
+- panel identity comes from **the labels the library assigns** (each group's parent carries its
+  group name) plus draw order — never from colour, which two panels could share;
+- that attribution is **proven, not trusted**: each parent must equal the mean of the leaves
+  attributed to it (`4.44e-16`, against `1.62e+00` for a deliberately mis-attributed control);
+- the affine transform is recovered only to **place annotations** in data terms — it takes no part
+  in building the visualization, which is entirely the one `hyp.plot` call;
+- the library's frame box is hidden through the documented `frame_kwargs`, not hunted down as an
+  unexplained patch.

@@ -530,6 +530,7 @@ print(f'saved D3 ({len(frame3)} strokes, {span3})')
 # no second call, no hidden artists. The hierarchy is demonstrated six
 # times over instead of being worked around once.
 PANEL_COLS, STEP = 3, 2.6
+N_LEAVES = len(next(iter(SECTORS.values())))
 
 ticker_cols = {}
 for sector, tickers in SECTORS.items():
@@ -559,38 +560,79 @@ for p, sector in enumerate(NAMES):
 
 anim = hyp.plot(tiled, '-', palette=SECTOR_COLORS, reduce=None, ndims=2,
                 normalize=None, animate='parallel', duration=6, frame_rate=15,
-                legend=False, colorbar=False, show=False,
+                colorbar=False, show=False,
+                # the library's own frame box is a documented public knob.
+                # The first version of this prototype hunted it down as an
+                # unexplained patch and hid it per frame; `frame_kwargs` is
+                # what it is for. The box spans the whole normalized square,
+                # so cropping the view to the panel grid would otherwise
+                # leave its left and right edges crossing the figure.
+                frame_kwargs={'visible': False},
                 title=f"Six sectors, their stocks, and each sector's mean "
                       f'({span3})')
 axe = anim.figure.axes[0]
 anim.figure.set_size_inches(7.36, 4.9)
 anim.draw_frame(anim.n_frames - 1)
-# the library draws its own frame box as a patch on the axes (NOT the axes
-# spines, which is what the first attempt at this hid). It spans the full
-# normalized box, so once the view is cropped to the panel grid only its
-# left and right edges remain -- two mystery vertical rules through the
-# figure. Recorded here, before any of this script's own patches exist,
-# so it can be told apart from them by identity rather than by looks.
-library_patches = list(axe.patches)
-print(f'E: the library drew {len(library_patches)} patch(es) of its own')
 
-# The panels are laid out in the data, so their positions on screen are a
-# fact to be READ OFF the drawn artists rather than assumed -- which is
-# also the check that the tiling worked. Labels and cell frames are
-# annotations; nothing here touches a trajectory.
-cells = {}
-for ln in axe.lines:
-    key = tuple(np.round(ln.get_color(), 3))
-    x, y = np.asarray(ln.get_xdata()), np.asarray(ln.get_ydata())
-    lo_x, hi_x, lo_y, hi_y = cells.get(key, (np.inf, -np.inf, np.inf, -np.inf))
-    cells[key] = (min(lo_x, x.min()), max(hi_x, x.max()),
-                  min(lo_y, y.min()), max(hi_y, y.max()))
-# The cells belong on a GRID, so their positions come from the offsets
-# that built the grid -- not from where each sector's content happens to
-# sit, which staggered them. `hyp.plot` maps data to the drawn box with one
-# affine transform (one gain, per-dimension centring), and that transform
-# is recoverable from the extents: the drawn extent IS the data extent
-# mapped, since interpolation along a segment stays inside it.
+
+def panel_traces(ax, names, n_leaves):
+    """`{sector: (leaves, parent)}` -- by the library's own labels and order.
+
+    Colour is not identity: two panels could share one and a check keyed on
+    colour would quietly pass. `hyp.plot` labels each group's PARENT with
+    the group's name (which is why this call leaves `legend=` at its
+    default -- `legend=False` strips those labels back to matplotlib's
+    `_childN`), and draws every leaf before any parent, in column order.
+
+    So parents are found by name and leaves are attributed by that order --
+    and the attribution is then PROVEN rather than trusted: each parent has
+    to equal the mean of the leaves attributed to it, which is exactly the
+    hierarchy's contract. A wrong grouping fails that check loudly.
+    """
+    parents = [line for line in ax.lines if line.get_label() in names]
+    leaves = [line for line in ax.lines if line.get_label() not in names]
+    if len(parents) != len(names) or len(leaves) != n_leaves * len(parents):
+        raise AssertionError(
+            f'expected {len(names)} parents and {n_leaves} leaves each, got '
+            f'{len(parents)} and {len(leaves)}')
+    return {parent.get_label():
+            (leaves[i * n_leaves:(i + 1) * n_leaves], parent)
+            for i, parent in enumerate(parents)}
+
+
+def path_xy(artist):
+    return np.column_stack([artist.get_xdata(), artist.get_ydata()])
+
+
+if axe.get_legend() is not None:
+    # the panel titles already name the sectors; the legend would repeat
+    # them and eat a third of the width. `legend=` itself stays at its
+    # DEFAULT so the parent traces keep their group labels.
+    axe.get_legend().remove()
+def decorate_panels(ax, gain, offsets, cell_box, pad):
+    """Draw the panel grid: one identical box per sector, plus its label.
+
+    Annotation only -- no trajectory is touched. The boxes come from the
+    OFFSETS that built the grid rather than from where each sector's paths
+    happen to sit, which staggered them; `gain`/`offsets` map data units to
+    the drawn box so an annotation can be placed in data terms.
+    """
+    (gain_x, off_x), (gain_y, off_y) = gain
+    boxes = {}
+    for index, (name, colour) in enumerate(zip(NAMES, SECTOR_COLORS)):
+        ox, oy = offsets(index)
+        x0 = gain_x * (ox + cell_box[0][0] - pad) + off_x
+        x1 = gain_x * (ox + cell_box[0][1] + pad) + off_x
+        y0 = gain_y * (oy + cell_box[1][0] - pad) + off_y
+        y1 = gain_y * (oy + cell_box[1][1] + pad) + off_y
+        ax.add_patch(plt.Rectangle((x0, y0), x1 - x0, y1 - y0, fill=False,
+                                   ec='#cccccc', lw=0.8, zorder=0))
+        ax.annotate(name, xy=(x0, y1 + 0.012), color=colour, fontsize=8.5,
+                    fontweight='bold', va='bottom')
+        boxes[name] = (x0, x1, y0, y1)
+    return boxes
+
+
 def _affine(drawn_lo, drawn_hi, data_lo, data_hi):
     gain = (drawn_hi - drawn_lo) / (data_hi - data_lo)
     return gain, drawn_lo - gain * data_lo
@@ -601,80 +643,154 @@ def _extent(frame_, measure):
     return float(block.min()), float(block.max())
 
 
-# recovered from a STATIC draw of the same frame, not from the animated
-# one: an animated last frame is a hair short of the full path, which
-# biases the extents differently in each dimension (measured: it made one
-# gain look 7% larger than the other, which is an artefact of measuring
-# mid-reveal rather than a property of the transform).
-probe_fig, probe_ax = plt.subplots()
+# The transform `hyp.plot` applied, recovered so ANNOTATIONS can be placed
+# in data terms -- it takes no part in building the visualization, which is
+# entirely the one call above. Read off a STATIC draw of the same frame: an
+# animated last frame stops a hair short of the full path, which biases the
+# two dimensions differently and made one gain look 7% larger than the
+# other (an artefact of measuring mid-reveal, not a property of the map).
+probe_fig, probe_ax_e = plt.subplots()
 hyp.plot(tiled, '-', palette=SECTOR_COLORS, reduce=None, ndims=2,
-         normalize=None, legend=False, colorbar=False, ax=probe_ax, show=False)
-static_x = (min(np.min(ln.get_xdata()) for ln in probe_ax.lines),
-            max(np.max(ln.get_xdata()) for ln in probe_ax.lines))
-static_y = (min(np.min(ln.get_ydata()) for ln in probe_ax.lines),
-            max(np.max(ln.get_ydata()) for ln in probe_ax.lines))
-plt.close(probe_fig)
+         normalize=None, colorbar=False, ax=probe_ax_e, show=False)
+if probe_ax_e.get_legend() is not None:
+    probe_ax_e.get_legend().remove()
+static_x = (min(np.min(ln.get_xdata()) for ln in probe_ax_e.lines),
+            max(np.max(ln.get_xdata()) for ln in probe_ax_e.lines))
+static_y = (min(np.min(ln.get_ydata()) for ln in probe_ax_e.lines),
+            max(np.max(ln.get_ydata()) for ln in probe_ax_e.lines))
 gain_x, off_x = _affine(*static_x, *_extent(tiled, 'cumulative return'))
 gain_y, off_y = _affine(*static_y, *_extent(tiled, 'drawdown'))
 print('E: one gain for both dimensions:',
       abs(gain_x - gain_y) < 1e-9, f'({gain_x:.4f}, {gain_y:.4f})')
 
-# one cell box, in data units: the union of every sector's content BEFORE
-# translation, so all six cells are identical and the panels differ only
-# in what they contain
-base_x, base_y = _extent(untiled, 'cumulative return'), _extent(untiled, 'drawdown')
-pad = 0.06 / gain_x
-for p_, (name, colour) in enumerate(zip(NAMES, SECTOR_COLORS)):
-    ox, oy = (p_ % PANEL_COLS) * STEP, -(p_ // PANEL_COLS) * STEP
-    x0 = gain_x * (ox + base_x[0] - pad) + off_x
-    x1 = gain_x * (ox + base_x[1] + pad) + off_x
-    y0 = gain_y * (oy + base_y[0] - pad) + off_y
-    y1 = gain_y * (oy + base_y[1] + pad) + off_y
-    axe.add_patch(plt.Rectangle((x0, y0), x1 - x0, y1 - y0, fill=False,
-                                ec='#cccccc', lw=0.8, zorder=0))
-    axe.annotate(name, xy=(x0, y1 + 0.012), color=colour, fontsize=8.5,
-                 fontweight='bold', va='bottom')
-    cells[name] = (x0, x1, y0, y1)
-print('E: axes artists ->', {k: v for k, v in (
-    ('lines', len(axe.lines)), ('patches', len(axe.patches)),
-    ('collections', len(axe.collections)), ('texts', len(axe.texts)),
-    ('figure axes', len(anim.figure.axes)),
-    ('figure lines', len(anim.figure.lines)),
-    ('figure patches', len(anim.figure.patches)))})
-# and drop the letterbox the normalized square leaves around a 3x2 grid
-boxes = [cells[name] for name in NAMES]
-axe.set_xlim(min(b[0] for b in boxes) - 0.02, max(b[1] for b in boxes) + 0.02)
-axe.set_ylim(min(b[2] for b in boxes) - 0.02, max(b[3] for b in boxes) + 0.075)
-
-per_colour = {}
-for ln in axe.lines:
-    per_colour.setdefault(tuple(np.round(ln.get_color(), 3)), []).append(
-        round(float(ln.get_linewidth()), 1))
-print(f'E: ONE call -> {anim.n_frames} frames, {len(anim.figure.axes)} axes, '
-      f'{len(axe.lines)} lines, {len(per_colour)} colours')
-print('E: linewidths within one panel (leaves then parent):',
-      sorted(sorted(v) for v in per_colour.values())[0])
-# MEASURED: the animated backend re-applies its axis styling on EVERY
-# frame, so decoration applied once is undone by the next frame -- the
-# first render of this prototype came back with the axes spines restored
-# after `save()`. `on_frame` is the supported hook for exactly this, so
-# the panel-grid styling is re-applied per frame rather than once.
-def restyle(context):
-    for spine in axe.spines.values():
-        spine.set_visible(False)
-    for patch in library_patches:
-        patch.set_visible(False)
-    axe.set_xlim(*xlim)
-    axe.set_ylim(*ylim)
+panels = panel_traces(axe, set(NAMES), n_leaves=N_LEAVES)
 
 
+def at_vertices(path, n_rows):
+    """The drawn path sampled at the ORIGINAL data vertices.
+
+    `hyp.plot` draws each trace as a linear interpolation with 100 sub-steps
+    per segment (measured: 10 data rows -> 901 points), so every 100th point
+    IS a data vertex. Between vertices each trace is resampled along its own
+    arc length, and the mean of several resampled paths is NOT the
+    resampling of their mean -- which is why comparing whole paths shows a
+    ~2e-2 residual that means nothing.
+    """
+    step = (len(path) - 1) // (n_rows - 1)
+    return path[::step]
+
+
+def parent_is_the_mean_of_its_leaves(groups, n_rows):
+    """The hierarchy's contract, checked where it is exactly true."""
+    return max(
+        float(np.abs(
+            np.stack([at_vertices(path_xy(leaf), n_rows) for leaf in leaves]
+                     ).mean(axis=0)
+            - at_vertices(path_xy(parent), n_rows)).max())
+        for leaves, parent in groups.values())
+
+
+static_panels = panel_traces(probe_ax_e, set(NAMES), n_leaves=N_LEAVES)
+worst = parent_is_the_mean_of_its_leaves(static_panels, len(tiled))
+# the control: attribute each parent the WRONG leaves, and the same check
+# must fail by orders of magnitude, or it is not checking anything
+shuffled = {name: (leaves, list(static_panels.values())[(i + 1) % len(NAMES)][1])
+            for i, (name, (leaves, _)) in enumerate(static_panels.items())}
+control = parent_is_the_mean_of_its_leaves(shuffled, len(tiled))
+print(f'E: every parent IS the mean of its {N_LEAVES} leaves, at the data '
+      f'vertices: {worst:.2e}   (mis-attributed control: {control:.2e})')
+assert worst < 1e-12 < control, 'the hierarchy contract does not hold'
+
+
+
+
+
+cell_box = (_extent(untiled, 'cumulative return'), _extent(untiled, 'drawdown'))
+boxes = decorate_panels(
+    axe, ((gain_x, off_x), (gain_y, off_y)),
+    lambda i: ((i % PANEL_COLS) * STEP, -(i // PANEL_COLS) * STEP),
+    cell_box, pad=0.06 / gain_x)
+
+# every path inside its own box, and no two boxes overlapping: the two
+# claims tiling has to earn, since nothing in the library enforces them
+inside = all(
+    boxes[name][0] <= path_xy(a)[:, 0].min() and path_xy(a)[:, 0].max() <= boxes[name][1]
+    and boxes[name][2] <= path_xy(a)[:, 1].min() and path_xy(a)[:, 1].max() <= boxes[name][3]
+    for name, (leaves, parent) in panels.items() for a in [*leaves, parent])
+sizes = {(round(b[1] - b[0], 6), round(b[3] - b[2], 6)) for b in boxes.values()}
+overlap = any(
+    not (a[1] <= b[0] or b[1] <= a[0] or a[3] <= b[2] or b[3] <= a[2])
+    for i, a in enumerate(boxes.values()) for b in list(boxes.values())[i + 1:])
+print(f'E: every path inside its panel: {inside} | identical box sizes: '
+      f'{len(sizes) == 1} | panels overlap: {overlap}')
+
+axe.set_xlim(min(b[0] for b in boxes.values()) - 0.02,
+             max(b[1] for b in boxes.values()) + 0.02)
+axe.set_ylim(min(b[2] for b in boxes.values()) - 0.02,
+             max(b[3] for b in boxes.values()) + 0.075)
+axe.set_title(f"Six sectors, their stocks, and each sector's mean "
+              f'({span3})', fontsize=10.5, fontweight='bold')
+# the caption the tiling OWES the reader: same scale everywhere, and panel
+# positions carry no market meaning
+figtext = ('same cumulative-return (x) and drawdown (y) scale in every '
+           'panel; panel positions are layout only')
+anim.figure.text(0.5, 0.025, figtext, ha='center', fontsize=8,
+                 color='#555555')
+
+# Round 13, finding 7: give the parent more contrast than the hierarchy's
+# own 2x linewidth -- a darker shade of the panel's colour, and a heavier
+# line. This is restyling artists the library created, not redrawing them.
+def _darker(hex_colour, factor=0.62):
+    return tuple(channel * factor
+                 for channel in matplotlib.colors.to_rgb(hex_colour))
+
+
+heads = {}
+for name, colour in zip(NAMES, SECTOR_COLORS):
+    leaves, parent = panels[name]
+    parent.set(color=_darker(colour), linewidth=2.6, zorder=4)
+    for leaf in leaves:
+        leaf.set(alpha=0.55, linewidth=0.9)
+    # a dot riding the head of each mean, so the direction of the reveal is
+    # visible in a still as well as in motion
+    heads[name] = axe.plot([], [], 'o', color=_darker(colour), ms=4.0,
+                           mfc='white', mew=1.3, zorder=7)[0]
+
+# `on_frame` is for decoration that must CHANGE with the frame -- here,
+# the dot riding the head of each mean. An earlier version of this file
+# also re-applied the spines and limits here, on the belief that the
+# backend re-applies its axis styling every frame; that belief was WRONG.
+# It came from two vertical rules surviving a `save()`, which the library's
+# own frame box (now hidden through `frame_kwargs`) explains by itself.
+# Measured: limits, spine visibility and patch visibility all survive
+# `draw_frame` AND `save`.
 xlim, ylim = axe.get_xlim(), axe.get_ylim()
-restyle(None)
-anim.on_frame(restyle)
+
+
+def move_the_head_dots(context):
+    for name_ in NAMES:
+        drawn = path_xy(panels[name_][1])
+        if len(drawn):
+            heads[name_].set_data(drawn[-1:, 0], drawn[-1:, 1])
+
+
+for spine in axe.spines.values():
+    spine.set_visible(False)          # once is enough: it persists
+move_the_head_dots(None)
+anim.on_frame(move_the_head_dots)
+print(f'E: ONE call -> {anim.n_frames} frames, {len(anim.figure.axes)} axes, '
+      f'{len(axe.lines)} lines ({len(NAMES)} of them head dots this script '
+      f'added)')
+print('E: linewidths, leaves then parent:',
+      [round(float(np.atleast_1d(a.get_linewidth())[0]), 2)
+       for a in [*panels[NAMES[0]][0], panels[NAMES[0]][1]]])
 anim.save(f'{OUT}PROTO_E_animated.gif', dpi=100)
-print('E: still restyled after save:',
+print('E: styling survives the save without any per-frame help:',
       not any(sp.get_visible() for sp in axe.spines.values())
-      and not any(pt.get_visible() for pt in library_patches))
+      and axe.get_xlim() == xlim
+      and all(len(heads[n].get_xdata()) == 1 for n in NAMES))
 anim.figure.savefig(f'{OUT}PROTO_E_lastframe.png', dpi=100)
+anim.draw_frame(anim.n_frames // 2)
+anim.figure.savefig(f'{OUT}PROTO_E_midframe.png', dpi=100)
 print('E: GIF %.2f MB'
       % (pathlib.Path(f'{OUT}PROTO_E_animated.gif').stat().st_size / 1e6))

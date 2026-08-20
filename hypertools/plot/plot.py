@@ -2801,7 +2801,21 @@ def plot(
         pretrained model will be loaded which can save a lot of time.
 
     ax : matplotlib.Axes
-        Axis handle to plot the figure
+        Axis handle to plot the figure.
+
+        STATIC PLOTS ONLY. An animated plot (any truthy ``animate=``) owns
+        its own figure: it creates one, draws there, and returns it, so an
+        `ax` passed alongside ``animate=`` would be left empty. That
+        combination raises ``ValueError`` rather than drawing the right data
+        somewhere the caller is not looking. Style an animation through the
+        figure it hands back -- ``anim.figure``, ``anim.figure.axes[0]`` --
+        which persists: styling applied to that figure after the call
+        survives both ``draw_frame`` and ``save`` (measured). Use
+        ``on_frame=`` for decoration that must CHANGE with the frame, such
+        as a marker tracking the head of a trace.
+        Several animated panels in one figure are not supported; lay the
+        panels out in the DATA instead (translate each column group into its
+        own region of one shared frame) and make a single plot call.
 
     frame_kwargs : dict
         Keyword arguments for styling the frame drawn around the plot.
@@ -3989,6 +4003,28 @@ def plot(
     _user_supplied_ax = ax is not None
 
     if ax is not None:
+        # An animated plot BUILDS ITS OWN FIGURE. Measured across every mode
+        # -- parallel, serial, spin, chemtrails, precog, bullettime, window,
+        # morph -- a passed `ax` is ignored: the animation is drawn on a new
+        # figure, that figure is returned, and the caller's axes is left
+        # empty. Silently drawing the right data in the wrong place is worse
+        # than refusing, and refusing an unsupportable `ax=` is what the 3-D
+        # check immediately below already does.
+        #
+        # Composing several animated plots into one figure is therefore not
+        # possible today. An example that needs panels can lay them out in
+        # the DATA instead -- translate each group into its own region of one
+        # shared frame -- which keeps it to a single call and a single
+        # animation (see `examples/`).
+        if _raw_animate_style(animate):
+            raise ValueError(
+                "ax= cannot be combined with animate=: an animated plot owns "
+                "its own figure, so the axes you passed would be left empty "
+                "and the animation drawn somewhere else. Drop ax= and use the "
+                "returned animation's .figure (or .figure.axes[0]) to style "
+                "what was drawn; for several panels in one animation, lay the "
+                "panels out in the data and make a single plot call."
+            )
         if ndims > 2:
             if ax.name != "3d":
                 raise ValueError(

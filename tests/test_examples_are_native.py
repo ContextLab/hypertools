@@ -32,6 +32,7 @@ import contextlib
 import os
 import re
 
+import matplotlib as mpl
 import numpy as np
 import pytest
 
@@ -792,7 +793,8 @@ STATED_ARTIFACT = {
     # Market should go static, and the answer is that it stays animated --
     # so the floor stays, at a value the approved composition can actually
     # reach (a 6 s reveal at 15 fps measures 90 frames).
-    'animate_market_forecast': dict(min_frames=60),
+    'animate_market_forecast': dict(min_frames=90, axes_exactly=1,
+                                    tiled=dict(panels=6, leaves=4)),
     'animate_weather_decades': dict(min_frames=100, axes=2),
     'animate_painting_embeddings': dict(min_frames=60, palette=True),
     'animate_conversation': dict(min_frames=100, on_frame=True),
@@ -894,6 +896,168 @@ def _drive(anim, frame):
     anim.draw_frame(frame)
 
 
+def _path_xy(artist):
+    return np.column_stack([artist.get_xdata(), artist.get_ydata()])
+
+
+def _tiled_panels(fig, n_panels, n_leaves):
+    """`{panel: (leaves, parent)}` from the labels and order the library set.
+
+    NOT keyed on colour: two panels could share one and the check would
+    quietly pass. `hyp.plot` labels each group's parent with the group's own
+    name, leaves the leaves unlabelled, and draws every leaf before any
+    parent, in column order. The attribution is proven downstream by the
+    mean identity rather than trusted here.
+    """
+    lines = [ln for ln in fig.axes[0].lines if len(ln.get_xdata()) > 2]
+    parents = [ln for ln in lines if not ln.get_label().startswith('_')]
+    leaves = [ln for ln in lines if ln.get_label().startswith('_')]
+    assert len(parents) == n_panels, (
+        f'{len(parents)} labelled parent traces, expected {n_panels}')
+    assert len(leaves) == n_panels * n_leaves, (
+        f'{len(leaves)} leaf traces, expected {n_panels * n_leaves}')
+    return {parent.get_label():
+            (leaves[i * n_leaves:(i + 1) * n_leaves], parent)
+            for i, parent in enumerate(parents)}
+
+
+def _assert_tiled_composition(stem, anim, spec):
+    """The properties a TILED one-call composition has to earn.
+
+    `min_frames` alone only proves that something animated exists. These are
+    the defining properties of the composition Plan v5 criterion 3(b)
+    selected: panels laid out in the data, one call, one animation, one
+    pooled scaling, and a hierarchy whose parents are real means.
+    """
+    fig = anim.figure
+    n_panels, n_leaves = spec['panels'], spec['leaves']
+    # recorded BEFORE any frame is driven -- i.e. the view the example
+    # left behind. Comparing frames only to each other would accept an
+    # animation that discards the example's framing at frame 0 and then
+    # stays consistently wrong.
+    left_by_the_example = (fig.axes[0].get_xlim(), fig.axes[0].get_ylim())
+    _drive(anim, frame=anim.n_frames - 1)
+    panels = _tiled_panels(fig, n_panels, n_leaves)
+
+    colours = {tuple(np.round(mpl.colors.to_rgba(parent.get_color()), 3))
+               for _, parent in panels.values()}
+    assert len(colours) == n_panels, (
+        f'{stem}: {len(colours)} distinct parent colours for {n_panels} '
+        f'panels -- each panel must be identifiable by its own colour')
+
+    for name, (leaves, parent) in panels.items():
+        thinnest = min(np.atleast_1d(leaf.get_linewidth())[0]
+                       for leaf in leaves)
+        assert np.atleast_1d(parent.get_linewidth())[0] > thinnest, (
+            f'{stem}: panel {name} draws its hierarchy mean no heavier than '
+            f'its leaves')
+
+    # THE HIERARCHY CONTRACT, checked two ways, because an animated trace
+    # cannot be checked the obvious way. `hyp.plot` resamples each trace
+    # along its OWN arc length, and the sample count depends on the frame
+    # (measured: 980 points at the last frame of a 90-frame reveal over 12
+    # data rows, where a static draw of the same data gives 1101 = 11 x 100
+    # + 1). So the mean of several drawn paths is not the drawn mean
+    # BETWEEN vertices, and on an animated figure the vertices are not at
+    # predictable indices either.
+    #
+    # What IS exact on a fully revealed animated trace is its ENDPOINTS:
+    # they are data vertices whatever the resampling. So the identity is
+    # asserted exactly there, and the whole path is then required to be
+    # dramatically closer to its own leaves than to any other panel's --
+    # which is what catches a panel that has been handed the wrong traces.
+    def _mean_gap(leaves, parent, slicer=slice(None)):
+        return float(np.abs(
+            np.stack([_path_xy(leaf)[slicer] for leaf in leaves]).mean(axis=0)
+            - _path_xy(parent)[slicer]).max())
+
+    names = list(panels)
+    for index, name in enumerate(names):
+        leaves, parent = panels[name]
+        ends = _mean_gap(leaves, parent, slicer=[0, -1])
+        assert ends < 1e-9, (
+            f'{stem}: panel {name}\'s bold trace does not start and end at '
+            f'the mean of the {n_leaves} leaves drawn beside it (off by '
+            f'{ends:.2e}) -- the hierarchy is not computing it')
+        mine = _mean_gap(leaves, parent)
+        others = [_mean_gap(panels[other][0], parent)
+                  for other in names if other != name]
+        assert mine * 20 < min(others), (
+            f'{stem}: panel {name}\'s bold trace is no closer to its own '
+            f'leaves ({mine:.2e}) than to another panel\'s '
+            f'({min(others):.2e}) -- the panel is mixing traces')
+
+    boxes = {}
+    for name, (leaves, parent) in panels.items():
+        pts = np.vstack([_path_xy(a) for a in (*leaves, parent)])
+        boxes[name] = (pts[:, 0].min(), pts[:, 0].max(),
+                       pts[:, 1].min(), pts[:, 1].max())
+    # The panel CELLS the example draws must be identical in size: the
+    # panels differ in what they contain, not in how much room they are
+    # given.
+    #
+    # What this does NOT prove, stated so nobody reads it as more than it
+    # is: it cannot detect a per-panel RESCALE of the source data. A panel
+    # scaled up by 3 looks exactly like a panel whose data legitimately
+    # spans 3x as much, and no property of the rendered figure separates
+    # them -- that comparison needs the source, which lives in the example.
+    # Pooled per-measure scaling is therefore held by CONSTRUCTION (one
+    # call, one frame, one divisor computed once over the complete frame),
+    # and criterion 4 records that.
+    rectangles = [patch for patch in fig.axes[0].patches
+                  if isinstance(patch, mpl.patches.Rectangle)
+                  and patch.get_visible() and patch.get_width() > 0]
+    assert len(rectangles) >= n_panels, (
+        f'{stem}: {len(rectangles)} panel rectangles for {n_panels} panels '
+        f'-- a tiled composition has to draw its own panel boxes, since '
+        f'there are no axes to supply them')
+    sizes = {(round(r.get_width(), 6), round(r.get_height(), 6))
+             for r in rectangles[:n_panels]}
+    assert len(sizes) == 1, (
+        f'{stem}: panel boxes differ in size ({sizes}) -- the panels are not '
+        f'drawn on one shared cell, so a reader comparing two of them is '
+        f'comparing different amounts of room')
+
+    cells = [(r.get_x(), r.get_x() + r.get_width(),
+              r.get_y(), r.get_y() + r.get_height())
+             for r in rectangles[:n_panels]]
+    for i, a in enumerate(cells):
+        for b in cells[i + 1:]:
+            assert (a[1] <= b[0] or b[1] <= a[0]
+                    or a[3] <= b[2] or b[3] <= a[2]), (
+                f'{stem}: two panel boxes overlap -- the layout translations '
+                f'are too small to separate the panels')
+    for name, (lo_x, hi_x, lo_y, hi_y) in boxes.items():
+        assert any(c[0] <= lo_x and hi_x <= c[1]
+                   and c[2] <= lo_y and hi_y <= c[3] for c in cells), (
+            f'{stem}: panel {name} draws outside every panel box -- a path '
+            f'that leaves its cell reads as belonging to a neighbour')
+
+    # no forecast, in geometry or in prose: Plan v5 retired the claim
+    assert not [a for a in fig.axes[0].lines
+                if getattr(a, '_hyp_forecast_role', None)], (
+        f'{stem}: a forecast artist is drawn, and Plan v5 retired the '
+        f'forecast claim')
+    prose = ' '.join(t.get_text() for t in fig.texts) + ' ' + ' '.join(
+        t.get_text() for t in fig.axes[0].texts) + ' ' + (
+        fig.axes[0].get_title() or '')
+    assert 'forecast' not in prose.lower() and 'predict' not in prose.lower(), (
+        f'{stem}: the figure still says "forecast"/"predict": {prose!r}')
+
+    # The panel view has to survive being driven. Today nothing in the
+    # backend resets it -- measured: limits, spines and patches all survive
+    # `draw_frame` and `save` -- so this is a REGRESSION gate rather than a
+    # workaround, and it also catches an `on_frame` callback that moves the
+    # view out from under the panel boxes.
+    for frame in (0, anim.n_frames // 2, anim.n_frames - 1):
+        _drive(anim, frame=frame)
+        now = (fig.axes[0].get_xlim(), fig.axes[0].get_ylim())
+        assert now == left_by_the_example, (
+            f'{stem}: the view moved at frame {frame} ({now} vs the '
+            f'{left_by_the_example} the example left) -- the panel boxes '
+            f'and the paths would no longer line up')
+
+
 @pytest.mark.parametrize('stem', sorted(STATED_ARTIFACT))
 def test_examples_produce_their_stated_artifact(stem):
     """Executable semantics, not source-shape -- driven by a FIXTURE.
@@ -967,6 +1131,14 @@ def test_examples_produce_their_stated_artifact(stem):
         _drive(anim, frame=anim.n_frames // 2)
         assert fig.axes[0].collections or fig.axes[0].lines, (
             'a driven mid-morph frame drew nothing')
+    if want.get('axes_exactly'):
+        assert len(fig.axes) == want['axes_exactly'], (
+            f"{stem}: {len(fig.axes)} axes, expected exactly "
+            f"{want['axes_exactly']} -- a tiled composition puts its panels "
+            f'in the DATA, and a second axes means it went back to subplots, '
+            f'which cannot be one animation')
+    if want.get('tiled'):
+        _assert_tiled_composition(stem, anim, want['tiled'])
     if want.get('palette'):
         # Paintings is the ONLY example whose whole point is Task 1's native
         # `palette='image:<path>'`, and the only one that costs a committed
