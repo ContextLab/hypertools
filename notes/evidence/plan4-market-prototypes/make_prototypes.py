@@ -88,12 +88,17 @@ def path_of(coll):
     return np.vstack([segs[0]] + [s[-1:] for s in segs[1:]])
 
 
-def mark(ax, pts, color, lw=2.0):
-    """Where it started, and which way it is going."""
-    ax.plot(*pts[0], 'o', color=color, ms=5.5, mfc='white', mew=1.7, zorder=6)
+def mark(ax, pts, color, lw=2.0, ms=5.5, mew=1.7, head=16):
+    """Where it started, and which way it is going.
+
+    Sized by argument because the annotation that reads well on a 1500 px
+    prototype is a blob on a 736 px documentation page -- which is the
+    whole reason C is rendered at the documentation width.
+    """
+    ax.plot(*pts[0], 'o', color=color, ms=ms, mfc='white', mew=mew, zorder=6)
     ax.annotate('', xy=pts[-1], xytext=pts[-4],
                 arrowprops=dict(arrowstyle='-|>', color=color, lw=lw,
-                                mutation_scale=16), zorder=6)
+                                mutation_scale=head), zorder=6)
 
 
 # ---------------- A: one fixed 2-D panel ----------------------------------
@@ -137,3 +142,117 @@ lims = [(round(float(a.get_xlim()[0]), 6), round(float(a.get_xlim()[1]), 6),
          round(float(a.get_ylim()[0]), 6), round(float(a.get_ylim()[1]), 6))
         for a in axes.ravel()]
 print('every panel shares one normalization:', len(set(lims)) == 1, lims[0])
+
+
+# ---------------- C: B2, with the pooled per-measure display gain --------
+# MEASURED on the library, and the reason B2's traces sat in a thin band:
+# `hyp.plot` centres each dimension separately but applies ONE gain to all
+# of them, so a dimension with 1/100th the spread is drawn at 1/100th the
+# height (probe: x in [0, 100], y in [0, 1] -> drawn y range +-0.01).
+# MEASURED here: the two measures' half-ranges over the complete frame are
+# 0.456 (return) and 0.129 (drawdown), a factor of 3.5 -- so drawdown was
+# being drawn into a band under a third of the height it deserved, and each
+# individual sector covers only part of even that.
+#
+# So each MEASURE gets one display gain, computed ONCE over the complete
+# frame -- every sector, every row -- and applied to every panel. It is a
+# display gain, not a per-panel rescale: within-panel and across-panel
+# comparisons are untouched, and the only thing it sets is how tall one
+# unit of drawdown looks next to one unit of return, which the raw units
+# were deciding by accident.
+half_range = {}
+for measure in frame.columns.get_level_values('Measure').unique():
+    block = frame.xs(measure, axis=1, level='Measure').to_numpy()
+    half_range[measure] = (block.max() - block.min()) / 2.0
+scaled = frame / [half_range[c[2]] for c in frame.columns]
+print('per-measure half-ranges:',
+      {k: round(v, 4) for k, v in half_range.items()})
+
+
+#: C pales the peers further than B2 did. At 736 px the #dcdcdc peers were
+#: not "context" but clutter competing with the sector the panel is about.
+#:
+#: This value also decides whether the MARKET MEAN can be seen, and the
+#: three rendered candidates say it cannot -- measured parent luminance vs
+#: peer luminance, from `parent colour` below:
+#:
+#:   FAINT      peer   parent   gap    what it looks like at 736 px
+#:   #f4f4f4    0.957  0.863    0.094  peers gone; mean a faint tint
+#:   #ededed    0.929  0.841    0.088  peers a ghost; mean lost among them
+#:   #c4c4c4    0.769  0.707    0.062  peers compete with the focus; mean
+#:                                     still not separable from the peers
+#:
+#: The parent is the MEAN OF ITS CHILDREN by construction, so it always
+#: lands inside the peer greys, roughly a tenth of a luminance step from
+#: them, whatever this value is. Twice the leaf linewidth (measured: 2.0 vs
+#: 1.0) is not enough to recover a 0.1 gap at this size. That is a
+#: composition decision, not a tuning problem -- see README.md.
+FAINT = '#ededed'
+
+
+def draw_scaled(ax, focus=None, **kw):
+    hyp.plot(scaled, '-', hue=weights(focus), palette=SECTOR_COLORS + [FAINT],
+             hue_mode='mixture', reduce=None, ndims=2, normalize=None,
+             colorbar=False, ax=ax, show=False, **kw)
+    return sorted([c for c in ax.collections
+                   if getattr(c, '_hyp_trace_index', None) is not None],
+                  key=lambda c: c._hyp_trace_index)
+
+
+# 7.36in x 100dpi = 736px = furo's content column, which is the width that
+# actually decides whether these panels are legible
+figc, axesc = plt.subplots(2, 3, figsize=(7.36, 4.9), dpi=100)
+for i, (name, axc) in enumerate(zip(NAMES, axesc.ravel())):
+    panel = draw_scaled(axc, focus=i)
+    mark(axc, path_of(panel[i]), SECTOR_COLORS[i], lw=1.4, ms=4.0, mew=1.2,
+         head=10)
+    # the hierarchy mean is a BLEND, not a dark line: one focused leaf and
+    # five pale ones average to mostly pale, and the hierarchy's own
+    # arithmetic cannot make it black. What it DOES give it is twice the
+    # leaf linewidth (measured: 2.0 vs 1.0). Its endpoint gets a neutral
+    # marker so it can be found; nothing redraws its path.
+    mark(axc, path_of(panel[-1]), '#5f5f5f', lw=1.2, ms=4.0, mew=1.2,
+         head=10)
+    axc.set_title(name, fontsize=9.5, fontweight='bold',
+                  color=SECTOR_COLORS[i], loc='left', pad=3)
+figc.supxlabel(XLAB, fontsize=8.5)
+figc.supylabel(YLAB, fontsize=8.5)
+# the title claims only what the figure delivers: it does NOT say the mean
+# is visible, because at this width it is findable only by its marker
+figc.suptitle(f'One sector at a time, on one shared frame  ({span})',
+              fontsize=10, fontweight='bold')
+figc.tight_layout()
+figc.savefig(f'{OUT}PROTO_C_small_multiples.png')
+width_px, height_px = figc.get_size_inches() * figc.dpi
+print(f'saved C at {width_px:.0f}x{height_px:.0f} px '
+      f"(furo's content column is 736 px wide)")
+
+# what the hierarchy's own arithmetic gives the parent, rather than what a
+# caption might claim it gives: linewidth and blended colour, measured
+parent, leaf = panel[-1], panel[0]
+print('parent linewidth', np.atleast_1d(parent.get_linewidth())[0],
+      'vs leaf', np.atleast_1d(leaf.get_linewidth())[0])
+print('parent colour (first segment)', parent.get_colors()[0].round(3))
+peer = panel[0]          # panel 6 focuses leaf 5, so leaf 0 is a peer
+
+
+def luminance(rgba):
+    return round(float(0.2126 * rgba[0] + 0.7152 * rgba[1]
+                       + 0.0722 * rgba[2]), 3)
+
+
+print(f'luminance: peer {luminance(peer.get_colors()[0])}  '
+      f'parent {luminance(parent.get_colors()[0])}  '
+      f'(the gap the market mean has to be found across)')
+
+limsc = [(round(float(a.get_xlim()[0]), 6), round(float(a.get_xlim()[1]), 6),
+          round(float(a.get_ylim()[0]), 6), round(float(a.get_ylim()[1]), 6))
+         for a in axesc.ravel()]
+print('C: every panel shares one normalization:', len(set(limsc)) == 1,
+      limsc[0])
+probe_fig, probe_ax = plt.subplots()
+spans = [(np.ptp(path_of(c)[:, 0]), np.ptp(path_of(c)[:, 1]))
+         for c in draw_scaled(probe_ax)]
+plt.close(probe_fig)
+print('C: drawn x/y spans per trace, out of the 2.0 the box allows:',
+      [(round(a, 2), round(b, 2)) for a, b in spans])

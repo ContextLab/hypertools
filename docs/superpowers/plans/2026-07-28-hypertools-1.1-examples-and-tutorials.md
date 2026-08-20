@@ -84,20 +84,27 @@ Market: there is no accuracy code left to budget.
 
 ### Acceptance criteria for the replacement
 
-Each is checkable, and the ones marked *(gate)* are enforced by
-`tests/test_examples_are_native.py` rather than by review.
+Each is checkable, and the **five** marked *(gate)* — criteria 4–8 — are enforced by
+`tests/test_examples_are_native.py` rather than by review. Criteria 1–3 are review gates: a
+reviewer reads the script and the rendered figure.
 
 1. **No forecast-skill claim** anywhere in the script, notebook, docstring, figure text, or gallery
    caption. No accuracy number, no per-sector ranking, no "beats"/"predicts" language about markets.
 2. **A static composition is approved before any animation is rendered**, and reviewed at
    *documentation display width* — not at full PNG resolution, which is not the size that decides
    legibility. Evidence lives in `notes/evidence/plan4-market-prototypes/`.
-3. **Every drawn trace comes from one `hyp.plot` call** over a column MultiIndex, and the
+3. **Every panel's data traces originate from exactly one `hyp.plot` call** over the complete
+   column-MultiIndex frame; manual artists may annotate endpoints but may not redraw data
+   trajectories. (A six-panel composition therefore makes six calls — one per panel, each over the
+   *same* frame. The rule being stated is that no trajectory is ever drawn by hand.) The
    hierarchy's colour is the mean-of-children arithmetic (`hue=` matrix weights, `hue_mode=
    'mixture'`) rather than a lookup table. This is the thing the example exists to show.
-4. **Panels, if the composition uses them, are geometrically comparable** — each `hyp.plot` call
-   normalizes its own inputs, so every panel is passed the same complete frame and differentiated
-   only by hue. Asserted, not eyeballed: one shared limit tuple across panels.
+4. *(gate)* **Panels, if the composition uses them, are geometrically comparable** — each
+   `hyp.plot` call normalizes its own inputs, so every panel is passed the same complete frame and
+   differentiated only by hue. Asserted, not eyeballed: one shared limit tuple across panels, and
+   one pooled per-measure scaling computed once over the complete frame. The assertion belongs in
+   `tests/test_examples_are_native.py`, not only in the prototype generator, and lands with the
+   script (Step 7 of the resume sequence).
 5. *(gate)* **Within its size budget**, re-measured after the design settles. The budget is
    re-measured once, not renegotiated to fit an interim design.
 6. *(gate)* **No defect markers and no private-API reaches** (Contract 3).
@@ -122,24 +129,35 @@ cycle makes the trivial competitor obvious in advance; the Market study had to c
 parameter-free competitor separately only because that competitor became obvious after seeing which
 measure passed.
 
+Correlations are pooled across cities **after dividing each city's predictions and realisations by
+that city's own units** (the std of its month-over-month changes). The first run pooled them in raw
+units, which let a city with large numbers outvote a city with small ones — see the *2026-08-19
+amendment* in the study. The table is the corrected (`pooled_scaled`) run:
+
 | model | block | temperature | precipitation | humidity | windspeed |
 |-|-|-|-|-|-|
-| Kalman | 1 | +0.697 | +0.440 | +0.221 | +0.238 |
-| Kalman | 2 | +0.903 | **+0.651** | +0.583 | **+0.468** |
-| ARIMA | 1 | +0.687 | +0.595 | +0.372 | +0.404 |
-| ARIMA | 2 | +0.642 | +0.579 | +0.359 | +0.208 |
-| *best baseline* | 1 | *+0.940* | *+0.729* | *+0.710* | *+0.773* |
-| *best baseline* | 2 | *+0.935* | *+0.631* | *+0.656* | *+0.382* |
+| Kalman | 1 | +0.530 | +0.497 | +0.199 | +0.335 |
+| Kalman | 2 | +0.894 | **+0.678** | +0.595 | **+0.482** |
+| ARIMA | 1 | +0.624 | +0.630 | +0.365 | +0.273 |
+| ARIMA | 2 | +0.564 | +0.600 | +0.354 | +0.261 |
+| *best baseline* | 1 | *+0.918* | *+0.745* | *+0.722* | *+0.813* |
+| *best baseline* | 2 | *+0.925* | *+0.661* | *+0.665* | *+0.293* |
 
 `climatology` is the strongest baseline in **every one of the eight cells**. Kalman beats it on
 precipitation and windspeed — in **block 2 only**, which fails the both-blocks clause the rule
 already applies. **Nothing survives. Weather does not earn a forecast claim either.**
 
+The correction moved individual numbers by a lot — Kalman's block-1 temperature fell from +0.697 to
++0.530, and the per-city correlations behind it span +0.24 to +0.92 — but it moved **no verdict**.
+The rule was applied under all three aggregations (`pooled_scaled`, a per-city Fisher-z average,
+and the original raw pooling) and all three refuse everything; `tests/test_weather_forecast_study.
+py` pins all three sets of numbers so the conclusion cannot drift from the run that produced it.
+
 **But it fails for the opposite reason to Market, and the difference decides what to do next.** On
 Market the surviving numbers were an artifact: every trivial baseline was *anti*-correlated (down
 to -0.504), so clearing the bar was nearly free, and a parameter-free recovery rule then beat the
 models outright. Here the models are genuinely, strongly correlated with what happens next —
-temperature at **r = +0.90** — and lose only to a baseline that is handed the calendar. That is a
+temperature at **r = +0.89** — and lose only to a baseline that is handed the calendar. That is a
 true and demonstrable statement about the API: *the forecast tracks the seasonal cycle*. What it is
 not is evidence of **skill**, because knowing the month is cheaper and better.
 
