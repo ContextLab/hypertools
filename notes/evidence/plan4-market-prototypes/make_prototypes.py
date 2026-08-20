@@ -58,6 +58,7 @@ for sector in NAMES:
 frame = pd.DataFrame(columns).dropna()
 frame.columns = pd.MultiIndex.from_tuples(
     frame.columns, names=['Market', 'Sector', 'Measure'])
+frame_all = frame
 frame = frame.iloc[-WINDOW:].apply(np.expm1)
 dates, n = frame.index, len(frame)
 span = f'{dates[0]:%b %Y} - {dates[-1]:%b %Y}'
@@ -341,3 +342,339 @@ limsd = [(round(float(a.get_xlim()[0]), 6), round(float(a.get_xlim()[1]), 6),
          for a in axesd.ravel()]
 print('D: every panel shares one normalization:', len(set(limsd)) == 1,
       limsd[0])
+
+
+# ---------------- D2: D, with the mean restrained -------------------------
+# Review round 12, finding 3: D's mean is unmistakable but reads as a dense
+# black knot competing with the sector the panel is about. Four changes,
+# all of them display-side:
+#   * a shorter window -- 30 months of a wandering mean is knot, not path
+#   * the mean drawn at 1.6 rather than the hierarchy's own 2.0, still
+#     heavier than the 1.0 leaves, and at alpha 0.85 rather than opaque
+#   * peers paler still
+#   * only the focused sector keeps a direction arrow
+# The per-measure gain is recomputed over the SHORTER frame: it is defined
+# as "one gain per measure over the complete frame", and the complete frame
+# is now 21 months.
+D2_WINDOW = 21
+frame2 = frame.iloc[-D2_WINDOW:]
+half2 = {}
+for measure in frame2.columns.get_level_values('Measure').unique():
+    block2 = frame2.xs(measure, axis=1, level='Measure').to_numpy()
+    half2[measure] = (block2.max() - block2.min()) / 2.0
+scaled2 = frame2 / [half2[c[2]] for c in frame2.columns]
+span2 = f'{frame2.index[0]:%b %Y} - {frame2.index[-1]:%b %Y}'
+PALEST = '#f2f2f2'
+MEAN_GREY = '#4a4a4a'
+
+
+def draw_hierarchy_mean(ax, data, color=MEAN_GREY, lw=1.6, alpha=0.85):
+    """Draw ONLY the hierarchy's parent trace, in a colour of our choosing.
+
+    THIS IS A WORKAROUND, and it is isolated here so that it is obvious
+    where it starts and stops. 1.1 has no way to give a hierarchy's parent
+    a colour independent of its leaves: `palette` colours every trace in a
+    group identically, and `hue_mode='mixture'` forces the parent to the
+    MEAN of its leaves' colours -- which can never be darker than the
+    darkest leaf, so five pale peers force a pale mean. See README.md for
+    the five spellings that were measured.
+
+    So the same complete frame is drawn a second time with a dark
+    single-colour palette, and every trace except the parent is hidden.
+    Both calls receive identical input, so they normalize identically and
+    the two parent paths coincide exactly (asserted below). This is NOT
+    how one normally plots a hierarchy -- ordinary usage is one call -- and
+    a gallery example carrying it must say so where a reader will see it.
+    """
+    before = set(map(id, ax.lines))
+    hyp.plot(data, '-', palette=[color], reduce=None, ndims=2,
+             normalize=None, colorbar=False, legend=False, ax=ax, show=False)
+    drawn = [ln for ln in ax.lines if id(ln) not in before]
+    # the parent is found by the style the LIBRARY gave it -- the heavier
+    # line -- not by its position in the list
+    parent = max(drawn, key=lambda ln: ln.get_linewidth())
+    for line in drawn:
+        line.set_visible(line is parent)
+    parent.set(linewidth=lw, alpha=alpha, zorder=5)
+    return parent
+
+
+def draw_scaled2(ax, focus):
+    hyp.plot(scaled2, '-', hue=weights2(focus),
+             palette=SECTOR_COLORS + [PALEST], hue_mode='mixture',
+             reduce=None, ndims=2, normalize=None, colorbar=False, ax=ax,
+             show=False)
+    return sorted([c for c in ax.collections
+                   if getattr(c, '_hyp_trace_index', None) is not None],
+                  key=lambda c: c._hyp_trace_index)
+
+
+def weights2(focus):
+    rows = []
+    for leaf in range(6):
+        column = leaf if leaf == focus else 6
+        rows.append(np.tile(np.eye(7)[column], (len(frame2), 1)))
+    return rows
+
+
+figd2, axesd2 = plt.subplots(2, 3, figsize=(7.36, 4.9), dpi=100)
+for i, (name, axd) in enumerate(zip(NAMES, axesd2.ravel())):
+    panel2 = draw_scaled2(axd, focus=i)
+    mean2 = draw_hierarchy_mean(axd, scaled2)
+    mark(axd, path_of(panel2[i]), SECTOR_COLORS[i], lw=1.4, ms=4.0, mew=1.2,
+         head=10)
+    axd.plot(*np.array(mean2.get_data()).T[0], 'o', color=MEAN_GREY, ms=3.6,
+             mfc='white', mew=1.1, zorder=6)
+    axd.set_title(name, fontsize=9.5, fontweight='bold',
+                  color=SECTOR_COLORS[i], loc='left', pad=3)
+figd2.supxlabel(XLAB, fontsize=8.5)
+figd2.supylabel(YLAB, fontsize=8.5)
+figd2.suptitle(f'One sector at a time, against the market mean  ({span2})',
+               fontsize=10, fontweight='bold')
+figd2.tight_layout()
+figd2.savefig(f'{OUT}PROTO_D2_small_multiples.png')
+print(f'saved D2 ({D2_WINDOW} months, {span2})')
+print('D2: the two calls agree on the parent to %.2e'
+      % np.abs(path_of(panel2[-1]) - np.array(mean2.get_data()).T).max())
+print('D2: mean lw %.1f vs leaf %.1f, alpha %.2f'
+      % (mean2.get_linewidth(), np.atleast_1d(panel2[0].get_linewidth())[0],
+         mean2.get_alpha()))
+limsd2 = [(round(float(a.get_xlim()[0]), 6), round(float(a.get_xlim()[1]), 6),
+           round(float(a.get_ylim()[0]), 6), round(float(a.get_ylim()[1]), 6))
+          for a in axesd2.ravel()]
+print('D2: every panel shares one normalization:', len(set(limsd2)) == 1)
+
+
+# ---------------- D3: the knot, diagnosed and fixed ----------------------
+# D2 followed round 12's prescription (shorter window, restrained mean) and
+# the mean was STILL a knot. Measured, rather than re-tuned:
+#
+#   roughness = total turning / total drawn length
+#
+#   30 months, monthly     mean 8.59   sector 2.94
+#   21 months, monthly     mean 8.59   sector 2.94   (the window is not it)
+#   + Smooth(kernel=5)     mean 10.10  sector 3.23   (smoothing makes it WORSE:
+#                                                     it removes length faster
+#                                                     than it removes turning)
+#   60 months, 6-monthly   mean 4.18   sector 2.74
+#
+# The cause is in the data, not the styling: over the same span the market
+# mean covers 0.46x the ground of a single sector while turning as often,
+# because averaging six sectors cancels DIRECTION rather than noise. No
+# linewidth, alpha or window fixes that -- only fewer, wider strides do.
+# Sampling every 6 months over 5 years gives 10 strokes instead of 30, and
+# shows more history rather than less.
+D3_MONTHS, D3_STEP = 60, 6
+frame3 = frame_all.iloc[-D3_MONTHS:].apply(np.expm1).iloc[::D3_STEP]
+half3 = {}
+for measure in frame3.columns.get_level_values('Measure').unique():
+    half3[measure] = np.ptp(
+        frame3.xs(measure, axis=1, level='Measure').to_numpy()) / 2.0
+scaled3 = frame3 / [half3[c[2]] for c in frame3.columns]
+span3 = f'{frame3.index[0]:%b %Y} - {frame3.index[-1]:%b %Y}'
+
+
+def weights3(focus):
+    return [np.tile(np.eye(7)[leaf if leaf == focus else 6], (len(frame3), 1))
+            for leaf in range(6)]
+
+
+figd3, axesd3 = plt.subplots(2, 3, figsize=(7.36, 4.9), dpi=100)
+for i, (name, axd) in enumerate(zip(NAMES, axesd3.ravel())):
+    hyp.plot(scaled3, '-', hue=weights3(i), palette=SECTOR_COLORS + [PALEST],
+             hue_mode='mixture', reduce=None, ndims=2, normalize=None,
+             colorbar=False, ax=axd, show=False)
+    panel3 = sorted([c for c in axd.collections
+                     if getattr(c, '_hyp_trace_index', None) is not None],
+                    key=lambda c: c._hyp_trace_index)
+    mean3 = draw_hierarchy_mean(axd, scaled3)
+    mark(axd, path_of(panel3[i]), SECTOR_COLORS[i], lw=1.4, ms=4.0, mew=1.2,
+         head=10)
+    axd.plot(*np.array(mean3.get_data()).T[0], 'o', color=MEAN_GREY, ms=3.6,
+             mfc='white', mew=1.1, zorder=6)
+    axd.set_title(name, fontsize=9.5, fontweight='bold',
+                  color=SECTOR_COLORS[i], loc='left', pad=3)
+figd3.supxlabel(XLAB, fontsize=8.5)
+figd3.supylabel(YLAB, fontsize=8.5)
+figd3.suptitle(f'One sector at a time, against the market mean  ({span3}, '
+               f'every {D3_STEP} months)', fontsize=10, fontweight='bold')
+figd3.tight_layout()
+figd3.savefig(f'{OUT}PROTO_D3_small_multiples.png')
+print(f'saved D3 ({len(frame3)} strokes, {span3})')
+
+
+# ---------------- E: the ANIMATED composition ----------------------------
+# Round 12, finding 1, is right that six panels x two calls cannot be one
+# animation -- and the reason is sharper than "twelve schedules". MEASURED:
+# `hyp.plot` IGNORES `ax=` when `animate=` is set and builds its own figure
+# (probe: `out.figure is fig` -> False, and the passed axes stays empty). So
+# panels cannot be composed into one figure through `ax=` at all, and the
+# two-call dark-mean workaround is impossible in an animated plot.
+#
+# `HyperAnimation.draw_frame(i)` IS public and documented as "the supported
+# way to drive an animation from a test or a script", so N animations could
+# be stepped in lockstep -- but they live on N separate figures, so there
+# is nothing to save them into.
+#
+# The way out is to stop asking matplotlib for the panels. Translate each
+# panel group into its own region of ONE shared coordinate box and the six
+# panels become six column groups of a single frame: ONE `hyp.plot` call,
+# ONE animation, an ordinary `.save()`. The panels are laid out in the
+# DATA, which is also what makes them share one normalization by
+# construction rather than by assertion.
+#
+# And with the panels in the data, colour-by-group becomes the RIGHT
+# behaviour rather than an obstacle: each panel is one sector, its leaves
+# are that sector's constituent stocks, and its parent -- automatically
+# computed, automatically heavier -- is that sector's mean. No hue matrix,
+# no second call, no hidden artists. The hierarchy is demonstrated six
+# times over instead of being worked around once.
+PANEL_COLS, STEP = 3, 2.6
+
+ticker_cols = {}
+for sector, tickers in SECTORS.items():
+    for ticker in tickers:
+        lvl = levels[(sector, ticker)]
+        ticker_cols[(sector, ticker, 'cumulative return')] = (
+            lvl - lvl.shift(CUM_WINDOW))
+        ticker_cols[(sector, ticker, 'drawdown')] = (
+            lvl - lvl.rolling(DD_WINDOW, min_periods=1).max())
+stocks = pd.DataFrame(ticker_cols).dropna()
+stocks.columns = pd.MultiIndex.from_tuples(
+    stocks.columns, names=['Sector', 'Ticker', 'Measure'])
+stocks = stocks.iloc[-D3_MONTHS:].apply(np.expm1).iloc[::D3_STEP]
+
+# one display gain per measure over the COMPLETE frame, exactly as C/D3
+halfs = {m: np.ptp(stocks.xs(m, axis=1, level='Measure').to_numpy()) / 2.0
+         for m in stocks.columns.get_level_values('Measure').unique()}
+tiled = stocks / [halfs[c[2]] for c in stocks.columns]
+untiled = tiled.copy()          # the same content, before any translation
+# ...then translate each sector's block into its own cell of the grid
+for p, sector in enumerate(NAMES):
+    ox, oy = (p % PANEL_COLS) * STEP, -(p // PANEL_COLS) * STEP
+    for column in tiled.columns:
+        if column[0] == sector:
+            tiled[column] = tiled[column] + (
+                ox if column[2] == 'cumulative return' else oy)
+
+anim = hyp.plot(tiled, '-', palette=SECTOR_COLORS, reduce=None, ndims=2,
+                normalize=None, animate='parallel', duration=6, frame_rate=15,
+                legend=False, colorbar=False, show=False,
+                title=f"Six sectors, their stocks, and each sector's mean "
+                      f'({span3})')
+axe = anim.figure.axes[0]
+anim.figure.set_size_inches(7.36, 4.9)
+anim.draw_frame(anim.n_frames - 1)
+# the library draws its own frame box as a patch on the axes (NOT the axes
+# spines, which is what the first attempt at this hid). It spans the full
+# normalized box, so once the view is cropped to the panel grid only its
+# left and right edges remain -- two mystery vertical rules through the
+# figure. Recorded here, before any of this script's own patches exist,
+# so it can be told apart from them by identity rather than by looks.
+library_patches = list(axe.patches)
+print(f'E: the library drew {len(library_patches)} patch(es) of its own')
+
+# The panels are laid out in the data, so their positions on screen are a
+# fact to be READ OFF the drawn artists rather than assumed -- which is
+# also the check that the tiling worked. Labels and cell frames are
+# annotations; nothing here touches a trajectory.
+cells = {}
+for ln in axe.lines:
+    key = tuple(np.round(ln.get_color(), 3))
+    x, y = np.asarray(ln.get_xdata()), np.asarray(ln.get_ydata())
+    lo_x, hi_x, lo_y, hi_y = cells.get(key, (np.inf, -np.inf, np.inf, -np.inf))
+    cells[key] = (min(lo_x, x.min()), max(hi_x, x.max()),
+                  min(lo_y, y.min()), max(hi_y, y.max()))
+# The cells belong on a GRID, so their positions come from the offsets
+# that built the grid -- not from where each sector's content happens to
+# sit, which staggered them. `hyp.plot` maps data to the drawn box with one
+# affine transform (one gain, per-dimension centring), and that transform
+# is recoverable from the extents: the drawn extent IS the data extent
+# mapped, since interpolation along a segment stays inside it.
+def _affine(drawn_lo, drawn_hi, data_lo, data_hi):
+    gain = (drawn_hi - drawn_lo) / (data_hi - data_lo)
+    return gain, drawn_lo - gain * data_lo
+
+
+def _extent(frame_, measure):
+    block = frame_.xs(measure, axis=1, level='Measure').to_numpy()
+    return float(block.min()), float(block.max())
+
+
+# recovered from a STATIC draw of the same frame, not from the animated
+# one: an animated last frame is a hair short of the full path, which
+# biases the extents differently in each dimension (measured: it made one
+# gain look 7% larger than the other, which is an artefact of measuring
+# mid-reveal rather than a property of the transform).
+probe_fig, probe_ax = plt.subplots()
+hyp.plot(tiled, '-', palette=SECTOR_COLORS, reduce=None, ndims=2,
+         normalize=None, legend=False, colorbar=False, ax=probe_ax, show=False)
+static_x = (min(np.min(ln.get_xdata()) for ln in probe_ax.lines),
+            max(np.max(ln.get_xdata()) for ln in probe_ax.lines))
+static_y = (min(np.min(ln.get_ydata()) for ln in probe_ax.lines),
+            max(np.max(ln.get_ydata()) for ln in probe_ax.lines))
+plt.close(probe_fig)
+gain_x, off_x = _affine(*static_x, *_extent(tiled, 'cumulative return'))
+gain_y, off_y = _affine(*static_y, *_extent(tiled, 'drawdown'))
+print('E: one gain for both dimensions:',
+      abs(gain_x - gain_y) < 1e-9, f'({gain_x:.4f}, {gain_y:.4f})')
+
+# one cell box, in data units: the union of every sector's content BEFORE
+# translation, so all six cells are identical and the panels differ only
+# in what they contain
+base_x, base_y = _extent(untiled, 'cumulative return'), _extent(untiled, 'drawdown')
+pad = 0.06 / gain_x
+for p_, (name, colour) in enumerate(zip(NAMES, SECTOR_COLORS)):
+    ox, oy = (p_ % PANEL_COLS) * STEP, -(p_ // PANEL_COLS) * STEP
+    x0 = gain_x * (ox + base_x[0] - pad) + off_x
+    x1 = gain_x * (ox + base_x[1] + pad) + off_x
+    y0 = gain_y * (oy + base_y[0] - pad) + off_y
+    y1 = gain_y * (oy + base_y[1] + pad) + off_y
+    axe.add_patch(plt.Rectangle((x0, y0), x1 - x0, y1 - y0, fill=False,
+                                ec='#cccccc', lw=0.8, zorder=0))
+    axe.annotate(name, xy=(x0, y1 + 0.012), color=colour, fontsize=8.5,
+                 fontweight='bold', va='bottom')
+    cells[name] = (x0, x1, y0, y1)
+print('E: axes artists ->', {k: v for k, v in (
+    ('lines', len(axe.lines)), ('patches', len(axe.patches)),
+    ('collections', len(axe.collections)), ('texts', len(axe.texts)),
+    ('figure axes', len(anim.figure.axes)),
+    ('figure lines', len(anim.figure.lines)),
+    ('figure patches', len(anim.figure.patches)))})
+# and drop the letterbox the normalized square leaves around a 3x2 grid
+boxes = [cells[name] for name in NAMES]
+axe.set_xlim(min(b[0] for b in boxes) - 0.02, max(b[1] for b in boxes) + 0.02)
+axe.set_ylim(min(b[2] for b in boxes) - 0.02, max(b[3] for b in boxes) + 0.075)
+
+per_colour = {}
+for ln in axe.lines:
+    per_colour.setdefault(tuple(np.round(ln.get_color(), 3)), []).append(
+        round(float(ln.get_linewidth()), 1))
+print(f'E: ONE call -> {anim.n_frames} frames, {len(anim.figure.axes)} axes, '
+      f'{len(axe.lines)} lines, {len(per_colour)} colours')
+print('E: linewidths within one panel (leaves then parent):',
+      sorted(sorted(v) for v in per_colour.values())[0])
+# MEASURED: the animated backend re-applies its axis styling on EVERY
+# frame, so decoration applied once is undone by the next frame -- the
+# first render of this prototype came back with the axes spines restored
+# after `save()`. `on_frame` is the supported hook for exactly this, so
+# the panel-grid styling is re-applied per frame rather than once.
+def restyle(context):
+    for spine in axe.spines.values():
+        spine.set_visible(False)
+    for patch in library_patches:
+        patch.set_visible(False)
+    axe.set_xlim(*xlim)
+    axe.set_ylim(*ylim)
+
+
+xlim, ylim = axe.get_xlim(), axe.get_ylim()
+restyle(None)
+anim.on_frame(restyle)
+anim.save(f'{OUT}PROTO_E_animated.gif', dpi=100)
+print('E: still restyled after save:',
+      not any(sp.get_visible() for sp in axe.spines.values())
+      and not any(pt.get_visible() for pt in library_patches))
+anim.figure.savefig(f'{OUT}PROTO_E_lastframe.png', dpi=100)
+print('E: GIF %.2f MB'
+      % (pathlib.Path(f'{OUT}PROTO_E_animated.gif').stat().st_size / 1e6))

@@ -8,8 +8,28 @@ cannot be reviewed from a sentence saying one image is legible.
 | `PROTO_A2_single_panel.png` | one fixed 2-D panel, six sector leaves + the market mean |
 | `PROTO_B2_small_multiples.png` | one small panel per sector, market mean repeated as a reference |
 | `PROTO_C_small_multiples.png` | B2 with the vertical compression fixed, rendered at **736 px** — the actual documentation width |
-| `PROTO_D_small_multiples.png` | C, plus a **dark hierarchy mean** — the current candidate |
-| `make_prototypes.py` | regenerates all four, ~20 s |
+| `PROTO_D_small_multiples.png` | C, plus a **dark hierarchy mean** |
+| `PROTO_D2_small_multiples.png` | D at 21 months, mean restrained — round 12's prescription, followed |
+| `PROTO_D3_small_multiples.png` | the knot diagnosed: 5 years at 6-month strides — **static candidate** |
+| `PROTO_E_animated.gif` + `PROTO_E_lastframe.png` | six panels, **one call, one animation** — animated candidate |
+| `make_prototypes.py` | regenerates all of them, ~90 s (E renders 90 frames) |
+
+### The knot was in the data, not the styling
+
+Round 12 asked for a shorter window and a restrained mean. Done (D2) — and the mean was still a
+knot. Measured with `roughness = total turning / total drawn length`:
+
+| | mean | one sector |
+|-|-|-|
+| 30 months, monthly | 8.59 | 2.94 |
+| 21 months, monthly | 8.59 | 2.94 |
+| + `Smooth(kernel_width=5)` | **10.10** | 3.23 |
+| 60 months, 6-monthly | **4.18** | 2.74 |
+
+Smoothing makes it *worse*: it removes length faster than it removes turning. The cause is that
+over the same span the market mean covers **0.46×** the ground of a single sector while turning as
+often — averaging six sectors cancels *direction*, not noise. Only fewer, wider strides fix it, and
+they show more history rather than less. That is D3.
 
 Run it from anywhere:
 
@@ -121,3 +141,35 @@ does not own, so it needs the maintainer's call.
 
 That highlight IS the hierarchy's arithmetic (the mean of the weight rows),
 which is what makes it a demonstration rather than a workaround.
+
+### E — panels in the data, not in matplotlib
+
+Measured, in order:
+
+1. `hyp.plot` **ignores `ax=` when `animate=` is set** and builds its own figure — so animated
+   panels cannot be composed through `ax=`, and the two-call dark-mean workaround is impossible
+   in an animated plot.
+2. `HyperAnimation.draw_frame(i)` **is public** and documented as the supported way to drive an
+   animation, so N animations can be stepped in lockstep — but they live on N figures, and
+   there is nothing to save them into.
+3. So the panels move into the **data**: each panel group is translated into its own region of one
+   shared coordinate box. Six panels become six column groups of one frame — **one call, one
+   animation, an ordinary `.save()`** — and they share one normalization by construction.
+
+With the panels in the data, colour-by-top-level-group stops being an obstacle and becomes the
+right behaviour: each panel is one sector, its leaves are that sector's stocks, and its parent is
+that sector's mean, automatically computed and automatically heavier. **No hue matrix, no second
+call, no hidden artists.** Measured: 6 colours, `[1.0, 1.0, 1.0, 1.0, 2.0]` linewidths per panel,
+90 frames, 0.87 MB.
+
+Two things the animated backend does that any multi-panel example must handle:
+
+- it **re-applies its axis styling every frame**, so decoration applied once is undone by the next
+  one — `on_frame` is the supported hook, and the prototype re-applies its styling there;
+- it **draws a frame box as a patch on the axes** (not the spines), whose left and right edges
+  cross the figure as two mystery vertical rules once the view is cropped to the panel grid.
+
+The grid geometry is recovered from the affine transform `hyp.plot` applied, read off a **static**
+draw of the same frame: an animated last frame stops a hair short of the full path, which biased
+the two dimensions differently and made one gain look 7% larger than the other. Off the static
+draw, the two gains agree exactly (0.2851 / 0.2851) — one gain, per-dimension centring, confirmed.

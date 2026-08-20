@@ -124,6 +124,75 @@ reviewer reads the script and the rendered figure.
 8. *(gate)* **Produces its stated artifact**, degrades offline through a deterministic synthetic
    fallback, and exits 0.
 
+**Task 2's checklist carries the gate revision itself** *(round 12, finding 2)* — it is work, not a
+consequence, and discovering it after implementation is how the last two stale-record failures
+happened:
+
+- [x] `STATED_ARTIFACT['animate_market_forecast']`: drop `predicts=True` (Plan v5 retired the
+      forecast, so a gate demanding it would demand the thing the plan removed), keep `min_frames`
+      at a floor the approved composition reaches — now `dict(min_frames=60)`.
+- [ ] the gallery title and docstring stop describing a forecast.
+- [ ] `EXPECTED_VISIBLE_OUTPUTS['market_forecast']` recorded from a real execution (criterion 7).
+- [ ] the notebook's display expectations match whatever the composition actually emits.
+- [ ] criterion 4's shared-limit assertion lands in the gate with the script.
+
+**If the composition carries a workaround, it is quarantined** *(round 12, finding 4)*. A gallery
+example teaches by example, so a reader must not infer that duplicating every hierarchy plot and
+picking the widest line is how one colours a parent. Any such code is confined to a single named
+helper (`draw_hierarchy_mean`), its docstring says plainly that it exists only because 1.1 has no
+independent parent colouring, and the API gap is tracked separately. Plan 4 does **not** add the
+parent-colour API. (Composition E needs no workaround at all.)
+
+### Animated or static — MEASURED (review round 12, finding 1)
+
+Round 12 asked whether Market should go static, on the grounds that six panels × two `hyp.plot`
+calls is twelve animations and one `HyperAnimation` owns one schedule. The premise is right; two of
+the three facts underneath it are not what they appeared to be, and the third settles the question.
+
+1. **`ax=` is IGNORED when `animate=` is set.** An animated call builds its own figure and leaves
+   the passed axes empty (`out.figure is fig` → `False`). So panels cannot be composed into one
+   figure through `ax=` at all — this, not the schedule count, is the real blocker, and it also
+   makes the two-call dark-mean workaround impossible in an animated plot.
+2. **`HyperAnimation.draw_frame(i)` is public**, and documented as *"the supported way to drive an
+   animation from a test or a script"*, with frames idempotent and order-independent by contract.
+   Twelve animations really can be stepped in lockstep — but they live on twelve separate figures,
+   so there is nothing to save them into. No orchestration layer rescues that.
+3. **Panels do not have to be axes.** Translate each panel group into its own region of one shared
+   coordinate box and the six panels become six column groups of a single frame: **one call, one
+   animation, an ordinary `.save()`**. Measured end to end on the real data — 6 groups × (4 stock
+   leaves + 1 automatic sector mean at double linewidth), 90 frames, 0.87 MB GIF, one figure.
+   Laying the panels out in the data also makes them share one normalization *by construction*
+   rather than by assertion, which is criterion 4 satisfied structurally.
+
+**So Market stays animated** — the maintainer's standing preference is that every gallery demo
+moves, and the evidence no longer argues against it. The artifact stays a GIF, and the smoke-gate
+entry keeps `min_frames` (lowered to a floor the composition can reach) while `predicts=True` is
+removed.
+
+Two facts about the animated backend that any multi-panel example must handle, both measured:
+
+- It **re-applies its axis styling on every frame**, so decoration applied once is undone by the
+  next frame. `on_frame` is the supported hook; the prototype re-applies its panel styling there.
+- It **draws a frame box as a patch on the axes** (not the axes spines). Cropping the view to a
+  panel grid leaves its left and right edges crossing the figure as two mystery vertical rules
+  unless that patch is hidden too.
+
+What is still open is the *composition*, because the two candidates differ in what the hierarchy
+means, not merely in how it looks:
+
+| | **D3** (static) | **E** (animated) |
+|-|-|-|
+| panel | all six sectors, one emphasized | one sector |
+| leaves | six sector aggregates | that sector's constituent stocks |
+| the parent | the **market** mean, shared reference | that **sector's** mean, six of them |
+| colour | matrix hue + a second call for the mean | one palette colour per group, native |
+| workaround | `draw_hierarchy_mean` (hidden artists) | **none** |
+| animation | impossible without new API | one call, one `.save()` |
+
+E needs no workaround at all *because* the panels moved into the data: colour-by-top-level-group
+stops being an obstacle and becomes the right behaviour. It loses the market mean as a shared
+reference and gains six automatic parents. **Needs: the maintainer's pick.**
+
 ### Where the prediction story goes — MEASURED, and the answer is "nowhere yet"
 
 The maintainer's direction was to move the successful-prediction story to data with genuine

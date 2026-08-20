@@ -376,3 +376,54 @@ Before the gate landed: **3589 passed, 13 skipped, 2 deselected, 1 failed** — 
 one failure was `test_sdist_contains_only_tracked_files_plus_allowlist`, caused by
 the new test files being untracked at collection time. It passes once they are
 `git add`ed, which is the guard working as designed.
+
+
+## Review round 13 (2026-08-20)
+
+| finding | disposition |
+|-|-|
+| **1 (High)** D is static-only under the current architecture | **premise confirmed, conclusion reversed**: panels moved into the DATA, so six panels are one call and one animation (prototype **E**) |
+| **2 (High)** the smoke gate still requires the retired forecast | **fixed**: `predicts=True` removed, `min_frames` 100 -> 60; the gate revision is now an explicit Task 2 checklist item |
+| **3 (Medium)** D's mean dominates | D2 followed the prescription and the knot survived; **diagnosed** (roughness) and fixed by fewer, wider strides -> **D3** |
+| **4 (Medium)** don't teach the two-call workaround | quarantined in `draw_hierarchy_mean` with a docstring saying why it exists; plan says Task 2 does NOT add the parent-colour API |
+| **5, 6, 7 (Low)** weather calibration, retry portability, predict note | closed, no action |
+
+### Three measurements that decided the animation question
+
+1. **`hyp.plot` ignores `ax=` when `animate=` is set** -- it builds its own
+   figure and leaves the passed axes empty. That, not the schedule count, is
+   why six panels could not be one animation; it also makes the two-call
+   dark-mean workaround impossible in any animated plot.
+2. **`draw_frame(i)` is public** and documented as the supported way to drive
+   an animation, so N animations CAN be stepped in lockstep -- but they live
+   on N figures, so there is nothing to save them into.
+3. **Panels do not have to be axes.** Translating each panel group into its
+   own region of one shared box makes six panels six column groups of one
+   frame: one call, one animation, an ordinary `.save()`. Measured on real
+   data: 90 frames, 0.87 MB, 6 colours, `[1, 1, 1, 1, 2]` linewidths per
+   panel. Panels laid out in the data share one normalization BY
+   CONSTRUCTION, which is criterion 4 satisfied structurally.
+
+Two backend behaviours any multi-panel animated example must handle, both
+measured here: the animated backend **re-applies its axis styling every
+frame** (so decoration goes through `on_frame`), and it **draws its frame
+box as an axes patch**, not as spines -- cropping the view leaves its left
+and right edges crossing the figure as two mystery vertical rules.
+
+### The knot was in the data
+
+`roughness = total turning / total drawn length`: 8.59 for the market mean
+against 2.94 for a sector, unchanged by the shorter window, and made WORSE
+by smoothing (10.10) because smoothing removes length faster than turning.
+The market mean covers 0.46x the ground of one sector while turning as
+often -- averaging cancels direction, not noise. Six-month strides over
+five years: 4.18, and more history rather than less.
+
+### Open: which composition
+
+**Market stays animated** (maintainer's standing preference; the evidence no
+longer argues against it). The open pick is D3 vs E -- they differ in what
+the hierarchy MEANS, not in how it looks. Table in the plan's *Animated or
+static* section. E needs no workaround at all and animates in one call; D3
+keeps the market mean as the shared reference and cannot animate without
+new API.

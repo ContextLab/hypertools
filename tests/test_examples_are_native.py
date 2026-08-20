@@ -784,7 +784,15 @@ def test_reduce_tutorial_mentions_describe():
 STATED_ARTIFACT = {
     # min_frames is a real floor per example (frame_rate x duration), not
     # `>= 1`, which every animation satisfies by construction.
-    'animate_market_forecast': dict(min_frames=100, predicts=True),
+    # Market: `predicts=True` is GONE. Plan v5 retired the forecast claim
+    # (the preregistered study passed three specifications, and the audit
+    # it committed to in advance killed all three), so an example that
+    # still had to call `predict=` would be a gate demanding the thing the
+    # plan removed. `min_frames` stays: review round 12 asked whether
+    # Market should go static, and the answer is that it stays animated --
+    # so the floor stays, at a value the approved composition can actually
+    # reach (a 6 s reveal at 15 fps measures 90 frames).
+    'animate_market_forecast': dict(min_frames=60),
     'animate_weather_decades': dict(min_frames=100, axes=2),
     'animate_painting_embeddings': dict(min_frames=60, palette=True),
     'animate_conversation': dict(min_frames=100, on_frame=True),
