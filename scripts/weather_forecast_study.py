@@ -43,12 +43,80 @@ same discipline.
 
 A claim that survives this is worth drawing. A claim that does not is worth
 saying so, and the Market example is the precedent for saying it.
+
+AMENDMENT, 2026-08-19 -- HOW THE SCORES ARE POOLED ACROSS CITIES
+----------------------------------------------------------------
+Written and committed BEFORE the corrected numbers were produced, and the
+first run's numbers are superseded by them.
+
+The first version of `evaluate` concatenated every city's predicted and
+realised changes and took ONE Pearson correlation per measure, in raw
+units. Pearson is invariant to a scale shared by both of its arguments, but
+NOT to different scales in different blocks of the pooled sample: a city
+whose precipitation swings by 80 mm contributes ~1600x the covariance of a
+city that swings by 2 mm, so the pooled number is close to that one city's
+number and the other five barely vote. `market_representation_study.py`
+already refuses this on the MEASURE axis, in its own docstring ("never
+pooled across measures in raw units -- the three measures differ in scale,
+and pooling them lets one dominate"). The same objection applies on the
+CITY axis, and the first version of this file did not apply it.
+
+The correction, fixed here before rerunning:
+
+  unit scale     for each city and measure, s = the standard deviation of
+                 that city's month-over-month changes over the whole
+                 series. A pure units constant: it never reaches a model,
+                 and it divides the prediction and the realisation of EVERY
+                 competitor identically, so it cannot move one competitor
+                 relative to another.
+
+  pooled_scaled  the same pooled correlation, computed after dividing each
+                 city's predicted and realised changes by that city's s.
+                 THIS IS THE HEADLINE AGGREGATION.
+
+  fisher_z       an independent check: correlate within each city, then
+                 average with Fisher's z weighted by (n - 3), and report
+                 the spread across cities. It never pools cities' units at
+                 all, so it answers the same question a different way.
+
+  pooled_raw     the defective original, kept and printed so the size of
+                 the defect is on the record rather than described.
+
+The verdict is applied under all three. A claim that survives under a
+scale-free aggregation but not under `pooled_raw` would be a NEW claim: it
+would not inherit this preregistration, and it would need its own.
+
+WHY THERE IS NO END-TO-END "MULTIPLY A CITY BY 100" INVARIANCE TEST
+-------------------------------------------------------------------
+Because the shipped forecaster is not scale-equivariant, and pretending
+otherwise would hide that. MEASURED on a 60x2 seasonal series, multiplying
+the input by 100 and dividing the forecast change back by 100:
+
+  Kalman  n_iter=1  rel. change 0.012 / 2.03      ARIMA  0.0005 / 0.32
+  Kalman  n_iter=5  rel. change 0.003 / 0.41
+  Kalman  n_iter=25 rel. change 0.021 / 0.91
+  Kalman  n_iter=100 rel. change 0.084 / 0.62
+
+More EM iterations do not close the gap, so this is not "5 is too few":
+pykalman's EM starts from identity covariances, which mean something
+different relative to data scaled by 100, and it settles into a different
+optimum. `hypertools.predict` documents no scaling requirement.
+
+So the invariance that CAN be asserted is the one this amendment is about:
+the SCORING layer is invariant to a city's units. `tests/test_weather_
+forecast_study.py` asserts exactly that, on the aggregation and on the
+exactly-equivariant baselines, and states the model measurement above as
+the reason it stops there.
 """
+import datetime
+import email.utils
 import json
 import os
+import random
 import sys
 import tempfile
 import time
+import urllib.error
 import urllib.request
 
 import numpy as np
@@ -84,6 +152,67 @@ CITIES = {
 }
 
 
+#: waits, in seconds, before retry attempts 2..7 of a throttled request.
+#: open-meteo 429s six back-to-back archive requests on the last three,
+#: MEASURED, and the last of those still 429'd after a 1+2+4+8s schedule --
+#: it cleared after roughly another 30s. This schedule therefore spans 62s
+#: before giving up, and a `Retry-After` header overrides it whenever the
+#: server states its own number.
+_RETRY_WAITS = (2, 4, 8, 16, 32)
+
+#: pause between cities that actually reach the network, so six requests are
+#: not fired back to back in the first place. Cached cities skip it.
+_PACING_SECONDS = 1.5
+
+
+def _get_with_retries(req, name, waits=_RETRY_WAITS, sleep=time.sleep):
+    """Fetch `req`, retrying a throttle instead of calling it "offline".
+
+    Retries only 429 and 5xx -- a 404 or a 400 is a bug in the URL and
+    repeating it is pointless. Honours `Retry-After` when the server sends
+    one (in seconds or as an HTTP date), and jitters the fallback waits so
+    six cities that were throttled together do not all come back at the
+    same instant and throttle each other again.
+    """
+    for attempt, wait in enumerate((*waits, None)):
+        try:
+            with urllib.request.urlopen(req, timeout=60) as r:
+                return r.read()
+        except urllib.error.HTTPError as exc:
+            retryable = exc.code == 429 or 500 <= exc.code < 600
+            if not retryable or wait is None:
+                raise
+            stated = _retry_after_seconds(exc.headers.get('Retry-After'))
+            delay = stated if stated is not None else wait * random.uniform(
+                0.8, 1.3)
+            print(f'  . {name}: HTTP {exc.code}, retrying in {delay:.1f}s'
+                  f'{" (Retry-After)" if stated is not None else ""}'
+                  f' [attempt {attempt + 1}/{len(waits) + 1}]',
+                  file=sys.stderr)
+            sleep(delay)
+    raise AssertionError('unreachable: the last attempt re-raises')
+
+
+def _retry_after_seconds(header):
+    """`Retry-After` as a float, or None. Accepts both legal spellings."""
+    if not header:
+        return None
+    try:
+        return max(0.0, float(header.strip()))
+    except ValueError:
+        pass
+    try:
+        # raises on anything unparseable (it does NOT return None, which is
+        # what this code assumed until a test fed it "not a number")
+        stamp = email.utils.parsedate_to_datetime(header.strip())
+    except (TypeError, ValueError):
+        return None
+    if stamp.tzinfo is None:
+        stamp = stamp.replace(tzinfo=datetime.timezone.utc)
+    return max(0.0, (stamp - datetime.datetime.now(datetime.timezone.utc)
+                     ).total_seconds())
+
+
 def fetch_city_months(name, lat, lon):
     """Monthly-mean feature matrix for one city, or None.
 
@@ -106,27 +235,14 @@ def fetch_city_months(name, lat, lon):
         if not (os.path.exists(dest) and os.path.getsize(dest) > 0):
             req = urllib.request.Request(
                 url, headers={'User-Agent': 'hypertools-gallery/1.0'})
-            # open-meteo rate-limits: six of these fired back to back gets
-            # HTTP 429 on the last three, MEASURED. Retry with backoff
-            # rather than treating a throttle as "offline" -- the first run
-            # of this study did exactly that and answered the question with
-            # fabricated data.
-            for attempt in range(5):
-                try:
-                    with urllib.request.urlopen(req, timeout=60) as r:
-                        data = r.read()
-                    break
-                except urllib.error.HTTPError as exc:
-                    if exc.code != 429 or attempt == 4:
-                        raise
-                    wait = 2 ** attempt
-                    print(f'  . {name}: 429, retrying in {wait}s',
-                          file=sys.stderr)
-                    time.sleep(wait)
+            data = _get_with_retries(req, name)
             tmp = dest + '.part'
             with open(tmp, 'wb') as f:
                 f.write(data)
             os.replace(tmp, dest)
+            # this city cost a network request; pace the next one rather
+            # than racing it into the same rate-limit window
+            time.sleep(_PACING_SECONDS)
         with open(dest) as f:
             d = json.load(f)['daily']
         df = pd.DataFrame({f: pd.to_numeric(pd.Series(d[f]), errors='coerce')
@@ -198,54 +314,147 @@ def seasonal_deltas(series, anchor, horizon):
 BASELINES = ('zero', 'persistence', 'mean_change', 'ew_continuation',
              'seasonal_naive', 'climatology')
 
+AGGREGATIONS = ('pooled_scaled', 'fisher_z', 'pooled_raw')
+HEADLINE = 'pooled_scaled'
+
+
+def unit_scale(series):
+    """One positive units constant per measure for one city.
+
+    The standard deviation of that city's month-over-month changes over the
+    whole series. It never reaches a model -- it is applied to predictions
+    and realisations alike, after every forecast has been made -- so it
+    cannot move any competitor relative to any other; it only stops a city
+    with large numbers from outvoting a city with small ones. A measure with
+    no variation at all yields nan, and that city is then dropped from that
+    measure's pooling rather than dividing by zero.
+    """
+    spread = np.std(np.diff(np.asarray(series, dtype=float), axis=0), axis=0)
+    return np.where(np.isfinite(spread) & (spread > 0), spread, np.nan)
+
+
+def _corr_columns(pred, real):
+    """Per-column Pearson correlation, nan where it is not defined.
+
+    nan-tolerant on purpose: `zero` predicts a constant, so its column has
+    no variance and its correlation genuinely does not exist -- and one
+    city dropped for one measure must not take the other five with it.
+    """
+    pred, real = np.asarray(pred, dtype=float), np.asarray(real, dtype=float)
+    out = []
+    for j in range(real.shape[1]):
+        ok = np.isfinite(pred[:, j]) & np.isfinite(real[:, j])
+        if ok.sum() < 3 or np.std(pred[ok, j]) == 0 or np.std(real[ok, j]) == 0:
+            out.append(float('nan'))
+        else:
+            out.append(float(np.corrcoef(pred[ok, j], real[ok, j])[0, 1]))
+    return out
+
+
+def _fisher_z_mean(per_city):
+    """Correlate WITHIN each city, then average with Fisher's z.
+
+    `per_city` is a list of (correlations, n) pairs, one per city. Weighting
+    by (n - 3) is the usual variance weighting for z. Cities are never
+    pooled in the same units here at all, so this agrees with
+    `pooled_scaled` only if the answer does not depend on how the pooling
+    was done -- which is exactly what it is here to check.
+    """
+    n_measures = len(per_city[0][0])
+    means, spreads = [], []
+    for j in range(n_measures):
+        z, w, raw = [], [], []
+        for corrs, n in per_city:
+            c = corrs[j]
+            if np.isfinite(c) and n > 3:
+                z.append(np.arctanh(np.clip(c, -0.999999, 0.999999)))
+                w.append(n - 3)
+                raw.append(c)
+        if not z:
+            means.append(float('nan'))
+            spreads.append((float('nan'), float('nan')))
+            continue
+        means.append(float(np.tanh(np.average(z, weights=w))))
+        spreads.append((float(min(raw)), float(max(raw))))
+    return means, spreads
+
+
+def _aggregate(per_city_pred, per_city_real, scales):
+    """The three aggregations of one competitor's (city -> arrays) scores."""
+    scaled_pred = [p / s for p, s in zip(per_city_pred, scales)]
+    scaled_real = [r / s for r, s in zip(per_city_real, scales)]
+    per_city = [(_corr_columns(p, r), len(r))
+                for p, r in zip(per_city_pred, per_city_real)]
+    fisher, spread = _fisher_z_mean(per_city)
+    return {
+        'pooled_scaled': _corr_columns(np.concatenate(scaled_pred),
+                                       np.concatenate(scaled_real)),
+        'fisher_z': fisher,
+        'pooled_raw': _corr_columns(np.concatenate(per_city_pred),
+                                    np.concatenate(per_city_real)),
+        'per_city': [corrs for corrs, _ in per_city],
+        'spread': spread,
+    }
+
 
 def evaluate(arrays, model, horizon, anchors, block):
-    """Pooled predicted-vs-realised Pearson correlation, per measure."""
-    predicted, realised = [], []
-    baselines = {name: [] for name in BASELINES}
+    """Predicted-vs-realised correlation per measure, under each aggregation.
+
+    Scores are accumulated PER CITY and pooled afterwards, because how the
+    cities are combined turned out to be a load-bearing choice -- see the
+    2026-08-19 amendment at the top of this file.
+    """
+    pred_by_city, real_by_city, scales = [], [], []
+    base_by_city = {name: [] for name in BASELINES}
     t0 = time.time()
-    for anchor in anchors:
-        for series in arrays:
+    for series in arrays:
+        pred, real = [], []
+        trivials = {name: [] for name in BASELINES}
+        for anchor in anchors:
             if anchor + horizon - 1 >= len(series) or anchor < 2 * SEASON:
                 continue
             history = series[:anchor]
-            predicted.append(_predict_delta(history, model, horizon))
-            realised.append(series[anchor + horizon - 1] - history[-1])
+            pred.append(_predict_delta(history, model, horizon))
+            real.append(series[anchor + horizon - 1] - history[-1])
             trivial = _baseline_deltas(history, horizon)
             trivial.update(seasonal_deltas(series, anchor, horizon))
             for name in BASELINES:
-                baselines[name].append(trivial[name])
+                trivials[name].append(trivial[name])
+        if not pred:
+            continue
+        # the scale is appended HERE, beside the arrays it belongs to, so a
+        # city that contributed no anchors cannot shift every later city's
+        # units by one position
+        scales.append(unit_scale(series))
+        pred_by_city.append(np.array(pred))
+        real_by_city.append(np.array(real))
+        for name in BASELINES:
+            base_by_city[name].append(np.array(trivials[name]))
     elapsed = time.time() - t0
-    if not predicted:
+    if not pred_by_city:
         return None
-    predicted, realised = np.array(predicted), np.array(realised)
-
-    def _pearson(pred):
-        return [float(np.corrcoef(pred[:, j], realised[:, j])[0, 1])
-                if np.std(pred[:, j]) > 0 and np.std(realised[:, j]) > 0
-                else float('nan') for j in range(realised.shape[1])]
-
     return {'model': model, 'horizon': horizon, 'block': block,
-            'n': len(predicted), 'seconds': elapsed,
-            'pearson': _pearson(predicted),
-            'baselines': {name: _pearson(np.array(vals))
-                          for name, vals in baselines.items()}}
+            'n': sum(len(p) for p in pred_by_city), 'seconds': elapsed,
+            'cities': len(pred_by_city),
+            'scores': _aggregate(pred_by_city, real_by_city, scales),
+            'baselines': {name: _aggregate(vals, real_by_city, scales)
+                          for name, vals in base_by_city.items()}}
 
 
-def best_baseline(row, measure_index):
-    """The STRONGEST trivial competitor for one measure.
+def best_baseline(row, measure_index, aggregation=HEADLINE):
+    """The STRONGEST trivial competitor for one measure, one aggregation.
 
     `zero` has no variance, so its correlation is nan by construction --
     take the max over the FINITE ones only, or a single nan becomes "the
     baseline" and every model wins by default.
     """
-    finite = [row['baselines'][name][measure_index]
+    finite = [row['baselines'][name][aggregation][measure_index]
               for name in BASELINES
-              if np.isfinite(row['baselines'][name][measure_index])]
+              if np.isfinite(row['baselines'][name][aggregation][measure_index])]
     return max(finite) if finite else float('nan')
 
 
-def verdict(rows, drawn_horizon=DRAWN_HORIZON):
+def verdict(rows, drawn_horizon=DRAWN_HORIZON, aggregation=HEADLINE):
     """Apply the preregistered rule mechanically, and report what survived."""
     survivors, considered = [], {}
     for row in rows:
@@ -254,7 +463,8 @@ def verdict(rows, drawn_horizon=DRAWN_HORIZON):
         for j, measure in enumerate(MEASURES):
             key = (row['model'], measure)
             considered.setdefault(key, []).append(
-                (row['block'], row['pearson'][j], best_baseline(row, j)))
+                (row['block'], row['scores'][aggregation][j],
+                 best_baseline(row, j, aggregation)))
     for key, entries in considered.items():
         blocks = [block for block, _, _ in entries]
         if sorted(blocks) != sorted(EXPECTED_BLOCKS):
@@ -293,32 +503,60 @@ def main():
         for block, anchors in blocks.items():
             row = evaluate(arrays, model, DRAWN_HORIZON, anchors, block)
             rows.append(row)
-            if row is None:
-                continue
-            print(f'\n{model:8s} {block}  n={row["n"]:4d}  '
-                  f'{row["seconds"]:.1f}s')
-            for j, measure in enumerate(MEASURES):
-                base = best_baseline(row, j)
-                mark = 'BEATS' if (np.isfinite(row['pearson'][j])
-                                   and np.isfinite(base)
-                                   and row['pearson'][j] > max(0.0, base)) else '.'
-                print(f'   {measure:14s} r={row["pearson"][j]:+.3f}   '
-                      f'best baseline {base:+.3f} '
-                      f'({max(BASELINES, key=lambda b: (row["baselines"][b][j] if np.isfinite(row["baselines"][b][j]) else -9))})'
-                      f'   {mark}')
+            if row is not None:
+                report_block(row)
 
-    survivors = verdict(rows)
-    print('\n' + '=' * 68)
-    if not survivors:
+    print('\n' + '=' * 70)
+    outcomes = {}
+    for aggregation in AGGREGATIONS:
+        survivors = verdict(rows, aggregation=aggregation)
+        outcomes[aggregation] = survivors
+        label = f'{aggregation}{"  (HEADLINE)" if aggregation == HEADLINE else ""}'
+        if not survivors:
+            print(f'{label:28s} nothing survives at t=1')
+            continue
+        print(f'{label:28s} {len(survivors)} specification(s) survive:')
+        for (model, measure), entries in survivors:
+            for block, score, base in sorted(entries):
+                print(f'      {model} / {measure} / {block}: '
+                      f'r={score:+.3f} vs baseline {base:+.3f}')
+
+    print('=' * 70)
+    if not outcomes[HEADLINE]:
         print('NOTHING SURVIVES the preregistered rule at t=1.')
         print('Weather does not earn a forecast claim either.')
     else:
-        print(f'{len(survivors)} specification(s) survive at t=1:')
-        for (model, measure), entries in survivors:
-            print(f'  {model} / {measure}')
-            for block, score, base in sorted(entries):
-                print(f'     {block}: r={score:+.3f} vs baseline {base:+.3f}')
-    return 0 if True else 1
+        print(f'{len(outcomes[HEADLINE])} specification(s) survive at t=1 '
+              f'under {HEADLINE}.')
+    disagree = [a for a in AGGREGATIONS
+                if bool(outcomes[a]) != bool(outcomes[HEADLINE])]
+    if disagree:
+        print(f'NOTE: {", ".join(disagree)} disagree(s) with {HEADLINE}. A '
+              'claim that survives\nonly under some aggregations is a NEW '
+              'claim and does not inherit this\npreregistration.')
+    return 0
+
+
+def report_block(row):
+    """Print one model-block cell: every aggregation, side by side."""
+    print(f'\n{row["model"]:8s} {row["block"]}  {row["cities"]} cities  '
+          f'n={row["n"]:4d}  {row["seconds"]:.1f}s')
+    for j, measure in enumerate(MEASURES):
+        cells = []
+        for aggregation in AGGREGATIONS:
+            score = row['scores'][aggregation][j]
+            base = best_baseline(row, j, aggregation)
+            beats = (np.isfinite(score) and np.isfinite(base)
+                     and score > max(0.0, base))
+            cells.append(f'{aggregation}: r={score:+.3f} vs {base:+.3f}'
+                         f'{" BEATS" if beats else ""}')
+        lo, hi = row['scores']['spread'][j]
+        winner = max(BASELINES, key=lambda b: (
+            row['baselines'][b][HEADLINE][j]
+            if np.isfinite(row['baselines'][b][HEADLINE][j]) else -9))
+        print(f'   {measure:14s} {cells[0]}   [{winner}]')
+        print(f'   {"":14s} {cells[1]}   per-city r in [{lo:+.2f}, {hi:+.2f}]')
+        print(f'   {"":14s} {cells[2]}')
 
 
 if __name__ == '__main__':
