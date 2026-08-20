@@ -23,8 +23,13 @@ of writing it down):
 
   models     Kalman, AutoRegressor, Laplace
   horizons   1 and 3 monthly steps
-  blocks     two NON-OVERLAPPING halves of the sample, so a specification
-             cannot be chosen on the same data it is then scored on
+  blocks     two NON-OVERLAPPING EVALUATION-ANCHOR blocks, so a
+             specification cannot be chosen on the same anchors it is then
+             scored on. The wording is exact on purpose: the split is over
+             WHERE each forecast is evaluated, not what it was fitted on.
+             Every model's history expands from the start of the series, so
+             the two blocks' fitting windows overlap heavily and they are
+             NOT two independent samples.
 
   metrics    per-measure Pearson correlation between PREDICTED and REALISED
              change (never pooled across measures in raw units -- the three
