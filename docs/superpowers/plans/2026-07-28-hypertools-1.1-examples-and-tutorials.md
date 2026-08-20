@@ -93,12 +93,22 @@ reviewer reads the script and the rendered figure.
 2. **A static composition is approved before any animation is rendered**, and reviewed at
    *documentation display width* — not at full PNG resolution, which is not the size that decides
    legibility. Evidence lives in `notes/evidence/plan4-market-prototypes/`.
-3. **Every panel's data traces originate from exactly one `hyp.plot` call** over the complete
-   column-MultiIndex frame; manual artists may annotate endpoints but may not redraw data
-   trajectories. (A six-panel composition therefore makes six calls — one per panel, each over the
-   *same* frame. The rule being stated is that no trajectory is ever drawn by hand.) The
-   hierarchy's colour is the mean-of-children arithmetic (`hue=` matrix weights, `hue_mode=
-   'mixture'`) rather than a lookup table. This is the thing the example exists to show.
+3. **Every drawn data trajectory comes from a `hyp.plot` call over the complete column-MultiIndex
+   frame.** Manual artists may annotate endpoints and may restyle or hide artists the library
+   created, but no trajectory is ever computed or drawn by hand. A six-panel composition therefore
+   makes at least six calls, each over the *same* frame — which is also what keeps the panels
+   comparable, since each call normalizes its own input.
+
+   **The hierarchy must be native in discovery, geometry and style**: leaves found from the column
+   MultiIndex, the parent's path computed as the mean of its children, and the parent drawn in the
+   hierarchy's own heavier style. **Its colour need not be.** *(Revised, review round 12.)* The
+   original wording required the parent's colour to fall out of `hue_mode='mixture'` weight
+   averaging, and that requirement is unsatisfiable in this composition: a mixture parent's colour
+   is the *mean* of its children's, a mean lies in the convex hull of what it averages, so a parent
+   can never be darker than its darkest leaf. Five pale peers force a pale mean — measured
+   parent-vs-peer luminance gap **0.088**, against **0.76** once the colour is assigned directly.
+   Requiring it was hiding the example's own subject. Matrix hue keeps its own documentation and
+   tests; Market does not have to demonstrate every hierarchy feature at once.
 4. *(gate)* **Panels, if the composition uses them, are geometrically comparable** — each
    `hyp.plot` call normalizes its own inputs, so every panel is passed the same complete frame and
    differentiated only by hue. Asserted, not eyeballed: one shared limit tuple across panels, and
@@ -130,28 +140,36 @@ parameter-free competitor separately only because that competitor became obvious
 measure passed.
 
 Correlations are pooled across cities **after dividing each city's predictions and realisations by
-that city's own units** (the std of its month-over-month changes). The first run pooled them in raw
-units, which let a city with large numbers outvote a city with small ones — see the *2026-08-19
-amendment* in the study. The table is the corrected (`pooled_scaled`) run:
+that city's own units** — the std of its month-over-month changes, measured on the 24 changes
+**before the first evaluation anchor** and reused for both blocks. The first run pooled in raw
+units, letting a city with large numbers outvote a city with small ones; the second measured the
+units over the whole series, which let evaluation-period volatility decide how loudly each city
+votes. Both corrections are recorded in the study's *2026-08-19 amendment*. The table is the
+calibrated (`pooled_scaled`) run:
 
 | model | block | temperature | precipitation | humidity | windspeed |
 |-|-|-|-|-|-|
-| Kalman | 1 | +0.530 | +0.497 | +0.199 | +0.335 |
-| Kalman | 2 | +0.894 | **+0.678** | +0.595 | **+0.482** |
-| ARIMA | 1 | +0.624 | +0.630 | +0.365 | +0.273 |
-| ARIMA | 2 | +0.564 | +0.600 | +0.354 | +0.261 |
-| *best baseline* | 1 | *+0.918* | *+0.745* | *+0.722* | *+0.813* |
-| *best baseline* | 2 | *+0.925* | *+0.661* | *+0.665* | *+0.293* |
+| Kalman | 1 | +0.539 | +0.520 | +0.201 | +0.355 |
+| Kalman | 2 | +0.895 | **+0.674** | +0.558 | **+0.495** |
+| ARIMA | 1 | +0.641 | +0.695 | +0.418 | +0.257 |
+| ARIMA | 2 | +0.578 | +0.609 | +0.365 | **+0.296** |
+| *best baseline* | 1 | *+0.921* | *+0.758* | *+0.719* | *+0.824* |
+| *best baseline* | 2 | *+0.925* | *+0.660* | *+0.648* | *+0.296* |
 
-`climatology` is the strongest baseline in **every one of the eight cells**. Kalman beats it on
-precipitation and windspeed — in **block 2 only**, which fails the both-blocks clause the rule
-already applies. **Nothing survives. Weather does not earn a forecast claim either.**
+`climatology` is the strongest baseline in **seven of the eight cells**; in windspeed/block 2
+`seasonal_naive` edges it at +0.296. (Under the other two aggregations climatology takes all eight
+— which is why the study now names the winning baseline *per aggregation* rather than once per
+cell.) Kalman beats the bar on precipitation and windspeed in **block 2 only**, and ARIMA clears
+windspeed/block 2 by **0.0001** — a rounding artefact, not a result — while losing the same measure
+in block 1 by 0.57. Every one fails the both-blocks clause. **Nothing survives. Weather does not
+earn a forecast claim either.**
 
-The correction moved individual numbers by a lot — Kalman's block-1 temperature fell from +0.697 to
-+0.530, and the per-city correlations behind it span +0.24 to +0.92 — but it moved **no verdict**.
-The rule was applied under all three aggregations (`pooled_scaled`, a per-city Fisher-z average,
-and the original raw pooling) and all three refuse everything; `tests/test_weather_forecast_study.
-py` pins all three sets of numbers so the conclusion cannot drift from the run that produced it.
+Neither correction moved a verdict, and both moved numbers: Kalman's block-1 temperature went
++0.697 (raw) → +0.539 (calibrated), with the per-city correlations behind it spanning +0.24 to
++0.92. The rule was applied under all three aggregations — `pooled_scaled`, a per-city Fisher-z
+average, and the original raw pooling — and all three refuse everything.
+`tests/test_weather_forecast_study.py` pins all three sets of numbers, plus the windspeed near-tie,
+so the conclusion cannot drift from the run that produced it.
 
 **But it fails for the opposite reason to Market, and the difference decides what to do next.** On
 Market the surviving numbers were an artifact: every trivial baseline was *anti*-correlated (down
@@ -5154,8 +5172,8 @@ Flagged rather than invented. Each states the options and the exact change to sw
   mechanically, not from judgement calls:
    - Market — three specifications passed the rule, and the audit the study pre-committed to killed
      all three (a parameter-free "predict full recovery" rule beat the models in **10 of 12** cells).
-   - Weather — `climatology` is the strongest baseline in **all eight** cells; the one model that
-     beats it does so in a single block.
+   - Weather — `climatology` is the strongest baseline in **seven of eight** cells (`seasonal_naive`
+     takes the eighth); every model that clears its bar does so in a single block only.
    - **(implemented)** no example claims forecast skill. `predict=` is drawn as API mechanics or
      omitted, and the gallery says nothing about accuracy anywhere. This is runnable today and is
      what Tasks 2–6 build against.
@@ -5174,8 +5192,9 @@ Flagged rather than invented. Each states the options and the exact change to sw
      is closed for 1.1**: testing motion and sensor data now would turn Plan 4 into an open-ended
      search for a favourable benchmark. A successful-prediction showcase can be added later, under
      a separately reviewed study.
-   - The weather numbers quoted above are the corrected, city-scale-free run; **r = +0.89** on
-     temperature under `pooled_scaled`. The conclusion holds under all three aggregations.
+   - The weather numbers quoted above are the calibrated, city-scale-free run; **r = +0.89** on
+     temperature under `pooled_scaled`, with the per-city units measured before the first
+     evaluation anchor. The conclusion holds under all three aggregations.
 
 - **Where `image_palette` is exported.** `hypertools/__init__.py` carries a curated `__all__` (`__init__.py:46-52`) and adding a name to it is a public-API decision.
    - **(implemented)** `hypertools.plot.colors.image_palette`, beside the two existing public palette helpers (`get_palette_colors`, `continuous_colormap`), documented in a new `docs/api.rst` **Colors** section, plus the declarative `palette='image:<path>'` spelling that needs no import at all.

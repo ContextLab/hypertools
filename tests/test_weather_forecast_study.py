@@ -15,12 +15,16 @@ These tests pin the arithmetic against directly computed values and then
 attack the rule with results designed to slip through it.
 """
 import datetime
+import email.message
 import email.utils
 import http.server
+import io
+import socket
 import threading
 import time
 import urllib.error
 import urllib.request
+import urllib.response
 
 import numpy as np
 import pytest
@@ -110,7 +114,8 @@ def test_evaluate_REFUSES_anchors_with_a_degraded_baseline():
     """
     from scripts.weather_forecast_study import evaluate
     arrays = [_series(n=40, seed=s) for s in range(2)]
-    assert evaluate(arrays, 'Kalman', 1, [10, 15, 20], 'block1') is None
+    assert evaluate(arrays, 'Kalman', 1, [10, 15, 20], 'block1',
+                    calibration_end=10) is None
 
 
 def test_best_baseline_SKIPS_the_nan_from_the_zero_baseline():
@@ -188,17 +193,17 @@ def test_the_LIVE_weather_numbers_are_refused_by_the_rule():
     """The measured 2026-08-19 result, pinned so the conclusion in
     *Revision note (v5)* cannot drift from the rule that produced it.
 
-    These are the HEADLINE (`pooled_scaled`) numbers from the corrected run
-    on 6 cities x 420 months of open-meteo archive. Kalman beats
-    climatology on precipitation (+0.678 vs +0.661) and windspeed (+0.482
-    vs +0.293) in block 2, and loses on both in block 1. Nothing survives
-    -- and it must be the BOTH-BLOCKS clause that refuses it, not an
-    accident of the numbers.
+    These are the HEADLINE (`pooled_scaled`) numbers from the run with the
+    city units calibrated before the first anchor, on 6 cities x 420 months
+    of open-meteo archive. Kalman beats the best baseline on precipitation
+    (+0.674 vs +0.660) and windspeed (+0.495 vs +0.296) in block 2, and
+    loses on both in block 1. Nothing survives -- and it must be the
+    BOTH-BLOCKS clause that refuses it, not an accident of the numbers.
     """
-    b1 = _row('Kalman', 'block1', [0.530, 0.497, 0.199, 0.335],
-              [0.918, 0.745, 0.722, 0.813])
-    b2 = _row('Kalman', 'block2', [0.894, 0.678, 0.595, 0.482],
-              [0.925, 0.661, 0.665, 0.293])
+    b1 = _row('Kalman', 'block1', [0.539, 0.520, 0.201, 0.355],
+              [0.921, 0.758, 0.719, 0.824])
+    b2 = _row('Kalman', 'block2', [0.895, 0.674, 0.558, 0.495],
+              [0.925, 0.660, 0.648, 0.296])
     assert verdict([b1, b2]) == []
     # and block 2 alone really would have passed on two measures, which is
     # exactly what the both-blocks clause exists to catch
@@ -208,17 +213,17 @@ def test_the_LIVE_weather_numbers_are_refused_by_the_rule():
 
 def test_the_CORRECTED_pooling_did_not_rescue_any_specification():
     """The scale correction moved the numbers -- Kalman's block-1
-    temperature fell from +0.697 (raw) to +0.530 (scaled), because the raw
+    temperature fell from +0.697 (raw) to +0.539 (scaled), because the raw
     pooling had been letting the loudest cities speak for the rest -- but it
     moved no verdict. Pinned under all three aggregations so a later change
     to `HEADLINE` cannot quietly change the published conclusion.
     """
     from scripts.weather_forecast_study import AGGREGATIONS
     measured = {
-        'pooled_scaled': ([0.530, 0.497, 0.199, 0.335],
-                          [0.918, 0.745, 0.722, 0.813],
-                          [0.894, 0.678, 0.595, 0.482],
-                          [0.925, 0.661, 0.665, 0.293]),
+        'pooled_scaled': ([0.539, 0.520, 0.201, 0.355],
+                          [0.921, 0.758, 0.719, 0.824],
+                          [0.895, 0.674, 0.558, 0.495],
+                          [0.925, 0.660, 0.648, 0.296]),
         'fisher_z': ([0.713, 0.543, 0.345, 0.355],
                      [0.934, 0.768, 0.750, 0.818],
                      [0.900, 0.684, 0.629, 0.502],
@@ -362,7 +367,7 @@ def test_unit_scale_REFUSES_a_flat_series_instead_of_dividing_by_zero():
     at whatever scale it happened to have."""
     from scripts.weather_forecast_study import _corr_columns, unit_scale
     flat = np.column_stack([np.ones(30), _series(n=30)[:, 0]])
-    scale = unit_scale(flat)
+    scale = unit_scale(flat, len(flat))
     assert not np.isfinite(scale[0]) and np.isfinite(scale[1])
     dropped = _corr_columns(flat / scale, flat / scale)
     assert not np.isfinite(dropped[0]), 'the flat measure must drop out'
@@ -415,6 +420,30 @@ class _Throttler(http.server.BaseHTTPRequestHandler):
         """Silence: a passing test should not print an access log."""
 
 
+def _can_bind_a_local_socket():
+    """Whether this builder is allowed to listen on the loopback address.
+
+    Asked by TRYING it, not by guessing from the platform: sandboxed and
+    managed builders refuse the bind, and the four integration tests below
+    cannot run there. Everything they check is also checked without a
+    socket by the unit tests further down, so skipping them loses coverage
+    of the transport, not of the retry policy.
+    """
+    probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        probe.bind(('127.0.0.1', 0))
+        return True
+    except OSError:
+        return False
+    finally:
+        probe.close()
+
+
+needs_a_socket = pytest.mark.skipif(
+    not _can_bind_a_local_socket(),
+    reason='this environment does not allow binding 127.0.0.1')
+
+
 @pytest.fixture
 def throttled_server():
     """A real server on a real port, reset for each test."""
@@ -433,6 +462,7 @@ def throttled_server():
         thread.join(timeout=5)
 
 
+@needs_a_socket
 def test_a_throttled_request_is_RETRIED_until_it_succeeds(throttled_server):
     """Two real 429s, then a real body -- and the body is the one returned."""
     from scripts.weather_forecast_study import _get_with_retries
@@ -442,6 +472,7 @@ def test_a_throttled_request_is_RETRIED_until_it_succeeds(throttled_server):
     assert _Throttler.seen == 3, 'both throttles must have been retried'
 
 
+@needs_a_socket
 def test_the_server_STATED_wait_is_honoured_over_the_backoff_schedule(
         throttled_server):
     """`Retry-After: 1` must be obeyed even though the local schedule would
@@ -457,6 +488,7 @@ def test_the_server_STATED_wait_is_honoured_over_the_backoff_schedule(
     assert time.monotonic() - started >= 1.0
 
 
+@needs_a_socket
 def test_a_request_that_is_WRONG_rather_than_throttled_is_not_retried(
         throttled_server):
     """A 404 means the URL is broken. Repeating it six times wastes a minute
@@ -471,6 +503,7 @@ def test_a_request_that_is_WRONG_rather_than_throttled_is_not_retried(
     assert _Throttler.seen == 1, 'a 404 must not be retried at all'
 
 
+@needs_a_socket
 def test_a_throttle_that_never_clears_RAISES_rather_than_going_synthetic(
         throttled_server):
     """The failure that started all of this. When the retries are exhausted
@@ -520,3 +553,225 @@ def test_a_date_in_the_PAST_means_retry_now_not_a_negative_sleep():
     when = datetime.datetime.now(datetime.timezone.utc) - \
         datetime.timedelta(seconds=60)
     assert _retry_after_seconds(email.utils.format_datetime(when)) == 0.0
+
+
+# --------------------------------------------------- retry, without a socket
+# The four tests above are the integration layer: a real server, real
+# sockets, real 429s. They are skipped where a builder may not bind. These
+# check the same policy through the `opener` seam, and they check two things
+# the server tests CANNOT: the real 62-second wait schedule (no test should
+# sit through it) and the exact jitter bounds.
+#
+# Nothing here is a mock object. `_scripted_opener` hands back the same two
+# real types urllib itself hands back -- `urllib.error.HTTPError` for a
+# failure and `urllib.response.addinfourl` for a body -- so the code under
+# test cannot tell the difference, and there is no stub whose behaviour
+# could drift from the library's.
+
+def _http_error(code, retry_after=None, url='http://example.invalid/archive'):
+    """A real `urllib.error.HTTPError`, built the way urllib builds one."""
+    headers = email.message.Message()
+    if retry_after is not None:
+        headers['Retry-After'] = retry_after
+    return urllib.error.HTTPError(url, code, f'HTTP {code}', headers,
+                                  io.BytesIO(b''))
+
+
+def _response(body, url='http://example.invalid/archive'):
+    """A real `urllib.response.addinfourl` -- what `urlopen` returns."""
+    return urllib.response.addinfourl(io.BytesIO(body), email.message.Message(),
+                                      url, 200)
+
+
+def _scripted_opener(script):
+    """Play `script` in order: raise the exceptions, return the responses."""
+    remaining = list(script)
+    calls = []
+
+    def opener(request, timeout=None):
+        calls.append(timeout)
+        step = remaining.pop(0)
+        if isinstance(step, Exception):
+            raise step
+        return step
+
+    opener.calls = calls
+    return opener
+
+
+def _recording_sleep():
+    waited = []
+
+    def sleep(seconds):
+        waited.append(seconds)
+
+    sleep.waited = waited
+    return sleep
+
+
+def test_the_REAL_wait_schedule_spans_the_measured_throttle():
+    """The default schedule, which no test can sit through for real.
+
+    The sixth of six back-to-back archive requests was measured needing
+    roughly 30 s; a 1+2+4+8 schedule gave up after 15 and reported the run
+    as offline. Five waits of 2/4/8/16/32, jittered, span 62 s, and each
+    wait must stay inside its jitter band -- a bug that dropped the
+    multiplier would still "retry", just uselessly fast.
+    """
+    from scripts.weather_forecast_study import (_RETRY_WAITS,
+                                                _get_with_retries)
+    opener = _scripted_opener([_http_error(429)] * 5 + [_response(b'ok')])
+    sleep = _recording_sleep()
+    body = _get_with_retries(urllib.request.Request('http://example.invalid'),
+                             'test', sleep=sleep, opener=opener)
+    assert body == b'ok'
+    assert len(sleep.waited) == len(_RETRY_WAITS) == 5
+    for waited, nominal in zip(sleep.waited, _RETRY_WAITS):
+        assert 0.8 * nominal <= waited <= 1.3 * nominal
+    assert sum(_RETRY_WAITS) == 62
+
+
+def test_the_waits_are_JITTERED_rather_than_identical_every_run():
+    """Six cities throttled together must not all come back at the same
+    instant and throttle each other again. Two runs of the same schedule
+    must therefore differ."""
+    from scripts.weather_forecast_study import _get_with_retries
+
+    def run():
+        sleep = _recording_sleep()
+        _get_with_retries(urllib.request.Request('http://example.invalid'),
+                          'test', sleep=sleep,
+                          opener=_scripted_opener([_http_error(503),
+                                                   _response(b'ok')]))
+        return sleep.waited[0]
+
+    assert len({round(run(), 9) for _ in range(8)}) > 1
+
+
+def test_a_stated_Retry_After_REPLACES_the_schedule_without_a_socket():
+    from scripts.weather_forecast_study import _get_with_retries
+    sleep = _recording_sleep()
+    body = _get_with_retries(
+        urllib.request.Request('http://example.invalid'), 'test',
+        waits=(2, 4), sleep=sleep,
+        opener=_scripted_opener([_http_error(429, retry_after='11'),
+                                 _response(b'ok')]))
+    assert body == b'ok'
+    assert sleep.waited == [11.0]
+
+
+@pytest.mark.parametrize('code, retried', [
+    (429, True),                       # throttled: the whole point
+    (500, True), (503, True),          # the server is briefly unwell
+    (400, False), (404, False),        # the request itself is wrong
+])
+def test_only_a_RETRYABLE_status_is_retried(code, retried):
+    from scripts.weather_forecast_study import _get_with_retries
+    sleep = _recording_sleep()
+    opener = _scripted_opener([_http_error(code), _response(b'ok')])
+    request = urllib.request.Request('http://example.invalid')
+    if retried:
+        assert _get_with_retries(request, 'test', waits=(0.5,), sleep=sleep,
+                                 opener=opener) == b'ok'
+        assert len(sleep.waited) == 1
+    else:
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            _get_with_retries(request, 'test', waits=(0.5,), sleep=sleep,
+                              opener=opener)
+        assert caught.value.code == code
+        assert sleep.waited == [], 'a wrong request must not be slept on'
+
+
+def test_the_LAST_attempt_re_raises_rather_than_returning_nothing():
+    """Exhausting the schedule must raise, so `fetch_city_months` prints the
+    failure and `main` refuses to report a synthetic run. Returning None
+    here is how the study answered a question about real weather with
+    fabricated weather the first time."""
+    from scripts.weather_forecast_study import _get_with_retries
+    sleep = _recording_sleep()
+    opener = _scripted_opener([_http_error(429)] * 3)
+    with pytest.raises(urllib.error.HTTPError):
+        _get_with_retries(urllib.request.Request('http://example.invalid'),
+                          'test', waits=(0.1, 0.2), sleep=sleep, opener=opener)
+    assert len(opener.calls) == 3, 'two waits means exactly three attempts'
+
+
+def test_the_request_carries_a_TIMEOUT_so_a_hung_server_cannot_stall_the_run():
+    """A throttled request that never answers would hang the whole study."""
+    from scripts.weather_forecast_study import _get_with_retries
+    opener = _scripted_opener([_response(b'ok')])
+    _get_with_retries(urllib.request.Request('http://example.invalid'), 'test',
+                      opener=opener)
+    assert opener.calls == [60]
+
+
+# ------------------------------------------------------- calibration cutoff
+# Review round 12, finding 2: the units each city is scored in must not be
+# measured on the outcomes being scored. `unit_scale` decides how loudly a
+# city votes in the pooled headline, so computing it over the whole series
+# used held-out evaluation-period volatility to set those weights.
+
+def test_the_UNITS_are_blind_to_everything_after_the_cutoff():
+    """The leakage test. Rewrite the post-cutoff data as violently as you
+    like -- x100, sign-flipped, a different process entirely -- and the
+    stored scale must not move by one ulp."""
+    from scripts.weather_forecast_study import unit_scale
+    series = _series(n=200)
+    cutoff = 25
+    before = unit_scale(series, cutoff)
+    for mutation in (lambda x: x * 100.0, lambda x: -x,
+                     lambda x: np.zeros_like(x),
+                     lambda x: np.cumsum(x, axis=0)):
+        mutated = series.copy()
+        mutated[cutoff:] = mutation(mutated[cutoff:])
+        assert np.array_equal(unit_scale(mutated, cutoff), before), (
+            'the calibration window is not blind to the evaluation period')
+
+
+def test_the_units_DO_move_when_the_calibration_window_itself_changes():
+    """The control. Without it the test above would pass just as well
+    against a `unit_scale` that ignored its input entirely."""
+    from scripts.weather_forecast_study import unit_scale
+    series = _series(n=200)
+    mutated = series.copy()
+    mutated[:25] *= 100.0
+    assert not np.allclose(unit_scale(mutated, 25), unit_scale(series, 25))
+
+
+def test_evaluate_REFUSES_a_cutoff_that_reaches_past_the_first_anchor():
+    """Asserted rather than trusted: a caller that passes the series length
+    (the pre-fix behaviour) must fail loudly, not score quietly."""
+    from scripts.weather_forecast_study import evaluate
+    arrays = [_series(n=120, seed=s) for s in range(2)]
+    with pytest.raises(ValueError, match='reaches past the first anchor'):
+        evaluate(arrays, 'Kalman', 1, [40, 60, 80], 'block1',
+                 calibration_end=len(arrays[0]))
+
+
+def test_a_calibration_window_too_short_to_DIFF_yields_no_units():
+    """One observation gives no changes, so there is no spread to measure.
+    That must be nan -- a city dropped from the pooling -- not a crash and
+    not a silent 1.0."""
+    from scripts.weather_forecast_study import unit_scale
+    assert not np.any(np.isfinite(unit_scale(_series(n=50), 1)))
+
+
+def test_the_WINDSPEED_cell_is_a_near_tie_and_the_rule_still_refuses_it():
+    """The one cell where the calibrated headline changes which baseline is
+    the one to beat: in block 2, `seasonal_naive` (+0.296) edges out
+    `climatology`, and ARIMA's +0.2961 clears it by 0.0001.
+
+    A margin that small is a rounding artefact, not a result -- and the
+    rule refuses it anyway, because ARIMA loses the same measure in block
+    1 (+0.257 vs +0.824). Pinned because "climatology is the strongest
+    baseline in all eight cells" was TRUE before this calibration and is
+    now true in seven of eight; a claim like that has to be re-checked, not
+    carried forward.
+    """
+    b1 = _row('ARIMA', 'block1', [0.641, 0.695, 0.418, 0.257],
+              [0.921, 0.758, 0.719, 0.824])
+    b2 = _row('ARIMA', 'block2', [0.578, 0.609, 0.365, 0.2961],
+              [0.925, 0.660, 0.648, 0.2960])
+    assert b2['scores'][HEADLINE][3] > best_baseline(b2, 3), (
+        'block 2 alone really does clear it, by 0.0001')
+    assert verdict([b1, b2]) == []

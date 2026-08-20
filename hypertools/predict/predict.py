@@ -395,6 +395,23 @@ def predict(data, model='Kalman', t=10, return_model=False, **kwargs):
     per group in input order -- or, with ``return_model=True``, the parallel
     ``([f0, f1, ...], [m0, m1, ...])`` pair described there.
 
+    Notes
+    -----
+    **Forecasts are not scale-invariant, so normalize heterogeneous
+    features first.** These are fitted statistical models, not scale-free
+    transforms: their priors, initial covariances and convergence criteria
+    are expressed in the units you supply, so multiplying an input column
+    by a constant does not simply multiply its forecast by the same
+    constant. Measured on a 60x2 seasonal series, scaling the input by 100
+    and dividing the one-step forecast change back by 100 moves it by 41%
+    on one column for ``Kalman`` and 32% for ``ARIMA`` -- and raising
+    ``n_iter`` from 1 to 100 does not close the gap, because `pykalman`'s
+    EM starts from identity covariances and settles on a different
+    optimum. Columns measured in wildly different units (millimetres beside
+    percentages, say) will therefore not be weighted the way you expect.
+    Pass ``normalize=`` upstream, or `hypertools.normalize` the data, when
+    the features are not already comparable.
+
     Examples
     --------
     >>> import numpy as np

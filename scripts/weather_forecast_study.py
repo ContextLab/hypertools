@@ -165,7 +165,8 @@ _RETRY_WAITS = (2, 4, 8, 16, 32)
 _PACING_SECONDS = 1.5
 
 
-def _get_with_retries(req, name, waits=_RETRY_WAITS, sleep=time.sleep):
+def _get_with_retries(req, name, waits=_RETRY_WAITS, sleep=time.sleep,
+                      opener=urllib.request.urlopen):
     """Fetch `req`, retrying a throttle instead of calling it "offline".
 
     Retries only 429 and 5xx -- a 404 or a 400 is a bug in the URL and
@@ -173,10 +174,15 @@ def _get_with_retries(req, name, waits=_RETRY_WAITS, sleep=time.sleep):
     one (in seconds or as an HTTP date), and jitters the fallback waits so
     six cities that were throttled together do not all come back at the
     same instant and throttle each other again.
+
+    `sleep` and `opener` are seams for the tests: the real schedule spans
+    62 seconds, which no test should actually wait through, and a builder
+    that is not allowed to bind a socket still has to be able to check the
+    retry policy. Both default to the real thing.
     """
     for attempt, wait in enumerate((*waits, None)):
         try:
-            with urllib.request.urlopen(req, timeout=60) as r:
+            with opener(req, timeout=60) as r:
                 return r.read()
         except urllib.error.HTTPError as exc:
             retryable = exc.code == 429 or 500 <= exc.code < 600
@@ -318,18 +324,29 @@ AGGREGATIONS = ('pooled_scaled', 'fisher_z', 'pooled_raw')
 HEADLINE = 'pooled_scaled'
 
 
-def unit_scale(series):
+def unit_scale(series, calibration_end):
     """One positive units constant per measure for one city.
 
-    The standard deviation of that city's month-over-month changes over the
-    whole series. It never reaches a model -- it is applied to predictions
-    and realisations alike, after every forecast has been made -- so it
-    cannot move any competitor relative to any other; it only stops a city
-    with large numbers from outvoting a city with small ones. A measure with
-    no variation at all yields nan, and that city is then dropped from that
-    measure's pooling rather than dividing by zero.
+    The standard deviation of that city's month-over-month changes over
+    `series[:calibration_end]` -- data that is entirely BEFORE the first
+    evaluation anchor. The cutoff is the point of the parameter, and it is
+    required rather than defaulted: computing this over the whole series
+    (as the first corrected version did) uses evaluation-period volatility
+    to decide how loudly each city votes in the pooled score, which is
+    held-out outcome data selecting the weights on the outcomes. The scale
+    never reaches a model either way; that is not what makes it leakage.
+
+    ONE scale per city serves BOTH blocks, so the two blocks are also
+    weighted the same way as each other.
+
+    A measure with no variation in the calibration window yields nan, and
+    that city is dropped from that measure's pooling rather than dividing
+    by zero.
     """
-    spread = np.std(np.diff(np.asarray(series, dtype=float), axis=0), axis=0)
+    window = np.asarray(series, dtype=float)[:calibration_end]
+    if len(window) < 2:
+        return np.full(np.shape(series)[1], np.nan)
+    spread = np.std(np.diff(window, axis=0), axis=0)
     return np.where(np.isfinite(spread) & (spread > 0), spread, np.nan)
 
 
@@ -397,13 +414,20 @@ def _aggregate(per_city_pred, per_city_real, scales):
     }
 
 
-def evaluate(arrays, model, horizon, anchors, block):
+def evaluate(arrays, model, horizon, anchors, block, calibration_end):
     """Predicted-vs-realised correlation per measure, under each aggregation.
 
     Scores are accumulated PER CITY and pooled afterwards, because how the
     cities are combined turned out to be a load-bearing choice -- see the
-    2026-08-19 amendment at the top of this file.
+    2026-08-19 amendment at the top of this file. `calibration_end` is the
+    index the per-city units are measured up to; it must be at or before
+    the first anchor in `anchors`, and it is asserted rather than trusted.
     """
+    if calibration_end > min(anchors):
+        raise ValueError(
+            f'calibration_end={calibration_end} reaches past the first '
+            f'anchor ({min(anchors)}): the units would be measured on data '
+            f'the score is taken over')
     pred_by_city, real_by_city, scales = [], [], []
     base_by_city = {name: [] for name in BASELINES}
     t0 = time.time()
@@ -425,7 +449,7 @@ def evaluate(arrays, model, horizon, anchors, block):
         # the scale is appended HERE, beside the arrays it belongs to, so a
         # city that contributed no anchors cannot shift every later city's
         # units by one position
-        scales.append(unit_scale(series))
+        scales.append(unit_scale(series, calibration_end))
         pred_by_city.append(np.array(pred))
         real_by_city.append(np.array(real))
         for name in BASELINES:
@@ -498,10 +522,17 @@ def main():
     blocks = {'block1': np.linspace(lo, mid, 20, dtype=int),
               'block2': np.linspace(mid + 1, hi - 1, 20, dtype=int)}
 
+    # the per-city units are measured on everything BEFORE the first
+    # evaluation anchor, and the same scale then serves both blocks
+    calibration_end = lo
+    print(f'city units calibrated on months [0, {calibration_end}) -- '
+          f'{calibration_end - 1} changes, all before the first anchor')
+
     rows = []
     for model in ('Kalman', 'ARIMA'):
         for block, anchors in blocks.items():
-            row = evaluate(arrays, model, DRAWN_HORIZON, anchors, block)
+            row = evaluate(arrays, model, DRAWN_HORIZON, anchors, block,
+                           calibration_end)
             rows.append(row)
             if row is not None:
                 report_block(row)
@@ -542,21 +573,36 @@ def report_block(row):
     print(f'\n{row["model"]:8s} {row["block"]}  {row["cities"]} cities  '
           f'n={row["n"]:4d}  {row["seconds"]:.1f}s')
     for j, measure in enumerate(MEASURES):
-        cells = []
-        for aggregation in AGGREGATIONS:
+        for k, aggregation in enumerate(AGGREGATIONS):
             score = row['scores'][aggregation][j]
             base = best_baseline(row, j, aggregation)
             beats = (np.isfinite(score) and np.isfinite(base)
                      and score > max(0.0, base))
-            cells.append(f'{aggregation}: r={score:+.3f} vs {base:+.3f}'
-                         f'{" BEATS" if beats else ""}')
+            # the margin is printed, not just the verdict: a cell that
+            # reads "+0.296 vs +0.296 BEATS" at three decimals is a
+            # near-tie, and rounding it away would look like a broken rule
+            mark = f' BEATS by {score - max(0.0, base):.4f}' if beats else ''
+            label = measure if k == 0 else ''
+            print(f'   {label:14s} {aggregation}: r={score:+.3f} vs '
+                  f'{base:+.3f} [{_winning_baseline(row, j, aggregation)}]'
+                  f'{mark}')
         lo, hi = row['scores']['spread'][j]
-        winner = max(BASELINES, key=lambda b: (
-            row['baselines'][b][HEADLINE][j]
-            if np.isfinite(row['baselines'][b][HEADLINE][j]) else -9))
-        print(f'   {measure:14s} {cells[0]}   [{winner}]')
-        print(f'   {"":14s} {cells[1]}   per-city r in [{lo:+.2f}, {hi:+.2f}]')
-        print(f'   {"":14s} {cells[2]}')
+        print(f'   {"":14s} {"":13s}  per-city r in [{lo:+.2f}, {hi:+.2f}]')
+
+
+def _winning_baseline(row, measure_index, aggregation):
+    """WHICH trivial competitor is the one to beat, for this aggregation.
+
+    Named per aggregation rather than once per cell: the winner is not
+    always the same one. Under the calibrated headline, `seasonal_naive`
+    takes windspeed in block 2 while `climatology` takes the other seven
+    cells, and a single label would have quietly reported the wrong
+    baseline for that cell.
+    """
+    finite = [(row['baselines'][name][aggregation][measure_index], name)
+              for name in BASELINES
+              if np.isfinite(row['baselines'][name][aggregation][measure_index])]
+    return max(finite)[1] if finite else 'none'
 
 
 if __name__ == '__main__':

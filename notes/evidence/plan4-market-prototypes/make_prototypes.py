@@ -256,3 +256,88 @@ spans = [(np.ptp(path_of(c)[:, 0]), np.ptp(path_of(c)[:, 1]))
 plt.close(probe_fig)
 print('C: drawn x/y spans per trace, out of the 2.0 the box allows:',
       [(round(a, 2), round(b, 2)) for a, b in spans])
+
+
+# ---------------- D: explicit trace colours, dark hierarchy mean ---------
+# WHY C COULD NOT WORK, stated as the theorem it is: with `hue_mode=
+# 'mixture'` the parent's colour is the MEAN of its children's colours, and
+# a mean lies in the convex hull of what it averages. So the parent can
+# never be darker than the darkest leaf. Five pale peers therefore FORCE a
+# pale mean -- measured gap 0.088, and no palette setting escapes it,
+# because the constraint is arithmetic rather than aesthetic.
+#
+# Review round 12 relaxes the requirement accordingly: the hierarchy must
+# be native in DISCOVERY (leaves from the column MultiIndex), GEOMETRY (the
+# parent is the mean of its children) and STYLE (its heavier line), but the
+# parent's COLOUR need not come out of hue-weight averaging.
+#
+# What the library supports today, measured:
+#   * 3-level frame + `palette`  -> 6 leaves + 1 parent, ALL one colour
+#     (leaves alpha 0.7 lw 1.0, parent alpha 1.0 lw 2.0)
+#   * matrix `hue` + 'mixture'   -> arbitrary per-leaf colours, parent = the
+#     mean of them
+#   * there is NO spelling that gives per-leaf colours AND an independently
+#     coloured parent -- that is the API gap this prototype documents
+#
+# So D draws the SAME complete frame twice: once for the leaves (matrix
+# hue) and once for the parent (a dark single-colour palette), and hides
+# the second call's leaves. Both calls receive identical input, so they
+# normalize identically -- asserted below by comparing the two parent paths
+# point for point. Nothing is drawn by hand; the dark mean is the library's
+# own parent trace, in the library's own heavier hierarchy style.
+MEAN_DARK = '#3f3f3f'
+
+
+def draw_mean(ax):
+    """The hierarchy's parent trace, drawn dark, with its leaves hidden."""
+    before = set(map(id, ax.lines))
+    # legend=False: this call exists only for its parent trace, and its
+    # legend entry would otherwise steal a third of every panel's width
+    hyp.plot(scaled, '-', palette=[MEAN_DARK], reduce=None, ndims=2,
+             normalize=None, colorbar=False, legend=False, ax=ax, show=False)
+    drawn = [ln for ln in ax.lines if id(ln) not in before]
+    # the parent is the one the hierarchy styles as a parent: the heavier
+    # line. Found by the style the LIBRARY assigned, not by position.
+    parent = max(drawn, key=lambda ln: ln.get_linewidth())
+    for line in drawn:
+        if line is not parent:
+            line.set_visible(False)
+    parent.set_zorder(5)
+    return parent
+
+
+figd, axesd = plt.subplots(2, 3, figsize=(7.36, 4.9), dpi=100)
+for i, (name, axd) in enumerate(zip(NAMES, axesd.ravel())):
+    panel = draw_scaled(axd, focus=i)
+    mean_line = draw_mean(axd)
+    mark(axd, path_of(panel[i]), SECTOR_COLORS[i], lw=1.4, ms=4.0, mew=1.2,
+         head=10)
+    # the mean gets a start dot only: it is already the heaviest line in
+    # the panel, and a second arrowhead competes with the sector's
+    axd.plot(*np.array(mean_line.get_data()).T[0], 'o', color=MEAN_DARK,
+             ms=4.0, mfc='white', mew=1.2, zorder=6)
+    axd.set_title(name, fontsize=9.5, fontweight='bold',
+                  color=SECTOR_COLORS[i], loc='left', pad=3)
+figd.supxlabel(XLAB, fontsize=8.5)
+figd.supylabel(YLAB, fontsize=8.5)
+figd.suptitle(f'One sector at a time, against the market mean  ({span})',
+              fontsize=10, fontweight='bold')
+figd.tight_layout()
+figd.savefig(f'{OUT}PROTO_D_small_multiples.png')
+print('saved D at %.0fx%.0f px' % tuple(figd.get_size_inches() * figd.dpi))
+
+# the claim that makes the overlay legitimate: both calls see the same
+# frame, so the parent they each compute is the SAME curve
+hue_parent = path_of(panel[-1])
+dark_parent = np.array(mean_line.get_data()).T
+print('D: the two calls agree on the parent to',
+      f'{np.abs(hue_parent - dark_parent).max():.2e}')
+print('D: mean linewidth', mean_line.get_linewidth(), 'vs leaf',
+      np.atleast_1d(panel[0].get_linewidth())[0],
+      '| mean luminance', luminance(matplotlib.colors.to_rgb(MEAN_DARK)),
+      'vs peer', luminance(panel[0].get_colors()[0]))
+limsd = [(round(float(a.get_xlim()[0]), 6), round(float(a.get_xlim()[1]), 6),
+          round(float(a.get_ylim()[0]), 6), round(float(a.get_ylim()[1]), 6))
+         for a in axesd.ravel()]
+print('D: every panel shares one normalization:', len(set(limsd)) == 1,
+      limsd[0])

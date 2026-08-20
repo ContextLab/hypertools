@@ -230,6 +230,52 @@ one display gain computed once over the complete frame; drawn spans are
 0.33–1.18 (x) and 0.46–1.45 (y) out of the 2.0 available, all six panels
 still share one limit tuple exactly.
 
+## Review round 12 (2026-08-19)
+
+| finding | disposition |
+|-|-|
+| **1 (High)** C hides the feature the example showcases | **prototype D**, and criterion 3 relaxed on a proof rather than a preference |
+| **2 (Medium)** the headline scale used future evaluation data | **fixed**: units are calibrated on the 24 changes before the first anchor and reused for both blocks; `calibration_end` is a REQUIRED argument and `evaluate` raises if it reaches past the first anchor |
+| **3 (Medium)** the retry tests need to bind a socket | socket tests marked and skipped where binding is denied (asked by TRYING a bind); 6 socket-free tests added through a new `opener=` seam |
+| **4 (Medium)** scale-sensitive forecasting should be a documented limitation | **Notes** section on `hyp.predict`'s docstring + `notes/followup_predict_scale_sensitivity.md`; GitHub issue NOT filed (needs the go-ahead) |
+| **5, 6 (Low)** prediction decision and `hue_mode` coverage adequate | no action |
+
+### The mean-colour constraint is a theorem, not a tuning problem
+
+Round 11 asked whether a dark parent could be tuned into existence. It
+cannot:
+
+> With `hue_mode='mixture'` the parent's colour is the MEAN of its
+> children's colours; a mean lies in the convex hull of what it averages;
+> **so the parent can never be darker than its darkest leaf.**
+
+Five pale peers therefore force a pale mean at every palette setting, which
+is why three settings all measured a ~0.09 gap. Criterion 3 now requires
+the hierarchy to be native in **discovery, geometry and style** but not in
+**colour** — and D's mean goes from a 0.088 gap to **0.76**.
+
+D draws the same complete frame twice (matrix hue for the leaves, a dark
+single-colour palette for the parent) and hides the second call's leaves.
+The two calls agree on the parent path to **0.00e+00**, so the overlay is
+exact rather than approximate. It works, and a shipped example needing two
+calls plus a visibility toggle is an argument for closing the API gap:
+**there is no spelling of `hyp.plot` that gives per-leaf colours AND an
+independently coloured parent** — measured five ways, table in
+`notes/evidence/plan4-market-prototypes/README.md`. Library work Plan 4
+does not own.
+
+### The calibration fix changed a published claim
+
+Numbers moved, no verdict moved — but "climatology is the strongest
+baseline in **all eight** cells" is no longer true under the headline
+aggregation: `seasonal_naive` takes windspeed/block 2 at +0.296, so it is
+**seven of eight**. ARIMA clears that cell by **0.0001** (a rounding
+artefact) and loses the same measure in block 1 by 0.57, so the both-blocks
+clause refuses it anyway. The study now names the winning baseline PER
+AGGREGATION rather than once per cell, and prints the winning margin, so a
+near-tie cannot read as a clean pass. Plan, notes and the pinned tests are
+all updated to seven-of-eight.
+
 Still open from round 9's sequence: harden `scripts/execute_tutorial.py`
 (argparse, create the output directory, reject output collisions) — it is
 currently DELETED from the tree and lives only in the session scratchpad,

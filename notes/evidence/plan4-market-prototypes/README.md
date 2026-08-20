@@ -8,7 +8,8 @@ cannot be reviewed from a sentence saying one image is legible.
 | `PROTO_A2_single_panel.png` | one fixed 2-D panel, six sector leaves + the market mean |
 | `PROTO_B2_small_multiples.png` | one small panel per sector, market mean repeated as a reference |
 | `PROTO_C_small_multiples.png` | B2 with the vertical compression fixed, rendered at **736 px** — the actual documentation width |
-| `make_prototypes.py` | regenerates all three, ~15 s |
+| `PROTO_D_small_multiples.png` | C, plus a **dark hierarchy mean** — the current candidate |
+| `make_prototypes.py` | regenerates all four, ~20 s |
 
 Run it from anywhere:
 
@@ -59,12 +60,48 @@ changes, and what it measured:
   delivers: its title no longer says "against the market mean", and the
   mean is findable by its neutral endpoint marker, not by its path.
 
-So the open question for review is not "is C tuned right" but **what the
-panels are for**: peers as context with no visible mean (C as it stands),
-or the mean as a reference with the peers dropped or darkened — which, per
-review round 11, would need a dark component shared by every leaf and would
-muddy the leaf colours. That trade cannot be settled by the arithmetic; it
-is a call about what the example is showing.
+### D — and why C's constraint was never going to yield
+
+Review round 11 asked whether a dark mean could be tuned into existence.
+It cannot, and the reason is arithmetic rather than aesthetic:
+
+> With `hue_mode='mixture'`, the parent's colour is the **mean** of its
+> children's colours. A mean lies in the convex hull of what it averages.
+> **So the parent can never be darker than its darkest leaf.** Five pale
+> peers force a pale mean, at every palette setting.
+
+Round 12 therefore relaxed Plan v5 criterion 3: the hierarchy must stay
+native in **discovery** (leaves from the column MultiIndex), **geometry**
+(the parent is the mean of its children) and **style** (its heavier line),
+but the parent's **colour** may be assigned directly. D does that, and the
+mean goes from a 0.088 luminance gap to **0.76**.
+
+### The API gap D documents
+
+There is no spelling of `hyp.plot` today that gives per-leaf colours AND an
+independently coloured parent. Measured:
+
+| call | result |
+|-|-|
+| 3-level frame + `palette=[...]` | 6 leaves + 1 parent, **all one colour** (leaves α 0.7 lw 1.0, parent α 1.0 lw 2.0) |
+| 2-level frame + `palette=[...]` | 6 leaves, each its own colour, **and no parent at all** |
+| matrix `hue` + `hue_mode='mixture'` | arbitrary per-leaf colours, parent forced to their mean |
+| `color=`/`colors=` with a column MultiIndex | ignored, with a warning: colour comes from the top-level index |
+| `hue=` one label per trace | every trace takes `palette[0]` — a per-trace value has no range to map |
+
+So D draws the **same complete frame twice**: once with matrix hue for the
+leaves, once with a dark single-colour palette for the parent, hiding the
+second call's leaves. Both calls receive identical input, so they normalize
+identically — asserted point-for-point, and the two parent paths agree to
+**0.00e+00**. Nothing is drawn by hand and the dark line is the library's
+own parent trace in the library's own hierarchy style.
+
+That works, but a shipped example needing two calls and a visibility toggle
+is an argument for closing the gap rather than a design to copy. **The
+minimal fix**: let a hierarchy assign one palette colour per child group,
+with the parent's colour separately settable. That is a smaller and better
+defined change than any of the alternatives — and it is library work Plan 4
+does not own, so it needs the maintainer's call.
 
 ## Two measured library limits the prototypes work around
 
