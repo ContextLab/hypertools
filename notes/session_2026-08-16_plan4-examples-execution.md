@@ -154,14 +154,81 @@ The maintainer's sequence, steps 1–3 complete:
    example carries the prediction story instead (maintainer's suggestions:
    seasonal weather, motion, sensor data); and any budget change if the new
    composition changes the loader/builder split.
-5. review `PROTO_B2_small_multiples.png` at documentation display width —
-   not full-resolution PNG size, which is not the size that decides it
-6. approve a static composition BEFORE building any animation
+5. ~~review the small multiples at documentation display width~~ **done**
+   — and the answer was "reject and iterate", which is why there is now a
+   **prototype C** rendered at **736 px** (furo's content column), `e3b0c5cd`
+6. approve a static composition BEFORE building any animation — **blocked
+   on the maintainer**, and now with a measured question attached (below)
 7. implement the new Market script, no scoring claims
 8. generate + execute the notebook, then record its REAL output cells in
    `EXPECTED_VISIBLE_OUTPUTS` (it is empty again, deliberately)
 9. re-measure budgets and update the reds table ONCE, after the design settles
 10. Tasks 3–7, then the publication and full-suite gates
+
+## Review round 11 (2026-08-19)
+
+Round 11 accepted the round-10 corrections ("finding 6: the restored gate
+record is now coherent") and raised two Highs, both handled here.
+
+| finding | disposition |
+|-|-|
+| **2 (High)** weather study pools cities in scale-sensitive raw units | **fixed and rerun.** Scores are now divided by each city's own units before pooling, and reported three ways. `5ac84aed` |
+| **1 (High)** B2 not publication-ready: thin band, empty panels, clipped labels, "dark" mean that is not dark | **prototype C**, at 736 px. `e3b0c5cd` |
+| **3 (Medium)** v5 says five gates, marks four; "one `hyp.plot` call" contradicts a six-panel figure | criterion 4 now explicitly `(gate)` with its assertion assigned to the examples gate; criterion 3 restated as "no trajectory is ever drawn by hand". `e3b0c5cd` |
+| **4 (Medium)** the dark market mean is not produced by hierarchy arithmetic | **confirmed by measurement, and it is worse than "not dark": it cannot be made visible this way at all.** See below. |
+| **5 (Low)** retry schedule (15 s) does not match the recorded ~30 s | schedule now spans 62 s, honours `Retry-After` in both spellings, jitters, retries 5xx, refuses to retry a 4xx, and paces cities. `5ac84aed` |
+
+### The scale correction moved numbers, not verdicts
+
+`evaluate` concatenated all six cities in raw units, so precipitation in a
+city that swings by 80 mm outvoted one that swings by 2 mm by roughly the
+square of the ratio. (`market_representation_study.py` had already banned
+exactly this on the MEASURE axis, in its own docstring — the weather study
+just failed to apply it on the CITY axis.) Each city's predictions and
+realisations are now divided by that city's own month-over-month std, a
+constant that never reaches a model and divides both sides of every
+competitor identically.
+
+Rerun on the same 6 × 420 real archive: Kalman's block-1 temperature falls
+**+0.697 → +0.530** (its per-city correlations span +0.24 to +0.92, which
+is what the raw pooling had been hiding), and **no verdict moves**. The
+rule was applied under all three aggregations — `pooled_scaled` (headline),
+per-city Fisher-z, and the original raw pooling — and all three refuse
+everything at t=1. All three sets of numbers are pinned in tests.
+
+**No end-to-end "rescale a city, same verdict" test exists, deliberately.**
+The shipped forecaster is not scale-equivariant: at ×100, Kalman's one-step
+change moves 41 % on one column and ARIMA's 32 %, and n_iter 1 / 5 / 25 /
+100 does not close it (pykalman's EM starts from identity covariances and
+settles elsewhere). So the invariance is asserted where it is real — the
+scoring layer, plus the exactly-equivariant baselines. **Flagged for the
+maintainer:** `hypertools.predict` documents no scaling requirement, and a
+forecast that depends on the units you supply is at minimum a docs defect.
+
+### The market mean cannot be a visible reference in this composition
+
+Not a tuning problem. The hierarchy parent is the mean of its children, so
+with one focused leaf and five pale ones it always lands *inside* the peer
+greys. Measured parent-vs-peer luminance gap at three palette settings:
+**0.094 / 0.088 / 0.062**, and the hierarchy's automatic doubled linewidth
+(measured 2.0 vs 1.0) does not recover a 0.09 gap at 736 px. C therefore
+stops claiming it: the title no longer says "against the market mean", and
+the mean is findable by its neutral endpoint marker, not by its path.
+
+So step 6 now carries a real question: **peers as context with no visible
+mean (C as it stands), or the mean as a reference with peers dropped or
+darkened** — which needs a dark component shared by every leaf and muddies
+the leaf colours. Arithmetic cannot settle it.
+
+### What C fixed, measured
+
+`hyp.plot` centres each dimension separately but applies ONE gain to all of
+them (probe: x ∈ [0, 100], y ∈ [0, 1] → drawn y ∈ [-0.01, 0.01]). Return
+and drawdown have half-ranges 0.456 and 0.129 over the complete frame, so
+drawdown was drawn into a third of its due height. Each measure now gets
+one display gain computed once over the complete frame; drawn spans are
+0.33–1.18 (x) and 0.46–1.45 (y) out of the 2.0 available, all six panels
+still share one limit tuple exactly.
 
 Still open from round 9's sequence: harden `scripts/execute_tutorial.py`
 (argparse, create the output directory, reject output collisions) — it is
