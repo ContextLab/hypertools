@@ -165,7 +165,10 @@ happened:
       `tutorials/market_forecast.html` are published 1.0 documentation URLs, so a rename breaks links for
       no reader-visible gain; the minimum, no displayed prose saying "forecast", is met, and a comment at
       the top of the script says why the name stays. **Flagged for the maintainer**: if a rename is
-      preferred, the five touch points above are the cost.)*
+      preferred, the five touch points above are the cost.)* **Maintainer's call, same day: RENAMED** to
+      `examples/animate_market_sectors.py` / `docs/tutorials/market_sectors.{ipynb,gif}`; every touch
+      point updated, the notebook re-executed under the new name. Earlier mentions of the old names in
+      this plan are history.
 
 **If the composition carries a workaround, it is quarantined** *(round 12, finding 4)*. A gallery
 example teaches by example, so a reader must not infer that duplicating every hierarchy plot and

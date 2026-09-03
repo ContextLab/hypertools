@@ -139,7 +139,7 @@ one-line change. **These want a maintainer call before execution.**
 **Plans 1 and 2 have none left** — Plan 2's four were resolved in the round-3 review, Plan 1's four
 in the round-5 exchange. Both sets are recorded under *Standing decisions*.
 
-## Execution status (updated 2026-08-16, through `d14d07ce`)
+## Execution status (updated 2026-09-03, through `c5c74f8e`)
 
 | plan | state |
 |-|-|
@@ -147,7 +147,7 @@ in the round-5 exchange. Both sets are recorded under *Standing decisions*.
 | 3 — forecast animation | **landed** (`forecast_trail=`, per-frame forecasts) |
 | regrouped reveal + forecasts | **landed 2026-08-11**, 10 commits ending `59405545` |
 | 2 — MultiIndex | **COMPLETE, all 12 tasks.** T1 `420ef60c`, T2 `1f6e4d6d`, T3 `7a415d28`, T4 `86db0842`, NA-label grouping fix `af77f09e`, T5 `5b21e3c6`, nominal correspondence `c5662249`, T6 `ea5d9b5e`, T7 `c51d274d`+`c5fb889c`, T8 `5238d6bc`+`5c2f29e9`, T9 `c9b91293`+`a309f49e`+`b48c2848`, T10 `f2a7a2b1`, T11 `b0076f8f`+`cdae7096`, T12 `3a4ce8e0`; maintainer review rounds since: `bb4ad30c`, `e52dd861`, `6f07c213`, `5b15d3dc`, `393e64a3`, `d14d07ce` |
-| 4 — examples and tutorials | **NOT STARTED — and this is the release blocker.** No task is blocked any more; every prerequisite below is satisfied |
+| 4 — examples and tutorials | **IN PROGRESS (updated 2026-09-03).** Task 8 Steps 0–2 (the gate and measurer) and Task 1 (palette) landed 2026-08-16; **Task 2 Market landed 2026-09-03 as composition E** (`c5c74f8e`: six panels tiled in the data, one call, sector→ticker hierarchy, no forecast). Gate `tests/test_examples_are_native.py` reads **30 reds = Tasks 3–7** (weather, paintings, conversation, morph, older tutorials, analyze/reduce). The authoritative record is `notes/session_2026-08-16_plan4-examples-execution.md` |
 
 ### Prerequisites now satisfied (2026-08-16)
 

@@ -41,3 +41,9 @@ docs/sg_execution_times.rst
 
 # social-media launch assets (post drafts + demo gifs) -- not for GitHub
 notes/bluesky-launch/
+
+# agent-tooling scratch: the /init-deep AGENTS.md hierarchy and .omo/ are
+# local-only by maintainer decision (2026-09-03). MANIFEST.in excludes
+# AGENTS.md too, because `graft tests` walks the filesystem, not git.
+AGENTS.md
+.omo/

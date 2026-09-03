@@ -129,11 +129,11 @@ def test_the_market_section_is_reframed_once_its_notebook_is_hierarchical():
     """
     is_hierarchical = bool(re.search(
         r'MultiIndex\.from_(tuples|product|arrays)',
-        _notebook_code('docs/tutorials/market_forecast.ipynb')))
+        _notebook_code('docs/tutorials/market_sectors.ipynb')))
     tut = _read('docs/tutorials.rst')
     if is_hierarchical:
         assert 'one moving path' not in tut, (
-            'market_forecast.ipynb is now hierarchical (Plan 4 Task 2 landed);'
+            'market_sectors.ipynb is now hierarchical (Plan 4 Task 2 landed);'
             ' retitle its docs/tutorials.rst section to the hierarchy framing'
             ' and add the sectors-as-leaves / market-mean / price-hue /'
             ' per-trace-forecast synopsis (Plan 2 Task 10 Step 4).')

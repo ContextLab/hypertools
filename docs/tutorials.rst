@@ -160,7 +160,7 @@ mean and no forecast. See :doc:`hierarchy` for the column-axis rule.
 .. toctree::
   :maxdepth: 2
 
-  tutorials/market_forecast.ipynb
+  tutorials/market_sectors.ipynb
 
 Decades of weather: bold means, faint cities, temperature colormaps
 -------------------------------------------------------------------

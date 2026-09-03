@@ -100,7 +100,7 @@ SCRIPT_BUDGETS = {
     # the panel boxes, the affine probe that places them, and the restyling
     # of the library's artists are the presentation the composition needs.
     # Rounded up to the next multiple of 5, as every other budget is.
-    'examples/animate_market_forecast.py': 185,   # 181 measured -> 185
+    'examples/animate_market_sectors.py': 185,    # 181 measured -> 185
     'examples/animate_weather_decades.py': 75,    # 73 measured -> 75
     'examples/animate_painting_embeddings.py': 140,  # 135 measured -> 140
     'examples/animate_conversation.py': 110,      # 106 measured -> 110
@@ -109,7 +109,7 @@ SCRIPT_BUDGETS = {
 
 #: script stem -> notebook, so the derivation below has something to pair.
 NOTEBOOKS = {
-    'examples/animate_market_forecast.py': 'docs/tutorials/market_forecast.ipynb',
+    'examples/animate_market_sectors.py': 'docs/tutorials/market_sectors.ipynb',
     'examples/animate_weather_decades.py': 'docs/tutorials/weather_decades.ipynb',
     'examples/animate_painting_embeddings.py': 'docs/tutorials/painting_embeddings.ipynb',
     'examples/animate_conversation.py': 'docs/tutorials/conversation_shape.ipynb',
@@ -788,7 +788,9 @@ STATED_ARTIFACT = {
     # Market should go static, and the answer is that it stays animated --
     # so the floor stays, at a value the approved composition can actually
     # reach (a 6 s reveal at 15 fps measures 90 frames).
-    'animate_market_forecast': dict(min_frames=90, axes_exactly=1,
+    # (renamed from animate_market_forecast 2026-09-03, maintainer decision:
+    # nothing in it forecasts, so the name stopped being true)
+    'animate_market_sectors': dict(min_frames=90, axes_exactly=1,
                                     tiled=dict(panels=6, leaves=4)),
     'animate_weather_decades': dict(min_frames=100, axes=2),
     'animate_painting_embeddings': dict(min_frames=60, palette=True),
@@ -1162,7 +1164,7 @@ def test_examples_produce_their_stated_artifact(stem):
                 f'actually using the image palette it exists to demonstrate')
 
 
-LAUNCH_NOTEBOOKS = ('market_forecast', 'weather_decades',
+LAUNCH_NOTEBOOKS = ('market_sectors', 'weather_decades',
                     'painting_embeddings', 'conversation_shape',
                     'morph_shapes_zoo')
 
@@ -1201,7 +1203,8 @@ def _code_cells(stem):
 #:
 #: Install-cell indices are filtered out of both sides before comparing.
 EXPECTED_VISIBLE_OUTPUTS = {
-    # market: MEASURED 2026-09-03 from two real `scripts/execute_tutorial.py`
+    # market (`market_sectors.ipynb`, renamed from `market_forecast.ipynb` on
+    # landing): MEASURED 2026-09-03 from two real `scripts/execute_tutorial.py`
     # runs of the composition-E notebook (the first run showed a third
     # output, cell 7's `execute_result` -- the HyperAnimation's own inline
     # video repr, produced by leaving `anim.draw_frame(...)` as the cell's
@@ -1210,7 +1213,7 @@ EXPECTED_VISIBLE_OUTPUTS = {
     # the saved-GIF line; every other cell only defines things. An earlier
     # entry here described a DISCARDED notebook and was removed rather than
     # re-measured; this one describes the committed file.
-    'market_forecast': {7, 8},
+    'market_sectors': {7, 8},
 }
 
 
@@ -1340,7 +1343,7 @@ def test_example_runs_end_to_end(stem):
 def test_no_launch_notebook_committed_an_error_output():
     """A notebook can be fully executed and still be broken."""
     import json
-    for stem in ('market_forecast', 'weather_decades', 'painting_embeddings',
+    for stem in ('market_sectors', 'weather_decades', 'painting_embeddings',
                  'conversation_shape', 'morph_shapes_zoo'):
         nb = json.loads(_read(f'docs/tutorials/{stem}.ipynb'))
         for cell in nb['cells']:

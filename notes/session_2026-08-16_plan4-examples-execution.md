@@ -570,3 +570,15 @@ script's sections (generator in the session scratchpad, not the repo),
 execute with `scripts/execute_tutorial.py`, record the visible set, run
 the gate, re-measure the budget once, commit script + notebook + GIF +
 gate together.
+
+### Maintainer calls, 2026-09-03 (after the Task 2 commit)
+
+| question | call | done |
+|-|-|-|
+| untracked AGENTS.md hierarchy, `.omo/`, the 2026-08-21 note | **ignore** the agent files (gitignore + a MANIFEST.in `global-exclude`, because `graft tests` walks the filesystem and would still ship `tests/AGENTS.md`); commit the note | yes |
+| Market file names | **rename to `*_sectors`** -- `examples/animate_market_sectors.py`, `docs/tutorials/market_sectors.{ipynb,gif}`; the two 1.0 URLs break (no redirect mechanism in `docs/conf.py`) | yes; notebook re-executed under the new name, visible set still `{7, 8}` |
+| Tasks 3-7 | **proceed straight through**, commit per task, report at the end | in progress |
+
+Historical mentions of `animate_market_forecast` / `market_forecast.ipynb` in
+the plan, this note and the gate's comments describe the files as they were
+and are left as written.

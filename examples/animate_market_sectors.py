@@ -60,8 +60,6 @@ from matplotlib.colors import to_rgb
 
 import hypertools as hyp
 
-# This file keeps its 1.0 name so the published docs URL survives. Nothing in
-# it forecasts anything; see the module docstring for what it shows instead.
 CACHE = os.path.join(tempfile.gettempdir(), 'hypertools_gallery_cache')
 RANGE = '10y'
 # six sectors x four EQUALLY WEIGHTED tickers each
