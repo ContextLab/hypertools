@@ -667,3 +667,30 @@ suite 3767 passed on its branch) is cherry-picked after this commit. It
 noqa'd E402 in six tutorial notebooks' code cells, three of which this
 task re-executed, so the cherry-pick may conflict on those; resolution is
 to keep the executed notebook and re-add the noqa comments.
+
+## Task 8 LANDED (2026-09-03) -- verification, and the gallery scraper
+
+Gate: 139 collected, 134 passed, 0 failed, 5 skipped (opt-in smoke). Docs
+`-W -E -a` from a wiped `_build`: 0 warnings. Five thumbnails generated
+and referenced; `tests/test_docs_thumbnails.py` green.
+
+**The plan's Step 6 could never have worked as written.** sphinx-gallery
+only scrapes animations whose figure is in `plt.get_fignums()`, and
+`show=False` leaves the figure unmanaged -- so the five launch examples
+had never rendered anything in the gallery, before or after Plan 4. Fixed
+in `docs/conf.py` with `hyperanimation_scraper` (renders any
+`HyperAnimation` through sphinx-gallery's own `_anim_rst`); examples
+untouched. Remember: a scraper change does not invalidate the gallery's
+md5 cache -- delete `docs/auto_examples/<stem>.py.md5` to re-run one.
+
+Also found: Sphinx keeps orphaned output from renamed pages across `-E -a`
+(wipe `_build`); sphinx-gallery executes without `__file__` (paintings
+guards it); the hierarchy-guide control forbids the phrase "one moving
+path" anywhere in `docs/tutorials.rst`, including alt text.
+
+`RELEASE_CHECKLIST.md` rewritten for 1.1.0: push + integration PR FIRST
+(no hosted CI has seen this line), local validation list, v1.1.0
+everywhere, conda-forge is now a bot bump on the existing feedstock.
+
+**Plan 4 is complete.** What remains is not example work: push `dev-1.0`,
+open the PR, wait for matrix CI, then follow the checklist.

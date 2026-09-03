@@ -358,6 +358,41 @@ texinfo_documents = [
      'Miscellaneous'),
 ]
 
+
+def hyperanimation_scraper(block, block_vars, gallery_conf, **kwargs):
+    """Scrape the animations ``hyp.plot(..., show=False)`` returns.
+
+    sphinx-gallery's matplotlib scraper walks ``plt.get_fignums()`` and pairs
+    each MANAGED figure with any ``matplotlib.animation.Animation`` in the
+    example's namespace. A ``show=False`` plot leaves its figure unmanaged
+    by pyplot, so the five launch examples (which bind the ``HyperAnimation``
+    wrapper the call returns) rendered NOTHING in the gallery -- measured
+    2026-09-03: their generated pages carried no image block at all, and no
+    ``.mp4`` for a thumbnail. This scraper finds every ``HyperAnimation`` (or
+    bare ``Animation``) whose figure the matplotlib scraper will not see and
+    renders it through sphinx-gallery's own animation writer, so the page
+    gets the same embedded video as the managed-figure examples.
+    """
+    from pathlib import PurePosixPath
+    import matplotlib.pyplot as plt
+    from matplotlib.animation import Animation
+    from sphinx_gallery.scrapers import _anim_rst
+    from hypertools.plot.hyper_animation import HyperAnimation
+
+    managed = {plt.figure(num) for num in plt.get_fignums()}
+    seen, rst = set(), []
+    for value in block_vars['example_globals'].values():
+        ani = value.animation if isinstance(value, HyperAnimation) else value
+        if not isinstance(ani, Animation) or id(ani) in seen:
+            continue
+        seen.add(id(ani))
+        if ani._fig in managed:
+            continue                    # the matplotlib scraper renders it
+        image_path = PurePosixPath(next(block_vars['image_path_iterator']))
+        rst.append(_anim_rst(ani, image_path, gallery_conf))
+    return '\n'.join(rst)
+
+
 sphinx_gallery_conf = {
     # path to your examples scripts
     'examples_dirs' : '../examples',
@@ -384,7 +419,8 @@ sphinx_gallery_conf = {
     'capture_repr': ('_repr_html_',),
     # scrape BOTH matplotlib figures and plotly figures (the plotly scraper
     # renders interactive figures into the gallery via kaleido)
-    'image_scrapers': ('matplotlib', plotly_sg_scraper),
+    'image_scrapers': ('matplotlib', plotly_sg_scraper,
+                       hyperanimation_scraper),
     # Limit memory usage display
     'show_memory': False,
     # Ensure proper thumbnail linking

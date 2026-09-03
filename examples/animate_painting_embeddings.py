@@ -50,8 +50,11 @@ CACHE = os.path.join(tempfile.gettempdir(), 'hypertools_gallery_cache')
 FILEPATH = 'https://commons.wikimedia.org/wiki/Special:FilePath/'
 # the ONLY committed fixture bytes in the gallery: a 64-px thumbnail the
 # test-suite extracts a palette from, so no canvas is ever fetched by a test
-PALETTE_FIXTURE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                               'data', 'painting_palette_fixture.png')
+# (`__file__` is absent when sphinx-gallery executes this script; it runs
+# from the examples directory, so the relative path resolves there)
+PALETTE_FIXTURE = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)) if '__file__' in globals()
+    else os.getcwd(), 'data', 'painting_palette_fixture.png')
 try:
     import sentence_transformers  # noqa: F401 -- only asks whether [text] is installed
     VECTORIZER = 'all-MiniLM-L6-v2'

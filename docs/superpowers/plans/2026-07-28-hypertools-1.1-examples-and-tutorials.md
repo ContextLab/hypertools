@@ -3575,6 +3575,26 @@ Expected: every one of the eight has a **strictly higher** ratio than the audit'
 
 ## Task 8: Verification — measure it, and keep it measured
 
+> **LANDED 2026-09-03** (Steps 0-2 on 2026-08-16, the rest today). Final gate:
+> `tests/test_examples_are_native.py` **139 collected, 134 passed, 0 failed, 5 skipped** (the opt-in
+> smoke tests), exactly the table's *final* row. Every launch example runs headless with
+> `UserWarning` promoted to an error. Docs built with `-W -E -a` from a wiped `_build`: **0
+> warnings**; the five tutorial pages render their outputs and GIFs; the tutorials index carries the
+> five thumbnails (35-171 KB, all under the 1.1 MB ceiling).
+>
+> **Step 6's mechanism was wrong, and is corrected in `docs/conf.py`.** sphinx-gallery's matplotlib
+> scraper pairs animations with the figures in `plt.get_fignums()`, and `hyp.plot(..., show=False)`
+> leaves its figure UNMANAGED by pyplot -- so none of the five launch examples had ever produced a
+> gallery movie (measured: their generated pages carried no image block at all, and the July build
+> had no `.mp4` for any of them). Exposing the bare `FuncAnimation` (`fig, ani = anim`) does not
+> help, because the figure is still unmanaged. `hyperanimation_scraper` in `docs/conf.py` finds every
+> `HyperAnimation` (or bare `Animation`) whose figure the matplotlib scraper will not see and renders
+> it through sphinx-gallery's own animation writer; the examples are unchanged. A scraper change does
+> not change an example's md5, so the five `.py.md5` files were deleted to force re-execution.
+> Two more: the July build's stale `animate_market_forecast` gallery output survived `-E -a` (Sphinx
+> never deletes orphans), so `docs/_build` is wiped before the release-parity build; and
+> `examples/animate_painting_embeddings.py` guards `__file__`, which sphinx-gallery does not define.
+
 > **On the `Step 0 / 0b / 0c` numbering here.** Tasks 2–6 had a `Step 0` that ran *after* Step 2,
 > which is why they were renumbered 1..N. These are different: 0, 0b, 0c, 1, 2, … is the order they
 > are executed in, so the names are unusual but nothing contradicts. They are left alone
@@ -3582,7 +3602,7 @@ Expected: every one of the eight has a **strictly higher** ratio than the audit'
 > them by these names, and renaming would trade a cosmetic improvement for a real chance of a
 > dangling reference.
 
-- [ ] **Step 0: Give `HyperAnimation` the three accessors the gate needs**
+- [x] **Step 0: Give `HyperAnimation` the three accessors the gate needs**
 
 **Files:** Modify `hypertools/plot/hyper_animation.py`; test `tests/plot/test_hyper_animation_accessors.py` (create).
 
@@ -3755,7 +3775,7 @@ Then the whole suite, since `hyper_animation.py` is on every animated path:
 
 > **The private access is now in ONE place, inside the library, where it belongs.** `draw_frame` and `n_frames` still touch `_func`/`_args`/`_save_count` — that is unavoidable, because matplotlib exposes no public equivalent — but the library is entitled to know its own backend's internals, and every example, notebook and test now goes through the documented accessor instead of repeating the reach. That is the same reasoning as Contract 3's allowlist, applied one layer down.
 
-- [ ] **Step 0b: The loader / builder split each example must expose**
+- [x] **Step 0b: The loader / builder split each example must expose**
 
 **This step defines two functions per example. Tasks 2–6 each WRITE them; nothing else in the plan defines them, so skipping this step leaves `test_examples_produce_their_stated_artifact` calling names that do not exist.**
 
@@ -3867,7 +3887,7 @@ if __name__ == '__main__':
 - **Readability is preserved.** All five examples contain **zero** sphinx-gallery narration blocks (`grep -c "^# %%\|^####"` → 0 for each), so sphinx-gallery already renders each as one docstring plus one code block; the split cannot fragment interleaved narration because there is none. The reader gains two labelled halves in place of a 336-line straight line whose two fetch loops sit 125 lines apart.
 - **sphinx-gallery still runs the guarded driver.** It executes each example inside a *fake `__main__` module* (`sphinx_gallery/gen_rst.py:1271-1280`), so `if __name__ == '__main__':` fires at docs build. Confirmed end-to-end on the split file: `weather: 6 cities (open-meteo archive)`, `EXIT=0`.
 
-- [ ] **Step 0c: Renegotiate the budgets the split costs**
+- [x] **Step 0c: Renegotiate the budgets the split costs**
 
 **This step is DONE — it was performed on 2026-08-04 and its results are already in `SCRIPT_BUDGETS`.** Verify rather than repeat, and only re-measure if you change what a task prescribes.
 
@@ -3899,7 +3919,7 @@ The overhead is not constant, and the spread is explained: it scales with the pa
 
 To re-measure after changing a task: transcribe its rewrite block to a scratch file, apply the split, and run `.venv/bin/python scripts/measure_native_ratio.py <both files>`. Record the result in `SCRIPT_BUDGETS` with a one-line comment, and round the budget up to the next multiple of 5 — that rounding is the only allowance.
 
-- [ ] **Step 1: Commit the measurement**
+- [x] **Step 1: Commit the measurement**
 
 ```python
 # scripts/measure_native_ratio.py
@@ -4083,7 +4103,7 @@ Expected on the pre-`d730a085` file: `code= 166 native=   9 ratio=  5.4%`. On th
 
 **Never `git stash` for this.** Global Constraints explains why: with a clean tree it saves nothing and the following `pop` restores *and drops* an unrelated pre-existing stash. `git show` is read-only and needs no clean tree.
 
-- [ ] **Step 2: Write the gate as a real test**
+- [x] **Step 2: Write the gate as a real test**
 
 ```python
 # tests/test_examples_are_native.py
@@ -5238,7 +5258,7 @@ def test_no_launch_notebook_committed_an_error_output():
 >
 > **Add `scripts/__init__.py` anyway, in the same commit.** It costs one empty file, it makes the dependency explicit rather than incidental, and nothing else in the repo imports from `scripts.` yet (`grep -rn "from scripts\.\|import scripts\b"` returns nothing) — so this is the first use and the right moment to declare it. Do **not** reach for `pythonpath = ["."]`: it is a global change to every test's `sys.path` for the sake of one helper. Whichever is chosen, verify with the **same bare `pytest` invocation CI uses**, not `python -m pytest`, which puts the CWD on `sys.path` and would mask the difference.
 
-- [ ] **Step 3: Run the gate and confirm it passes**
+- [x] **Step 3: Run the gate and confirm it passes**
 
 Run: `.venv/bin/python -m pytest tests/test_examples_are_native.py -v`
 
@@ -5292,7 +5312,7 @@ v1 expected 109 by counting a 10-ID ratio gate that this revision removed; v2 ex
 
 If a size budget fails, cut presentation code or renegotiate the budget **in this plan** — never raise it silently in the test file.
 
-- [ ] **Step 4: Re-measure everything and record the result**
+- [x] **Step 4: Re-measure everything and record the result**
 
 ```bash
 .venv/bin/python scripts/measure_native_ratio.py examples/animate_conversation.py \
@@ -5303,7 +5323,7 @@ If a size budget fails, cut presentation code or renegotiate the budget **in thi
 
 Paste the table into the commit message. **This is a record, not a gate** — there is no floor to be "at or above" any more. Read it as a trend against the pre-plan audit baseline (five launch examples on 2026-07-28: 48/739 native code lines, 6.5%; 48/723 = 6.6% as of 2026-08-02), and if a rewrite lands far below what its siblings manage, ask why *in review* rather than letting a threshold decide. The v1 floors (26/18/20/25/26%) were set before the rewrites existed and four of the five missed them; keeping them would have blocked the plan on a number that measures formatting as much as content.
 
-- [ ] **Step 5: Run every example headless**
+- [x] **Step 5: Run every example headless**
 
 ```bash
 for f in examples/animate_conversation.py examples/animate_market_forecast.py \
@@ -5314,7 +5334,7 @@ done
 ```
 Expected: each exits 0, with no traceback and no `UserWarning` about an ignored kwarg.
 
-- [ ] **Step 6: Give the five launch tutorials a visible figure**
+- [x] **Step 6: Give the five launch tutorials a visible figure**
 
 Measured: none of the five has a gallery thumbnail (`scripts/generate_gallery_thumbs.py:26` hard-codes six stems). Extend it:
 
@@ -5343,14 +5363,14 @@ and add an `.. image::` line to each of the five sections of `docs/tutorials.rst
 
 Expected: five new thumbnails, each **under 1.1 MB** (the largest existing one, `sphx_glr_plot_story_trajectories_thumb.gif`, is 1 065 855 bytes).
 
-- [ ] **Step 7: Run the FULL suite**
+- [x] **Step 7: Run the FULL suite**
 
 Run: `.venv/bin/python -m pytest -q`
 Expected: the baseline plus **179** — Task 1's **19** (`test_image_palette.py`), Task 5's **12** (`test_recency_fade.py`), and Task 8's **148** (139 in `test_examples_are_native.py` + 9 in `test_hyper_animation_accessors.py`) — all passing, 13 skipped, plus **7 more skips** (2 `PRIVATE_API_EXCEPTIONS` + 5 opt-in smoke tests).
 
 **Verify by real collection, never by this number.** Three revisions running, the stated figure here has been stale: v1 said 17 + 109 = +126, v2 said 16 + 106 = +134, and both were wrong. Run `pytest <file> --collect-only -q` per file and add them up. Any new failure in `tests/test_docs_thumbnails.py` or `tests/test_docs_gallery_log_filter.py` is Step 6's doing — fix it there.
 
-- [ ] **Step 8: Build the docs to the RTD-parity standard**
+- [x] **Step 8: Build the docs to the RTD-parity standard**
 
 Run: `cd docs && MPLBACKEND=Agg ../.venv/bin/python -m sphinx -b html -W -E -a . _build/html 2>&1 | tail -30`
 Expected: build succeeds with **0 warnings**. Then verify the five tutorial pages actually show something:
@@ -5364,11 +5384,11 @@ print('output blocks:', len(re.findall(r'nboutput', html)))"
 ```
 Expected: `1` for the thumbnail, and a non-zero count of `nboutput` blocks (the executed outputs are rendering).
 
-- [ ] **Step 9: Re-run everything that could have been disturbed**
+- [x] **Step 9: Re-run everything that could have been disturbed**
 
 Per the repo rule (*"repeat **all** checks if any changes were made to fix any of the checks"*): if Steps 6–8 changed anything, re-run Steps 3, 5, 7 and 8 in that order and confirm all four are green **in the same tree**.
 
-- [ ] **Step 10: Commit**
+- [x] **Step 10: Commit**
 
 ```bash
 # Everything Step 0 touched belongs in this commit too: the accessors are

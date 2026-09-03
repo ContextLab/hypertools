@@ -157,6 +157,10 @@ figure, so this is one animation with one pooled scale. Position between
 panels is layout, not market data; there is deliberately no market-wide
 mean and no forecast. See :doc:`hierarchy` for the column-axis rule.
 
+.. image:: _static/thumbnails/sphx_glr_animate_market_sectors_thumb.gif
+   :width: 400
+   :alt: Six sector panels tiled in one animated hypertools plot, each with its stocks and the sector mean
+
 .. toctree::
   :maxdepth: 2
 
@@ -173,6 +177,10 @@ average temperature across the cities) colours it on a blue-cold /
 red-hot scale with a native colorbar; ``manip='Smooth'``,
 ``normalize='across'`` and ``chemtrails=True`` are the only other
 keywords. No hierarchy, no hand-spliced colormap, no per-frame callback.
+
+.. image:: _static/thumbnails/sphx_glr_animate_weather_decades_thumb.gif
+   :width: 400
+   :alt: A century of twenty cities' temperatures as one trajectory, coloured blue-cold to red-hot
 
 .. toctree::
   :maxdepth: 2
@@ -191,6 +199,10 @@ with a native legend, ``order='serial'`` reveals one turn at a time with
 one bespoke effect, a recency fade across turns, runs on the public
 ``on_frame`` hook and reads the schedule the library publishes.
 
+.. image:: _static/thumbnails/sphx_glr_animate_conversation_thumb.gif
+   :width: 400
+   :alt: The Mad Tea-Party revealed one turn at a time, each path coloured by speaker
+
 .. toctree::
   :maxdepth: 2
 
@@ -207,6 +219,10 @@ each cloud and ``animate='spin'`` orbits it. Each cloud's colour comes from
 its real canvas through ``image_palette``, which orders clusters by
 salience rather than size, with one legibility floor on top.
 
+.. image:: _static/thumbnails/sphx_glr_animate_painting_embeddings_thumb.gif
+   :width: 400
+   :alt: Five clouds of painting-description embeddings spinning in 3-D, each in its canvas's colour
+
 .. toctree::
   :maxdepth: 2
 
@@ -220,6 +236,10 @@ on each; ``rotations=`` gives every hold and transition its screen time, and
 ``title=`` takes one string per cloud, shown while that shape is whole and
 blanked through the transitions. The loader degrades to five parametric
 clouds when the zoo cannot be fetched, so the notebook always renders.
+
+.. image:: _static/thumbnails/sphx_glr_animate_morph_zoo_thumb.gif
+   :width: 400
+   :alt: A cloud of dots morphing through the shapes zoo, titled per shape
 
 .. toctree::
   :maxdepth: 2
