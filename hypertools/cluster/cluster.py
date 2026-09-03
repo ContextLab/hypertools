@@ -13,7 +13,7 @@ import warnings
 
 import numpy as np
 
-from .common import Clusterer, CLUSTERERS, MIXTURES, mixture_proportions, normalize_membership_rows
+from .common import Clusterer, CLUSTERERS, MIXTURES
 from ..core.model import external_stacklevel
 from ..tools.format_data import format_data as formatter
 

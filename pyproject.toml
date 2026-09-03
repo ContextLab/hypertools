@@ -244,3 +244,14 @@ markers = [
 # a user-supplied `-m` on the command line (e.g. `pytest -m bigdata`)
 # overrides this addopts value entirely, re-including bigdata tests.
 addopts = "-m 'not bigdata'"
+
+[tool.ruff.lint.per-file-ignores]
+# `from .._shared.helpers import *` pulls in ~20 plotting helper names used
+# throughout these two large (1500+/8000+ line) modules. `np` was already
+# pulled out into an explicit `import numpy as np` (see the comment at the
+# top of plot.py); enumerating every remaining star-imported name with
+# certainty across files this size risks a missed name turning into a live
+# NameError, so the star import is kept and only its lint findings are
+# silenced here (2026-09 ruff cleanup).
+"hypertools/plot/plot.py" = ["F403", "F405"]
+"hypertools/plot/matplotlib_backend.py" = ["F403", "F405"]

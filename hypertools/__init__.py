@@ -19,7 +19,7 @@ on the ``plot`` function) and raises ImportError. Use
 ``from hypertools.plot import backend`` for submodule access.
 """
 
-from .config import __version__
+from .config import __version__  # noqa: F401 (re-export; deliberately excluded from __all__, see below)
 from .plot.plot import plot
 from .plot.backend import set_interactive_backend
 from .plot.hyper_animation import HyperAnimation

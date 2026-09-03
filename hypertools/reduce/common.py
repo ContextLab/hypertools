@@ -17,7 +17,6 @@ returns properly normalized membership proportions (GH #174).
 """
 import inspect
 
-import numpy as np
 from sklearn.base import BaseEstimator
 from sklearn.exceptions import NotFittedError
 from sklearn.decomposition import (

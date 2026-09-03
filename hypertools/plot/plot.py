@@ -6210,7 +6210,8 @@ def plot(
         # in divide' RuntimeWarning and produced NaNs (release-1.0 audit,
         # C2 residual warnings); constant data maps to a finite fixed
         # position instead
-        _rescale = lambda a: 2 * (np.divide(a - _m1, _m2)) - 1
+        def _rescale(a):
+            return 2 * (np.divide(a - _m1, _m2)) - 1
         xform = [_rescale(xi) for xi in xform]
         raw_forecasts = [_rescale(fc) for fc in raw_forecasts]
         raw_xform = [_rescale(xi) for xi in raw_xform]
@@ -6237,7 +6238,8 @@ def plot(
         # observation reduced to zeros, or constant data) -> a finite
         # fixed position, instead of a divide-by-zero RuntimeWarning +
         # NaNs (release-1.0 audit, C2 residual warnings)
-        _rescale = lambda a: 2 * (np.divide(a - _m1, _m2)) - 1
+        def _rescale(a):
+            return 2 * (np.divide(a - _m1, _m2)) - 1
         xform = [_rescale(xi) for xi in xform]
         raw_xform = [_rescale(xi) for xi in raw_xform]
 
@@ -7303,7 +7305,7 @@ def _build_colorbar_info(colorbar, hue, multicolor_hue, cluster, n_clusters,
     # 2-level MultiIndex DataFrame (8 leaves + 2 top-level means) renders 2
     # colorbar segments (one per top-level group), not 10.
     if '_nolegend_' in labels:
-        keep = [i for i, l in enumerate(labels) if l != '_nolegend_']
+        keep = [i for i, lbl in enumerate(labels) if lbl != '_nolegend_']
         if not keep:
             raise ValueError(
                 "colorbar=True requires at least one labeled group, but "
@@ -7369,7 +7371,7 @@ def _add_colorbar(fig, ax, colorbar_info, font=None):
     # names), so they must be applied BEFORE any pixel-measurement-based
     # width fitting runs (see `_add_right_colorbar`), not after.
     ticklabels = (None if default_tick_labels is None or colorbar_info['ticks']
-                 is not None else [str(l) for l in default_tick_labels])
+                 is not None else [str(lbl) for lbl in default_tick_labels])
     label = colorbar_info['label']
 
     if colorbar_info['location'] == 'right':

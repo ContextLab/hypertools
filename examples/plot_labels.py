@@ -14,7 +14,6 @@ are simply labeling the first datapoint for each matrix in the list.
 
 # import
 import hypertools as hyp
-import numpy as np
 
 # load example data
 data = hyp.load('weights_sample')

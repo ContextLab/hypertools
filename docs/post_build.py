@@ -145,8 +145,8 @@ def copy_gif_thumbnails():
         BUILD_IMAGES_DIR, GALLERY_HTML = find_build_dirs()
     
     if not BUILD_IMAGES_DIR or not os.path.exists(BUILD_IMAGES_DIR):
-        print(f"Error: Build images directory not found.")
-        print(f"Searched paths:")
+        print("Error: Build images directory not found.")
+        print("Searched paths:")
         possible_dirs = [
             os.path.join(DOCS_DIR, "_build", "html", "_images"),
             os.path.join(DOCS_DIR, "..", "_readthedocs", "html", "_images"),

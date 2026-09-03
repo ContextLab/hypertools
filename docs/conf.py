@@ -18,7 +18,8 @@
 #
 # import os
 # import sys
-import sys, os
+import os
+import sys
 
 # plotly scraper for sphinx-gallery: renders plotly figures produced by
 # gallery examples to static PNGs. This needs THREE things: plotly, kaleido,
@@ -185,7 +186,8 @@ author = u'Andrew C. Heusser, Kirsten Ziman, Lucy L. W. Owen, Jeremy R. Manning'
 # built documents.
 #
 # Import version from package
-import hypertools
+import hypertools  # noqa: E402 (sphinx conf.py: intentionally imported here,
+# after sys.path is configured above, not at module top)
 # The short X.Y version.
 version = hypertools.__version__
 # The full version, including alpha/beta/rc tags.

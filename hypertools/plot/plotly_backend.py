@@ -19,9 +19,11 @@ elev=10/azim=-60 camera, 1.5pt lines, 6pt markers, and the same seaborn
 palette assignment per trace.
 """
 
+import contextlib
 import itertools
 import os
 import sys
+import threading
 import warnings
 
 import numpy as np
@@ -1732,9 +1734,6 @@ def _show_sphinx_gallery(fig):
                      auto_play=False)
 
 
-import contextlib
-import threading
-
 # --- headless-Chrome (kaleido) animation export: hard timeout via subprocess -
 # kaleido 1.x drives headless Chrome; its OWN per-render timeout only wraps the
 # figure CALC (`asyncio.wait_for(tab._calc_fig(...), ...)`), NOT browser launch
@@ -2850,7 +2849,7 @@ def _colorbar_trace(go, colorbar_info, ndims, legend_present):
         else:
             cb['tickvals'] = (list(range(n - 1, -1, -1)) if orientation == 'v'
                               else list(range(n)))
-            cb['ticktext'] = [str(l) for l in colorbar_info['labels']]
+            cb['ticktext'] = [str(lbl) for lbl in colorbar_info['labels']]
 
     marker = dict(color=[cmin], colorscale=colorscale, cmin=cmin, cmax=cmax,
                  showscale=True, colorbar=cb, size=0.001, opacity=0)

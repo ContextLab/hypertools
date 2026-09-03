@@ -9,3 +9,11 @@ from .shared import RobustDict, unpack_model, get, is_reused_pipeline
 from .configurator import get_default_options, apply_defaults
 from .model import apply_model, supported_models
 from .pipeline import Pipeline, build_pipeline, CANONICAL_ORDER
+
+__all__ = [
+    'HypertoolsError', 'HypertoolsBackendError', 'HypertoolsIOError',
+    'RobustDict', 'unpack_model', 'get', 'is_reused_pipeline',
+    'get_default_options', 'apply_defaults',
+    'apply_model', 'supported_models',
+    'Pipeline', 'build_pipeline', 'CANONICAL_ORDER',
+]

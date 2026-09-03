@@ -25,6 +25,7 @@ data = hyp.load('weights', align='hyper')
 group1 = np.mean(data[:18], 0)
 group2 = np.mean(data[18:], 0)
 
-import os, tempfile
+import os  # noqa: E402 (sphinx-gallery narrative section, not top-of-file)
+import tempfile  # noqa: E402 (same)
 save_path = os.path.join(tempfile.mkdtemp(), 'animation.mp4')
 fig, ani = hyp.plot([group1, group2], animate=True, save_path=save_path)
