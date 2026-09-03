@@ -259,6 +259,23 @@ def _match_features_by_name(leaves, leaf_keys):
     return matched
 
 
+
+def _groupby_level(group_levels):
+    """The `level=` to hand `groupby` for these grouping levels.
+
+    A length-1 LIST makes pandas 2.x warn (FutureWarning: "a length-1
+    list-like level parameter will yield indexes as tuples in a future
+    version") on every iteration -- pandas 3 already yields tuples for it,
+    silently. A two-level hierarchy has exactly one grouping level, so pass
+    it as a scalar: both versions then yield scalar keys, which the callers
+    wrap into 1-tuples themselves, and neither warns. Caught by the first
+    hosted run of the 1.1 line (PR #283, py3.10 / pandas 2.3.3), where
+    `test_colorbar_shows_one_segment_per_top_level_group` runs with
+    warnings as errors.
+    """
+    return group_levels[0] if len(group_levels) == 1 else group_levels
+
+
 def group_columns(df, feature_correspondence='name'):
     """Group a column-hierarchical frame into one leaf per group.
 
@@ -306,7 +323,8 @@ def group_columns(df, feature_correspondence='name'):
     # and the palette both depend on. dropna=False keeps groups whose
     # hierarchy LABEL is missing -- measured on pandas 3.0.3, the default
     # silently turns 3 groups into 2.
-    for key, sub in df.T.groupby(level=group_levels, sort=False, dropna=False):
+    for key, sub in df.T.groupby(level=_groupby_level(group_levels),
+                                 sort=False, dropna=False):
         # COPY FIRST, then flatten. `sub.T` may be a VIEW onto the caller's
         # frame depending on the pandas version and copy-on-write state, so
         # assigning `.columns` to it directly risks silently rewriting the
@@ -365,7 +383,8 @@ def group_rows_for_forecast(df):
 
     group_levels = list(range(df.index.nlevels - 1))
     groups, keys = [], []
-    for key, sub in df.groupby(level=group_levels, sort=False, dropna=False):
+    for key, sub in df.groupby(level=_groupby_level(group_levels),
+                               sort=False, dropna=False):
         # droplevel, NOT reset_index: the innermost level survives as this
         # group's index, carrying its name and dtype (verified: a datetime
         # innermost level comes back as a DatetimeIndex named 'date').

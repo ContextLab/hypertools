@@ -4,6 +4,8 @@ Three DIFFERENT rules live here deliberately; conflating them was the main
 defect in v1 of this plan. Every expectation below was measured on the
 pandas 3.0.3 / numpy 2.3.5 in this repo's venv before it was written.
 """
+import warnings
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -563,3 +565,40 @@ def test_flat_frames_in_a_list_pass():
         axes='columns')
     reject_hierarchical_in_list(market_frame(), caller='hyp.plot',
                                 axes='columns')
+
+
+# --- a two-level hierarchy has ONE grouping level ---------------------------
+
+def _two_level_column_frame():
+    cols = pd.MultiIndex.from_product([['A', 'B', 'C'], list(MEASURES)],
+                                      names=['Sector', 'Measure'])
+    return pd.DataFrame(np.arange(4 * 9, dtype=float).reshape(4, 9),
+                        columns=cols)
+
+
+def _two_level_row_frame():
+    idx = pd.MultiIndex.from_product([['A', 'B', 'C'], range(4)],
+                                     names=['Sector', 't'])
+    return pd.DataFrame(np.arange(12 * 2, dtype=float).reshape(12, 2),
+                        index=idx, columns=['x', 'y'])
+
+
+def test_a_two_level_hierarchy_groups_without_a_pandas_FutureWarning():
+    """A two-level hierarchy has exactly ONE grouping level. Handing pandas
+    2.x that level as a length-1 LIST makes every `groupby` iteration emit
+    "FutureWarning: a length-1 list-like level parameter will yield indexes
+    as tuples in a future version"; pandas 3 is silent (it already yields
+    tuples). The first hosted run of the 1.1 line (PR #283, py3.10 / pandas
+    2.3.3) failed `test_colorbar_shows_one_segment_per_top_level_group`,
+    which plots with warnings as errors. The fix passes a scalar level, so
+    this test is the same on both: no warning, and keys are still 1-tuples
+    in first-appearance order on both axes."""
+    with warnings.catch_warnings():
+        warnings.simplefilter('error')
+        leaves, meta = group_columns(_two_level_column_frame())
+        groups, keys = group_rows_for_forecast(_two_level_row_frame())
+    assert meta['leaf_keys'] == [('A',), ('B',), ('C',)]
+    assert [leaf.shape for leaf in leaves] == [(4, 3)] * 3
+    assert keys == [('A',), ('B',), ('C',)]
+    assert [g.shape for g in groups] == [(4, 2)] * 3
+    assert all(list(g.index) == [0, 1, 2, 3] for g in groups)
