@@ -255,6 +255,13 @@ previously ambiguous or silently lossy.
   of datasets. Nothing changes for flat input, where the two counts
   coincide.
 
+- **`ax=` is rejected together with `animate=`.** An animated plot owns its
+  own figure, so the axes passed in were left empty and the animation was
+  drawn on a figure of its own. The error says to drop `ax=` and style the
+  returned animation's `.figure` instead, and that several panels in one
+  animation are laid out in the DATA (translate each group into its own
+  region of one shared frame) and drawn with a single call.
+
 ### Bug fixes
 
 Each of these was found while building the above, and each affects FLAT
