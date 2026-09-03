@@ -929,7 +929,32 @@ def test_render_script_exits_NO_BROWSER_when_CHROME_CANNOT_BE_FOUND(tmp_path):
     because choreographer looks for its OWN downloaded Chrome first, before
     ever consulting `BROWSER_PATH` (`chromium.py:83`), and that download
     lives under the home directory.
+
+    That last sentence holds on Linux and macOS only. The download
+    directory is `platformdirs.PlatformDirs('choreographer', 'plotly')
+    .user_data_dir` (`choreographer/cli/defaults.py`): `~/.local/share` or
+    `~/Library/Application Support`, both of which follow `HOME`, but on
+    Windows `%LOCALAPPDATA%` resolved through the shell API
+    (`platformdirs/windows.py:_pick_get_win_folder`: ctypes first, registry
+    second, environment variables only when neither works), so no variable
+    this subprocess is given can hide a Chrome already downloaded there.
+    The first hosted run of the 1.1 line (PR #283, all three windows lanes)
+    had one at `AppData\\Local\\plotly\\choreographer\\deps` from the
+    workflow's pre-fetch step, choreographer used it, and the render
+    exited 0. The script's own `HYPERTOOLS_RENDER_BROWSER_PATH` is no
+    substitute: it calls kaleido directly and never passes through the
+    plotly wrapping this test exists to prove. So on Windows, when that
+    download exists, this shape cannot be driven from outside the process
+    and the test skips, naming the path.
     """
+    if os.name == 'nt':
+        from choreographer.cli._cli_utils import get_chrome_download_path
+        local = get_chrome_download_path(mkdir=False)
+        if local is not None and local.exists():
+            pytest.skip(
+                'choreographer will use its downloaded Chrome at '
+                f'{local}; on Windows that directory is resolved through '
+                'the shell API, which no subprocess environment can move')
     result = _run_render(
         str(tmp_path / 'out.png'),
         {'BROWSER_PATH': str(tmp_path / 'not-a-browser'),
