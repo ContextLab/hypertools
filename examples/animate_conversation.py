@@ -21,7 +21,9 @@ The one bespoke effect left is a **recency fade** across turns: the current
 turn is opaque, earlier turns recede, unspoken turns are hidden. Nothing in
 1.1 fades across already-revealed datasets, so it is real custom work -- but
 it runs on the public ``on_frame`` hook and reads the schedule the library
-publishes (``ctx.current_index``, ``ctx.revealed_counts``).
+publishes (``ctx.current_index``, ``ctx.revealed_counts``). Before 1.1 this
+example monkeypatched ``ani._func`` and re-derived that schedule by hand;
+the hook replaces both.
 
 Here the conversation is Lewis Carroll's *Mad Tea-Party* (Alice in
 Wonderland). The turns are bundled inline -- quoted verbatim from the

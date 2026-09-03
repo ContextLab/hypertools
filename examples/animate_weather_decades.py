@@ -23,7 +23,9 @@ behind the moving head as 138 years play.
 
 There is no hand-built hierarchy, no hand-spliced colormap, no
 ``ScalarMappable``, and no per-frame callback: the colour axis, the
-colorbar and the trail are all the library's.
+colorbar and the trail are all the library's. (Before 1.1 this example
+monkeypatched ``ani._func`` to redraw a second panel every frame; that
+reach, and the panel, are gone.)
 
 **Data & graceful degradation.** The temperature matrix and the city
 coordinates are the ones published with the HyperTools paper (verified

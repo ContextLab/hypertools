@@ -215,6 +215,12 @@ salience rather than size, with one legibility floor on top.
 Morphing through the shapes zoo
 -------------------------------
 
+``animate='morph'`` flows a cloud of dots from one shape to the next, holding
+on each; ``rotations=`` gives every hold and transition its screen time, and
+``title=`` takes one string per cloud, shown while that shape is whole and
+blanked through the transitions. The loader degrades to five parametric
+clouds when the zoo cannot be fetched, so the notebook always renders.
+
 .. toctree::
   :maxdepth: 2
 

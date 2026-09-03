@@ -3175,6 +3175,18 @@ git commit -m "docs(gallery): conversation example uses native text, order='seri
 
 ## Task 6: Morph — per-segment titles, natively
 
+> **LANDED 2026-09-03.** Script **61** code lines (budget re-measured 45 -> **65**: the plan's 43
+> was a bare split, but Contract 4 says this task must give `hyp.load` -- the one loader that
+> hard-failed offline -- a fallback, and a fallback for five point clouds is five parametric clouds
+> plus the degrade-and-say-so branch), notebook **65** (≤ 70).
+> `EXPECTED_VISIBLE_OUTPUTS['morph_shapes_zoo'] = {5, 6}`. `TITLES` is gone: titles are
+> `name.capitalize()` over the payload's clouds, so the fixture's five stand-ins get their own.
+> **Step 3's schedule check omits `rotations`**: `segment_frame_counts(n, total)` gives equal
+> segments, while the example passes weighted rotations, so the snippet reports 34 boundary-frame
+> "mismatches" that are the check's, not the titles'. With
+> `segment_frame_counts(n, total, rotations)` -- counts `[23, 15, 30, ..., 22]` -- **0 mismatches
+> over 240 frames**. The library's titles are right; run the check with the same rotations.
+
 > **v3: THE SCRIPT HALF OF THIS TASK IS ALREADY DONE.** Commit `d730a085` landed it on 2026-08-01. Step 1 below is retained only as a record of what was asked for; **do not apply it** — see "Step 1 (ALREADY LANDED)". The remaining work is the notebook, which still reaches into the private API the script has stopped using.
 
 **BEFORE — re-measured 2026-08-02 at `065c841e`, with the docstring-aware metric:**
@@ -3244,7 +3256,7 @@ shape. Nothing here recomputes hypertools' morph schedule or reaches into
 its private modules.
 ```
 
-- [ ] **Step 2: Split the loader from the figure builder (Contract 4 / Task 8 Step 0b)**
+- [x] **Step 2: Split the loader from the figure builder (Contract 4 / Task 8 Step 0b)**
 
 > **Ordering.** This step restructures the file the rewrite step above produces, so it comes
 > after it and never before. The prescribed rewrite blocks are monolithic — measured, not one of
@@ -3304,7 +3316,7 @@ anim = m.construct_artifact(m.fixture_data()); print('frames:', anim.n_frames)"
 
 Expected: it imports without touching the network and prints both names plus a frame count. If the import fetches, a loader call is still at module scope.
 
-- [ ] **Step 3: Run the example and confirm the titles track the schedule**
+- [x] **Step 3: Run the example and confirm the titles track the schedule**
 
 ```bash
 MPLBACKEND=Agg .venv/bin/python examples/animate_morph_zoo.py
@@ -3338,7 +3350,7 @@ PY
 
 Expected: exits 0 and prints `frames checked: 240 | mismatches: 0 []`. Any mismatch means the native titles are not tracking `frame_to_segment`'s parity — that is animation-core Task 8's contract, so fix it there, not here.
 
-- [ ] **Step 4: Rewrite the notebook in lockstep**
+- [x] **Step 4: Rewrite the notebook in lockstep**
 
 Rewrite `docs/tutorials/morph_shapes_zoo.ipynb`. The current cell 9 (24 lines of schedule recomputation and `_func` monkeypatching) is **deleted outright**, and its markdown heading (cell 8, `## 4. A title that tracks the current shape`) is folded into the plot cell's markdown:
 
@@ -3355,7 +3367,7 @@ Rewrite `docs/tutorials/morph_shapes_zoo.ipynb`. The current cell 9 (24 lines of
 | 8 | markdown | `## 4. Display (or save) the animation` |
 | 9 | code | `HTML(ani.to_jshtml())` / `# or: ani.save('morph_zoo.gif', fps=fps)` |
 
-- [ ] **Step 5: Execute and measure**
+- [x] **Step 5: Execute and measure**
 
 ```bash
 .venv/bin/python scripts/execute_tutorial.py docs/tutorials/morph_shapes_zoo.ipynb
@@ -3365,7 +3377,7 @@ Rewrite `docs/tutorials/morph_shapes_zoo.ipynb`. The current cell 9 (24 lines of
 
 Expected: both files inside budget (**≤ 45 / ≤ 50 code lines**) -- morph measures 26 today and 43 split, both measured. Record the measured visible-output index set into `EXPECTED_VISIBLE_OUTPUTS` (see Task 2's measure step for the Task-8-first ordering this requires); do not assert a predicted count.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add examples/animate_morph_zoo.py docs/tutorials/morph_shapes_zoo.ipynb

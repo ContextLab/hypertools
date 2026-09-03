@@ -74,7 +74,7 @@ NOTEBOOK_OVERHEAD = 5
 #:      weather            56       77      +21   (landed 2026-09-03; see the dict comment)
 #:      paintings         112      147      +35   (landed 2026-09-03; see the dict comment)
 #:      conversation       88      113      +25   (landed 2026-09-03; see the dict comment)
-#:      morph              26       43      +17
+#:      morph              26       61      +35   (landed 2026-09-03; see the dict comment)
 #:
 #: Each budget is the SPLIT figure rounded up to the next multiple of 5. That
 #: rounding is the entire allowance: at most 4 lines, for wording differences
@@ -123,7 +123,13 @@ SCRIPT_BUDGETS = {
     # so the per-turn titles read the payload rather than the module-level
     # TURNS (+3). Next multiple of 5.
     'examples/animate_conversation.py': 115,      # 113 measured -> 115
-    'examples/animate_morph_zoo.py': 45,          # 43 measured -> 45
+    # morph: the plan's 43 was the landed script (26) plus a bare split.
+    # Contract 4 also says Task 6 must give hyp.load -- the one loader that
+    # HARD-FAILED offline -- a fallback, and a fallback for five point
+    # clouds is five parametric clouds (+12) plus the degrade-and-say-so
+    # branch (+4); the payload assembly shared by loader and fixture is the
+    # rest. Landed 2026-09-03 at 61. Next multiple of 5.
+    'examples/animate_morph_zoo.py': 65,          # 61 measured -> 65
 }
 
 #: script stem -> notebook, so the derivation below has something to pair.
@@ -1246,6 +1252,9 @@ EXPECTED_VISIBLE_OUTPUTS = {
     # conversation: MEASURED 2026-09-03 from a real run. Cell 6 prints the
     # data line, cell 7 the saved-GIF line; the other six cells only define.
     'conversation_shape': {6, 7},
+    # morph: MEASURED 2026-09-03 from a real run. Cell 5 prints the data
+    # line, cell 6 the saved-GIF line.
+    'morph_shapes_zoo': {5, 6},
 }
 
 

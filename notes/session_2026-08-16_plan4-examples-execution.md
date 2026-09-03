@@ -642,3 +642,12 @@ re-rendered.
 
 The plan's maintainer call on `vectorizer` in the payload: taken as the
 plan's table assumed (fixture = TF-IDF, no model download in the suite).
+
+## Task 6 LANDED (2026-09-03) -- Morph
+
+Gate **12 -> 6** (what is left is Task 7: four older tutorials, analyze,
+reduce). Script 61 (budget 65: Contract 4's offline fallback for
+`hyp.load` costs five parametric clouds), notebook 65 (≤ 70), visible set
+`{5, 6}`, GIF 240 frames / 6.2 MB. The plan's Step 3 title check omits
+`rotations` and so reports 34 false boundary mismatches; with the weighted
+schedule the titles match on all 240 frames. Recorded in the plan.
