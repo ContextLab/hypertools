@@ -157,9 +157,12 @@ class HyperAnimation(tuple):
         (only the video formats need ffmpeg) -- matching what
         ``hyp.plot(..., save_path=...)`` supports; any other extension raises
         ``ValueError`` naming the supported formats. ``filename`` may be a
-        str or any path-like (e.g. ``pathlib.Path``). Passing an explicit
+        str or any path-like (e.g. ``pathlib.Path``). ``fps`` overrides the
+        animation's own frame rate and ``dpi`` the figure's resolution (as
+        in ``matplotlib.animation.Animation.save``); any other keyword
+        raises ``TypeError`` rather than being ignored. Passing an explicit
         ``writer`` (or positional args) delegates straight to
-        ``matplotlib.animation.Animation.save`` instead.
+        ``matplotlib.animation.Animation.save`` instead, with every keyword.
 
         QC 2026-07: ``.save('x.svg')`` / ``.save('x.png')`` used to crash (raw
         ``Animation.save`` tried to pipe h264 into an svg/png), even though the
@@ -169,7 +172,15 @@ class HyperAnimation(tuple):
             return self.animation.save(filename, *args, **kwargs)
         from .animate import _save_animation
         fps = kwargs.pop('fps', None) or self._fps()
-        return _save_animation(self.animation, str(filename), fps)
+        dpi = kwargs.pop('dpi', None)
+        if kwargs:
+            # Silently dropping a keyword is how `save(path, dpi=75)` wrote
+            # a 10 MB GIF at the figure's dpi and nobody noticed (2026-09-03).
+            raise TypeError(
+                f"HyperAnimation.save() got unexpected keyword argument(s) "
+                f"{sorted(kwargs)}; it takes fps= and dpi=, or pass writer= "
+                f"to delegate to matplotlib's Animation.save with any keyword")
+        return _save_animation(self.animation, str(filename), fps, dpi=dpi)
 
     def _fps(self):
         """Frames per second from the animation's frame interval (default 30)."""

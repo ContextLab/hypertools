@@ -4,22 +4,31 @@
 Five paintings, described in words, drawn in their own colors
 =============================================================
 
-Text becomes geometry, tinted by the art itself. Short descriptions of five
-famous paintings are embedded with a sentence-transformer and reduced *together*
-into one shared 3-D space with ``hyp.reduce`` (UMAP). Each painting is one
-cloud, plotted by ``hyp.plot`` in a color taken from the actual canvas; the box,
-the spin animation (``animate='spin'``) and the markers are all the library's.
-A stack of side panels lists each description, colored to match its dots.
+Text becomes geometry, tinted by the art itself. A full paragraph
+describing each of five famous paintings is cut into overlapping word
+windows and handed to ``hyp.plot`` **as text** -- a list of five lists of
+strings. One call embeds every window with a sentence-transformer
+(``vectorizer='all-MiniLM-L6-v2'``), reduces all of them together into one
+shared 3-D space with UMAP, keeps the five clouds separate (the nesting of
+the input is the grouping), spins the camera, and annotates each cloud with
+its painting's name.
 
-**Data & graceful degradation.** The painting descriptions are bundled inline
-(so the example is self-contained). The per-canvas color is extracted by
-k-means over the pixels of the real image, downloaded from
-`Wikimedia Commons <https://commons.wikimedia.org>`_ and cached; if the image
-cannot be fetched, a hand-picked representative color is used instead. Text is
-embedded with ``all-MiniLM-L6-v2`` when sentence-transformers is installed,
-falling back to a character n-gram TF-IDF vector otherwise -- so the example
-renders without a large model download. The pipeline (embed -> reduce together
--> one cloud/color per painting -> spin) is identical either way.
+Each cloud is drawn in a colour taken from the **actual canvas**:
+``hypertools.plot.colors.image_palette`` clusters the downloaded image's
+pixels and orders the result by ``pixel_fraction * chroma``, so the vivid
+subject wins rather than the muted background -- Starry Night comes out
+cobalt, not canvas-beige. The side panels show the complete description
+that was embedded, in that painting's colour, so nothing about the geometry
+is hidden.
+
+**Data & graceful degradation.** The descriptions are bundled inline (so the
+text side is fully offline and deterministic). Each canvas is downloaded
+once from Wikimedia Commons and cached; if an image cannot be fetched, a
+hand-picked representative colour is used instead, and the run says so.
+Text embedding needs the ``[text]`` extra (``pip install
+"hypertools[text]"``); without it, ``vectorizer='TfidfVectorizer'`` is used,
+and the pipeline (embed -> reduce together -> one cloud/colour per painting
+-> spin) is identical either way.
 """
 
 # Code source: Contextual Dynamics Laboratory
@@ -29,16 +38,25 @@ import os
 import tempfile
 import textwrap
 import urllib.request
+from typing import NamedTuple
 
 import numpy as np
 from matplotlib.colors import to_rgb
-from matplotlib.patches import Rectangle
 
 import hypertools as hyp
+from hypertools.plot.colors import image_palette
 
 CACHE = os.path.join(tempfile.gettempdir(), 'hypertools_gallery_cache')
-os.makedirs(CACHE, exist_ok=True)
 FILEPATH = 'https://commons.wikimedia.org/wiki/Special:FilePath/'
+# the ONLY committed fixture bytes in the gallery: a 64-px thumbnail the
+# test-suite extracts a palette from, so no canvas is ever fetched by a test
+PALETTE_FIXTURE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                               'data', 'painting_palette_fixture.png')
+try:
+    import sentence_transformers  # noqa: F401 -- only asks whether [text] is installed
+    VECTORIZER = 'all-MiniLM-L6-v2'
+except ImportError:
+    VECTORIZER = 'TfidfVectorizer'
 
 PAINTINGS = {
     'Starry Night': {
@@ -96,117 +114,125 @@ PAINTINGS = {
 }
 
 WINDOW, STEP = 10, 1
+LUMA = np.array([0.2126, 0.7152, 0.0722])    # sRGB luminance weights
+MAX_LUMINANCE = 0.6                          # legible on a white page
 
 
-def embed(texts):
-    """Sentence-transformer embedding, or a char n-gram TF-IDF fallback."""
-    try:
-        from sentence_transformers import SentenceTransformer
-        model = SentenceTransformer('all-MiniLM-L6-v2')
-        return np.asarray(model.encode(texts, show_progress_bar=False),
-                          dtype=float)
-    except Exception:
-        from sklearn.feature_extraction.text import TfidfVectorizer
-        vec = TfidfVectorizer(analyzer='char_wb', ngram_range=(2, 4), min_df=1)
-        return vec.fit_transform(texts).toarray().astype(float)
+class Paintings(NamedTuple):
+    names: list                 # one per painting, in PAINTINGS order
+    descriptions: list          # per painting, its list of word windows
+    colors: list                # one RGB tuple per painting
+    vectorizer: str             # how the windows are embedded
+    source: str                 # which path produced the colours
 
 
-def windows(text, size, step):
-    w = text.split()
-    return [' '.join(w[i:i + size])
-            for i in range(0, max(1, len(w) - size + 1), step)]
+def windows(text, size=WINDOW, step=STEP):
+    """Overlapping word windows: one observation per window."""
+    words = text.split()
+    return [' '.join(words[i:i + size])
+            for i in range(0, max(1, len(words) - size + 1), step)]
 
 
+# --- the data half: the ONLY code here that reaches the network -------------
 def canvas_color(spec):
-    """Dominant color from the real canvas (k-means over pixels), or the
-    hand-picked fallback if the image cannot be fetched."""
+    """The painting's most salient colour, from the real canvas.
+
+    The download and the cache are this example's job (hypertools never
+    fetches an image); choosing the colour is the library's:
+    ``image_palette`` orders clusters by ``pixel_fraction * chroma``, so a
+    small vivid region beats a large muted one. Ordering by cluster SIZE --
+    which is what this example used to do -- returns the background.
+
+    One legibility floor on top of that ordering: the first colour whose
+    luminance is at most MAX_LUMINANCE. Measured on the real canvases, The
+    Great Wave's two most salient clusters are its cream sky and foam
+    (luminance 0.88 and 0.94), which vanish on a white page; its Prussian
+    blue is third.
+    """
+    if os.environ.get('HYPERTOOLS_OFFLINE'):
+        raise RuntimeError('HYPERTOOLS_OFFLINE is set: refusing to fetch')
+    os.makedirs(CACHE, exist_ok=True)
     try:
-        from PIL import Image
-        from sklearn.cluster import KMeans
         dest = os.path.join(CACHE, 'paint_' + spec['file'][:20] + '.jpg')
-        if not (os.path.exists(dest) and os.path.getsize(dest) > 0):
+        if not os.path.exists(dest):
             req = urllib.request.Request(
                 FILEPATH + spec['file'] + '?width=400',
-                headers={'User-Agent': 'hypertools-gallery/1.0'})
-            with urllib.request.urlopen(req, timeout=30) as r:
-                data = r.read()
-            with open(dest, 'wb') as f:
-                f.write(data)
-        im = Image.open(dest).convert('RGB')
-        im.thumbnail((200, 200))
-        px = np.asarray(im).reshape(-1, 3).astype(float)
-        km = KMeans(n_clusters=6, n_init=4, random_state=0).fit(px)
-        counts = np.bincount(km.labels_, minlength=6)
-        rgb = km.cluster_centers_[np.argmax(counts)] / 255.0
-        lum = 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]
-        if lum > 0.5:                     # keep swatches legible on white
-            rgb = rgb * (0.5 / max(lum, 1e-6))
-        return tuple(rgb)
-    except Exception:
+                headers={'User-Agent': 'hypertools-gallery/1.1'})
+            with urllib.request.urlopen(req, timeout=30) as response:
+                payload = response.read()
+            with open(dest + '.part', 'wb') as handle:
+                handle.write(payload)
+            os.replace(dest + '.part', dest)   # never a truncated cache
+        return next(tuple(c) for c in image_palette(dest)
+                    if float(c @ LUMA) <= MAX_LUMINANCE)
+    except Exception as error:
+        print(f'canvas {spec["file"][:20]}... unavailable ({error!r}); '
+              'using its hand-picked colour')
         return to_rgb(spec['fallback'])
 
 
-# collect every painting's windows + one canvas-derived color each, then embed
-# ALL windows in a SINGLE call so every vector shares the same dimensionality
-# (the TF-IDF fallback fits its vocabulary once -- embedding per painting would
-# give each a different feature dimension)
-all_windows, owners, colors_by_name = [], [], {}
-for name, spec in PAINTINGS.items():
-    wins = windows(spec['text'], WINDOW, STEP)
-    all_windows += wins
-    owners += [name] * len(wins)
-    colors_by_name[name] = canvas_color(spec)
-all_vecs = embed(all_windows)
-owners = np.array(owners)
+def load_paintings(paintings=PAINTINGS):
+    """The ONLY function here that may touch the network (the canvases)."""
+    names = list(paintings)
+    return Paintings(names, [windows(paintings[n]['text']) for n in names],
+                     [canvas_color(paintings[n]) for n in names],
+                     VECTORIZER, 'Wikimedia Commons canvases')
 
-# reduce all descriptions together into a shared 3-D space, then trim each
-# cloud's few farthest outliers so the clouds read cleanly. The UMAP kwargs
-# trade global structure for tighter per-painting clumps: n_neighbors=12 keeps
-# the graph local so one description's windows stay together, min_dist=0.25
-# lets a clump pack closely, and random_state=42 fixes the stochastic layout.
-red = np.asarray(hyp.reduce(
-    all_vecs, reduce={'model': 'UMAP',
-                      'kwargs': {'n_neighbors': 12, 'min_dist': 0.25,
-                                 'random_state': 42}}, ndims=3))
-# no rescaling here: hyp.plot already mean-centers every dataset and rescales
-# them into [-1, 1] with ONE shared affine before drawing (and the outlier trim
-# below compares distances to a percentile, so it is scale-free)
-keep = np.ones(len(red), bool)
-for name in PAINTINGS:
-    idx = np.where(owners == name)[0]
-    dist = np.linalg.norm(red[idx] - np.median(red[idx], 0), axis=1)
-    keep[idx[dist > np.percentile(dist, 85)]] = False
-red, owners = red[keep], owners[keep]
 
-clouds = [red[owners == name] for name in PAINTINGS]
-colors = [colors_by_name[name] for name in PAINTINGS]
+def fixture_data(paintings=PAINTINGS):
+    """The same payload with every colour drawn from the one committed
+    thumbnail and a deterministic TF-IDF embedding. No network, no model."""
+    names = list(paintings)
+    return Paintings(names, [windows(paintings[n]['text']) for n in names],
+                     [tuple(c) for c in image_palette(PALETTE_FIXTURE,
+                                                      n_colors=6)[:len(names)]],
+                     'TfidfVectorizer', 'palette fixture')
 
-# THE hypertools call: 5 clouds, one canvas color each, box + spin.
-# reduce=None says the clouds are already 3-D, so plot skips its default
-# IncrementalPCA; color=colors gives one canvas color per cloud (the color list
-# lines up element-for-element with the cloud list); animate='spin' orbits the
-# camera rotations=2 full turns over duration=12 s at frame_rate=20 fps (240
-# frames) while the points stay fixed, so the parallax reveals the 3-D layout.
-duration, fps = 12, 20
-fig, ani = hyp.plot(clouds, '.', color=colors, reduce=None, markersize=5,
-                    animate='spin', rotations=2, duration=duration,
-                    frame_rate=fps, size=(11, 6.6), show=False)
 
-# main plot on the left; description side-panels on the right
-ax = fig.axes[0]
-ax.set_position([0.0, 0.0, 0.6, 1.0])
-fig.text(0.30, 0.965,
-         'Five paintings, described in words, drawn in their own colors',
-         ha='center', va='top', fontsize=13.5, fontweight='bold',
-         color='#1a1a1a')
-for i, name in enumerate(PAINTINGS):
-    y = 0.90 - i * 0.178
-    c = colors_by_name[name]
-    fig.text(0.635, y, name, ha='left', va='top', fontsize=13,
-             fontweight='bold', color=c)
-    body = '\n'.join(textwrap.wrap(PAINTINGS[name]['blurb'], 42)[:3])
-    fig.text(0.635, y - 0.032, body, ha='left', va='top', fontsize=8.8,
-             color=c)
-    fig.add_artist(Rectangle((0.635, y - 0.11), 0.12, 0.014,
-                             transform=fig.transFigure, facecolor=c,
-                             edgecolor='#dddddd', lw=0.4))
+# --- the figure half: no network, deterministic given its input -------------
+def construct_artifact(data):
+    """`data.descriptions` / `data.colors` in, the animation out. Returns
+    the HyperAnimation wrapper, never the unpacked pair."""
+    # labels= annotates per OBSERVATION, not per dataset: one sub-list per
+    # cloud, carrying the painting's name on its MIDDLE window (roughly the
+    # centre of a text trajectory) and None everywhere else.
+    labels = [[name if i == len(cloud) // 2 else None
+               for i in range(len(cloud))]
+              for name, cloud in zip(data.names, data.descriptions)]
+    # THE hypertools call: raw TEXT in, five clouds out. The nesting of the
+    # input is the grouping, the vectorizer/semantic/corpus trio selects
+    # the embedding instead of the default bag-of-words + LDA, and reduce=
+    # puts every window into one shared UMAP space so the clouds are
+    # directly comparable. n_neighbors=12 keeps one description's windows
+    # together, min_dist=0.25 lets a clump pack closely, random_state=42
+    # fixes the stochastic layout. 15 fps: the side panels' antialiased
+    # text compresses badly in a GIF, and 240 frames at 20 fps was 7 MB.
+    anim = hyp.plot(
+        data.descriptions, '.',
+        vectorizer=data.vectorizer, semantic=None, corpus=None,
+        reduce={'model': 'UMAP', 'kwargs': {'n_neighbors': 12, 'min_dist': 0.25,
+                                            'random_state': 42}},
+        ndims=3, color=data.colors, markersize=5, labels=labels,
+        animate='spin', rotations=2,
+        title='five paintings, described in words, drawn in their own colors',
+        duration=12, frame_rate=15, size=(13, 9), show=False)
+    # the descriptions that were actually embedded, each in its cloud's colour
+    fig = anim.figure
+    fig.axes[0].set_position([0.0, 0.0, 0.52, 1.0])
+    for i, name in enumerate(data.names):
+        y = 0.94 - i * 0.19
+        fig.text(0.55, y, name, ha='left', va='top', fontsize=12,
+                 fontweight='bold', color=data.colors[i])
+        body = '\n'.join(textwrap.wrap(PAINTINGS[name]['text'], 62))
+        fig.text(0.55, y - 0.028, body, ha='left', va='top', fontsize=7,
+                 color=data.colors[i])
+    return anim
+
+
+if __name__ == '__main__':
+    paintings = load_paintings()
+    print(f'paintings: {len(paintings.names)}, '
+          f'{sum(len(c) for c in paintings.descriptions)} description windows, '
+          f'embedded with {paintings.vectorizer} ({paintings.source})')
+    anim = construct_artifact(paintings)
+    fig = anim.figure

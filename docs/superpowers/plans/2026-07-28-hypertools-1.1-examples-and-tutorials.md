@@ -2316,6 +2316,29 @@ git commit -m "docs(gallery): weather example is the paper figure in one native 
 
 ## Task 4: Paintings — native text, native palette, full descriptions
 
+> **LANDED 2026-09-03.** Script **147** code lines (budget re-measured 140 -> **150**: the plan's own
+> sanctioned `VECTORIZER` fallback block, the `PALETTE_FIXTURE` constant, a `vectorizer` payload
+> field, exception naming + atomic cache write, and a measured legibility floor -- none in the
+> plan's 135), notebook **151** (≤ 155). `EXPECTED_VISIBLE_OUTPUTS['painting_embeddings'] = {4, 5}`.
+> Fixture: `examples/data/painting_palette_fixture.png`, a 64 x 51 px thumbnail of Starry Night
+> (**7.3 KB**, not the plan's 1.7 KB -- PNG of a photographic thumbnail; the size was never
+> load-bearing). Three deviations, each measured:
+>
+> 1. **The payload carries `vectorizer`** (as Task 5's does): the fixture embeds with TF-IDF so the
+>    default suite downloads no model; the loader uses the sentence-transformer.
+> 2. **A luminance floor on the canvas colour.** The plan said the salience ordering makes the old
+>    luminance clamp unnecessary. Measured on the real canvases it does for four; **The Great Wave's
+>    two most salient clusters are cream (luminance 0.88 and 0.94)** and its cloud, label and
+>    description vanished on the white page (its Prussian blue is third). `canvas_color` takes the
+>    first palette entry with luminance ≤ 0.6; the ordering is still the library's.
+> 3. **15 fps, not 20.** The five antialiased text paragraphs compress badly as a GIF: 240 frames at
+>    75 dpi were 7.1 MB (and at 100 dpi, 10.3 MB); 180 frames are 5.5 MB. Still 12 s, two turns.
+>
+> Two defects found on the way, both fixed in the library/tooling with tests: `HyperAnimation.save()`
+> silently discarded `dpi=` (and every keyword but `fps=`); transformers' weight-loading progress
+> widget was being committed as a stateless `widget-view` output, so the notebook runner now disables
+> Hub progress bars in the kernel environment.
+
 **BEFORE — re-measured 2026-08-02 at `065c841e`. This is the ONE example `d730a085` did not touch** (its last change is `4d1d2223`), so v2's baseline for the script is still exact and this task is a clean rewrite rather than a rebase:
 
 | file | v2 said | actual now |
@@ -2344,7 +2367,7 @@ The download-and-cache half of `canvas_color` **stays** (class **A**, textbook: 
 
 **Files:** rewrite `examples/animate_painting_embeddings.py`; rewrite `docs/tutorials/painting_embeddings.ipynb`.
 
-- [ ] **Step 1: Rewrite the example**
+- [x] **Step 1: Rewrite the example**
 
 Keep the `PAINTINGS` dict verbatim (lines 43-96 of the current file) and replace everything else. **Step 2's loader/builder split is applied to the result of this step, not before it.** The new body:
 
@@ -2480,7 +2503,7 @@ for i, name in enumerate(names):
              color=color)
 ```
 
-- [ ] **Step 2: Split the loader from the figure builder (Contract 4 / Task 8 Step 0b)**
+- [x] **Step 2: Split the loader from the figure builder (Contract 4 / Task 8 Step 0b)**
 
 > **Ordering.** This step restructures the file the rewrite step above produces, so it comes
 > after it and never before. The prescribed rewrite blocks are monolithic — measured, not one of
@@ -2542,7 +2565,7 @@ anim = m.construct_artifact(m.fixture_data()); print('frames:', anim.n_frames)"
 
 Expected: it imports without touching the network and prints both names plus a frame count. If the import fetches, a loader call is still at module scope.
 
-- [ ] **Step 3: Run the example and confirm it renders**
+- [x] **Step 3: Run the example and confirm it renders**
 
 Run: `MPLBACKEND=Agg .venv/bin/python examples/animate_painting_embeddings.py`
 
@@ -2566,7 +2589,7 @@ except ImportError:
 ```
 and pass `vectorizer=VECTORIZER`. That is 4 lines of graceful degradation using **only** documented kwargs — it is not a re-implementation, and it keeps the offline property Contract 4 requires.
 
-- [ ] **Step 4: Confirm the colour is the vivid one, not the background**
+- [x] **Step 4: Confirm the colour is the vivid one, not the background**
 
 Run:
 
@@ -2594,7 +2617,7 @@ PY
 
 Expected: five colours, each with **chroma > 0.10** for any painting whose image was fetched. A chroma near zero means the extraction returned a grey/beige — i.e. the salience ordering regressed, or the fallback hex was used because the download failed. Distinguish the two by checking `ls $TMPDIR/hypertools_gallery_cache/paint_*.jpg`.
 
-- [ ] **Step 5: Rewrite the notebook in lockstep**
+- [x] **Step 5: Rewrite the notebook in lockstep**
 
 Rewrite `docs/tutorials/painting_embeddings.ipynb`, keeping cell 0 unchanged:
 
@@ -2613,7 +2636,7 @@ Rewrite `docs/tutorials/painting_embeddings.ipynb`, keeping cell 0 unchanged:
 | 10 | markdown | `## 5. Display the animation` |
 | 11 | code | `HTML(ani.to_jshtml())` |
 
-- [ ] **Step 6: Execute and measure**
+- [x] **Step 6: Execute and measure**
 
 ```bash
 .venv/bin/python scripts/execute_tutorial.py docs/tutorials/painting_embeddings.ipynb
@@ -2623,7 +2646,7 @@ Rewrite `docs/tutorials/painting_embeddings.ipynb`, keeping cell 0 unchanged:
 
 Expected: both files inside budget (**≤ 140 / ≤ 145 code lines**) -- the rewrite measures 112 and the split 135, both measured. Record the measured visible-output index set into `EXPECTED_VISIBLE_OUTPUTS` (see Task 2's measure step for the Task-8-first ordering this requires); do not assert a predicted count.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 # the fixture PNG is new and binary; an untracked file in the sdist fails

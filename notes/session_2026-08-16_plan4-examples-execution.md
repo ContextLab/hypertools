@@ -594,3 +594,33 @@ Notebook 81 (≤ 85), visible set `{4, 5}`, GIF 160 frames / 5.2 MB (same
 size as before). `docs/tutorials.rst` section retitled and its synopsis
 rewritten: the old one explained the list-vs-MultiIndex hemisphere design
 the rewrite deletes. Data verified live: 1645 complete months, 20 cities.
+
+## Task 4 LANDED (2026-09-03) -- Paintings
+
+Gate **26 -> 21**; no paintings entry red. Script 147 (budget 150), notebook
+151 (≤ 155), visible set `{4, 5}`, GIF 180 frames / 5.5 MB at 75 dpi,
+fixture `examples/data/painting_palette_fixture.png` (7.3 KB, 64 px).
+
+Measured corrections to the plan, all recorded in its Task 4 banner: the
+payload carries `vectorizer` so the fixture embeds with TF-IDF (no model
+download in the default suite); a luminance floor (≤ 0.6) on the canvas
+colour because The Great Wave's two most salient clusters are cream and
+its whole panel vanished on white; 15 fps because five paragraphs of
+antialiased text make a 240-frame GIF 7-10 MB.
+
+Two defects fixed on the way:
+
+* **`HyperAnimation.save()` dropped every keyword but `fps=`.** `dpi=75`
+  produced a byte-identical 10 MB GIF; the market notebook's `dpi=100` had
+  been doing nothing too. Now forwarded to the raster/video writers, and
+  any other keyword raises `TypeError`. Three tests in
+  `tests/test_animation_export.py` (real GIFs at two dpis, the default,
+  the refusal); CHANGELOG entry under 1.1.0 bug fixes.
+* **Progress-bar widgets in committed notebooks.** transformers' "Loading
+  weights" tqdm arrived as a `widget-view` display_data with no saved
+  state (the docs would render a stuck 0% line). The runner sets
+  `HF_HUB_DISABLE_PROGRESS_BARS=1`, which the kernel inherits.
+
+Also: a background agent cleared the 111 pre-existing ruff findings in
+`tests/` and `scripts/` on a worktree branch (commit `7442ac7e`, based on
+`dcd72d29`); cherry-picked after this task's commit.

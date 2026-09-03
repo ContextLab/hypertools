@@ -50,6 +50,13 @@ from nbclient import NotebookClient
 NEUTRAL_KERNELSPEC = {'display_name': 'Python 3', 'language': 'python',
                       'name': 'python3'}
 KERNEL = 'hypertools-venv'
+# The kernel inherits this process's environment. Model loading (transformers
+# via sentence-transformers) emits tqdm progress bars as ipywidgets, which
+# would be committed as `widget-view` outputs with no saved state and render
+# in the docs as a stuck "Loading weights: 0%" line. Measured 2026-09-03 on
+# painting_embeddings.ipynb. huggingface_hub and transformers both honour
+# this variable.
+os.environ.setdefault('HF_HUB_DISABLE_PROGRESS_BARS', '1')
 SKIP_TAG = 'skip-execution'         # what nbclient honours
 TIMEOUT = 1800
 

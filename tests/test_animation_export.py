@@ -417,3 +417,41 @@ def test_animation_controls_preserve_other_margins():
     for side in ('l', 'r', 't'):
         assert getattr(anim.layout.margin, side) == \
             getattr(static.layout.margin, side)
+
+
+# --- HyperAnimation.save() forwards dpi= and refuses what it cannot honour ---
+# Found 2026-09-03: `anim.save('x.gif', dpi=75)` wrote the GIF at the figure's
+# dpi because save() popped `fps` and silently discarded every other keyword.
+# The launch notebooks had been passing dpi= for a month with no effect.
+
+def _gif_size(path):
+    with Image.open(path) as im:
+        return im.size
+
+
+def test_hyper_animation_save_honours_dpi(tmp_path):
+    anim = hyp.plot(walk, animate=True, duration=0.5, frame_rate=4,
+                    size=(4, 3), show=False)
+    anim.save(tmp_path / 'lo.gif', dpi=50)
+    anim.save(tmp_path / 'hi.gif', dpi=100)
+    lo, hi = _gif_size(tmp_path / 'lo.gif'), _gif_size(tmp_path / 'hi.gif')
+    assert lo == (200, 150) and hi == (400, 300), (lo, hi)
+    plt.close('all')
+
+
+def test_hyper_animation_save_default_dpi_is_the_figures(tmp_path):
+    anim = hyp.plot(walk, animate=True, duration=0.5, frame_rate=4,
+                    size=(4, 3), show=False)
+    anim.save(tmp_path / 'default.gif')
+    expected = (round(4 * anim.figure.dpi), round(3 * anim.figure.dpi))
+    assert _gif_size(tmp_path / 'default.gif') == expected
+    plt.close('all')
+
+
+def test_hyper_animation_save_refuses_unknown_keywords(tmp_path):
+    anim = hyp.plot(walk, animate=True, duration=0.5, frame_rate=4,
+                    show=False)
+    with pytest.raises(TypeError, match=r"unexpected keyword.*'bitrate'"):
+        anim.save(tmp_path / 'x.gif', bitrate=1800)
+    assert not (tmp_path / 'x.gif').exists()
+    plt.close('all')

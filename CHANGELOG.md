@@ -260,6 +260,14 @@ previously ambiguous or silently lossy.
 Each of these was found while building the above, and each affects FLAT
 input too.
 
+- **`HyperAnimation.save()` silently discarded every keyword except
+  `fps=`**, so `anim.save('clip.gif', dpi=75)` wrote the GIF at the
+  figure's own dpi and nothing said so (a 13 x 9 inch figure came out as a
+  10 MB file). `dpi=` is now forwarded to the raster and video writers,
+  as `matplotlib.animation.Animation.save` takes it, and any other
+  keyword raises `TypeError` naming it. Passing `writer=` still delegates
+  to matplotlib with every keyword, as before.
+
 - **Every continuous-hue matplotlib plot rendered fully opaque**, whatever
   `alpha=` was set to. `_apply_multicolor_lines` never read alpha from its
   per-trace kwargs, and the artists carrying the alpha are exactly the

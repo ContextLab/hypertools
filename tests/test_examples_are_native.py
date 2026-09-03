@@ -72,7 +72,7 @@ NOTEBOOK_OVERHEAD = 5
 #:      file            rewrite   split   overhead
 #:      market            --       181      --    (composition E, measured 2026-09-03; no separate pre-split figure -- the split was written in)
 #:      weather            56       77      +21   (landed 2026-09-03; see the dict comment)
-#:      paintings         112      135      +23   (two fetch sites)
+#:      paintings         112      147      +35   (landed 2026-09-03; see the dict comment)
 #:      conversation       88      106      +18
 #:      morph              26       43      +17
 #:
@@ -107,7 +107,16 @@ SCRIPT_BUDGETS = {
     # atomic (+2, as market's is), and load_weather handles the offline
     # refusal (+2) -- none of which the 73 included. Next multiple of 5.
     'examples/animate_weather_decades.py': 80,    # 77 measured -> 80
-    'examples/animate_painting_embeddings.py': 140,  # 135 measured -> 140
+    # paintings: the plan's 135 was measured on its prescribed rewrite +
+    # split. The landed file (2026-09-03) measures 147: the plan's own
+    # sanctioned VECTORIZER fallback block (+4), the PALETTE_FIXTURE constant
+    # (+2), a `vectorizer` payload field so the fixture embeds with TF-IDF
+    # and no test downloads a model (+1), the fetcher naming the exception it
+    # swallows and writing its cache atomically (+4), and a measured
+    # legibility floor on the canvas colour (+3: The Great Wave's two most
+    # salient clusters are cream, luminance 0.88 and 0.94, invisible on
+    # white). Next multiple of 5.
+    'examples/animate_painting_embeddings.py': 150,  # 147 measured -> 150
     'examples/animate_conversation.py': 110,      # 106 measured -> 110
     'examples/animate_morph_zoo.py': 45,          # 43 measured -> 45
 }
@@ -1223,6 +1232,12 @@ EXPECTED_VISIBLE_OUTPUTS = {
     # notebook. Cell 4 prints the data line, cell 5 prints the saved-GIF
     # line; the install cell is exempt and every other cell only defines.
     'weather_decades': {4, 5},
+    # paintings: MEASURED 2026-09-03 from real runs. Cell 4 prints the
+    # data line (the first run also carried transformers' weight-loading
+    # progress WIDGET as a display_data with no saved state; the runner now
+    # disables Hub progress bars in the kernel's environment), cell 5
+    # prints the saved-GIF line.
+    'painting_embeddings': {4, 5},
 }
 
 

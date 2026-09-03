@@ -57,7 +57,7 @@ class _RealTimePillowWriter(animation.PillowWriter):
             duration=durations, loop=0)
 
 
-def _save_animation(line_ani, save_path, frame_rate):
+def _save_animation(line_ani, save_path, frame_rate, dpi=None):
     """Save a matplotlib animation, choosing the writer by file extension.
 
     .gif and .png/.apng use PillowWriter (no ffmpeg required; Pillow writes
@@ -68,6 +68,10 @@ def _save_animation(line_ani, save_path, frame_rate):
     paths with NO extension -- previously fell through to ffmpeg and
     surfaced as a raw ``CalledProcessError`` dumping the ffmpeg command
     line).
+
+    ``dpi`` is handed to the raster and video writers exactly as
+    ``matplotlib.animation.Animation.save`` takes it; ``None`` keeps the
+    figure's own dpi. The SVG writer is vector and ignores it.
     """
     # gif / apng / video writers save EVERY animation frame (no subsampling),
     # with per-frame delays that cumulatively track 1000/frame_rate ms (see
@@ -82,7 +86,7 @@ def _save_animation(line_ani, save_path, frame_rate):
     if ext == 'svg':
         _save_animated_svg(line_ani, save_path, frame_rate)
     elif ext == 'gif':
-        line_ani.save(save_path,
+        line_ani.save(save_path, dpi=dpi,
                       writer=_RealTimePillowWriter(fps=frame_rate,
                                                    grid_ms=10))
     elif ext in ('png', 'apng'):
@@ -97,7 +101,7 @@ def _save_animation(line_ani, save_path, frame_rate):
         fd, tmp_path = tempfile.mkstemp(suffix='.png', dir=target_dir)
         os.close(fd)
         try:
-            line_ani.save(tmp_path,
+            line_ani.save(tmp_path, dpi=dpi,
                           writer=_RealTimePillowWriter(fps=frame_rate,
                                                        grid_ms=1))
             # mkstemp's private 0600 mode must not leak onto the saved
@@ -113,7 +117,7 @@ def _save_animation(line_ani, save_path, frame_rate):
     elif ext in _FFMPEG_EXTENSIONS:
         Writer = animation.writers["ffmpeg"]
         writer = Writer(fps=frame_rate, bitrate=1800)
-        line_ani.save(save_path, writer=writer)
+        line_ani.save(save_path, writer=writer, dpi=dpi)
     else:
         what = f"extension {'.' + ext!r}" if ext else "missing extension"
         raise ValueError(

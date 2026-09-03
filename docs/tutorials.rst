@@ -190,6 +190,14 @@ The shape of a conversation, revealed one turn at a time
 Five paintings, described in words and drawn in their own colors
 ----------------------------------------------------------------
 
+Raw text in, five clouds out: a paragraph per painting is cut into word
+windows and handed to ``hyp.plot`` as a list of five lists of strings, so
+the nesting is the grouping. ``vectorizer='all-MiniLM-L6-v2'`` embeds every
+window, ``reduce='UMAP'`` puts them in one shared space, ``labels=`` names
+each cloud and ``animate='spin'`` orbits it. Each cloud's colour comes from
+its real canvas through ``image_palette``, which orders clusters by
+salience rather than size, with one legibility floor on top.
+
 .. toctree::
   :maxdepth: 2
 
