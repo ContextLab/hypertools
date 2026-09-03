@@ -694,3 +694,25 @@ everywhere, conda-forge is now a bot bump on the existing feedstock.
 
 **Plan 4 is complete.** What remains is not example work: push `dev-1.0`,
 open the PR, wait for matrix CI, then follow the checklist.
+
+## RESUME HERE (paused 2026-09-03 ~11:10, computer suspended)
+
+State: `dev-1.0` at `f8d75655` (+ this note commit), tree clean, 184+
+commits ahead of `origin/dev-1.0`, nothing pushed. Plan 4 complete.
+
+The one thing not finished: the FINAL full-suite run on the committed tree
+was started and then killed by the suspend. An earlier full run on a
+slightly older tree (before the scraper/thumbnail/checklist commit) was
+also interrupted. The last COMPLETE full-suite figures are the ruff agent's
+on its branch (3767 passed, 13 skipped) and this session's pre-rename run
+(3744 passed, 13 skipped, gate deselected). So:
+
+    .venv/bin/python -m pytest -q -p no:cacheprovider 2>&1 | tail -3
+
+must be run once, to completion, with nothing else running. Expected:
+0 failed, ~3790 passed (139 gate tests are now included), 5 + 13 skipped.
+
+Then the release line, in `RELEASE_CHECKLIST.md` step 0 order: push
+`dev-1.0`, open the integration PR to `master`, wait for matrix CI.
+Maintainer calls still open: delete `dev-1.0` after release (checklist
+step 8); nothing else.
