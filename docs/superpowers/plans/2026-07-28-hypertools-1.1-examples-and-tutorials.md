@@ -2000,6 +2000,17 @@ git commit -m "docs(gallery): market example is a column-MultiIndex showcase wit
 
 ## Task 3: Weather — the paper figure, nearly all native
 
+> **LANDED 2026-09-03.** Script **77** code lines (budget re-measured 75 -> **80**: the defect
+> note below requires the fetcher to name the exception it swallowed, the cache write is atomic,
+> and `load_weather` handles the offline refusal -- +6 the plan's 73 did not include), notebook
+> **81** (≤ 85). `EXPECTED_VISIBLE_OUTPUTS['weather_decades'] = {4, 5}` from a real run. Fixture:
+> 160 frames, 2 axes, **686** distinct colours at frame 150 (the plan's 879 was measured on the
+> real matrix; the fixture is synthetic). Title carries the month count rather than a hard-coded
+> `1875–2013`, so the synthetic fallback never claims the archive's span. The 429 defect is moot
+> for this fetcher (two files from GitHub raw, not six open-meteo calls) but its rule -- announce a
+> fallback with its cause -- is applied. `docs/tutorials.rst`'s section retitled and its synopsis
+> rewritten (the old one described the hemisphere list hierarchy).
+
 > **DEFECT FOUND 2026-08-19, and Step 1's rewrite must fix it.** The current fetcher fires six
 > `archive-api.open-meteo.com` requests back to back with no spacing and no retry, and the archive
 > API **rate-limits**: measured on a cold cache, the last three cities returned `HTTP 429 Too Many
@@ -2047,7 +2058,7 @@ Verified today, end to end: `hyp.plot(temps, fmt='-', hue=avg_temp, palette='RdB
 
 **Files:** rewrite `examples/animate_weather_decades.py`; rewrite `docs/tutorials/weather_decades.ipynb`.
 
-- [ ] **Step 1: Rewrite the example**
+- [x] **Step 1: Rewrite the example**
 
 Replace the body of `examples/animate_weather_decades.py`. **Step 2's loader/builder split is applied to the result of this step, not before it.**
 
@@ -2164,7 +2175,7 @@ anim = hyp.plot(   # the WRAPPER, never `fig, ani = ...` -- Contract 8
     duration=duration, frame_rate=fps, size=(8, 7), show=False)
 ```
 
-- [ ] **Step 2: Split the loader from the figure builder (Contract 4 / Task 8 Step 0b)**
+- [x] **Step 2: Split the loader from the figure builder (Contract 4 / Task 8 Step 0b)**
 
 > **Ordering.** This step restructures the file the rewrite step above produces, so it comes
 > after it and never before. The prescribed rewrite blocks are monolithic — measured, not one of
@@ -2225,7 +2236,7 @@ anim = m.construct_artifact(m.fixture_data()); print('frames:', anim.n_frames)"
 
 Expected: it imports without touching the network and prints both names plus a frame count. If the import fetches, a loader call is still at module scope.
 
-- [ ] **Step 3: Run the example and confirm it renders**
+- [x] **Step 3: Run the example and confirm it renders**
 
 Run: `MPLBACKEND=Agg .venv/bin/python examples/animate_weather_decades.py`
 
@@ -2235,7 +2246,7 @@ Expected: exits 0, no warnings, prints
 weather: 1645 months x 20 cities (HyperTools paper temperature archive)
 ```
 
-- [ ] **Step 4: Confirm the colour sweep and colorbar are real**
+- [x] **Step 4: Confirm the colour sweep and colorbar are real**
 
 Run:
 
@@ -2267,7 +2278,7 @@ PY
 
 Expected: `axes: 2`, **several hundred distinct colours** (879 measured for these exact parameters), and the title string. If `axes` is 1, the colorbar did not render and `colorbar=` is wrong.
 
-- [ ] **Step 5: Rewrite the notebook in lockstep**
+- [x] **Step 5: Rewrite the notebook in lockstep**
 
 Rewrite `docs/tutorials/weather_decades.ipynb`, keeping cell 0 (Colab install) unchanged:
 
@@ -2284,7 +2295,7 @@ Rewrite `docs/tutorials/weather_decades.ipynb`, keeping cell 0 (Colab install) u
 | 8 | markdown | `## 4. Display the animation` |
 | 9 | code | `HTML(ani.to_jshtml())` |
 
-- [ ] **Step 6: Execute and measure**
+- [x] **Step 6: Execute and measure**
 
 ```bash
 .venv/bin/python scripts/execute_tutorial.py docs/tutorials/weather_decades.ipynb
@@ -2294,7 +2305,7 @@ Rewrite `docs/tutorials/weather_decades.ipynb`, keeping cell 0 (Colab install) u
 
 Expected: both files inside budget (**≤ 75 / ≤ 80 code lines**) -- the rewrite measures 56 and the split 73, both measured. (This line said `≤ 62` while the AFTER line and the enforced `SCRIPT_BUDGETS` both said 77: a file that measures 71 could not satisfy it. The unsatisfiable-gate class, reintroduced in the one place the fix was not propagated.) Record the measured visible-output index set into `EXPECTED_VISIBLE_OUTPUTS` (see Task 2's measure step for the Task-8-first ordering this requires) rather than asserting a predicted count — v2's `4/5` named cells 3/5/7/9, and the real emitting cells are a different set entirely.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add examples/animate_weather_decades.py docs/tutorials/weather_decades.ipynb

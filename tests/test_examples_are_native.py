@@ -71,7 +71,7 @@ NOTEBOOK_OVERHEAD = 5
 #:
 #:      file            rewrite   split   overhead
 #:      market            --       181      --    (composition E, measured 2026-09-03; no separate pre-split figure -- the split was written in)
-#:      weather            56       73      +17
+#:      weather            56       77      +21   (landed 2026-09-03; see the dict comment)
 #:      paintings         112      135      +23   (two fetch sites)
 #:      conversation       88      106      +18
 #:      morph              26       43      +17
@@ -101,7 +101,12 @@ SCRIPT_BUDGETS = {
     # of the library's artists are the presentation the composition needs.
     # Rounded up to the next multiple of 5, as every other budget is.
     'examples/animate_market_sectors.py': 185,    # 181 measured -> 185
-    'examples/animate_weather_decades.py': 75,    # 73 measured -> 75
+    # weather: the plan's 73 was measured on its prescribed rewrite + split.
+    # The landed file (2026-09-03) measures 77: Task 3's defect note REQUIRES
+    # the fetcher to name the exception it swallowed (+2), the cache write is
+    # atomic (+2, as market's is), and load_weather handles the offline
+    # refusal (+2) -- none of which the 73 included. Next multiple of 5.
+    'examples/animate_weather_decades.py': 80,    # 77 measured -> 80
     'examples/animate_painting_embeddings.py': 140,  # 135 measured -> 140
     'examples/animate_conversation.py': 110,      # 106 measured -> 110
     'examples/animate_morph_zoo.py': 45,          # 43 measured -> 45
@@ -1214,6 +1219,10 @@ EXPECTED_VISIBLE_OUTPUTS = {
     # entry here described a DISCARDED notebook and was removed rather than
     # re-measured; this one describes the committed file.
     'market_sectors': {7, 8},
+    # weather: MEASURED 2026-09-03 from a real run of the paper-figure
+    # notebook. Cell 4 prints the data line, cell 5 prints the saved-GIF
+    # line; the install cell is exempt and every other cell only defines.
+    'weather_decades': {4, 5},
 }
 
 

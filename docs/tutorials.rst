@@ -162,17 +162,17 @@ mean and no forecast. See :doc:`hierarchy` for the column-axis rule.
 
   tutorials/market_sectors.ipynb
 
-Decades of weather: bold means, faint cities, temperature colormaps
--------------------------------------------------------------------
+A century of weather: twenty cities as twenty features, one hot path
+--------------------------------------------------------------------
 
-The bold-means / faint-leaves *hierarchy*: cities grouped by hemisphere,
-each hemisphere drawn as a bold mean loop over its faint member cities.
-This notebook builds that structure as an explicit **list** of loops rather
-than as a row-MultiIndex DataFrame, deliberately -- a row hierarchy colours
-by group and ignores a continuous ``hue=``, which would cost it the
-per-point temperature colouring. See :doc:`hierarchy` for what the
-MultiIndex path does instead, on each axis, and for the column-axis rule
-that *does* carry a continuous hue through the grouping.
+The figure from the HyperTools paper in one ``hyp.plot`` call: monthly
+temperatures for twenty cities are twenty *features* of one trajectory,
+not twenty datasets, so 138 years become a single path that sweeps with
+the seasons and drifts with the century. A continuous ``hue=`` (the
+average temperature across the cities) colours it on a blue-cold /
+red-hot scale with a native colorbar; ``manip='Smooth'``,
+``normalize='across'`` and ``chemtrails=True`` are the only other
+keywords. No hierarchy, no hand-spliced colormap, no per-frame callback.
 
 .. toctree::
   :maxdepth: 2

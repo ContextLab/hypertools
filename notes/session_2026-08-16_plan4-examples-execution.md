@@ -582,3 +582,15 @@ gate together.
 Historical mentions of `animate_market_forecast` / `market_forecast.ipynb` in
 the plan, this note and the gate's comments describe the files as they were
 and are left as written.
+
+## Task 3 LANDED (2026-09-03) -- Weather, the paper figure
+
+Gate **30 -> 26**; no weather entry red. The plan's prescribed rewrite was
+applied nearly verbatim with the split written in (`Weather(temps, cities,
+source)`); the fetcher names the exception it swallows (the defect note's
+rule), writes its cache atomically, and `load_weather` catches the offline
+refusal, which is +6 over the plan's 73 -> budget **80** (77 measured).
+Notebook 81 (≤ 85), visible set `{4, 5}`, GIF 160 frames / 5.2 MB (same
+size as before). `docs/tutorials.rst` section retitled and its synopsis
+rewritten: the old one explained the list-vs-MultiIndex hemisphere design
+the rewrite deletes. Data verified live: 1645 complete months, 20 cities.
