@@ -729,3 +729,10 @@ random_state" (3x, from any seeded UMAP call; emitted by umap regardless of
 n_jobs -- third-party, benign, left alone). `ruff check .` clean; venv
 editable 1.1.0. Pushed `dev-1.0` and opened the integration PR to `master`
 (checklist step 0); matrix CI is the next gate.
+
+**PR #283 opened** (2026-09-03 ~12:05): https://github.com/ContextLab/hypertools/pull/283,
+`dev-1.0` -> `master`, head `b028d0b9`. Found while drafting it: the
+`ax=`+`animate=` refusal (6c73421c) had a test but no CHANGELOG entry;
+added under 1.1.0 *Changed / validation* (the four CHANGELOG-reading test
+files pass, 66/0). Next gate: matrix CI on the PR (first hosted run of
+this line; expect Linux/Windows findings, fix on `dev-1.0`, PR updates).
