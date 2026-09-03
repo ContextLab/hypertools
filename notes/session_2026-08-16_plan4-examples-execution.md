@@ -736,3 +736,18 @@ editable 1.1.0. Pushed `dev-1.0` and opened the integration PR to `master`
 added under 1.1.0 *Changed / validation* (the four CHANGELOG-reading test
 files pass, 66/0). Next gate: matrix CI on the PR (first hosted run of
 this line; expect Linux/Windows findings, fix on `dev-1.0`, PR updates).
+
+## PR #283 first matrix run (2026-09-03): three platform findings, all fixed
+
+Local macOS/py3.12/pandas 3 had never exercised these. Each reproduced
+locally where a venv could (scratchpad venvs: py3.13; py3.11 + pandas<3).
+
+| lane(s) | failure | root cause | fix |
+|-|-|-|-|
+| ubuntu+windows 3.13 | `test_plot_docstring_type_lines_have_no_stray_optional_default_markers` | Python 3.13 dedents docstrings at compile time (gh-81283); the scan picked "exactly 4-space" lines = params on 3.12, DESCRIPTIONS on 3.13, so prose with a colon parsed as a param | `inspect.cleandoc` + column-0 match (`0c0333ca`); 3.13: 1 failed -> 3 passed |
+| ubuntu+windows 3.10 (pandas 2.3.3) | `test_colorbar_shows_one_segment_per_top_level_group` (warnings as errors) | pandas 2.x FutureWarning for `groupby(level=[one_level])` at both `hierarchy.py` sites; pandas 3 silent | scalar level when one grouping level, keys unchanged (`c8f3cc07`); pandas 2: 2 failed -> 162 passed; regression test |
+| windows 3.10-3.13 | `test_render_script_exits_NO_BROWSER_when_CHROME_CANNOT_BE_FOUND` exit 0 | choreographer's download dir on Windows is `%LOCALAPPDATA%` via platformdirs ctypes/shell API: no env var moves it, so the pre-fetched Chrome is found despite HOME+BROWSER_PATH; the script's own override bypasses the plotly wrapping the test proves | skip on Windows ONLY when that download exists, naming the path (`87c2e3d4`) |
+
+Green lanes: ubuntu 3.11 (pandas 3, no 3.13 dedent), wheel-smoke,
+docs-clean, dataset-gate, live-source-gate; release-gate skipping (not
+master). Windows lanes take ~28 min; ubuntu ~21.
