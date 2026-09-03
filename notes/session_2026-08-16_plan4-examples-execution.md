@@ -751,3 +751,13 @@ locally where a venv could (scratchpad venvs: py3.13; py3.11 + pandas<3).
 Green lanes: ubuntu 3.11 (pandas 3, no 3.13 dedent), wheel-smoke,
 docs-clean, dataset-gate, live-source-gate; release-gate skipping (not
 master). Windows lanes take ~28 min; ubuntu ~21.
+
+**Second matrix run GREEN** (run 33780351665 on `15145040`: 16 success,
+release-gate skipped). Then GitHub reported the PR **CONFLICTING**:
+master's one commit past the merge base (`647ce929`, the 1.0.0
+release-form flip) collides with the CHANGELOG restructure, and a plain
+merge would also pull its PyPI install cells (-> installs 1.0.0 under
+tutorials using 1.1 API) and v1.0.0 image URLs into dev-1.0. Resolved
+with merge commit `85280877`: master as second parent, every one of the
+17 files kept at dev-1.0's version, `git diff HEAD~1 HEAD` empty (tree
+byte-identical to the green head). Third run is on the merge commit.
