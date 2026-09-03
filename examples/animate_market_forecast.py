@@ -1,376 +1,313 @@
 # -*- coding: utf-8 -*-
 """
-======================================================
-Many markets as one path: chemtrails + a live forecast
-======================================================
+==================================================
+Six sectors, their stocks, and each sector's mean
+==================================================
 
-Several daily financial series are bundled into a single moving 3-D "market
-path": each day is a point, the whole history is reduced with
-``hyp.reduce(..., reduce='IncrementalPCA', ndims=3, manip='Smooth',
-normalize='across')`` (hypertools' canonical ``manip -> normalize -> reduce``
-order: a Savitzky-Golay smooth per dataset, an across-the-stack z-score, then
-the 3 highest-variance directions in mini-batches), and ``hyp.plot``
-draws it with **one slow quarter-turn** of the camera over the whole clip
-(``rotations=0.25`` -- enough parallax to read the 3-D shape without the box
-spinning out from under the overlay), colored by an equal-weight index (a
-continuous ``hue`` + labeled ``colorbar``) and animated with
-``chemtrails=True`` -- a moving head that leaves the whole history glowing
-faintly behind it.
+Twenty-four large-cap stocks, four per sector, each drawn as a path through
+two measures every stock shares -- cumulative 12-month return (x) and
+drawdown below the 24-month peak (y) -- over the most recent five years at
+six-month strokes. The whole figure is **one** ``hyp.plot`` call on a
+DataFrame whose columns carry a ``(Sector, Ticker, Measure)``
+``MultiIndex``. The innermost level is the feature axis and every level
+above it groups, so the library finds the four stocks of each sector in the
+index, draws each as a faint leaf, and draws the sector's **mean** as a
+heavier line on top. That mean is computed by the hierarchy, not by this
+file, and nothing here computes or draws a trajectory by hand.
 
-On top of the library call we overlay a **live forecast**: at each step a
-Kalman filter (``hyp.predict(..., model='Kalman')``) extrapolates the next few
-months from the history so far, drawn as a dashed red tail off the current
-point, and every *past* forecast stays on-screen as a thin faint fan in the
-SAME red (they are all forecasts, so they read as one family, separated by
-weight and opacity rather than hue) as a "history of
-predictions" fan. A subtitle keeps a running **directional-accuracy** score:
-each forecast is compared with what the path actually did over the same
-horizon, and only counts once that horizon has elapsed on screen.
+**Six panels, one call.** An animated ``hyp.plot`` owns its figure and
+normalizes everything it is given into one unit box, so six sectors cannot
+be six axes of one animation -- and they do not need to be. Each sector's
+block is translated into its own region of one shared coordinate box
+*before* the call, and the six panels become six column groups of a single
+frame: one call, one animation, one ``.save()``, and one normalization
+shared by construction rather than by assertion. The boxes, the sector
+labels, the darker mean and the dot riding its head are annotation of
+artists the library drew.
 
-**Coordinate note (important for any overlay on an animation).** ``hyp.plot``
-internally normalizes the reduced path into its drawn cube, so points in the
-original ``reduce`` space do NOT line up with what's on screen. We therefore
-read the TRUE on-screen head straight from the plotted line artist
-(``ani._args[1][0]``) each frame -- guaranteeing the forecast starts exactly at
-the visible head and stays in the box -- and recover the (reduce -> drawn)
-scale with a small per-axis fit so the red-space forecast delta lands in drawn
-units. The forecast carries a single visual GAIN so it is legible; it is
-illustrative, not a price target.
+**How to read it.** Every panel has the same units and the same gain, so
+the length, direction and shape of a path are comparable across panels,
+and each panel is read against its own rectangle. Position *between*
+panels is not comparable: the offsets are layout, not market data, and the
+caption says so. The bold line is that **sector's** mean of the four stocks
+beside it. There is deliberately no market-wide mean: the offsets are
+applied before the hierarchy computes its means, so a top-level parent
+would average six layout translations and mean nothing. Sector means stay
+exact because all four stocks of a sector receive the same translation.
 
-**Data & graceful degradation.** The series are pulled from FRED
-(`fred.stlouisfed.org <https://fred.stlouisfed.org>`_) as small CSVs and cached
-on disk. If the network is unavailable the example falls back to a synthetic
-basket of correlated random-walk "assets", so it always renders -- the
-technique (reduce -> hue/colorbar -> chemtrails -> forecast overlay) is
-identical either way.
+**Data & graceful degradation.** Ten years of ADJUSTED daily closes are
+pulled from Yahoo Finance's chart endpoint and cached on disk; adjusted, so
+a split does not read as a -50% day. Month-end levels are a decimation, so
+no future observation reaches back into a bar. If the network is
+unavailable the example falls back to a seeded synthetic basket with the
+same sector structure, so it always renders -- the technique (hierarchy ->
+tiled panels -> one animated call) is identical either way.
 """
 
 # Code source: Contextual Dynamics Laboratory
 # License: MIT
 
+import json
 import os
 import tempfile
 import urllib.request
+from typing import NamedTuple
 
+import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.cm import ScalarMappable
-from matplotlib.colors import Normalize
-from matplotlib.lines import Line2D
+import pandas as pd
+from matplotlib.colors import to_rgb
 
 import hypertools as hyp
 
+# This file keeps its 1.0 name so the published docs URL survives. Nothing in
+# it forecasts anything; see the module docstring for what it shows instead.
 CACHE = os.path.join(tempfile.gettempdir(), 'hypertools_gallery_cache')
-os.makedirs(CACHE, exist_ok=True)
+RANGE = '10y'
+# six sectors x four EQUALLY WEIGHTED tickers each
+SECTORS = {
+    'Technology': ['AAPL', 'MSFT', 'ORCL', 'IBM'],
+    'Financials': ['JPM', 'BAC', 'GS', 'AXP'],
+    'Healthcare': ['JNJ', 'PFE', 'MRK', 'ABT'],
+    'Energy': ['XOM', 'CVX', 'COP', 'SLB'],
+    'Consumer': ['KO', 'PG', 'WMT', 'MCD'],
+    'Industrials': ['BA', 'CAT', 'GE', 'HON'],
+}
+SECTOR_COLORS = ['#c1272d', '#f2a900', '#1b7f4f', '#2d5fa8', '#7d3c98',
+                 '#00808a']
+CUM_WINDOW, DD_WINDOW = 12, 24          # months
+MONTHS, STRIDE = 60, 6                  # five years, one stroke per half-year
+PANEL_COLS, PANEL_STEP = 3, 2.6         # the grid -- layout only, no meaning
+DURATION, FPS = 6, 15                   # seconds, frames per second
+CAPTION = ('same cumulative-return (x) and drawdown (y) scale in every '
+           'panel; panel positions are layout only')
 
-# five broad daily FRED series -- a rough cross-section of "the market"
-FRED_IDS = ['SP500', 'NASDAQCOM', 'DGS10', 'DCOILWTICO', 'VIXCLS']
-START, END = '2004-01-01', '2024-01-01'
+
+class Market(NamedTuple):
+    stocks: pd.DataFrame        # (Sector, Ticker, Measure) -- what is PLOTTED
+    source: str                 # which path produced it
 
 
-def fetch_fred(ids, start, end):
-    """Return (dates, (days, n_series) matrix) from FRED, forward-filled and
-    aligned; or ``None`` if anything (network, parsing) goes wrong."""
+# --- the data half: the ONLY code here that reaches the network -------------
+def fetch_closes(sectors=SECTORS):
+    """Adjusted daily closes per (sector, ticker), or ``None`` if anything
+    (network, parsing) goes wrong."""
+    # outside the try, so it raises instead of being caught and quietly
+    # downgraded: a test that sets HYPERTOOLS_OFFLINE is asserting that no
+    # fetch happened, and a swallowed exception would hide one
+    if os.environ.get('HYPERTOOLS_OFFLINE'):
+        raise RuntimeError('HYPERTOOLS_OFFLINE is set: refusing to fetch')
+    os.makedirs(CACHE, exist_ok=True)
     try:
-        import pandas as pd
-        frames = []
-        for sid in ids:
-            url = (f'https://fred.stlouisfed.org/graph/fredgraph.csv?id={sid}'
-                   f'&cosd={start}&coed={end}')
-            dest = os.path.join(CACHE, f'fred_{sid}_{start}_{end}.csv')
-            if not (os.path.exists(dest) and os.path.getsize(dest) > 0):
-                req = urllib.request.Request(
-                    url, headers={'User-Agent': 'hypertools-gallery/1.0'})
-                with urllib.request.urlopen(req, timeout=30) as r:
-                    data = r.read()
-                with open(dest, 'wb') as f:
-                    f.write(data)
-            df = pd.read_csv(dest, na_values=['.'])
-            df.columns = ['date', sid]
-            df['date'] = pd.to_datetime(df['date'])
-            frames.append(df.set_index('date'))
-        # sort=False + an explicit sort_index(): pandas is deprecating the
-        # implicit sort here, and we sort the union index ourselves anyway
-        merged = pd.concat(frames, axis=1,
-                           sort=False).sort_index().ffill().dropna()
-        return merged.index.to_numpy(), merged.to_numpy(dtype=float)
+        series = {}
+        for sector, tickers in sectors.items():
+            for ticker in tickers:
+                dest = os.path.join(CACHE, f'yahoo_adj_{ticker}_{RANGE}.json')
+                if not os.path.exists(dest):
+                    url = ('https://query1.finance.yahoo.com/v8/finance/chart/'
+                           f'{ticker}?range={RANGE}&interval=1d')
+                    req = urllib.request.Request(
+                        url, headers={'User-Agent': 'Mozilla/5.0'})
+                    with urllib.request.urlopen(req, timeout=30) as resp:
+                        payload = resp.read()
+                    with open(dest + '.part', 'wb') as f:
+                        f.write(payload)
+                    # rename, so an interrupted download can never leave a
+                    # truncated cache file that every later run would trust
+                    os.replace(dest + '.part', dest)
+                with open(dest) as f:
+                    result = json.load(f)['chart']['result'][0]
+                stamps = pd.to_datetime(result['timestamp'], unit='s')
+                series[(sector, ticker)] = pd.Series(
+                    result['indicators']['adjclose'][0]['adjclose'],
+                    index=stamps.normalize()).astype(float)
+        # no ffill: a stale ticker padded flat would contribute exactly zero
+        # return while its peers moved. Dropping the row makes it visible.
+        return pd.DataFrame(series).sort_index().dropna()
     except Exception:
         return None
 
 
-def synthetic_basket(n_days=1000, n_assets=5, seed=0):
-    """Fallback: correlated geometric-random-walk 'assets' (a stand-in market
-    with enough shared structure to trace a coherent low-D path)."""
+def synthetic_closes(sectors=SECTORS, days=2500, seed=0):
+    """The same sector structure, seeded, so the figure renders offline."""
     rng = np.random.default_rng(seed)
-    market = np.cumsum(rng.standard_normal(n_days)) * 0.6      # shared factor
-    prices = []
-    for k in range(n_assets):
-        idio = np.cumsum(rng.standard_normal(n_days)) * (0.4 + 0.1 * k)
-        prices.append(100 * np.exp(0.02 * (market + idio) / 10))
-    dates = np.arange(n_days)
-    return dates, np.column_stack(prices)
+    index = pd.date_range('2016-08-15', periods=days, freq='B')
+    columns = [(sector, t) for sector, ts in sectors.items() for t in ts]
+    drift = rng.normal(0.0003, 0.0002, size=(1, len(columns)))
+    steps = rng.normal(0, 0.013, size=(days, len(columns))) + drift
+    return pd.DataFrame(100.0 * np.exp(steps.cumsum(axis=0)), index=index,
+                        columns=pd.MultiIndex.from_tuples(columns))
 
 
-fetched = fetch_fred(FRED_IDS, START, END)
-if fetched is None:
-    dates, prices = synthetic_basket()
-    source = 'synthetic basket (offline fallback)'
-else:
-    dates, prices = fetched
-    source = 'FRED daily series'
-print(f'market data: {prices.shape[0]} days x {prices.shape[1]} series '
-      f'({source})')
-
-# thin to a manageable number of points, take LOG prices (assets grow
-# ~exponentially; log linearizes the path), then ONE hyp.reduce call in the
-# canonical stage order (manip -> normalize -> reduce): Smooth strips
-# day-to-day jitter, normalize='across' z-scores the columns across the
-# stacked rows (replacing a hand-rolled z-score), and IncrementalPCA keeps the
-# 3 highest-variance directions, so every day becomes one 3-D point.
-THIN = max(1, len(prices) // 800)
-prices = prices[::THIN]
-idx_level = (prices / prices[0]).mean(axis=1) * 100.0     # equal-weight index
-logp = np.log(np.clip(prices, 1e-9, None))
-red = np.asarray(hyp.reduce(logp, reduce='IncrementalPCA', ndims=3,
-                            manip='Smooth', normalize='across'))
-T = len(red)
-
-# Precompute Kalman forecasts at monthly anchors from the history-so-far, as a
-# reduce-space DELTA (running Kalman on the full daily path every frame is
-# slow). STEP is derived from the thinning factor so it stays ~1 trading month
-# of the ORIGINAL series no matter how much we thinned.
-#
-# MIN_HIST: require a real run-up of history before forecasting at all. Kalman
-# fits from only a couple of samples are wildly over-confident: measured on the
-# FRED series above, dropping the requirement lets the largest forecast reach
-# ~25x the median forecast length, and the visual GAIN below turns that into an
-# arrow that streaks across the box. Requiring two years of monthly history
-# halves the worst case (to ~12x the median) without changing directional
-# skill; the CAP below handles what remains of the tail (95th pct ~7x median).
-#
-# MODEL CHOICE, measured rather than assumed. On a 20-stock daily version of
-# this pipeline (293 anchors, scoring the predicted 4-month displacement
-# against what actually happened), direction was called correctly by:
-#     Kalman   51%        ARIMA   51%        Laplace   65%
-# against 62% for the trivial "assume it keeps drifting the way it has been"
-# rule. A reduced market path is close to a random walk with drift, so a single
-# linear-Gaussian fit has little to grip; hyp's 'Laplace' is a
-# likelihood-weighted Bayesian ensemble over a population of candidate
-# forecasters and holds up better. Kalman is kept HERE only because it is ~30x
-# faster (this file runs on every docs build). Swap the one keyword below to
-# model='Laplace' for the better forecast.
-STEP = max(2, round(21 / THIN))                           # ~1 trading month
-HORIZON = 4                                               # months ahead
-MIN_HIST = 24                                             # monthly samples
-anchors = list(range(MIN_HIST * STEP, T, STEP))
-raw_fc, raw_hit = {}, {}
-for a in anchors:
-    hist = red[:a + 1:STEP]
-    if len(hist) < 2:
-        continue
-    f = np.asarray(hyp.predict(hist, model='Kalman', t=HORIZON))
-    # hyp.predict returns exactly `t` NEW rows, all of them future steps, so
-    # f[0] is the FIRST forecast step and not the last observation: anchor the
-    # displacement on the last OBSERVED row. (`f - f[0]` would discard a whole
-    # step and force the first displacement to zero.) The prepended zero row
-    # keeps the drawn forecast starting exactly at the current head.
-    raw_fc[a] = np.vstack([np.zeros((1, f.shape[1])),
-                           f - hist[-1]])                 # reduce-space delta
-    # score it against what ACTUALLY happened over the same horizon: did the
-    # forecast point the right way? (directional hit = positive dot product)
-    j = min(T - 1, a + HORIZON * STEP)
-    d_pred, d_act = raw_fc[a][-1], red[j] - red[a]
-    n1, n2 = np.linalg.norm(d_pred), np.linalg.norm(d_act)
-    raw_hit[a] = (float(d_pred @ d_act) > 0) if (n1 > 1e-12 and n2 > 1e-12) \
-        else None
-
-# THE hypertools call: one market path, hue = equal-weight index, chemtrails,
-# and ONE slow quarter-turn of the camera (rotations=0.25) over the clip.
-# duration/frame_rate MUST be passed: otherwise hyp falls back to its 30s/30fps
-# defaults while this script's `total` says otherwise, desyncing the forecasts.
-duration, fps = 8, 20
-anim = hyp.plot(red, fmt='-', reduce=None, hue=idx_level, colorbar=False,
-                palette='plasma', animate=True, chemtrails=True,
-                rotations=0.25, duration=duration, frame_rate=fps,
-                linewidth=2.2, size=(9, 6.5), show=False)
-fig, ani = anim
-ax = [a for a in fig.axes if hasattr(a, 'zaxis')][0]
-ax.set_position([0.0, 0.03, 0.78, 0.9])
-total = int(round(fps * duration))
-
-# read the visible line artist so forecasts anchor at the TRUE drawn head, and
-# fit the (reduce -> drawn) per-axis scale so the reduce-space delta lands in
-# drawn units (see the module docstring for why this is necessary).
-#
-# This ONE-TIME setup step is the one place this example still reaches into
-# matplotlib's private FuncAnimation internals (`ani._args`/`ani._func`),
-# deliberately: it needs the fully-revealed, ANTIALIASED on-screen line (this
-# is a synchronous "force a render, then read it back" operation, not a
-# per-frame callback), and there is no public equivalent -- `ctx.datasets`
-# (from `on_frame=`) is the pre-antialiasing array at a coarser resolution
-# and fits a measurably different (~2-8%, checked empirically) slope. The
-# RECURRING per-frame decoration below has a clean public replacement and
-# uses it (`anim.on_frame`); this setup step does not, so it is left alone
-# rather than silently changing the fitted forecast geometry.
-market_line = ani._args[1][0]
-_orig = ani._func
-_orig(total - 1, *ani._args)                              # reveal fully, once
-_fx, _fy, _fz = market_line.get_data_3d()
-full_drawn = np.column_stack([_fx, _fy, _fz])
-K = len(full_drawn)
-_red_rs = np.column_stack([np.interp(np.linspace(0, T - 1, K), np.arange(T),
-                                     red[:, c]) for c in range(3)])
-SLOPE = np.array([np.polyfit(_red_rs[:, c], full_drawn[:, c], 1)[0]
-                  for c in range(3)])
-BLO = np.array([ax.get_xlim3d()[0], ax.get_ylim3d()[0], ax.get_zlim3d()[0]])
-BHI = np.array([ax.get_xlim3d()[1], ax.get_ylim3d()[1], ax.get_zlim3d()[1]])
+def stock_paths(closes):
+    """``(Sector, Ticker, Measure)``: each stock's path through the two
+    measures. Month-end LOG levels (a month still in progress is dropped),
+    both measures backward-looking, the leading incomplete window dropped
+    rather than filled, and one stroke per STRIDE months counted back from
+    the most recent month."""
+    levels = np.log(closes.resample('ME').last().loc[:closes.index[-1]])
+    columns = {}
+    for sector, ticker in closes.columns:
+        level = levels[(sector, ticker)]
+        columns[(sector, ticker, 'cumulative return')] = (
+            level - level.shift(CUM_WINDOW))
+        columns[(sector, ticker, 'drawdown')] = (
+            level - level.rolling(DD_WINDOW, min_periods=1).max())
+    paths = pd.DataFrame(columns).dropna()
+    paths.columns = pd.MultiIndex.from_tuples(
+        paths.columns, names=['Sector', 'Ticker', 'Measure'])
+    return paths.iloc[-MONTHS:].apply(np.expm1).iloc[::-STRIDE].iloc[::-1]
 
 
-def _frame_of(a):
-    """Frame at which reduce-space sample ``a`` is the animated head."""
-    return int(round(a / max(1, T - 1) * (total - 1)))
+def load_market(sectors=SECTORS):
+    """The ONLY function here that may touch the network."""
+    try:
+        closes, source = fetch_closes(sectors), 'Yahoo Finance adjusted closes'
+    except RuntimeError:
+        closes = None
+    if closes is None:
+        closes, source = synthetic_closes(sectors), 'synthetic basket (offline)'
+    return Market(stock_paths(closes), source)
 
 
-# forecasts as DRAWN-space deltas, keyed by the frame they were made; a single
-# GAIN makes them legible (hyp packs this path into a sub-region of the cube)
-FC = {_frame_of(a): SLOPE[None, :] * d for a, d in raw_fc.items()}
-_ends = [np.linalg.norm(d[-1]) for d in FC.values() if len(d)]
-MED_LEN = 0.20                                            # median arrow length
-GAIN = MED_LEN / (np.median(_ends) or 1.0)
-# A few months of movement is tiny next to a 20-year path, so the arrow has to
-# be amplified to be visible at all -- which also amplifies the heavy tail of
-# Kalman forecast magnitudes. Capping each forecast at 1.8x the MEDIAN length
-# keeps relative differences readable (a bigger predicted move is still a
-# longer arrow) while stopping any single forecast from streaking across the
-# box; an absolute cap would instead flatten every large forecast onto the same
-# length.
-CAP = 1.8 * MED_LEN
+def fixture_data():
+    """The same payload from the seeded synthetic basket. No network."""
+    return Market(stock_paths(synthetic_closes()), 'synthetic basket (fixture)')
 
 
-def _scale(d):
-    d = GAIN * d
-    L = np.linalg.norm(d[-1])
-    return d * (CAP / L) if L > CAP else d
+# --- the figure half: no network, deterministic given its input -------------
+def cell_offset(index):
+    """Where panel `index` sits in the grid, in the tiled frame's units."""
+    return (index % PANEL_COLS) * PANEL_STEP, -(index // PANEL_COLS) * PANEL_STEP
 
 
-FC = {f: _scale(d) for f, d in FC.items()}
-frame_list = sorted(FC)
-HEAD_CACHE = {}
+def tile(paths):
+    """Lay the panels out IN THE DATA.
 
-# running directional accuracy: a forecast only counts once its horizon has
-# actually elapsed on screen (no peeking at the future)
-_matured = sorted((_frame_of(min(T - 1, a + HORIZON * STEP)), raw_hit[a])
-                  for a in raw_fc if raw_hit.get(a) is not None)
-ACC = np.full(total, np.nan)                              # frame -> accuracy %
-_n = _k = _mi = 0
-for _f in range(total):
-    while _mi < len(_matured) and _matured[_mi][0] <= _f:
-        _n += 1
-        _k += int(_matured[_mi][1])
-        _mi += 1
-    if _n:
-        ACC[_f] = 100.0 * _k / _n
-N_SCORED = _n
-print(f'forecasts: {len(FC)} drawn, {N_SCORED} scored; '
-      f'final directional accuracy = {ACC[-1]:.0f}%')
-
-
-def _smooth(pts, n=80):
-    """Densify a short polyline so it draws smooth.
-
-    ``antialias_line`` is the exact routine ``hyp.plot(antialias=True)`` runs
-    on every library-drawn line; we call it directly here because this
-    forecast overlay is hand-drawn matplotlib rather than a plotted dataset.
-    There is no public re-export of it (unlike ``title=``/``on_frame=``, this
-    is smoothing, not a per-frame callback, so it is outside plan 1.1's
-    scope) -- reimplementing PCHIP antialiasing by hand here would risk
-    silently drifting from what ``hyp.plot`` actually draws, so the private
-    import stays.
+    One display gain per measure, pooled once over the complete frame (so no
+    panel can be rescaled on its own), then each sector's block translated
+    into its own cell. Returns the tiled frame and the extent of one cell.
     """
-    from hypertools._shared.helpers import antialias_line
-    pts = np.asarray(pts, float)
-    if len(pts) < 3:
-        return pts
-    return antialias_line(pts, n)[0]
+    measures = paths.columns.get_level_values('Measure')
+    half = {m: np.ptp(paths.xs(m, axis=1, level='Measure').to_numpy()) / 2
+            for m in measures.unique()}
+    tiled = paths / [half[m] for m in measures]
+    cell = {m: (tiled.xs(m, axis=1, level='Measure').min().min(),
+                tiled.xs(m, axis=1, level='Measure').max().max())
+            for m in half}
+    sectors = tiled.columns.get_level_values('Sector')
+    for index, sector in enumerate(sectors.unique()):
+        dx, dy = cell_offset(index)
+        tiled.loc[:, (sectors == sector) & (measures == 'cumulative return')] += dx
+        tiled.loc[:, (sectors == sector) & (measures == 'drawdown')] += dy
+    return tiled, cell
 
 
-def _hang(head, delta):
-    return _smooth(np.clip(head + delta, BLO, BHI))
+def drawn_affine(tiled):
+    """Recover the affine ``hyp.plot`` applies (its docstring: mean-centred
+    and rescaled into ``[-1, 1]``, one shared transform), so annotations can
+    be placed in data terms. It takes no part in drawing the data. Read off a
+    STATIC draw: an animated frame stops a hair short of the last vertex."""
+    probe, ax = plt.subplots()
+    hyp.plot(tiled, '-', reduce=None, ndims=2, normalize=None, colorbar=False,
+             ax=ax, show=False)
+    lines = [line for line in ax.lines if len(line.get_xdata()) > 2]
+    plt.close(probe)
+    affine = {}
+    for measure, drawn in (('cumulative return', [ln.get_xdata() for ln in lines]),
+                           ('drawdown', [ln.get_ydata() for ln in lines])):
+        data = tiled.xs(measure, axis=1, level='Measure').to_numpy()
+        lo, hi = min(d.min() for d in drawn), max(d.max() for d in drawn)
+        gain = (hi - lo) / (data.max() - data.min())
+        affine[measure] = (gain, lo - gain * data.min())
+    return affine
 
 
-# history fan + the current forecast, in the SAME red: these are all forecasts,
-# so what separates them is weight and opacity (thin/faint = already made and
-# left behind, thick/dashed/bright = the one being made right now)
-N_HIST = 16
-FC_COLOR = '#E23B2E'
-HIST_COLOR = FC_COLOR
-hist_lines = [ax.plot([], [], [], '-', color=HIST_COLOR, lw=1.1, alpha=0.0,
-                      zorder=6)[0] for _ in range(N_HIST)]
-for _ln in hist_lines:
-    _ln.set_clip_on(False)
-fc_line, = ax.plot([], [], [], '--', color=FC_COLOR, lw=2.6, alpha=0.98,
-                   zorder=10)
-fc_line.set_clip_on(False)
-
-# labeled colorbar for the equal-weight index
-cax = fig.add_axes([0.82, 0.14, 0.02, 0.66])
-sm = ScalarMappable(Normalize(idx_level.min(), idx_level.max()), cmap='plasma')
-cbar = fig.colorbar(sm, cax=cax)
-cbar.set_label('equal-weight index (start = 100)', fontsize=9)
-
-title = fig.text(0.40, 0.965, '', ha='center', va='top', fontsize=14,
-                 fontweight='bold', color='#1a1a1a')
-# the running score lives UNDER the title, in its own lighter subtitle line
-acc_label = fig.text(0.40, 0.925, '', ha='center', va='top', fontsize=11.5,
-                     color='#555')
-# legend built from REAL Line2D handles, so each entry is drawn in exactly the
-# style it has on screen (thick red dashed = live forecast; thin faint red
-# solid = the past-forecast fan) instead of two identical text labels
-fig.legend(handles=[
-    Line2D([], [], color=FC_COLOR, lw=2.6, ls='--',
-           label=f'forecast from today (next {HORIZON} months)'),
-    Line2D([], [], color=HIST_COLOR, lw=1.1, ls='-', alpha=0.75,
-           label='past forecasts, as they were made'),
-], loc='lower left', bbox_to_anchor=(0.055, 0.02), ncol=1, frameon=False,
-    fontsize=12.5, handlelength=3.2, labelspacing=0.6, labelcolor='#444')
-fig.text(0.40, 0.005, 'arrows amplified for visibility; length is relative, '
-         'not a price target', ha='center', va='bottom', fontsize=9,
-         color='#8a8a8a', style='italic')
+def draw_panel_boxes(ax, sectors, cell, affine, pad=0.06):
+    """One identical rectangle per panel, from the OFFSETS that built the
+    grid (not from where each sector's paths happen to sit), plus its label.
+    Annotation only: no trajectory is touched."""
+    (gx, sx), (gy, sy) = affine['cumulative return'], affine['drawdown']
+    boxes = {}
+    for index, sector in enumerate(sectors):
+        dx, dy = cell_offset(index)
+        x0 = gx * (dx + cell['cumulative return'][0]) + sx - pad
+        x1 = gx * (dx + cell['cumulative return'][1]) + sx + pad
+        y0 = gy * (dy + cell['drawdown'][0]) + sy - pad
+        y1 = gy * (dy + cell['drawdown'][1]) + sy + pad
+        ax.add_patch(plt.Rectangle((x0, y0), x1 - x0, y1 - y0, fill=False,
+                                   ec='#cccccc', lw=0.8, zorder=0))
+        ax.annotate(sector, xy=(x0, y1 + 0.012), color=SECTOR_COLORS[index],
+                    fontsize=8.5, fontweight='bold', va='bottom')
+        boxes[sector] = (x0, x1, y0, y1)
+    return boxes
 
 
-def decorate(ctx):
-    """Per-frame decoration: the live forecast arrow, the past-forecast fan,
-    and the running accuracy subtitle. Registered below via ``anim.on_frame``
-    -- hyp.plot() has already moved the market path's head for this frame by
-    the time this runs, so (unlike the pre-1.1 ``ani._func`` monkeypatch this
-    replaces) there is no original updater to call through to."""
-    num = ctx.frame
-    hx, hy, hz = market_line.get_data_3d()
-    head = np.array([hx[-1], hy[-1], hz[-1]])
-    HEAD_CACHE[num] = head
-    passed = [f for f in frame_list if f <= num]
-    for ln in hist_lines:
-        ln.set_alpha(0.0)
-    if passed:
-        cur = _hang(head, FC[passed[-1]])
-        fc_line.set_data(cur[:, 0], cur[:, 1])
-        fc_line.set_3d_properties(cur[:, 2])
-        prior = passed[:-1][-N_HIST:]
-        for slot, f in enumerate(prior):
-            hp = _hang(HEAD_CACHE.get(f, head), FC[f])
-            hist_lines[slot].set_data(hp[:, 0], hp[:, 1])
-            hist_lines[slot].set_3d_properties(hp[:, 2])
-            hist_lines[slot].set_alpha(0.08 + 0.30 * (slot + 1) / len(prior))
-    else:
-        fc_line.set_data([], [])
-        fc_line.set_3d_properties([])
-    # running directional accuracy of every forecast whose horizon has already
-    # elapsed on screen (50% = a coin flip)
-    acc = ACC[min(num, total - 1)]
-    title.set_text('many markets as one path')
-    acc_label.set_text(
-        'forecast direction correct so far: waiting for the first horizon'
-        if np.isnan(acc) else
-        f'forecast direction correct so far: {acc:.0f}%   (50% = coin flip)')
+def construct_artifact(data):
+    """`data.stocks` in, the animation out. No network, no module globals.
+    Returns the HyperAnimation wrapper, never the unpacked pair."""
+    tiled, cell = tile(data.stocks)
+    sectors = list(tiled.columns.get_level_values('Sector').unique())
+    span = f'{tiled.index[0]:%b %Y} - {tiled.index[-1]:%b %Y}'
+    # THE call. The column MultiIndex is the whole layout instruction: 24
+    # leaves, six automatic sector means drawn heavier, one colour per
+    # top-level group. The trail window equals the clip, so every path stays
+    # in view and the last frame is fully revealed (the default 2 s window
+    # leaves 16-54% of a path on screen at the end -- measured). The
+    # library's own frame box spans the full unit square, so once the view
+    # is cropped to the panel grid its edges would cross the figure;
+    # `frame_kwargs` is the documented knob for that.
+    anim = hyp.plot(tiled, '-', palette=SECTOR_COLORS, reduce=None, ndims=2,
+                    normalize=None, animate='parallel', duration=DURATION,
+                    tail_duration=DURATION, frame_rate=FPS, colorbar=False,
+                    size=(7.36, 4.9), frame_kwargs={'visible': False},
+                    show=False,
+                    title=f"Six sectors, their stocks, and each sector's "
+                          f'mean ({span})')
+    ax = anim.figure.axes[0]
+    # the panel labels already name the sectors. `legend=` stays at its
+    # default so the parent traces keep their group labels, which is how
+    # they are told apart from the leaves below.
+    ax.get_legend().remove()
+    parents = {ln.get_label(): ln for ln in ax.lines if ln.get_label() in sectors}
+    leaves = [ln for ln in ax.lines if ln.get_label() not in sectors]
+    per_panel = len(leaves) // len(sectors)
+    boxes = draw_panel_boxes(ax, sectors, cell, drawn_affine(tiled))
+
+    # restyle what the library drew: a darker, heavier mean than the
+    # hierarchy's own 2x width gives, paler leaves, and a dot at each head
+    heads = {}
+    for index, sector in enumerate(sectors):
+        dark = tuple(0.62 * channel for channel in to_rgb(SECTOR_COLORS[index]))
+        parents[sector].set(color=dark, linewidth=2.6, zorder=4)
+        for leaf in leaves[index * per_panel:(index + 1) * per_panel]:
+            leaf.set(alpha=0.55, linewidth=0.9)
+        heads[sector] = ax.plot([], [], 'o', color=dark, ms=4.0, mfc='white',
+                                mew=1.3, zorder=7)[0]
+
+    def move_head_dots(context):
+        """`on_frame` is for decoration that must CHANGE with the frame."""
+        for sector, parent in parents.items():
+            heads[sector].set_data(parent.get_xdata()[-1:],
+                                   parent.get_ydata()[-1:])
+
+    anim.on_frame(move_head_dots)
+    # crop to the grid; limits and spines persist across frames and saves
+    ax.set_xlim(min(b[0] for b in boxes.values()) - 0.02,
+                max(b[1] for b in boxes.values()) + 0.02)
+    ax.set_ylim(min(b[2] for b in boxes.values()) - 0.02,
+                max(b[3] for b in boxes.values()) + 0.075)
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+    anim.figure.text(0.5, 0.025, CAPTION, ha='center', fontsize=8,
+                     color='#555555')
+    return anim
 
 
-anim.on_frame(decorate)
+if __name__ == '__main__':
+    market = load_market()
+    print(f'market data: {market.stocks.shape[0]} strokes x '
+          f'{market.stocks.columns.get_level_values("Ticker").nunique()} '
+          f'stocks in {len(SECTORS)} sectors ({market.source})')
+    anim = construct_artifact(market)
+    fig = anim.figure

@@ -145,8 +145,17 @@ spread tightens ~30%. See the full gallery example,
    :width: 400
    :alt: Animated hyperaligned brain-activity trajectories through a spoken story
 
-A market as one moving path: chemtrails and a live forecast
------------------------------------------------------------
+Six sectors, their stocks, and each sector's mean
+-------------------------------------------------
+
+The *column-MultiIndex* hierarchy, six times over: a ``(Sector, Ticker,
+Measure)`` frame draws each sector's four stocks as faint leaves and that
+sector's mean as a heavier line, all from **one** ``hyp.plot`` call. The six
+panels are laid out *in the data* -- each sector's block translated into
+its own region of one shared box -- because an animated call owns its
+figure, so this is one animation with one pooled scale. Position between
+panels is layout, not market data; there is deliberately no market-wide
+mean and no forecast. See :doc:`hierarchy` for the column-axis rule.
 
 .. toctree::
   :maxdepth: 2

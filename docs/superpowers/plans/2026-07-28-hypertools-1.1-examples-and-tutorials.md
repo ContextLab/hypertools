@@ -151,16 +151,21 @@ happened:
 - [x] `STATED_ARTIFACT['animate_market_forecast']`: drop `predicts=True` (Plan v5 retired the
       forecast, so a gate demanding it would demand the thing the plan removed), keep `min_frames`
       at a floor the approved composition reaches — now `dict(min_frames=60)`.
-- [ ] the gallery title and docstring stop describing a forecast.
-- [ ] `EXPECTED_VISIBLE_OUTPUTS['market_forecast']` recorded from a real execution (criterion 7).
-- [ ] the notebook's display expectations match whatever the composition actually emits.
-- [ ] criterion 4's assertions land in the gate with the script — for the tiled composition that
+- [x] the gallery title and docstring stop describing a forecast. *(Landed 2026-09-03: title "Six sectors, their stocks, and each sector's mean"; neither "forecast" nor "predict" appears in the docstring, the notebook prose, the figure, or `docs/tutorials.rst`.)*
+- [x] `EXPECTED_VISIBLE_OUTPUTS['market_forecast']` recorded from a real execution (criterion 7). *(Measured 2026-09-03: `{7, 8}`, the data print and the saved-GIF print, from two runs; the first exposed a third output, cell 7's inline-video repr from leaving `draw_frame` as the cell's last expression, fixed by assignment.)*
+- [x] the notebook's display expectations match whatever the composition actually emits. *(No inline video: the last code cell saves `market_forecast.gif` (90 frames, 0.86 MB) and a markdown cell embeds it, as the other launch notebooks do.)*
+- [x] criterion 4's assertions land in the gate with the script — for the tiled composition that
       is pooled scaling, identical box dimensions, non-overlapping boxes, and containment, **not**
-      the shared-limit tuple that only applies to a multi-axes composition.
-- [ ] the example and its notebook stop being called `*_forecast` where compatibility permits, and
+      the shared-limit tuple that only applies to a multi-axes composition. *(`_assert_tiled_composition`, landed round 13; the landed script passes it on the fixture.)*
+- [x] the example and its notebook stop being called `*_forecast` where compatibility permits, and
       at minimum no displayed prose (title, gallery caption, docstring, axis labels) says
       "forecast". Renaming the FILES touches the gallery index, the tutorial notebook, both budget
-      tables, `STATED_ARTIFACT`, and the release notebook checker — costed at implementation time.
+      tables, `STATED_ARTIFACT`, and the release notebook checker — costed at implementation time. 
+      *(Decided 2026-09-03: the FILES keep their names. `auto_examples/animate_market_forecast.html` and
+      `tutorials/market_forecast.html` are published 1.0 documentation URLs, so a rename breaks links for
+      no reader-visible gain; the minimum, no displayed prose saying "forecast", is met, and a comment at
+      the top of the script says why the name stays. **Flagged for the maintainer**: if a rename is
+      preferred, the five touch points above are the cost.)*
 
 **If the composition carries a workaround, it is quarantined** *(round 12, finding 4)*. A gallery
 example teaches by example, so a reader must not infer that duplicating every hierarchy plot and
@@ -318,6 +323,14 @@ notebook **187** (re-measured 2026-08-19). Removing the scoring loop and panel s
 small-multiples composition may add. Task 2's measure step re-measures and records the real number
 **once**, after the composition is approved, and the budget is renegotiated there per Contract 6 —
 never the code trimmed to flatter it.
+
+**Re-measured once, 2026-09-03, on the landed composition E:** script **181** code lines, notebook
+**185** (overhead +4: the `__main__` guard line goes; a `draw_frame` line, a two-line save cell and
+the two-line install cell come). `SCRIPT_BUDGETS` is **185** (181 rounded up to the next multiple
+of 5, as every other budget is) and the notebook's derived budget is 190. Of the 181, the fetcher is
+32 lines (class A); the tiling, the affine probe that places the panel boxes, the boxes themselves
+and the restyling of the library's artists are the presentation the composition needs (class D).
+No forecast, no scoring, and no per-frame work beyond the six head dots.
 
 ---
 
@@ -1391,7 +1404,7 @@ Audit classification (unchanged, still accurate for the parts this task rewrites
 
 **The `forecast_trail=` prerequisite is SATISFIED (was: BLOCKED) — read the next paragraph before starting.** The prescribed call passes `forecast_trail=16`. That parameter did not exist when this task was written; it does now — `90a63a1a` added it (`_validate_forecast_trail`, `hypertools/plot/plot.py:700`), `bb6fcb18` gave it plotly parity, and `tests/plot/test_forecast_trail.py` covers it in 11 tests. Verified 2026-08-04 with `inspect.signature(hyp.plot)`.
 
-**EVERY prerequisite of this task is now satisfied (2026-08-16). It is unexecuted, not blocked, and it is the release blocker.** The regrouped-reveal plan ([`2026-08-03-…`](2026-08-03-hypertools-1.1-regrouped-reveal-and-forecasts.md)) landed in full on 2026-08-11 (`59405545`) with its focused tests green; MultiIndex Task 6 (`ea5d9b5e`) makes a continuous `hue=` reach a column hierarchy's traces, Task 8 (`5238d6bc`) makes `predict=` work over the final traces, and `c9b91293`/`d14d07ce` carry the plotly parity and the animated hue-anchored forecast colour.
+**EXECUTED 2026-09-03 as composition E (see *Revision note (v5)*); Steps 2-6 below describe the superseded v4 regime-space rewrite and are kept as history. Step 1's runner exists, Step 3's split shape was applied (payload `Market(stocks, source)`, not `Market(regimes, closes, source)`: the tiling is presentation, so only the `(Sector, Ticker, Measure)` frame crosses the boundary), and Steps 7-8 were done as written.** **EVERY prerequisite of this task is now satisfied (2026-08-16). It was unexecuted, not blocked, and it was the release blocker.** The regrouped-reveal plan ([`2026-08-03-…`](2026-08-03-hypertools-1.1-regrouped-reveal-and-forecasts.md)) landed in full on 2026-08-11 (`59405545`) with its focused tests green; MultiIndex Task 6 (`ea5d9b5e`) makes a continuous `hue=` reach a column hierarchy's traces, Task 8 (`5238d6bc`) makes `predict=` work over the final traces, and `c9b91293`/`d14d07ce` carry the plotly parity and the animated hue-anchored forecast colour.
 
 **One correction to how this task's own call has been described.** It is an *animated, forecast-carrying* trajectory with a **continuous** `hue=` over a **column** hierarchy — not a `hue=`-**regrouped** one. Continuous hue is a per-trace auxiliary value drawn as a `LineCollection` overlay; it does **not** change the trace count, which is precisely why one forecast per sector trace survives. Row regrouping (`_regroup_categorical_lines`) is a different mechanism and is not in play here.
 

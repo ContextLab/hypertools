@@ -491,3 +491,82 @@ the identity there (`< 1e-9`) and then requires each parent to be at least
 20x closer to its own leaves than to any other panel's. On a static draw
 the vertex check is exact: **4.44e-16**, against **1.62e+00** for a
 mis-attributed control.
+
+
+## Task 2 LANDED (2026-09-03) -- composition E, and what landing it measured
+
+Resumed after a two-week gap from the "E SELECTED" state above. The gate
+went **42 -> 30** reds; every market entry is green, and nothing else moved.
+
+| unit | state |
+|-|-|
+| `scripts/execute_tutorial.py` | created from the plan's Step 1 text, smoke-tested with `--out-dir` (tree clean), then **amended** -- see the trap below |
+| `examples/animate_market_forecast.py` | rewritten as E with the loader / fixture / builder split; payload `Market(stocks, source)` |
+| `docs/tutorials/market_forecast.ipynb` | regenerated from the script (code cells = the script's sections), executed for real, `EXPECTED_VISIBLE_OUTPUTS = {7, 8}` |
+| `docs/tutorials/market_forecast.gif` | 90 frames, 0.86 MB (was 2.6 MB), live Yahoo data Feb 2022 - Aug 2026 |
+| `tests/test_examples_are_native.py` | market budget re-measured **181 -> 185**; visible set recorded |
+| `docs/tutorials.rst` | section title no longer says forecast |
+| plan | Task 2 checklist ticked; budget note; Task 2 header marks Steps 2-6 as superseded history |
+
+### Three things measured on the way that the plan did not know
+
+1. **The default trail window hides most of the path at the last frame.**
+   `tail_duration` defaults to 2 s; at 6 s the last frame held only
+   **16-54%** of each path (arc length against a static draw), so the start
+   of a drawn trace was mid-path and the gate's exact endpoint identity
+   failed by 6e-4. The gate's own self-test uses a 2 s clip, where the
+   window happens to cover everything. The example passes
+   `tail_duration=DURATION`; the last frame is then fully revealed
+   (0.998-1.000) and the identity holds to 2e-16. Recorded in the script's
+   comment, since the number is the reason for the argument.
+2. **No closed-form affine reproduces the drawn coordinates.** Midpoint
+   centring matched x to 1e-16 and missed y by 0.149; mean centring missed
+   by 0.07. The static probe the prototype used is exact and stays, and is
+   explained as annotation placement (round 13, finding 4).
+3. **The Colab install cell rewrites the venv.** Executing a launch notebook
+   locally runs `%pip install "hypertools[...] @ git+...@dev-1.0"`, which
+   installs the REMOTE branch over the editable checkout mid-run; the
+   market notebook then failed in its own kernel with "48 dimensions ...
+   static plots support at most 2" (column-MultiIndex support gone), and
+   `pip show hypertools` reported the git install afterwards. Every
+   committed launch notebook carries 2026-07-30 execution timestamps on
+   that cell -- in July local and remote agreed, so nothing noticed. The
+   runner now tags `pip install` cells `skip-execution` in memory and
+   strips the tag before writing, so the committed cell is byte-identical
+   (verified against HEAD). Also found on the way: the venv held a
+   NON-editable hypertools 1.0.0, so `python examples/<file>.py` from any
+   directory but the repo root ran 1.0.0. Reinstalled with
+   `pip install -e ".[dev]"`; **check `pip show hypertools` says Editable
+   after any notebook execution.** A project skillnote records this.
+
+### Decisions taken here, flagged for the maintainer
+
+- **File names kept.** `animate_market_forecast.py` / `market_forecast.ipynb`
+  are published 1.0 URLs. No displayed prose says "forecast"; a comment at
+  the top of the script says why the name stays. Renaming costs the five
+  touch points the plan lists.
+- **Payload shape.** `Market(stocks, source)` rather than the plan's
+  `Market(regimes, closes, source)`: those fields belonged to the discarded
+  rewrite, and the tiling is presentation, so only the
+  `(Sector, Ticker, Measure)` frame crosses the loader/builder boundary.
+- **Strokes counted back from the latest month**, and a month in progress
+  is dropped, so the span ends at the most recent complete month rather
+  than five months early (the first cut decimated from the window's start).
+- **The notebook shows no inline video.** `draw_frame` returns the wrapper,
+  whose repr embeds an 89 KB autoplay mp4; assigned away, so the page
+  carries the GIF once, via the markdown cell, like the other four.
+
+### Remaining reds (30), which are Tasks 3-7
+
+weather 5 (2 budgets, `ani._func` in the notebook, artifact, visible set),
+paintings 5, conversation 8, morph 6, older tutorials 4, analyze 1,
+reduce 1 -- exactly the per-task lists at the top of this note, minus
+market. `test_every_allowlisted_reach_is_still_present_and_still_explained`
+fails on conversation's reach (Task 5), as its comment already says.
+
+**Resume at Task 3 (Weather).** The pattern that worked for market: rewrite
+the script with the split written in, generate the notebook from the
+script's sections (generator in the session scratchpad, not the repo),
+execute with `scripts/execute_tutorial.py`, record the visible set, run
+the gate, re-measure the budget once, commit script + notebook + GIF +
+gate together.

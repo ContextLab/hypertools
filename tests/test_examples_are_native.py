@@ -70,7 +70,7 @@ NOTEBOOK_OVERHEAD = 5
 #: what made two of them unattainable.
 #:
 #:      file            rewrite   split   overhead
-#:      market            124      145      +21   (re-measured 2026-08-17)
+#:      market            --       181      --    (composition E, measured 2026-09-03; no separate pre-split figure -- the split was written in)
 #:      weather            56       73      +17
 #:      paintings         112      135      +23   (two fetch sites)
 #:      conversation       88      106      +18
@@ -89,23 +89,18 @@ NOTEBOOK_OVERHEAD = 5
 #: `test_file_is_within_its_size_budget` failing is still an instruction, not
 #: a licence to trim the split.
 SCRIPT_BUDGETS = {
-    # market's was PROJECTED (140), then MEASURED at 145 on 2026-08-17 --
-    # both numbers taken on a REWRITE that has since been DISCARDED (its
-    # representation was rejected; see
-    # `notes/market_representation_study_2026-08-17.md`). Every measurement
-    # in this comment's earlier versions -- 145, then 148 -- described a
-    # file that is no longer in the tree, which is exactly the failure mode
-    # a budget comment must not have: a limit checked against one artifact
-    # while the gate measures another.
-    #
-    # RE-MEASURED 2026-08-19 against what is actually committed -- the
-    # ORIGINAL, un-rewritten example -- at **191**. That is the pre-Task-2
-    # number, and this gate is red for the same reason the other four
-    # scripts are: the rewrite has not happened yet. The budget stays at
-    # 145 because it is a TARGET for the replacement, not a description of
-    # HEAD; moving a limit to fit an interim design is how a budget stops
-    # meaning anything. Re-measure once the replacement lands.
-    'examples/animate_market_forecast.py': 145,   # 191 measured -> OVER by 46
+    # market: 145 was PROJECTED (140) then MEASURED on a rewrite that was
+    # DISCARDED (its representation was rejected; see
+    # `notes/market_representation_study_2026-08-17.md`), and the committed
+    # pre-Task-2 file measured 191. Plan v5 voided that budget and said to
+    # re-measure ONCE, after the composition was approved. Composition E
+    # (six panels tiled in the data, one call) was approved in review round
+    # 13 and landed 2026-09-03; the landed script measures **181** with the
+    # loader/builder split included -- the fetcher alone is 32 lines, and
+    # the panel boxes, the affine probe that places them, and the restyling
+    # of the library's artists are the presentation the composition needs.
+    # Rounded up to the next multiple of 5, as every other budget is.
+    'examples/animate_market_forecast.py': 185,   # 181 measured -> 185
     'examples/animate_weather_decades.py': 75,    # 73 measured -> 75
     'examples/animate_painting_embeddings.py': 140,  # 135 measured -> 140
     'examples/animate_conversation.py': 110,      # 106 measured -> 110
@@ -1206,20 +1201,16 @@ def _code_cells(stem):
 #:
 #: Install-cell indices are filtered out of both sides before comparing.
 EXPECTED_VISIBLE_OUTPUTS = {
-    # DELIBERATELY EMPTY. It held `'market_forecast': {3, 5, 6, 7, 8}`,
-    # measured 2026-08-17 from two real `scripts/execute_tutorial.py` runs
-    # -- of a notebook that was then DISCARDED along with the rest of the
-    # rejected Market rewrite. The committed notebook emits on {2, 4, 5, 6},
-    # so the recorded set described a file that no longer exists and the
-    # gate failed for a reason unrelated to Task 2's actual state.
-    #
-    # The entry is REMOVED rather than re-measured against the committed
-    # notebook: that notebook is itself scheduled for replacement, so
-    # re-measuring would just pin a second doomed artifact. With no entry,
-    # `test_the_right_cells_carry_visible_output` fails with "no measured
-    # index set recorded", which is the same honest unresolved red the
-    # other four launch notebooks show. Record a set here only after the
-    # replacement notebook has been executed for real.
+    # market: MEASURED 2026-09-03 from two real `scripts/execute_tutorial.py`
+    # runs of the composition-E notebook (the first run showed a third
+    # output, cell 7's `execute_result` -- the HyperAnimation's own inline
+    # video repr, produced by leaving `anim.draw_frame(...)` as the cell's
+    # last expression; the notebook assigns it away, and this is the set
+    # the second run measured). Cell 7 prints the data line, cell 8 prints
+    # the saved-GIF line; every other cell only defines things. An earlier
+    # entry here described a DISCARDED notebook and was removed rather than
+    # re-measured; this one describes the committed file.
+    'market_forecast': {7, 8},
 }
 
 
