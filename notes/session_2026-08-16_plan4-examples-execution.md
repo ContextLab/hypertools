@@ -761,3 +761,16 @@ tutorials using 1.1 API) and v1.0.0 image URLs into dev-1.0. Resolved
 with merge commit `85280877`: master as second parent, every one of the
 17 files kept at dev-1.0's version, `git diff HEAD~1 HEAD` empty (tree
 byte-identical to the green head). Third run is on the merge commit.
+
+## RESUME HERE (2026-09-03 ~14:40) -- PR #283 green and mergeable
+
+Head `a7f5ae31` (+ this note commit): push run 33786993551 AND
+pull_request run 33786999030 both 16 success / release-gate skipped;
+`mergeable=MERGEABLE`. Checklist step 0 is done except the maintainer
+items: sign-off, release date. Step 1 = **squash-merge** PR #283 to
+`master` (CONTRIBUTING.md rule; do NOT delete `dev-1.0` yet), then
+step 2 (release-form flips on master) onward. Local venvs used for the
+platform repros live in the session scratchpad only (py3.13; py3.11 +
+pandas<3), nothing in the repo. Unresolved umap-learn warning (3x
+"n_jobs 1 overridden to 1") is third-party and benign.
+
