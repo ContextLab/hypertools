@@ -624,3 +624,21 @@ Two defects fixed on the way:
 Also: a background agent cleared the 111 pre-existing ruff findings in
 `tests/` and `scripts/` on a worktree branch (commit `7442ac7e`, based on
 `dcd72d29`); cherry-picked after this task's commit.
+
+## Task 5 LANDED (2026-09-03) -- Conversation
+
+Gate **21 -> 12** (every conversation entry green, and the allowlisted-reach
+test with them). Script 113 (budget 115), notebook 118 (≤ 120), visible
+set `{6, 7}`, GIF 192 frames / 5.9 MB. `tests/plot/test_recency_fade.py`:
+20 tests, all driving the real callback.
+
+Two corrections, both in the plan's Task 5 banner: the payload carries
+`texts` so the titles do not read a module global; and trails take their
+head's alpha rather than 0.3x -- on a serial reveal the trail is the
+spoken part of the current turn (821 points vs a 6-point head), so the
+plan's convention made the current turn the faintest line on screen. The
+first render looked washed out for exactly that reason; measured, fixed,
+re-rendered.
+
+The plan's maintainer call on `vectorizer` in the payload: taken as the
+plan's table assumed (fixture = TF-IDF, no model download in the suite).

@@ -182,6 +182,15 @@ keywords. No hierarchy, no hand-spliced colormap, no per-frame callback.
 The shape of a conversation, revealed one turn at a time
 --------------------------------------------------------
 
+Raw dialogue in: each turn of the *Mad Tea-Party* is a list of word
+windows, and the turns are one list of lists of strings handed to a single
+``hyp.plot`` call, so every turn is its own trajectory through one shared
+space. ``vectorizer=`` embeds, a categorical ``hue=`` colours by speaker
+with a native legend, ``order='serial'`` reveals one turn at a time with
+``chemtrails=True``, and a per-turn ``title=`` names who is speaking. The
+one bespoke effect, a recency fade across turns, runs on the public
+``on_frame`` hook and reads the schedule the library publishes.
+
 .. toctree::
   :maxdepth: 2
 

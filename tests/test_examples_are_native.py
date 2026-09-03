@@ -73,7 +73,7 @@ NOTEBOOK_OVERHEAD = 5
 #:      market            --       181      --    (composition E, measured 2026-09-03; no separate pre-split figure -- the split was written in)
 #:      weather            56       77      +21   (landed 2026-09-03; see the dict comment)
 #:      paintings         112      147      +35   (landed 2026-09-03; see the dict comment)
-#:      conversation       88      106      +18
+#:      conversation       88      113      +25   (landed 2026-09-03; see the dict comment)
 #:      morph              26       43      +17
 #:
 #: Each budget is the SPLIT figure rounded up to the next multiple of 5. That
@@ -117,7 +117,12 @@ SCRIPT_BUDGETS = {
     # salient clusters are cream, luminance 0.88 and 0.94, invisible on
     # white). Next multiple of 5.
     'examples/animate_painting_embeddings.py': 150,  # 147 measured -> 150
-    'examples/animate_conversation.py': 110,      # 106 measured -> 110
+    # conversation: the plan's 106 was measured on its prescribed rewrite +
+    # split. The landed file (2026-09-03) measures 113: the plan's own
+    # sanctioned VECTORIZER fallback block (+4) and a `texts` payload field
+    # so the per-turn titles read the payload rather than the module-level
+    # TURNS (+3). Next multiple of 5.
+    'examples/animate_conversation.py': 115,      # 113 measured -> 115
     'examples/animate_morph_zoo.py': 45,          # 43 measured -> 45
 }
 
@@ -1238,6 +1243,9 @@ EXPECTED_VISIBLE_OUTPUTS = {
     # disables Hub progress bars in the kernel's environment), cell 5
     # prints the saved-GIF line.
     'painting_embeddings': {4, 5},
+    # conversation: MEASURED 2026-09-03 from a real run. Cell 6 prints the
+    # data line, cell 7 the saved-GIF line; the other six cells only define.
+    'conversation_shape': {6, 7},
 }
 
 

@@ -2660,6 +2660,23 @@ git commit -m "docs(gallery): paintings example uses native text embedding and n
 
 ## Task 5: Conversation — native text, serial order, per-segment titles
 
+> **LANDED 2026-09-03.** Script **113** code lines (budget re-measured 110 -> **115**: the plan's
+> sanctioned `VECTORIZER` block and a `texts` payload field), notebook **118** (≤ 120).
+> `EXPECTED_VISIBLE_OUTPUTS['conversation_shape'] = {6, 7}`. `tests/plot/test_recency_fade.py`
+> landed with **20** tests (the plan's 12, plus the dataset-count parametrisation it described, a
+> turn-count pin, and one end-to-end drive of the fixture plot). The *maintainer call* the split
+> step flagged is taken the way the table assumed: **the payload carries `vectorizer`**, the fixture
+> embeds with TF-IDF and no test downloads a model. Two measured corrections:
+>
+> 1. **The payload also carries `texts`** (the spoken lines): the prescribed builder read the
+>    module-level `TURNS` for the per-turn titles, which breaks the split's own rule and would let a
+>    fixture disagree with its titles.
+> 2. **Trails fade WITH their heads, not at 0.3x.** On a serial reveal the trail artist IS the
+>    already-spoken part of the current turn (measured at a mid frame: 821 trail points against a
+>    6-point head), so the plan's 0.3x convention made the turn being spoken the faintest thing on
+>    screen. The callback assigns one alpha per turn to both artists; the test that asserted 0.3x
+>    now asserts equality and says why.
+
 > **v3: THE SCRIPT HALF IS PARTIALLY LANDED, AND v2's PRESCRIBED TEXT WOULD REGRESS IT INTO A CRASH.** `d730a085` migrated this file onto `anim.on_frame(decorate)` and replaced `ani._args[0]`/`[1]` with `ctx.datasets`/`ctx.artists`. It binds `anim = hyp.plot(...)` **without unpacking**, which is what makes `.on_frame()` reachable (Contract 8). v2's prescribed notebook does `fig, ani = hyp.plot(...)` and then `ani.on_frame(recency_fade)` — an `AttributeError`, because `ani` is then the raw `FuncAnimation`. Reconcile against the file on disk; `git show d730a085~1:examples/animate_conversation.py` shows the pre-migration state.
 
 **BEFORE — re-measured 2026-08-02 at `065c841e`, with the docstring-aware metric:**
@@ -2693,7 +2710,7 @@ The `word_spans` window helper collapses to a plain `windows()` (the span bookke
 
 **Files:** rewrite `examples/animate_conversation.py`; rewrite `docs/tutorials/conversation_shape.ipynb`.
 
-- [ ] **Step 1: Rewrite the example**
+- [x] **Step 1: Rewrite the example**
 
 Keep `SPEAKER_COLOR` and the `TURNS` list verbatim (lines 44-85). Replace everything below. **Step 2's loader/builder split is applied to the result of this step, not before it.**
 
@@ -2811,7 +2828,7 @@ anim.on_frame(recency_fade)
 
 > **Interface check before writing this:** `FrameContext` is defined in animation-core Task 7 (`hypertools/plot/animation_context.py`) with the fields `current_index`, `revealed_counts` and `artists`, and `HyperAnimation.on_frame()` registers against the shared `FrameHooks` registry that `plot()` created (animation-core contract #3). If any field is named differently when Task 7 lands, follow the implemented names — do not add a shim here.
 
-- [ ] **Step 2: Split the loader from the figure builder (Contract 4 / Task 8 Step 0b)**
+- [x] **Step 2: Split the loader from the figure builder (Contract 4 / Task 8 Step 0b)**
 
 > **Ordering.** This step restructures the file the rewrite step above produces, so it comes
 > after it and never before. The prescribed rewrite blocks are monolithic — measured, not one of
@@ -2881,12 +2898,12 @@ anim = m.construct_artifact(m.fixture_data()); print('frames:', anim.n_frames)"
 
 Expected: it imports without touching the network and prints both names plus a frame count. If the import fetches, a loader call is still at module scope.
 
-- [ ] **Step 3: Run the example and confirm it renders**
+- [x] **Step 3: Run the example and confirm it renders**
 
 Run: `MPLBACKEND=Agg .venv/bin/python examples/animate_conversation.py`
 Expected: exits 0, prints `conversation: 28 turns, 4 speakers, NNN windows`, no warnings.
 
-- [ ] **Step 3a: Write the callback's tests**
+- [x] **Step 3a: Write the callback's tests**
 
 The head/trail split is the part that was wrong in v1 and the part a future edit is most likely to break, so it gets real tests rather than an eyeball check. Create `tests/plot/test_recency_fade.py`:
 
@@ -3057,7 +3074,7 @@ def test_a_single_point_turn_stays_invisible(example):
     assert ctx.artists[1].get_alpha() == 0.0
 ```
 
-- [ ] **Step 3b: Run the callback's tests**
+- [x] **Step 3b: Run the callback's tests**
 
 Run: `.venv/bin/python -m pytest tests/plot/test_recency_fade.py -v`
 
@@ -3077,7 +3094,7 @@ Expected: **12 passed**, derived from the block above (8 `def test_` functions, 
 
 `DATASET_COUNTS` deliberately does **not** have to track the example: `recency_fade` is dataset-count agnostic and the fixture parametrises over 1, 6 and 28 to prove it. What *does* have to be checked against the real example is that 28 is still its FINAL drawn dataset count — `hue=` reshapes, so confirm with `len(ctx.revealed_counts)` from the Step 3 script below and update the tuple if the example's turn count changes.
 
-- [ ] **Step 4: Confirm the reveal, the legend and the titles**
+- [x] **Step 4: Confirm the reveal, the legend and the titles**
 
 Run:
 
@@ -3113,7 +3130,7 @@ PY
 
 Expected: the legend has exactly **4 entries** in first-appearance order (`Alice`, `March Hare`, `Hatter`, `Dormouse`); the four titles are **different** and each begins with a speaker name; and at least three distinct alpha values are present (the fade is working). If every title is identical, `title=` did not receive the per-segment list — check `order='serial'` reached `_validate_title`.
 
-- [ ] **Step 5: Rewrite the notebook in lockstep**
+- [x] **Step 5: Rewrite the notebook in lockstep**
 
 Rewrite `docs/tutorials/conversation_shape.ipynb`, keeping cell 0 unchanged:
 
@@ -3132,7 +3149,7 @@ Rewrite `docs/tutorials/conversation_shape.ipynb`, keeping cell 0 unchanged:
 | 10 | markdown | `## 5. Display the animation` |
 | 11 | code | `HTML(ani.to_jshtml())` |
 
-- [ ] **Step 6: Execute and measure**
+- [x] **Step 6: Execute and measure**
 
 ```bash
 .venv/bin/python scripts/execute_tutorial.py docs/tutorials/conversation_shape.ipynb
@@ -3142,7 +3159,7 @@ Rewrite `docs/tutorials/conversation_shape.ipynb`, keeping cell 0 unchanged:
 
 Expected: both files inside budget (**≤ 110 / ≤ 115 code lines**) -- the rewrite measures 88 and the split 106, both measured. Record the measured visible-output index set into `EXPECTED_VISIBLE_OUTPUTS` (see Task 2's measure step for the Task-8-first ordering this requires); do not assert a predicted count.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 # tests/plot/test_recency_fade.py is CREATED by this task (Step 4). An
