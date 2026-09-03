@@ -651,3 +651,19 @@ reduce). Script 61 (budget 65: Contract 4's offline fallback for
 `{5, 6}`, GIF 240 frames / 6.2 MB. The plan's Step 3 title check omits
 `rotations` and so reports 34 false boundary mismatches; with the weighted
 schedule the titles match on all 240 frames. Recorded in the plan.
+
+## Task 7 LANDED (2026-09-03) -- the older tutorials
+
+Gate **6 -> 0**: `tests/test_examples_are_native.py` is fully green for
+the first time. Eight notebooks edited by one content-matching script,
+executed, ratios all above baseline (table in the plan's Task 7 banner).
+Measured surprises, each in the banner: direct GIFs at 900 frames are
+13 MB (three animations cut to 300 frames, one to 15 fps); `datasets`
+returns a `Column` that `hyp.plot` refuses (`list(...)`); an import-order
+slip in projectile; the double-figure repr under the inline backend.
+
+The second ruff agent's commit (`bd5df563`, based on `ebed10c2`; full
+suite 3767 passed on its branch) is cherry-picked after this commit. It
+noqa'd E402 in six tutorial notebooks' code cells, three of which this
+task re-executed, so the cherry-pick may conflict on those; resolution is
+to keep the executed notebook and re-add the noqa comments.

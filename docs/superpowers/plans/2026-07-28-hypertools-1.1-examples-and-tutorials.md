@@ -3388,11 +3388,36 @@ git commit -m "docs(gallery): morph example uses native per-segment titles, drop
 
 ## Task 7: The fifteen older tutorials
 
+> **LANDED 2026-09-03**, all five groups in one commit rather than five (the eight notebooks were
+> edited by one content-matching script and executed together). Measured after execution:
+>
+> | notebook | baseline | now |
+> |-|-|-|
+> | `conversation_trajectories` | 2.5% | **14.5%** |
+> | `hugging_face_embeddings` | 10.0% | **51.5%** |
+> | `wikipedia_embeddings` | 7.1% | **33.8%** |
+> | `modern_sklearn_dynamics` | 10.2% | **34.4%** |
+> | `stock_forecasting` | 3.7% | **12.2%** |
+> | `projectile_kalman` | 3.2% | **15.2%** |
+> | `analyze` | 20.0% | **45.5%** |
+> | `reduce` | 36.8% | **50.0%** |
+>
+> Four things the steps did not know: (1) a 900-frame GIF written directly is **13 MB** (the deleted
+> ffmpeg step had been scaling to 420 px), so the three 30 s / 30 fps animations became 20 s / 15 fps
+> (300 frames, 4-6 MB) and wikipedia's 10 s spin went to 15 fps, with the prose updated; (2)
+> `dataset['text']` from `datasets` is a `Column`, not a list -- `hyp.plot` refuses it, so the
+> Hugging Face notebook wraps it in `list(...)`; (3) `projectile_kalman` imports `hypertools` only in
+> a later cell, so the rewritten arc cell imports it; (4) a bare `hyp.plot(...)` as a cell's last
+> expression emits the figure twice under the inline backend (the `Figure` repr plus the display),
+> so analyze's and reduce's new cells assign it. Stock's 2 x 2 grid shows its legend once, on the
+> first panel; hypertools draws in its unticked box, so the axes are labelled but carry no scale --
+> the table above the grid carries the numbers.
+
 Grouped by the recurring fix so each step is one reviewable diff. Every group ends by executing the touched notebooks and committing.
 
 **Baseline** (from `notes/audit/other_tutorials_audit.md`, §1): `conversation_trajectories` 2.5%, `projectile_kalman` 3.2%, `stock_forecasting` 3.7%, `wikipedia_embeddings` 7.1%, `hugging_face_embeddings` 10.0%, `modern_sklearn_dynamics` 10.2%, `analyze` 20.0% (and **never calls `hyp.plot`**), `reduce` 36.8% (never plots, never mentions `hyp.describe`). The seven clean ones (`align`, `plot`, `normalize`, `cluster`, `streaming_data`, `text`, `lsl_streaming`) are **not touched**.
 
-- [ ] **Step 1 (G2): Delete the four ffmpeg cells; ask for a GIF directly**
+- [x] **Step 1 (G2): Delete the four ffmpeg cells; ask for a GIF directly**
 
 `save_path='foo.gif'` writes a GIF with **no ffmpeg at all** (`plot.py:1513-1520`, writer dispatch at `animate.py:84`) — verified today: a real 24 832-byte GIF. Three notebooks in this same set already prove it (`streaming_data` cells 4/8, `lsl_streaming` cell 6).
 
@@ -3420,7 +3445,7 @@ git add docs/tutorials/conversation_trajectories.ipynb docs/tutorials/hugging_fa
 git commit -m "docs(tutorials): save GIFs natively; delete 62 lines of ffmpeg boilerplate"
 ```
 
-- [ ] **Step 2 (G1): Delete the four hand-rolled sentence-transformer blocks**
+- [x] **Step 2 (G1): Delete the four hand-rolled sentence-transformer blocks**
 
 Two of these notebooks *already document the native call in adjacent markdown and then ignore it* (`hugging_face_embeddings` cell 3, `wikipedia_embeddings` cell 5). Native form, verified: `vectorizer='<hf-model-id>', semantic=None, corpus=None` (`text2mat.py:89`, dispatch `:184`, `semantic` `:391`, `corpus` `:404`).
 
@@ -3450,7 +3475,7 @@ git add docs/tutorials/hugging_face_embeddings.ipynb docs/tutorials/wikipedia_em
 git commit -m "docs(tutorials): embed text with vectorizer=<hf-id> instead of hand-rolling it"
 ```
 
-- [ ] **Step 3 (G3): Route the hand-drawn comparison figures through `hyp.plot(..., ax=)`**
+- [x] **Step 3 (G3): Route the hand-drawn comparison figures through `hyp.plot(..., ax=)`**
 
 Verified today: `hyp.plot([d, d + 1, d - 1], ['-', '--', '*'], reduce=None, ndims=2, ax=axes[0, 0], legend=['train', 'held out', 'forecast'], show=False)` returns a `Figure` and draws **3 lines on the supplied axes**, with no warnings.
 
@@ -3470,7 +3495,7 @@ git add docs/tutorials/stock_forecasting.ipynb docs/tutorials/projectile_kalman.
 git commit -m "docs(tutorials): draw comparison figures with hyp.plot(..., ax=) instead of raw matplotlib"
 ```
 
-- [ ] **Step 4 (smoothing): pandas rolling mean → `manip='Smooth'`**
+- [x] **Step 4 (smoothing): pandas rolling mean → `manip='Smooth'`**
 
 `stock_forecasting` cell 12 builds its log-volume column with `pandas.rolling(smooth, min_periods=1).mean()` and never mentions `manip=`. Replace the rolling call with the plot-stage kwarg:
 
@@ -3492,7 +3517,7 @@ git add docs/tutorials/stock_forecasting.ipynb
 git commit -m "docs(tutorials): smooth with manip='Smooth' at the pipeline stage, not pandas.rolling"
 ```
 
-- [ ] **Step 5 (structural): make `analyze.ipynb` plot, and `reduce.ipynb` describe**
+- [x] **Step 5 (structural): make `analyze.ipynb` plot, and `reduce.ipynb` describe**
 
 `analyze.ipynb` **never calls `hyp.plot`** — a pipeline tutorial that shows `normalize → reduce → align` only as `sb.heatmap(x)` never demonstrates why the pipeline exists. Cells 18, 23 and 28 each hold the identical 3-line seaborn loop over **already-reduced 3-D output**, which is exactly what `hyp.plot` is for:
 
@@ -3534,7 +3559,7 @@ git add docs/tutorials/analyze.ipynb docs/tutorials/reduce.ipynb
 git commit -m "docs(tutorials): analyze.ipynb finally plots its pipeline; reduce.ipynb gains hyp.describe"
 ```
 
-- [ ] **Step 6: Re-measure the eight touched notebooks**
+- [x] **Step 6: Re-measure the eight touched notebooks**
 
 ```bash
 .venv/bin/python scripts/measure_native_ratio.py \
