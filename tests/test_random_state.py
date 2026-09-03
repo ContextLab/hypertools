@@ -13,7 +13,6 @@ matplotlib.use('Agg')
 import warnings
 
 import numpy as np
-import pytest
 
 import hypertools as hyp
 

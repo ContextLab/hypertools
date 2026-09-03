@@ -188,7 +188,7 @@ def test_forecast_vertices_stay_inside_frame(ndims, model):
     ax = fig.axes[0]
     plt.close(fig)
 
-    fc_lines = [l for l in ax.lines if l.get_label() == '_nolegend_']
+    fc_lines = [ln for ln in ax.lines if ln.get_label() == '_nolegend_']
     assert len(fc_lines) == len(data)
     # square/cube frame spans [-1, 1]: every forecast vertex must be inside
     for line in fc_lines:
@@ -196,7 +196,7 @@ def test_forecast_vertices_stay_inside_frame(ndims, model):
         assert pts.min() >= -1.0 - 1e-9
         assert pts.max() <= 1.0 + 1e-9
     # observed data stays inside the frame too (joint center/scale)
-    for line in [l for l in ax.lines if l.get_label() != '_nolegend_']:
+    for line in [ln for ln in ax.lines if ln.get_label() != '_nolegend_']:
         pts = _line_pts(line, ndims)
         assert pts.min() >= -1.0 - 1e-9
         assert pts.max() <= 1.0 + 1e-9

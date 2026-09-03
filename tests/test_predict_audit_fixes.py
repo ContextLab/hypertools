@@ -5,15 +5,12 @@ Every test uses real data and real forecaster runs (no mocks); each mirrors
 a repro that was CONFIRMED failing on the pre-fix code by the independent
 audit verifiers (see notes/audit-1.0-2026-07/verdicts/F16-predict.json).
 """
-import warnings
 
 import numpy as np
 import pandas as pd
 import pytest
 
-import hypertools as hyp
 from hypertools.predict.predict import predict
-from hypertools.predict.common import Forecaster, resolve_t
 
 
 def _sine(n=200, period=40.0, noise=0.1, seed=42):

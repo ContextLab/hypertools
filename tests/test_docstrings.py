@@ -108,14 +108,14 @@ def _plot_docstring_parameters_section():
 
     doc = hypertools.plot.__doc__
     lines = doc.split('\n')
-    start = next(i for i, l in enumerate(lines) if l.strip() == 'Parameters')
+    start = next(i for i, line in enumerate(lines) if line.strip() == 'Parameters')
     end = next(i for i in range(start + 1, len(lines))
               if lines[i].strip() == 'Returns')
     param_re = re.compile(r'^    (\S[^:]*?)\s*:\s*(.+)$')
     params = []
-    for l in lines[start:end]:
-        if l.startswith('    ') and not l.startswith('     '):
-            m = param_re.match(l)
+    for line in lines[start:end]:
+        if line.startswith('    ') and not line.startswith('     '):
+            m = param_re.match(line)
             if m:
                 params.append((m.group(1), m.group(2)))
     return params

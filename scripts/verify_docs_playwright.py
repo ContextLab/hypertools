@@ -20,8 +20,6 @@ non-blank pixel-variance check) are written to ``docs/images/v1.0-docs/``.
 
 from __future__ import annotations
 
-import functools
-import http.server
 import io
 import os
 import re

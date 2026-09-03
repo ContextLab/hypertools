@@ -223,7 +223,6 @@ def test_stream_view_is_frozen_after_head():
     """Round-6.5: once the head sets the space, drawn positions of already-
     plotted points NEVER move as new chunks arrive (no per-chunk rescale
     'twitch'), and the axis limits stay fixed."""
-    import hypertools.io.streaming as st
 
     # drifting walk: later samples leave the head's extent
     def drifting(n=300):

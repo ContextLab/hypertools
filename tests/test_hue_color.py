@@ -219,7 +219,7 @@ def test_gh291_two_datasets_same_category():
     assert _any_endpoint_touches_start(cap['x']) is None
     assert np.allclose(cap['colors'][0], cap['colors'][1])   # same colour
     # one legend entry for the shared category (the rest '_nolegend_')
-    real = [l for l in cap['labels'] if l != '_nolegend_']
+    real = [lab for lab in cap['labels'] if lab != '_nolegend_']
     assert real == ['same']
 
 
@@ -259,7 +259,7 @@ def test_gh291_ABA_within_one_trajectory_preserves_run_order():
     assert np.allclose(cap['x'][1][-1], cap['x'][2][0])
     # both A runs share a colour; only one 'A' legend entry
     assert np.allclose(cap['colors'][0], cap['colors'][2])
-    real = [l for l in cap['labels'] if l != '_nolegend_']
+    real = [lab for lab in cap['labels'] if lab != '_nolegend_']
     assert real == ['A', 'B']
 
 

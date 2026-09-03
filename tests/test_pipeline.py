@@ -13,7 +13,6 @@ from sklearn.exceptions import NotFittedError
 import hypertools as hyp
 from hypertools.core.pipeline import Pipeline, build_pipeline, CANONICAL_ORDER
 from hypertools.core.shared import unpack_model
-from hypertools.align.hyperalign import HyperAlign
 
 
 def _rng():

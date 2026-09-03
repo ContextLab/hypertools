@@ -16,7 +16,6 @@ from sklearn.exceptions import NotFittedError
 
 import hypertools as hyp
 from hypertools.align.align import align as aligner, ALIGNERS
-from hypertools.align.common import Aligner
 from hypertools.align.hyperalign import HyperAlign
 from hypertools.align.null import NullAlign
 from hypertools.align.srm import (SharedResponseModel,
@@ -128,7 +127,7 @@ def test_hyp_plot_align_canonical_dict_with_kwargs_key():
 
 def test_hyp_plot_align_legacy_dict_with_params_key():
     d1, d2 = _rotated_pair()
-    with warnings.catch_warnings(record=True) as caught:
+    with warnings.catch_warnings(record=True):
         warnings.simplefilter('always')
         fig = hyp.plot([d1, d2],
                         align={'model': 'hyper', 'params': {'n_iter': 3}},

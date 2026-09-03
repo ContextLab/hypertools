@@ -10,7 +10,6 @@ import http.server
 import pickle
 import threading
 import warnings
-from pathlib import Path
 
 import numpy as np
 import pandas as pd

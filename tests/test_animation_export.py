@@ -1,8 +1,12 @@
 # -*- coding: utf-8 -*-
 """Animation export tests: real files, verified frame counts."""
 
+import importlib
 import os
 import shutil
+import subprocess
+import sys
+import time
 
 import numpy as np
 import pytest
@@ -173,10 +177,6 @@ def test_mixture_soft_membership_on_overlapping_clusters():
 # These exercise that lifecycle -- including a genuinely-blocked renderer, its
 # bounded termination, and a real export afterwards in the same parent process.
 
-import importlib
-import subprocess
-import sys
-import time
 # the `hypertools.plot` submodule name is shadowed by the `plot` function, so
 # reach the backend module via importlib rather than a dotted import
 _pb = importlib.import_module('hypertools.plot.plotly_backend')

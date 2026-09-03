@@ -105,7 +105,7 @@ def test_static_smoothing_removes_sharp_angles():
 
     def worst(fig):
         ln = max(fig.axes[0].get_lines(),
-                 key=lambda l: len(l.get_data_3d()[0]))
+                 key=lambda ln: len(ln.get_data_3d()[0]))
         return _max_turn_angle(np.column_stack(ln.get_data_3d()))
 
     a_on, a_off = worst(on), worst(off)
@@ -128,8 +128,8 @@ def test_marker_line_combo_smooths_line_but_keeps_markers_on_samples():
     """'o-' gets a smoothed line PLUS markers at the true sample points."""
     data = _helix()
     fig = hyp.plot(data, fmt='o-', show=False)
-    lens = sorted(len(l.get_data_3d()[0]) for l in fig.axes[0].get_lines()
-                  if len(l.get_data_3d()[0]) > 2)
+    lens = sorted(len(ln.get_data_3d()[0]) for ln in fig.axes[0].get_lines()
+                  if len(ln.get_data_3d()[0]) > 2)
     plt.close('all')
     assert lens[0] == len(data)   # markers stay on the raw samples
     assert lens[-1] > len(data)   # the line is densified
@@ -238,8 +238,8 @@ def test_predict_forecast_overlay_is_antialiased_and_toggleable():
         # forecast artists identify THEMSELVES (`_hyp_forecast_role`);
         # linestyle is not a discriminator -- since 1.1.0 a forecast inherits
         # its observed trace's linestyle, so it is solid here.
-        fc = [l for l in fig.axes[0].get_lines()
-              if getattr(l, '_hyp_forecast_role', None) == 'static']
+        fc = [ln for ln in fig.axes[0].get_lines()
+              if getattr(ln, '_hyp_forecast_role', None) == 'static']
         assert fc, 'no forecast overlay drawn'
         return len(fc[0].get_xdata())
 

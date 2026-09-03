@@ -37,9 +37,9 @@ os.environ.setdefault('MPLBACKEND', 'Agg')
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(REPO, 'tests'))
 
-import importlib
+import importlib  # noqa: E402  (after the sys.path insert for tests/ helpers)
 
-import requests
+import requests  # noqa: E402  (after the sys.path insert for tests/ helpers)
 
 import hypertools as hyp                       # noqa: E402,F401
 # the `load` function shadows the `hypertools.io.load` submodule name

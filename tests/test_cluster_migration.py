@@ -11,7 +11,7 @@ import warnings
 
 import numpy as np
 import pytest
-from sklearn.cluster import KMeans, DBSCAN
+from sklearn.cluster import KMeans
 
 import hypertools as hyp
 from hypertools.cluster.cluster import cluster, models, mixture_models

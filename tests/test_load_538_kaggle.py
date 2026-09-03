@@ -23,6 +23,8 @@ loads of the same slug within a test run don't re-hit the API).
 """
 
 import os
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pandas as pd
 import pytest
@@ -32,6 +34,7 @@ matplotlib.use('Agg')
 
 import hypertools as hyp
 from hypertools._shared.exceptions import HypertoolsIOError
+from hypertools.io.sources import _github_get_with_retry
 
 
 def test_load_538_bechdel_single_csv():
@@ -122,10 +125,6 @@ def test_load_538_bechdel_plot_end_to_end():
 # local HTTP server (a real socket over the loopback interface -- NOT a mock
 # object) that returns 502 a few times before 200, so the retry actually
 # runs against live HTTP.
-import threading
-from http.server import BaseHTTPRequestHandler, HTTPServer
-
-from hypertools.io.sources import _github_get_with_retry
 
 
 def _start_flaky_server(n_502, body=b'ok'):

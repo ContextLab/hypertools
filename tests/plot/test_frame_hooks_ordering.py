@@ -3,7 +3,7 @@
 
 import pytest
 
-from hypertools.plot.animation_context import FrameContext, FrameHooks
+from hypertools.plot.animation_context import FrameHooks
 
 
 def _hooks(**state):

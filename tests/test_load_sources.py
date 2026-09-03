@@ -22,6 +22,9 @@ import hypertools as hyp
 from hypertools._shared.exceptions import HypertoolsIOError
 from hypertools.io.sources import (is_loadable_string, HypertoolsTrustError,
                                     _table_file_keys)
+from tests._netskip import (is_transient_network as _is_transient_network,
+                            skip_on_transient_network as
+                            _skip_on_transient_network)
 
 IRIS_CSV = 'raw.githubusercontent.com/mwaskom/seaborn-data/master/iris.csv'
 # legacy hypertools 'spiral' pickle, still hosted on Google Drive
@@ -65,9 +68,6 @@ GOOGLE_SHEETS_SAMPLE_URL = (
 # which load_source() produces routinely (sources.py:664-670). Classification is
 # now structural (exception type + HTTP status), and any defect-shaped attempt
 # line vetoes the whole aggregate. The cases below pin all three.
-from tests._netskip import (is_transient_network as _is_transient_network,
-                            skip_on_transient_network as
-                            _skip_on_transient_network)
 
 
 def test_is_transient_network_recognizes_wrapped_load_errors():

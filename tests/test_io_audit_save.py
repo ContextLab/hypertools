@@ -2,8 +2,6 @@
 """Regression tests for the 2026-07 release audit findings on hyp.save
 (unit F20-save). Real files, real serialization -- no mocks."""
 
-import os
-import pickle
 
 import numpy as np
 import pandas as pd

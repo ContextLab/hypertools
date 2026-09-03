@@ -37,7 +37,7 @@ class TestExtraKwargsPassthroughMatplotlib:
         plt.close('all')
 
         assert len(lines) == 2
-        assert all(l.get_zorder() == 3 for l in lines)
+        assert all(ln.get_zorder() == 3 for ln in lines)
 
     def test_dashes_reaches_line_artists(self):
         # NOTE: a 4-element dash pattern (not 2) is used deliberately --
@@ -56,14 +56,14 @@ class TestExtraKwargsPassthroughMatplotlib:
         plt.close('all')
 
         assert len(lines) == 2
-        for l in lines:
+        for ln in lines:
             # matplotlib has no public dashes GETTER (only `set_dashes`);
             # `_dash_pattern` is `(offset, [on, off, on, off, ...])`,
             # scaled by the artist's linewidth -- checking its ratio
             # (rather than absolute values) confirms the (4, 2, 4, 2)
             # pattern reached the artist without depending on matplotlib's
             # internal scaling factor.
-            on1, off1, on2, off2 = l._dash_pattern[1]
+            on1, off1, on2, off2 = ln._dash_pattern[1]
             assert on1 == pytest.approx(on2)
             assert off1 == pytest.approx(off2)
             assert on1 == pytest.approx(2 * off1)
@@ -80,7 +80,7 @@ class TestExtraKwargsPassthroughMatplotlib:
         lines = fig.axes[0].get_lines()
         plt.close('all')
 
-        assert all(l.get_alpha() == pytest.approx(0.42) for l in lines)
+        assert all(ln.get_alpha() == pytest.approx(0.42) for ln in lines)
 
     def test_named_kwarg_wins_over_extra_kwarg_collision(self):
         """linewidth= (a named parameter) must win over anything a
@@ -91,7 +91,7 @@ class TestExtraKwargsPassthroughMatplotlib:
         fig = hyp.plot(data, linewidth=5, show=False)
         lines = fig.axes[0].get_lines()
         plt.close('all')
-        assert all(l.get_linewidth() == 5 for l in lines)
+        assert all(ln.get_linewidth() == 5 for ln in lines)
 
     def test_unknown_kwarg_surfaces_matplotlib_error(self):
         """Unknown kwargs that matplotlib itself rejects surface
@@ -168,7 +168,7 @@ class TestMismatchedLengthListKwargsRaise:
         lines = fig.axes[0].get_lines()
         plt.close('all')
         assert len(lines) == 2
-        assert all(l.get_gid() == ['a', 'b', 'c'] for l in lines)
+        assert all(ln.get_gid() == ['a', 'b', 'c'] for ln in lines)
 
     def test_correct_length_list_still_works(self):
         """Matching-length lists must be unaffected by the fix."""

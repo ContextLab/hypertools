@@ -99,7 +99,7 @@ class TestStaticMatplotlib3D:
         fig = hyp.plot(_two_datasets_3d(), '.',
                        surface={'keep_points': False}, show=False)
         ax = fig.axes[0]
-        assert all(not l.get_visible() for l in ax.lines)
+        assert all(not ln.get_visible() for ln in ax.lines)
 
 
 class TestStaticMatplotlib2D:
@@ -180,7 +180,7 @@ class TestDegenerateInputs:
         pts = np.column_stack([np.linspace(0, 1, 10), np.zeros(10)])
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter('always')
-            fig = hyp.plot([pts], '.', surface=True, show=False)
+            hyp.plot([pts], '.', surface=True, show=False)
         assert any('surface' in str(warning.message) for warning in w)
 
 

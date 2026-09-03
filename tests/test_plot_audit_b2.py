@@ -153,10 +153,10 @@ def test_series_hue_nondefault_index_matches_list_hue():
     fig_series = hyp.plot(pts, fmt='.', ndims=2, show=False,
                           hue=pd.Series(labels, index=range(100, 120)))
     fig_list = hyp.plot(pts, fmt='.', hue=labels, ndims=2, show=False)
-    colors_series = sorted(matplotlib.colors.to_hex(l.get_color())
-                           for l in fig_series.axes[0].lines)
-    colors_list = sorted(matplotlib.colors.to_hex(l.get_color())
-                         for l in fig_list.axes[0].lines)
+    colors_series = sorted(matplotlib.colors.to_hex(ln.get_color())
+                           for ln in fig_series.axes[0].lines)
+    colors_list = sorted(matplotlib.colors.to_hex(ln.get_color())
+                         for ln in fig_list.axes[0].lines)
     assert colors_series == colors_list
     assert len(fig_series.axes[0].lines) == 2
 
@@ -390,8 +390,8 @@ def test_none_hue_entries_render_gray_and_keep_named_palette_order():
     assert len(ax.lines) == 3
     legend_texts = [t.get_text() for t in ax.get_legend().get_texts()]
     assert legend_texts == ['a', 'b']
-    line_colors = [tuple(np.round(matplotlib.colors.to_rgb(l.get_color()), 4))
-                   for l in ax.lines]
+    line_colors = [tuple(np.round(matplotlib.colors.to_rgb(ln.get_color()), 4))
+                   for ln in ax.lines]
     # the None group (second in first-appearance order) is neutral gray
     assert line_colors[1] == GRAY
     # named categories take the first palette slots, in order, unaffected

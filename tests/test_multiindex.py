@@ -79,7 +79,7 @@ def _make_3level_df(n_time=8, seed=0):
 
 
 def _leaf_lines_3d(ax, n):
-    return [np.array(l.get_data_3d()).T for l in ax.get_lines()[:n]]
+    return [np.array(ln.get_data_3d()).T for ln in ax.get_lines()[:n]]
 
 
 # ---------------------------------------------------------------------------
@@ -226,17 +226,17 @@ def test_plot_2level_mpl_counts_styles_legend():
     lines = ax.get_lines()
     assert len(lines) == 10
 
-    lws = [round(l.get_linewidth(), 6) for l in lines]
+    lws = [round(ln.get_linewidth(), 6) for ln in lines]
     assert lws == [1.0] * 8 + [2.0] * 2
-    alphas = [round(l.get_alpha(), 6) for l in lines]
+    alphas = [round(ln.get_alpha(), 6) for ln in lines]
     assert alphas == pytest.approx([0.7] * 8 + [1.0] * 2)
 
-    colors = [l.get_color() for l in lines]
+    colors = [ln.get_color() for ln in lines]
     assert len(set(colors[0:4] + [colors[8]])) == 1
     assert len(set(colors[4:8] + [colors[9]])) == 1
     assert colors[0] != colors[4]
 
-    labels = [l.get_label() for l in lines]
+    labels = [ln.get_label() for ln in lines]
     assert labels == ['_nolegend_'] * 8 + ['condA', 'condB']
 
     legend = ax.get_legend()
@@ -271,7 +271,7 @@ def test_plot_3level_mpl_counts_and_linewidths():
     fig = hyp.plot(df, fmt='.', show=False)
     lines = fig.axes[0].get_lines()
     assert len(lines) == 12 + 4 + 2  # leaves + (grp,cond)-means + grp-means
-    lws = [round(l.get_linewidth(), 6) for l in lines]
+    lws = [round(ln.get_linewidth(), 6) for ln in lines]
     assert lws == [1.0] * 12 + [2.0] * 4 + [3.0] * 2
     legend = fig.axes[0].get_legend()
     assert [t.get_text() for t in legend.get_texts()] == ['grpX', 'grpY']
@@ -281,7 +281,7 @@ def test_plot_3level_mpl_counts_and_linewidths():
 def test_plot_linestyle_list_cycles_per_top_group():
     df = _make_2level_df()
     fig = hyp.plot(df, fmt='-', linestyle=['-', '--'], show=False)
-    linestyles = [l.get_linestyle() for l in fig.axes[0].get_lines()]
+    linestyles = [ln.get_linestyle() for ln in fig.axes[0].get_lines()]
     assert linestyles == ['-'] * 4 + ['--'] * 4 + ['-', '--']
     plt.close(fig)
 
@@ -312,7 +312,7 @@ def test_hue_plus_multiindex_warns_and_ignores_hue():
     lines = ax.get_lines()
     # still grouped by top-level index (10 traces), not exploded by hue
     assert len(lines) == 10
-    colors = [l.get_color() for l in lines]
+    colors = [ln.get_color() for ln in lines]
     assert len(set(colors[0:4] + [colors[8]])) == 1
     plt.close(fig)
 

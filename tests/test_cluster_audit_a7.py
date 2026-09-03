@@ -10,9 +10,7 @@ import numpy as np
 import pytest
 from sklearn.cluster import KMeans
 
-import hypertools as hyp
 from hypertools.cluster.cluster import cluster
-from hypertools.cluster.common import Clusterer
 
 
 def _blobs(n_per=50, cols=4, k=2, seed=0):

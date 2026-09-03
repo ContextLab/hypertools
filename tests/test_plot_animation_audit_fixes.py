@@ -7,7 +7,6 @@ Every test drives real hypertools plots (no mocks): MPLBACKEND=Agg,
 show=False, seeded data.
 """
 
-import os
 import warnings
 
 import numpy as np

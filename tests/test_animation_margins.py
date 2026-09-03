@@ -591,7 +591,6 @@ class TestAxesBoxNoClipping:
         traj2 = self._wide_flat_trajectory(seed=3)
         fig, ani = hyp.plot([traj, traj2], animate=True, chemtrails=True,
                             duration=3, frame_rate=10, show=False)
-        ax = fig.axes[0]
         fig.canvas.draw()
 
         idx, total = _full_rotation_frames(ani, n_samples=24)

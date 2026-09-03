@@ -20,7 +20,10 @@ notes/issues-to-close-on-merge.md).
 """
 
 import importlib.util
+import json
 import os
+import subprocess
+import sys
 import warnings
 
 import numpy as np
@@ -31,7 +34,8 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg
 import pytest
 
 import hypertools as hyp
-from hypertools.plot.fonts import (find_covering_font, resolve_font,
+from hypertools.plot.fonts import (_codepoints_uncovered_by_stack,
+                                   find_covering_font, resolve_font,
                                    sans_serif_stack)
 
 JP_LABELS_A = ['いち', 'に', 'さん']
@@ -42,7 +46,6 @@ JP_LABELS_B = ['よん', 'ご', 'ろく']
 # (Since the stack now supplies CJK per-glyph, find_covering_font(CJK) returns
 # None on a machine whose stack already covers it -- so it can no longer be
 # used as this gate.)
-from hypertools.plot.fonts import _codepoints_uncovered_by_stack
 covering_font_available = not _codepoints_uncovered_by_stack({ord('い')})
 requires_covering_font = pytest.mark.skipif(
     not covering_font_available,
@@ -416,10 +419,6 @@ def test_animated_cjk_legend_no_missing_glyph_warnings_across_frames():
 # full label-to-point mapping / mismatched-count / animate parity suite.
 # This module only covers the multibyte (CJK) angle: exact string survival
 # and the kaleido anti-tofu pixel-diff check, below.
-
-import json
-import subprocess
-import sys
 
 _RENDER_PLOTLY_SCRIPT = os.path.join(
     os.path.dirname(__file__), '..', 'scripts', 'render_multibyte_plotly.py')

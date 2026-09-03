@@ -21,7 +21,6 @@ import matplotlib
 matplotlib.use('Agg')
 
 import hypertools as hyp
-from hypertools.plot.matplotlib_backend import _draw
 from hypertools.plot.plotly_backend import plotly_draw
 
 
@@ -140,7 +139,6 @@ def test_plotly_mixed_trail_styles_per_dataset():
 
     mid = fig.frames[len(fig.frames) // 2]
     trail_by_idx = dict(zip(mid.traces, mid.data))
-    head_lens = [len(fig.data[i].x) for i in range(3)]
 
     # trail traces sit at indices 3, 4, 5 (right after the 3 data traces,
     # no forecasts in play)

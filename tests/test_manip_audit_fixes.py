@@ -13,7 +13,7 @@ import pandas as pd
 import pytest
 
 import hypertools as hyp
-from hypertools.manip import Normalize, Smooth, Resample
+from hypertools.manip import Smooth, Resample
 
 
 # --- F14-001 / D01-readme-001: Smooth must be PER-DATASET on a list --------

@@ -10,7 +10,6 @@ import os
 import pickle
 import stat
 import sys
-import threading
 import time
 
 import numpy as np

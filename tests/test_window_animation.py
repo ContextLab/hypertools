@@ -28,8 +28,6 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 import hypertools as hyp
-from hypertools.plot.matplotlib_backend import _draw
-from hypertools.plot.plotly_backend import plotly_draw
 
 
 def _walks(n=200, d=3, k=2, seed=0):

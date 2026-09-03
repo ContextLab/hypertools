@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 """Tests for hypertools.plot.backend module, particularly version parsing."""
 
-import pytest
 
 
 class TestVersionParsing:

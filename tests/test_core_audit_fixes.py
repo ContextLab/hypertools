@@ -278,8 +278,8 @@ def test_list_pipeline_mode_fit_predict_returns_final_stage_labels():
                                              'n_init': 10}}],
                          mode='fit_predict')
     assert isinstance(labels, list) and len(labels) == 2
-    assert all(np.asarray(l).shape == (80,) for l in labels)
-    assert len(np.unique(np.concatenate([np.asarray(l) for l in labels]))) == 2
+    assert all(np.asarray(lab).shape == (80,) for lab in labels)
+    assert len(np.unique(np.concatenate([np.asarray(lab) for lab in labels]))) == 2
 
 
 def test_mode_mismatch_raises_clear_value_error():

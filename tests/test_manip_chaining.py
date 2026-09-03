@@ -14,6 +14,7 @@ from sklearn.exceptions import NotFittedError
 import hypertools as hyp
 from hypertools.core.pipeline import Pipeline
 from hypertools.manip.manip import manip
+from hypertools.manip.normalize import Normalize
 from hypertools.manip.smooth import Smooth
 from hypertools.manip.resample import Resample
 from hypertools.manip.zscore import ZScore
@@ -377,8 +378,6 @@ def test_manip_kwargs_only_dict_applies_kwargs():
 
 
 # --- QC P1-1: ZScore/Normalize are invertible; Smooth/Resample are not ---
-from hypertools.manip.normalize import Normalize
-
 
 # upstream: datawrangler calls pd.concat(copy=...), deprecated in pandas 4.
 # the filter names the DeprecationWarning BASE class on purpose:

@@ -42,7 +42,7 @@ from hypertools.tools.text2mat import (
 )
 
 try:
-    import gensim
+    import gensim  # noqa: F401  (availability probe)
     GENSIM_AVAILABLE = True
 except ImportError:
     GENSIM_AVAILABLE = False
