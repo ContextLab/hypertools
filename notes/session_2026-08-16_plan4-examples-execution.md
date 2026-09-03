@@ -716,3 +716,16 @@ Then the release line, in `RELEASE_CHECKLIST.md` step 0 order: push
 `dev-1.0`, open the integration PR to `master`, wait for matrix CI.
 Maintainer calls still open: delete `dev-1.0` after release (checklist
 step 8); nothing else.
+
+## Final full-suite run DONE (2026-09-03 ~11:50) -- and the push
+
+The interrupted run had in fact survived the suspend (orphaned at 69%, 0
+failures, output unreadable); stopped it and re-ran from scratch:
+
+    3901 passed, 18 skipped, 2 deselected (bigdata), 0 failed, 12m34s
+
+Only warnings: umap-learn's own "n_jobs value 1 overridden to 1 by setting
+random_state" (3x, from any seeded UMAP call; emitted by umap regardless of
+n_jobs -- third-party, benign, left alone). `ruff check .` clean; venv
+editable 1.1.0. Pushed `dev-1.0` and opened the integration PR to `master`
+(checklist step 0); matrix CI is the next gate.
