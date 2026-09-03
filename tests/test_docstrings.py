@@ -101,20 +101,29 @@ def test_manip_dispatcher_has_docstring():
 def _plot_docstring_parameters_section():
     """Return `hyp.plot`'s docstring "Parameters" section as a list of
     `(name, type_line)` pairs, one per TOP-LEVEL documented parameter
-    (numpydoc `name : type` lines indented exactly 4 spaces -- nested
-    sub-keys, e.g. a dict spec's own entries, are indented 8+ and so are
-    excluded)."""
+    (numpydoc `name : type` lines at column 0 once the docstring is
+    dedented -- nested sub-keys, e.g. a dict spec's own entries, and every
+    description line are indented 4+ and so are excluded).
+
+    The dedent is `inspect.cleandoc`, not a fixed indent: Python 3.13
+    strips the common leading whitespace from docstrings at compile time
+    (gh-81283), so `__doc__` keeps the source's 4-space indent on <= 3.12
+    and drops it on 3.13. Selecting lines "indented exactly 4 spaces"
+    picked the parameter lines on 3.12 and the DESCRIPTION lines on 3.13,
+    where any prose containing a colon ("Default None: ...") parsed as a
+    parameter (CI, first 3.13 run of the 1.1 line, PR #283)."""
+    import inspect
     import re
 
-    doc = hypertools.plot.__doc__
+    doc = inspect.cleandoc(hypertools.plot.__doc__)
     lines = doc.split('\n')
     start = next(i for i, line in enumerate(lines) if line.strip() == 'Parameters')
     end = next(i for i in range(start + 1, len(lines))
               if lines[i].strip() == 'Returns')
-    param_re = re.compile(r'^    (\S[^:]*?)\s*:\s*(.+)$')
+    param_re = re.compile(r'^(\S[^:]*?)\s*:\s*(.+)$')
     params = []
     for line in lines[start:end]:
-        if line.startswith('    ') and not line.startswith('     '):
+        if line and not line.startswith(' '):
             m = param_re.match(line)
             if m:
                 params.append((m.group(1), m.group(2)))
