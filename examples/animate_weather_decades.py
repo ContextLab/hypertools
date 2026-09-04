@@ -286,7 +286,7 @@ def construct_artifact(data):
     head, = line_ax.plot([], [], 'o', markersize=8, markeredgecolor='black',
                          clip_on=False)          # whole marker at the ends
     line_ax.set(xlim=(when[0], when[-1]), ylim=(mean.min() - 1, mean.max() + 1),
-                xlabel='year', ylabel='mean temperature ($^\\circ$C)')
+                xlabel='year', ylabel='Average temperature ($^\\circ$C)')
     line_ax.spines[['top', 'right']].set_visible(False)
 
     def on_frame(ctx):

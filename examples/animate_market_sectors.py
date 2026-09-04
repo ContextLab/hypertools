@@ -210,7 +210,10 @@ def synthetic_market(sectors=SECTORS, days=7000, seed=0):
 def assemble(adjusted, raw, shares, sectors, source):
     """Month-end trailing returns per sector, market-cap weights per sector
     and the basket's own return, on one shared monthly index from START."""
-    levels = np.log(adjusted.resample('ME').last())
+    # month-end levels; a month still in progress is DROPPED (resample
+    # stamps the last close so far at the month's END, which dated a clip
+    # rendered on 4 September "September 30" -- measured 2026-09-04)
+    levels = np.log(adjusted.resample('ME').last()).loc[:adjusted.index[-1]]
     returns = (levels - levels.shift(WINDOW)).loc[START:].dropna()
     months = returns.index
     # what is PLOTTED: each stock's cumulative log return since the first
