@@ -51,8 +51,27 @@ def _section(text, heading):
     return text[start:start + stop.start()] if stop else text[start:]
 
 
-def test_changelog_has_a_1_1_0_unreleased_section():
-    assert '## 1.1.0 (unreleased)' in _changelog()
+# The 1.1.0 heading reads `## 1.1.0 (unreleased)` on the development branch
+# and `## 1.1.0 (YYYY-MM-DD)` once RELEASE_CHECKLIST.md step 2 dates it on
+# master (the release-gate REQUIRES the date), so the section is located by
+# either form. Measured 2026-09-04: the first master run of the release commit
+# failed all 12 matrix jobs on the hard-coded `(unreleased)` string.
+_HEADING_1_1_0_RE = re.compile(r'^## 1\.1\.0 \((unreleased|\d{4}-\d{2}-\d{2})\)$',
+                               re.MULTILINE)
+
+
+def _heading_1_1_0(text):
+    match = _HEADING_1_1_0_RE.search(text)
+    assert match, 'no `## 1.1.0 (unreleased|YYYY-MM-DD)` heading in CHANGELOG.md'
+    return match.group(0)
+
+
+def test_changelog_has_a_1_1_0_section():
+    text = _changelog()
+    heading = _heading_1_1_0(text)
+    # exactly one 1.1.0 heading, and it is the first version section
+    assert len(_HEADING_1_1_0_RE.findall(text)) == 1
+    assert text.index(heading) == text.index('\n## ') + 1
 
 
 def test_1_1_0_precedes_1_0_1():
@@ -61,7 +80,8 @@ def test_1_1_0_precedes_1_0_1():
 
 
 def test_the_section_has_added_changed_and_limitations_headings():
-    section = _section(_changelog(), '## 1.1.0 (unreleased)')
+    text = _changelog()
+    section = _section(text, _heading_1_1_0(text))
     for heading in ('### Added', '### Changed / validation',
                     '### Documented limitations'):
         assert heading in section, f'missing {heading}'
