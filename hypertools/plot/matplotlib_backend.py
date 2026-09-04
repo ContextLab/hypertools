@@ -25,7 +25,7 @@ try:
     from matplotlib.axes._base import _process_plot_format
 except ImportError:  # pragma: no cover
     _process_plot_format = None
-import matplotlib.animation as animation
+from .animate import HyperFuncAnimation
 import matplotlib.patches as patches
 from .._shared.helpers import *
 from ..core.model import external_stacklevel
@@ -2013,7 +2013,7 @@ def _draw(
             # LATER dataset was silently truncated (F04-003), marker-only
             # animations ignored duration= entirely (F04-005/F05-010), and a
             # 1-point FIRST dataset produced a 1-frame "animation" (F05-012).
-            line_ani = animation.FuncAnimation(
+            line_ani = HyperFuncAnimation(
                 fig,
                 update_lines_parallel,
                 max(1, int(round(frame_rate * duration))),
@@ -2035,7 +2035,7 @@ def _draw(
                 repeat=False,
             )
         elif style == "serial":
-            line_ani = animation.FuncAnimation(
+            line_ani = HyperFuncAnimation(
                 fig,
                 update_lines_serial,
                 max(1, int(round(frame_rate * duration))),
@@ -2046,7 +2046,7 @@ def _draw(
                 repeat=False,
             )
         elif style == "spin":
-            line_ani = animation.FuncAnimation(
+            line_ani = HyperFuncAnimation(
                 fig,
                 update_lines_spin,
                 max(1, int(round(frame_rate * duration))),
@@ -2061,7 +2061,7 @@ def _draw(
             frame_counts, _, azimuths = _morph.morph_schedule(
                 n_morph_datasets, total_frames, rotations, azim)
             morph_state["frame_counts"] = frame_counts
-            line_ani = animation.FuncAnimation(
+            line_ani = HyperFuncAnimation(
                 fig,
                 update_morph,
                 sum(frame_counts),
@@ -2458,7 +2458,7 @@ def _draw(
         if style in ["parallel", True, "window"]:
             # frames == round(frame_rate * duration) -- see the identical
             # F04-003/F04-005/F05-010/F05-012 note in `animate_plot3D`.
-            line_ani = animation.FuncAnimation(
+            line_ani = HyperFuncAnimation(
                 fig,
                 update_lines_parallel_2d,
                 max(1, int(round(frame_rate * duration))),
@@ -2469,7 +2469,7 @@ def _draw(
                 repeat=False,
             )
         elif style == "serial":
-            line_ani = animation.FuncAnimation(
+            line_ani = HyperFuncAnimation(
                 fig,
                 update_lines_serial_2d,
                 max(1, int(round(frame_rate * duration))),
@@ -2491,7 +2491,7 @@ def _draw(
             frame_counts, _, _ = _morph.morph_schedule(
                 n_morph_datasets, total_frames, 1, 0)
             morph_state["frame_counts"] = frame_counts
-            line_ani = animation.FuncAnimation(
+            line_ani = HyperFuncAnimation(
                 fig,
                 update_morph_2d,
                 sum(frame_counts),

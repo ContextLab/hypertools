@@ -289,6 +289,19 @@ input too.
   as `matplotlib.animation.Animation.save` takes it, and any other
   keyword raises `TypeError` naming it. Passing `writer=` still delegates
   to matplotlib with every keyword, as before.
+- **Closing an animated figure under matplotlib's notebook backend raised
+  `AttributeError: 'NoneType' object has no attribute 'remove_callback'`.**
+  `nbAgg` (the backend hypertools selects in Colab and classic Jupyter)
+  processes a figure's close event twice, once from the manager's
+  `destroy()` and once more from its comm-close handler, so matplotlib's
+  `Animation._stop` ran twice and the second call found the timer already
+  cleared (matplotlib 3.10.8 and 3.11.1, with or without hypertools). On
+  Colab every displayed animation made the next static-plot cell fail in
+  IPython's end-of-cell `plt.close('all')`, and `show=False` animated plots
+  failed inside `plot()` at its own `plt.close(fig)`. Animations are now a
+  `FuncAnimation` subclass (`hypertools.plot.animate.HyperFuncAnimation`)
+  whose `_stop` ignores the repeat call; `isinstance(anim.animation,
+  matplotlib.animation.FuncAnimation)` still holds.
 
 - **Every continuous-hue matplotlib plot rendered fully opaque**, whatever
   `alpha=` was set to. `_apply_multicolor_lines` never read alpha from its
