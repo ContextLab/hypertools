@@ -68,6 +68,23 @@ def test_matplotlib_mp4_export(tmp_path):
     assert os.path.getsize(out) > 1000
 
 
+@pytest.mark.skipif(not HAS_FFMPEG, reason='ffmpeg not installed')
+def test_mp4_export_is_quality_targeted_not_fixed_bitrate(tmp_path):
+    """Until 1.1 every video was written at ``bitrate=1800`` kbit/s, so a
+    2-second clip was ~450 KB whatever it showed. A CRF encode of a small,
+    mostly-white line plot spends a small fraction of that. The bound is
+    generous (a quarter of the old fixed budget) so codec build differences
+    cannot flake it, and still impossible for a fixed 1800 kbit/s stream."""
+    out = str(tmp_path / 'anim.mp4')
+    hyp.plot(walk, animate=True, duration=2, frame_rate=10, size=(4, 4),
+             save_path=out, show=False)
+    plt.close('all')
+    size = os.path.getsize(out)
+    assert 1000 < size < 1800 * 1000 / 8 * 2 / 4, (
+        f'{size} bytes for a 2 s clip -- a fixed 1800 kbit/s stream is '
+        f'~450 KB; a CRF encode of this plot is far smaller')
+
+
 def test_plotly_gif_export(tmp_path):
     out = str(tmp_path / 'anim.gif')
     hyp.plot(walk, animate=True, duration=2, backend='plotly',

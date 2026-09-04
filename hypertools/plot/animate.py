@@ -13,6 +13,21 @@ from .._shared.animated_svg import combine_frames_svg
 
 # video containers the ffmpeg writer (h264) can mux into
 _FFMPEG_EXTENSIONS = ('mp4', 'mov', 'avi', 'm4v', 'mkv')
+
+#: x264 constant-rate-factor for video exports. 23 is x264's own default: a
+#: quality target, so the file size follows the CONTENT (a 560-px line plot
+#: on white encodes at a fraction of the bits a 1400-px one needs). Until
+#: 1.1 every video was written at a fixed ``bitrate=1800`` kbit/s, which made
+#: a two-minute clip 27 MB whatever its size or content (measured 2026-09-04:
+#: the same weather animation was 27.2 MB at 1400x700 and 26.2 MB at
+#: 980x490), and starved a large figure while over-spending on a small one.
+VIDEO_CRF = 23
+
+
+def _ffmpeg_quality_kwargs():
+    """Writer kwargs for a quality-targeted (CRF) h264 encode, shared by
+    ``_save_animation`` and the streaming recorder so both agree."""
+    return dict(codec='h264', extra_args=['-crf', str(VIDEO_CRF)])
 # every extension _save_animation understands, for error messages
 _SUPPORTED_ANIMATION_EXTENSIONS = (
     '.gif, .png/.apng (animated PNG), .svg (animated vector graphics), '
@@ -116,7 +131,7 @@ def _save_animation(line_ani, save_path, frame_rate, dpi=None):
                 os.remove(tmp_path)
     elif ext in _FFMPEG_EXTENSIONS:
         Writer = animation.writers["ffmpeg"]
-        writer = Writer(fps=frame_rate, bitrate=1800)
+        writer = Writer(fps=frame_rate, **_ffmpeg_quality_kwargs())
         line_ani.save(save_path, writer=writer, dpi=dpi)
     else:
         what = f"extension {'.' + ext!r}" if ext else "missing extension"

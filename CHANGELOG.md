@@ -267,6 +267,16 @@ previously ambiguous or silently lossy.
 Each of these was found while building the above, and each affects FLAT
 input too.
 
+- **Video exports were written at a fixed 1800 kbit/s.** `save_path=` and
+  `HyperAnimation.save()` handed ffmpeg `bitrate=1800` for every `.mp4`
+  (and the streaming recorder did the same), so a file's size followed its
+  duration and nothing else: a two-minute clip was 27 MB at 1400 x 700 and
+  26 MB at 980 x 490, while a large figure was starved and a small one
+  over-spent. Video is now a quality-targeted encode (x264 CRF 23, its own
+  default; `hypertools.plot.animate.VIDEO_CRF`), so the size follows the
+  content: the same 5-second test clip went from 0.96 MB to 0.38 MB with
+  no visible difference. Callers wanting a specific bitrate can pass
+  `writer=` to `HyperAnimation.save()` as before.
 - **`HyperAnimation.save()` silently discarded every keyword except
   `fps=`**, so `anim.save('clip.gif', dpi=75)` wrote the GIF at the
   figure's own dpi and nothing said so (a 13 x 9 inch figure came out as a
