@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from hypertools.tools.normalize import normalize
+from hypertools.tools.normalize import normalize, Normalizer
 
 cluster1 = np.random.multivariate_normal(np.zeros(3), np.eye(3), size=100)
 cluster2 = np.random.multivariate_normal(np.zeros(3)+100, np.eye(3), size=100)
@@ -35,8 +35,6 @@ def test_normalize_geo():
 
 
 # --- return_model reuse (Normalizer.transform on new data) — QC P0-1 regression ---
-from hypertools.tools.normalize import Normalizer
-
 
 def _fit_new(mode):
     rng = np.random.default_rng(0)

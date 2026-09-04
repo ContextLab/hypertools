@@ -1,8 +1,12 @@
 # -*- coding: utf-8 -*-
 """Animation export tests: real files, verified frame counts."""
 
+import importlib
 import os
 import shutil
+import subprocess
+import sys
+import time
 
 import numpy as np
 import pytest
@@ -62,6 +66,23 @@ def test_matplotlib_mp4_export(tmp_path):
              save_path=out, show=False)
     plt.close('all')
     assert os.path.getsize(out) > 1000
+
+
+@pytest.mark.skipif(not HAS_FFMPEG, reason='ffmpeg not installed')
+def test_mp4_export_is_quality_targeted_not_fixed_bitrate(tmp_path):
+    """Until 1.1 every video was written at ``bitrate=1800`` kbit/s, so a
+    2-second clip was ~450 KB whatever it showed. A CRF encode of a small,
+    mostly-white line plot spends a small fraction of that. The bound is
+    generous (a quarter of the old fixed budget) so codec build differences
+    cannot flake it, and still impossible for a fixed 1800 kbit/s stream."""
+    out = str(tmp_path / 'anim.mp4')
+    hyp.plot(walk, animate=True, duration=2, frame_rate=10, size=(4, 4),
+             save_path=out, show=False)
+    plt.close('all')
+    size = os.path.getsize(out)
+    assert 1000 < size < 1800 * 1000 / 8 * 2 / 4, (
+        f'{size} bytes for a 2 s clip -- a fixed 1800 kbit/s stream is '
+        f'~450 KB; a CRF encode of this plot is far smaller')
 
 
 def test_plotly_gif_export(tmp_path):
@@ -173,10 +194,6 @@ def test_mixture_soft_membership_on_overlapping_clusters():
 # These exercise that lifecycle -- including a genuinely-blocked renderer, its
 # bounded termination, and a real export afterwards in the same parent process.
 
-import importlib
-import subprocess
-import sys
-import time
 # the `hypertools.plot` submodule name is shadowed by the `plot` function, so
 # reach the backend module via importlib rather than a dotted import
 _pb = importlib.import_module('hypertools.plot.plotly_backend')
@@ -417,3 +434,41 @@ def test_animation_controls_preserve_other_margins():
     for side in ('l', 'r', 't'):
         assert getattr(anim.layout.margin, side) == \
             getattr(static.layout.margin, side)
+
+
+# --- HyperAnimation.save() forwards dpi= and refuses what it cannot honour ---
+# Found 2026-09-03: `anim.save('x.gif', dpi=75)` wrote the GIF at the figure's
+# dpi because save() popped `fps` and silently discarded every other keyword.
+# The launch notebooks had been passing dpi= for a month with no effect.
+
+def _gif_size(path):
+    with Image.open(path) as im:
+        return im.size
+
+
+def test_hyper_animation_save_honours_dpi(tmp_path):
+    anim = hyp.plot(walk, animate=True, duration=0.5, frame_rate=4,
+                    size=(4, 3), show=False)
+    anim.save(tmp_path / 'lo.gif', dpi=50)
+    anim.save(tmp_path / 'hi.gif', dpi=100)
+    lo, hi = _gif_size(tmp_path / 'lo.gif'), _gif_size(tmp_path / 'hi.gif')
+    assert lo == (200, 150) and hi == (400, 300), (lo, hi)
+    plt.close('all')
+
+
+def test_hyper_animation_save_default_dpi_is_the_figures(tmp_path):
+    anim = hyp.plot(walk, animate=True, duration=0.5, frame_rate=4,
+                    size=(4, 3), show=False)
+    anim.save(tmp_path / 'default.gif')
+    expected = (round(4 * anim.figure.dpi), round(3 * anim.figure.dpi))
+    assert _gif_size(tmp_path / 'default.gif') == expected
+    plt.close('all')
+
+
+def test_hyper_animation_save_refuses_unknown_keywords(tmp_path):
+    anim = hyp.plot(walk, animate=True, duration=0.5, frame_rate=4,
+                    show=False)
+    with pytest.raises(TypeError, match=r"unexpected keyword.*'bitrate'"):
+        anim.save(tmp_path / 'x.gif', bitrate=1800)
+    assert not (tmp_path / 'x.gif').exists()
+    plt.close('all')

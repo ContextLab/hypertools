@@ -171,7 +171,7 @@ def test_plot_ax_2d():
 def test_plot_ax_error():
     fig = plt.figure()
     ax = fig.add_subplot(111)
-    with pytest.raises(ValueError) as e_info:
+    with pytest.raises(ValueError):
         plot.plot(data, ax=ax, show=False)
 
 
@@ -186,7 +186,7 @@ def test_plot_geo():
 # ## ANIMATED ##
 def test_plot_1d_animate():
     d = reducer(data, ndims=1)
-    with pytest.raises(Exception) as e_info:
+    with pytest.raises(Exception):
         plot.plot(d, animate=True, show=False)
 
 

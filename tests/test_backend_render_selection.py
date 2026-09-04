@@ -19,7 +19,7 @@ import pytest
 import hypertools as hyp
 
 plotly = pytest.importorskip('plotly')
-import plotly.graph_objects as go
+import plotly.graph_objects as go  # noqa: E402  (must follow the importorskip guard)
 
 
 def _traj():

@@ -96,3 +96,58 @@ def test_manip_dispatcher_has_docstring():
     assert hypertools.manip.__doc__ is not None
     assert hypertools.manip.__doc__.strip() != ''
     assert len(hypertools.manip.__doc__.strip()) > 20
+
+
+def _plot_docstring_parameters_section():
+    """Return `hyp.plot`'s docstring "Parameters" section as a list of
+    `(name, type_line)` pairs, one per TOP-LEVEL documented parameter
+    (numpydoc `name : type` lines at column 0 once the docstring is
+    dedented -- nested sub-keys, e.g. a dict spec's own entries, and every
+    description line are indented 4+ and so are excluded).
+
+    The dedent is `inspect.cleandoc`, not a fixed indent: Python 3.13
+    strips the common leading whitespace from docstrings at compile time
+    (gh-81283), so `__doc__` keeps the source's 4-space indent on <= 3.12
+    and drops it on 3.13. Selecting lines "indented exactly 4 spaces"
+    picked the parameter lines on 3.12 and the DESCRIPTION lines on 3.13,
+    where any prose containing a colon ("Default None: ...") parsed as a
+    parameter (CI, first 3.13 run of the 1.1 line, PR #283)."""
+    import inspect
+    import re
+
+    doc = inspect.cleandoc(hypertools.plot.__doc__)
+    lines = doc.split('\n')
+    start = next(i for i, line in enumerate(lines) if line.strip() == 'Parameters')
+    end = next(i for i in range(start + 1, len(lines))
+              if lines[i].strip() == 'Returns')
+    param_re = re.compile(r'^(\S[^:]*?)\s*:\s*(.+)$')
+    params = []
+    for line in lines[start:end]:
+        if line and not line.startswith(' '):
+            m = param_re.match(line)
+            if m:
+                params.append((m.group(1), m.group(2)))
+    return params
+
+
+def test_plot_docstring_type_lines_have_no_stray_optional_default_markers():
+    """Minor finding (whole-branch review): of plot()'s ~70 documented
+    top-level parameters, only 4 -- alpha, order, on_frame, simplify --
+    carried a numpydoc `, optional`/`, default <value>` type-line marker,
+    split inconsistently (three said ", optional", simplify said ",
+    default True") -- while every other parameter, including ones that
+    also default to True (`show`, `antialias`), uses a bare `name : type`
+    line and describes its default in prose instead (e.g. `linewidth :
+    int or float` / "Width of plotted lines in points (default: ...)").
+    These four must match that established convention, not carry their
+    own one-off markers."""
+    params = _plot_docstring_parameters_section()
+    assert len(params) > 50, (
+        f'expected dozens of top-level parameters, found {len(params)} -- '
+        'the Parameters-section scan above may be broken')
+    marked = [(name, t) for name, t in params
+             if ', optional' in t or 'default' in t]
+    assert marked == [], (
+        'plot() docstring type-line(s) still carry a stray optional/'
+        f'default marker (bare "name : type" is this file\'s established '
+        f'convention -- see e.g. `linewidth`/`show`/`antialias`): {marked}')

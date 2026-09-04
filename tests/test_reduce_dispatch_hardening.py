@@ -11,7 +11,6 @@
 Real data, sklearn cross-check, no mocks.
 """
 import contextlib
-import warnings
 
 import numpy as np
 import pytest

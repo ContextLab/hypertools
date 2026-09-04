@@ -48,10 +48,30 @@ class HyperAnimation(tuple):
     Indexing/unpacking behave exactly like the legacy 2-tuple
     (``fig, anim = result``; ``result[0]`` is the figure, ``result[1]`` the
     animation), so this is a drop-in replacement for the old return value.
+
+    ``.on_frame(callback)`` registers a per-frame callback (matplotlib
+    only -- see ``hyp.plot``'s ``on_frame=`` docstring for the
+    backend-portable form and the ``FrameContext`` it receives).
     """
 
-    def __new__(cls, figure, animation):
+    def __new__(cls, figure, animation, frame_hooks=None):
         self = super().__new__(cls, (figure, animation))
+        # ADOPT the registry plot() already threaded into the backend -- do
+        # NOT create one here. The per-frame updater closure was built inside
+        # `_draw` long before this wrapper existed, so a list created here
+        # would be a fresh, unreferenced object and `on_frame()` could never
+        # fire (plan 1.1 Task 7, review C7).
+        self._frame_hooks = frame_hooks
+        # Mark the inner animation as draw-started NOW, not only in
+        # __del__. When a wrapper dies inside a reference cycle (a test's
+        # captured traceback, a figure whose callbacks point back at the
+        # animation) the cyclic collector runs the two finalizers in
+        # arbitrary order, and if ``Animation.__del__`` goes first it warns
+        # "deleted without rendering" before the wrapper can silence it --
+        # seen on 4 of 12 CI jobs on 2026-09-04, never locally. matplotlib
+        # only reads the flag in that ``__del__`` (see ``mark_draw_started``),
+        # so setting it early changes nothing about rendering or saving.
+        mark_draw_started(animation)
         return self
 
     @property
@@ -65,6 +85,68 @@ class HyperAnimation(tuple):
         ``FuncAnimation``). Keeping a reference to it keeps the animation
         alive."""
         return self[1]
+
+    @property
+    def n_frames(self):
+        """How many frames this animation draws.
+
+        `hyp.plot` always hands `FuncAnimation` an int frame count --
+        `max(1, round(frame_rate * duration))` for parallel/serial/spin, and
+        `sum(segment_frame_counts(...))` for a morph -- so this is exact
+        rather than an estimate. Reading it is the supported alternative to
+        matplotlib's private `_save_count`.
+        """
+        return int(self[1]._save_count)
+
+    @property
+    def n_segments(self):
+        """Hold/transition segments for ``animate='morph'``; ``None``
+        otherwise.
+
+        `n` clouds give ``2n - 1`` segments: `n` holds interleaved with
+        `n - 1` transitions, beginning and ending on a hold. There is NO
+        implicit closing transition back to the first cloud -- a caller who
+        wants the animation to loop seamlessly appends ``clouds[0]``
+        themselves, as ``examples/animate_morph_zoo.py`` does (5 shapes plus
+        the repeat = 6 clouds = 11 segments). Measured against
+        ``morph.segment_frame_counts``: 2 clouds -> 3, 3 -> 5, 5 -> 9.
+        """
+        return getattr(self[1], '_hyp_morph_segments', None)
+
+    def draw_frame(self, frame):
+        """Render frame `frame`, and return `self` so calls chain.
+
+        The supported way to drive an animation from a test or a script
+        without reaching into `FuncAnimation._func`/`._args`. Frames are
+        idempotent and order-independent by contract (see `FrameContext`),
+        so any index may be drawn at any time.
+        """
+        if not 0 <= frame < self.n_frames:
+            raise IndexError(
+                f'frame {frame} is out of range; this animation has '
+                f'{self.n_frames} frames, so valid indices are 0 and '
+                f'{self.n_frames - 1}')
+        self[1]._func(frame, *self[1]._args)
+        return self
+
+    def on_frame(self, callback):
+        """Register `callback` to run after every drawn frame.
+
+        The callback receives a
+        :class:`~hypertools.plot.animation_context.FrameContext`. Returns
+        `self`, so calls chain. Exceptions from a callback propagate.
+
+        Not available on the ``return_model=True`` bundle, which hands back
+        the raw ``FuncAnimation``; pass ``on_frame=`` to ``plot()`` instead
+        on that path.
+        """
+        if self._frame_hooks is None:
+            raise RuntimeError(
+                "this HyperAnimation carries no frame-hook registry (it was "
+                "constructed directly rather than by hyp.plot); pass "
+                "on_frame= to hyp.plot instead.")
+        self._frame_hooks.add(callback)
+        return self
 
     # --- export / display --------------------------------------------------
 
@@ -85,9 +167,12 @@ class HyperAnimation(tuple):
         (only the video formats need ffmpeg) -- matching what
         ``hyp.plot(..., save_path=...)`` supports; any other extension raises
         ``ValueError`` naming the supported formats. ``filename`` may be a
-        str or any path-like (e.g. ``pathlib.Path``). Passing an explicit
+        str or any path-like (e.g. ``pathlib.Path``). ``fps`` overrides the
+        animation's own frame rate and ``dpi`` the figure's resolution (as
+        in ``matplotlib.animation.Animation.save``); any other keyword
+        raises ``TypeError`` rather than being ignored. Passing an explicit
         ``writer`` (or positional args) delegates straight to
-        ``matplotlib.animation.Animation.save`` instead.
+        ``matplotlib.animation.Animation.save`` instead, with every keyword.
 
         QC 2026-07: ``.save('x.svg')`` / ``.save('x.png')`` used to crash (raw
         ``Animation.save`` tried to pipe h264 into an svg/png), even though the
@@ -97,7 +182,15 @@ class HyperAnimation(tuple):
             return self.animation.save(filename, *args, **kwargs)
         from .animate import _save_animation
         fps = kwargs.pop('fps', None) or self._fps()
-        return _save_animation(self.animation, str(filename), fps)
+        dpi = kwargs.pop('dpi', None)
+        if kwargs:
+            # Silently dropping a keyword is how `save(path, dpi=75)` wrote
+            # a 10 MB GIF at the figure's dpi and nobody noticed (2026-09-03).
+            raise TypeError(
+                f"HyperAnimation.save() got unexpected keyword argument(s) "
+                f"{sorted(kwargs)}; it takes fps= and dpi=, or pass writer= "
+                f"to delegate to matplotlib's Animation.save with any keyword")
+        return _save_animation(self.animation, str(filename), fps, dpi=dpi)
 
     def _fps(self):
         """Frames per second from the animation's frame interval (default 30)."""

@@ -13,7 +13,6 @@ import numpy as np
 import pandas as pd
 import pytest
 
-import hypertools as hyp
 from hypertools.impute.impute import impute
 
 

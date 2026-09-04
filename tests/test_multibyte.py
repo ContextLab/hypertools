@@ -19,7 +19,11 @@ CI provisions a covering font separately -- see the F2 follow-up noted in
 notes/issues-to-close-on-merge.md).
 """
 
+import importlib.util
+import json
 import os
+import subprocess
+import sys
 import warnings
 
 import numpy as np
@@ -30,7 +34,8 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg
 import pytest
 
 import hypertools as hyp
-from hypertools.plot.fonts import (find_covering_font, resolve_font,
+from hypertools.plot.fonts import (_codepoints_uncovered_by_stack,
+                                   find_covering_font, resolve_font,
                                    sans_serif_stack)
 
 JP_LABELS_A = ['いち', 'に', 'さん']
@@ -41,7 +46,6 @@ JP_LABELS_B = ['よん', 'ご', 'ろく']
 # (Since the stack now supplies CJK per-glyph, find_covering_font(CJK) returns
 # None on a machine whose stack already covers it -- so it can no longer be
 # used as this gate.)
-from hypertools.plot.fonts import _codepoints_uncovered_by_stack
 covering_font_available = not _codepoints_uncovered_by_stack({ord('い')})
 requires_covering_font = pytest.mark.skipif(
     not covering_font_available,
@@ -416,13 +420,19 @@ def test_animated_cjk_legend_no_missing_glyph_warnings_across_frames():
 # This module only covers the multibyte (CJK) angle: exact string survival
 # and the kaleido anti-tofu pixel-diff check, below.
 
-import json
-import subprocess
-import sys
-
 _RENDER_PLOTLY_SCRIPT = os.path.join(
     os.path.dirname(__file__), '..', 'scripts', 'render_multibyte_plotly.py')
 _KALEIDO_TIMEOUT_S = 120
+
+# Imported from the render script rather than restated, so the two cannot
+# drift into disagreeing about which exit code means "no usable browser".
+_render_spec = importlib.util.spec_from_file_location(
+    '_render_multibyte_plotly', _RENDER_PLOTLY_SCRIPT)
+_render_mod = importlib.util.module_from_spec(_render_spec)
+_render_spec.loader.exec_module(_render_mod)
+_NO_BROWSER_EXIT = _render_mod.NO_BROWSER_EXIT
+_BROWSER_PATH_ENV = _render_mod.BROWSER_PATH_ENV
+_is_browser_lifecycle_error = _render_mod.is_browser_lifecycle_error
 
 
 def _plotly_plot(legend, **kwargs):
@@ -555,6 +565,18 @@ def _render_plotly_png(legend, title, out_path, labels=None):
             "hang, not a test failure (see the known deadlock-prone "
             "plotly export tests deselected in "
             "test_animation_export.py/test_round3.py)")
+        return
+    if result.returncode == _NO_BROWSER_EXIT:
+        # The render subprocess reports "no usable browser here" with its own
+        # reserved exit code, raised only for the three browser-lifecycle
+        # exception types kaleido itself exports plus plotly's no-Chrome
+        # RuntimeError. A Chrome that dies during startup is a fact about the
+        # machine, not about hypertools -- but the discrimination is narrow on
+        # purpose: EVERY other non-zero exit is still a hard failure below, so
+        # a real rendering defect cannot hide behind this skip.
+        pytest.skip(
+            "kaleido could not drive a browser in this environment "
+            f"(render script exit {_NO_BROWSER_EXIT}):\n{result.stderr[-600:]}")
         return
     assert result.returncode == 0, (
         f"render_multibyte_plotly.py failed (exit {result.returncode}):\n"
@@ -849,3 +871,135 @@ def test_plotly_public_path_dedups_explicit_family_already_in_stack():
                    font='Noto Sans', show=False)
     assert fig.layout.font.family.count('"Noto Sans"') == 1
     assert fig.layout.font.family.startswith('"Noto Sans"')
+
+
+# --------------------------------------- the no-browser skip is discriminating
+#
+# The pixel checks above skip when the render subprocess reports that no
+# browser could be driven. A skip that fires too eagerly is worse than no
+# skip at all, so both halves of that discrimination are pinned here with
+# REAL exceptions -- never a stub.
+#
+# Every test in this section runs WITHOUT a working browser, deliberately:
+# the machines where the skip's accuracy actually matters are the ones that
+# cannot start Chrome, and a check that needs Chrome in order to prove
+# "Chrome is not what failed" is exactly backwards. That is why the
+# "not the browser" half calls `is_browser_lifecycle_error` directly on a
+# real exception object instead of driving the subprocess: with the
+# subprocess, a bad output path is only reached AFTER the browser renders,
+# so on a Chrome-less machine the run exits NO_BROWSER for the right reason
+# and the check fails for the wrong one.
+
+def _run_render(out_path, env=None):
+    full = dict(os.environ)
+    full.update(env or {})
+    return subprocess.run(
+        [sys.executable, _RENDER_PLOTLY_SCRIPT, json.dumps(['a', 'b']), '',
+         out_path],
+        timeout=_KALEIDO_TIMEOUT_S, capture_output=True, text=True, env=full)
+
+
+@requires_covering_font
+def test_render_script_exits_NO_BROWSER_when_the_browser_will_not_launch(
+        tmp_path):
+    """`/bin/echo` is a real executable that is not a browser, so kaleido
+    genuinely raises `BrowserFailedError: the browser seemed to close
+    immediately after starting` -- the same class of failure as a managed
+    Chrome dying during startup. That must exit with the reserved code, not
+    with a generic non-zero the caller would (correctly) treat as a defect."""
+    result = _run_render(str(tmp_path / 'nope.png'),
+                         {_BROWSER_PATH_ENV: '/bin/echo'})
+    assert result.returncode == _NO_BROWSER_EXIT, (
+        f'expected exit {_NO_BROWSER_EXIT}, got {result.returncode}\n'
+        f'stderr:\n{result.stderr[-800:]}')
+    assert 'NO_BROWSER:' in result.stderr
+
+
+@requires_covering_font
+def test_render_script_exits_NO_BROWSER_when_CHROME_CANNOT_BE_FOUND(tmp_path):
+    """The other no-browser shape, and the one no `except` clause can catch
+    by type: plotly swallows kaleido's `ChromeNotFoundError` and re-raises a
+    PLAIN `RuntimeError` (`plotly/io/_kaleido.py:411`), so it is recognised
+    by plotly's own message constant.
+
+    Driven for real, and without launching anything: `BROWSER_PATH` is
+    choreographer's documented override (`choreographer/utils/_which.py:91`)
+    and pointing it at a path that is not a file makes `Chromium.__init__`
+    raise `ChromeNotFoundError` (`chromium.py:177`). `HOME` moves with it
+    because choreographer looks for its OWN downloaded Chrome first, before
+    ever consulting `BROWSER_PATH` (`chromium.py:83`), and that download
+    lives under the home directory.
+
+    That last sentence holds on Linux and macOS only. The download
+    directory is `platformdirs.PlatformDirs('choreographer', 'plotly')
+    .user_data_dir` (`choreographer/cli/defaults.py`): `~/.local/share` or
+    `~/Library/Application Support`, both of which follow `HOME`, but on
+    Windows `%LOCALAPPDATA%` resolved through the shell API
+    (`platformdirs/windows.py:_pick_get_win_folder`: ctypes first, registry
+    second, environment variables only when neither works), so no variable
+    this subprocess is given can hide a Chrome already downloaded there.
+    The first hosted run of the 1.1 line (PR #283, all three windows lanes)
+    had one at `AppData\\Local\\plotly\\choreographer\\deps` from the
+    workflow's pre-fetch step, choreographer used it, and the render
+    exited 0. The script's own `HYPERTOOLS_RENDER_BROWSER_PATH` is no
+    substitute: it calls kaleido directly and never passes through the
+    plotly wrapping this test exists to prove. So on Windows, when that
+    download exists, this shape cannot be driven from outside the process
+    and the test skips, naming the path.
+    """
+    if os.name == 'nt':
+        from choreographer.cli._cli_utils import get_chrome_download_path
+        local = get_chrome_download_path(mkdir=False)
+        if local is not None and local.exists():
+            pytest.skip(
+                'choreographer will use its downloaded Chrome at '
+                f'{local}; on Windows that directory is resolved through '
+                'the shell API, which no subprocess environment can move')
+    result = _run_render(
+        str(tmp_path / 'out.png'),
+        {'BROWSER_PATH': str(tmp_path / 'not-a-browser'),
+         'HOME': str(tmp_path / 'home')})
+    assert result.returncode == _NO_BROWSER_EXIT, (
+        f'expected exit {_NO_BROWSER_EXIT}, got {result.returncode}\n'
+        f'stderr:\n{result.stderr[-800:]}')
+    assert 'NO_BROWSER: RuntimeError' in result.stderr
+
+
+def test_a_real_OSError_from_the_render_is_NOT_the_browser(tmp_path):
+    """The half that matters: a failure that is not the browser's must never
+    be laundered into the skip. Without this, widening the predicate by one
+    exception type would silently turn every pixel check into a skip.
+
+    The `OSError` is a real one, caught from a real failed write into a
+    directory that does not exist -- the same call the render performs, and
+    the same exception it would raise.
+    """
+    try:
+        with open(tmp_path / 'no_such_dir' / 'x.png', 'wb'):
+            pass
+    except OSError as err:
+        caught = err
+    else:
+        raise AssertionError('writing into a missing directory must fail')
+    assert not _is_browser_lifecycle_error(caught), (
+        f'{caught!r} is a hypertools/kaleido failure, not a missing browser')
+
+
+def test_a_real_RuntimeError_that_is_NOT_plotly_s_is_NOT_the_browser():
+    """`ChromeNotFoundError` reaches us as a bare `RuntimeError`, so the
+    predicate has to inspect a message -- which makes "some OTHER
+    `RuntimeError`" the exact failure mode to pin. This one is real (the
+    interpreter's own, from a generator that lets `StopIteration` escape),
+    not a constructed stand-in."""
+    def leaks_stop_iteration():
+        yield next(iter([]))
+
+    try:
+        next(leaks_stop_iteration())
+    except RuntimeError as err:
+        caught = err
+    else:
+        raise AssertionError('a generator raising StopIteration must become '
+                             'a RuntimeError (PEP 479)')
+    assert not _is_browser_lifecycle_error(caught), (
+        f'{caught!r} is unrelated to the browser: {caught}')

@@ -18,6 +18,7 @@ matplotlib.use('Agg')
 
 import hypertools as hyp
 from hypertools._shared.exceptions import HypertoolsIOError
+from tests._netskip import skip_on_transient_network
 
 
 def test_load_iris_is_sklearn_iris():
@@ -51,7 +52,11 @@ def test_load_linnerud_multioutput_targets():
 
 
 def test_load_penguins_is_seaborn():
-    df = hyp.load('penguins')
+    # real fetch of seaborn-data from GitHub -- skip (never pass) if that host
+    # is transiently unreachable; a genuine defect still fails. See
+    # tests/_netskip.py for why guarding is not weakening.
+    with skip_on_transient_network("loading seaborn's penguins"):
+        df = hyp.load('penguins')
     assert isinstance(df, pd.DataFrame)
     for col in ('species', 'island', 'bill_length_mm'):
         assert col in df.columns

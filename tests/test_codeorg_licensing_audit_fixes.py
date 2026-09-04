@@ -298,6 +298,7 @@ def test_all_names_resolve_and_cover_documented_api():
                   'describe', 'cluster', 'manip', 'predict', 'impute',
                   'load', 'save', 'apply_model', 'supported_models',
                   'Pipeline', 'set_interactive_backend', 'HyperAnimation',
+                  'FrameContext',
                   'io', 'HypertoolsError', 'HypertoolsBackendError',
                   'HypertoolsIOError'}
     assert set(hyp.__all__) == documented

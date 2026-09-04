@@ -15,7 +15,6 @@ Output: docs/images/v1.0-animations/shapes_morph.gif
 """
 
 import os
-import sys
 
 import numpy as np
 

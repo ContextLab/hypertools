@@ -3,7 +3,7 @@
 import inspect
 import warnings
 import numpy as np
-from .common import (Reducer, models, REDUCERS, AUTOENCODER_NAMES,
+from .common import (Reducer, models, REDUCERS, AUTOENCODER_NAMES,  # noqa: F401 (re-export; hypertools.core.pipeline imports `models` from here for backward compatibility)
                      resolve_reducer)
 from ..core.model import external_stacklevel
 from ..tools.format_data import format_data as formatter

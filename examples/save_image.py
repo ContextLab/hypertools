@@ -20,6 +20,7 @@ import hypertools as hyp
 data = hyp.load('weights_sample')
 
 # plot
-import os, tempfile
+import os  # noqa: E402 (sphinx-gallery narrative section, not top-of-file)
+import tempfile  # noqa: E402 (same)
 save_path = os.path.join(tempfile.mkdtemp(), 'test-image.pdf')
 hyp.plot(data, fmt='o', save_path=save_path)

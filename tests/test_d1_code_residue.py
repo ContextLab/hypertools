@@ -13,7 +13,6 @@ headless warning, and the divide-by-zero rescale guard.
 All tests use real function calls (no mocks), per the project testing
 policy.
 """
-import os
 import shutil
 import warnings
 

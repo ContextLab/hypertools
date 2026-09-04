@@ -26,11 +26,11 @@ os.environ.setdefault('MPLBACKEND', 'Agg')
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(REPO, 'tests'))
 
-import hypertools as hyp
-import hypertools.io.load as _load_mod  # noqa: F401  (module, not the fn)
-from test_dataset_compat import _canonical_sha256
+import hypertools as hyp  # noqa: E402  (after the sys.path insert for tests/ helpers)
+import hypertools.io.load as _load_mod  # noqa: E402,F401  (after sys.path insert; module, not the fn)
+from test_dataset_compat import _canonical_sha256  # noqa: E402  (after the sys.path insert for tests/ helpers)
 
-import importlib
+import importlib  # noqa: E402  (after the sys.path insert for tests/ helpers)
 L = importlib.import_module('hypertools.io.load')
 
 # Overwriting the baseline BLESSES whatever the current loader returns, so a

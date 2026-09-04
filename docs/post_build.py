@@ -119,6 +119,11 @@ GIF_REPLACEMENTS = {
     "sphx_glr_animate_thumb.png": "sphx_glr_animate_thumb.gif",
     "sphx_glr_precog_thumb.png": "sphx_glr_precog_thumb.gif",
     "sphx_glr_save_movie_thumb.png": "sphx_glr_save_movie_thumb.gif",
+    "sphx_glr_animate_conversation_thumb.png": "sphx_glr_animate_conversation_thumb.gif",
+    "sphx_glr_animate_market_sectors_thumb.png": "sphx_glr_animate_market_sectors_thumb.gif",
+    "sphx_glr_animate_morph_zoo_thumb.png": "sphx_glr_animate_morph_zoo_thumb.gif",
+    "sphx_glr_animate_painting_embeddings_thumb.png": "sphx_glr_animate_painting_embeddings_thumb.gif",
+    "sphx_glr_animate_weather_decades_thumb.png": "sphx_glr_animate_weather_decades_thumb.gif",
     "sphx_glr_animate_plotly_thumb.png": "sphx_glr_animate_plotly_thumb.gif",
     # QC 2026-07: the story-trajectories example ships an animated gif thumbnail
     # (docs/_static/thumbnails/sphx_glr_plot_story_trajectories_thumb.gif) and
@@ -145,8 +150,8 @@ def copy_gif_thumbnails():
         BUILD_IMAGES_DIR, GALLERY_HTML = find_build_dirs()
     
     if not BUILD_IMAGES_DIR or not os.path.exists(BUILD_IMAGES_DIR):
-        print(f"Error: Build images directory not found.")
-        print(f"Searched paths:")
+        print("Error: Build images directory not found.")
+        print("Searched paths:")
         possible_dirs = [
             os.path.join(DOCS_DIR, "_build", "html", "_images"),
             os.path.join(DOCS_DIR, "..", "_readthedocs", "html", "_images"),

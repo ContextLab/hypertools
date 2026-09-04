@@ -13,6 +13,21 @@ from .._shared.animated_svg import combine_frames_svg
 
 # video containers the ffmpeg writer (h264) can mux into
 _FFMPEG_EXTENSIONS = ('mp4', 'mov', 'avi', 'm4v', 'mkv')
+
+#: x264 constant-rate-factor for video exports. 23 is x264's own default: a
+#: quality target, so the file size follows the CONTENT (a 560-px line plot
+#: on white encodes at a fraction of the bits a 1400-px one needs). Until
+#: 1.1 every video was written at a fixed ``bitrate=1800`` kbit/s, which made
+#: a two-minute clip 27 MB whatever its size or content (measured 2026-09-04:
+#: the same weather animation was 27.2 MB at 1400x700 and 26.2 MB at
+#: 980x490), and starved a large figure while over-spending on a small one.
+VIDEO_CRF = 23
+
+
+def _ffmpeg_quality_kwargs():
+    """Writer kwargs for a quality-targeted (CRF) h264 encode, shared by
+    ``_save_animation`` and the streaming recorder so both agree."""
+    return dict(codec='h264', extra_args=['-crf', str(VIDEO_CRF)])
 # every extension _save_animation understands, for error messages
 _SUPPORTED_ANIMATION_EXTENSIONS = (
     '.gif, .png/.apng (animated PNG), .svg (animated vector graphics), '
@@ -57,7 +72,7 @@ class _RealTimePillowWriter(animation.PillowWriter):
             duration=durations, loop=0)
 
 
-def _save_animation(line_ani, save_path, frame_rate):
+def _save_animation(line_ani, save_path, frame_rate, dpi=None):
     """Save a matplotlib animation, choosing the writer by file extension.
 
     .gif and .png/.apng use PillowWriter (no ffmpeg required; Pillow writes
@@ -68,6 +83,10 @@ def _save_animation(line_ani, save_path, frame_rate):
     paths with NO extension -- previously fell through to ffmpeg and
     surfaced as a raw ``CalledProcessError`` dumping the ffmpeg command
     line).
+
+    ``dpi`` is handed to the raster and video writers exactly as
+    ``matplotlib.animation.Animation.save`` takes it; ``None`` keeps the
+    figure's own dpi. The SVG writer is vector and ignores it.
     """
     # gif / apng / video writers save EVERY animation frame (no subsampling),
     # with per-frame delays that cumulatively track 1000/frame_rate ms (see
@@ -82,7 +101,7 @@ def _save_animation(line_ani, save_path, frame_rate):
     if ext == 'svg':
         _save_animated_svg(line_ani, save_path, frame_rate)
     elif ext == 'gif':
-        line_ani.save(save_path,
+        line_ani.save(save_path, dpi=dpi,
                       writer=_RealTimePillowWriter(fps=frame_rate,
                                                    grid_ms=10))
     elif ext in ('png', 'apng'):
@@ -97,7 +116,7 @@ def _save_animation(line_ani, save_path, frame_rate):
         fd, tmp_path = tempfile.mkstemp(suffix='.png', dir=target_dir)
         os.close(fd)
         try:
-            line_ani.save(tmp_path,
+            line_ani.save(tmp_path, dpi=dpi,
                           writer=_RealTimePillowWriter(fps=frame_rate,
                                                        grid_ms=1))
             # mkstemp's private 0600 mode must not leak onto the saved
@@ -112,8 +131,8 @@ def _save_animation(line_ani, save_path, frame_rate):
                 os.remove(tmp_path)
     elif ext in _FFMPEG_EXTENSIONS:
         Writer = animation.writers["ffmpeg"]
-        writer = Writer(fps=frame_rate, bitrate=1800)
-        line_ani.save(save_path, writer=writer)
+        writer = Writer(fps=frame_rate, **_ffmpeg_quality_kwargs())
+        line_ani.save(save_path, writer=writer, dpi=dpi)
     else:
         what = f"extension {'.' + ext!r}" if ext else "missing extension"
         raise ValueError(

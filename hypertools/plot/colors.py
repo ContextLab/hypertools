@@ -21,6 +21,26 @@ import pandas as pd
 NAN_COLOR = (0.75, 0.75, 0.75)
 
 
+def is_missing_label(value):
+    """True for every spelling of "no label given": `None`, NaN, `pd.NA`.
+
+    NaN needs saying because it is not equal to itself, so two missing
+    labels group as two DIFFERENT categories -- and, since `np.nan` is a
+    singleton while `float('nan')` is a fresh object each time, whether they
+    did depended on how the caller happened to spell it. Callers normalize
+    every one of these to `None`, the sentinel this module and `plot()`
+    already use for "unlabeled" (drawn `NAN_COLOR`, no legend entry).
+    """
+    if value is None:
+        return True
+    try:
+        return bool(pd.isna(value))
+    except (TypeError, ValueError):
+        # pd.isna returns an ARRAY for array-like input, and raises for some
+        # exotic types; neither is a missing scalar
+        return False
+
+
 def mat2colors(m, palette='hls', n_bins=100):
     """Map labels, values, or matrices to RGB colors.
 
@@ -260,6 +280,128 @@ def continuous_colormap(palette, n_bins=100):
                    dtype=float)[:, :3])
 
 
+#: How many anchor colors `palette='image:<path>'` extracts for a CONTINUOUS
+#: mapping, which asks `_get_palette` for `n_bins` (100) colors -- clustering
+#: an image into 100 groups is both slow and meaningless, so it takes this
+#: few and lets the short-list blending (the `continuous` arm of
+#: `_get_palette`'s `len(colors) < n_colors` branch) build the gradient. A
+#: CATEGORICAL or matrix mapping instead extracts exactly as many colors as it
+#: has categories, so the number of groups is NOT capped at this value; see
+#: `_image_palette_list`.
+IMAGE_PALETTE_N = 6
+
+#: Prefix that marks a `palette=` string as "extract this from an image".
+#: Seaborn/matplotlib palette names never contain a colon, so there is no
+#: collision; an unmatched name still reaches seaborn and raises its own
+#: "is not a valid palette name" error.
+IMAGE_PALETTE_PREFIX = 'image:'
+
+#: Below this chroma (max(RGB) - min(RGB)) an image has no colour to be
+#: salient ABOUT, so `image_palette` orders by population instead.
+_ACHROMATIC_EPS = 0.02
+
+
+def _image_pixels(image, resize):
+    """(n_pixels, 3) float RGB in [0, 1] from a path, PIL image, or array."""
+    import os
+
+    from PIL import Image
+
+    if isinstance(image, np.ndarray):
+        arr = image
+        if arr.dtype.kind == 'f':
+            arr = np.clip(arr, 0.0, 1.0) * 255.0
+        im = Image.fromarray(arr.astype(np.uint8)).convert('RGB')
+    elif hasattr(image, 'convert'):          # a PIL.Image.Image
+        im = image.convert('RGB')
+    else:
+        path = os.path.expanduser(os.fspath(image))
+        if not os.path.exists(path):
+            raise FileNotFoundError(
+                f"image_palette() could not find an image at {path!r}. It "
+                "takes a LOCAL path, a PIL image, or an (H, W, 3) array -- "
+                "hypertools never downloads the image for you, so fetch and "
+                "cache it yourself first.")
+        im = Image.open(path).convert('RGB')
+    im.thumbnail((int(resize), int(resize)))
+    return np.asarray(im, dtype=np.float64).reshape(-1, 3) / 255.0
+
+
+def image_palette(image, n_colors=IMAGE_PALETTE_N, resize=200, random_state=0):
+    """Extract a color palette from an image, most VISUALLY SALIENT first.
+
+    Parameters
+    ----------
+    image : str, pathlib.Path, PIL.Image.Image, or numpy array
+        A LOCAL image file, an already-open PIL image, or an (H, W, 3) array
+        (uint8 0-255, or float 0-1). URLs are deliberately not accepted:
+        hypertools does not fetch images, so download and cache the file
+        yourself and pass the cached path.
+    n_colors : int
+        UPPER bound on how many colors to return (default 6). Fewer come
+        back when the image has fewer distinct colors, or when two cluster
+        centers coincide to 3 decimal places.
+    resize : int
+        Longest edge the image is thumbnailed to before clustering
+        (default 200). Clustering cost is linear in pixel count.
+    random_state : int
+        Seed for the k-means fit, so repeated calls are identical.
+
+    Returns
+    -------
+    palette : numpy.ndarray
+        (k, 3) float RGB in [0, 1], k <= n_colors, ordered most salient
+        first.
+
+    Notes
+    -----
+    Salience is ``pixel_fraction * chroma``, where
+    ``chroma = max(r, g, b) - min(r, g, b)`` measures distance from grey.
+    Ordering by pixel fraction ALONE returns a painting's background --
+    which is exactly the bug this function exists to avoid. When every
+    cluster is achromatic (max chroma < 0.02, i.e. a greyscale image) the
+    ordering falls back to pixel fraction, because a grey image has no
+    vivid color and "largest" is then the right answer.
+
+    Examples
+    --------
+    >>> from hypertools.plot.colors import image_palette
+    >>> image_palette('starry_night.jpg')[0]        # doctest: +SKIP
+    array([0.16, 0.24, 0.55])
+
+    The same extraction is reachable declaratively from any plotting call
+    that takes a palette::
+
+        hyp.plot(x, hue=values, palette='image:starry_night.jpg')
+    """
+    from sklearn.cluster import KMeans
+
+    if (not isinstance(n_colors, (int, np.integer))
+            or isinstance(n_colors, bool) or n_colors < 1):
+        raise ValueError(
+            f"n_colors= must be a positive integer; got {n_colors!r}")
+    px = _image_pixels(image, resize)
+    if len(px) == 0:
+        raise ValueError("image_palette() got an image with no pixels")
+    # cap k at the number of DISTINCT colors: asking k-means for more
+    # clusters than there are distinct points emits a ConvergenceWarning
+    # and returns duplicate centers
+    k = int(min(n_colors, len(np.unique(px, axis=0))))
+    km = KMeans(n_clusters=k, n_init=4, random_state=random_state).fit(px)
+    centers = np.clip(km.cluster_centers_, 0.0, 1.0)
+    frac = np.bincount(km.labels_, minlength=k) / len(px)
+    chroma = centers.max(axis=1) - centers.min(axis=1)
+    score = frac if chroma.max() < _ACHROMATIC_EPS else frac * chroma
+    out, seen = [], set()
+    for i in np.argsort(-score, kind='stable'):
+        key = tuple(np.round(centers[i], 3))
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(centers[i])
+    return np.asarray(out, dtype=float)
+
+
 # palettes that wrap the hue circle end-to-end: sampling them over the full
 # cycle makes a continuous mapping's minimum and maximum values visually
 # identical (release-1.0 audit, F01-013)
@@ -284,6 +426,43 @@ def _continuous_palette(palette, n_colors, sns):
     return _get_palette(palette, n_colors, sns, continuous=True)
 
 
+def _image_palette_list(source, n_colors, sns, continuous):
+    """Colors for a `palette='image:<path>'` string, as a list `_get_palette`
+    can then handle exactly like any other color list.
+
+    How many colors are EXTRACTED depends on the mapping. A categorical or
+    matrix mapping needs one color per category, so exactly `n_colors`
+    anchors are pulled: k-means with k = the number of categories is the
+    best k-color summary of that image, and extracting a FIXED count would
+    instead cap every plot at that many categories. A CONTINUOUS mapping
+    asks for `n_bins` (100) colors, and clustering an image into 100 groups
+    is both slow and meaningless, so it takes `IMAGE_PALETTE_N` anchors and
+    lets the short-list blending below build the gradient from them.
+
+    An image can hold FEWER distinct colors than there are categories (a
+    two-tone image, nine groups). Unlike a user-supplied short list -- which
+    raises, because the user can simply pass more colors -- a caller cannot
+    add colors to an image, so the anchors are interpolated up to `n_colors`
+    with the same ``blend_palette`` semantics the continuous path already
+    uses (F02-006/F24-017). Interpolating keeps every category a DIFFERENT
+    color and leaves the most salient anchor first; cycling the anchors
+    would silently give two categories the same color, which is the
+    ambiguity the short-list error exists to prevent. A single-color image
+    is the one case interpolation cannot serve, and it raises."""
+    colors = [tuple(c) for c in image_palette(
+        source, n_colors=IMAGE_PALETTE_N if continuous else max(n_colors, 1))]
+    if continuous or len(colors) >= n_colors:
+        return colors
+    if len(colors) == 1:
+        raise ValueError(
+            f"palette='{IMAGE_PALETTE_PREFIX}{source}' yielded 1 color but "
+            f"{n_colors} are required (one per category/component); that "
+            "image has a single dominant color, so pass a more colorful "
+            "image, an explicit list of colors, or a palette name")
+    return [tuple(np.asarray(c)[:3])
+            for c in sns.blend_palette(colors, n_colors)]
+
+
 def _get_palette(palette, n_colors, sns, continuous=False):
     """Resolve `palette` into a list of >= `n_colors` RGB tuples.
 
@@ -303,7 +482,15 @@ def _get_palette(palette, n_colors, sns, continuous=False):
             "palette= must be a seaborn/matplotlib palette name, a list of "
             "colors, or a matplotlib Colormap; got None")
     if isinstance(palette, str):
-        return sns.color_palette(palette, n_colors)
+        if palette.startswith(IMAGE_PALETTE_PREFIX):
+            # resolve to a color LIST and fall through to the list handling
+            # below, so a continuous mapping blends the extracted anchors
+            # into its gradient exactly as it would any short list
+            palette = _image_palette_list(
+                palette[len(IMAGE_PALETTE_PREFIX):].strip(),
+                n_colors, sns, continuous)
+        else:
+            return sns.color_palette(palette, n_colors)
     if isinstance(palette, Colormap):
         if n_colors == 1:
             return [tuple(np.asarray(palette(0.5))[:3])]

@@ -30,9 +30,23 @@ STAGES = [
 ]
 PREDICT_LABEL = 'predict\n(overlay)'
 
-fig, ax = plt.subplots(figsize=(13, 3.2))
-ax.set_xlim(0, len(STAGES) + 1.6)
-ax.set_ylim(-1.6, 1.6)
+# The two HIERARCHY-only operations (1.1). They are drawn as a side branch,
+# off the main line, because they run only for a MultiIndex DataFrame and are
+# not ordinary stages: expansion feeds leaves INTO the chain (so every leaf
+# gets the identical canonical pipeline), and mean-trace construction hangs
+# off the end of it (means are built in the PLOTTED space, which is why they
+# reach trace_data and never xform_data). See docs/hierarchy.rst.
+HIERARCHY_COLOR = '#f0f0f0'
+EXPANSION_LABEL = 'hierarchy\nexpansion'
+MEANS_LABEL = 'hierarchy: mean traces\n+ hue propagation'
+
+fig, ax = plt.subplots(figsize=(13, 4.6))
+# xlim must clear the predict box's RIGHT edge: it is centred 1.15 past the
+# last stage and is box_w wide, so it ends at len(STAGES) + 1.72. The old
+# limit of len(STAGES) + 1.6 cut its dashed border off mid-box (visible in
+# the SVG this script has been shipping); +2.3 leaves a margin instead.
+ax.set_xlim(0, len(STAGES) + 2.3)
+ax.set_ylim(-2.7, 2.5)
 ax.axis('off')
 
 box_w, box_h = 0.86, 0.9
@@ -70,12 +84,50 @@ arrow = FancyArrowPatch((centers[-1] + box_w / 2, 0), (px - box_w / 2, 0),
                          linestyle='--', color='#1b1b1b', zorder=1)
 ax.add_patch(arrow)
 
-ax.text((centers[0] + centers[-1]) / 2, 1.25,
+
+def side_branch(label, x, y, source, target, width=1.75):
+    """Draw one hierarchy-only box at (x, y), wired to two main-line stages.
+
+    `source`/`target` are main-line x-centers: the branch is ENTERED from
+    `source` and REJOINS at `target`, both with dashed arrows, so the eye
+    reads it as a detour off the linear chain rather than a stage in it.
+    Both arrows are drawn explicitly (rather than from a symmetric loop) so
+    that their direction is unambiguous: the first head lands on the box,
+    the second lands back on the main line.
+    """
+    box = FancyBboxPatch((x - width / 2, y - box_h / 2), width, box_h,
+                         boxstyle='round,pad=0.05,rounding_size=0.08',
+                         linewidth=1.4, edgecolor='#1b1b1b', linestyle='--',
+                         facecolor=HIERARCHY_COLOR, alpha=0.95, zorder=2)
+    ax.add_patch(box)
+    ax.text(x, y, label, ha='center', va='center', fontsize=9.5,
+            color='#1b1b1b', fontweight='bold', zorder=3)
+
+    # the main line's edge, and the branch box's edge, both facing each other
+    main_edge = box_h / 2 if y > 0 else -box_h / 2
+    branch_edge = y - box_h / 2 if y > 0 else y + box_h / 2
+    for (x0, y0), (x1, y1) in (
+            ((source, main_edge), (x - width / 4, branch_edge)),   # in
+            ((x + width / 4, branch_edge), (target, main_edge))):  # out
+        ax.add_patch(FancyArrowPatch(
+            (x0, y0), (x1, y1), arrowstyle='-|>', mutation_scale=14,
+            linewidth=1.2, linestyle='--', color='#555555', zorder=1))
+
+
+# expansion feeds the chain just after load/format; mean construction hangs
+# off cluster, just before plot/animate
+side_branch(EXPANSION_LABEL, (centers[0] + centers[1]) / 2, 1.3,
+            centers[0], centers[1])
+side_branch(MEANS_LABEL, (centers[5] + centers[6]) / 2, -1.3,
+            centers[5], centers[6])
+
+ax.text((centers[0] + centers[-1]) / 2, 2.15,
          'Canonical hypertools pipeline order (GH #153)',
          ha='center', va='center', fontsize=13, fontweight='bold')
-ax.text((centers[0] + centers[-1]) / 2, -1.3,
+ax.text((centers[0] + centers[-1]) / 2, -2.35,
          'A manip LIST may interleave any stage explicitly and overrides this order; '
-         'standalone stage kwargs (manip=, normalize=, reduce=, align=, cluster=) always follow it.',
+         'standalone stage kwargs (manip=, normalize=, reduce=, align=, cluster=) always follow it.\n'
+         'Dashed side boxes run ONLY for a hierarchical (MultiIndex) DataFrame -- see docs/hierarchy.rst.',
          ha='center', va='center', fontsize=8.5, style='italic', color='#444444')
 
 plt.tight_layout()

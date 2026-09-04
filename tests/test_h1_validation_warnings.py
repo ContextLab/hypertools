@@ -222,10 +222,10 @@ def test_plot_bundle_forecasts_match_hyp_predict_rows():
     fc = np.asarray(bundle['predict']['forecasts'][0])
     assert standalone.shape == (t, 3)
     assert fc.shape == (t, 3)
-    # the drawn overlay still connects to the trajectory via one extra
-    # (prepended, last-observed) vertex
+    # the drawn overlay is smoothed like any line (PCHIP-densified beyond the
+    # raw t+1 vertices), while the returned forecast stays exactly t rows
     ax = bundle['fig'].axes[0]
-    assert len(ax.lines[-1].get_xdata()) == t + 1
+    assert len(ax.lines[-1].get_xdata()) > t + 1
 
 
 # --- item 13: legacy-dict deprecation attributed to user code (X4-008) -----
@@ -266,6 +266,29 @@ def test_deleted_unrendered_animation_does_not_warn():
         ani = hyp.plot(_walk(), animate=True, duration=0.5, frame_rate=5,
                        show=False)
         del ani
+        gc.collect()
+    assert not [x for x in w
+                if 'deleted without rendering' in str(x.message)]
+
+
+def test_unrendered_animation_in_a_reference_cycle_does_not_warn():
+    """The wrapper cannot rely on its own ``__del__`` running first.
+
+    When a ``HyperAnimation`` dies inside a reference cycle (a captured
+    traceback holding the frame that made it, a figure whose callbacks lead
+    back to the animation), the cyclic collector finalizes the wrapper and
+    the inner ``FuncAnimation`` in arbitrary order, and matplotlib's
+    ``Animation.__del__`` warns "deleted without rendering" if it goes
+    first. Seen on 4 of 12 CI jobs on 2026-09-04 and never locally; the
+    wrapper now marks the animation at construction, so order is moot.
+    """
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter('always')
+        ani = hyp.plot(_walk(), animate=True, duration=0.5, frame_rate=5,
+                       show=False)
+        cycle = [ani]
+        cycle.append(cycle)                 # wrapper reachable only via a cycle
+        del ani, cycle
         gc.collect()
     assert not [x for x in w
                 if 'deleted without rendering' in str(x.message)]

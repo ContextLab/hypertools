@@ -18,7 +18,8 @@
 #
 # import os
 # import sys
-import sys, os
+import os
+import sys
 
 # plotly scraper for sphinx-gallery: renders plotly figures produced by
 # gallery examples to static PNGs. This needs THREE things: plotly, kaleido,
@@ -38,6 +39,22 @@ except Exception:  # pragma: no cover
     def plotly_sg_scraper(*args, **kwargs):
         return ''
 sys.path.insert(0, os.path.abspath('../'))
+# `setup()` below does `from _gallery_log_filter import install` -- a sibling
+# module living right next to this file (docs/_gallery_log_filter.py).
+# Whether that import resolves depends on HOW Sphinx was invoked, which is
+# not something conf.py should have to care about:
+#   - `python -m sphinx` (what the docs-clean CI job runs, see
+#     .github/workflows/test.yml) puts the current working directory --
+#     docs/ -- on sys.path[0], so the import silently works;
+#   - the installed `sphinx-build` console script (what `cd docs &&
+#     make html`, the documented local workflow, uses) does NOT: console
+#     entry points get the script's own bin/ directory instead, so the same
+#     import raised ModuleNotFoundError and the local build could not run.
+# Read the Docs' exact invocation is deliberately not assumed here --
+# .readthedocs.yaml declares a normal Sphinx build without pinning it.
+# Explicitly adding this file's own directory makes the import
+# invocation-agnostic, so every path above behaves identically.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 
 def _install_notebook_cell():
@@ -88,6 +105,14 @@ extensions = ['sphinx.ext.autodoc',
     'numpydoc',
     'sphinx.ext.autosummary',
     'sphinx.ext.viewcode',
+    # provides the `.. doctest::` directive docs/hierarchy.rst uses for its
+    # worked examples. Those examples are EXECUTED by
+    # tests/test_docs_hierarchy_guide.py (via doctest.testfile), not by this
+    # builder -- the extension is here so the directive renders instead of
+    # raising "Unknown directive type", which -W turns into a build failure.
+    'sphinx.ext.doctest',
+    # (see doctest_global_setup below -- running `-b doctest` from the repo
+    # root used to litter it with the files those examples write)
     'sphinx_gallery.gen_gallery',
     # renders the .. video:: directives sphinx-gallery emits for
     # matplotlib animations (matplotlib_animations = (True, 'mp4'))
@@ -96,6 +121,28 @@ extensions = ['sphinx.ext.autodoc',
 
 # allow nbsphinx errors for missing optional dependencies
 nbsphinx_allow_errors = True
+
+# Run every doctest in a scratch directory. Several examples legitimately
+# WRITE files with relative names -- `hyp.save(x, 'data.pkl')` in
+# hypertools/io/save.py, and the figure dumps a couple of plotting examples
+# produce -- so `sphinx -b doctest` launched from the repo root left
+# data.csv, data.pkl and hypertools_fig_00*.{png,html} lying in it,
+# untracked, for the next `git add -A` to sweep up. Changing the examples to
+# write to a temp path would make the docs teach a worse idiom than the one
+# users actually want, so the BUILDER moves instead of the docs. Only the
+# doctest builder reads these hooks; the html build is unaffected.
+doctest_global_setup = '''
+import os as _os, tempfile as _tempfile
+_doctest_cwd = _os.getcwd()
+_doctest_scratch = _tempfile.mkdtemp(prefix='hypertools-doctest-')
+_os.chdir(_doctest_scratch)
+'''
+
+doctest_global_cleanup = '''
+import os as _os, shutil as _shutil
+_os.chdir(_doctest_cwd)
+_shutil.rmtree(_doctest_scratch, ignore_errors=True)
+'''
 
 # numpydoc auto-inserts a "Methods" autosummary (with :toctree:) into every
 # documented class's page by default, pointing at per-method stub pages
@@ -139,7 +186,8 @@ author = u'Andrew C. Heusser, Kirsten Ziman, Lucy L. W. Owen, Jeremy R. Manning'
 # built documents.
 #
 # Import version from package
-import hypertools
+import hypertools  # noqa: E402 (sphinx conf.py: intentionally imported here,
+# after sys.path is configured above, not at module top)
 # The short X.Y version.
 version = hypertools.__version__
 # The full version, including alpha/beta/rc tags.
@@ -310,6 +358,41 @@ texinfo_documents = [
      'Miscellaneous'),
 ]
 
+
+def hyperanimation_scraper(block, block_vars, gallery_conf, **kwargs):
+    """Scrape the animations ``hyp.plot(..., show=False)`` returns.
+
+    sphinx-gallery's matplotlib scraper walks ``plt.get_fignums()`` and pairs
+    each MANAGED figure with any ``matplotlib.animation.Animation`` in the
+    example's namespace. A ``show=False`` plot leaves its figure unmanaged
+    by pyplot, so the five launch examples (which bind the ``HyperAnimation``
+    wrapper the call returns) rendered NOTHING in the gallery -- measured
+    2026-09-03: their generated pages carried no image block at all, and no
+    ``.mp4`` for a thumbnail. This scraper finds every ``HyperAnimation`` (or
+    bare ``Animation``) whose figure the matplotlib scraper will not see and
+    renders it through sphinx-gallery's own animation writer, so the page
+    gets the same embedded video as the managed-figure examples.
+    """
+    from pathlib import PurePosixPath
+    import matplotlib.pyplot as plt
+    from matplotlib.animation import Animation
+    from sphinx_gallery.scrapers import _anim_rst
+    from hypertools.plot.hyper_animation import HyperAnimation
+
+    managed = {plt.figure(num) for num in plt.get_fignums()}
+    seen, rst = set(), []
+    for value in block_vars['example_globals'].values():
+        ani = value.animation if isinstance(value, HyperAnimation) else value
+        if not isinstance(ani, Animation) or id(ani) in seen:
+            continue
+        seen.add(id(ani))
+        if ani._fig in managed:
+            continue                    # the matplotlib scraper renders it
+        image_path = PurePosixPath(next(block_vars['image_path_iterator']))
+        rst.append(_anim_rst(ani, image_path, gallery_conf))
+    return '\n'.join(rst)
+
+
 sphinx_gallery_conf = {
     # path to your examples scripts
     'examples_dirs' : '../examples',
@@ -336,7 +419,8 @@ sphinx_gallery_conf = {
     'capture_repr': ('_repr_html_',),
     # scrape BOTH matplotlib figures and plotly figures (the plotly scraper
     # renders interactive figures into the gallery via kaleido)
-    'image_scrapers': ('matplotlib', plotly_sg_scraper),
+    'image_scrapers': ('matplotlib', plotly_sg_scraper,
+                       hyperanimation_scraper),
     # Limit memory usage display
     'show_memory': False,
     # Ensure proper thumbnail linking

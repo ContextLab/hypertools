@@ -19,9 +19,11 @@ elev=10/azim=-60 camera, 1.5pt lines, 6pt markers, and the same seaborn
 palette assignment per trace.
 """
 
+import contextlib
 import itertools
 import os
 import sys
+import threading
 import warnings
 
 import numpy as np
@@ -49,7 +51,9 @@ from .density import (
     resolve_grid,
     resolve_plotly_volume_params,
 )
-from .trails import broadcast_trail_flag
+from .trails import (RunWindow, anim_window_bounds, broadcast_trail_flag,
+                     dataset_window_bounds, head_window_frames)
+from .._shared.helpers import antialias_line, has_line_component
 from . import morph as _morph
 
 
@@ -380,18 +384,116 @@ def _labeled_axis_layout(base, label, scene=False):
     return layout
 
 
+def _build_aa_curves(data, fmt, antialias, morph_tags=None):
+    """One ``(dense, step)`` pair per dataset, for DRAW-TIME line smoothing.
+
+    Mirrors `matplotlib_backend._draw`'s identical precomputation (see
+    `plot`'s ``antialias=``): each LINE-styled dataset gets a dense,
+    PCHIP-upsampled copy built ONCE here, so every static trace and every
+    animation frame can draw a smooth curve for whatever window of ORIGINAL
+    rows it would have shown (`_aa_window`) without re-interpolating.
+
+    Datasets that draw no line are passed through untouched with
+    ``step == 1``: `has_line_component` is True only when a linestyle token
+    is present (solid/dashed/dotted, with or without a marker), so a
+    marker-only 'o'/'.' dataset is never densified and its markers stay on
+    the true samples. `animate='morph'` datasets are skipped too -- morph
+    draws traveling point CLOUDS, not lines. ``step == 1`` makes every
+    window mapping degrade to the raw row slice, so ``antialias=False``
+    reproduces the pre-antialias figure exactly.
+    """
+    curves = []
+    for i, arr in enumerate(data):
+        arr = np.atleast_2d(np.asarray(arr, dtype=np.float64))
+        is_morph = morph_tags is not None and i < len(morph_tags) and morph_tags[i]
+        if antialias and not is_morph and has_line_component(
+                fmt[i] if i < len(fmt) else None):
+            curves.append(antialias_line(arr))
+        else:
+            curves.append((arr, 1))
+    return curves
+
+
+def _aa_window(aa_curves, i, a, b):
+    """The smooth polyline to DRAW for dataset `i`'s ORIGINAL-row window
+    ``data[i][a:b]``.
+
+    Because `antialias_line` subdivides UNIFORMLY (``dense[::step]`` is
+    exactly the original array), a window of original rows maps onto the
+    dense curve exactly as ``dense[a * step:(b - 1) * step + 1]``. With
+    antialiasing off (or nothing to upsample, ``step == 1``) this is
+    literally ``data[i][a:b]``, so the drawn vertices are unchanged.
+    """
+    dense, step = aa_curves[i]
+    if step == 1:
+        return dense[a:b]
+    if b <= a:
+        return dense[0:0]
+    return dense[a * step:(b - 1) * step + 1]
+
+
+def _aa_x(step, start_x, n_drawn):
+    """The x positions accompanying a drawn 1-D window of `n_drawn` vertices
+    whose first vertex sits at ORIGINAL row index `start_x`.
+
+    1-D plots put the row index on x, so densifying the y values has to
+    densify x the same way; `step` dense vertices span one original row.
+    ``step == 1`` returns the historical integer `np.arange`, byte-identical
+    to the pre-antialias behavior.
+    """
+    if step == 1:
+        return np.arange(start_x, start_x + n_drawn)
+    return start_x + np.arange(n_drawn) / step
+
+
+def _aa_resample_colors(colors, n_orig, n_dense):
+    """Per-point colors resampled onto a densified line's parameterization.
+
+    `colors` are plotly color STRINGS (one per original point), so each dense
+    vertex takes its NEAREST original point's color rather than a blended
+    one. Returns `colors` unchanged when there is nothing to resample.
+    """
+    if colors is None or n_dense == n_orig:
+        return colors
+    grid = np.linspace(0, n_orig - 1, n_dense)
+    return [colors[j] for j in np.round(grid).astype(int)]
+
+
+def _run_window(frame_windows, idx, n_rows, num, total_frames,
+                window_frames):
+    """This trace's `RunWindow` at one frame.
+
+    `frame_windows` is what `trails.dataset_window_bounds` returned for this
+    frame -- ONE clock per source dataset, so `hue=`/`cluster=` runs of one
+    dataset reveal in row order -- or None when the caller has no ownership
+    mapping (marker-only categorical regrouping, whose traces are not
+    datasets). The fallback rebuilds the historical per-trace bounds as a
+    `RunWindow` so both paths hand the drawing code one shape, and it is the
+    SAME shared `anim_window_bounds` the matplotlib backend falls back to.
+    """
+    if frame_windows is not None:
+        return frame_windows[idx]
+    start, end, trail_stop = anim_window_bounds(
+        num, total_frames, n_rows, window_frames)
+    return RunWindow(start, end, trail_stop, max(0, end - 1), True, n_rows)
+
+
 def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 title=None, animate=False, size=None, show=True,
                 save_path=None, frame_rate=30, duration=30, rotations=1,
                 elev=10, azim=-60, point_colors=None, tail_duration=2,
                 focused=None,
                 chemtrails=False, precog=False, bullettime=False, zoom=1,
-                forecasts=None, colorbar_info=None, surface=None,
+                forecasts=None, forecast_owner=None,
+                forecast_overrides=None,
+                forecast_schedule=None, forecast_trail=0,
+                colorbar_info=None, surface=None,
                 surface_colors=None, surface_point_colors=None,
                 density=None, density_colors=None,
                 morph_tags=None, morph_colors=None, morph_samples=None,
                 font=None, font_extra=None, label_alpha=0.5, xlabel=None,
-                ylabel=None, zlabel=None):
+                ylabel=None, zlabel=None, antialias=True, frame_hooks=None,
+                segment_titles=None, ownership=None, forecast_reveal=None):
     """Render grouped datasets with plotly, mirroring _draw's contract and
     the matplotlib renderer's appearance.
 
@@ -418,7 +520,9 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         Figure title.
     animate : bool or str
         Animation style (False for static; True/'parallel'/'spin'/
-        'serial'/'window'/'morph').
+        'serial'/'window'/'morph'). 'serial' composes with the
+        chemtrails/precog/bullettime trail flags below, at parity with the
+        matplotlib backend (backend parity, Task 4) -- see those params.
     size : (width, height) or None
         Figure size in inches (converted to pixels at 100 dpi).
     show : bool
@@ -443,15 +547,37 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     focused : float or None
         In-focus (opaque) window length in seconds; None -> tail_duration.
     chemtrails : bool or list of bool
-        Past-trail flag(s), per trace.
+        Past-trail flag(s), per trace. Applies to `animate=True`/
+        `'parallel'` AND `animate='serial'` (the currently-revealing
+        dataset traces its own past), matching the matplotlib backend.
     precog : bool or list of bool
-        Future-trail flag(s), per trace.
+        Future-trail flag(s), per trace. Same `animate='serial'` support
+        as `chemtrails` above.
     bullettime : bool or list of bool
-        Past+future trail flag(s), per trace.
+        Past+future trail flag(s), per trace. Same `animate='serial'`
+        support as `chemtrails` above.
     zoom : float
         3-D camera zoom factor.
     forecasts : list of numpy.ndarray or None
-        predict= forecast traces (see below).
+        predict= forecast traces (see below). ONE PER INPUT DATASET, which
+        after `hue=`/`cluster=` regrouping is NOT one per drawn trace.
+    forecast_overrides : list of dict or None
+        One `forecast_*=` override per dataset
+        (`forecast.resolve_forecast_overrides`), or `None` for pure
+        inheritance.
+    forecast_owner : list of int or None
+        `forecast_owner[i]` is the index in `data` of the run that forecast
+        `i` continues -- the run holding dataset `i`'s last observation, and
+        so the run whose style it inherits. `None` when no regrouping
+        happened, in which case forecast `i` continues run `i`.
+    forecast_schedule : hypertools.plot.forecast.ForecastSchedule or None
+        Every forecast a TIME-PROGRESSING animation will draw, precomputed by
+        `plot()` and already mapped into the display box (see below). `None`
+        for static plots and `animate='spin'`, which draw the frozen
+        full-history `forecasts` overlay instead.
+    forecast_trail : int
+        Past forecasts kept on screen as a fading fan (`forecast_trail=`),
+        0 (the default) for none. Only meaningful with `forecast_schedule`.
     colorbar_info : dict or None
         Colorbar spec from `plot._build_colorbar_info` (see below).
     surface : list of dict or None
@@ -480,6 +606,66 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         y-axis title.
     zlabel : str or None
         z-axis title (3-D only; rejected upstream otherwise).
+    antialias : bool
+        Whether to smooth every drawn LINE (default True) -- see below.
+    frame_hooks : hypertools.plot.animation_context.FrameHooks or None
+        The public `on_frame=` registry (plan 1.1 Task 7), created once by
+        `plot()` and threaded straight through to `_add_animation`, which
+        records each frame's state and dispatches every registered
+        callback immediately before that frame is appended to
+        `fig.frames` -- see `_add_animation`'s docstring. `None` (the
+        default) when no `on_frame=` was requested.
+    forecast_reveal : hypertools.plot.forecast.DatasetRevealSchedule or None
+        Which of each dataset's ORIGINAL rows are on screen at each frame,
+        when `hue=`/`cluster=` regrouping means a dataset spans several
+        traces. Used only to colour the animated forecast traces: a live
+        forecast wears the colour of the run drawing the head at that frame,
+        and a retained `forecast_trail=` member wears the one it was FIT
+        with, so a boundary crossing does not repaint the historical fan
+        (Decision R3, matching the matplotlib backend). `None` for
+        unregrouped figures, where the forecast keeps its build-time colour.
+    ownership : hypertools.plot.ownership.TraceOwnership or None
+        Which source dataset each drawn trace came from and which of its
+        rows (`None` when the traces do not correspond to input datasets --
+        marker-only categorical regrouping groups globally by category).
+        When given, the animation's head/trail windows come from
+        `trails.dataset_window_bounds`, which paces every trace of ONE
+        dataset from that dataset's single clock, so a `hue=`/`cluster=`
+        regrouped trajectory sweeps once in row order rather than growing
+        in several places at once. This is the SAME call the matplotlib
+        updaters make, for the reason the `trails` module exists: a window
+        arithmetic transcribed separately into this backend once blanked a
+        5-row dataset for 9 of its 15 frames.
+    segment_titles : list of str or None
+        Per-segment titles for serial-style animations (`_validate_title`'s
+        resolved list, plan 1.1 Task 8) -- `None` for every static or
+        scalar-title plot (the overwhelmingly common case). Threaded
+        straight through to `_add_animation`, which sets each frame's
+        `layout.title` from the SAME hold/transition rule the matplotlib
+        backend's `_make_title_updater` uses (segment PARITY, never a
+        fraction) -- see `_add_animation`'s docstring. Also reserves the
+        same top `margin` a scalar `title=` would (task-8 review, margin
+        finding) -- `title` itself is None here (the static title text is
+        never drawn), but a per-frame title still renders on every hold
+        frame and needs the same vertical room or it clips at the canvas
+        top edge; see the `margin=` local below.
+
+    `antialias` (see `plot`'s `antialias=`): DRAW-TIME line smoothing, at
+    parity with `matplotlib_backend._draw`'s identical option. Each
+    line-styled dataset gets a dense, PCHIP-upsampled copy built ONCE
+    (`_build_aa_curves`); the static traces and every animation frame then
+    draw, for whatever window of ORIGINAL rows they would have shown,
+    exactly the corresponding stretch of that smooth curve (`_aa_window`),
+    so successive observations are joined by a smoothly bending curve
+    instead of a sharp-angled chain of straight segments. The underlying
+    `data` rows are deliberately left untouched, so frame pacing, window/row
+    index math, `labels=` annotations, hover text, colorbars, `surface=`
+    hulls and `density=` layers all keep indexing the REAL observations --
+    only the drawn coordinate arrays change. Marker-only styles (e.g. 'o',
+    '.') are never touched, so their markers stay on the true samples, and
+    `animate='morph'` (traveling point CLOUDS, not lines) is excluded too.
+    `antialias=False` reproduces the pre-antialias figure exactly (same
+    traces, same frames, same coordinate arrays).
 
     `font` (GH #205): the ALREADY-RESOLVED `matplotlib.font_manager.
     FontProperties` from `hypertools.plot.fonts.resolve_font` (or `None`
@@ -511,8 +697,36 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     one per dataset in `data` (same length, same coordinate space -- already
     center/scale-matched to `data` by the caller), each starting with the
     dataset's final observed row so the trace connects. Rendered as one
-    dashed (`dash='dash'`), 0.6-opacity, `showlegend=False` trace per
-    dataset, in the SAME color as its source trace.
+    `showlegend=False` trace per dataset, styled to match its source trace
+    (`_forecast_style_from`): the SAME colour, width and dash, at half its
+    opacity.
+
+    `forecast_schedule`/`forecast_trail` (predict= during a TIME-PROGRESSING
+    animation, 1.1): a frozen full-history overlay would show a prediction
+    made from data the viewer has not been revealed yet, so when a schedule
+    is given the static `forecasts` block above is skipped entirely (the same
+    gate `plot.py` applies to the matplotlib overlay) and this function
+    creates one EMPTY `live` trace per dataset -- plus `forecast_trail`
+    fading `trail` traces per dataset, newest-first, exactly like matplotlib's
+    preallocated trail artists -- which `_add_animation` then rewrites every
+    frame from the schedule. Every one of them carries
+    ``meta['hyp_forecast_role']`` (``'static'``/``'live'``/``'trail'``),
+    ``meta['hyp_dataset']``, ``meta['hyp_forecast_age']`` and
+    ``meta['hyp_forecast_alpha']``, so forecast traces are identifiable
+    without guessing from `dash` (user data drawn with `fmt='--'` is dashed
+    too) -- the plotly half of matplotlib's `_hyp_forecast_role` artist tag.
+
+    The OBSERVED data traces are tagged the same way, with
+    ``meta['hyp_trace_index']`` -- the index into `data` of the trajectory
+    they draw, and the plotly half of matplotlib's `coll._hyp_trace_index`
+    (`plot._apply_multicolor_lines`). It exists for the same reason: neither
+    `fig.data` nor `ax.collections` is a list of data artists. `fig.data`
+    also carries the black wireframe cube, 2-D density/surface layers, the
+    forecast overlays above and the colorbar's phantom trace, and NONE of
+    those is named, so counting "traces with a `name`" or "all but the last"
+    is wrong as soon as any of them is present. Under a continuous `hue=` in
+    2-D the tag is also what identifies the many one-segment traces
+    (`_segment_traces_2d`) as ONE trajectory.
 
     `colorbar_info` (GH #100): optional dict from
     `hypertools.plot.plot._build_colorbar_info` (``kind='continuous'`` with
@@ -627,6 +841,14 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     morph_tags = (morph_tags if morph_tags is not None
                  else ([True] * len(data) if animate == "morph" else None))
 
+    # antialias= (see this function's docstring and `plot`'s `antialias=`):
+    # build each line-styled dataset's dense, PCHIP-upsampled drawing curve
+    # ONCE, here, before any trace is created -- the static traces below and
+    # every animation frame in `_add_animation` then slice the SAME curves
+    # via `_aa_window`, so a dataset is never interpolated twice and the
+    # smoothing is identical across the static figure and its frames.
+    aa_curves = _build_aa_curves(data, fmt, antialias, morph_tags=morph_tags)
+
     # density= (GH #108/#191), 2-D case: subtle KDE density layers must
     # render BELOW everything else (including surface= fills). Plotly's 2D
     # layering follows trace order in `fig.data` (no zorder), so these are
@@ -681,12 +903,35 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         if ndims >= 3 and symbol not in _SYMBOLS_3D:
             symbol = _SYMBOL_3D_FALLBACK.get(symbol, 'circle')
 
-        # multicolored lines: per-point colors along each trajectory
+        # multicolored lines: per-point colors along each trajectory.
+        #
+        # TWO serializations, because the two backends treat this trace's
+        # `alpha=` differently and parity is stated against matplotlib, not
+        # against internal consistency:
+        #  * LINES carry it. `plot._apply_multicolor_lines` replaces the line
+        #    artist with a collection whose segment colours gain a 4th
+        #    channel from `tkwargs['alpha']` -- an alpha left on the
+        #    discarded artist is simply lost -- so the per-point colours are
+        #    the only place the alpha can live here either. Serializing them
+        #    through `_rgb_string` (which drops the 4th channel) with no
+        #    trace `opacity` is why a hierarchy's 0.7 leaves, and a plain
+        #    `hue=` + `alpha=`, rendered fully opaque on plotly alone.
+        #  * MARKERS do not. `plot._apply_multicolor_markers` scatters
+        #    `c=ci` -- the raw hue colours, with no alpha folded in
+        #    (measured: every facecolor's 4th channel is 1.0 under
+        #    `alpha=0.7`). Baking it in here would make plotly the ONLY
+        #    backend dimming a hue-coloured marker.
         trace_point_colors = None
+        trace_line_colors = None
         if point_colors is not None and i < len(point_colors) \
                 and point_colors[i] is not None:
             trace_point_colors = [
                 _rgb_string(c) for c in np.asarray(point_colors[i])]
+            _pt_alpha = tkwargs.get('alpha')
+            trace_line_colors = (
+                trace_point_colors if _pt_alpha is None else
+                [_to_plotly_color(c, _pt_alpha)
+                 for c in np.asarray(point_colors[i])])
 
         # surface= (GH #109) keep_points=False: hide this dataset's own
         # line/marker trace so only its surface shows.
@@ -709,6 +954,7 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         # never hide their points: the mesh now renders with real Mesh3d
         # opacity (see `_mesh3d_trace`), so the data shows through it
         # exactly like the matplotlib reference behavior.
+        enclosed_mask = None
         if (ndims >= 3 and not hide_points and surface is not None
                 and i < len(surface) and surface[i] is not None
                 and surface[i].get('alpha', SURFACE_DEFAULTS['alpha'])
@@ -721,6 +967,43 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 if enclosed.any():
                     arr = arr.copy()
                     arr[enclosed] = np.nan
+                    enclosed_mask = enclosed
+
+        # antialias=: draw the dense (smooth) curve for this dataset's FULL
+        # row range instead of its raw rows. `arr` itself stays the original
+        # rows -- it is what the surface/enclosure logic above and the point
+        # count below reason about. Per-point colors are resampled onto the
+        # same parameterization so they stay 1:1 with the drawn vertices;
+        # a color array that does NOT align with the rows (defensive -- the
+        # caller builds both from the same post-interpolation data) disables
+        # smoothing for this trace rather than mismatching the two.
+        aa_step = aa_curves[i][1]
+        if (aa_step != 1 and trace_point_colors is not None
+                and len(trace_point_colors) != arr.shape[0]):
+            aa_step = 1
+        if aa_step == 1:
+            draw_arr = arr
+        else:
+            draw_arr = _aa_window(aa_curves, i, 0, arr.shape[0])
+            if enclosed_mask is not None:
+                # points an opaque surface hides are dropped from the drawn
+                # line (NaN); on the dense curve each vertex follows its
+                # NEAREST original point's visibility.
+                draw_arr = draw_arr.copy()
+                grid = np.linspace(0, arr.shape[0] - 1, draw_arr.shape[0])
+                draw_arr[enclosed_mask[np.round(grid).astype(int)]] = np.nan
+            # both serializations follow the SAME resampling, so the line
+            # and marker colour arrays stay index-aligned with each other
+            # and with the drawn vertices
+            _n_orig, _n_dense = arr.shape[0], draw_arr.shape[0]
+            if trace_line_colors is trace_point_colors:
+                trace_point_colors = trace_line_colors = _aa_resample_colors(
+                    trace_point_colors, _n_orig, _n_dense)
+            else:
+                trace_point_colors = _aa_resample_colors(
+                    trace_point_colors, _n_orig, _n_dense)
+                trace_line_colors = _aa_resample_colors(
+                    trace_line_colors, _n_orig, _n_dense)
 
         common = dict(
             mode=mode,
@@ -731,62 +1014,225 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
             visible=not hide_points,
             line=dict(color=color, width=width, dash=dash),
             marker=dict(color=color, size=msize, symbol=symbol),
+            # WHICH trace of `data` this draws -- the plotly half of
+            # matplotlib's `coll._hyp_trace_index` tag
+            # (`plot._apply_multicolor_lines`), and for the same reason:
+            # `fig.data` is not a list of data traces. It also carries the
+            # black wireframe cube, 2-D density/surface layers, forecast
+            # overlays and an invisible colorbar carrier, none of which is
+            # named, so "the traces with a name" or "all but the last"
+            # miscounts as soon as any of those is present. Tagged
+            # positively so a decoration added later cannot leak in.
+            meta=dict(hyp_trace_index=i),
         )
         if ndims >= 3:
             if trace_point_colors is not None:
                 # Scatter3d supports per-point line colors natively
-                common['line'] = dict(color=trace_point_colors, width=width,
+                common['line'] = dict(color=trace_line_colors, width=width,
                                       dash=dash)
                 common['marker'] = dict(color=trace_point_colors,
                                         size=msize, symbol=symbol)
             traces.append(go.Scatter3d(
-                x=arr[:, 0], y=arr[:, 1], z=arr[:, 2], **common))
+                x=draw_arr[:, 0], y=draw_arr[:, 1], z=draw_arr[:, 2],
+                **common))
         elif ndims == 2:
             if trace_point_colors is not None and 'lines' in mode:
                 # 2D Scatter has no per-point line colors; draw short
                 # segment traces instead (grouped under one legend entry)
                 traces.extend(_segment_traces_2d(
-                    go, arr, trace_point_colors, width, dash, name))
+                    go, draw_arr, trace_line_colors, width, dash, name,
+                    trace_index=i))
                 continue
             if trace_point_colors is not None:
                 common['marker'] = dict(color=trace_point_colors,
                                         size=msize, symbol=symbol)
-            traces.append(go.Scatter(x=arr[:, 0], y=arr[:, 1], **common))
+            traces.append(go.Scatter(x=draw_arr[:, 0], y=draw_arr[:, 1],
+                                     **common))
         else:
-            xs = np.arange(arr.shape[0])
+            xs = _aa_x(aa_step, 0, draw_arr.shape[0])
             if trace_point_colors is not None and 'lines' in mode:
-                pts = np.column_stack([xs, arr[:, 0]])
+                pts = np.column_stack([xs, draw_arr[:, 0]])
                 traces.extend(_segment_traces_2d(
-                    go, pts, trace_point_colors, width, dash, name))
+                    go, pts, trace_line_colors, width, dash, name,
+                    trace_index=i))
                 continue
-            traces.append(go.Scatter(x=xs, y=arr[:, 0], **common))
+            if trace_point_colors is not None:
+                # the 1-D marker branch used to fall through to the single
+                # `color`, so a marker-only continuous hue drew all 60 points
+                # in ONE palette colour here while matplotlib's
+                # `_apply_multicolor_markers` scattered them per point
+                # (`ax.scatter(np.arange(n), xi[:, 0], c=ci, ...)`) -- the
+                # same per-point colours the 2-D and 3-D branches above
+                # already pass on.
+                common['marker'] = dict(color=trace_point_colors,
+                                        size=msize, symbol=symbol)
+            traces.append(go.Scatter(x=xs, y=draw_arr[:, 0], **common))
 
     n_data_traces = len(traces) - n_surface_traces_2d - n_density_traces_2d
 
-    # predict=: one dashed, low-opacity forecast trace per dataset, in the
-    # same color as its source trace (GH #169; matplotlib parity).
-    if forecasts is not None:
-        for i, arr in enumerate(data):
-            tkwargs = kwargs_list[i] or {}
+    # predict=: one forecast trace per dataset, styled to match its source
+    # trace -- same colour, width and dash, at half its opacity
+    # (`_forecast_style_from`; GH #169, matplotlib parity).
+    # `forecast_trace_start`/`forecast_trace_specs` do for these traces what
+    # `trail_trace_start`/`trail_dataset_indices` (just below) do for the
+    # chemtrail traces: record the block's REAL position in `traces` and what
+    # each entry draws, so `_add_animation` can rewrite them every frame.
+    # `forecast_trace_specs[k]` is the ``(dataset, age)`` pair that produced
+    # `traces[forecast_trace_start + k]`; age 0 is the live forecast.
+    forecast_trace_start = len(traces)
+    forecast_trace_specs = []
+    #: parallel to `forecast_trace_specs`: {run -> colour} for each
+    #: forecast trace, so a frame can repaint it in the head run's
+    #: colour (Decision R3). Empty dict = the colour is pinned.
+    forecast_frame_colors = []
+    if forecasts is not None and forecast_schedule is None:
+        # Loop over the FORECASTS (one per input dataset), not over `data`
+        # (one per drawn RUN). `hue=`/`cluster=` regrouping makes those two
+        # counts differ, and looping over runs indexed `forecasts[i]` off
+        # the end -- an IndexError that only became reachable once the
+        # matplotlib side started keeping forecasts under regrouping.
+        for i in range(len(forecasts)):
+            # `forecast_owner` names the run this forecast continues; without
+            # it, forecast i continues run i (the un-regrouped case).
+            src = (forecast_owner[i]
+                   if forecast_owner is not None and i < len(forecast_owner)
+                   else i)
+            src = src if src < len(data) else len(data) - 1
+            arr = data[src]
+            tkwargs = kwargs_list[src] or {}
             fc = np.atleast_2d(np.asarray(forecasts[i], dtype=np.float64))
-            color = _to_plotly_color(tkwargs.get('color'), 0.6)
-            width = float(tkwargs.get('linewidth')
-                          or DEFAULT_LINEWIDTH_PT) * PT_TO_PX
+            fc_line, fc_alpha = _forecast_style_from(
+                tkwargs, fmt[src],
+                override=(forecast_overrides[i]
+                          if forecast_overrides is not None
+                          and i < len(forecast_overrides) else None),
+                # a continuous `hue=` draws this run in MANY colours, so the
+                # forecast takes the one it starts from (matplotlib parity;
+                # see `_hue_anchor_color`). `src` -- the run holding the
+                # dataset's last observation -- is the right index into
+                # `point_colors` for the same reason it is the right index
+                # into `kwargs_list`/`data`.
+                anchor_color=_hue_anchor_color(point_colors, src))
             fc_common = dict(mode='lines', showlegend=False,
                              hoverinfo='skip',
-                             line=dict(color=color, width=width, dash='dash'))
+                             line=fc_line,
+                             meta=dict(hyp_forecast_role='static',
+                                       hyp_dataset=i, hyp_forecast_age=0,
+                                       hyp_forecast_alpha=fc_alpha))
+            # antialias=: a forecast trace is always a LINE, so smooth it the
+            # same way as any other line (matching `plot._draw_forecast_
+            # overlays`, which does exactly this on the matplotlib side) --
+            # a short forecast (e.g. t+1 = 5 vertices) then draws as a smooth
+            # curve rather than a few straight segments. The seam-
+            # prepended first point and the final point stay exact, so it
+            # still joins the trajectory.
+            fc_draw, fc_step = (antialias_line(fc) if antialias else (fc, 1))
             if ndims >= 3:
                 traces.append(go.Scatter3d(
-                    x=fc[:, 0], y=fc[:, 1], z=fc[:, 2], **fc_common))
+                    x=fc_draw[:, 0], y=fc_draw[:, 1], z=fc_draw[:, 2],
+                    **fc_common))
             elif ndims == 2:
                 traces.append(go.Scatter(
-                    x=fc[:, 0], y=fc[:, 1], **fc_common))
+                    x=fc_draw[:, 0], y=fc_draw[:, 1], **fc_common))
             else:
                 arr2 = np.atleast_2d(np.asarray(arr, dtype=np.float64))
                 start = arr2.shape[0] - 1
                 traces.append(go.Scatter(
-                    x=np.arange(start, start + fc.shape[0]), y=fc[:, 0],
-                    **fc_common))
+                    x=_aa_x(fc_step, start, fc_draw.shape[0]),
+                    y=fc_draw[:, 0], **fc_common))
+            forecast_trace_specs.append((i, 0))
+    elif forecast_schedule is not None:
+        # A time-progressing animation must draw the forecast made from the
+        # history revealed SO FAR, so the full-history overlay above is
+        # skipped and these EMPTY traces take its place, rewritten every
+        # frame by `_add_animation`. Empty -- not zero-alpha -- is how
+        # "nothing to draw here yet" is said, exactly as on the matplotlib
+        # side: `trail_alpha` never returns 0, so a stale trace and an
+        # unwritten one would otherwise be indistinguishable.
+        from .forecast import forecast_alpha, trail_alpha
+        n_retained = int(forecast_trail or 0)
+        # over the FORECASTS (one per input dataset), not over `data` (one
+        # per drawn RUN) -- the same rule the static branch above states, and
+        # for the same reason: `hue=`/`cluster=` regrouping makes those
+        # counts differ, `meta['hyp_dataset']` is what `_forecast_frame_data`
+        # asks the schedule with, and a run index there indexed off the end
+        # of the schedule (IndexError on the first frame of every regrouped
+        # animated forecast).
+        _n_forecasts = len(forecasts) if forecasts is not None else len(data)
+        for i in range(_n_forecasts):
+            # style from the run this dataset's forecast CONTINUES, exactly
+            # as the static branch does
+            _src = (forecast_owner[i]
+                    if forecast_owner is not None and i < len(forecast_owner)
+                    else i)
+            _src = _src if _src < len(data) else len(data) - 1
+            tkwargs = kwargs_list[_src] or {}
+            # the LIVE forecast's alpha for this dataset -- the fan decays
+            # from THIS, not from a fixed value, so a trail can never be more
+            # opaque than the live forecast it fades from (matplotlib parity)
+            live_alpha = forecast_alpha(tkwargs.get('alpha'))
+            # trails FIRST, so the live forecast draws on top of its own fan
+            # rather than under it (matplotlib parity)
+            for age in list(range(1, n_retained + 1)) + [0]:
+                # the declared alpha and the one baked into the rgba string
+                # are the SAME float, so a reader of `meta` can trust it
+                alpha = trail_alpha(age, n_retained, live_alpha=live_alpha)
+                fc_line, alpha = _forecast_style_from(
+                    tkwargs, fmt[_src], alpha=alpha,
+                    override=(forecast_overrides[i]
+                              if forecast_overrides is not None
+                              and i < len(forecast_overrides) else None),
+                    # same anchor the STATIC branch above takes: under a
+                    # continuous hue the run's own `line.color` is the
+                    # per-dataset palette colour, which nothing is drawn in.
+                    anchor_color=_hue_anchor_color(point_colors, _src))
+                fc_common = dict(
+                    mode='lines', showlegend=False, hoverinfo='skip',
+                    line=fc_line,
+                    meta=dict(
+                        hyp_forecast_role='live' if age == 0 else 'trail',
+                        hyp_dataset=i, hyp_forecast_age=age,
+                        hyp_forecast_alpha=alpha))
+                if ndims >= 3:
+                    traces.append(go.Scatter3d(x=[], y=[], z=[], **fc_common))
+                else:
+                    traces.append(go.Scatter(x=[], y=[], **fc_common))
+                forecast_trace_specs.append((i, age))
+                # Decision R3: the colour a live/retained forecast wears is
+                # the HEAD RUN's, which changes from frame to frame. Plotly
+                # frames carry geometry, so the colour must be resolvable
+                # per frame -- precompute what THIS trace would look like
+                # continuing each possible run, through the same
+                # `_forecast_style_from` the build above uses, so the two
+                # cannot express different policies. Empty when the user
+                # pinned the colour (forecast_hue=/_cluster=/_palette=):
+                # an explicit grouping is fixed for the whole animation.
+                _ov = (forecast_overrides[i]
+                       if forecast_overrides is not None
+                       and i < len(forecast_overrides) else None)
+                # A continuous hue pins it too: the forecast's identity is
+                # the hue value where its trajectory ENDS, which does not
+                # change from frame to frame. Decision R3's per-frame
+                # head-run colour stays correct for CATEGORICAL regrouping,
+                # where the run colour is what the viewer actually sees.
+                # Same rule, same reason, as matplotlib's `_override_colour`
+                # -- including that this half is DEFENSIVE: a continuous hue
+                # never regroups, so `forecast_reveal` is None and
+                # `_forecast_frame_data` never consults this map at all
+                # (measured 2026-08-16). The anchor an animated forecast
+                # actually wears comes from `anchor_color=` above.
+                _pinned = (
+                    (isinstance(_ov, dict) and _ov.get('color') is not None)
+                    or _hue_anchor_color(point_colors, _src) is not None)
+                forecast_frame_colors.append({} if _pinned else {
+                    _r: _forecast_style_from(
+                        kwargs_list[_r] or {}, fmt[_r],
+                        alpha=trail_alpha(
+                            age, n_retained,
+                            live_alpha=forecast_alpha(
+                                (kwargs_list[_r] or {}).get('alpha'))),
+                        override=_ov)[0].get('color')
+                    for _r in range(len(data))})
 
     # low-opacity trail traces for chemtrails (past) / precog (future) /
     # bullettime (both) on window animations, mirroring the matplotlib
@@ -799,16 +1245,36 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     # `trail_dataset_indices[k]` is the ORIGINAL dataset index that produced
     # `traces[trail_trace_start + k]`, so `_add_animation` can look up the
     # right dataset's data per frame.
+    #
+    # Backend parity (Task 4): 'serial' builds these too, not just
+    # True/'parallel' -- each currently-revealing dataset traces out its own
+    # trail as it grows, matching `matplotlib_backend.update_lines_serial`
+    # exactly (the serial frame loop in `_add_animation` below is what
+    # decides each frame's actual trail geometry per dataset; this list only
+    # decides which datasets get a trail TRACE at all, same flags/rule as
+    # parallel).
     n_trail_traces = 0
     trail_trace_start = len(traces)
     trail_dataset_indices = [
         i for i in range(len(data))
         if chemtrails[i] or precog[i] or bullettime[i]
-    ] if animate in (True, 'parallel') else []
+    ] if animate in (True, 'parallel', 'serial') else []
     for i in trail_dataset_indices:
         tkwargs = kwargs_list[i] or {}
         mode, symbol, dash, marker_char = _resolve_fmt(fmt[i], tkwargs)
-        color = _to_plotly_color(tkwargs.get('color'), 0.3)
+        # fold the 0.3 trail-fade factor into whatever alpha= this dataset
+        # carries (default 1.0 -> 0.3, unchanged for the common no-alpha
+        # case) -- mirrors matplotlib_backend.animate_plot3D/2D's
+        # `_trail_kwargs` (`kw["alpha"] = 0.3 * kw.pop("alpha", 1.0)`)
+        # exactly. Previously hardcoded to 0.3 regardless of alpha=, so a
+        # per-dataset alpha list (unreachable before per-dataset alpha=
+        # existed) never reached plotly's trail traces even though the
+        # matching head trace already honors it (see `tkwargs.get('alpha')`
+        # a few dozen lines above, in the head-trace loop).
+        _trail_alpha = tkwargs.get('alpha')
+        _trail_alpha = (0.3 if _trail_alpha is None
+                        else 0.3 * float(_trail_alpha))
+        color = _to_plotly_color(tkwargs.get('color'), _trail_alpha)
         width = float(tkwargs.get('linewidth')
                       or DEFAULT_LINEWIDTH_PT) * PT_TO_PX
         msize = _marker_size_px(
@@ -1052,11 +1518,26 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         explicit=font.get_name() if font is not None else None,
         extra=font_extra)
 
+    # t=40 reserves room for a title; t=10 assumes no title will ever be
+    # drawn. `segment_titles` (plan 1.1 Task 8) must ALSO trigger the wider
+    # margin: `plot.py` nulls the static `title` for segment-titled
+    # serial/morph animations (the title is drawn PER FRAME instead, by the
+    # 'morph'/'serial' branches of `_add_animation`, below), but a title
+    # still renders on every hold frame -- keying this off `title` alone
+    # left those figures at the "no title" t=10 margin even though most
+    # frames DO show one (task-8 review, margin finding: measured via a
+    # real kaleido PNG render of the first hold frame -- ink starting at
+    # canvas row 0 of a 480px-tall render at t=10 (clipped), vs. row 6+ at
+    # t=40 (clean); reproduced in
+    # tests/plot/test_serial_titles.py). This only reserves the SPACE a
+    # per-frame title will use -- it does not un-null `title` itself, so no
+    # stray static title is drawn (see `if title is not None:` below).
     layout = dict(
         paper_bgcolor='white',
         plot_bgcolor='white',
         showlegend=legend is not None,
-        margin=dict(l=10, r=margin_r, t=40 if title else 10, b=10),
+        margin=dict(l=10, r=margin_r,
+                    t=40 if (title or segment_titles) else 10, b=10),
         legend=dict(bgcolor='rgba(255,255,255,0.8)',
                     x=1.02, y=0.5, xanchor='left', yanchor='middle'),
         # layout.font is plotly's inherited default for every text surface
@@ -1144,6 +1625,13 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                        n_trail_traces=n_trail_traces,
                        trail_trace_start=trail_trace_start,
                        trail_dataset_indices=trail_dataset_indices,
+                       forecast_schedule=forecast_schedule,
+                       forecast_trace_start=forecast_trace_start,
+                       forecast_trace_specs=forecast_trace_specs,
+                       forecast_frame_colors=forecast_frame_colors,
+                       forecast_reveal=forecast_reveal,
+                       forecast_trail=forecast_trail,
+                       forecast_antialias=antialias,
                        surface=surface, surface_colors=surface_colors,
                        surface_trace_start=surface_trace_start_3d,
                        surface_dataset_indices=surface_dataset_indices,
@@ -1154,7 +1642,12 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                        morph_trace_start=morph_trace_start_3d,
                        morph_mesh_trace_start=morph_mesh_trace_start_3d,
                        morph_surface_spec=morph_surface_spec_3d,
-                       morph_sampled=sampled0, morph_dup_masks=dup_masks0)
+                       morph_sampled=sampled0, morph_dup_masks=dup_masks0,
+                       aa_curves=aa_curves, frame_hooks=frame_hooks,
+                       segment_titles=segment_titles,
+                       # the run -> dataset -> rows mapping the reveal
+                       # clock is driven from (see `_run_window`)
+                       ownership=ownership)
 
     if save_path is not None:
         ext = save_path.lower().rsplit('.', 1)[-1]
@@ -1240,9 +1733,6 @@ def _show_sphinx_gallery(fig):
     light.write_html(base + '.html', include_plotlyjs='cdn',
                      auto_play=False)
 
-
-import contextlib
-import threading
 
 # --- headless-Chrome (kaleido) animation export: hard timeout via subprocess -
 # kaleido 1.x drives headless Chrome; its OWN per-render timeout only wraps the
@@ -2206,6 +2696,77 @@ def _resolve_fmt(fmt_str, tkwargs):
     return mode, symbol, dash, marker_char
 
 
+def _forecast_style_from(tkwargs, fmt_str, alpha=None, override=None,
+                         anchor_color=None):
+    """Style a forecast trace to match the observed trace it continues.
+
+    The plotly twin of `hypertools.plot.plot._forecast_style_from`, sharing
+    its policy constant (`forecast.FORECAST_ALPHA_SCALE`) so the two backends
+    cannot drift: colour, line WIDTH and DASH are inherited verbatim from the
+    observed trace, and only the opacity changes -- ``observed_alpha *
+    FORECAST_ALPHA_SCALE``, with an unset alpha counting as fully opaque.
+    The dash comes from the same `_resolve_fmt` call the observed trace is
+    built with, so a solid dataset yields a solid forecast and a dotted one a
+    dotted forecast (pre-1.1.0 every forecast was ``dash='dash'`` at a
+    hard-coded 0.6 opacity, regardless of how the data was drawn).
+
+    Parameters
+    ----------
+    tkwargs : dict
+        This dataset's resolved per-trace kwargs (`kwargs_list[i]`).
+    fmt_str : str or None
+        This dataset's fmt (`fmt[i]`), the same value the observed trace's
+        `_resolve_fmt` gets.
+    alpha : float, optional
+        Override the computed alpha -- used by the animated TRAIL traces,
+        whose alpha is `forecast.trail_alpha` of the live one.
+    override : dict, optional
+        This dataset's `forecast_*=` override
+        (`forecast.resolve_forecast_overrides`) -- the SAME dict the
+        matplotlib side applies, resolved once and translated here into
+        plotly's dash/rgba vocabulary. Sparse: only the aspects it names
+        replace the inherited ones.
+    anchor_color : tuple of float, optional
+        The source trace's FINAL per-point colour, from `_hue_anchor_color`,
+        when a continuous `hue=` gave that trace many colours. It replaces
+        `tkwargs['color']` (which is then only plotly's per-dataset palette
+        fallback, not a colour the trace is actually drawn in) and is still
+        overruled by an explicit `forecast_color=`, so the precedence reads
+        override > anchor > inherited, exactly as on matplotlib.
+
+    Returns
+    -------
+    (dict, float)
+        A trace ``line=`` dict, and the alpha baked into its rgba colour --
+        the SAME float callers record in ``meta['hyp_forecast_alpha']``, so a
+        reader of `meta` can trust it.
+    """
+    from .forecast import forecast_alpha
+    override = override or {}
+    # a `forecast_fmt=` is read through the SAME `_resolve_fmt` the observed
+    # trace's own fmt goes through, so the two strings mean the same thing --
+    # but WITHOUT the observed trace's linestyle=/marker= kwargs. Inside
+    # `_resolve_fmt` an explicit style kwarg beats the fmt string, which is
+    # right for the observed trace's own fmt and wrong for an override whose
+    # entire purpose is to overrule the observed style: `linestyle='--'` with
+    # `forecast_fmt=':'` drew a DASHED forecast here and a dotted one on
+    # matplotlib, which applies the override last.
+    _fmt_kwargs = tkwargs
+    if 'fmt' in override:
+        _fmt_kwargs = {k: v for k, v in tkwargs.items()
+                       if k not in ('linestyle', 'ls', 'marker')}
+    _mode, _symbol, dash, _marker_char = _resolve_fmt(
+        override.get('fmt', fmt_str), _fmt_kwargs)
+    if alpha is None:
+        alpha = forecast_alpha(tkwargs.get('alpha'))
+    width = float(tkwargs.get('linewidth') or DEFAULT_LINEWIDTH_PT) * PT_TO_PX
+    color = override.get(
+        'color',
+        anchor_color if anchor_color is not None else tkwargs.get('color'))
+    line = dict(color=_to_plotly_color(color, alpha), width=width, dash=dash)
+    return line, alpha
+
+
 def _marker_size_px(markersize_pt, marker_char, ndims=2):
     """Convert an mpl `markersize` (points, diameter) to the `marker.size`
     value to pass to a plotly trace, matching matplotlib's rendered pixel
@@ -2288,7 +2849,7 @@ def _colorbar_trace(go, colorbar_info, ndims, legend_present):
         else:
             cb['tickvals'] = (list(range(n - 1, -1, -1)) if orientation == 'v'
                               else list(range(n)))
-            cb['ticktext'] = [str(l) for l in colorbar_info['labels']]
+            cb['ticktext'] = [str(lbl) for lbl in colorbar_info['labels']]
 
     marker = dict(color=[cmin], colorscale=colorscale, cmin=cmin, cmax=cmax,
                  showscale=True, colorbar=cb, size=0.001, opacity=0)
@@ -2330,35 +2891,94 @@ def _rgb_string(c):
     return f'rgb({r},{g},{b})'
 
 
-def _segment_traces_2d(go, pts, colors, width, dash, name):
+def _segment_traces_2d(go, pts, colors, width, dash, name, trace_index=None):
     """Per-segment colored 2D line, emitted as one small trace per segment
-    (plotly's 2D Scatter lines accept only a single color per trace)."""
+    (plotly's 2D Scatter lines accept only a single color per trace).
+
+    Every segment carries the SAME ``meta['hyp_trace_index']`` as the
+    trajectory it is a piece of, so a reader counting data traces by that tag
+    sees one trace rather than ``len(pts) - 1`` of them."""
     segs = []
     for j in range(len(pts) - 1):
         segs.append(go.Scatter(
             x=pts[j:j + 2, 0], y=pts[j:j + 2, 1], mode='lines',
             line=dict(color=colors[j], width=width, dash=dash),
             showlegend=False, hoverinfo='skip',
+            meta=(None if trace_index is None
+                  else dict(hyp_trace_index=trace_index)),
             legendgroup=name or 'multicolor'))
     return segs
 
 
 def _to_plotly_color(color, alpha=None):
+    # ROUNDS each channel, like `_rgb_string`. These are the module's two
+    # colour serializers and they must agree: a forecast whose colour is
+    # anchored to its source trace's final per-point colour
+    # (`_hue_anchor_color`) goes through THIS function while the trace's own
+    # per-point strings go through `_rgb_string`, so truncating here made the
+    # "same" colour print one channel unit darker (measured on viridis's last
+    # stop: 0.9932*255 -> rgb(253,...) rounded vs rgb(252,...) truncated).
     if color is None:
         return None
     import matplotlib.colors as mcolors
     r, g, b = mcolors.to_rgb(color)
     a = 1.0 if alpha is None else float(alpha)
-    return f'rgba({int(r * 255)},{int(g * 255)},{int(b * 255)},{a})'
+    return (f'rgba({int(round(r * 255))},{int(round(g * 255))},'
+            f'{int(round(b * 255))},{a})')
+
+
+def _hue_anchor_color(point_colors, src):
+    """The single colour a forecast inherits from a MULTI-coloured trace.
+
+    A continuous `hue=` gives the observed trace one colour per point, so
+    "the same colour as its trace" resolves to the colour where the forecast
+    begins: the source run's LAST per-point colour. The matplotlib twin is
+    the `_kept_forecasts` loop in `plot._apply_multicolor_lines`, which
+    anchors on `line_colors[dataset][-1]` -- without this, plotly styled the
+    forecast from `kwargs_list[src]['color']`, which under a continuous hue
+    is the per-dataset PALETTE fallback `plot.py` fills in for plotly
+    (`plot.py`, "if 'color' not in mpl_kwargs"). Measured on a 3-trace column
+    hierarchy with `hue=linspace(0,1)` and `palette='viridis'`: the observed
+    traces all ended at rgb(253,231,37) while their forecasts drew
+    rgb(59,82,139)/rgb(33,145,140)/rgb(94,201,97) -- seaborn's 3-colour
+    viridis cycle, unrelated to the hue.
+
+    Returns None (leaving the inherited single colour in place) when this
+    trace has no per-point colours, which is every non-continuous-hue plot.
+    """
+    if point_colors is None or src is None or src >= len(point_colors):
+        return None
+    pc = point_colors[src]
+    if pc is None or len(pc) == 0:
+        return None
+    return tuple(float(v) for v in np.asarray(pc[-1], dtype=np.float64)[:3])
 
 
 def _trace_name(legend, tkwargs, i):
+    """This trace's plotly `name`, or None when it has no legend entry.
+
+    `'_nolegend_'` (and any other leading-underscore label) is
+    MATPLOTLIB's convention for "keep this artist out of the legend" --
+    `plot.py` uses it for every hierarchy leaf, every intermediate mean,
+    every unnamed hue group, forecasts and trails. plotly has no such
+    convention: a name is just text, so passing the sentinel through made
+    it the trace's actual name -- rendered in hover labels ("_nolegend_"
+    beside the cursor on every leaf of a MultiIndex plot) and written into
+    exported HTML, where a plain list of arrays leaves `name=None`.
+    Normalising to None here fixes both while keeping the sentinel's
+    meaning: `showlegend` at the call site already excludes a `None` name,
+    so exactly the same traces stay out of the legend (its own
+    `startswith('_')` test is kept as a belt-and-braces guard for any
+    future caller that sets `name` without coming through here).
+    """
     label = tkwargs.get('label')
     if label is not None:
-        return str(label)
-    if isinstance(legend, (list, tuple)) and i < len(legend):
-        return str(legend[i])
-    return None
+        name = str(label)
+    elif isinstance(legend, (list, tuple)) and i < len(legend):
+        name = str(legend[i])
+    else:
+        return None
+    return None if name.startswith('_') else name
 
 
 def _camera_eye(elev, azim, r=1.95):
@@ -2377,13 +2997,18 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                    chemtrails=None, precog=None, bullettime=None,
                    zoom=1, n_trail_traces=0, trail_trace_start=None,
                    trail_dataset_indices=None,
+                   forecast_schedule=None, forecast_trace_start=None,
+                   forecast_trace_specs=None, forecast_trail=0,
+                   forecast_antialias=True,
                    surface=None, surface_colors=None,
                    surface_trace_start=None,
                    surface_dataset_indices=None, data_trace_start=0,
                    morph_tags=None, morph_colors=None, morph_samples=None,
                    morph_trace_start=None, morph_mesh_trace_start=None,
                    morph_surface_spec=None, surface_point_colors=None,
-                   morph_sampled=None, morph_dup_masks=None):
+                   morph_sampled=None, morph_dup_masks=None, aa_curves=None,
+                   frame_hooks=None, segment_titles=None, ownership=None,
+                   forecast_frame_colors=None, forecast_reveal=None):
     """Attach frames + play controls: 'spin' rotates the camera; True /
     'parallel' reveals trajectories through a sliding time window; 'morph'
     eases the single traveling point-cloud trace (+ mesh, if surfaced)
@@ -2423,7 +3048,32 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
     produced the trail trace at `fig.data[trail_trace_start + k]`, so each
     frame's trail geometry is built from `chemtrails[i]`/`precog[i]`/
     `bullettime[i]` for that SAME original dataset index `i`, not from the
-    trail trace's own position `k`.
+    trail trace's own position `k`. This applies to `animate=True`/
+    `'parallel'` AND `animate='serial'` (backend parity, Task 4): the
+    `'serial'` branch below builds the SAME per-dataset trail semantics as
+    `matplotlib_backend.update_lines_serial` (the ONE currently-revealing
+    dataset carries a trail; already-revealed/not-yet-started datasets
+    don't), rather than the sliding-window semantics used elsewhere in this
+    function.
+
+    `forecast_schedule`/`forecast_trace_start`/`forecast_trace_specs`/
+    `forecast_trail`/`forecast_antialias` (predict= during a time-progressing
+    animation, 1.1): the forecast traces `plotly_draw` created empty are
+    rewritten every frame from the precomputed schedule, by the SAME
+    mechanism the chemtrail traces use -- a recorded trace range whose data
+    each frame replaces. `forecast_trace_specs[k]` is the ``(dataset, age)``
+    pair for `fig.data[forecast_trace_start + k]`; age 0 draws
+    ``schedule.polyline(dataset, frame)`` and age N draws the forecast from
+    ``trail_frames(frame, forecast_trail)[N - 1]``, so the fan is a PURE
+    function of the frame index -- never accumulated -- and an exported
+    animation is identical to an interactively-played one. A frame with no
+    forecast for a slot (too little history revealed, or fewer past frames
+    than the fan is deep) gets EMPTY x/y/z, matching matplotlib's
+    hidden-artist state. Wired into BOTH the `'serial'` branch and the
+    trailing parallel/`'window'` branch below: a forecast wired into only one
+    would be frozen in the other. `'spin'` never receives a schedule (it
+    reveals nothing over time, so it keeps the static full-history overlay)
+    and `'morph'` refuses `predict=` outright.
 
     `data_trace_start` (GH #108/#191): the actual `fig.data` index where the
     DATA traces begin -- 0, UNLESS a 2-D `density=`/`surface=` layer was
@@ -2432,13 +3082,73 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
     Density traces themselves are deliberately never referenced by
     `trace_indices` below (nor `surface_trace_indices`): they are computed
     once from the full data and must stay untouched by every frame update.
+
+    `aa_curves` (antialias=, see `plotly_draw`'s docstring): the per-dataset
+    ``(dense, step)`` smoothing curves `plotly_draw` built once via
+    `_build_aa_curves`. Every frame draws `_aa_window(aa_curves, idx, a, b)`
+    -- the smooth stretch spanning exactly the ORIGINAL rows ``[a:b]`` the
+    frame would otherwise have sliced -- for both its head/window traces and
+    its chemtrails/precog/bullettime trail traces. All the surrounding index
+    math (frame pacing, `window_frames`/`start`/`end`, `revealed`, trail
+    bounds) and
+    everything derived from it (`windows_by_index` for `surface=` meshes,
+    `_window_colors`) keeps working in ORIGINAL rows, untouched. ``None``
+    (direct callers) or ``step == 1`` means the raw row slices are drawn,
+    exactly as before `antialias=` existed.
+
+    `frame_hooks` (plan 1.1 Task 7, the public `on_frame=` hook): unlike
+    matplotlib, where a per-frame updater is CALLED by `FuncAnimation`
+    later, plotly builds every frame in the Python loops below, right now,
+    before this function returns -- so `on_frame=` fires here too, once
+    per frame index, in order. Each of the four branches below (`'spin'`,
+    `'morph'`, `'serial'`, and the trailing `else:` covering the shared
+    parallel/serial-window/'window' reveal) calls
+    ``frame_hooks.record(...)`` then ``frame_hooks.dispatch(fig, None)``
+    (plotly has no `Axes` object) immediately BEFORE its own
+    ``frames.append(go.Frame(**frame_kwargs))`` -- dispatching before the
+    append means a callback that mutates a trace object is captured by the
+    `go.Frame` that stores it (mutating afterward would be silently
+    dropped). `None` (the default) short-circuits every one of these
+    blocks to a no-op via `FrameHooks.dispatch`'s own guard.
+
+    `segment_titles` (plan 1.1 Task 8, `title=` as a per-dataset sequence
+    for serial-style animations): only the `'morph'` and `'serial'`
+    branches below set a per-frame `layout.title` from it -- `'spin'` and
+    the trailing `else:` (parallel/window) never receive a non-`None` value
+    here, because `_validate_title` rejects a `title=` list for those
+    styles long before `plotly_draw` is even called. The `'morph'` branch
+    derives its own segment index from data it already has in hand
+    (`seg_idx`) independently of the `frame_hooks` block below it, since
+    either may run without the other. The `'serial'` branch instead calls
+    `serial_current_index` over the already-built `_shown`/`lengths` AT
+    MOST ONCE per frame and shares the result between its `segment_titles`
+    and `frame_hooks` consumers (task-8 review, minor finding: these used
+    to each call it separately with identical arguments -- byte-identical,
+    purely duplicate work) -- guarded so the call itself is still skipped
+    entirely when neither consumer is active.
     """
     import plotly.graph_objects as go
 
-    # EXACTLY match the matplotlib renderer's pacing: frame_rate frames
-    # per second of animation for the full duration (no frame cap), so the
-    # two backends play at identical speed, duration, and framerate
-    n_frames = max(2, int(round(frame_rate * duration)))
+    if aa_curves is None:
+        aa_curves = [(np.atleast_2d(np.asarray(a, dtype=np.float64)), 1)
+                     for a in data]
+
+    # EXACTLY match the matplotlib renderer's pacing: frame_rate frames per
+    # second of animation for the full duration (no frame cap), so the two
+    # backends play at identical speed, duration, and framerate -- down to
+    # the `max(1, ...)` floor, which this used to spell `max(2, ...)`. That
+    # lone character made a sub-frame request (`duration * frame_rate`
+    # rounding below 1) a 2-frame plotly animation against matplotlib's
+    # single still, and -- because this count is also the `total_frames`
+    # every dataset's window is paced against -- shifted the pacing itself.
+    #
+    # This ONE count is resolved before the style branches below, so the
+    # floor necessarily applies to all four styles. Matplotlib floored only
+    # its parallel/'window' path, so aligning here surfaced that its
+    # 'serial' and 'spin' asked `FuncAnimation` for ZERO frames on the same
+    # input -- an animation that draws nothing. Both were given the same
+    # floor rather than reproducing them here; see `matplotlib_backend`.
+    n_frames = max(1, int(round(frame_rate * duration)))
     frames = []
     trace_indices = list(range(data_trace_start, data_trace_start + n_data_traces))
     trail_dataset_indices = trail_dataset_indices or []
@@ -2489,6 +3199,75 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                     base_rgb = vertex_colors_from_points(v, pts, cols)
                 out.append(_mesh3d_geometry_update(
                     go, v, f, base_rgb, spec['alpha'], view, light_kw))
+        return out
+
+    forecast_trace_specs = forecast_trace_specs or []
+    has_forecasts = (forecast_schedule is not None
+                     and forecast_trace_start is not None
+                     and bool(forecast_trace_specs))
+    forecast_trace_indices = (
+        list(range(forecast_trace_start,
+                   forecast_trace_start + len(forecast_trace_specs)))
+        if has_forecasts else [])
+
+    def _forecast_frame_data(k, anchor_rows):
+        """One geometry update per forecast trace at frame `k`, in
+        `forecast_trace_specs` order (so it lines up with
+        `forecast_trace_indices`).
+
+        `anchor_rows[dataset]` is that dataset's last REVEALED row this
+        frame -- the 1-D x offset the forecast hangs off, generalizing the
+        static path's `start = arr.shape[0] - 1` (where everything is
+        revealed) to a partially-revealed one. Unused for 2-D/3-D, which
+        carry their own coordinates.
+        """
+        from .forecast import trail_frames
+        past = trail_frames(k, forecast_trail) if forecast_trail else []
+        out = []
+        _colors = forecast_frame_colors or []
+        for _spec, (dataset, age) in enumerate(forecast_trace_specs):
+            if age == 0:
+                fit_frame = k
+                pts = forecast_schedule.polyline(dataset, k)
+            elif age <= len(past):
+                fit_frame = past[age - 1]
+                pts = forecast_schedule.polyline(dataset, past[age - 1])
+            else:
+                fit_frame = None
+                pts = None          # fewer past frames than the fan is deep
+            # Decision R3, matplotlib parity: the live forecast takes the
+            # colour of the run drawing the head NOW; a retained one takes
+            # the run that was drawing it when it was FIT, so a boundary
+            # crossing does not repaint the historical fan.
+            _line = None
+            if (forecast_reveal is not None and fit_frame is not None
+                    and _spec < len(_colors) and _colors[_spec]):
+                _run = forecast_reveal.head_run(dataset, fit_frame)
+                _colour = _colors[_spec].get(_run)
+                if _colour is not None:
+                    _line = dict(color=_colour)
+            if pts is None or len(pts) < 2:
+                out.append(go.Scatter3d(x=[], y=[], z=[]) if ndims >= 3
+                           else go.Scatter(x=[], y=[]))
+                continue
+            # antialias=: a forecast is a LINE, smoothed exactly like the
+            # static overlay above (and like matplotlib's per-frame artist,
+            # whose `_interp_static_line` is this same call at this same
+            # 900-vertex target), so a paused animation is indistinguishable
+            # from a static plot
+            draw, step = (antialias_line(pts) if forecast_antialias
+                          else (pts, 1))
+            _extra = {} if _line is None else dict(line=_line)
+            if ndims >= 3:
+                out.append(go.Scatter3d(x=draw[:, 0], y=draw[:, 1],
+                                        z=draw[:, 2], **_extra))
+            elif ndims == 2:
+                out.append(go.Scatter(x=draw[:, 0], y=draw[:, 1], **_extra))
+            else:
+                out.append(go.Scatter(
+                    x=_aa_x(step, anchor_rows.get(dataset, 0),
+                            draw.shape[0]),
+                    y=draw[:, 0], **_extra))
         return out
 
     def _window_colors(idx, start, stop):
@@ -2567,6 +3346,25 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                             go, v, f, base_rgb, spec['alpha'], view, light_kw))
                 frame_kwargs['data'] = surf_data
                 frame_kwargs['traces'] = surface_trace_indices
+            # on_frame= (plan 1.1 Task 7): 'spin' never builds a
+            # `frame_traces` list of its own (the FULL dataset is static;
+            # only the camera/lighting move) -- publish the traces the
+            # frame ACTUALLY renders instead: the figure's shared static
+            # data traces, plus (when surfaced) this frame's own re-shaded
+            # Mesh3d updates. The leading traces are SHARED across every
+            # frame (mutating one is figure-wide); the trailing mesh
+            # entries, if any, are per-frame -- see FrameContext's
+            # artist-lifetime table.
+            _frame_artists = tuple(fig.data[i] for i in trace_indices)
+            if surface_trace_indices:
+                _frame_artists = _frame_artists + tuple(surf_data)
+            if frame_hooks is not None:
+                frame_hooks.record(
+                    frame=k, n_frames=n_frames, artists=_frame_artists,
+                    datasets=tuple(data), style='spin', order='parallel',
+                    current_index=None, current_fraction=None,
+                    revealed_counts=None)
+                frame_hooks.dispatch(fig, None)
             frames.append(go.Frame(**frame_kwargs))
     elif animate == 'morph' and ndims in (2, 3):
         # Hungarian-matched point-cloud morph (maintainer request): ONE
@@ -2652,45 +3450,161 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                         go, v, f, color, morph_surface_spec['alpha'],
                         view, light_kw))
 
+            # `seg_idx // 2` is a position WITHIN THE MORPH SEQUENCE (0, 1,
+            # 2, ... for the 1st, 2nd, 3rd morph-tagged dataset), not a
+            # FINAL dataset index -- those only coincide when every dataset
+            # is tagged (scalar animate='morph'). `morph_indices` (built
+            # above from `morph_tags`) maps sequence position back to the
+            # actual dataset index for a partial-tag list (e.g.
+            # animate=[None, 'morph', 'morph']), exactly like the simplify
+            # guard in `plot.py` already does -- so `title=`'s per-segment
+            # lookup and `FrameContext.current_index` agree with each other
+            # and with the matplotlib backend's `update_morph`.
+            _dataset_idx = morph_indices[seg_idx // 2]
             frame_kwargs = dict(
                 name=str(k), data=frame_traces, traces=morph_trace_indices)
             if ndims >= 3:
                 frame_kwargs['layout'] = dict(scene_camera=dict(
                     eye=_camera_eye(elev, angle, r=_anim_zoom_r(zoom))))
+            if segment_titles is not None:
+                # segment PARITY discriminates hold vs. transition, never a
+                # fraction (both sweep 0->1 over their own segment) -- the
+                # same rule `_make_title_updater` uses on the matplotlib
+                # backend, applied here via `seg_idx % 2` directly since
+                # this branch already has it in hand. `.setdefault` (not a
+                # plain assignment) so this does not clobber the
+                # scene_camera layout key the ndims>=3 block above may have
+                # just set, and is not clobbered by it either.
+                _text = ('' if seg_idx % 2 else
+                         segment_titles[min(_dataset_idx,
+                                            len(segment_titles) - 1)])
+                frame_kwargs.setdefault('layout', {})['title'] = dict(text=_text)
+            if frame_hooks is not None:
+                frame_hooks.record(
+                    frame=k, n_frames=n_frames, artists=tuple(frame_traces),
+                    # the morph-SAMPLED (morph_samples-capped/matched)
+                    # clouds -- what this loop actually draws from -- not
+                    # the raw `data`, matching matplotlib's `update_morph`
+                    # (`FrameContext.datasets`' own contract: "the arrays
+                    # the animation actually DRAWS FROM ... not the raw
+                    # input").
+                    datasets=tuple(sampled), style='morph', order='serial',
+                    current_index=_dataset_idx,
+                    current_fraction=step / max(1, n_steps - 1),
+                    revealed_counts=None, segment_index=seg_idx,
+                    segment_kind='hold' if seg_idx % 2 == 0 else 'transition')
+                frame_hooks.dispatch(fig, None)
             frames.append(go.Frame(**frame_kwargs))
     elif animate == 'serial':
         # datasets appear one at a time, each growing into place while
-        # earlier ones stay fully drawn (never connected to each other)
+        # earlier ones stay fully drawn (never connected to each other).
+        # Trail composition mirrors `matplotlib_backend.update_lines_serial`
+        # (backend parity, Task 4): the ONE dataset currently being revealed
+        # leads with a short opaque comet-head and trails the rest at 0.3
+        # opacity; already-revealed datasets stay fully drawn, and
+        # not-yet-started ones stay empty.
         lengths = [np.atleast_2d(a).shape[0] for a in data]
         total_points = sum(lengths)
         starts = np.concatenate([[0], np.cumsum(lengths)[:-1]])
+        has_trails = n_trail_traces > 0
+        if has_trails:
+            trace_indices = list(trace_indices) + list(range(
+                trail_trace_start, trail_trace_start + n_trail_traces))
+        # head length in FRAMES, resolved exactly as
+        # `matplotlib_backend.animate_plot3D` resolves its own `window_frames`
+        _focused = focused if focused is not None else tail_duration
+        _uses_focus_window = (any(chemtrails) or any(precog)
+                              or any(bullettime))
+        _window_duration = _focused if _uses_focus_window else tail_duration
+        window_frames = (1 if _window_duration == 0
+                         else int(frame_rate * _window_duration))
+
         for k in range(n_frames):
             revealed = total_points * k / max(1, n_frames - 1)
             frame_traces = []
+            trail_traces = []
             windows_by_index = {}
             window_colors_by_index = {}
+            head_bounds_by_index = {}
+            forecast_anchors = {}
+            _shown = []
             for idx, (arr, start) in enumerate(zip(data, starts)):
                 arr = np.atleast_2d(np.asarray(arr, dtype=np.float64))
-                shown = int(np.clip(revealed - start, 0, arr.shape[0]))
-                seg = arr[:shown]
-                windows_by_index[idx] = seg
+                n_pts = arr.shape[0]
+                shown = int(np.clip(revealed - start, 0, n_pts))
+                _shown.append(shown)
+                ct, pc, bt = chemtrails[idx], precog[idx], bullettime[idx]
+                has_trail = has_trails and (ct or pc or bt)
+
+                trail_bounds = None
+                if not has_trail:
+                    head_bounds = (0, shown)          # plain serial, UNCHANGED
+                elif shown <= 0:
+                    head_bounds = (0, 0)
+                elif shown >= n_pts:
+                    head_bounds = (0, n_pts)
+                else:
+                    w = max(1, int(round(window_frames * n_pts
+                                         / max(1, total_points))))
+                    head_bounds = (max(0, shown - 1 - w), shown)
+                    if (ct and pc) or bt:
+                        trail_bounds = (0, n_pts)              # bullettime
+                    elif ct:
+                        trail_bounds = (0, shown)              # chemtrails
+                    else:
+                        trail_bounds = (max(0, shown - 1), n_pts)  # precog
+                head_bounds_by_index[idx] = head_bounds
+
+                # surface/hue windows follow the FULL revealed portion, as in
+                # `matplotlib_backend.update_lines_serial` -- independent of
+                # the comet-head trimming above
+                windows_by_index[idx] = arr[:shown]
+                forecast_anchors[idx] = max(0, shown - 1)
                 cols = _window_colors(idx, 0, shown)
                 if cols is not None:
                     window_colors_by_index[idx] = cols
+
+                draw_seg = _aa_window(aa_curves, idx, *head_bounds)
                 if ndims >= 3:
                     frame_traces.append(go.Scatter3d(
-                        x=seg[:, 0], y=seg[:, 1], z=seg[:, 2]))
+                        x=draw_seg[:, 0], y=draw_seg[:, 1], z=draw_seg[:, 2]))
                 elif ndims == 2:
-                    frame_traces.append(go.Scatter(x=seg[:, 0], y=seg[:, 1]))
+                    frame_traces.append(go.Scatter(x=draw_seg[:, 0],
+                                                   y=draw_seg[:, 1]))
                 else:
                     frame_traces.append(go.Scatter(
-                        x=np.arange(seg.shape[0]), y=seg[:, 0]))
+                        x=_aa_x(aa_curves[idx][1], head_bounds[0],
+                                draw_seg.shape[0]),
+                        y=draw_seg[:, 0]))
+
+                if has_trail:
+                    t0, t1 = trail_bounds if trail_bounds is not None else (0, 0)
+                    trail = _aa_window(aa_curves, idx, t0, t1)
+                    if ndims >= 3:
+                        trail_traces.append(go.Scatter3d(
+                            x=trail[:, 0], y=trail[:, 1], z=trail[:, 2]))
+                    elif ndims == 2:
+                        trail_traces.append(go.Scatter(x=trail[:, 0],
+                                                       y=trail[:, 1]))
+                    else:
+                        trail_traces.append(go.Scatter(
+                            x=_aa_x(aa_curves[idx][1], t0, trail.shape[0]),
+                            y=trail[:, 0]))
+                elif has_trails and idx in trail_dataset_indices:
+                    # this dataset has a trail TRACE but no trail THIS frame
+                    empty = np.zeros((0, max(2, min(3, ndims))))
+                    trail_traces.append(
+                        go.Scatter3d(x=empty[:, 0], y=empty[:, 0],
+                                     z=empty[:, 0]) if ndims >= 3
+                        else go.Scatter(x=empty[:, 0], y=empty[:, 0]))
+
+            frame_traces.extend(trail_traces)
             frame_kwargs = dict(name=str(k), data=frame_traces,
                                 traces=list(trace_indices))
             if ndims >= 3:
                 angle = azim + 360.0 * rotations * k / n_frames
-                frame_kwargs['layout'] = dict(
-                    scene_camera=dict(eye=_camera_eye(elev, angle, r=_anim_zoom_r(zoom))))
+                frame_kwargs['layout'] = dict(scene_camera=dict(
+                    eye=_camera_eye(elev, angle, r=_anim_zoom_r(zoom))))
             if surface_trace_indices:
                 frame_kwargs['data'] = (list(frame_kwargs['data'])
                                         + _surface_frame_data(
@@ -2698,9 +3612,49 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                                             window_colors_by_index))
                 frame_kwargs['traces'] = (list(frame_kwargs['traces'])
                                           + surface_trace_indices)
+            if has_forecasts:
+                # appended to `frame_kwargs` rather than to `frame_traces`,
+                # exactly like the surface meshes above: `frame_traces` is
+                # what `frame_hooks.record` publishes as `ctx.artists`, and
+                # matplotlib's `ctx.artists` does not include its forecast
+                # artists either (they are added by `plot.py` after the
+                # animation's own artist list is built).
+                frame_kwargs['data'] = (list(frame_kwargs['data'])
+                                        + _forecast_frame_data(
+                                            k, forecast_anchors))
+                frame_kwargs['traces'] = (list(frame_kwargs['traces'])
+                                          + forecast_trace_indices)
+            # `_shown`/`lengths` are ALREADY built above (one entry per
+            # dataset, from the per-idx loop just above) -- reused here
+            # rather than re-derived, same as `lengths`/`starts` themselves
+            # are never re-derived from `data` a second time anywhere in
+            # this branch. Computed AT MOST ONCE per frame and shared
+            # between the `segment_titles`/`frame_hooks` consumers below
+            # (task-8 review, minor finding: these used to each call
+            # `serial_current_index` separately with the identical
+            # `(_shown, lengths)` arguments -- byte-identical results, so
+            # purely duplicate work).
+            _serial_idx = _serial_frac = None
+            if segment_titles is not None or frame_hooks is not None:
+                from .matplotlib_backend import serial_current_index
+                _serial_idx, _serial_frac = serial_current_index(_shown,
+                                                                  lengths)
+            if segment_titles is not None:
+                # `.setdefault` (not a plain assignment) so a 3-D
+                # scene_camera layout set by the ndims>=3 block above is
+                # preserved, not clobbered.
+                frame_kwargs.setdefault('layout', {})['title'] = dict(
+                    text=segment_titles[min(_serial_idx,
+                                            len(segment_titles) - 1)])
+            if frame_hooks is not None:
+                frame_hooks.record(
+                    frame=k, n_frames=n_frames, artists=tuple(frame_traces),
+                    datasets=tuple(data), style='serial', order='serial',
+                    current_index=_serial_idx, current_fraction=_serial_frac,
+                    revealed_counts=tuple(_shown))
+                frame_hooks.dispatch(fig, None)
             frames.append(go.Frame(**frame_kwargs))
     else:
-        max_len = max(arr.shape[0] for arr in data)
         # focused=/tail_duration= (round17 #8, GH #275): `focused` governs
         # the visible window for `animate='window'` and for any dataset with
         # a chemtrails/precog/bullettime trail; plain `animate=True`/
@@ -2712,17 +3666,18 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
         # `plot.py`'s own resolution, which never passes `None` through) --
         # resolved defensively here the same way `chemtrails`/`precog`/
         # `bullettime` are re-broadcast defensively above.
-        _focused = focused if focused is not None else tail_duration
-        _uses_focus_window = (
-            animate == 'window' or any(chemtrails) or any(precog)
-            or any(bullettime)
-        )
-        _window_duration = _focused if _uses_focus_window else tail_duration
-        # the visible window covers `_window_duration` seconds of the
-        # duration-second animation, matching the matplotlib renderer's
-        # window_frames = frame_rate * _window_duration frame window
-        window = max(2, int(round(max_len * float(_window_duration)
-                                  / max(float(duration), 1e-6))))
+        # shared with matplotlib AND with plot()'s reveal schedule
+        # the visible head window is `window_frames` FRAMES long, resolved
+        # byte-identically to `matplotlib_backend.animate_plot3D`/`2D` (same
+        # int() truncation, same `_window_duration == 0` special case) and
+        # then mapped onto each dataset's own rows by `anim_window_bounds`.
+        # It used to be derived from the LONGEST dataset's row count and
+        # rounded, which mis-sized the window whenever that count was not the
+        # frame count AND left every dataset sharing one window -- see
+        # `trails.anim_window_bounds`.
+        window_frames = head_window_frames(
+            frame_rate, tail_duration, focused, animate == 'window',
+            chemtrails, precog, bullettime)
         has_trails = n_trail_traces > 0
         if has_trails:
             # trail traces are NOT guaranteed to sit right after the data
@@ -2731,28 +3686,52 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
             # assuming contiguity with n_data_traces.
             trace_indices = list(trace_indices) + list(range(
                 trail_trace_start, trail_trace_start + n_trail_traces))
+        # every trace's drawn row count, once: the reveal clock needs them
+        # every frame and they do not change between frames
+        _grid_lengths = [
+            np.atleast_2d(np.asarray(a, dtype=np.float64)).shape[0]
+            for a in data]
         for k in range(n_frames):
-            end = max(2, int(np.ceil((k + 1) * max_len / n_frames)))
-            start = max(0, end - window)
+            # ONE clock per source dataset -- the same call the matplotlib
+            # updater makes, so the two backends cannot drift (see the
+            # `trails` module docstring for the drift this rule prevents).
+            frame_windows = None
+            if ownership is not None:
+                frame_windows = dataset_window_bounds(
+                    k, n_frames, ownership, _grid_lengths, window_frames)
             frame_traces = []
             windows_by_index = {}
             window_colors_by_index = {}
+            forecast_anchors = {}
             for idx, arr in enumerate(data):
                 arr = np.atleast_2d(np.asarray(arr, dtype=np.float64))
-                seg = arr[start:min(end, arr.shape[0])]
+                # PER DATASET, exactly as the matplotlib renderer paces it:
+                # a 5-row marker dataset beside a 15-row line gets its own
+                # rescaled window instead of being clamped into the longest
+                # dataset's, which used to slide off its end and leave it
+                # blank for most of the animation (`trails` docstring).
+                _win = _run_window(frame_windows, idx, arr.shape[0],
+                                   k, n_frames, window_frames)
+                start, end = _win.head_start, _win.head_end
+                seg = arr[start:end]
                 windows_by_index[idx] = seg
-                cols = _window_colors(idx, start, min(end, arr.shape[0]))
+                forecast_anchors[idx] = max(0, end - 1)
+                cols = _window_colors(idx, start, end)
                 if cols is not None:
                     window_colors_by_index[idx] = cols
+                # antialias=: `seg` (ORIGINAL rows) still drives the surface
+                # mesh/hue windows above; only the DRAWN vertices are smoothed
+                draw_seg = _aa_window(aa_curves, idx, start, end)
                 if ndims >= 3:
                     frame_traces.append(go.Scatter3d(
-                        x=seg[:, 0], y=seg[:, 1], z=seg[:, 2]))
+                        x=draw_seg[:, 0], y=draw_seg[:, 1], z=draw_seg[:, 2]))
                 elif ndims == 2:
-                    frame_traces.append(go.Scatter(x=seg[:, 0], y=seg[:, 1]))
+                    frame_traces.append(go.Scatter(x=draw_seg[:, 0],
+                                                   y=draw_seg[:, 1]))
                 else:
                     frame_traces.append(go.Scatter(
-                        x=np.arange(start, start + seg.shape[0]),
-                        y=seg[:, 0]))
+                        x=_aa_x(aa_curves[idx][1], start, draw_seg.shape[0]),
+                        y=draw_seg[:, 0]))
 
             # GH #127: trail traces exist (and are updated here) only for
             # datasets in `trail_dataset_indices`, in that SAME ascending
@@ -2767,15 +3746,31 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                 for idx in trail_dataset_indices:
                     arr = np.atleast_2d(np.asarray(data[idx], dtype=np.float64))
                     ct, pc, bt = chemtrails[idx], precog[idx], bullettime[idx]
+                    # this dataset's OWN bounds again -- the head loop above
+                    # computed the same triple, but only the trailed datasets
+                    # need `trail_stop`, and re-deriving beats threading a
+                    # parallel dict through the head loop for it
+                    _twin = _run_window(frame_windows, idx, arr.shape[0],
+                                        k, n_frames, window_frames)
                     if (ct and pc) or bt:
-                        trail = arr
-                        t0 = 0
+                        t0, t1 = 0, arr.shape[0]
                     elif ct:
-                        trail = arr[:start + 1]
-                        t0 = 0
+                        # `trail_stop = max(0, end - w)`, independently clamped
+                        # at 0 rather than derived from the already-clamped
+                        # `start` (a `start + 1` off-by-one that used to
+                        # overstate this trail by one point at every frame,
+                        # not just the early, fully-clamped ones)
+                        t0, t1 = 0, _twin.past_stop
                     else:
-                        trail = arr[min(end, arr.shape[0]) - 1:]
-                        t0 = min(end, arr.shape[0]) - 1
+                        # precog shares the head's last vertex (F05-008) --
+                        # via `future_start`, never `end - 1`: a run this
+                        # dataset's clock has not reached has `end == 0`, and
+                        # `data[-1:]` would draw one point of a future
+                        # category from the first frame (Decision R5).
+                        t0, t1 = _twin.future_start, arr.shape[0]
+                    # antialias=: trail bounds stay ORIGINAL-row indices; the
+                    # smooth curve spanning exactly those rows is drawn
+                    trail = _aa_window(aa_curves, idx, t0, t1)
                     if ndims >= 3:
                         trail_traces.append(go.Scatter3d(
                             x=trail[:, 0], y=trail[:, 1], z=trail[:, 2]))
@@ -2784,7 +3779,7 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                             x=trail[:, 0], y=trail[:, 1]))
                     else:
                         trail_traces.append(go.Scatter(
-                            x=np.arange(t0, t0 + trail.shape[0]),
+                            x=_aa_x(aa_curves[idx][1], t0, trail.shape[0]),
                             y=trail[:, 0]))
             frame_traces.extend(trail_traces)
             frame_kwargs = dict(name=str(k), data=frame_traces,
@@ -2803,10 +3798,34 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                                             window_colors_by_index))
                 frame_kwargs['traces'] = (list(frame_kwargs['traces'])
                                           + surface_trace_indices)
+            if has_forecasts:
+                # see the identical block in the 'serial' branch above for
+                # why this appends to `frame_kwargs`, not to `frame_traces`
+                frame_kwargs['data'] = (list(frame_kwargs['data'])
+                                        + _forecast_frame_data(
+                                            k, forecast_anchors))
+                frame_kwargs['traces'] = (list(frame_kwargs['traces'])
+                                          + forecast_trace_indices)
+            if frame_hooks is not None:
+                frame_hooks.record(
+                    frame=k, n_frames=n_frames, artists=tuple(frame_traces),
+                    datasets=tuple(data), style=animate, order='parallel',
+                    current_index=None, current_fraction=None,
+                    revealed_counts=None)
+                frame_hooks.dispatch(fig, None)
             frames.append(go.Frame(**frame_kwargs))
 
     fig.frames = frames
-    frame_ms = max(10, int(1000.0 * duration / n_frames))
+    # Play-button pacing is the TRUE inter-frame interval, `1000 / frame_rate`
+    # -- byte-identical to the `interval=` matplotlib hands `FuncAnimation`,
+    # and the same rule the GIF/APNG export path above already documents ("NOT
+    # 1000*duration/n_frames"). This used to be that forbidden form, which
+    # agrees only when `frame_rate * duration` is a whole number: at
+    # frame_rate=3, duration=1.4 the browser played 350 ms/frame against
+    # matplotlib's 333.33 (5% slow), and a sub-frame request played 50 against
+    # matplotlib's 100 (2x fast). The export path was right; this was the one
+    # place left deriving playback speed from the frame count.
+    frame_ms = 1000.0 / float(frame_rate)
     # Play/Pause controls: laid out horizontally BELOW the plotting area
     # (y < 0 in paper coords, anchored by their top edge) rather than at paper
     # (0, 0). In 3-D the scene floats above that corner so the old placement

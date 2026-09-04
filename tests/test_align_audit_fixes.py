@@ -113,7 +113,6 @@ def test_hyperalign_row_order_preserved_end_to_end():
     and confirm output rows follow the input time order (monotone col 0 of
     the common trajectory reconstructed via near-perfect alignment)."""
     n = 30
-    rng = np.random.RandomState(0)
     t = np.linspace(0, 4 * np.pi, n)
     common = np.stack([t / 10, np.sin(t), np.cos(t)], axis=1)
     tidx = pd.date_range('2022-01-01', periods=n, freq='min')

@@ -131,6 +131,60 @@ def test_resolve_t_past_datetime_signals_truncation():
     assert list(future_index) == list(idx[:5])
 
 
+# --- resolve_t: duplicated index entries, and the scope of that check ---
+
+def test_resolve_t_rejects_duplicated_timestamps():
+    """A repeated TIMESTAMP makes the horizon ill-defined: `_infer_step`
+    would drop the (zero-length) gap between the repeats and forecast on a
+    step that no longer describes the data, and a datetime-like `t` would
+    truncate to an ambiguous position."""
+    idx = pd.DatetimeIndex(
+        sorted(list(pd.date_range("2026-01-01", periods=5, freq="h")) * 2))
+    df = _make_df(n=10, index=idx)
+
+    with pytest.raises(ValueError, match=r"duplicated entr.*ill-defined"):
+        resolve_t(df, 3)
+
+
+def test_resolve_t_keeps_a_duplicated_integer_index():
+    """SCOPE: the rejection above is about the TIME axis (1.1 plan,
+    *Decisions (resolved)* #4: "legitimate integer-indexed panels are not
+    rejected"). A stacked panel -- `pd.concat([run_a, run_b])`, whose index
+    repeats 0..n-1 -- has a perfectly well-defined horizon: the step is the
+    minimum non-zero difference (1) and the forecast continues from the last
+    row, exactly as in 1.0."""
+    df = _make_df(n=10, index=pd.Index(sorted(list(range(5)) * 2)))
+
+    n_steps, future_index = resolve_t(df, 2)
+
+    assert n_steps == 2
+    assert list(future_index) == [5, 6]
+
+
+def test_all_identical_timestamps_message_comes_from_live_infer_step(monkeypatch):
+    """The fully-degenerate case (every observation at ONE timestamp) is
+    `_infer_step`'s: `tests/test_predict_audit_fixes.py` pins its wording.
+    `resolve_t`'s duplicate check runs FIRST, so it must hand this case to
+    `_infer_step` rather than raise a copied string -- a copy would leave
+    that branch dead code with a test that only pins the copy."""
+    from hypertools.predict import common as common_module
+
+    calls = []
+    real_infer_step = common_module._infer_step
+
+    def spy(index):
+        calls.append(index)
+        return real_infer_step(index)
+
+    monkeypatch.setattr(common_module, "_infer_step", spy)
+    df = _make_df(n=5, index=pd.DatetimeIndex(["2026-01-01"] * 5))
+
+    with pytest.raises(ValueError, match="share one timestamp"):
+        resolve_t(df, 3)
+
+    assert calls, "the message must come from live _infer_step code, not a copy"
+
+
 def test_forecaster_predict_truncates_on_past_datetime_without_calling_forecaster():
     idx = pd.date_range("2026-01-01", periods=10, freq="h")
     df = _make_df(n=10, index=idx)

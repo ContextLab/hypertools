@@ -38,7 +38,8 @@ from .surface import (
     surface_cube_scale,
     view_vector,
 )
-from .trails import broadcast_trail_flag
+from .trails import (RunWindow, anim_window_bounds, broadcast_trail_flag,
+                     dataset_window_bounds, head_window_frames)
 from . import morph as _morph
 from .density import (
     DENSITY_DEFAULTS,
@@ -316,54 +317,10 @@ def _anim_box_zoom(zoom):
     return 9.0 / max(0.5, 9.0 - zoom)
 
 
-def _anim_window_bounds(num, total_frames, n_points, window_frames):
-    """Map animation frame `num` (of `total_frames`) onto one dataset's
-    row indices for the parallel/'window' styles.
-
-    Animations are paced by the FRAME grid (``total_frames ==
-    round(frame_rate * duration)``), not by any single dataset's row count:
-    line datasets are pre-interpolated onto that exact grid by ``plot.py``
-    (identity mapping), while marker-only and 1-point datasets keep their
-    raw rows and are paced here instead (release-1.0 audit: F04-003
-    multi-dataset truncation, F04-005/F05-010 marker-only pacing, F05-012
-    single-point datasets).
-
-    Parameters
-    ----------
-    num : int
-        Current frame index, ``0 <= num < total_frames``.
-    total_frames : int
-        Total number of animation frames.
-    n_points : int
-        This dataset's row count.
-    window_frames : int
-        The opaque head window's length in frames.
-
-    Returns
-    -------
-    tuple of (int, int, int)
-        ``(start, end, trail_stop)``: the head window is ``data[start:end]``
-        (up to ``window_frames + 1`` rows, frozen at the trajectory's end
-        once the dataset is fully revealed -- a shorter dataset never
-        vanishes mid-animation), and a chemtrails trail is
-        ``data[0:trail_stop]`` -- 0 rows until the head window actually
-        starts sliding (F05-001: the historical ``num - window + 1`` stop
-        went NEGATIVE for early frames, so Python's negative indexing drew
-        nearly the whole FUTURE trajectory as a "past" trail, then blinked
-        empty). A precog trail is ``data[end - 1:]`` (sharing the head's
-        last vertex, so there is no one-segment gap -- F05-008).
-    """
-    total = max(1, int(total_frames))
-    end = int(np.ceil((num + 1) * n_points / total))
-    end = max(1, min(n_points, end))
-    if n_points == total:
-        w = int(window_frames)
-    else:
-        # rescale the window (given in frames) onto this dataset's rows
-        w = int(round(window_frames * n_points / total))
-    start = max(0, end - 1 - w)
-    trail_stop = max(0, end - w)
-    return start, end, trail_stop
+# NOTE: the parallel/'window' head + trail geometry lives in
+# `trails.anim_window_bounds` (imported above), not here, because the PLOTLY
+# renderer calls that same function on the same arguments. See its docstring
+# for the backend divergences a shared callee closed.
 
 
 def _make_save_dpi_safe(line_ani):
@@ -440,6 +397,38 @@ def _make_save_dpi_safe(line_ani):
     return line_ani
 
 
+def serial_reveal_counts(lengths, num, total_frames):
+    """Rows revealed per dataset at frame `num` of a serial animation.
+
+    THE reveal schedule. `update_lines_serial` (3-D), `update_lines_serial_2d`
+    and `FrameContext.revealed_counts` all read it, and
+    `plot._apply_multicolor_animation` recovers its hue window from it, so the
+    formula exists once. Equivalent to the historical inline code
+    (`revealed = total_points * num / max(1, total_frames - 1)`; per dataset
+    `shown = int(np.clip(revealed - start, 0, n_pts))`).
+    """
+    total_points = sum(lengths)
+    revealed = total_points * num / max(1, total_frames - 1)
+    counts, remaining = [], revealed
+    for length in lengths:
+        counts.append(int(max(0, min(length, remaining))))
+        remaining -= length
+    return counts
+
+
+def serial_current_index(counts, lengths):
+    """``(index, fraction)`` of the dataset mid-reveal at these counts."""
+    done = -1
+    for i, (shown, length) in enumerate(zip(counts, lengths)):
+        if 0 < shown < length:
+            return i, (shown - 1) / max(1, length - 1)
+        if shown >= length:
+            done = i
+    if done < 0:
+        return 0, 0.0
+    return done, 1.0
+
+
 def _draw(
     x,
     legend=None,
@@ -448,6 +437,7 @@ def _draw(
     show=True,
     kwargs_list=None,
     fmt=None,
+    antialias=True,
     raw_data=None,
     animate=False,
     tail_duration=2,
@@ -478,6 +468,8 @@ def _draw(
     xlabel=None,
     ylabel=None,
     zlabel=None,
+    frame_hooks=None,
+    ownership=None,
 ):
     """
     Draws the plot
@@ -496,6 +488,28 @@ def _draw(
     currently render at the interpolated points rather than only the
     original samples; splitting the animated marker/line artists frame-by-
     frame was judged out of scope for this fix.
+
+    `ownership` (a `hypertools.plot.ownership.TraceOwnership`, or None): which
+    source dataset each drawn trace came from and which of its rows. When
+    given, the parallel/'window' updaters pace every trace of ONE dataset
+    from that dataset's single clock (`trails.dataset_window_bounds`), so a
+    `hue=`/`cluster=` regrouped trajectory sweeps once in row order instead of
+    growing in several places at once. `plot()` passes an `identity` ownership
+    for unregrouped figures, where the projection is provably the identity, so
+    both cases take one code path; it passes None for anything whose traces do
+    not correspond to input datasets (marker-only categorical regrouping
+    groups globally by category), and those keep `anim_window_bounds` directly.
+
+    `frame_hooks` (the public `on_frame=` hook, plan 1.1 Task 7): a
+    `hypertools.plot.animation_context.FrameHooks` registry, created once by
+    `plot()` and threaded in here so every animated updater below can call
+    `frame_hooks.record(...)` with whatever it knows about the frame just
+    drawn. `None` (the default) when no `on_frame=` was requested, in which
+    case every updater's `if frame_hooks is not None:` guard is a no-op.
+    `plot()` installs the actual callback dispatch as the outermost wrapper
+    of the returned `FuncAnimation._func`, AFTER this function returns (see
+    `FrameHooks.dispatch`) -- updaters here only ever record state, never
+    invoke callbacks.
     """
 
     # chemtrails/precog/bullettime (GH #127): normalize to one bool per
@@ -510,6 +524,56 @@ def _draw(
     chemtrails = broadcast_trail_flag(chemtrails, len(x), "chemtrails")
     precog = broadcast_trail_flag(precog, len(x), "precog")
     bullettime = broadcast_trail_flag(bullettime, len(x), "bullettime")
+
+    # antialias (see `plot`'s `antialias=`): DRAW-TIME line smoothing for
+    # ANIMATIONS. Each line-styled dataset gets a dense, PCHIP-upsampled copy
+    # built ONCE here; the `update_lines_*` callbacks below then draw, for
+    # whatever window of original rows a frame would have shown, exactly the
+    # corresponding stretch of that smooth curve (`_aa_window`). The
+    # underlying `x` rows are deliberately left untouched, so frame pacing
+    # (`anim_window_bounds`), per-point labels (`_sync_anim_labels`), surface
+    # hulls and marker artists all keep indexing the REAL data -- only the
+    # drawn polyline is smoothed. (Static plots are antialiased upstream in
+    # `plot.py`, where the densified rows also drive label/marker handling.)
+    #
+    # Marker-only styles are excluded: `has_line_component` is True only when
+    # a linestyle token is present (solid/dashed/dotted, with or without a
+    # marker), so an 'o'/'.' plot is never touched and its markers stay on the
+    # true samples.
+    def _fmt_at(idx):
+        if isinstance(fmt, (list, tuple, np.ndarray)):
+            return fmt[idx] if idx < len(fmt) else None
+        return fmt
+
+    _aa_curves = []
+    for _i, _xi in enumerate(x):
+        _xi = np.asarray(_xi)
+        if antialias and animate and has_line_component(_fmt_at(_i)):
+            _aa_curves.append(antialias_line(_xi))
+        else:
+            _aa_curves.append((_xi, 1))
+
+    def _aa_window(i, a, b, artist=None):
+        """The smooth polyline to DRAW for the original-row window ``x[i][a:b]``.
+
+        With antialiasing off (or nothing to upsample) this is exactly
+        ``x[i][a:b]``, so the drawn vertices are unchanged.
+
+        When `artist` is given, the ORIGINAL row bounds are recorded on it as
+        ``_hyp_row_window``. Downstream renderers that re-draw the same window
+        in another form -- notably `plot._apply_multicolor_animation`, which
+        re-slices a per-segment-colored collection to match -- read that
+        instead of trying to recover the window from the artist's vertex
+        count, which antialiasing decouples from the row count.
+        """
+        if artist is not None:
+            artist._hyp_row_window = (a, b)
+        dense, step = _aa_curves[i]
+        if step == 1:
+            return dense[a:b]
+        if b <= a:
+            return dense[0:0]
+        return dense[a * step:(b - 1) * step + 1]
 
     # handle static plots
     def dispatch_static(x, ax=None):
@@ -1103,8 +1167,17 @@ def _draw(
         # 'serial'/'morph'/static plots) and pace the rotation over the
         # FRAME count rather than the first dataset's row count (the two
         # are no longer interchangeable for marker-only datasets, which
-        # keep their raw rows -- see `_anim_window_bounds`).
+        # keep their raw rows -- see `anim_window_bounds`).
         total_frames = max(1, int(round(frame_rate * duration)))
+        # ONE clock per source dataset: `hue=`/`cluster=` runs of the same
+        # dataset must reveal in row order, not all at once (see
+        # `trails.dataset_window_bounds`). Without regrouping this returns
+        # exactly what `anim_window_bounds` returned before, frame for frame.
+        _windows = None
+        if ownership is not None:
+            _windows = dataset_window_bounds(
+                num, total_frames, ownership,
+                [d.shape[0] for d in data_lines], tail_duration)
         azim_now = azim + rotations * (360 * (num / total_frames))
         ax.view_init(elev=elev, azim=azim_now)
         # Axes3D.dist was removed in matplotlib >= 3.8, silently disabling
@@ -1127,28 +1200,43 @@ def _draw(
                 lines, data_lines, trail_lines)):
 
             # head/trail slicing (release-1.0 audit): every dataset is paced
-            # onto the shared frame grid -- see `_anim_window_bounds` for the
+            # onto the shared frame grid -- see `anim_window_bounds` for the
             # F05-001 (negative chemtrails slice), F05-008 (precog gap),
             # F04-003/F05-012 (shorter/1-point datasets vanishing or driving
             # the frame count) fixes it encodes.
-            start, end, trail_stop = _anim_window_bounds(
-                num, total_frames, data.shape[0], tail_duration)
+            if _windows is not None:
+                win = _windows[i]
+            else:
+                _s, _e, _ts = anim_window_bounds(
+                    num, total_frames, data.shape[0], tail_duration)
+                win = RunWindow(_s, _e, _ts, max(0, _e - 1), True,
+                                data.shape[0])
+            start, end = win.head_start, win.head_end
 
+            # antialias: each artist draws the SMOOTH curve spanning the same
+            # rows it would otherwise have drawn raw (`_aa_window`).
+            n_rows = data.shape[0]
             if trail is not None:
                 ct, pc, bt = chemtrails[i], precog[i], bullettime[i]
+                trail_seg = None
                 if (pc and ct) or bt:
-                    trail.set_data(data[:, 0:2].T)
-                    trail.set_3d_properties(data[:, 2])
+                    trail_seg = _aa_window(i, 0, n_rows, artist=trail)
                 elif ct:
-                    trail.set_data(data[0:trail_stop, 0:2].T)
-                    trail.set_3d_properties(data[0:trail_stop, 2])
+                    trail_seg = _aa_window(i, 0, win.past_stop, artist=trail)
                 elif pc:
-                    trail.set_data(data[end - 1 :, 0:2].T)
-                    trail.set_3d_properties(data[end - 1 :, 2])
+                    # `win.future_start`, never `end - 1`: a run the dataset's
+                    # clock has not reached has `end == 0`, and `data[-1:]`
+                    # would put one point of a future category on screen.
+                    trail_seg = _aa_window(i, win.future_start, n_rows,
+                                           artist=trail)
+                if trail_seg is not None:
+                    trail.set_data(trail_seg[:, 0:2].T)
+                    trail.set_3d_properties(trail_seg[:, 2])
 
-            window = data[start:end]
-            line.set_data(window[:, 0:2].T)
-            line.set_3d_properties(window[:, 2])
+            window = data[start:end]            # RAW rows: hull/point colors
+            draw_window = _aa_window(i, start, end, artist=line)  # drawn curve
+            line.set_data(draw_window[:, 0:2].T)
+            line.set_3d_properties(draw_window[:, 2])
             windows.append(window)
             window_spcs.append(_window_surface_point_colors(
                 surface_point_colors, i, start, end))
@@ -1168,6 +1256,13 @@ def _draw(
         # per-point labels track their datapoint's visibility window (the same
         # [num - tail_duration, num] window the head line uses above)
         _sync_anim_labels(num, tail_duration)
+        if frame_hooks is not None:
+            frame_hooks.record(
+                frame=int(num), n_frames=int(total_frames),
+                artists=list(lines) + [t for t in trail_lines if t is not None],
+                datasets=list(data_lines), style=animate, order='parallel',
+                current_index=None, current_fraction=None,
+                revealed_counts=None)
         return lines, trail_lines
 
     def update_lines_spin(
@@ -1192,17 +1287,30 @@ def _draw(
         update_lines_spin.planes = plot_cube(cube_scale, **frame_kwargs)
         # honor the user's azim= as the starting camera angle (F05-003:
         # 'spin' previously always started at azimuth 0, so azim=45 was
-        # silently ignored and rotations=0 could not pick a viewing angle)
-        azim_now = azim + rotations * (360 * (num / (frame_rate * duration)))
+        # silently ignored and rotations=0 could not pick a viewing angle).
+        # Pace the orbit over the ROUNDED frame count -- the number of frames
+        # actually drawn -- exactly as `update_lines_parallel` and the plotly
+        # renderer do. Spin was the ONLY path dividing by the raw
+        # `frame_rate * duration` product, which differs from the drawn frame
+        # count whenever that product is not a whole number: at frame_rate=7,
+        # duration=2.5 (18 frames drawn, product 17.5) the last frame landed
+        # at 289.71 deg here against plotly's 280.0 -- the same call, a 9.71
+        # deg disagreement, and 349.71 deg of travel for a `rotations=1` turn.
+        # Frames 0..N-1 are meant to span [0, 360) so a looping animation does
+        # not draw the same angle twice; dividing by 17.5 overshot that.
+        total_frames = max(1, int(round(frame_rate * duration)))
+        azim_now = azim + rotations * (360 * (num / total_frames))
         ax.view_init(elev=elev, azim=azim_now)
         # Axes3D.dist was removed in matplotlib >= 3.8, silently disabling
         # zoom; set_box_aspect(zoom=...) is the supported equivalent. See
         # _anim_box_zoom for the (slightly zoomed-out) animation mapping.
         ax.set_box_aspect(None, zoom=_anim_box_zoom(zoom))
 
-        for line, data in zip(lines, data_lines):
-            line.set_data(data[:, 0:2].T)
-            line.set_3d_properties(data[:, 2])
+        for i, (line, data) in enumerate(zip(lines, data_lines)):
+            # antialias: 'spin' draws the FULL trajectory every frame
+            draw_data = _aa_window(i, 0, data.shape[0], artist=line)
+            line.set_data(draw_data[:, 0:2].T)
+            line.set_3d_properties(draw_data[:, 2])
 
         # surface= (GH #109): the FULL dataset is static in 'spin' mode
         # (only the camera rotates), so the mesh itself is precomputed once
@@ -1220,47 +1328,117 @@ def _draw(
         # 'spin' draws every point every frame, so labels stay visible -- but
         # still reproject them for the rotated camera
         _sync_anim_labels(num, 0, all_visible=True)
+        if frame_hooks is not None:
+            frame_hooks.record(
+                frame=int(num), n_frames=int(total_frames),
+                artists=list(lines), datasets=list(data_lines), style=animate,
+                order='parallel', current_index=None, current_fraction=None,
+                revealed_counts=None)
         return lines
 
     def update_lines_serial(
-        num, data_lines, lines, cube_scale, rotations=1, zoom=1, elev=10
+        num, data_lines, lines, trail_lines, cube_scale, window_frames=1,
+        rotations=1, zoom=1, chemtrails=None, precog=None, bullettime=None,
+        elev=10,
     ):
         """Serial animation: datasets appear ONE AT A TIME, each growing
         point-by-point into place while all previous datasets stay fully
         drawn (e.g. conversation turns adding to a shared embedding space).
-        Datasets are never connected to each other."""
+        Datasets are never connected to each other.
+
+        Trail composition (GH #127 follow-up): when a per-dataset
+        chemtrails/precog/bullettime flag is set, the ONE dataset currently
+        being revealed ALSO traces out a low-opacity trail relative to its
+        OWN reveal, led by a short opaque comet-head near the reveal tip --
+        chemtrails fades its revealed-so-far past (``data[:shown]``), precog
+        fades its not-yet-revealed future (``data[shown - 1:]``, sharing the
+        head's last vertex so there is no one-segment gap, cf.
+        `anim_window_bounds`' F05-008), and bullettime (or chemtrails AND
+        precog together) fades the WHOLE trajectory. Already-revealed
+        datasets stay fully drawn (accumulated history) and future ones stay
+        invisible. With NO trail flag set for a dataset (plain 'serial'), its
+        whole revealed portion is drawn fully opaque with no trail --
+        byte-for-byte the historical behavior."""
         if hasattr(update_lines_serial, "planes"):
             for plane in update_lines_serial.planes:
                 plane.remove()
         update_lines_serial.planes = plot_cube(cube_scale, **frame_kwargs)
 
-        total_frames = int(round(frame_rate * duration))
-        ax.view_init(elev=elev,
-                     azim=azim + rotations * 360.0 * num / total_frames)
+        total_frames = max(1, int(round(frame_rate * duration)))
+        azim_now = azim + rotations * 360.0 * num / total_frames
+        ax.view_init(elev=elev, azim=azim_now)
         ax.set_box_aspect(None, zoom=_anim_box_zoom(zoom))
 
         lengths = [d.shape[0] for d in data_lines]
         total_points = sum(lengths)
         revealed = total_points * num / max(1, total_frames - 1)
+        _counts = serial_reveal_counts(lengths, num, total_frames)
 
-        start = 0
         windows = []
         window_spcs = []
-        for i, (line, data) in enumerate(zip(lines, data_lines)):
-            shown = int(np.clip(revealed - start, 0, data.shape[0]))
-            window = data[:shown]
-            line.set_data(window[:, 0:2].T)
-            line.set_3d_properties(window[:, 2])
-            windows.append(window)
+        for i, (line, data, trail) in enumerate(itertools.zip_longest(
+                lines, data_lines, trail_lines)):
+            n_pts = data.shape[0]
+            shown = _counts[i]
+
+            ct = chemtrails[i] if chemtrails is not None else False
+            pc = precog[i] if precog is not None else False
+            bt = bullettime[i] if bullettime is not None else False
+            # a dataset composes a trail only if it both HAS a trail artist
+            # (created by `_wants_trail`) and a flag set this frame's window.
+            has_trail = trail is not None and (ct or pc or bt)
+
+            # antialias: bounds are resolved as ORIGINAL-row index pairs, then
+            # `_aa_window` maps each onto the smooth curve for drawing.
+            trail_bounds = None
+            if not has_trail:
+                # plain 'serial' (or a dataset with no trail flag): the whole
+                # revealed portion is drawn fully opaque -- UNCHANGED.
+                head_bounds = (0, shown)
+            elif shown <= 0:
+                # not started revealing yet: head + trail both empty.
+                head_bounds = (0, 0)
+            elif shown >= n_pts:
+                # fully revealed: the whole dataset stays drawn as opaque
+                # history, trail cleared.
+                head_bounds = (0, n_pts)
+            else:
+                # currently revealing: a short opaque comet-head leads the
+                # reveal tip while the rest traces out as a faded trail.
+                # `window_frames` is the head length in FRAMES; scale it onto
+                # this dataset's SHARE of the serial timeline
+                # (`n_pts / total_points`, since the serial sweep packs every
+                # dataset's rows into the same frame grid), mirroring
+                # `anim_window_bounds`' start = end - 1 - w head sizing.
+                w = max(1, int(round(window_frames * n_pts
+                                     / max(1, total_points))))
+                head_bounds = (max(0, shown - 1 - w), shown)
+                if (ct and pc) or bt:
+                    trail_bounds = (0, n_pts)              # bullettime: whole
+                elif ct:
+                    trail_bounds = (0, shown)              # chemtrails: past
+                else:
+                    trail_bounds = (max(0, shown - 1), n_pts)  # precog: future
+
+            head = _aa_window(i, *head_bounds, artist=line)
+            trail_seg = (data[:0] if trail_bounds is None
+                         else _aa_window(i, *trail_bounds, artist=trail))
+            line.set_data(head[:, 0:2].T)
+            line.set_3d_properties(head[:, 2])
+            if trail is not None:
+                trail.set_data(trail_seg[:, 0:2].T)
+                trail.set_3d_properties(trail_seg[:, 2])
+
+            # surface hull follows the full revealed portion (same window as
+            # plain serial), independent of the comet-head trimming above
+            windows.append(data[:shown])
             window_spcs.append(_window_surface_point_colors(
                 surface_point_colors, i, 0, shown))
-            start += data.shape[0]
 
         # surface= (GH #109): each dataset's hull follows its own currently-
         # revealed portion (same window as its line above), keeping the
         # per-vertex hue coloring of the revealed points (F07-005)
         if surface is not None:
-            azim_now = azim + rotations * 360.0 * num / total_frames
             prior = getattr(update_lines_serial, "surface_colls", None)
             update_lines_serial.surface_colls = _mesh_and_draw_3d(
                 ax, windows, surface, surface_colors, elev, azim_now,
@@ -1270,6 +1448,14 @@ def _draw(
         # serial reveals points cumulatively: a label shows once its point has
         # been revealed (global index <= revealed), and stays
         _sync_anim_labels(num, 0, revealed=revealed)
+        if frame_hooks is not None:
+            _idx, _frac = serial_current_index(_counts, lengths)
+            frame_hooks.record(
+                frame=int(num), n_frames=int(total_frames),
+                artists=list(lines) + [t for t in trail_lines if t is not None],
+                datasets=list(data_lines), style='serial', order='serial',
+                current_index=_idx, current_fraction=_frac,
+                revealed_counts=_counts)
         return lines
 
     def update_morph(num, morph_state, cube_scale, azimuths, zoom=1, elev=10):
@@ -1350,6 +1536,28 @@ def _draw(
         # morph collapses the datasets to one traveling cloud that does not
         # correspond to the original labeled points -> hide per-point labels
         _sync_anim_labels(num, 0, hide_all=True)
+        if frame_hooks is not None:
+            frame_hooks.record(
+                frame=int(num),
+                n_frames=int(sum(morph_state["frame_counts"])),
+                artists=[morph_state["artist"]],
+                datasets=list(morph_state["sampled"]),
+                style='morph', order='serial',
+                # `seg_idx // 2` is a position WITHIN THE MORPH SEQUENCE
+                # (0, 1, 2, ... for the 1st, 2nd, 3rd morph-tagged dataset),
+                # not a FINAL dataset index -- those only coincide when
+                # every dataset is tagged (scalar animate='morph'). For a
+                # partial-tag list (e.g. animate=[None, 'morph', 'morph']),
+                # `morph_state["indices"]` (built from `morph_tags` in
+                # `animate_plot3D` above) maps sequence position back to the
+                # actual dataset index, exactly like the simplify guard in
+                # `plot.py` already does -- so this agrees with `title=`'s
+                # per-segment lookup, which indexes by FINAL dataset.
+                current_index=morph_state["indices"][seg_idx // 2],
+                current_fraction=step / max(1, n_steps - 1),
+                revealed_counts=None,
+                segment_index=seg_idx,
+                segment_kind='hold' if seg_idx % 2 == 0 else 'transition')
         return (artist,)
 
     def dispatch_animate(x, ani_params):
@@ -1452,18 +1660,22 @@ def _draw(
         # via `itertools.zip_longest` already (marker-only animations relied
         # on this same mechanism before this change).
         #
-        # 'spin'/'serial' (GH #127 follow-up): neither `update_lines_spin`
-        # nor `update_lines_serial` accepts (or ever touches) a trail_lines
-        # argument -- 'spin' has no "current position" for a trail to lead/
-        # follow (only the camera moves) and 'serial' already communicates
-        # elapsed time via its point-by-point reveal. Trail artists created
-        # here for those two styles would therefore stay frozen at their
-        # initial (single-point) state for the whole animation: invisible/
-        # useless stubs. `plot.py` already warns the caller and names the
-        # ignored flags/dataset indices; this just skips ever creating them
-        # so `_wants_trail` is forced False for every dataset in these modes.
+        # 'spin' (GH #127 follow-up): `update_lines_spin` never accepts (or
+        # touches) a trail_lines argument -- 'spin' has no "current position"
+        # for a trail to lead/follow (only the camera moves). A trail artist
+        # created here for 'spin' would stay frozen at its initial (single-
+        # point) state for the whole animation: an invisible/useless stub.
+        # 'morph' draws a single traveling cloud (no per-dataset current
+        # position) and 'window' is bullettime MINUS its trail by definition,
+        # so both likewise skip trails. `plot.py` already warns the caller
+        # (and names the ignored flags/dataset indices) for these modes.
+        #
+        # 'serial' now COMPOSES with the trail flags (chemtrails-serial /
+        # precog-serial / bullettime-serial): `update_lines_serial` draws the
+        # currently-revealing dataset with a per-dataset trail, so its trail
+        # artists ARE created here whenever a flag is set for that dataset.
         def _wants_trail(idx):
-            if style in ("spin", "serial", "morph", "window"):
+            if style in ("spin", "morph", "window"):
                 return False
             return chemtrails[idx] or precog[idx] or bullettime[idx]
 
@@ -1477,6 +1689,17 @@ def _draw(
             if isinstance(kwargs_list[idx], dict) else 1
             for idx in range(len(x))
         ]
+
+        # fold the 0.3 trail-fade factor into whatever alpha the dataset kwargs
+        # already carry (default 1.0 -> 0.3, i.e. unchanged for the common
+        # no-alpha case). Passing a bare `alpha=0.3` alongside **kwargs_list[idx]
+        # collided when MultiIndex expansion assigned a per-trace alpha (faint
+        # leaf traces vs. opaque group-mean traces), raising "got multiple
+        # values for keyword argument 'alpha'".
+        def _trail_kwargs(kw):
+            kw = dict(kw) if isinstance(kw, dict) else {}
+            kw["alpha"] = 0.3 * kw.pop("alpha", 1.0)
+            return kw
 
         trail = []
         if fmt is not None:
@@ -1498,9 +1721,8 @@ def _draw(
                         dat[0:1, 1],
                         dat[0:1, 2],
                         fmt[idx],
-                        alpha=0.3,
                         linewidth=linewidths[idx],
-                        **kwargs_list[idx]
+                        **_trail_kwargs(kwargs_list[idx])
                     )[0] if _wants_trail(idx) else None
                     for idx, dat in enumerate(x)
                 ]
@@ -1521,9 +1743,8 @@ def _draw(
                         dat[0:1, 0],
                         dat[0:1, 1],
                         dat[0:1, 2],
-                        alpha=0.3,
                         linewidth=linewidths[idx],
-                        **kwargs_list[idx]
+                        **_trail_kwargs(kwargs_list[idx])
                     )[0] if _wants_trail(idx) else None
                     for idx, dat in enumerate(x)
                 ]
@@ -1776,22 +1997,18 @@ def _draw(
         # to `tail_duration`'s own value there), so when it IS used the
         # numeric result is byte-identical to before whenever the caller
         # never passed an explicit `focused=`.
-        _uses_focus_window = (
-            style == "window" or any(chemtrails) or any(precog)
-            or any(bullettime)
-        )
-        _window_duration = focused if _uses_focus_window else tail_duration
-        if _window_duration == 0:
-            window_frames = 1
-        else:
-            window_frames = int(frame_rate * _window_duration)
+        # one implementation, shared with the plotly backend AND with the
+        # forecast reveal schedule `plot()` builds (see `trails`)
+        window_frames = head_window_frames(
+            frame_rate, tail_duration, focused, style == "window",
+            chemtrails, precog, bullettime)
 
         # get line animation
         if style in ["parallel", True, "window"]:
             # frames == round(frame_rate * duration), the documented frame
             # count, for EVERY dataset mix (release-1.0 audit): line datasets
             # are pre-interpolated onto exactly this grid, and marker-only/
-            # 1-point datasets are paced onto it by `_anim_window_bounds` --
+            # 1-point datasets are paced onto it by `anim_window_bounds` --
             # previously frames came from x[0].shape[0] alone, so a longer
             # LATER dataset was silently truncated (F04-003), marker-only
             # animations ignored duration= entirely (F04-005/F05-010), and a
@@ -1821,8 +2038,9 @@ def _draw(
             line_ani = animation.FuncAnimation(
                 fig,
                 update_lines_serial,
-                int(round(frame_rate * duration)),
-                fargs=(x, lines, cube_scale_anim, rotations, zoom, elev),
+                max(1, int(round(frame_rate * duration))),
+                fargs=(x, lines, trail, cube_scale_anim, window_frames,
+                       rotations, zoom, chemtrails, precog, bullettime, elev),
                 interval=1000 / frame_rate,
                 blit=False,
                 repeat=False,
@@ -1831,7 +2049,7 @@ def _draw(
             line_ani = animation.FuncAnimation(
                 fig,
                 update_lines_spin,
-                int(round(frame_rate * duration)),
+                max(1, int(round(frame_rate * duration))),
                 fargs=(x, lines, cube_scale_anim, rotations, zoom, elev),
                 interval=1000 / frame_rate,
                 blit=False,
@@ -1839,7 +2057,7 @@ def _draw(
             )
         elif style == "morph":
             n_morph_datasets = len(morph_state["indices"])
-            total_frames = int(round(frame_rate * duration))
+            total_frames = max(1, int(round(frame_rate * duration)))
             frame_counts, _, azimuths = _morph.morph_schedule(
                 n_morph_datasets, total_frames, rotations, azim)
             morph_state["frame_counts"] = frame_counts
@@ -1852,6 +2070,14 @@ def _draw(
                 blit=False,
                 repeat=False,
             )
+            # `HyperAnimation.n_segments` reads this. Tagged HERE, beside the
+            # `sum(frame_counts)` that becomes `_save_count`, so the segment
+            # count and the frame count can never describe different
+            # schedules. The 2-D morph branch below carries the same tag --
+            # tagging only one makes `n_segments` silently None for half of
+            # all morphs, which reads as "not a morph" rather than as an
+            # error.
+            line_ani._hyp_morph_segments = len(frame_counts)
 
         return fig, ax, x, line_ani
 
@@ -1882,49 +2108,117 @@ def _draw(
             artists, for `blit=True` animation.
         """
         total_frames = max(1, int(round(frame_rate * duration)))
+        # one clock per source dataset, exactly as in the 3-D updater above
+        _windows = None
+        if ownership is not None:
+            _windows = dataset_window_bounds(
+                num, total_frames, ownership,
+                [d.shape[0] for d in data_lines], tail_duration)
         for i, (line, data, trail) in enumerate(itertools.zip_longest(
                 lines, data_lines, trail_lines)):
             # same F05-001/F05-008/F04-003/F05-012 slicing fixes as the 3-D
-            # path -- see `_anim_window_bounds`.
-            start, end, trail_stop = _anim_window_bounds(
-                num, total_frames, data.shape[0], tail_duration)
+            # path -- see `anim_window_bounds`.
+            if _windows is not None:
+                win = _windows[i]
+            else:
+                _s, _e, _ts = anim_window_bounds(
+                    num, total_frames, data.shape[0], tail_duration)
+                win = RunWindow(_s, _e, _ts, max(0, _e - 1), True,
+                                data.shape[0])
+            start, end = win.head_start, win.head_end
+            # antialias: draw the smooth curve spanning the same rows
+            n_rows = data.shape[0]
             if trail is not None:
                 ct, pc, bt = chemtrails[i], precog[i], bullettime[i]
+                trail_seg = None
                 if (pc and ct) or bt:
-                    trail.set_data(data[:, 0], data[:, 1])
+                    trail_seg = _aa_window(i, 0, n_rows, artist=trail)
                 elif ct:
-                    trail.set_data(data[0:trail_stop, 0],
-                                   data[0:trail_stop, 1])
+                    trail_seg = _aa_window(i, 0, win.past_stop, artist=trail)
                 elif pc:
-                    trail.set_data(data[end - 1 :, 0], data[end - 1 :, 1])
+                    # `win.future_start`, never `end - 1` -- see the 3-D path
+                    trail_seg = _aa_window(i, win.future_start, n_rows,
+                                           artist=trail)
+                if trail_seg is not None:
+                    trail.set_data(trail_seg[:, 0], trail_seg[:, 1])
 
-            window = data[start:end]
+            window = _aa_window(i, start, end, artist=line)
             line.set_data(window[:, 0], window[:, 1])
 
         _sync_anim_labels(num, tail_duration)
+        if frame_hooks is not None:
+            frame_hooks.record(
+                frame=int(num), n_frames=int(total_frames),
+                artists=list(lines) + [t for t in trail_lines if t is not None],
+                datasets=list(data_lines), style=animate, order='parallel',
+                current_index=None, current_fraction=None,
+                revealed_counts=None)
         return lines, trail_lines
 
-    def update_lines_serial_2d(num, data_lines, lines):
-        """2D counterpart of `update_lines_serial` (fixed viewport, no camera/cube).
+    def update_lines_serial_2d(num, data_lines, lines, trail_lines,
+                               window_frames=1, chemtrails=None, precog=None,
+                               bullettime=None):
+        """2D counterpart of `update_lines_serial` (fixed viewport, no
+        camera/cube) -- including the same chemtrails/precog/bullettime trail
+        composition on the currently-revealing dataset (see
+        `update_lines_serial`).
 
         Returns
         -------
         list
             The updated matplotlib line artists, for `blit=True` animation.
         """
-        total_frames = int(round(frame_rate * duration))
+        total_frames = max(1, int(round(frame_rate * duration)))
         lengths = [d.shape[0] for d in data_lines]
         total_points = sum(lengths)
         revealed = total_points * num / max(1, total_frames - 1)
+        _counts = serial_reveal_counts(lengths, num, total_frames)
 
-        start = 0
-        for line, data in zip(lines, data_lines):
-            shown = int(np.clip(revealed - start, 0, data.shape[0]))
-            window = data[:shown]
-            line.set_data(window[:, 0], window[:, 1])
-            start += data.shape[0]
+        for i, (line, data, trail) in enumerate(itertools.zip_longest(
+                lines, data_lines, trail_lines)):
+            n_pts = data.shape[0]
+            shown = _counts[i]
+
+            ct = chemtrails[i] if chemtrails is not None else False
+            pc = precog[i] if precog is not None else False
+            bt = bullettime[i] if bullettime is not None else False
+            has_trail = trail is not None and (ct or pc or bt)
+
+            # antialias: resolve ORIGINAL-row bounds, draw the smooth curve
+            trail_bounds = None
+            if not has_trail:
+                head_bounds = (0, shown)                  # UNCHANGED
+            elif shown <= 0:
+                head_bounds = (0, 0)
+            elif shown >= n_pts:
+                head_bounds = (0, n_pts)
+            else:
+                w = max(1, int(round(window_frames * n_pts
+                                     / max(1, total_points))))
+                head_bounds = (max(0, shown - 1 - w), shown)
+                if (ct and pc) or bt:
+                    trail_bounds = (0, n_pts)              # bullettime: whole
+                elif ct:
+                    trail_bounds = (0, shown)              # chemtrails: past
+                else:
+                    trail_bounds = (max(0, shown - 1), n_pts)  # precog: future
+
+            head = _aa_window(i, *head_bounds, artist=line)
+            trail_seg = (data[:0] if trail_bounds is None
+                         else _aa_window(i, *trail_bounds, artist=trail))
+            line.set_data(head[:, 0], head[:, 1])
+            if trail is not None:
+                trail.set_data(trail_seg[:, 0], trail_seg[:, 1])
 
         _sync_anim_labels(num, 0, revealed=revealed)
+        if frame_hooks is not None:
+            _idx, _frac = serial_current_index(_counts, lengths)
+            frame_hooks.record(
+                frame=int(num), n_frames=int(total_frames),
+                artists=list(lines) + [t for t in trail_lines if t is not None],
+                datasets=list(data_lines), style='serial', order='serial',
+                current_index=_idx, current_fraction=_frac,
+                revealed_counts=_counts)
         return lines
 
     def update_morph_2d(num, morph_state):
@@ -1950,6 +2244,23 @@ def _draw(
         artist.set_color(color)
 
         _sync_anim_labels(num, 0, hide_all=True)
+        if frame_hooks is not None:
+            frame_hooks.record(
+                frame=int(num),
+                n_frames=int(sum(morph_state["frame_counts"])),
+                artists=[morph_state["artist"]],
+                datasets=list(morph_state["sampled"]),
+                style='morph', order='serial',
+                # see the identical note in `update_morph` (3-D): `seg_idx
+                # // 2` is a position within the morph SEQUENCE, which only
+                # equals the FINAL dataset index when every dataset is
+                # tagged -- `morph_state["indices"]` maps sequence position
+                # back to the actual dataset index for partial-tag lists.
+                current_index=morph_state["indices"][seg_idx // 2],
+                current_fraction=step / max(1, n_steps - 1),
+                revealed_counts=None,
+                segment_index=seg_idx,
+                segment_kind='hold' if seg_idx % 2 == 0 else 'transition')
         return (artist,)
 
     def animate_plot2D(
@@ -2008,7 +2319,10 @@ def _draw(
         ax = fig.add_subplot(111)
 
         def _wants_trail(idx):
-            if style in ("serial", "morph", "window"):
+            # 'serial' composes with the trail flags (see animate_plot3D's
+            # `_wants_trail`); only 'morph'/'window' skip trails in 2-D
+            # ('spin' is rejected for 2-D data before this point).
+            if style in ("morph", "window"):
                 return False
             return chemtrails[idx] or precog[idx] or bullettime[idx]
 
@@ -2019,6 +2333,15 @@ def _draw(
             if isinstance(kwargs_list[idx], dict) else 1
             for idx in range(len(x))
         ]
+
+        # see animate_plot3D: fold the 0.3 trail-fade factor into any alpha the
+        # dataset kwargs already carry, so a per-trace alpha from MultiIndex
+        # expansion does not collide with a bare `alpha=0.3` ("got multiple
+        # values for keyword argument 'alpha'").
+        def _trail_kwargs(kw):
+            kw = dict(kw) if isinstance(kw, dict) else {}
+            kw["alpha"] = 0.3 * kw.pop("alpha", 1.0)
+            return kw
 
         trail = []
         if fmt is not None:
@@ -2038,9 +2361,8 @@ def _draw(
                         dat[0:1, 0],
                         dat[0:1, 1],
                         fmt[idx],
-                        alpha=0.3,
                         linewidth=linewidths[idx],
-                        **kwargs_list[idx]
+                        **_trail_kwargs(kwargs_list[idx])
                     )[0] if _wants_trail(idx) else None
                     for idx, dat in enumerate(x)
                 ]
@@ -2059,9 +2381,8 @@ def _draw(
                     ax.plot(
                         dat[0:1, 0],
                         dat[0:1, 1],
-                        alpha=0.3,
                         linewidth=linewidths[idx],
-                        **kwargs_list[idx]
+                        **_trail_kwargs(kwargs_list[idx])
                     )[0] if _wants_trail(idx) else None
                     for idx, dat in enumerate(x)
                 ]
@@ -2128,15 +2449,11 @@ def _draw(
         if density is not None:
             _draw_density_2d(ax, x, density, density_colors)
 
-        _uses_focus_window = (
-            style == "window" or any(chemtrails) or any(precog)
-            or any(bullettime)
-        )
-        _window_duration = focused if _uses_focus_window else tail_duration
-        if _window_duration == 0:
-            window_frames = 1
-        else:
-            window_frames = int(frame_rate * _window_duration)
+        # one implementation, shared with the plotly backend AND with the
+        # forecast reveal schedule `plot()` builds (see `trails`)
+        window_frames = head_window_frames(
+            frame_rate, tail_duration, focused, style == "window",
+            chemtrails, precog, bullettime)
 
         if style in ["parallel", True, "window"]:
             # frames == round(frame_rate * duration) -- see the identical
@@ -2155,8 +2472,9 @@ def _draw(
             line_ani = animation.FuncAnimation(
                 fig,
                 update_lines_serial_2d,
-                int(round(frame_rate * duration)),
-                fargs=(x, lines),
+                max(1, int(round(frame_rate * duration))),
+                fargs=(x, lines, trail, window_frames, chemtrails, precog,
+                      bullettime),
                 interval=1000 / frame_rate,
                 blit=False,
                 repeat=False,
@@ -2169,7 +2487,7 @@ def _draw(
             # control), but is ignored uniformly for every 2-D style for
             # consistency (and `plot.py` has already warned about it).
             n_morph_datasets = len(morph_state["indices"])
-            total_frames = int(round(frame_rate * duration))
+            total_frames = max(1, int(round(frame_rate * duration)))
             frame_counts, _, _ = _morph.morph_schedule(
                 n_morph_datasets, total_frames, 1, 0)
             morph_state["frame_counts"] = frame_counts
@@ -2182,6 +2500,8 @@ def _draw(
                 blit=False,
                 repeat=False,
             )
+            # the 2-D half of the `n_segments` tag -- see the 3-D branch above
+            line_ani._hyp_morph_segments = len(frame_counts)
 
         return fig, ax, x, line_ani
 

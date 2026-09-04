@@ -27,7 +27,8 @@ Levels are numbered 0 (top/outermost) .. L-1 (leaf/deepest), where L is
   leaf and every mean sharing the same top-level value shares one color.
 - ``label``: only the TOP-level mean (``level_idx == 0``) carries a real
   legend label (``str(top_value)``); every other trace (all leaves, and any
-  intermediate-level means) gets ``'_nolegend_'``.
+  intermediate-level means) gets ``'_nolegend_'``. The ONE exception is
+  ``n_levels == 1`` -- see the one-level example below.
 
 Example (2 levels, (cond, subj)): leaves are (cond, subj) pairs, lw=1,
 alpha=0.7; cond-means (the only non-leaf level, which is also the top level)
@@ -36,14 +37,34 @@ get lw=2, alpha=1.0, and carry the legend label.
 Example (3 levels, (grp, cond, subj)): leaves lw=1, alpha=1/3+0.2=0.5333;
 (grp, cond)-means lw=2, alpha=0.7; grp-means (top level) lw=3, alpha=1.0 and
 carry the legend label.
+
+Example (``n_levels == 1``, reachable from a two-level COLUMN hierarchy such
+as (Group, Feature), where the innermost level is the feature axis): there is
+no non-leaf level, so NO mean is built and every leaf is itself a top-level
+group -- lw=1, alpha=1.0, its own colour, and **its own legend label**.
+Applying the general rule here would leave every trace ``'_nolegend_'`` and
+the legend empty, which is what it did before 1.1 (F11).
+
+Since 1.1 the mean-building and styling halves of this module live in
+`hypertools.plot.hierarchy` (`build_hierarchy_traces` / `build_hierarchy_styles`);
+`build_multiindex_styles` below is a thin shim over that pair, and grouping
+itself lives in `hypertools.core.hierarchy`.
+
+THE COLUMN RULE (1.1) is different and lives in
+`hypertools.core.hierarchy.group_columns`, not here. The innermost COLUMN
+level is the FEATURE axis and every level above it groups, so
+``(Market, Sector, Measure)`` gives one leaf per sector plus a market mean,
+and ``n_levels`` counts the GROUPING levels only. Everything below this
+docstring -- the style formulas, the ordering, the legend rule -- is shared
+by both axes; only the grouping differs. Two consequences specific to the
+column axis: every group keeps all ``len(df)`` rows (column grouping never
+shortens a trace), and feature correspondence across groups is NOMINAL --
+every group must carry the same innermost labels, later groups are permuted
+into the first group's order, and groups whose labels differ (including
+groups of unequal width) are refused BY NAME rather than silently lined up
+by position. A frame hierarchical on BOTH axes is refused outright. See docs/hierarchy.rst for the user-facing
+comparison table.
 """
-
-import warnings
-
-import numpy as np
-
-from .colors import get_palette_colors
-
 
 def expand_multiindex(df):
     """Expand a DataFrame with a row MultiIndex into one leaf DataFrame per
@@ -90,152 +111,16 @@ def expand_multiindex(df):
 
 def build_multiindex_styles(leaf_arrays, meta, palette='hls', linestyle=None,
                             linestyles=None):
-    """Compute per-level mean trajectories + per-dataset style overrides.
+    """Deprecated internal shim: build traces, then style them.
 
-    Parameters
-    ----------
-    leaf_arrays : list of numpy.ndarray
-        The TRANSFORMED (post normalize/reduce/align) leaf trajectories, in
-        the same order as ``meta['leaf_keys']``.
-    meta : dict
-        The metadata returned by `expand_multiindex`.
-    palette : str or list
-        Passed to `hypertools.plot.colors.get_palette_colors`; resolves one
-        color per unique TOP-level index value.
-    linestyle, linestyles : str, list, or None
-        If a list/tuple is given (`linestyles` takes priority, mirroring
-        `hyp.plot`'s own alias handling), its length MUST equal the number
-        of unique top-level index values -- each top-level group then uses
-        its entry for every one of its traces (leaves and means alike).
-        Raises ``ValueError`` on a length mismatch. A scalar (or None) is
-        left untouched -- the caller's existing scalar-broadcast handles it.
-
-    Notes
-    -----
-    Member leaves of a prefix group are averaged over their overlapping
-    (shortest) length when they are of unequal length. In a 3+-level tree
-    the same underlying short leaf is a member of the prefix group at every
-    level above it (e.g. its ``(grp, cond)`` group AND its ``grp`` group),
-    so rather than warn once per level for what is really one underlying
-    issue, all unequal-length groups discovered across every level are
-    collected and reported in a single aggregated ``UserWarning`` per call.
-
-    Returns
-    -------
-    arrays : list of numpy.ndarray
-        ``leaf_arrays`` followed by one mean array per non-leaf level
-        grouping, ordered from the DEEPEST non-leaf level up to the top
-        level (so the top-level means -- the thickest, most opaque, only
-        legend-labeled traces -- come last).
-    style : dict
-        ``{'colors': [...], 'linewidths': [...], 'alphas': [...],
-        'labels': [...], 'linestyles': [...] or None, 'n_top': int,
-        'unique_top': [...]}``, one entry per array in ``arrays`` (aligned
-        by position).
+    Kept because `tests/test_multiindex.py` imports it directly and pins its
+    ``(arrays, style)`` contract. New code calls `build_hierarchy_traces` and
+    `build_hierarchy_styles` separately -- see hypertools/plot/hierarchy.py,
+    which is the single owner of mean construction, unequal-length
+    truncation and the truncation warning.
     """
-    leaf_keys = meta['leaf_keys']
-    n_levels = meta['n_levels']
-    n_leaves = len(leaf_keys)
-    if len(leaf_arrays) != n_leaves:
-        raise ValueError(
-            f"build_multiindex_styles got {len(leaf_arrays)} leaf array(s) "
-            f"but expected {n_leaves} (one per unique MultiIndex "
-            "combination)."
-        )
-
-    top_vals = [key[0] for key in leaf_keys]
-    unique_top = list(dict.fromkeys(top_vals))
-    n_top = len(unique_top)
-    top_index_of = {val: i for i, val in enumerate(unique_top)}
-
-    palette_colors = get_palette_colors(palette, n_top)
-    color_of_top = [tuple(float(c) for c in palette_colors[i])
-                     for i in range(n_top)]
-
-    # linestyle(s): an explicit list/tuple must have length == n_top (one
-    # style per top-level group, applied to every trace in that group). A
-    # scalar (or None) is left alone -- the existing scalar-broadcast in
-    # plot.py already handles that case.
-    resolved_linestyle = linestyles if linestyles is not None else linestyle
-    per_top_linestyle = None
-    if isinstance(resolved_linestyle, (list, tuple)):
-        if len(resolved_linestyle) != n_top:
-            raise ValueError(
-                f"linestyle(s) has {len(resolved_linestyle)} entries but "
-                f"there are {n_top} unique top-level MultiIndex value(s) "
-                f"({unique_top!r}); pass exactly one linestyle per "
-                "top-level group."
-            )
-        per_top_linestyle = list(resolved_linestyle)
-
-    arrays = list(leaf_arrays)
-    colors, linewidths, alphas, labels = [], [], [], []
-    linestyles_out = [] if per_top_linestyle is not None else None
-
-    def _append_style(level_idx, top_val, label):
-        linewidths.append(float(1 + (n_levels - 1 - level_idx)))
-        alphas.append(float(min(1.0, 1.0 / (level_idx + 1) + 0.2)))
-        colors.append(color_of_top[top_index_of[top_val]])
-        labels.append(label)
-        if linestyles_out is not None:
-            linestyles_out.append(per_top_linestyle[top_index_of[top_val]])
-
-    # leaves: deepest level (level_idx = n_levels - 1), never legend-labeled
-    for key in leaf_keys:
-        _append_style(n_levels - 1, key[0], '_nolegend_')
-
-    # level-k means, k = n_levels - 2 down to 0 (deepest non-leaf level up
-    # to the top level) -- appended in that order so top-level means (the
-    # thickest, most opaque, only legend-labeled traces) come last.
-    #
-    # A single unequal-length subtree (e.g. one short subject) is a member
-    # of the prefix at EVERY level above it (its (grp, cond) group AND its
-    # grp group, in a 3-level tree), so warning immediately inside this loop
-    # would fire once per level for what is really one underlying issue.
-    # Instead, unequal-length groups are collected here and reported in ONE
-    # aggregated warning after the loop finishes.
-    _unequal_length_groups = []
-    for k in range(n_levels - 2, -1, -1):
-        prefix_members = {}
-        prefix_order = []
-        for i, key in enumerate(leaf_keys):
-            prefix = key[:k + 1]
-            if prefix not in prefix_members:
-                prefix_members[prefix] = []
-                prefix_order.append(prefix)
-            prefix_members[prefix].append(i)
-
-        for prefix in prefix_order:
-            member_idx = prefix_members[prefix]
-            member_arrays = [np.asarray(arrays[i]) for i in member_idx]
-            lengths = [a.shape[0] for a in member_arrays]
-            min_len = min(lengths)
-            if len(set(lengths)) > 1:
-                group_name = prefix[0] if len(prefix) == 1 else prefix
-                _unequal_length_groups.append((group_name, lengths, min_len))
-            stacked = np.stack([a[:min_len] for a in member_arrays], axis=0)
-            arrays.append(np.mean(stacked, axis=0))
-
-            label = str(prefix[0]) if k == 0 else '_nolegend_'
-            _append_style(k, prefix[0], label)
-
-    if _unequal_length_groups:
-        details = "; ".join(
-            f"{group_name!r} has members of unequal length ({lengths}), "
-            f"averaged over the overlapping prefix of {min_len} row(s)"
-            for group_name, lengths, min_len in _unequal_length_groups
-        )
-        warnings.warn(
-            f"MultiIndex group(s) with unequal-length members: {details}."
-        )
-
-    style = {
-        'colors': colors,
-        'linewidths': linewidths,
-        'alphas': alphas,
-        'labels': labels,
-        'linestyles': linestyles_out,
-        'n_top': n_top,
-        'unique_top': unique_top,
-    }
-    return arrays, style
+    from .hierarchy import build_hierarchy_styles, build_hierarchy_traces
+    ft = build_hierarchy_traces(leaf_arrays, meta)
+    return ft.arrays, build_hierarchy_styles(ft, palette=palette,
+                                             linestyle=linestyle,
+                                             linestyles=linestyles)

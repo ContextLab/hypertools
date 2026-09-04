@@ -5,7 +5,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hypertools"
-version = "1.0.0"
+# the 1.1 line: this branch's unreleased work now includes the hierarchy
+# features AND four rejections of previously-accepted input (CHANGELOG 1.1.0,
+# "Changed / validation"), which cannot ship as a patch release. The version
+# and the top CHANGELOG heading are held equal by
+# tests/test_release_readiness_gate.py::test_changelog_top_version_matches_pyproject.
+version = "1.1.0"
 description = "A python package for visualizing and manipulating high-dimensional data"
 readme = "readme.md"
 # PEP 639 SPDX expression (the `license = { text = ... }` table form is
@@ -52,6 +57,11 @@ dependencies = [
     # require numpy<2).
     "pandas>=2.2.2",
     "seaborn>=0.13.0",
+    # Pillow is already a hard requirement of matplotlib>=3.9 (`pillow>=8`),
+    # so this adds no install weight -- but hypertools now imports PIL
+    # itself (hypertools/plot/colors.py: image_palette / palette='image:...'),
+    # and a library that imports a package declares it.
+    "pillow>=8",
     "matplotlib>=3.9.0",     # 3.8.x requires numpy<2; 3.9.0 supports numpy 2
     "scipy>=1.13.0",
     "numpy>=2.0.0",
@@ -234,3 +244,14 @@ markers = [
 # a user-supplied `-m` on the command line (e.g. `pytest -m bigdata`)
 # overrides this addopts value entirely, re-including bigdata tests.
 addopts = "-m 'not bigdata'"
+
+[tool.ruff.lint.per-file-ignores]
+# `from .._shared.helpers import *` pulls in ~20 plotting helper names used
+# throughout these two large (1500+/8000+ line) modules. `np` was already
+# pulled out into an explicit `import numpy as np` (see the comment at the
+# top of plot.py); enumerating every remaining star-imported name with
+# certainty across files this size risks a missed name turning into a live
+# NameError, so the star import is kept and only its lint findings are
+# silenced here (2026-09 ruff cleanup).
+"hypertools/plot/plot.py" = ["F403", "F405"]
+"hypertools/plot/matplotlib_backend.py" = ["F403", "F405"]

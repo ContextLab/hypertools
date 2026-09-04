@@ -79,7 +79,7 @@ def _make_3level_df(n_time=8, seed=0):
 
 
 def _leaf_lines_3d(ax, n):
-    return [np.array(l.get_data_3d()).T for l in ax.get_lines()[:n]]
+    return [np.array(ln.get_data_3d()).T for ln in ax.get_lines()[:n]]
 
 
 # ---------------------------------------------------------------------------
@@ -226,17 +226,17 @@ def test_plot_2level_mpl_counts_styles_legend():
     lines = ax.get_lines()
     assert len(lines) == 10
 
-    lws = [round(l.get_linewidth(), 6) for l in lines]
+    lws = [round(ln.get_linewidth(), 6) for ln in lines]
     assert lws == [1.0] * 8 + [2.0] * 2
-    alphas = [round(l.get_alpha(), 6) for l in lines]
+    alphas = [round(ln.get_alpha(), 6) for ln in lines]
     assert alphas == pytest.approx([0.7] * 8 + [1.0] * 2)
 
-    colors = [l.get_color() for l in lines]
+    colors = [ln.get_color() for ln in lines]
     assert len(set(colors[0:4] + [colors[8]])) == 1
     assert len(set(colors[4:8] + [colors[9]])) == 1
     assert colors[0] != colors[4]
 
-    labels = [l.get_label() for l in lines]
+    labels = [ln.get_label() for ln in lines]
     assert labels == ['_nolegend_'] * 8 + ['condA', 'condB']
 
     legend = ax.get_legend()
@@ -271,7 +271,7 @@ def test_plot_3level_mpl_counts_and_linewidths():
     fig = hyp.plot(df, fmt='.', show=False)
     lines = fig.axes[0].get_lines()
     assert len(lines) == 12 + 4 + 2  # leaves + (grp,cond)-means + grp-means
-    lws = [round(l.get_linewidth(), 6) for l in lines]
+    lws = [round(ln.get_linewidth(), 6) for ln in lines]
     assert lws == [1.0] * 12 + [2.0] * 4 + [3.0] * 2
     legend = fig.axes[0].get_legend()
     assert [t.get_text() for t in legend.get_texts()] == ['grpX', 'grpY']
@@ -281,7 +281,7 @@ def test_plot_3level_mpl_counts_and_linewidths():
 def test_plot_linestyle_list_cycles_per_top_group():
     df = _make_2level_df()
     fig = hyp.plot(df, fmt='-', linestyle=['-', '--'], show=False)
-    linestyles = [l.get_linestyle() for l in fig.axes[0].get_lines()]
+    linestyles = [ln.get_linestyle() for ln in fig.axes[0].get_lines()]
     assert linestyles == ['-'] * 4 + ['--'] * 4 + ['-', '--']
     plt.close(fig)
 
@@ -312,7 +312,7 @@ def test_hue_plus_multiindex_warns_and_ignores_hue():
     lines = ax.get_lines()
     # still grouped by top-level index (10 traces), not exploded by hue
     assert len(lines) == 10
-    colors = [l.get_color() for l in lines]
+    colors = [ln.get_color() for ln in lines]
     assert len(set(colors[0:4] + [colors[8]])) == 1
     plt.close(fig)
 
@@ -388,6 +388,29 @@ def test_plot_2level_animated_mpl_smoke():
     plt.close('all')
 
 
+@pytest.mark.parametrize('ndims', [3, 2])
+@pytest.mark.parametrize('trail', ['bullettime', 'chemtrails'])
+def test_multiindex_trail_alpha_no_collision(ndims, trail, tmp_path):
+    """MultiIndex expansion assigns a per-trace ``alpha`` (faint leaf traces
+    vs. opaque group-mean traces). The animated trail artists
+    (chemtrails/precog/bullettime) used to pass a hardcoded ``alpha=0.3``
+    alongside ``**kwargs_list[idx]``, so that per-trace alpha collided ->
+    ``TypeError: ... got multiple values for keyword argument 'alpha'``. The
+    0.3 fade is now folded into any pre-existing alpha, so building AND
+    rendering the animation must not raise (both ndims=3 and ndims=2)."""
+    df = _make_2level_df(n_time=12)
+    fig, ani = hyp.plot(df, animate=True, duration=1, tail_duration=0.3,
+                        frame_rate=3, ndims=ndims, legend=True, show=False,
+                        **{trail: True})
+    assert ani is not None
+    # the collision used to raise while *building* the trail artists inside
+    # hyp.plot(); saving forces a real render of the faded trail frames too.
+    out = tmp_path / f'mi_{trail}_{ndims}d.gif'
+    ani.save(str(out))
+    assert out.exists() and out.stat().st_size > 0
+    plt.close('all')
+
+
 # ---------------------------------------------------------------------------
 # regression: single-level DataFrame / plain arrays unchanged
 # ---------------------------------------------------------------------------
@@ -453,10 +476,54 @@ def test_list_with_multiindex_df_warns_and_flattens():
     plt.close(fig2)
 
 
-def test_predict_plus_multiindex_raises():
+def test_predict_plus_multiindex_forecasts_every_trace():
+    """1.1 forecasts a row hierarchy whose LEAVES have enough history.
+
+    This used to be `test_predict_plus_multiindex_raises`: forecasts were
+    computed one-per-leaf BEFORE the per-level mean traces were appended, so
+    the leaf count could not match the final trace count and `predict=` was
+    refused outright. 1.1 computes one forecast per FINAL trace instead --
+    leaves and derived means alike -- so the leaf rule no longer conflicts
+    with forecasting; what remains is a shape requirement (Contract 10:
+    every final trace needs >= 2 rows), which this frame satisfies.
+
+    `_make_2level_df()` repeats each (cond, subj) tuple n_time=10 times, so
+    `expand_multiindex` gives 8 leaves of shape (10, 3) and the plot draws
+    10 traces (8 leaves + 2 top-level means), every one of them 10 rows.
+    Forecast artists are found by their `_hyp_forecast_role` tag, not by
+    linestyle: a forecast INHERITS its source line's linestyle
+    (plot.py `_forecast_style_from`), so both sets are solid here.
+    """
     df = _make_2level_df()
-    with pytest.raises(ValueError, match="predict="):
-        hyp.plot(df, predict='Kalman', show=False)
+    fig = hyp.plot(df, '-', predict='Kalman', t=2, show=False)
+    ax = fig.axes[0]
+    observed = [ln for ln in ax.lines
+                if getattr(ln, '_hyp_forecast_role', None) is None]
+    forecasts = [ln for ln in ax.lines
+                 if getattr(ln, '_hyp_forecast_role', None) is not None]
+    assert len(observed) == 10
+    assert len(forecasts) == 10
+    plt.close(fig)
+
+
+def test_predict_plus_one_row_row_hierarchy_raises():
+    """Contract 10's other side: a row hierarchy whose innermost level is
+    UNIQUE PER ROW yields one-row leaves (and one-row means), which cannot
+    be forecast at all. The message is about the DATA and the expansion
+    rule -- not the pre-1.1 blanket refusal, and not `predict`'s internal
+    single-observation error."""
+    idx = pd.MultiIndex.from_tuples(
+        [('cond1', s) for s in range(3)] + [('cond2', s) for s in range(3)],
+        names=['cond', 'subj'])
+    df = pd.DataFrame(np.random.default_rng(0).normal(size=(6, 4)), index=idx)
+
+    with pytest.raises(ValueError) as excinfo:
+        hyp.plot(df, '-', predict='Kalman', t=1, show=False)
+    message = str(excinfo.value)
+    assert 'at least 2 rows per trace' in message
+    assert 'unique FULL index tuple' in message
+    assert 'reset_index(drop=True)' in message
+    assert 'not supported with MultiIndex expansion' not in message
 
 
 def test_multiindex_colorbar_shows_only_top_level_segments():

@@ -115,6 +115,59 @@ def test_patch_lines_breaks_skip_bridge():
     assert not np.array_equal(out[0][-1], B[0])      # no bridge point
 
 
+def test_patch_lines_bridges_labels_in_lockstep_with_data():
+    # regression test: patch_lines grows x[idx] by one row (a duplicate of
+    # x[idx+1]'s first point) whenever it bridges, but historically left a
+    # parallel `labels` list untouched -- permanently under-counting it by
+    # one entry per bridge point relative to the (now longer) data array.
+    # This crashed `annotate_plot` (matplotlib_backend.py) with a bare
+    # IndexError whenever nothing downstream happened to rebuild `labels`
+    # from scratch afterward (animate='morph', or a static plot with
+    # antialias=False) -- and silently misplaced real point labels even
+    # when something DID (the `_expand_labels` interpolation remap), since
+    # it sliced each segment's labels using the BRIDGED (wrong) length.
+    # `labels=`, when given, must grow in lockstep with `x`: the synthetic
+    # bridge row is a DUPLICATE observation (not a new one), so it gets a
+    # `None` placeholder, exactly like `_expand_labels` marks synthetic
+    # interpolated points.
+    A = np.array([[0., 0.], [1., 0.]])
+    B = np.array([[0., 5.], [1., 5.]])
+    labels = [["a0", "a1"], ["b0", "b1"]]
+    out = helpers.patch_lines([A.copy(), B.copy()], labels=labels)
+    assert out[0].shape[0] == 3                      # A gained B's first point
+    assert len(labels[0]) == 3                        # labels[0] grew to match
+    assert labels[0] == ["a0", "a1", None]            # bridge slot is None
+    assert labels[1] == ["b0", "b1"]                  # untouched (last group)
+
+
+def test_patch_lines_breaks_skip_bridge_labels_too():
+    # when a break skips bridging the DATA, the parallel `labels` list must
+    # not be extended either -- they must always stay the same length.
+    A = np.array([[0., 0.], [1., 0.]])
+    B = np.array([[0., 5.], [1., 5.]])
+    labels = [["a0", "a1"], ["b0", "b1"]]
+    out = helpers.patch_lines([A.copy(), B.copy()], breaks={1}, labels=labels)
+    assert out[0].shape[0] == 2                       # A unchanged
+    assert labels[0] == ["a0", "a1"]                  # labels unchanged too
+
+
+def test_segment_by_run_then_patch_lines_keeps_labels_length_matched():
+    # the exact call sequence `_regroup_categorical_lines` (plot.py) uses:
+    # segment_by_run() followed by patch_lines(..., labels=seg_labels).
+    # This pins the root-cause invariant directly: every segment's label
+    # list must stay the SAME length as its (possibly bridged) data array,
+    # for every segment, not just the first.
+    T = np.arange(12, dtype=float).reshape(6, 2)   # one dataset, A A B B A A
+    segs, seg_labels, seg_cat, seg_bridge, seg_ds = helpers.segment_by_run(
+        [T], ['A', 'A', 'B', 'B', 'A', 'A'], labels=[0, 1, 2, 3, 4, 5])
+    breaks = {i + 1 for i in range(len(segs) - 1) if not seg_bridge[i]}
+    segs = helpers.patch_lines(segs, breaks=breaks, labels=seg_labels)
+    assert [s.shape[0] for s in segs] == [len(lab) for lab in seg_labels]
+    # the two bridged runs (A->B, B->A) each gained one None-labeled point;
+    # the real labels keep their original values and relative order
+    assert seg_labels == [[0, 1, None], [2, 3, None], [4, 5]]
+
+
 def test_segment_by_run_two_datasets_same_category():
     # GH #291: two datasets sharing ONE category must NOT be merged into a
     # single run -- each dataset is its own run and they are not bridgeable

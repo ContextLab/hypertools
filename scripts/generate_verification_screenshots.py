@@ -21,7 +21,6 @@ import pandas as pd
 
 from screenshot_harness import capture, summarize, SCREENSHOT_ROOT
 
-import matplotlib.pyplot as plt
 import hypertools as hyp
 
 TAG = 'verification_v1.0'
@@ -242,7 +241,7 @@ def main():
                                 'normalize: within')),
         ('cluster', 'kmeans_labels',
          lambda: hyp.plot(clusters, 'o',
-                          hue=[str(l) for l in
+                          hue=[str(lab) for lab in
                                hyp.cluster(clusters, n_clusters=3)],
                           title='cluster: KMeans labels', show=False)),
         ('cluster', 'mixture_proportions',

@@ -24,7 +24,11 @@ PLOTLY_GIF = os.path.join(REPO, 'docs', 'images', 'v1.0-animations',
                           'plotly_spin.gif')
 
 MPL_ANIMS = ['animate', 'animate_MDS', 'animate_spin', 'chemtrails',
-             'precog', 'save_movie']
+             'precog', 'save_movie',
+             # the five 1.1 launch examples (Plan 4 Task 8 Step 6)
+             'animate_conversation', 'animate_market_sectors',
+             'animate_morph_zoo', 'animate_painting_embeddings',
+             'animate_weather_decades']
 N_FRAMES = 40
 FRAME_MS = 100  # 10 fps thumbs: light files, clearly animated
 

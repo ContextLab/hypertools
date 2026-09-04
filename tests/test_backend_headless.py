@@ -12,7 +12,6 @@ import subprocess
 import sys
 import textwrap
 
-import pytest
 
 
 _GUI_MODULE_MARKERS = (

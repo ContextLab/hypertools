@@ -77,6 +77,17 @@ def resolve_t(data, t):
       less than one full step ahead rounds up to a single step). A
       tz-naive ``t`` on tz-aware data is localized to the data's timezone.
 
+    An index that is not sorted ascending WARNS (forecasts continue from the
+    last row regardless), and a TIME index (`DatetimeIndex`, `TimedeltaIndex`
+    or `PeriodIndex`) carrying DUPLICATE entries raises a `ValueError`: the
+    horizon is ill-defined when several observations share one position on
+    the time axis. This is checked for every time-indexed input, flat or
+    grouped (hypertools 1.1; `hyp.predict` names the offending group when the
+    input was hierarchical). A duplicated NON-time index -- the stacked
+    `pd.concat([run_a, run_b])` panel, whose index repeats 0..n-1 -- is
+    unaffected: its step is still the minimum non-zero difference and the
+    forecast still continues from the last row.
+
     Parameters
     ----------
     data : pandas.DataFrame
@@ -108,6 +119,40 @@ def resolve_t(data, t):
             'continue from the LAST row. If your data are newest-first, sort '
             'them (e.g. df.sort_index()) before forecasting.',
             stacklevel=external_stacklevel())
+
+    # duplicate observation TIMES make the horizon ill-defined: `_infer_step`
+    # would take the (zero-length) gap between the repeats out of the running
+    # and forecast on a step that no longer describes the data, and a
+    # datetime-like `t` would truncate to an ambiguous position (1.1 plan,
+    # Decisions #4: "preserve, warn, reject duplicates").
+    #
+    # SCOPED to time-like indexes on purpose (review of the Task 7 commit).
+    # An unconditional check also rejected the `pd.concat([run_a, run_b])`
+    # idiom, whose index repeats 0..n-1 -- measured at ea5d9b5e, that frame
+    # forecast fine, and nothing about its horizon is ambiguous: the step is
+    # the minimum non-zero difference (1) and the forecast continues from the
+    # last row. Rejecting it contradicts Decisions #4's own "legitimate
+    # integer-indexed panels are not rejected", and the message's argument
+    # ("one position on the time axis") does not describe a positional index.
+    # A datetime-like `t` on a non-time index already raises below.
+    if (len(index) > 1 and not index.is_unique
+            and isinstance(index, (pd.DatetimeIndex, pd.TimedeltaIndex,
+                                   pd.PeriodIndex))):
+        if isinstance(index, pd.DatetimeIndex) and index.nunique() == 1:
+            # the FULLY degenerate case (every observation at one timestamp)
+            # is `_infer_step`'s, and tests/test_predict_audit_fixes.py:186
+            # pins its wording. This check runs BEFORE `_infer_step`, so hand
+            # the case over rather than copying the string -- a copy left
+            # that branch dead code with a test that only pinned the copy.
+            _infer_step(index)
+        duplicated = index[index.duplicated()].unique()
+        raise ValueError(
+            f'the dataset index has {len(duplicated)} duplicated '
+            f'entr{"y" if len(duplicated) == 1 else "ies"} (e.g. '
+            f'{duplicated[0]!r}), so the forecast horizon is ill-defined: '
+            'several observations share one position on the time axis. '
+            'Aggregate the repeats (e.g. df.groupby(level=-1).mean()) or '
+            'give them distinct times before forecasting.')
 
     if isinstance(t, (int, np.integer)) and not isinstance(t, bool):
         n_steps = int(t)

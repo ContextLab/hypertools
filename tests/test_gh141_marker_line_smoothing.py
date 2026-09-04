@@ -21,7 +21,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 import hypertools as hyp
-from hypertools._shared.helpers import center, scale, has_line_component
+from hypertools._shared.helpers import has_line_component
 # the data-faithful STATIC line interpolator (release-1.0 audit, F01-001):
 # static smoothing now keeps every original sample as a drawn vertex and no
 # longer depends on the animation frame_rate/duration kwargs, so the ground
@@ -77,7 +77,10 @@ def _expected_line_and_raw(fmt, data, ndims=3):
     stacked = np.vstack(xform)
     m1 = np.min(stacked)
     m2 = np.max(stacked - m1)
-    rescale = lambda a: 2 * (np.divide(a - m1, m2)) - 1
+
+    def rescale(a):
+        return 2 * (np.divide(a - m1, m2)) - 1
+
     xform = [rescale(xi) for xi in xform]
     raw_xform = [rescale(xi) for xi in raw_xform]
 
@@ -86,14 +89,14 @@ def _expected_line_and_raw(fmt, data, ndims=3):
 
 def _line_artist(lines):
     """The artist with an actual connecting line (linestyle != 'None')."""
-    matches = [l for l in lines if l.get_linestyle() not in ('None', '')]
+    matches = [ln for ln in lines if ln.get_linestyle() not in ('None', '')]
     assert len(matches) == 1
     return matches[0]
 
 
 def _marker_artist(lines):
     """The artist with no connecting line (markers only)."""
-    matches = [l for l in lines if l.get_linestyle() in ('None', '')]
+    matches = [ln for ln in lines if ln.get_linestyle() in ('None', '')]
     assert len(matches) == 1
     return matches[0]
 

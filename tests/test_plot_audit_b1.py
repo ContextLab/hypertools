@@ -87,9 +87,9 @@ class TestStaticLineDataFidelity:
         data = rng.standard_normal((25, 3))
         fig = hyp.plot(data, "o-", reduce=None, show=False)
         lines = fig.axes[0].lines
-        line_art = [l for l in lines if l.get_linestyle() == "-"]
-        marker_art = [l for l in lines
-                      if l.get_linestyle() in ("None", "none")]
+        line_art = [ln for ln in lines if ln.get_linestyle() == "-"]
+        marker_art = [ln for ln in lines
+                      if ln.get_linestyle() in ("None", "none")]
         assert len(line_art) == 1 and len(marker_art) == 1
         lverts = _line_vertices_3d(line_art[0])
         mverts = _line_vertices_3d(marker_art[0])
@@ -120,7 +120,7 @@ class TestStaticLineDataFidelity:
         tr[-1] = [2.0, 1.0, 0.0]
         fig = hyp.plot(tr, "o-", reduce=None, show=False)
         lines = fig.axes[0].lines
-        marker_art = [l for l in lines if l.get_marker() not in ("None", None, "")]
+        marker_art = [ln for ln in lines if ln.get_marker() not in ("None", None, "")]
         assert marker_art
         mverts = _line_vertices_3d(marker_art[0])
         plt.close("all")
@@ -146,7 +146,7 @@ class TestFmtColorContract:
     def test_ro_dash_draws_red_line_and_red_markers(self):
         X = np.random.default_rng(7).standard_normal((15, 3))
         fig = hyp.plot(X, "ro-", reduce=None, show=False)
-        colors = [mcolors.to_hex(l.get_color()) for l in fig.axes[0].lines]
+        colors = [mcolors.to_hex(ln.get_color()) for ln in fig.axes[0].lines]
         plt.close("all")
         assert colors and all(c == "#ff0000" for c in colors)
 
@@ -155,8 +155,8 @@ class TestFmtColorContract:
         L2 = [rng.standard_normal((15, 3)) for _ in range(2)]
         fig = hyp.plot(L2, "o-", reduce=None, show=False)
         lines = fig.axes[0].lines
-        line_art = [l for l in lines if l.get_linestyle() == "-"]
-        marker_art = [l for l in lines if l.get_linestyle() in ("None", "none")]
+        line_art = [ln for ln in lines if ln.get_linestyle() == "-"]
+        marker_art = [ln for ln in lines if ln.get_linestyle() in ("None", "none")]
         assert len(line_art) == 2 and len(marker_art) == 2
         pair0 = (mcolors.to_hex(line_art[0].get_color()),
                  mcolors.to_hex(marker_art[0].get_color()))
@@ -185,8 +185,6 @@ class TestNestedListInputs:
         """[[1., 2.], [3., 4.]] is ONE dataset (a 2x2 matrix), matching
         np.array input."""
         fig = hyp.plot([[1.0, 2.0], [3.0, 4.0]], show=False)
-        lines = [l for l in fig.axes[0].lines
-                 if l.get_label() != "_nolegend_" or True]
         n_data_lines = len(fig.axes[0].lines)
         plt.close("all")
 

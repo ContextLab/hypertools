@@ -14,8 +14,11 @@ would overwrite the (static) forecast traces with trail geometry every
 frame, while the real trail traces are never updated and stay empty.
 
 `hyp.plot()`'s public `predict=` parameter cannot reach this combination
-(`predict=` + `animate=` raises `NotImplementedError` by design), but the
-lower-level `plotly_draw` function -- exported from
+(`predict=` is allowed only with the camera-only `animate='spin'`, which has
+no trail traces; the time-progressing modes that DO draw trails --
+`True`/`'parallel'`/`'window'`/etc. -- still raise `NotImplementedError` when
+combined with `predict=`, by design), but the lower-level `plotly_draw`
+function -- exported from
 `hypertools.plot.interactive` and directly unit-tested -- accepts
 `forecasts=` and `animate=`/`chemtrails=` independently, so the
 combination IS reachable through that entry point.
@@ -46,24 +49,27 @@ def test_trace_layout_data_forecast_trail_cube():
     groups fail loudly instead of silently mis-indexing frame updates."""
     data, forecasts = _walks_and_forecasts()
     fig = plotly_draw(data, animate=True, duration=2, tail_duration=1,
-                      chemtrails=True, forecasts=forecasts, show=False)
+                      chemtrails=True, forecasts=forecasts, show=False, antialias=False)
 
     # 2 data + 2 forecast + 2 trail + 1 cube
     assert len(fig.data) == 7
 
-    dash = [getattr(tr.line, 'dash', None) for tr in fig.data]
+    # forecast traces identify THEMSELVES via meta['hyp_forecast_role'] --
+    # `dash` cannot serve, because since 1.1.0 a forecast INHERITS its
+    # observed trace's dash (here: solid, like the data it continues).
+    role = [(tr.meta or {}).get('hyp_forecast_role') for tr in fig.data]
     x_lens = [len(tr.x) if tr.x is not None else 0 for tr in fig.data]
 
-    # data traces: solid, full-length
-    assert dash[0] == dash[1] == 'solid'
+    # data traces: not forecasts, full-length
+    assert role[0] is role[1] is None
     assert x_lens[0] == x_lens[1] == 30
 
-    # forecast traces: dashed, t+1 points, sandwiched between data and trail
-    assert dash[2] == dash[3] == 'dash'
+    # forecast traces: t+1 points, sandwiched between data and trail
+    assert role[2] == role[3] == 'static'
     assert x_lens[2] == x_lens[3] == 6
 
-    # trail traces: solid, start EMPTY (populated only via frame updates)
-    assert dash[4] == dash[5] == 'solid'
+    # trail traces: not forecasts, start EMPTY (populated via frame updates)
+    assert role[4] is role[5] is None
     assert x_lens[4] == x_lens[5] == 0
 
 
@@ -93,7 +99,7 @@ def test_forecast_traces_unaffected_by_animation_frames():
     carry an update for them, and they must never appear zeroed-out."""
     data, forecasts = _walks_and_forecasts()
     fig = plotly_draw(data, animate=True, duration=2, tail_duration=1,
-                      chemtrails=True, forecasts=forecasts, show=False)
+                      chemtrails=True, forecasts=forecasts, show=False, antialias=False)
 
     for frame in fig.frames:
         assert 2 not in frame.traces

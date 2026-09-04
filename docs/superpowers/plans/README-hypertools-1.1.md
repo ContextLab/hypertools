@@ -1,0 +1,398 @@
+# HyperTools 1.1 — plan set
+
+Entry point for reviewing the 1.1 work. Four plans, written to be executed in dependency order.
+
+**Why 1.1 exists.** The five newest gallery examples were measured against their own source:
+**6.0% of their code is hypertools calls; 37.9% is defect** — either re-implementing something the
+library already does, or hand-rolling something the library should own. The 15 older tutorials run
+2.5%–39% hypertools; `analyze.ipynb` never calls `hyp.plot` at all. Rather than paper over that in
+the examples, 1.1 adds the missing library features and then rewrites the examples against them.
+
+Nothing ships until the whole line works; the Bluesky announcement waits.
+
+---
+
+## The plans
+
+| # | plan | what it delivers |
+|-|-|-|
+| 1 | [animation core](2026-07-26-hypertools-1.1-animation-core.md) | `order='parallel'\|'serial'`, per-dataset `alpha=`, public `on_frame` hook + public `FrameContext` (internal `FrameHooks` registry), per-segment titles, plotly serial parity, 3 bug fixes |
+| 2 | [MultiIndex](2026-07-28-hypertools-1.1-multiindex.md) | shared grouping in `core/hierarchy.py`, one authoritative final-trace builder, column-hierarchy expansion, continuous `hue=` through a hierarchy, hierarchical `hyp.predict`, `predict=` with expansion, plotly parity, the hierarchy guide + CHANGELOG 1.1.0 |
+| 3 | [forecast animation](2026-07-27-hypertools-1.1-forecast-animation.md) | precomputed forecast schedule, `predict=` with time-progressing animations, `forecast_trail=`, plotly parity |
+| 4 | [examples and tutorials](2026-07-28-hypertools-1.1-examples-and-tutorials.md) | native palette-from-image, then the 5 launch examples + 15 older tutorials rewritten against the new API |
+
+### Dependency order
+
+```
+Plan 1 (animation core)
+  ├─ Task 5  order=            ─┐
+  └─ Task 7  FrameHooks        ─┴─> Plan 3 (forecast animation)
+                                      └─ Tasks 1-2 ─┐
+Plan 2 (MultiIndex, 12 tasks) ────────────────────  ┴─> Plan 2 Tasks 8-9
+                                                          │
+                          Plans 1 + 2 + 3 ────────────────┴─> Plan 4
+```
+
+Plan 1 is the keystone: its `FrameHooks` registry is what lets Plans 2-4 stop monkeypatching
+matplotlib's private `FuncAnimation._func`, which four of the five examples do today.
+
+**Public vs. internal, so the two are never conflated:** `on_frame=` (the `plot()` argument),
+`HyperAnimation.on_frame()` (the post-construction registration) and **`FrameContext`** are the
+public callback API — `FrameContext` is exported as `hypertools.FrameContext`, listed in
+`__all__`, and documented in `docs/api.rst` beside `HyperAnimation` (Plan 1 Task 7 Step 6b).
+**`FrameHooks` is internal**: it is the shared mutable registry `plot()` creates and
+`HyperAnimation` adopts (contract 3), never exported and never named in a user-facing docstring.
+Users receive a `FrameContext`; they never construct a `FrameHooks`. Where this README says Plan 1
+"delivers `FrameHooks`", it means the internal mechanism Plans 2-4 build on, not a public name.
+
+---
+
+## How these plans were built
+
+Every plan was written, then **adversarially reviewed against the source**, then rewritten. That
+was not ceremony — each review found defects that would have failed on first execution:
+
+| plan | review | outcome |
+|-|-|-|
+| 2 | maintainer | 9 findings; 3 tasks rested on false assumptions → **v2** |
+| 2 | [maintainer, round 2](../../../notes/audit/review_plan2_v2_maintainer.md) | 24 findings (1-5, 17-24 blocking): duplicated mean construction, a nonexistent `return_data=` API, `xform_data` redefined, predict→plot layering, a discarded time index → **v3** |
+| 2 | [maintainer, round 3](../../../notes/audit/review_plan2_v3_maintainer.md) | 2 blockers + 5 corrections, and 4 open decisions resolved: row hierarchies cannot always be forecast, `trace_data is xform_data` is not universal → **v4** |
+| 2 | [maintainer, round 4](../../../notes/audit/review_plan2_v4_maintainer.md) | 1 edge case + 1 brittle assertion: the ≥2-row precondition was gated to the row axis, and a negative assertion failed on co-moving leaves → **v5** |
+| 1 | maintainer, round 5 (decisions) | all 4 open decisions resolved; investigating one of them disproved the plan's own "plotly cannot do this" premise → **v3** |
+| 1 | [review](../../../notes/audit/review_plan1_animation_core.md) | 9 critical findings → **v2** |
+| 3 | [review](../../../notes/audit/review_plan3_forecast_animation.md) | 8 defects, 4 fatal → **v2** |
+| 3 | [re-review of v2 vs later contracts](../../../notes/audit/review_plan3_v2_recheck.md) | 11 findings, **1 fatal** (a `FrameHooks` callback with the wrong signature) + 2 high → v3 pending |
+| 4 | [first adversarial review](../../../notes/audit/review_plan4_examples_and_tutorials.md) | 13 findings, **2 fatal** (4 of 5 rewrites miss their own ratio floors; a `recency_fade` IndexError) + 3 high → v2 pending |
+
+**What this table does and does not cover**, because a session note got it wrong on 2026-07-31 by
+reading the absence of a row as the absence of a review. It lists reviews that produced a **standalone
+audit file** under `notes/audit/`. Plan 1's later maintainer rounds (6–13) were delivered
+conversationally and are recorded in `notes/session_*.md` instead, so its true round count is far
+higher than its rows above. As of 2026-07-31 every plan had been reviewed at least once, and
+Plans 3 and 4 carried **unaddressed fatal findings** — neither was implementation-ready then. Check
+`notes/audit/` and the session notes together before claiming anything about a plan's review history.
+
+> **Both of those are resolved (2026-08-16).** Plan 3's eight defects were addressed in its **v3**,
+> and Plan 3 has since been **executed and landed** — see *Execution status* below. Plan 4's two
+> v1 Fatals were fixed in **v2**, its four v2 Fatals in **v3**, and the Market example was rebuilt
+> in **v4** across the round-4 and round-5 maintainer exchanges (`442285af`, `1e49e12c`); its
+> *Decisions* section carries no open items. Plan 4 is **ready to execute** — what remains is
+> execution, not revision. The rows above are kept as the historical record of what each review
+> found, not as a current statement of readiness.
+
+The recurring defect was writing tests that *looked* correct without tracing whether they could
+actually pass. Three examples, all caught by review rather than by reading:
+
+- A test asserting a grouping helper returns 2 groups where the source provably returns 2×T.
+- A morph-title rule keyed off `current_fraction`, when holds and transitions **both** sweep 0→1 —
+  so the rule blanked titles mid-hold and named them mid-transition, and its test passed anyway.
+- A forecast horizon silently redefined ~15×, because animations animate the antialiased array
+  (60 raw rows → 904 drawn rows), making `t=3` forecast 0.20 real samples.
+
+Each v2 carries a "Revision note" table listing every v1 error against verified reality; Plan 2's
+v3 carries the equivalent for its 24 second-round findings.
+
+**Cross-plan defects found and fixed** (both were the same class of drift — a plan citing
+something that no longer, or never did, exist):
+
+- Plan 3 called `hyp.plot(..., return_data=True)` in Task 7. No such parameter exists (`def plot(`
+  at `plot.py:517`, `return_model=False` at `:579`). Fixed: those tests now use `return_model=True`.
+- Plan 1's rewrite inserted a new Task 4, and Plan 2's v3 renumbered to 12 tasks. Every sibling
+  citation was re-pointed: Plan 3 → animation-core Tasks 5/7; Plan 4 → MultiIndex T1/T2/T5/T6/T8.
+- Plan 3 depended on `_register_frame_callback`, which Plan 1 v2 never ships; it now uses the
+  `FrameHooks` interface that does exist.
+
+- Plan 2 cited *"README Decisions still open #5"* for the silent forecast drop, but #5 was the
+  row-in-list decision — the drop was #9. Caught while renumbering this README, which would
+  otherwise have made the stale citation accidentally correct. Now cited **by name**.
+
+- **The fix above was incomplete, found 2026-07-30.** A *second* `#5` citation survived in the
+  MultiIndex plan (`2026-07-28-hypertools-1.1-multiindex.md:3565`) for eleven days after this entry
+  claimed the citation was "now cited by name" — carrying the same wrong number (the drop was #9).
+  A search-and-replace that fixes one occurrence and a note that says "fixed" is worse than no fix,
+  because the note stops anyone re-checking. Now re-pointed by name, and the numbered lists in
+  **animation-core** and **examples-and-tutorials** have been de-numbered as well, so the pattern
+  has no remaining source.
+
+When any plan is renumbered, re-check every sibling citation — this bit **six** times. Cite
+decisions by name, not by number; numbers move. Verify a citation fix by grepping for the *pattern*
+across every plan, never by fixing the one instance you were shown.
+
+**A reviewer's claim is evidence, not proof.** The round-3 review's blocking finding was right in
+principle but named the wrong frame: it read `tests/test_multiindex.py:479` as producing "six
+one-row leaves and two one-row means". Measured, `_make_2level_df()` repeats each `(cond, subj)`
+tuple `n_time=10` times, giving **8 leaves of shape (10, 3)** and 10 drawn traces — that frame
+forecasts fine. The one-row case is the plan's own 6-row `2 cond × 3 subj` example (measured: 6
+leaves of shape (1, 4)). The rule was adopted exactly as directed; only the example was corrected.
+
+---
+
+## Decisions still open
+
+Each is implemented one way so the plans stay runnable end to end; switching is a documented
+one-line change. **These want a maintainer call before execution.**
+
+> These are **deliberately unnumbered**. A numbered list here went stale the moment decisions were
+> resolved and items renumbered, and a sibling plan cited a number that had since moved. Cite these
+> by name.
+
+**Plans 1 and 2 have none left** — Plan 2's four were resolved in the round-3 review, Plan 1's four
+in the round-5 exchange. Both sets are recorded under *Standing decisions*.
+
+## Execution status (updated 2026-09-03, through `c5c74f8e`)
+
+| plan | state |
+|-|-|
+| 1 — animation core | **landed** (`FrameHooks`/`FrameContext`/`on_frame`/`HyperAnimation` all present) |
+| 3 — forecast animation | **landed** (`forecast_trail=`, per-frame forecasts) |
+| regrouped reveal + forecasts | **landed 2026-08-11**, 10 commits ending `59405545` |
+| 2 — MultiIndex | **COMPLETE, all 12 tasks.** T1 `420ef60c`, T2 `1f6e4d6d`, T3 `7a415d28`, T4 `86db0842`, NA-label grouping fix `af77f09e`, T5 `5b21e3c6`, nominal correspondence `c5662249`, T6 `ea5d9b5e`, T7 `c51d274d`+`c5fb889c`, T8 `5238d6bc`+`5c2f29e9`, T9 `c9b91293`+`a309f49e`+`b48c2848`, T10 `f2a7a2b1`, T11 `b0076f8f`+`cdae7096`, T12 `3a4ce8e0`; maintainer review rounds since: `bb4ad30c`, `e52dd861`, `6f07c213`, `5b15d3dc`, `393e64a3`, `d14d07ce` |
+| 4 — examples and tutorials | **COMPLETE, all 8 tasks, 2026-09-03.** T8 Steps 0-2 + T1 `2026-08-16`; T2 Market `c5c74f8e` (composition E, renamed `*_sectors` in `dcd72d29`); T3 Weather `adf68905`; T4 Paintings `662b9317` (+ the `HyperAnimation.save(dpi=)` fix); T5 Conversation `ebed10c2`; T6 Morph `de16a6d9`; T7 older tutorials `06da5f3f`; T8 verification (gallery scraper, thumbnails, docs `-W` clean) in the commit after `a37d895e`. Gate `tests/test_examples_are_native.py` **0 failed**. Record: `notes/session_2026-08-16_plan4-examples-execution.md`. **Next is the release line, not example work**: push `dev-1.0`, open the integration PR, matrix CI, then `RELEASE_CHECKLIST.md` (rewritten for 1.1.0) |
+
+### Prerequisites now satisfied (2026-08-16)
+
+Every dependency Plan 4 was waiting on is in the tree. Verified against `d14d07ce`, not from memory:
+
+- **Continuous `hue=` through a column hierarchy** — `ea5d9b5e` (Plan 2 T6). It reaches the traces
+  as a per-trace auxiliary value; it is **not** discarded, and it is **not** categorical row
+  regrouping. Earlier text in these plans described the Market call as a regrouped-lines plot; that
+  was wrong about the mechanism. A continuous `hue=` colours one line artist per trace through a
+  `LineCollection` overlay **without changing the trace count**, which is why the Market forecasts
+  draw at all.
+- **`predict=` over the final traces of a hierarchy** — `5238d6bc` (Plan 2 T8), on top of
+  hierarchical `hyp.predict` (`c51d274d`).
+- **Regrouped reveal + animated regrouped forecasts** — landed 2026-08-11, `59405545`.
+- **matplotlib/plotly parity** for all of the above — `c9b91293`, `a309f49e`, plus the animated
+  continuous-hue forecast anchor in `d14d07ce`.
+- **`forecast_trail=`** — `90a63a1a`, plotly parity `bb6fcb18`.
+
+Gate at `d14d07ce`: full suite **3576 passed / 13 skipped / 2 deselected / 0 failed**, `sphinx -b
+doctest` 251 passed, `sphinx -b html -W -E -a` clean, ruff diagnostic-key parity with the base.
+
+Nothing above is pushed: `dev-1.0` is ~146 commits ahead of `origin/dev-1.0` and CI has not seen
+any of it since 2026-07-24.
+
+### Plan 3 — none left; all five settled by shipping
+
+Plan 3 has been executed and its forecast work released, so these are no longer
+open questions: each was resolved in code, documented, and pinned with a test.
+Verified against the tree at `a062f768`, not from memory:
+
+- **Silent forecast drop under `hue=`/`cluster=`** — resolved as **warn**, not silent.
+  The refusal names what happened and why, and the `return_model=True` bundle carries the fit with
+  `drawn=False` and a `draw_reason` string, so a forecast that succeeded but could not be
+  rendered is still handed back. CHANGELOG entries at `:152` and `:169`.
+  **Superseded in part by the regrouped-reveal plan (landed 2026-08-11, `59405545`):** the two
+  cases named here were a continuous `hue=` and an animated regrouped plot. Measurement disproved
+  both. A continuous `hue=` colours one line artist per dataset through a `LineCollection` overlay
+  WITHOUT changing the trace count, so its forecasts draw — static and animated. Animated
+  regrouped forecasts now draw too. What actually reaches the refusal is **MARKER-ONLY categorical
+  regrouping**, where `reshape_data` groups globally by category so 3 datasets under 2 categories
+  become 2 traces that are not datasets at all. `docs/animation.rst` and the code comment both
+  state the corrected version; the plan text that said otherwise was wrong.
+- **Throttling beyond memoization** — resolved as **memoization only, plus a projected-cost
+  warning**. No `forecast_every=` exists. `ForecastSchedule.__init__` times the first real fit
+  and, when the projection exceeds `slow_warning_seconds`, says how many fits are queued and
+  roughly how long they will take, explicitly framed as an order of magnitude rather than a
+  countdown. Sampling the reveal was rejected in the code comment's own words: it "would change
+  what is plotted."
+- **`min_history`** — resolved as `DEFAULT_MIN_HISTORY = 2` (`forecast.py:57`). A history shorter
+  than that yields `None` from `forecast_from_history`, and the artist is left EMPTY rather than
+  drawn as a degenerate stub — emptiness, not alpha, is how "nothing to draw" is said.
+- **A finished dataset's forecast under `order='serial'`** — resolved as **freeze**.
+  `ForecastSchedule.for_serial` holds a finished dataset's revealed count at its full history, so
+  its forecast stays drawn at the final value while later datasets reveal.
+- **`forecast_cluster=`'s operand** — resolved as the forecast **ENDPOINT**. Plain forecasts
+  inherit the observed trace's assignment; `forecast_cluster=` clusters where each series is
+  predicted to end up, in the space the figure draws (`plot.py:2010-2024`, `:5268-5279`). In an
+  animation the groups are resolved once from the full-history forecasts and stay fixed for every
+  frame (`docs/animation.rst:480-493`, `CHANGELOG.md:122-127`). The canonical Plan 3 text carried
+  this as *"OPEN, for the maintainer"* until 2026-08-04; it now records the shipped answer.
+
+**The one Plan 3-adjacent thing that WAS outstanding** — the regrouped reveal + animated regrouped
+forecasts, `2026-08-03-hypertools-1.1-regrouped-reveal-and-forecasts.md` (v2) — is now
+**IMPLEMENTED IN FULL**, all 8 tasks, landed 2026-08-11 across 10 commits ending at `59405545`.
+Its named decisions R1-R5 live in that document; R1 (per-dataset reveal clock) was called by
+Jeremy on 2026-08-03, R2-R5 are recorded with the measurements behind them.
+
+Session record: `notes/session_2026-08-11_regrouped-reveal-implementation.md`. Gate at landing:
+full suite 3228 passed / 13 skipped / 0 failed with no warnings summary, `sphinx -W -E -a` clean,
+ruff at parity with the base commit (353 → 353). Seven defects in that plan's own listings, and
+two claims measurement disproved (the continuous-hue refusal above, and a "Before 1.1" version
+string), were corrected in code, tests and docs during implementation.
+
+**Consequence for Plan 4 Task 2 (updated 2026-08-16):** it has **no remaining blockers**. The
+regrouped-reveal prerequisite was satisfied on 2026-08-11, and MultiIndex T6/T8/T9 — the last
+three named here — landed in `ea5d9b5e`, `5238d6bc` and `c9b91293`. Plan 4's Market frame must
+still use **shared per-sector measurements** as its innermost column level, not per-sector tickers:
+cross-group feature correspondence is nominal (Plan 2 *Revision note (v8)*), so disjoint ticker
+names are refused rather than silently stacked by position. Plan 4 v4 already prescribes exactly
+that frame.
+
+### Plan 4
+
+- **Where `image_palette` is exported.** Implemented as `hypertools.plot.colors.image_palette`
+  plus the declarative `palette='image:<path>'` spelling. The alternative is a top-level
+  `hyp.image_palette`, which grows the curated `__all__` in a minor release.
+- **The paintings outlier trim.** Dropped, because a single `hyp.plot` over raw text leaves no
+  gap between reduce and plot to trim in. Restoring it needs either `vectorizer=` on `reduce()`
+  or a `manip='TrimOutliers'` — and no 1.1 plan currently owns either.
+- **The morph example's 5-line `normalize()` helper.** Kept, because it is genuinely not
+    redundant: `plot()` applies one shared pooled affine, and `normalize='within'` z-scores per
+    column, which distorts a point cloud's aspect ratio. An aspect-preserving
+    `normalize='isotropic'` mode would delete it, but again no 1.1 plan owns it.
+
+---
+
+## Standing decisions already made
+
+- **`t` is in raw samples**, not interpolated ones.
+- **Forecast bounds:** static data (including *animated* static data) precomputes all forecasts,
+  fits the reduction on **real data only** then applies it to the forecasts, and derives the box
+  from data + forecasts together — so no clamping. Streaming keeps the existing head-frozen box and
+  clamp (`streaming.py:382-401`). Verified: `analyze(raw, ...)` at `plot.py:2803` already fits on
+  real data only, so this matches shipped behaviour.
+- **Plotly and matplotlib must behave identically.** Where a capability genuinely cannot cross the
+  browser boundary it raises, naming the backend; it never silently degrades. **As of the round-5
+  exchange there is no such capability in 1.1** — `on_frame=` was the sole claimed exception and
+  turned out not to be one (below).
+- **The `on_frame=` ARGUMENT works on both backends; post-construction registration does not.**
+  `hyp.plot(..., on_frame=fn)` is the portable form. `HyperAnimation.on_frame(fn)` is
+  **matplotlib-only** and cannot be otherwise: animated matplotlib returns a `HyperAnimation` whose
+  frames are drawn lazily at render time, while animated plotly returns a plain `go.Figure` whose
+  frames are **already built** when `plot()` returns (`plot.py:4605-4612` — only animated matplotlib
+  sets `line_ani`; verified by running it). There is no later frame to register against.
+  Relatedly, `ctx.figure`/`ctx.axes`/`ctx.artists` are backend-native, so callback *bodies* are
+  usually backend-specific even though the context metadata is not.
+- **Artist lifetime differs by backend AND style, and the two failure modes are opposite.** Measured
+  2026-07-30 across every style. **Shared:** matplotlib all styles (`FuncAnimation`'s updater mutates
+  the same `Line2D`/collection objects every render — `id()` unchanged across frames 0/1/2) and
+  plotly `animate='spin'`, which moves only the camera and re-sends no point data
+  (`plotly_backend.py:2695-2699` — the frame payload has **no `data` key at all**; measured 0/4
+  frames carry data), so a mutation there is **figure-wide**. **Per-frame:** plotly
+  parallel/serial/window/morph, each of which builds an independent `frame_traces` payload —
+  measured `fig.frames[0].data[0] is not fig.frames[1].data[0]` for all four. A surfaced spin is the
+  mixed case: shared traces followed by per-frame `Mesh3d` updates. The consequence for callers is
+  that `if ctx.frame == 0: <mutate>` colours the **whole animation** where artists are shared and
+  **only frame 0** where they are not — so the portable rule is to **assign** the complete value on
+  every invocation, including the default. The rule bans a per-frame *assignment*, not a per-frame
+  *decision*: highlighting one frame stays portable when the condition sits in the value
+  (`set_color(HIGHLIGHT if ctx.frame == target else DEFAULT)`) rather than around the call.
+  Documented rather than smoothed over, in `FrameContext.artists` and in the guide, with a test on
+  each side.
+- **`FrameContext`'s sequence fields are tuples.** `artists`, `datasets` and `revealed_counts`
+  (`None` or a tuple) are canonicalized in `FrameContext.__post_init__`, because eleven separate
+  record sites — seven matplotlib updaters and four plotly branches — each have a different sequence
+  in hand, and a public field may not change type by backend or style. The dataclass is
+  `frozen=True`, which a mutable list would make only half-true; membership is fixed, while the
+  artists *inside* stay mutable because mutating them is the entire point of the hook.
+- **`on_frame=` works on BOTH backends, as a determinism/idempotence contract rather than a timing contract.**
+  The earlier claim that plotly has no Python per-frame loop was wrong: `_add_animation`
+  (`plotly_backend.py:2517`) builds every frame in a Python loop, appending `go.Frame` at
+  **four** sites: `:2729` (spin), `:2819` (morph), `:2865` (serial), `:2975` (the `else:`
+  parallel/window branch). What plotly lacks is a loop during *playback*. **All four must be
+  patched** — `:2975` serves the default `animate=True` parallel style, so patching only the first
+  three would ship an `on_frame` that never fires for the most common animation. Plan 1's Task 7
+  Step 6a is the authority here and applies one identical block to all four. So the hook is called once
+  per frame by each backend's natural loop — matplotlib at render time (`FuncAnimation`,
+  `matplotlib_backend.py:1935`, possibly re-called per frame index across loops/saves), plotly once
+  per frame at build. **Callbacks must therefore be deterministic and idempotent for a given frame
+  context: they must not depend on call count, call order, wall-clock time, or accumulated external
+  state.** Do **not** call this "purity" — mutating artists is the entire purpose of the hook, and
+  the plan's own docstring example sets a title every frame. Idempotence, not absence of effects,
+  is what makes matplotlib's possible re-delivery indistinguishable from plotly's single call.
+
+  The tested guarantee is **context-metadata parity**, *not* output parity: the backend-independent
+  `FrameContext` fields match per frame index. Rendered output is deliberately not claimed to match,
+  because `figure`/`axes`/`artists` are backend-native and a mutating callback is therefore not
+  source-compatible across backends. What each backend separately guarantees — one test apiece — is
+  that a mutation the callback makes is **retained** in that backend's own frame. Verified safe: all
+  four examples that monkeypatch `FuncAnimation._func` derive per-frame content from the frame index
+  and none accumulates inside its wrapper; where a running quantity is needed they precompute at
+  module level and index by frame.
+- **`morph_samples` above the tractability cap is governed by `simplify=`** (new in 1.1, default
+  `True`). Below the cap it does nothing. Above it, `simplify=True` downsamples **silently, with no
+  warning**; `simplify=False` raises with a message naming `simplify=True`. This narrows the
+  `morph.py:17-24` no-point-dropped guarantee, which must be updated in source to match.
+- **Animated continuous-hue default linewidth 1.5 → 1.0**, so hue and no-hue animations agree.
+  A visible change to existing animated hue figures, changelogged as such.
+- **`order='serial'` with `spin`/`window`** warns-and-ignores, matching `plot.py:3760-3781`.
+- **Forecast scoring stays out of the library** — it is analysis, not plotting, and belongs in the
+  tutorial as legitimately custom code.
+- **Column MultiIndex rule:** innermost level is the feature axis; every level above it groups.
+- **`xform_data` keeps its v1.0 meaning** (analysed pipeline output for the input datasets). The
+  pre-center/pre-scale plotted trajectories — leaves plus derived per-level means — are exposed
+  separately as `trace_data` / `trace_metadata`, and forecasts always correspond to `trace_data`.
+  `trace_data is xform_data` **only when no display-only projection occurred**: `xform_data` is
+  captured at `plot.py:2827`, *before* the display-dimensionality enforcement at `:2886-2919`
+  rebinds `xform`. Measured counterexample on a **flat** input — `reduce={'model':'PCA','kwargs':
+  {'n_components':5}}` gives `xform_data` shape (60, 5) while the artist is 3-D.
+- **`predict=` is not defined for every hierarchy — on either axis.** A hierarchy qualifies only
+  when **every** final trace (leaves *and* derived means) has ≥ 2 rows, because `hyp.predict`
+  refuses a one-row trace (`predict/common.py:256`). A precondition over the final traces raises
+  before any forecasting; only the remediation text is axis-specific. **Row:** `expand_multiindex`
+  makes one leaf per unique *full* index tuple, so a frame whose innermost level is unique per row
+  yields one-row traces — flatten, or move the grouping to the columns. **Column:** every group has
+  `len(df)` rows, so the input itself has only one observation — measured, a `T=1` column hierarchy
+  gives leaves `(1, 3)` and a mean `(1, 3)`.
+- **Short histories are handled by two mechanisms with different policies, and that is correct.**
+  The precondition above tests **full trace length** — a *permanent* property — so it runs for
+  animated hierarchies too, before the forecast schedule is built, and **raises**. Plan 3's
+  `min_history` tests the **per-frame revealed history** — a *transient* property — and returns
+  `None`, so the opening frames of a legitimate animation simply show no forecast yet. They do not
+  conflict: a long-trace animated hierarchy passes the precondition while `min_history` still
+  suppresses its opening frames.
+- **Hierarchical frames inside lists: rejected on the *column* axis only.** Rows keep today's
+  warn-and-flatten, so `tests/test_multiindex.py:453` passes unchanged. Deliberately asymmetric.
+- **Continuous `hue=` over a row hierarchy** stays today's warn-and-ignore for 1.1.
+- **No public single-frame render API** is added merely to serve tests.
+- **Row-forecast time-likeness:** numeric/datetime innermost levels are preserved, suspicious
+  ordering warns, duplicate timestamps raise.
+- **Shared hierarchy grouping lives in `hypertools/core/hierarchy.py`.** `hypertools/predict/` never
+  imports from `hypertools/plot/`; only `FinalTraces`/styles are rendering code.
+- **Dual-axis frames are rejected** in 1.1 — a compatibility change, changelogged under
+  *Changed / validation*. (Frames nested inside lists: column axis only — see above.)
+- **Market data comes from Yahoo Finance.** Verified: 24/24 tickers, 2513 trading days
+  (2016-07-28 → 2026-07-28), 6 sectors × 4 tickers, equal feature widths (required by
+  `plot.py:2750-2751`).
+
+---
+
+## Supporting evidence
+
+| document | what it establishes |
+|-|-|
+| [PLAN.md](../../../notes/audit/PLAN.md) | the original audit + synthesis |
+| [launch_examples_audit.md](../../../notes/audit/launch_examples_audit.md) | line-by-line A/B/C/D classification of the 5 examples |
+| [other_tutorials_audit.md](../../../notes/audit/other_tutorials_audit.md) | the 15 older tutorials, ranked |
+| [native_capability_map.md](../../../notes/audit/native_capability_map.md) | what the library actually supports today |
+| [temperatures_dataset_findings.md](../../../notes/audit/temperatures_dataset_findings.md) | the paper dataset + MultiIndex probes |
+| [hierarchical_example_ideas.md](../../../notes/audit/hierarchical_example_ideas.md) | 10 candidate hierarchical datasets, ranked |
+| [climate_hierarchy_feasibility.md](../../../notes/audit/climate_hierarchy_feasibility.md) | why climate cannot show loop + drift together |
+
+### Two findings that closed off directions
+
+- **Climate cannot be the hierarchical example.** Smoothing tightens the seasonal loop but never
+  lifts the warming drift: absolute drift stays flat (0.218–0.470) at every kernel while the loop
+  diameter collapses 4.27 → 0.83. At shipped smoothing the warming is 0.070% of variance against
+  the loop's 37.5%, and decade centroids are strictly monotone in **0 of 6** cities at every
+  setting. A physical limit, not a code limit. Weather instead became the paper-style figure —
+  essentially one native call.
+- **The market became the hierarchical showcase** because sectors-within-market is a real
+  two-level hierarchy over data that already carries a multi-dimensional measurement per timestep.
+
+---
+
+## Verified baseline
+
+`2567 collected`, **2554 passed, 13 skipped** (2026-07-31; was 2551 before round 13 added three
+live-source classifier tests). Every task ends by re-running the full suite; the pass count may only
+grow. Use `.venv/bin/python -m pytest` — the base anaconda python is broken (numpy/matplotlib
+mismatch).
+
+**The venv's hypertools must be an EDITABLE install.** On 2026-07-31 it held a stale, *copied*
+`hypertools 1.0.0` in `site-packages`, so `import hypertools` resolved to the repo tree from the
+repo root (1.0.1, correct) but to the released 1.0.0 — with no `antialias=` — from any other
+directory. `pytest` runs from the root and was never affected, but directly-run scripts silently
+measured the wrong package. Fixed with `pip uninstall -y hypertools && pip install -e . --no-deps`;
+re-check with `cd /tmp && <repo>/.venv/bin/python -c "import hypertools; print(hypertools.__file__)"`.

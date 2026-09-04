@@ -13,7 +13,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
-import hypertools as hyp
 from hypertools.reduce.reduce import reduce as reducer
 from hypertools.reduce.describe import describe
 

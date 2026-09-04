@@ -108,6 +108,40 @@ def test_singleton_first_category_still_works():
     assert fig is not None
 
 
+def test_singleton_warning_names_the_category_not_the_legend_sentinel():
+    """The warning must name the user's own category.
+
+    It used to read `hue category '_nolegend_' has only one observation`.
+    `'_nolegend_'` is matplotlib's sentinel for "keep this artist out of the
+    legend", which `_regroup_categorical_lines` assigns to every REPEAT run
+    of a category so each category gets exactly one legend entry. The
+    warning was reading that legend-label list, so any singleton after the
+    first run of its category was reported under a name no user could ever
+    have supplied -- and there is no category called `_nolegend_` to go
+    looking for.
+
+    Alternating labels under a pure line format make every run a singleton,
+    so the runs that get the sentinel are exactly the ones warned about.
+    """
+    np.random.seed(3)
+    with pytest.warns(UserWarning, match='only one observation') as record:
+        hyp.plot(np.random.randn(60, 3), '-', hue=['a', 'b'] * 30,
+                 show=False)
+    messages = [str(w.message) for w in record
+                if 'only one observation' in str(w.message)]
+    assert messages, 'expected the singleton-category warning'
+    joined = ' '.join(messages)
+    assert '_nolegend_' not in joined, (
+        f"the warning leaked matplotlib's legend sentinel to the user: "
+        f'{joined!r}')
+    # it names a category the caller actually passed
+    assert "'a'" in joined or "'b'" in joined, (
+        f'the warning names no real category: {joined!r}')
+    # ...and not a numpy scalar repr like np.str_('b')
+    assert 'np.str_' not in joined, (
+        f'numpy scalar repr leaked into a user-facing message: {joined!r}')
+
+
 # ---------------------------------------------------------------------------
 # F02-plot-hue-003: pandas Series hue with ANY index (positional semantics)
 # ---------------------------------------------------------------------------
@@ -119,10 +153,10 @@ def test_series_hue_nondefault_index_matches_list_hue():
     fig_series = hyp.plot(pts, fmt='.', ndims=2, show=False,
                           hue=pd.Series(labels, index=range(100, 120)))
     fig_list = hyp.plot(pts, fmt='.', hue=labels, ndims=2, show=False)
-    colors_series = sorted(matplotlib.colors.to_hex(l.get_color())
-                           for l in fig_series.axes[0].lines)
-    colors_list = sorted(matplotlib.colors.to_hex(l.get_color())
-                         for l in fig_list.axes[0].lines)
+    colors_series = sorted(matplotlib.colors.to_hex(ln.get_color())
+                           for ln in fig_series.axes[0].lines)
+    colors_list = sorted(matplotlib.colors.to_hex(ln.get_color())
+                         for ln in fig_list.axes[0].lines)
     assert colors_series == colors_list
     assert len(fig_series.axes[0].lines) == 2
 
@@ -356,8 +390,8 @@ def test_none_hue_entries_render_gray_and_keep_named_palette_order():
     assert len(ax.lines) == 3
     legend_texts = [t.get_text() for t in ax.get_legend().get_texts()]
     assert legend_texts == ['a', 'b']
-    line_colors = [tuple(np.round(matplotlib.colors.to_rgb(l.get_color()), 4))
-                   for l in ax.lines]
+    line_colors = [tuple(np.round(matplotlib.colors.to_rgb(ln.get_color()), 4))
+                   for ln in ax.lines]
     # the None group (second in first-appearance order) is neutral gray
     assert line_colors[1] == GRAY
     # named categories take the first palette slots, in order, unaffected
@@ -406,10 +440,22 @@ def test_unknown_font_family_still_raises_helpful_error():
 # F24-003: existing non-font file -> clear error at resolve time
 # ---------------------------------------------------------------------------
 
-def test_nonfont_file_rejected_at_resolve_time():
+def test_nonfont_file_rejected_at_resolve_time(tmp_path):
+    """A file that EXISTS but is not a loadable font must be rejected.
+
+    The file has to exist for this to test anything: `resolve_font` branches
+    on `os.path.exists` (fonts.py:401-406), so a non-existent path takes the
+    *installed-font-lookup* branch and raises a different error. The previous
+    version of this test passed a hardcoded absolute path that existed only
+    on one developer's machine, and `match='font='` matched BOTH messages --
+    so everywhere else it passed without exercising this branch at all.
+    """
     from hypertools.plot.fonts import resolve_font
-    with pytest.raises(ValueError, match='font='):
-        resolve_font('/Users/jmanning/hypertools/README.md', 'x')
+    not_a_font = tmp_path / 'README.md'
+    not_a_font.write_text('# not a font file\n')
+    with pytest.raises(ValueError,
+                       match='exists but is not a loadable font file'):
+        resolve_font(str(not_a_font), 'x')
 
 
 # ---------------------------------------------------------------------------

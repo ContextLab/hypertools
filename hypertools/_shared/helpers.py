@@ -343,7 +343,7 @@ def segment_by_run(x, hue, labels=None):
     return segments, seg_labels, seg_category, seg_bridge, seg_dataset
 
 
-def patch_lines(x, breaks=None):
+def patch_lines(x, breaks=None, labels=None):
     """Bridge each group's line to the start of the next group.
 
     Extending every group with the first point of the NEXT group makes a
@@ -352,12 +352,30 @@ def patch_lines(x, breaks=None):
     NOT be bridged INTO from their predecessor -- used to keep a line from
     crossing a dataset boundary (GH #291), e.g. the run segments produced by
     `segment_by_run` are bridged only where ``seg_bridge`` is True.
+
+    `labels`, if given, is a list of per-group label lists (parallel to
+    `x`, e.g. `segment_by_run`'s ``seg_labels``) that is bridged IN
+    LOCKSTEP, mutated in place: whenever `x[idx]` gains a duplicated bridge
+    point, `labels[idx]` gains a matching `None` entry (the bridge point is
+    a DUPLICATE observation, not a new one, mirroring how `_expand_labels`
+    -- plot.py -- marks synthetic interpolated points). Without this,
+    `labels[idx]` stays one entry short of `x[idx]` for every bridged
+    group, permanently under-counting it relative to the data: masked
+    whenever a later step happens to rebuild `labels` from scratch anyway
+    (`_expand_labels`, run when animation frame-gridding or static
+    antialiasing changes the point count) -- silently mis-slicing real
+    labels onto the wrong points when it does -- but reaching
+    `annotate_plot` (matplotlib_backend.py) unrebuilt and crashing it with
+    a bare ``IndexError`` when it doesn't (``animate='morph'``, which never
+    resamples `x` here, or a static plot with ``antialias=False``).
     """
     breaks = set() if breaks is None else set(breaks)
     for idx in range(len(x)-1):
         if (idx + 1) in breaks:
             continue
         x[idx] = np.vstack([x[idx], x[idx+1][0,:]])
+        if labels is not None:
+            labels[idx] = list(labels[idx]) + [None]
     return x
 
 
@@ -410,6 +428,54 @@ def has_line_component(format_str):
     if isinstance(format_str, (list, tuple, np.ndarray)):
         return all(has_line_component(f) for f in format_str)
     return any(token in format_str for token in ('-.', '--', '-', ':'))
+
+
+#: default vertex count a drawn line is upsampled toward by `antialias_line`
+ANTIALIAS_TARGET_VERTICES = 900
+
+
+def antialias_line(arr, target=ANTIALIAS_TARGET_VERTICES):
+    """Upsample a trajectory so it DRAWS as a smooth curve ("antialiasing").
+
+    Returns ``(dense, step)``, where ``dense[::step]`` is exactly `arr`: every
+    original sample stays a vertex of the drawn line, and each original
+    segment is subdivided into `step` equal-parameter pieces along a monotone
+    PCHIP interpolant. PCHIP is C1 (its tangent is continuous), so the drawn
+    curve bends smoothly through each sample rather than turning a sharp angle
+    at it; the densification is what makes that smoothness visible instead of
+    a chain of straight segments.
+
+    Because the subdivision is UNIFORM, any window of the original trajectory
+    maps onto the dense one exactly::
+
+        arr[a:b]  ->  dense[a * step : (b - 1) * step + 1]
+
+    which is what lets an animation draw a smooth curve for precisely the
+    portion of the trajectory a given frame would have shown (see
+    `matplotlib_backend._draw`'s ``_aa_window``).
+
+    Only ever ADDS points: a trajectory already at/above `target` density is
+    returned unchanged with ``step == 1`` (never decimated), as is anything
+    with fewer than 2 rows. (Release-1.0 audit F01-001: the historical
+    `np.arange`-based grid never reached the final sample, and for n > target
+    samples the "interpolation" silently became decimation.)
+    """
+    from scipy.interpolate import PchipInterpolator as pchip
+    arr = np.asarray(arr)
+    n = arr.shape[0]
+    if n < 2 or n >= target:
+        return arr, 1
+    # interpolated points to ADD per segment
+    k = int(np.ceil((target - n) / (n - 1)))
+    step = k + 1                                # dense points per original segment
+    seg = np.linspace(0.0, 1.0, step + 1)[:-1]  # left knot + k interior points
+    xx = np.concatenate([i + seg for i in range(n - 1)]
+                        + [np.array([n - 1.0])])
+    out = pchip(np.arange(n), arr)(xx)
+    # PCHIP passes through its knots up to floating error; enforce
+    # exactness so the drawn line provably contains every input sample.
+    out[::step] = arr
+    return out, step
 
 
 def split_marker_line_fmt(format_str):

@@ -422,7 +422,7 @@ def _transform(vmodel, tmodel, x):
 
 
 def _fit_models(vmodel, tmodel, x, model_is_fit):
-    if model_is_fit==True:
+    if model_is_fit:
         return
     if vmodel is not None:
         try:
@@ -452,6 +452,8 @@ def _check_mtype(x):
         try:
             if inspect.isclass(type(x)):
                 return 'class_instance'
-        except:
+        except Exception:  # genuinely broad: any failure here means x's
+            # type doesn't fit inspect.isclass's expectations, and every
+            # such failure maps to the same TypeError
             raise TypeError('Parameter must of type string, dict, class, or'
                             ' class instance.')

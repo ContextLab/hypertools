@@ -17,7 +17,6 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import numpy as np
-import pandas as pd
 
 import matplotlib
 matplotlib.use('Agg')
@@ -122,11 +121,11 @@ def main():
         # permutes component order (fit nondeterminism, not backend skew)
         ('cluster_kmeans',
          lambda: ((clusters, 'o'),
-                  {'hue': [str(l) for l in
+                  {'hue': [str(lab) for lab in
                            hyp.cluster(clusters, n_clusters=3)]})),
         ('cluster_hdbscan',
          lambda: ((clusters, 'o'),
-                  {'hue': [str(l) for l in
+                  {'hue': [str(lab) for lab in
                            hyp.cluster(clusters, cluster='HDBSCAN')]})),
         ('mixture_gaussian',
          lambda: ((oclusters, 'o'),

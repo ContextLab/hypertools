@@ -22,3 +22,6 @@ prune tests/.pytest_cache
 prune tests/screenshots
 prune hypertools-dev
 global-exclude *.py[cod] __pycache__ .DS_Store .pytest_cache
+# local-only agent-tooling files (gitignored, maintainer decision 2026-09-03);
+# `graft tests` would otherwise ship tests/AGENTS.md
+global-exclude AGENTS.md
