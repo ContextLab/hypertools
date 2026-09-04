@@ -11,6 +11,32 @@ import matplotlib.animation as animation
 from .._shared.animated_svg import combine_frames_svg
 
 
+class HyperFuncAnimation(animation.FuncAnimation):
+    """``matplotlib.animation.FuncAnimation`` whose ``_stop`` is idempotent.
+
+    matplotlib's notebook backend (``nbAgg``, the backend hypertools selects
+    in Colab and classic Jupyter) processes a figure's close event
+    re-entrantly: ``FigureManagerNbAgg.destroy()`` calls ``clearup_closed()``,
+    which fires ``close_event`` while the manager's own comm-close handler is
+    still being processed, so every ``close_event`` callback runs twice.
+    ``Animation._stop`` is one of them and is not idempotent: the second call
+    finds ``event_source`` already ``None`` and raises ``AttributeError:
+    'NoneType' object has no attribute 'remove_callback'``. Reproduced
+    2026-09-04 with plain matplotlib 3.10.8 and 3.11.1 (no hypertools
+    involved) and, on Colab, with every hypertools animation: the next
+    static-plot cell failed in IPython's end-of-cell figure flush
+    (``plt.close('all')``) and ``show=False`` animated plots failed inside
+    ``plot()`` itself, at its own ``plt.close(fig)``. Skipping the repeat
+    call is what ``_stop`` would do itself if it checked; nothing else about
+    the animation changes (``isinstance(x, FuncAnimation)`` still holds).
+    """
+
+    def _stop(self, *args):
+        if self.event_source is None:      # already stopped: re-entered close
+            return
+        super()._stop(*args)
+
+
 # video containers the ffmpeg writer (h264) can mux into
 _FFMPEG_EXTENSIONS = ('mp4', 'mov', 'avi', 'm4v', 'mkv')
 
