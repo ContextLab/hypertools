@@ -796,3 +796,24 @@ time). Render script kept at `scripts/render_bluesky_clips.py`.
 Also found on the way: the `market_forecast` tutorial/gallery pages were
 NEVER live on RTD (404 on stable and latest), so the "two 1.0 URLs break"
 premise for the rename was wrong; PR #283's body was corrected.
+
+## Round 2: five-clip rework (2026-09-03, late evening)
+
+Jeremy reviewed the five mp4 clips and found "substantial problems" in each. Requirements, verbatim:
+
+- 20_market_sectors: (1) *much* longer timeline, 2 decades+; (2) title = the current date ("February 3, 2016"), colour of the title = current market value; (3) all sectors in ONE space, sector colours kept, plus an average-across-sectors group (the full market); hyperalign at the sector level; (4) 3-D rotating plot: each sector is a timepoints x stocks matrix (stock counts may differ), reduce -> T x 3 per sector (zero padding "should happen automatically, but verify this"), hyperalign -> shared space; thicker average line across sectors, each point coloured by the market-share-weighted average of the sector colours; (5) 30 s, 3 rotations; (6) alt-text code: no default-valued args, no quote formatting (ALL examples).
+- 21_weather_decades: (1) title = current month/year spanning all panels; (2) second panel: world map, one dot per city coloured by that city's temperature that frame; (3) third panel: mean temperature across the 20 cities vs time, growing per frame; (4) colorbar title "Average temperature ($^\circ$C)"; (5) 15 s, 1 rotation.
+- 22_painting_embeddings: (1) thumbnail of each painting in a new panel right of its description, vertically centred on the description, thumbnails horizontally aligned; (2) title "Descriptions of five famous paintings"; (3) artist and year after each title, italic.
+- 23_conversation: (1) title = just the spoken text, coloured by speaker, wrapped so nothing is cut off or overlaps the box; (2) 30 s, 2 rotations; (3) longer tails.
+- 24_morph_zoo: (1) 30 s; (2) titles larger and moved down.
+
+Verified before building (probe scripts in the scratchpad):
+- `hyp.reduce` on a list with different column counts REFUSES ("cannot reduce a list of datasets with different numbers of columns ... pad/trim the features"); `hyp.align(..., align='hyper')` DOES zero-pad (`align/common.py: trim_and_pad`), raw ragged widths [4,5,3,6,4,4] -> six (T, 6) arrays. So padding is automatic at the align stage only. The requested pipeline (reduce each sector separately -> hyperalign) needs no padding: `[hyp.reduce(d, ndims=3) for d in sectors]` then `hyp.align(..., align='hyper')`.
+- Mixture hue works on a flat list of datasets with per-dataset weight matrices: `hue=[T x 6 weights per dataset], palette=6 colours, hue_mode='mixture'`; per-dataset `linewidth=[...]` is honoured.
+- Yahoo `v8/finance/chart` gives `range=max` monthly/daily history (AAPL from 1984) but no share counts; `quoteSummary`/`v7/quote` need a crumb (Unauthorized). SEC XBRL `companyconcept/CIK##########/dei/EntityCommonStockSharesOutstanding.json` works (AAPL: 70 quarterly points 2009-06 .. 2026-07) with `company_tickers.json` for the CIK map; values are RAW (not split-adjusted), so market cap = raw close x reported shares, back-filled before 2009 with the first known cap scaled by adjusted price.
+- The per-segment title updater (`plot.py:_make_title_updater`) calls `ax.set_title(text)` each frame (resets fontsize/position); user hooks added later run after it.
+- cartopy/geopandas are NOT installed; Natural Earth 110m land GeoJSON (138 KB) is fetchable from raw.githubusercontent.com/nvkelso/natural-earth-vector for the weather map, cached like the CSVs, with a no-coastline fallback.
+
+Interpretations chosen (flag to Jeremy): title colour on the market clip = diverging red/green by the basket's cap-weighted trailing-12-month return (the plotted measure); market-share weights = per-sector share of basket market cap from SEC share counts; average line position = plain mean of the six hyperaligned sector paths.
+
+Plan: market rebuilt by the main session; weather/paintings/conversation/morph by four parallel subagents (shared brief in the scratchpad `rework_brief.md`, review frames in `scratchpad/review/`); then gate re-measure, notebook regeneration (Plan 4 pattern), GIFs, POST.md alt text (no default args, no quote blocks), full checks, commit, push.
