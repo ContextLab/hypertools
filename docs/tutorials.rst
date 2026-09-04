@@ -150,7 +150,7 @@ A quarter century of the market: six sectors, one space
 
 Three library calls: ``hyp.reduce`` takes each sector (a months-by-stocks
 matrix of growth curves, four or five stocks each) to three dimensions on
-its own, ``hyp.align(..., align='hyper')`` hyperaligns the six paths into
+its own, ``hyp.align(..., align='HyperAlign')`` hyperaligns the six paths into
 one shared space, and ``hyp.plot`` draws them with a seventh, heavier path
 -- the market, their mean -- coloured through the mixture hue by each
 sector's share of the basket's capitalisation. The title is the current

@@ -62,6 +62,16 @@ class HyperAnimation(tuple):
         # would be a fresh, unreferenced object and `on_frame()` could never
         # fire (plan 1.1 Task 7, review C7).
         self._frame_hooks = frame_hooks
+        # Mark the inner animation as draw-started NOW, not only in
+        # __del__. When a wrapper dies inside a reference cycle (a test's
+        # captured traceback, a figure whose callbacks point back at the
+        # animation) the cyclic collector runs the two finalizers in
+        # arbitrary order, and if ``Animation.__del__`` goes first it warns
+        # "deleted without rendering" before the wrapper can silence it --
+        # seen on 4 of 12 CI jobs on 2026-09-04, never locally. matplotlib
+        # only reads the flag in that ``__del__`` (see ``mark_draw_started``),
+        # so setting it early changes nothing about rendering or saving.
+        mark_draw_started(animation)
         return self
 
     @property

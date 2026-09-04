@@ -63,7 +63,7 @@ SPECS = {
          'assemble'),
         ('## 4. Reduce per sector, hyperalign, draw seven paths',
          'Three library calls: `hyp.reduce` per sector (its own stocks, its '
-         'own space), `hyp.align(..., align=\'hyper\')` into one shared '
+         'own space), `hyp.align(..., align=\'HyperAlign\')` into one shared '
          'space, and `hyp.plot` on the six aligned paths plus their mean, '
          'coloured through the mixture hue. The `on_frame` hook only sets '
          'the title: the date under the head, tinted by the basket\'s '

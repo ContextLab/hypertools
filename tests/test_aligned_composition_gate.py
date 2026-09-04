@@ -44,7 +44,7 @@ def _compose(mean_is_mean=True, heavier=True, mixture=True,
              date_title=True, advancing=True):
     """The composition the gate describes, with one claim optionally broken."""
     reduced = [hyp.reduce(s, reduce='PCA', ndims=3) for s in _sectors()]
-    aligned = hyp.align(reduced, align='hyper')
+    aligned = hyp.align(reduced, align='HyperAlign')
     market = np.mean(aligned, axis=0)
     if not mean_is_mean:
         market = market + 0.5 * np.std(market)       # a shifted 'mean'

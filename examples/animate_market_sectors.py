@@ -14,7 +14,7 @@ calls turn that into the figure:
 1. ``hyp.reduce`` takes every sector from its own handful of stocks to three
    dimensions **separately**, so a sector is a trajectory in a space made
    of its own stocks, not a projection shared with the others;
-2. ``hyp.align(..., align='hyper')`` hyperaligns the six trajectories into
+2. ``hyp.align(..., align='HyperAlign')`` hyperaligns the six trajectories into
    **one** common space, so that from then on a direction means the same
    thing for Energy as it does for Technology;
 3. ``hyp.plot`` draws all six, plus a seventh, heavier path: the **market**,
@@ -262,7 +262,7 @@ def construct_artifact(data):
     # 1. each sector to 3-D in a space of ITS OWN stocks; 2. hyperalign the
     # six trajectories into one shared space; 3. the market is their mean
     reduced = [hyp.reduce(data.sectors[s], reduce=REDUCE, ndims=3) for s in names]
-    aligned = hyp.align(reduced, align='hyper')
+    aligned = hyp.align(reduced, align='HyperAlign')
     market = np.mean(aligned, axis=0)
     # mixture hue: one row of weights per month, blended through the six
     # sector colours. One-hot rows keep a sector its own colour; the market

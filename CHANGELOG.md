@@ -277,6 +277,11 @@ input too.
   content: the same 5-second test clip went from 0.96 MB to 0.38 MB with
   no visible difference. Callers wanting a specific bitrate can pass
   `writer=` to `HyperAnimation.save()` as before.
+- **The "Animation was deleted without rendering anything" warning could
+  still fire from a discarded `HyperAnimation`** when the wrapper died inside
+  a reference cycle: the collector may finalize matplotlib's animation before
+  the wrapper that silences it. The wrapper now marks the animation as
+  draw-started when it is constructed, so the order no longer matters.
 - **`HyperAnimation.save()` silently discarded every keyword except
   `fps=`**, so `anim.save('clip.gif', dpi=75)` wrote the GIF at the
   figure's own dpi and nothing said so (a 13 x 9 inch figure came out as a

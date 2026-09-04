@@ -271,6 +271,29 @@ def test_deleted_unrendered_animation_does_not_warn():
                 if 'deleted without rendering' in str(x.message)]
 
 
+def test_unrendered_animation_in_a_reference_cycle_does_not_warn():
+    """The wrapper cannot rely on its own ``__del__`` running first.
+
+    When a ``HyperAnimation`` dies inside a reference cycle (a captured
+    traceback holding the frame that made it, a figure whose callbacks lead
+    back to the animation), the cyclic collector finalizes the wrapper and
+    the inner ``FuncAnimation`` in arbitrary order, and matplotlib's
+    ``Animation.__del__`` warns "deleted without rendering" if it goes
+    first. Seen on 4 of 12 CI jobs on 2026-09-04 and never locally; the
+    wrapper now marks the animation at construction, so order is moot.
+    """
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter('always')
+        ani = hyp.plot(_walk(), animate=True, duration=0.5, frame_rate=5,
+                       show=False)
+        cycle = [ani]
+        cycle.append(cycle)                 # wrapper reachable only via a cycle
+        del ani, cycle
+        gc.collect()
+    assert not [x for x in w
+                if 'deleted without rendering' in str(x.message)]
+
+
 def test_hyper_animation_save_still_works_after_del_guard(tmp_path):
     ani = hyp.plot(_walk(), animate=True, duration=0.5, frame_rate=5,
                    show=False)
