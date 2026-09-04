@@ -35,11 +35,13 @@ matplotlib.use('Agg')
 import hypertools as hyp
 from hypertools._shared.exceptions import HypertoolsIOError
 from hypertools.io.sources import _github_get_with_retry
+from tests._netskip import skip_on_transient_network
 
 
 def test_load_538_bechdel_single_csv():
     # bechdel's folder has exactly one CSV (movies.csv) -> a DataFrame
-    df = hyp.load('fivethirtyeight/bechdel')
+    with skip_on_transient_network('loading fivethirtyeight/bechdel'):
+        df = hyp.load('fivethirtyeight/bechdel')
     assert isinstance(df, pd.DataFrame)
     assert len(df) > 1000
     assert 'binary' in df.columns
@@ -47,7 +49,9 @@ def test_load_538_bechdel_single_csv():
 
 def test_load_538_multi_csv_returns_dict():
     # college-majors' folder has five (small) CSVs -> a dict of DataFrames
-    data = hyp.load('fivethirtyeight/college-majors')
+    # 2026-09-04: a real GitHub-API 500 on macOS 3.13 CI outlived the retry
+    with skip_on_transient_network('loading fivethirtyeight/college-majors'):
+        data = hyp.load('fivethirtyeight/college-majors')
     assert isinstance(data, dict)
     assert len(data) > 1
     expected = {'all-ages', 'grad-students', 'majors-list', 'recent-grads',
@@ -111,7 +115,8 @@ def test_ci_has_kagglehub():
 
 
 def test_load_538_bechdel_plot_end_to_end():
-    df = hyp.load('fivethirtyeight/bechdel')
+    with skip_on_transient_network('loading fivethirtyeight/bechdel'):
+        df = hyp.load('fivethirtyeight/bechdel')
     numeric = df.select_dtypes(include='number').dropna()
     fig = hyp.plot(numeric, show=False)
     assert fig is not None
