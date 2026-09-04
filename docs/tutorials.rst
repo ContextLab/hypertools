@@ -145,21 +145,23 @@ spread tightens ~30%. See the full gallery example,
    :width: 400
    :alt: Animated hyperaligned brain-activity trajectories through a spoken story
 
-Six sectors, their stocks, and each sector's mean
--------------------------------------------------
+A quarter century of the market: six sectors, one space
+-------------------------------------------------------
 
-The *column-MultiIndex* hierarchy, six times over: a ``(Sector, Ticker,
-Measure)`` frame draws each sector's four stocks as faint leaves and that
-sector's mean as a heavier line, all from **one** ``hyp.plot`` call. The six
-panels are laid out *in the data* -- each sector's block translated into
-its own region of one shared box -- because an animated call owns its
-figure, so this is one animation with one pooled scale. Position between
-panels is layout, not market data; there is deliberately no market-wide
-mean and no forecast. See :doc:`hierarchy` for the column-axis rule.
+Three library calls: ``hyp.reduce`` takes each sector (a months-by-stocks
+matrix of growth curves, four or five stocks each) to three dimensions on
+its own, ``hyp.align(..., align='hyper')`` hyperaligns the six paths into
+one shared space, and ``hyp.plot`` draws them with a seventh, heavier path
+-- the market, their mean -- coloured through the mixture hue by each
+sector's share of the basket's capitalisation. The title is the current
+date, tinted by the basket's trailing-twelve-month return, and the camera
+makes three turns over one minute of 26 years. Prices from Yahoo Finance,
+share counts from the SEC. (For the column-MultiIndex route to a market
+hierarchy, see :doc:`hierarchy`.)
 
 .. image:: _static/thumbnails/sphx_glr_animate_market_sectors_thumb.gif
    :width: 400
-   :alt: Six sector panels tiled in one animated hypertools plot, each with its stocks and the sector mean
+   :alt: Six hyperaligned sector paths and the heavier market mean in one turning 3-D box, titled by date
 
 .. toctree::
   :maxdepth: 2
@@ -176,7 +178,11 @@ the seasons and drifts with the century. A continuous ``hue=`` (the
 average temperature across the cities) colours it on a blue-cold /
 red-hot scale with a native colorbar; ``manip='Smooth'``,
 ``normalize='across'`` and ``chemtrails=True`` are the only other
-keywords. No hierarchy, no hand-spliced colormap, no per-frame callback.
+keywords. One ``on_frame`` hook keeps two companion panels and a
+month/year title in step with the head of the path over the two-minute
+orbit: a world map with each city coloured by that month's temperature,
+and the mean temperature against time, drawn segment by segment on the
+same colour scale.
 
 .. image:: _static/thumbnails/sphx_glr_animate_weather_decades_thumb.gif
    :width: 400
@@ -195,9 +201,10 @@ windows, and the turns are one list of lists of strings handed to a single
 ``hyp.plot`` call, so every turn is its own trajectory through one shared
 space. ``vectorizer=`` embeds, a categorical ``hue=`` colours by speaker
 with a native legend, ``order='serial'`` reveals one turn at a time with
-``chemtrails=True``, and a per-turn ``title=`` names who is speaking. The
-one bespoke effect, a recency fade across turns, runs on the public
-``on_frame`` hook and reads the schedule the library publishes.
+``chemtrails=True``, and a per-turn ``title=`` shows the line being spoken,
+wrapped when long, in the speaker's colour. The recency fade across turns
+and the title colour run on the public ``on_frame`` hook and read the
+schedule the library publishes; thirty seconds, two camera turns.
 
 .. image:: _static/thumbnails/sphx_glr_animate_conversation_thumb.gif
    :width: 400
@@ -217,7 +224,9 @@ the nesting is the grouping. ``vectorizer='all-MiniLM-L6-v2'`` embeds every
 window, ``reduce='UMAP'`` puts them in one shared space, ``labels=`` names
 each cloud and ``animate='spin'`` orbits it. Each cloud's colour comes from
 its real canvas through ``image_palette``, which orders clusters by
-salience rather than size, with one legibility floor on top.
+salience rather than size, with one legibility floor on top. Beside the
+box, each painting's name with its artist and year, the description that
+was embedded, and a thumbnail of the canvas.
 
 .. image:: _static/thumbnails/sphx_glr_animate_painting_embeddings_thumb.gif
    :width: 400
@@ -234,8 +243,9 @@ Morphing through the shapes zoo
 ``animate='morph'`` flows a cloud of dots from one shape to the next, holding
 on each; ``rotations=`` gives every hold and transition its screen time, and
 ``title=`` takes one string per cloud, shown while that shape is whole and
-blanked through the transitions. The loader degrades to five parametric
-clouds when the zoo cannot be fetched, so the notebook always renders.
+blanked through the transitions (an ``on_frame`` hook enlarges it and sits
+it just above the cloud). The loader degrades to five parametric clouds
+when the zoo cannot be fetched, so the notebook always renders.
 
 .. image:: _static/thumbnails/sphx_glr_animate_morph_zoo_thumb.gif
    :width: 400

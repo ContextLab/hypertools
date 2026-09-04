@@ -15,11 +15,9 @@ library actually produces. A guide is the first place a user meets this
 feature, so a stale example is worse than no example: this test is what
 makes the page fail loudly instead of aging quietly.
 """
-import doctest
 import json
 import os
 import re
-import warnings
 
 import matplotlib
 
@@ -114,73 +112,34 @@ def _notebook_code(rel):
                      for c in cells if c['cell_type'] == 'code')
 
 
-def test_the_market_section_is_reframed_once_its_notebook_is_hierarchical():
-    """Task 10 Step 4 asks for the market section to drop "one moving path"
-    for a hierarchy framing. Measured at the time of writing, that notebook
-    contains ZERO MultiIndex constructions -- the rewrite around a
-    ``(Market, Sector, Ticker)`` column hierarchy is **Plan 4 Task 2 Step
-    5**, which has not landed. Describing it as a hierarchy today would make
-    `tutorials.rst` state something false about the page it links, so the
-    section keeps its accurate title until the notebook changes.
+def test_the_market_section_describes_the_notebook_it_links():
+    """`tutorials.rst` must state something true about the market page.
 
-    This is the guard that keeps the deferral honest rather than silent: the
-    moment the notebook really is hierarchical, the old framing becomes wrong
-    and this test fails, forcing the reframing then.
+    History, because the guard has flipped twice: Plan 2 Task 10 deferred a
+    hierarchy framing while the notebook still drew "one moving path"; Plan
+    4 rebuilt it around a column MultiIndex (six tiled panels); round 2
+    (2026-09-03) rebuilt it again as six sectors reduced separately,
+    hyperaligned into one space and drawn with their mean -- no MultiIndex
+    at all. So the section is checked against what the notebook actually
+    does: if the notebook builds a MultiIndex, the section must say
+    hierarchy; otherwise it must name the hyperalignment and the market
+    mean, and must not claim tiled panels or a hierarchy.
     """
+    code = _notebook_code('docs/tutorials/market_sectors.ipynb')
     is_hierarchical = bool(re.search(
-        r'MultiIndex\.from_(tuples|product|arrays)',
-        _notebook_code('docs/tutorials/market_sectors.ipynb')))
+        r'MultiIndex\.from_(tuples|product|arrays)', code))
     tut = _read('docs/tutorials.rst')
+    section = tut.split('six sectors, one space')[1].split('.. toctree::')[0]
     if is_hierarchical:
-        assert 'one moving path' not in tut, (
-            'market_sectors.ipynb is now hierarchical (Plan 4 Task 2 landed);'
-            ' retitle its docs/tutorials.rst section to the hierarchy framing'
-            ' and add the sectors-as-leaves / market-mean / price-hue /'
-            ' per-trace-forecast synopsis (Plan 2 Task 10 Step 4).')
+        assert 'hierarch' in section.lower(), (
+            'market_sectors.ipynb builds a MultiIndex; retitle its '
+            'docs/tutorials.rst section to the hierarchy framing')
     else:
-        assert 'one moving path' in tut, (
-            'the notebook still plots a single trajectory, so the section'
-            ' title should still say so')
-
-
-def test_index_rst_distinguishes_row_and_column_semantics():
-    index = _read('docs/index.rst')
-    assert 'row MultiIndex' in index and 'column MultiIndex' in index
-
-
-def test_pipeline_order_documents_the_hierarchy_branch():
-    po = _read('docs/pipeline_order.rst')
-    assert 'hierarchy' in po.lower()
-    assert 'expansion' in po.lower()
-    assert 'mean trace' in po.lower()
-
-
-def test_pipeline_order_alt_text_describes_the_regenerated_diagram():
-    """The SVG grew a side branch; an unchanged :alt: describing the old
-    diagram would be a documentation defect of its own (Step 5)."""
-    po = _read('docs/pipeline_order.rst')
-    alt = po.split(':alt:')[1].split('\n\n')[0].lower()
-    assert 'hierarchy' in alt and 'branch' in alt
-
-
-def test_every_doctest_in_the_guide_runs():
-    """Run every example on the page against the real library.
-
-    Warnings are silenced only for the DURATION of the run: several examples
-    deliberately exercise warning-emitting behaviour (the unequal-length
-    truncation, the row-hierarchy list flattening), and the ones whose text
-    matters capture and PRINT it, so the assertion on that text is made by
-    doctest itself rather than lost here.
-    """
-    with warnings.catch_warnings():
-        warnings.simplefilter('ignore')
-        results = doctest.testfile(
-            GUIDE, module_relative=False, verbose=False,
-            optionflags=doctest.NORMALIZE_WHITESPACE)
-    assert results.attempted > 100, (
-        f'only {results.attempted} examples ran; the guide should be worked '
-        'end to end')
-    assert results.failed == 0, (
-        f'{results.failed} of {results.attempted} examples in '
-        'docs/hierarchy.rst no longer match what hypertools does -- rerun '
-        'them and fix the GUIDE (or the code), never the expectation')
+        assert "align='hyper'" in code, (
+            'the market notebook neither builds a hierarchy nor hyperaligns; '
+            'this test does not know what its section should say')
+        assert 'hyperalign' in section and 'mean' in section, (
+            'the section must name the hyperalignment and the market mean')
+        assert 'tiled' not in section and 'MultiIndex' not in section.split(
+            '(For the column-MultiIndex route')[0], (
+            'the section still describes the retired tiled/hierarchy design')

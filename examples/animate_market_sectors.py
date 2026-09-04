@@ -1,47 +1,54 @@
 # -*- coding: utf-8 -*-
 """
-==================================================
-Six sectors, their stocks, and each sector's mean
-==================================================
+=========================================================
+A quarter century of the market: six sectors, one space
+=========================================================
 
-Twenty-four large-cap stocks, four per sector, each drawn as a path through
-two measures every stock shares -- cumulative 12-month return (x) and
-drawdown below the 24-month peak (y) -- over the most recent five years at
-six-month strokes. The whole figure is **one** ``hyp.plot`` call on a
-DataFrame whose columns carry a ``(Sector, Ticker, Measure)``
-``MultiIndex``. The innermost level is the feature axis and every level
-above it groups, so the library finds the four stocks of each sector in the
-index, draws each as a faint leaf, and draws the sector's **mean** as a
-heavier line on top. That mean is computed by the hierarchy, not by this
-file, and nothing here computes or draws a trajectory by hand.
+Twenty-seven large-cap stocks in six sectors, every month since 2000, drawn
+as seven paths through one shared 3-D space. Each **sector** is handed to
+the library as its own matrix -- months down the rows, that sector's stocks
+across the columns (four or five of them; the counts differ on purpose) --
+and each cell is the stock's **trailing twelve-month return**. Three library
+calls turn that into the figure:
 
-**Six panels, one call.** An animated ``hyp.plot`` owns its figure and
-normalizes everything it is given into one unit box, so six sectors cannot
-be six axes of one animation -- and they do not need to be. Each sector's
-block is translated into its own region of one shared coordinate box
-*before* the call, and the six panels become six column groups of a single
-frame: one call, one animation, one ``.save()``, and one normalization
-shared by construction rather than by assertion. The boxes, the sector
-labels, the darker mean and the dot riding its head are annotation of
-artists the library drew.
+1. ``hyp.reduce`` takes every sector from its own handful of stocks to three
+   dimensions **separately**, so a sector is a trajectory in a space made
+   of its own stocks, not a projection shared with the others;
+2. ``hyp.align(..., align='hyper')`` hyperaligns the six trajectories into
+   **one** common space, so that from then on a direction means the same
+   thing for Energy as it does for Technology;
+3. ``hyp.plot`` draws all six, plus a seventh, heavier path: the **market**,
+   the point-by-point mean of the six aligned sector paths.
 
-**How to read it.** Every panel has the same units and the same gain, so
-the length, direction and shape of a path are comparable across panels,
-and each panel is read against its own rectangle. Position *between*
-panels is not comparable: the offsets are layout, not market data, and the
-caption says so. The bold line is that **sector's** mean of the four stocks
-beside it. There is deliberately no market-wide mean: the offsets are
-applied before the hierarchy computes its means, so a top-level parent
-would average six layout translations and mean nothing. Sector means stay
-exact because all four stocks of a sector receive the same translation.
+**Colour is the market's composition.** Every path is coloured through the
+library's *mixture* hue: ``hue=`` carries one row of weights per month and
+``palette=`` the six sector colours, and each point is drawn in the
+weighted blend (``hue_mode='mixture'``). A sector's weights are a one-hot
+row, so it keeps its own colour; the market path's weights are each
+sector's **share of the basket's market capitalisation** that month
+(reported share counts x price), so its colour shifts toward whichever
+sectors dominate -- tech-blue-red as the 1990s bubble deflates, more
+financial-gold before 2008, and back again. The title is the **current
+date**, tinted by the basket's own trailing twelve-month return: red when
+the market is below where it stood a year earlier, green when it is above.
+The camera makes three turns over one minute, and nothing that has been
+drawn fades, so the last frame is the whole quarter century.
 
-**Data & graceful degradation.** Ten years of ADJUSTED daily closes are
-pulled from Yahoo Finance's chart endpoint and cached on disk; adjusted, so
-a split does not read as a -50% day. Month-end levels are a decimation, so
-no future observation reaches back into a bar. If the network is
-unavailable the example falls back to a seeded synthetic basket with the
-same sector structure, so it always renders -- the technique (hierarchy ->
-tiled panels -> one animated call) is identical either way.
+**Zero padding, verified.** ``hyp.align`` zero-pads datasets with different
+numbers of columns to a common width automatically (its ``trim_and_pad``
+step), so hyperaligning sectors of unequal size is fine. ``hyp.reduce`` on a
+list of unequal-width datasets deliberately refuses (it stacks them into one
+shared fit), which is exactly why the reduction here is per sector -- the
+sectors do not share columns, and should not share a projection.
+
+**Data & graceful degradation.** Adjusted and unadjusted daily closes come
+from Yahoo Finance's chart endpoint (full history, month-end decimated so no
+future observation reaches back into a bar) and share counts from the SEC's
+XBRL company-facts API (quarterly, from 2009; earlier months back-fill the
+first reported capitalisation along the adjusted price). Everything is
+cached on disk. If the network is unavailable the example falls back to a
+seeded synthetic basket with the same sector structure and share counts, so
+it always renders, and the technique is identical either way.
 """
 
 # Code source: Contextual Dynamics Laboratory
@@ -56,40 +63,71 @@ from typing import NamedTuple
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from matplotlib.colors import to_rgb
+from matplotlib.colors import LinearSegmentedColormap, Normalize
+from matplotlib.lines import Line2D
 
 import hypertools as hyp
 
 CACHE = os.path.join(tempfile.gettempdir(), 'hypertools_gallery_cache')
-RANGE = '10y'
-# six sectors x four EQUALLY WEIGHTED tickers each
+START = '2000-01-01'                    # first month drawn
+PERIOD1, PERIOD2 = 915148800, 4102444800   # 1999-01-01 .. 2100-01-01, unix
+WINDOW = 12                             # months in a trailing return
+# six sectors, four or five tickers each -- unequal on purpose (see docstring)
 SECTORS = {
-    'Technology': ['AAPL', 'MSFT', 'ORCL', 'IBM'],
+    'Technology': ['AAPL', 'MSFT', 'ORCL', 'IBM', 'INTC'],
     'Financials': ['JPM', 'BAC', 'GS', 'AXP'],
-    'Healthcare': ['JNJ', 'PFE', 'MRK', 'ABT'],
+    'Healthcare': ['JNJ', 'PFE', 'MRK', 'ABT', 'AMGN'],
     'Energy': ['XOM', 'CVX', 'COP', 'SLB'],
-    'Consumer': ['KO', 'PG', 'WMT', 'MCD'],
+    'Consumer': ['KO', 'PG', 'WMT', 'MCD', 'PEP'],
     'Industrials': ['BA', 'CAT', 'GE', 'HON'],
 }
 SECTOR_COLORS = ['#c1272d', '#f2a900', '#1b7f4f', '#2d5fa8', '#7d3c98',
                  '#00808a']
-CUM_WINDOW, DD_WINDOW = 12, 24          # months
-MONTHS, STRIDE = 60, 6                  # five years, one stroke per half-year
-PANEL_COLS, PANEL_STEP = 3, 2.6         # the grid -- layout only, no meaning
-DURATION, FPS = 6, 15                   # seconds, frames per second
-CAPTION = ('same cumulative-return (x) and drawdown (y) scale in every '
-           'panel; panel positions are layout only')
+DURATION, FPS, ROTATIONS = 60, 20, 3    # seconds, frames per second, turns
+TAIL, TITLE_SIZE = 6, 17                # bright window (s), title points
+# whitened PCA: without it the common growth of a sector's stocks is nearly
+# all of the variance, and its 3-D path collapses onto one line
+REDUCE = {'model': 'PCA', 'kwargs': {'whiten': True}}
+# the SEC's fair-access policy wants a declared agent with a contact; this is
+# the project's public one (pyproject.toml)
+USER_AGENT = 'hypertools-gallery/1.1 (Contextual Dynamics Lab, contextualdynamics@gmail.com)'
+SEC = 'https://data.sec.gov/api/xbrl/companyconcept/CIK{cik:010d}/dei/EntityCommonStockSharesOutstanding.json'
+SEC_FACTS = 'https://data.sec.gov/api/xbrl/companyfacts/CIK{cik:010d}.json'
+# the title's tint: the basket's trailing-12-month return, red below zero,
+# green above, saturating at +/-30 % (a range the 2008 and 2020 drawdowns
+# both leave)
+TITLE_CMAP = LinearSegmentedColormap.from_list(
+    'market', ['#b3261e', '#555555', '#1b7f4f'])
+TITLE_NORM = Normalize(-0.3, 0.3, clip=True)
 
 
 class Market(NamedTuple):
-    stocks: pd.DataFrame        # (Sector, Ticker, Measure) -- what is PLOTTED
+    sectors: dict               # sector -> DataFrame (months x its stocks): growth since START
+    weights: pd.DataFrame       # months x sectors: share of basket market cap
+    market: pd.Series           # months: cap-weighted trailing-12-month return
     source: str                 # which path produced it
 
 
+def _cached_json(name, url):
+    """Fetch `url` once into the cache (atomic write) and return the JSON."""
+    dest = os.path.join(CACHE, name)
+    if not os.path.exists(dest):
+        req = urllib.request.Request(url, headers={'User-Agent': USER_AGENT})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            payload = resp.read()
+        with open(dest + '.part', 'wb') as f:
+            f.write(payload)
+        # rename, so an interrupted download can never leave a truncated
+        # cache file that every later run would trust
+        os.replace(dest + '.part', dest)
+    with open(dest) as f:
+        return json.load(f)
+
+
 # --- the data half: the ONLY code here that reaches the network -------------
-def fetch_closes(sectors=SECTORS):
-    """Adjusted daily closes per (sector, ticker), or ``None`` if anything
-    (network, parsing) goes wrong."""
+def fetch_prices(sectors=SECTORS):
+    """Daily ADJUSTED and unadjusted closes for every ticker, or ``None``
+    if anything (network, parsing) goes wrong."""
     # outside the try, so it raises instead of being caught and quietly
     # downgraded: a test that sets HYPERTOOLS_OFFLINE is asserting that no
     # fetch happened, and a swallowed exception would hide one
@@ -97,215 +135,178 @@ def fetch_closes(sectors=SECTORS):
         raise RuntimeError('HYPERTOOLS_OFFLINE is set: refusing to fetch')
     os.makedirs(CACHE, exist_ok=True)
     try:
-        series = {}
-        for sector, tickers in sectors.items():
+        adjusted, raw = {}, {}
+        for tickers in sectors.values():
             for ticker in tickers:
-                dest = os.path.join(CACHE, f'yahoo_adj_{ticker}_{RANGE}.json')
-                if not os.path.exists(dest):
-                    url = ('https://query1.finance.yahoo.com/v8/finance/chart/'
-                           f'{ticker}?range={RANGE}&interval=1d')
-                    req = urllib.request.Request(
-                        url, headers={'User-Agent': 'Mozilla/5.0'})
-                    with urllib.request.urlopen(req, timeout=30) as resp:
-                        payload = resp.read()
-                    with open(dest + '.part', 'wb') as f:
-                        f.write(payload)
-                    # rename, so an interrupted download can never leave a
-                    # truncated cache file that every later run would trust
-                    os.replace(dest + '.part', dest)
-                with open(dest) as f:
-                    result = json.load(f)['chart']['result'][0]
-                stamps = pd.to_datetime(result['timestamp'], unit='s')
-                series[(sector, ticker)] = pd.Series(
-                    result['indicators']['adjclose'][0]['adjclose'],
-                    index=stamps.normalize()).astype(float)
-        # no ffill: a stale ticker padded flat would contribute exactly zero
-        # return while its peers moved. Dropping the row makes it visible.
-        return pd.DataFrame(series).sort_index().dropna()
-    except Exception:
+                # an explicit window: `range=max` silently degrades to
+                # 3-month bars (measured 2026-09-03), a period does not
+                result = _cached_json(
+                    f'yahoo_daily_{ticker}.json',
+                    'https://query1.finance.yahoo.com/v8/finance/chart/'
+                    f'{ticker}?period1={PERIOD1}&period2={PERIOD2}&interval=1d'
+                )['chart']['result'][0]
+                stamps = pd.to_datetime(result['timestamp'], unit='s').normalize()
+                quote = result['indicators']
+                adjusted[ticker] = pd.Series(
+                    quote['adjclose'][0]['adjclose'], index=stamps, dtype=float)
+                raw[ticker] = pd.Series(
+                    quote['quote'][0]['close'], index=stamps, dtype=float)
+        return pd.DataFrame(adjusted).sort_index(), pd.DataFrame(raw).sort_index()
+    except Exception as error:
+        print(f'price history unavailable ({error!r})')
         return None
 
 
-def synthetic_closes(sectors=SECTORS, days=2500, seed=0):
-    """The same sector structure, seeded, so the figure renders offline."""
+def fetch_shares(tickers):
+    """Reported shares outstanding per ticker from the SEC's XBRL API, as a
+    month-end series (forward-filled between filings, NaN before the first),
+    or ``None``. Counts are as reported -- NOT split-adjusted -- which is why
+    market cap below multiplies them by the UNADJUSTED close."""
+    if os.environ.get('HYPERTOOLS_OFFLINE'):
+        raise RuntimeError('HYPERTOOLS_OFFLINE is set: refusing to fetch')
+    try:
+        ciks = {row['ticker']: row['cik_str'] for row in _cached_json(
+            'sec_company_tickers.json',
+            'https://www.sec.gov/files/company_tickers.json').values()}
+        shares = {}
+        for ticker in tickers:
+            facts = _cached_json(f'sec_shares_{ticker}.json',
+                                 SEC.format(cik=ciks[ticker]))['units']['shares']
+            if not facts:
+                # the per-concept endpoint comes back EMPTY for a few filers
+                # (ABT, KO -- measured 2026-09-03) whose complete
+                # company-facts file carries the same concept; read it there
+                facts = _cached_json(
+                    f'sec_facts_{ticker}.json', SEC_FACTS.format(cik=ciks[ticker])
+                )['facts']['dei']['EntityCommonStockSharesOutstanding']['units']['shares']
+            # one value per period end: the LATEST filing wins over amendments
+            frame = pd.DataFrame(facts).sort_values('filed')
+            frame = frame.drop_duplicates('end', keep='last')
+            series = pd.Series(frame['val'].to_numpy(float),
+                               index=pd.to_datetime(frame['end']))
+            shares[ticker] = series.resample('ME').last().ffill()
+        return pd.DataFrame(shares)
+    except Exception as error:
+        print(f'share counts unavailable ({error!r})')
+        return None
+
+
+def synthetic_market(sectors=SECTORS, days=7000, seed=0):
+    """The same sector structure, seeded, so the figure renders offline:
+    daily closes (adjusted == unadjusted) and a constant share count."""
     rng = np.random.default_rng(seed)
-    index = pd.date_range('2016-08-15', periods=days, freq='B')
-    columns = [(sector, t) for sector, ts in sectors.items() for t in ts]
-    drift = rng.normal(0.0003, 0.0002, size=(1, len(columns)))
-    steps = rng.normal(0, 0.013, size=(days, len(columns))) + drift
-    return pd.DataFrame(100.0 * np.exp(steps.cumsum(axis=0)), index=index,
-                        columns=pd.MultiIndex.from_tuples(columns))
+    index = pd.date_range('1999-01-04', periods=days, freq='B')
+    tickers = [t for ts in sectors.values() for t in ts]
+    drift = rng.normal(0.0003, 0.0002, size=(1, len(tickers)))
+    steps = rng.normal(0, 0.013, size=(days, len(tickers))) + drift
+    closes = pd.DataFrame(100.0 * np.exp(steps.cumsum(axis=0)), index=index,
+                          columns=tickers)
+    shares = pd.DataFrame(
+        np.tile(rng.uniform(1e9, 1.6e10, len(tickers)), (days, 1)),
+        index=index, columns=tickers).resample('ME').last()
+    return closes, closes, shares
 
 
-def stock_paths(closes):
-    """``(Sector, Ticker, Measure)``: each stock's path through the two
-    measures. Month-end LOG levels (a month still in progress is dropped),
-    both measures backward-looking, the leading incomplete window dropped
-    rather than filled, and one stroke per STRIDE months counted back from
-    the most recent month."""
-    levels = np.log(closes.resample('ME').last().loc[:closes.index[-1]])
-    columns = {}
-    for sector, ticker in closes.columns:
-        level = levels[(sector, ticker)]
-        columns[(sector, ticker, 'cumulative return')] = (
-            level - level.shift(CUM_WINDOW))
-        columns[(sector, ticker, 'drawdown')] = (
-            level - level.rolling(DD_WINDOW, min_periods=1).max())
-    paths = pd.DataFrame(columns).dropna()
-    paths.columns = pd.MultiIndex.from_tuples(
-        paths.columns, names=['Sector', 'Ticker', 'Measure'])
-    return paths.iloc[-MONTHS:].apply(np.expm1).iloc[::-STRIDE].iloc[::-1]
+def assemble(adjusted, raw, shares, sectors, source):
+    """Month-end trailing returns per sector, market-cap weights per sector
+    and the basket's own return, on one shared monthly index from START."""
+    levels = np.log(adjusted.resample('ME').last())
+    returns = (levels - levels.shift(WINDOW)).loc[START:].dropna()
+    months = returns.index
+    # what is PLOTTED: each stock's cumulative log return since the first
+    # month, so a sector's matrix is a set of growth curves and its 3-D path
+    # is a journey rather than a tangle of month-to-month noise
+    paths = levels.loc[months] - levels.loc[months[0]]
+    # market cap = UNADJUSTED close x reported shares; before the first
+    # filing, the first known cap is carried back along the ADJUSTED price
+    cap = raw.resample('ME').last().reindex(months) * shares.reindex(months).ffill()
+    first = cap.apply(lambda col: col.first_valid_index())
+    for ticker in cap:
+        known = cap.loc[first[ticker], ticker]
+        adj = np.exp(levels.reindex(months)[ticker])
+        cap.loc[:first[ticker], ticker] = known * adj / adj[first[ticker]]
+    caps = pd.DataFrame({s: cap[t].sum(axis=1) for s, t in sectors.items()})
+    weights = caps.div(caps.sum(axis=1), axis=0)
+    market = (returns * cap.div(cap.sum(axis=1), axis=0)).sum(axis=1)
+    return Market({s: paths[t] for s, t in sectors.items()}, weights,
+                  market, source)
 
 
 def load_market(sectors=SECTORS):
     """The ONLY function here that may touch the network."""
+    prices = shares = None
     try:
-        closes, source = fetch_closes(sectors), 'Yahoo Finance adjusted closes'
+        prices = fetch_prices(sectors)
+        if prices is not None:
+            shares = fetch_shares([t for ts in sectors.values() for t in ts])
     except RuntimeError:
-        closes = None
-    if closes is None:
-        closes, source = synthetic_closes(sectors), 'synthetic basket (offline)'
-    return Market(stock_paths(closes), source)
+        pass
+    if prices is None or shares is None:
+        return assemble(*synthetic_market(sectors), sectors,
+                        'synthetic basket (offline)')
+    return assemble(*prices, shares, sectors,
+                    'Yahoo Finance closes, SEC share counts')
 
 
 def fixture_data():
     """The same payload from the seeded synthetic basket. No network."""
-    return Market(stock_paths(synthetic_closes()), 'synthetic basket (fixture)')
+    return assemble(*synthetic_market(), SECTORS, 'synthetic basket (fixture)')
 
 
 # --- the figure half: no network, deterministic given its input -------------
-def cell_offset(index):
-    """Where panel `index` sits in the grid, in the tiled frame's units."""
-    return (index % PANEL_COLS) * PANEL_STEP, -(index // PANEL_COLS) * PANEL_STEP
-
-
-def tile(paths):
-    """Lay the panels out IN THE DATA.
-
-    One display gain per measure, pooled once over the complete frame (so no
-    panel can be rescaled on its own), then each sector's block translated
-    into its own cell. Returns the tiled frame and the extent of one cell.
-    """
-    measures = paths.columns.get_level_values('Measure')
-    half = {m: np.ptp(paths.xs(m, axis=1, level='Measure').to_numpy()) / 2
-            for m in measures.unique()}
-    tiled = paths / [half[m] for m in measures]
-    cell = {m: (tiled.xs(m, axis=1, level='Measure').min().min(),
-                tiled.xs(m, axis=1, level='Measure').max().max())
-            for m in half}
-    sectors = tiled.columns.get_level_values('Sector')
-    for index, sector in enumerate(sectors.unique()):
-        dx, dy = cell_offset(index)
-        tiled.loc[:, (sectors == sector) & (measures == 'cumulative return')] += dx
-        tiled.loc[:, (sectors == sector) & (measures == 'drawdown')] += dy
-    return tiled, cell
-
-
-def drawn_affine(tiled):
-    """Recover the affine ``hyp.plot`` applies (its docstring: mean-centred
-    and rescaled into ``[-1, 1]``, one shared transform), so annotations can
-    be placed in data terms. It takes no part in drawing the data. Read off a
-    STATIC draw: an animated frame stops a hair short of the last vertex."""
-    probe, ax = plt.subplots()
-    hyp.plot(tiled, '-', reduce=None, ndims=2, normalize=None, colorbar=False,
-             ax=ax, show=False)
-    lines = [line for line in ax.lines if len(line.get_xdata()) > 2]
-    plt.close(probe)
-    affine = {}
-    for measure, drawn in (('cumulative return', [ln.get_xdata() for ln in lines]),
-                           ('drawdown', [ln.get_ydata() for ln in lines])):
-        data = tiled.xs(measure, axis=1, level='Measure').to_numpy()
-        lo, hi = min(d.min() for d in drawn), max(d.max() for d in drawn)
-        gain = (hi - lo) / (data.max() - data.min())
-        affine[measure] = (gain, lo - gain * data.min())
-    return affine
-
-
-def draw_panel_boxes(ax, sectors, cell, affine, pad=0.06):
-    """One identical rectangle per panel, from the OFFSETS that built the
-    grid (not from where each sector's paths happen to sit), plus its label.
-    Annotation only: no trajectory is touched."""
-    (gx, sx), (gy, sy) = affine['cumulative return'], affine['drawdown']
-    boxes = {}
-    for index, sector in enumerate(sectors):
-        dx, dy = cell_offset(index)
-        x0 = gx * (dx + cell['cumulative return'][0]) + sx - pad
-        x1 = gx * (dx + cell['cumulative return'][1]) + sx + pad
-        y0 = gy * (dy + cell['drawdown'][0]) + sy - pad
-        y1 = gy * (dy + cell['drawdown'][1]) + sy + pad
-        ax.add_patch(plt.Rectangle((x0, y0), x1 - x0, y1 - y0, fill=False,
-                                   ec='#cccccc', lw=0.8, zorder=0))
-        ax.annotate(sector, xy=(x0, y1 + 0.012), color=SECTOR_COLORS[index],
-                    fontsize=8.5, fontweight='bold', va='bottom')
-        boxes[sector] = (x0, x1, y0, y1)
-    return boxes
-
-
 def construct_artifact(data):
-    """`data.stocks` in, the animation out. No network, no module globals.
+    """`data` in, the animation out. No network, no module globals.
     Returns the HyperAnimation wrapper, never the unpacked pair."""
-    tiled, cell = tile(data.stocks)
-    sectors = list(tiled.columns.get_level_values('Sector').unique())
-    span = f'{tiled.index[0]:%b %Y} - {tiled.index[-1]:%b %Y}'
-    # THE call. The column MultiIndex is the whole layout instruction: 24
-    # leaves, six automatic sector means drawn heavier, one colour per
-    # top-level group. The trail window equals the clip, so every path stays
-    # in view and the last frame is fully revealed (the default 2 s window
-    # leaves 16-54% of a path on screen at the end -- measured). The
-    # library's own frame box spans the full unit square, so once the view
-    # is cropped to the panel grid its edges would cross the figure;
-    # `frame_kwargs` is the documented knob for that.
-    anim = hyp.plot(tiled, '-', palette=SECTOR_COLORS, reduce=None, ndims=2,
-                    normalize=None, animate='parallel', duration=DURATION,
-                    tail_duration=DURATION, frame_rate=FPS, colorbar=False,
-                    size=(7.36, 4.9), frame_kwargs={'visible': False},
-                    show=False,
-                    title=f"Six sectors, their stocks, and each sector's "
-                          f'mean ({span})')
+    names = list(data.sectors)
+    n_months = len(data.weights)
+    # 1. each sector to 3-D in a space of ITS OWN stocks; 2. hyperalign the
+    # six trajectories into one shared space; 3. the market is their mean
+    reduced = [hyp.reduce(data.sectors[s], reduce=REDUCE, ndims=3) for s in names]
+    aligned = hyp.align(reduced, align='hyper')
+    market = np.mean(aligned, axis=0)
+    # mixture hue: one row of weights per month, blended through the six
+    # sector colours. One-hot rows keep a sector its own colour; the market
+    # path's rows are the sectors' shares of the basket's capitalisation.
+    hue = [np.tile(np.eye(len(names))[i], (n_months, 1))
+           for i in range(len(names))] + [data.weights.to_numpy()]
+    # THE call: seven paths, one minute, three turns of the camera, and
+    # a trail as long as the clip so nothing drawn ever fades.
+    months, basket = data.weights.index, data.market.to_numpy()
+    # the title is restyled per frame below; the library reserves its margin
+    # at build time from rcParams, so the size is declared here as well
+    with plt.rc_context({'axes.titlesize': TITLE_SIZE, 'axes.titleweight': 'bold'}):
+        anim = hyp.plot(aligned + [market], '-', hue=hue, palette=SECTOR_COLORS,
+                        hue_mode='mixture', linewidth=[1.1] * len(names) + [3.4],
+                        manip='Smooth', animate=True, chemtrails=True,
+                        tail_duration=TAIL, duration=DURATION, frame_rate=FPS,
+                        rotations=ROTATIONS, colorbar=False,
+                        title=f'{months[0]:%B} {months[0].day}, {months[0].year}',
+                        size=(8, 8), show=False)
     ax = anim.figure.axes[0]
-    # the panel labels already name the sectors. `legend=` stays at its
-    # default so the parent traces keep their group labels, which is how
-    # they are told apart from the leaves below.
-    ax.get_legend().remove()
-    parents = {ln.get_label(): ln for ln in ax.lines if ln.get_label() in sectors}
-    leaves = [ln for ln in ax.lines if ln.get_label() not in sectors]
-    per_panel = len(leaves) // len(sectors)
-    boxes = draw_panel_boxes(ax, sectors, cell, drawn_affine(tiled))
+    ax.legend(handles=[Line2D([], [], color=c, lw=2, label=s)
+                       for s, c in zip(names, SECTOR_COLORS)]
+              + [Line2D([], [], color='#666666', lw=3.4,
+                        label='Market (average across sectors)')],
+              loc='upper left', fontsize=8, frameon=False)
 
-    # restyle what the library drew: a darker, heavier mean than the
-    # hierarchy's own 2x width gives, paler leaves, and a dot at each head
-    heads = {}
-    for index, sector in enumerate(sectors):
-        dark = tuple(0.62 * channel for channel in to_rgb(SECTOR_COLORS[index]))
-        parents[sector].set(color=dark, linewidth=2.6, zorder=4)
-        for leaf in leaves[index * per_panel:(index + 1) * per_panel]:
-            leaf.set(alpha=0.55, linewidth=0.9)
-        heads[sector] = ax.plot([], [], 'o', color=dark, ms=4.0, mfc='white',
-                                mew=1.3, zorder=7)[0]
+    def date_title(ctx):
+        """The title is the date under the head, tinted by the basket's own
+        trailing return. Assigned on EVERY frame (the portable hook rule)."""
+        frac = ctx.frame / max(1, ctx.n_frames - 1)
+        when = months[0] + frac * (months[-1] - months[0])
+        ret = np.interp(frac, np.linspace(0, 1, n_months), basket)
+        ax.set_title(f'{when:%B} {when.day}, {when.year}', fontsize=TITLE_SIZE,
+                     fontweight='bold', color=TITLE_CMAP(TITLE_NORM(ret)))
 
-    def move_head_dots(context):
-        """`on_frame` is for decoration that must CHANGE with the frame."""
-        for sector, parent in parents.items():
-            heads[sector].set_data(parent.get_xdata()[-1:],
-                                   parent.get_ydata()[-1:])
-
-    anim.on_frame(move_head_dots)
-    # crop to the grid; limits and spines persist across frames and saves
-    ax.set_xlim(min(b[0] for b in boxes.values()) - 0.02,
-                max(b[1] for b in boxes.values()) + 0.02)
-    ax.set_ylim(min(b[2] for b in boxes.values()) - 0.02,
-                max(b[3] for b in boxes.values()) + 0.075)
-    for spine in ax.spines.values():
-        spine.set_visible(False)
-    anim.figure.text(0.5, 0.025, CAPTION, ha='center', fontsize=8,
-                     color='#555555')
+    anim.on_frame(date_title)
     return anim
 
 
 if __name__ == '__main__':
     market = load_market()
-    print(f'market data: {market.stocks.shape[0]} strokes x '
-          f'{market.stocks.columns.get_level_values("Ticker").nunique()} '
-          f'stocks in {len(SECTORS)} sectors ({market.source})')
+    print(f'market data: {len(market.weights)} months x '
+          f'{sum(f.shape[1] for f in market.sectors.values())} stocks in '
+          f'{len(market.sectors)} sectors, {market.weights.index[0]:%b %Y} - '
+          f'{market.weights.index[-1]:%b %Y} ({market.source})')
     anim = construct_artifact(market)
     fig = anim.figure

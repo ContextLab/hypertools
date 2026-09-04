@@ -19,9 +19,17 @@ finished shape) with "transition" segments (one shape flowing into the next);
 ``hyp.plot`` names the shape while holding and shows nothing mid-transition,
 so the label never sits over a half-formed cloud.
 
+The library re-sets that title every frame at matplotlib's default size and
+position, so restyling it is a one-line ``anim.on_frame`` hook: the callback
+runs after the library's own updater and re-applies the current text at twice
+the size, in bold, lowered to just above the point cloud. The hook assigns
+the style on every frame (transitions keep their blank text), so any frame
+can be drawn in any order and looks the same.
+
 To keep the gallery build quick, each shape is capped at 2000 points (the cap
 the morph's point matching then runs on) and the zoo's five shapes are
-morphed; the technique is identical for the full clouds.
+morphed over a 30-second, 600-frame loop; the technique is identical for the
+full clouds.
 """
 
 # Code source: Contextual Dynamics Laboratory
@@ -55,6 +63,21 @@ N = 2000
 # box, so its frames read as noise in a wireframe rather than as a cube; shrink
 # it to sit visibly inside. The other shapes still set the shared box.
 CUBE_SCALE = 0.8
+# Title styling, re-applied every frame by an on_frame hook (see
+# construct_artifact): the library's own per-segment updater calls
+# ax.set_title(name) each frame, which resets the size to rcParams and the
+# position to matplotlib's automatic spot above the axes box. Twice the
+# default 'large' (~12 pt) size, bold, and lowered toward the cloud but kept
+# clear of the axes box: measured over all 600 frames (title bbox bottom vs
+# the highest projected box corner, 2026-09-03), 0.90 collided by 7 px at
+# the box's near-top-corner azimuths and 0.93 clears them everywhere. The
+# family is named explicitly because hypertools' bundled default (Noto Sans)
+# ships only a Regular face, so ``fontweight='bold'`` alone silently falls
+# back to regular (checked with font_manager.findfont, 2026-09-03); DejaVu
+# Sans Bold ships inside matplotlib itself, so it is always available.
+TITLE_FONTSIZE = 24
+TITLE_FONTFAMILY = 'DejaVu Sans'
+TITLE_Y = 0.93
 
 
 class Shapes(NamedTuple):
@@ -139,8 +162,19 @@ def construct_artifact(data):
     # hyp.plot itself during every transition -- no hand-rolled schedule.
     anim = hyp.plot(data.clouds, fmt='.', color='k', markersize=1.6,
                     animate='morph', rotations=rotations, morph_samples=N,
-                    duration=12, frame_rate=20, size=(6, 6), show=False,
+                    duration=30, frame_rate=20, size=(6, 6), show=False,
                     title=data.titles)
+
+    def restyle_title(ctx):
+        """Runs AFTER the library's title updater on every frame: re-apply
+        whatever text it set (the shape's name in a hold, '' in a
+        transition) at the larger, bolder, lowered style. Assigned every
+        frame, never accumulated, so frames stay order-independent."""
+        ctx.axes.set_title(ctx.axes.get_title(), fontsize=TITLE_FONTSIZE,
+                           fontweight='bold', fontfamily=TITLE_FONTFAMILY,
+                           y=TITLE_Y)
+
+    anim.on_frame(restyle_title)
     return anim
 
 

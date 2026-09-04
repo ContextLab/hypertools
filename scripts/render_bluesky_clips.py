@@ -5,7 +5,11 @@ Output: notes/bluesky-launch/<stem>.mp4 (that folder is gitignored).
 
 Each clip is the example's own construct_artifact() output (the exact
 animation the tutorial shows), saved with the example's frame rate at a dpi
-chosen so both pixel dimensions are even (h264 yuv420p needs that)."""
+chosen so both pixel dimensions are even (h264 yuv420p needs that). Where the
+dpi below equals the tutorial notebook's, the clip is byte-for-byte the mp4
+that executing the notebook writes to docs/tutorials/, so copying that file
+is equivalent to running this (the market and weather clips are 1200 and 2400
+frames; do not render them twice)."""
 import importlib
 import os
 import sys
@@ -19,10 +23,10 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, 'examples'))
 OUT = os.path.join(ROOT, 'notes', 'bluesky-launch')
 JOBS = [  # (module, loader, output stem, dpi)
-    ('animate_market_sectors', 'load_market', '20_market_sectors', 100),      # 7.36x4.9 -> 736x490
-    ('animate_weather_decades', 'load_weather', '21_weather_decades', 120),   # 8x7 -> 960x840
-    ('animate_painting_embeddings', 'load_paintings', '22_painting_embeddings', 80),  # 13x9 -> 1040x720
-    ('animate_conversation', 'embed_turns', '23_conversation', 110),          # 8x8 -> 880x880
+    ('animate_market_sectors', 'load_market', '20_market_sectors', 100),      # 8x8 -> 800x800
+    ('animate_weather_decades', 'load_weather', '21_weather_decades', 100),   # 14x7 -> 1400x700
+    ('animate_painting_embeddings', 'load_paintings', '22_painting_embeddings', 100),  # 17.5x9.24 -> 1750x924
+    ('animate_conversation', 'embed_turns', '23_conversation', 110),          # 9.58x8.63 (legend+2-line title) -> 1052x948
     ('animate_morph_zoo', 'load_shapes', '24_morph_zoo', 130),                # 6x6 -> 780x780
 ]
 only = sys.argv[1:]
