@@ -774,3 +774,25 @@ platform repros live in the session scratchpad only (py3.13; py3.11 +
 pandas<3), nothing in the repo. Unresolved umap-learn warning (3x
 "n_jobs 1 overridden to 1") is third-party and benign.
 
+
+## Bluesky launch folder refreshed (2026-09-03 evening)
+
+`notes/bluesky-launch/` (gitignored) now holds ONLY the five clips rendered
+from the shipped examples' `construct_artifact()` (`20_market_sectors` ..
+`24_morph_zoo`, all mp4, 0.2-2.8 MB, frames checked visually) and a
+rewritten `POST.md`: a 1.1 launch thread (1.0 was never announced), six
+posts all under 300 graphemes (counted with regex `\X`), alt text carrying
+each example's real `hyp.plot` call, limits re-verified against the atproto
+lexicons (video cap now 300 MB; no alt cap in the lexicon), and the
+blockers: release 1.1.0 first, and the five tutorial URLs 404 until RTD
+builds `master`. Voice: the writing-style-guide says social posts have no
+measured guidance and to use direct examples, so the thread follows the
+account's own 17 posts (lead emoji, `Docs:`/`Code:` lines, `--` dashes);
+both AI-tell scanners run, rulings recorded at the bottom of POST.md. The
+July clips, the Aug-18 market prototypes and `.omc/` were removed on the
+maintainer's instruction (a copy sat in the session scratchpad at deletion
+time). Render script kept at `scripts/render_bluesky_clips.py`.
+
+Also found on the way: the `market_forecast` tutorial/gallery pages were
+NEVER live on RTD (404 on stable and latest), so the "two 1.0 URLs break"
+premise for the rename was wrong; PR #283's body was corrected.
