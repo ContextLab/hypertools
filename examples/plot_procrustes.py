@@ -1,29 +1,37 @@
 # -*- coding: utf-8 -*-
 """
-==================================================
-Aligning two matrices with the procrustes function
-==================================================
+=======================================
+Aligning two matrices with Procrustes
+=======================================
 
-In this example, we load in some synthetic data, rotate it, and then use the
-procrustes function to get the datasets back in alignment.  The procrustes
-function uses linear transformations to project a source matrix into the
-space of a target matrix.
+The ``spiral`` dataset holds two copies of the same 3-D spiral, one of
+them rotated. Procrustes alignment finds the linear transformation
+(rotation, reflection, and scaling) that projects a source matrix onto a
+target matrix, so the two spirals land on top of each other. The first
+figure shows the two spirals as loaded; the second aligns them with
+``model='Procrustes'`` through `hyp.align`, and the third does the same
+thing inside a single `hyp.plot` call via its ``align`` kwarg.
 """
 
 # Code source: Andrew Heusser
 # License: MIT
 
-# import
 import hypertools as hyp
-from hypertools.align.procrustes import procrustes
 
-# load example data
+# load example data: two copies of a spiral, one rotated
 data = hyp.load('spiral')
-hyp.plot(data, title='Before Alignment')
+hyp.plot(data, title='Before alignment')
 
-# use procrustes to align the data
-source, target = data
-aligned = [procrustes(source, target), target]
+# %%
+# `hyp.align` with the Procrustes model projects every dataset onto the
+# first one (the alignment target; pass ``index=`` to choose another).
+aligned = hyp.align(data, model='Procrustes')
+hyp.plot(aligned, ['-', '--'], title='After alignment (hyp.align)')
 
-# after alignment
-hyp.plot(aligned, ['-','--'], title='After alignment')
+# %%
+# The same alignment can run inside `hyp.plot` with the ``align`` kwarg; the
+# dictionary form passes the model's keyword arguments (here, aligning onto
+# the second spiral instead of the first).
+hyp.plot(data, ['-', '--'],
+         align={'model': 'Procrustes', 'kwargs': {'index': 1}},
+         title='After alignment (align= in hyp.plot)')

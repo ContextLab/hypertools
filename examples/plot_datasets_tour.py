@@ -3,16 +3,17 @@
 A tour of hyp.load's data sources
 ==================================
 
-`hypertools.load` resolves a plain string dataset name against several
-built-in and third-party sources, in order (GH #116, #273): built-in
-example datasets, `scikit-learn <https://scikit-learn.org>`_'s bundled
-datasets, `seaborn <https://seaborn.pydata.org>`_'s example datasets,
-`FiveThirtyEight <https://data.fivethirtyeight.com>`_'s published datasets
-(explicit ``'fivethirtyeight/<slug>'`` prefix), and `Kaggle
-<https://www.kaggle.com>`_ datasets (explicit ``'kaggle/<owner>/<dataset>'``
-prefix, downloaded anonymously via ``kagglehub`` -- no Kaggle account or API
-key required). This example tours all four, loading one small dataset from
-each and plotting it.
+`hypertools.load` resolves a plain string dataset name against five
+sources, in order: HyperTools' own built-in example datasets (used
+throughout the rest of this gallery), then four third-party sources:
+`scikit-learn <https://scikit-learn.org>`_'s bundled datasets, `seaborn
+<https://seaborn.pydata.org>`_'s example datasets, `FiveThirtyEight
+<https://data.fivethirtyeight.com>`_'s published datasets (explicit
+``'fivethirtyeight/<slug>'`` prefix), and `Kaggle <https://www.kaggle.com>`_
+datasets (explicit ``'kaggle/<owner>/<dataset>'`` prefix, downloaded
+anonymously via ``kagglehub`` -- no Kaggle account or API key required).
+This example tours the four third-party sources, loading one small dataset
+from each and plotting it in a 2x2 grid: one panel per source.
 """
 
 # Code source: Contextual Dynamics Laboratory

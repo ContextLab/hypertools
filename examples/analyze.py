@@ -26,7 +26,7 @@ data = hyp.load('weights')
 
 # process the data
 data = hyp.analyze(data, normalize='within', reduce='PCA', ndims=10,
-                align='hyper')
+                align='HyperAlign')
 
 # plot it
 hyp.plot(data)

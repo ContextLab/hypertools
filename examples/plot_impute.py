@@ -8,7 +8,7 @@ Hypertools fills missing (NaN) values via `hypertools.impute` before
 reducing/plotting. This compares two imputers on the `weights_avg` dataset
 after randomly knocking out 10% of its entries -- plus three CONSECUTIVE
 rows where every feature is missing. That fully-missing-row case is the
-motivating example for GH #169: PPCA reconstructs a row from its own
+case that separates the two imputers: PPCA reconstructs a row from its own
 observed features, so a row with NO observed features at all cannot be
 recovered, so PPCA warns and leaves those rows NaN (they are dropped below
 purely so the PPCA panel has something plottable). The Kalman imputer
@@ -37,7 +37,7 @@ flat_inds = np.random.choice(n_rows * n_cols, size=n_missing, replace=False)
 rows, cols = np.unravel_index(flat_inds, (n_rows, n_cols))
 missing[rows, cols] = np.nan
 
-# knock out 3 consecutive fully-missing rows (the GH #169 case)
+# knock out 3 consecutive fully-missing rows
 missing[40:43, :] = np.nan
 
 # impute with PPCA (cannot fill the fully-NaN rows) and Kalman (can)

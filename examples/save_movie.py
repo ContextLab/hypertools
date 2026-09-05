@@ -1,14 +1,16 @@
 # -*- coding: utf-8 -*-
 """
-=============================
+===================
 Saving an animation
-=============================
+===================
 
-To save an animation, simply add the `save_path` kwarg and specify the path
-where you want to save the movie, including the extension.  NOTE: saving to
-`.mp4` (or `.mov`/`.avi`) uses matplotlib's ffmpeg writer, so ffmpeg must be
-installed and on your PATH for those formats; `.gif` and animated `.png`
-exports are written with Pillow and need no external tools.
+To save an animation, add the ``save_path`` kwarg with the path (and file
+extension) you want. Saving to ``.mp4`` (or ``.mov``/``.avi``) uses
+matplotlib's ffmpeg writer, so ffmpeg must be installed and on your PATH
+for those formats; ``.gif`` and animated ``.png`` exports are written with
+Pillow and need no external tools. The data are the 36 hyperaligned
+subjects of the ``weights`` dataset, averaged into two groups of 18, so the
+movie shows two group-average trajectories through the same story.
 """
 
 # sphinx_gallery_thumbnail_path = '_static/thumbnails/sphx_glr_save_movie_thumb.gif'
@@ -16,16 +18,24 @@ exports are written with Pillow and need no external tools.
 # Code source: Andrew Heusser
 # License: MIT
 
-import hypertools as hyp
+import os
+import tempfile
+
 import numpy as np
 
-data = hyp.load('weights', align='hyper')
+import hypertools as hyp
 
-# average the 36 subjects into two equal groups of 18
+# `hyp.load` can run alignment on its way in: align='HyperAlign' hyperaligns
+# the 36 subjects into a shared space as they are loaded (equivalent to
+# calling hyp.align(hyp.load('weights'), model='HyperAlign') yourself), so
+# that averaging across subjects below is meaningful
+data = hyp.load('weights', align='HyperAlign')
+
+# average the 36 aligned subjects into two equal groups of 18
 group1 = np.mean(data[:18], 0)
 group2 = np.mean(data[18:], 0)
 
-import os  # noqa: E402 (sphinx-gallery narrative section, not top-of-file)
-import tempfile  # noqa: E402 (same)
+# animate the two group trajectories and write the movie to disk
 save_path = os.path.join(tempfile.mkdtemp(), 'animation.mp4')
 fig, ani = hyp.plot([group1, group2], animate=True, save_path=save_path)
+print(f'saved {os.path.getsize(save_path) // 1024} KB to {save_path}')

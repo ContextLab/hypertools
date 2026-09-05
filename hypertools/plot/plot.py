@@ -2320,7 +2320,8 @@ def plot(
         Hungarian algorithm (`scipy.optimize.linear_sum_assignment` on
         pairwise distances, so each point travels the shortest total
         distance to its partner in the next cloud -- exactly
-        `examples/plot_shape_morph.py`'s original hand-rolled algorithm,
+        the shape-morph gallery example's original hand-rolled algorithm
+        (now `examples/animate_morph_zoo.py`),
         now built into the library), and eased between clouds with
         smoothstep interpolation. A SINGLE point artist/trace is drawn
         (one per plot, not one per dataset): its color linearly (RGB)

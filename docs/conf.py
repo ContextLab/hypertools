@@ -21,6 +21,8 @@
 import os
 import sys
 
+from sphinx_gallery.sorting import FunctionSortKey
+
 # plotly scraper for sphinx-gallery: renders plotly figures produced by
 # gallery examples to static PNGs. This needs THREE things: plotly, kaleido,
 # and a real Chrome/Chromium that kaleido drives headlessly (kaleido 1.x). The
@@ -393,11 +395,62 @@ def hyperanimation_scraper(block, block_vars, gallery_conf, **kwargs):
     return '\n'.join(rst)
 
 
+# Gallery page order. sphinx-gallery's default (`NumberOfCodeLinesSortKey`)
+# sorts pages by how many code lines they contain, which scatters related
+# pages (the three cluster/missing-data/animation pages end up far apart and
+# a large showcase can land between two one-kwarg reference pages). The
+# explicit list below groups the gallery by topic instead: basics and
+# input formats, then styling, reduction, normalize/align/analyze,
+# clustering, missing data and forecasting, text, animation basics, and the
+# animated showcases last. Any example not listed here sorts by filename
+# after the listed ones, so adding a page never breaks the build.
+GALLERY_ORDER = [
+    # basics and input formats
+    'plot_basic', 'plot_2D', 'plot_dataframe', 'plot_nested_lists',
+    'plot_multiindex', 'plot_geo', 'save_image', 'explore',
+    'plot_interactive_backend',
+    # styling: grouping, legends, labels, color, density, surfaces
+    'plot_hue', 'plot_legend', 'plot_labels', 'plot_colorbar',
+    'plot_multicolored_lines', 'plot_density', 'plot_surface',
+    # dimensionality reduction and data sources
+    'plot_digits', 'plot_autoencoders', 'plot_describe', 'plot_datasaurus',
+    'plot_datasets_tour', 'plot_shapes_zoo',
+    # normalize / align / analyze / pipelines
+    'plot_normalize', 'plot_align', 'plot_procrustes', 'analyze',
+    'plot_apply_model', 'plot_pipelines_return_model',
+    # clustering
+    'plot_clusters', 'plot_mixture_models',
+    # missing data and forecasting
+    'plot_missing_data', 'plot_impute', 'plot_predict',
+    # text
+    'plot_text', 'plot_corpus', 'plot_sotus', 'plot_gensim_text',
+    # animation basics
+    'animate', 'animate_spin', 'animate_trails', 'animate_trails_mix',
+    'save_movie', 'animate_plotly',
+    # animated showcases
+    'plot_story_trajectories', 'animate_morph_zoo', 'animate_surface_morph',
+    'animate_conversation', 'animate_painting_embeddings',
+    'animate_market_sectors', 'animate_weather_decades', 'animate_forecast',
+]
+
+
+def _gallery_order(filename):
+    """Sort key for `within_subsection_order`: position in GALLERY_ORDER,
+    with unlisted examples after the listed ones in filename order."""
+    stem = os.path.splitext(os.path.basename(filename))[0]
+    if stem in GALLERY_ORDER:
+        return (0, GALLERY_ORDER.index(stem), stem)
+    return (1, 0, stem)
+
+
 sphinx_gallery_conf = {
     # path to your examples scripts
     'examples_dirs' : '../examples',
     # path where to save gallery generated examples
     'gallery_dirs'  : 'auto_examples',
+    # order the pages within the gallery by topic (see GALLERY_ORDER)
+    'within_subsection_order': FunctionSortKey(_gallery_order,
+                                               'hypertools GALLERY_ORDER'),
     # Abort on first failure
     'abort_on_example_error': False,
     # Execute code to generate plots

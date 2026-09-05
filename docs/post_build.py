@@ -113,11 +113,9 @@ BUILD_IMAGES_DIR, GALLERY_HTML = find_build_dirs()
 
 # Mapping of PNG to GIF thumbnails that should be replaced
 GIF_REPLACEMENTS = {
-    "sphx_glr_chemtrails_thumb.png": "sphx_glr_chemtrails_thumb.gif",
-    "sphx_glr_animate_MDS_thumb.png": "sphx_glr_animate_MDS_thumb.gif", 
+    "sphx_glr_animate_trails_thumb.png": "sphx_glr_animate_trails_thumb.gif",
     "sphx_glr_animate_spin_thumb.png": "sphx_glr_animate_spin_thumb.gif",
     "sphx_glr_animate_thumb.png": "sphx_glr_animate_thumb.gif",
-    "sphx_glr_precog_thumb.png": "sphx_glr_precog_thumb.gif",
     "sphx_glr_save_movie_thumb.png": "sphx_glr_save_movie_thumb.gif",
     "sphx_glr_animate_conversation_thumb.png": "sphx_glr_animate_conversation_thumb.gif",
     "sphx_glr_animate_market_sectors_thumb.png": "sphx_glr_animate_market_sectors_thumb.gif",

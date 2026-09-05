@@ -6,7 +6,7 @@ Mixing trail styles per dataset
 
 `chemtrails`, `precog`, and `bullettime` each accept a per-dataset list of
 bools instead of a single bool, so different datasets in the same animation
-can show different trail styles (GH #127): a low-opacity trace of the past
+can show different trail styles: a low-opacity trace of the past
 (chemtrails), of the future (precog), or of the entire timeseries at once
 (bullettime -- equivalent to chemtrails AND precog together).
 """

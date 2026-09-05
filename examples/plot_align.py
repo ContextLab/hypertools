@@ -19,7 +19,7 @@ import numpy as np
 
 # load example data
 data = hyp.load('weights')
-data = hyp.align(data, model='hyper')
+data = hyp.align(data, model='HyperAlign')
 
 # average into two equal groups (18 subjects each)
 group1 = np.mean(data[:18], 0)

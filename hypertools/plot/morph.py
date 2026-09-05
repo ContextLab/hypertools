@@ -2,7 +2,8 @@
 """``animate='morph'``: Hungarian-matched point-cloud morphs between
 datasets (maintainer request, 2026-07-06).
 
-Lifted from ``examples/plot_shape_morph.py`` (the original hand-rolled
+Lifted from the shape-morph gallery example (now
+``examples/animate_morph_zoo.py``; the original hand-rolled
 demo) into a reusable, backend-agnostic module: sample an equal number of
 points from each morphing dataset, chain-match consecutive clouds with the
 Hungarian algorithm (``scipy.optimize.linear_sum_assignment`` on

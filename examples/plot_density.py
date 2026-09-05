@@ -6,7 +6,7 @@ Density shading
 
 The `density` kwarg overlays a subtle KDE (kernel density estimate) "glow"
 behind the data: a 2D alpha-ramped heatmap, or a 3D volumetric cloud,
-showing where each dataset's points are concentrated (GH #108, #191).
+showing where each dataset's points are concentrated.
 Density shading is OFF by default (`density=None`) -- pass `density=True`
 for the defaults, or a dict to override `alpha`/`levels`/`grid`/`per_group`.
 """

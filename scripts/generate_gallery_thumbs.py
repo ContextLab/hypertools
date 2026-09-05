@@ -23,8 +23,8 @@ THUMBS = os.path.join(REPO, 'docs', '_static', 'thumbnails')
 PLOTLY_GIF = os.path.join(REPO, 'docs', 'images', 'v1.0-animations',
                           'plotly_spin.gif')
 
-MPL_ANIMS = ['animate', 'animate_MDS', 'animate_spin', 'chemtrails',
-             'precog', 'save_movie',
+MPL_ANIMS = ['animate', 'animate_spin', 'animate_trails', 'save_movie',
+             'plot_story_trajectories',
              # the five 1.1 launch examples (Plan 4 Task 8 Step 6)
              'animate_conversation', 'animate_market_sectors',
              'animate_morph_zoo', 'animate_painting_embeddings',

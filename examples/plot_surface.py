@@ -6,7 +6,7 @@ Surfaces around point clouds
 
 The `surface` kwarg overlays a smooth, lit surface over each dataset's
 convex hull: a filled outline for 2D data, or a shaded, Taubin-smoothed
-3D "blob" for 3D data (GH #109). Pass `surface=True` for sensible
+3D "blob" for 3D data. Pass `surface=True` for sensible
 defaults, or a dict to customize the alpha, color, lighting, and amount
 of smoothing.
 """

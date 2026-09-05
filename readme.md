@@ -64,7 +64,7 @@ HyperTools 1.0 modernizes the toolbox while keeping the familiar API:
   matched, smoothstep-eased), holding on each one along the way; `rotations`
   accepts a per-segment list for independent camera control over each hold
   and transition, and `surface=True` composes with it to morph a lit hull
-  instead of raw points. See `examples/plot_shape_morph.py` and
+  instead of raw points. See `examples/animate_morph_zoo.py` and
   `examples/animate_surface_morph.py`.
 + **More animation styles, and 2-D animation:** in addition to `True`/
   `'parallel'`, `animate='spin'` keeps all the data drawn and spins the

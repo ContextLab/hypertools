@@ -5,7 +5,7 @@ Colorbars
 =============================
 
 The `colorbar` kwarg draws a colorbar reflecting whatever color mapping
-is already in use (GH #100). For a continuous `hue`, the colorbar is a
+is already in use. For a continuous `hue`, the colorbar is a
 continuous gradient spanning the actual value range. For discrete groups
 (categorical `hue`, `cluster`/`n_clusters`, or a plain list of datasets),
 the colorbar is segmented into one block per group, labeled the same way

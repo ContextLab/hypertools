@@ -6,10 +6,10 @@ Fit once, reuse: pipelines and return_model
 Every stage dispatcher (`hyp.manip`, `hyp.normalize`, `hyp.reduce`,
 `hyp.align`, `hyp.cluster`, `hyp.analyze`, `hyp.impute`, `hyp.predict`) and
 `hyp.plot` accept ``return_model=True`` to get back the *fitted* model
-alongside the transformed result (GH #227, #161): a single fitted wrapper
+alongside the transformed result: a single fitted wrapper
 when only one stage ran, or a fitted `hyp.Pipeline` when multiple stages
 ran together (e.g. via the cross-module ``normalize=``/``reduce=``/
-``align=``/``cluster=`` kwargs, GH #138). The fitted model/`Pipeline` can
+``align=``/``cluster=`` kwargs). The fitted model/`Pipeline` can
 then be applied to held-out data via ``.transform()`` -- WITHOUT refitting
 -- so a train/test split, or streaming new data through an established
 projection, only ever fits once.
@@ -42,7 +42,7 @@ test_reduced = model.transform(test)
 print(f'train: {reduced.shape}, test (via .transform): {test_reduced.shape}')
 
 # %% multi-stage return_model: normalize= + align= alongside reduce= makes
-# hyp.reduce run all three stages (canonical order, GH #153) and hands back
+# hyp.reduce run all three stages (canonical order) and hands back
 # a fitted hyp.Pipeline. (Alignment keeps only the rows common to all
 # datasets -- pass equal-length datasets to avoid dropping data.)
 multi_out, pipeline = hyp.reduce(
@@ -53,7 +53,7 @@ print(f'multi-stage output shapes: {[m.shape for m in multi_out]}')
 
 # %% hyp.plot's own return_model bundle exposes a 'pipeline' key that can be
 # fed straight back into pipeline= to replay the exact fitted pipeline on
-# new data (GH #227) -- no need to re-specify normalize=/reduce=/align=
+# new data -- no need to re-specify normalize=/reduce=/align=
 bundle = hyp.plot([train], normalize='across', reduce='PCA', ndims=3,
                    align='HyperAlign', show=False, return_model=True)
 replayed = hyp.plot([test], pipeline=bundle['pipeline'], show=False)

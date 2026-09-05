@@ -176,7 +176,7 @@ def test_plot_cluster_legend_sorted_numerically():
 # --- F13-cluster-005: small-cardinality integer hue is categorical ---
 
 def test_integer_cluster_labels_hue_renders_distinct_colors():
-    # verbatim workflow from examples/plot_clusters2.py: cluster labels
+    # verbatim workflow from examples/plot_clusters.py (hyp.cluster cell): cluster labels
     # passed to hue= must NOT collapse into near-identical adjacent reds
     rng = np.random.default_rng(0)
     data = np.vstack([rng.standard_normal((100, 3)),

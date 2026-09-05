@@ -12,7 +12,7 @@ the canvas, and measures the pixel margin from the nearest inked (non-
 background) pixel to each of the four canvas edges.
 
 Exhaustive per-frame scans (every single frame, not a subsample) of both
-`examples/plot_shape_morph.py`'s call (``animate='morph'``, no surface,
+the morph call that became `examples/animate_morph_zoo.py` (``animate='morph'``, no surface,
 the full 7-shape zoo, 390 frames) and `examples/animate_surface_morph.py`'s
 call (``animate='morph'`` + ``surface=``, 360 frames, cube_scale grown to
 ~1.16 by the union-hull sizing), plus a `cube_scale`~1.44 stress case,
@@ -50,10 +50,10 @@ IGNORES the full-canvas ``ax.set_position([0, 0, 1, 1])`` call in
 defaults to ``clip_on=True`` with its `clip_box` tied to that SAME shrunk
 square, so whenever the projected cube/data is wider than tall (common at
 many rotation angles, and especially for real elongated trajectories like
-`examples/chemtrails.py`'s `weights_avg` data), content is sliced by a
+`examples/animate_trails.py`'s `weights_avg` data), content is sliced by a
 hard vertical cut at the square's left/right edge -- a real defect, not a
 margin/measurement artifact. Confirmed directly: `ax.get_position()`
-after drawing a real `chemtrails.py` render is the shrunk square above
+after drawing a real `animate_trails.py` (chemtrails) render is the shrunk square above
 (not `[0, 0, 1, 1]`), and every `Line3D`/`Line3DCollection` had
 ``clip_on=True`` with a `clip_box` derived from it.
 
@@ -398,7 +398,7 @@ class TestSaveDpiGeometry:
 #    exactly [-1, 1], so the array handed to `_draw`/`animate_plot3D` (the
 #    same array the chemtrail/trail artists draw from) is bounded to
 #    exactly 1.0, not "approximately".
-# 3. Empirically confirmed on the real `examples/chemtrails.py` call
+# 3. Empirically confirmed on the real `examples/animate_trails.py` chemtrails call
 #    (`hyp.load('weights_avg')`, `animate=True, chemtrails=True`): the
 #    `xform` array `_draw` receives has `max(abs(...)) == 1.0` exactly
 #    (901-frame trajectory, both datasets).
@@ -409,7 +409,7 @@ class TestSaveDpiGeometry:
 #    frame) -- there is no clipped/overshooting trail.
 # 5. The ~25px worst-case right margin (at the 198px-wide thumbnail size
 #    sphinx-gallery renders, ~frame 69-100 of 901) is IDENTICAL, at the
-#    same frame, in `precog`/`animate_MDS`/`animate_spin`/
+#    same frame, in `animate_trails` (precog)/`animate` (MDS)/`animate_spin`/
 #    `animate_trails_mix`/`save_movie` -- none of which show any visible
 #    "cut off" -- confirming it is the ordinary camera-rotation cube
 #    margin (proportionally consistent with the ~80px measured at native
@@ -530,13 +530,13 @@ class TestAxesBoxNoClipping:
     margin-only guard (`_assert_healthy` above) already existed and did
     NOT catch this, because it only ever exercised near-isotropic blob
     clouds -- these tests exercise clip_on directly, plus cube-corner
-    containment/ink on a wide, `chemtrails.py`-style trajectory (the
+    containment/ink on a wide, `animate_trails.py`-style trajectory (the
     reported case)."""
 
     @staticmethod
     def _wide_flat_trajectory(n=200, seed=0):
         """A wide, flat, elongated trajectory -- the same shape (long in
-        one axis, thin in the others) as `examples/chemtrails.py`'s real
+        one axis, thin in the others) as `examples/animate_trails.py`'s real
         `weights_avg` data, whose elongated PCA projection is what makes
         its rotated silhouette wider-than-tall at many azimuths."""
         rng = np.random.default_rng(seed)

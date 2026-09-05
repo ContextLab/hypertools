@@ -3,7 +3,7 @@
 Autoencoder reducers
 =============================
 
-`hyp.reduce` supports six torch-backed autoencoder reducers (GH #162):
+`hyp.reduce` supports six torch-backed autoencoder reducers:
 `Autoencoder` (shallow), `SparseAutoencoder`, `DeepAutoencoder`,
 `ConvolutionalAutoencoder`, `SequenceAutoencoder`, and
 `VariationalAutoencoder`. They are used exactly like any other `reduce=`
@@ -11,7 +11,10 @@ model -- by name, with parameters passed via the dict spec -- and use
 the optional ``torch`` extra, which hypertools installs on demand the first
 time one is fit (pre-install it with ``pip install "hypertools[torch]"``).
 This example fits a shallow `Autoencoder` and a `VariationalAutoencoder` on
-the same data and compares them against PCA.
+the same data and compares them against PCA: three 2-D embeddings of a
+noisy spiral manifold embedded in 10-D, with each point colored by its
+position along the spiral, so a reducer that unfolds the manifold shows a
+smooth color gradient.
 """
 
 # Code source: Contextual Dynamics Laboratory
@@ -51,6 +54,8 @@ fig, axes = plt.subplots(1, 3, figsize=(15, 5))
 for ax, (name, out) in zip(
         axes, [('PCA (linear)', pca_out), ('Autoencoder', ae_out),
                ('VariationalAutoencoder', vae_out)]):
-    ax.scatter(out[:, 0], out[:, 1], c=t, cmap='viridis', s=10)
-    ax.set_title(name)
+    # the embeddings are already 2-D, so reduce=None plots them as they are;
+    # hue=t colors each point by its position along the spiral
+    hyp.plot(out, '.', hue=t, palette='viridis', reduce=None, ndims=2,
+             ax=ax, title=name)
 plt.tight_layout()

@@ -338,7 +338,7 @@ def load(
 
     align : str, dict, False, or None
         Alignment model to bring a list of datasets into a shared space. If
-        str, 'hyper' (hyperalignment) or 'SRM' (shared response model). You
+        str, 'HyperAlign' (hyperalignment) or 'SRM' (shared response model). You
         can also pass a dictionary for finer control, where 'model' specifies
         the model and 'kwargs' holds its parameters, e.g.
         align={'model': 'HyperAlign', 'kwargs': {'n_iter': 10}}. If False or

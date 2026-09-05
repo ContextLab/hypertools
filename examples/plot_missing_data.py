@@ -1,46 +1,62 @@
 # -*- coding: utf-8 -*-
 """
-============================================================
-Using the missing_inds function to label interpolated values
-============================================================
+=================================
+Plotting data with missing values
+=================================
 
-If you have data with missing values, Hypertools will try to interpolate them
-using PPCA.  To visualize how well its doing, you can use the missing_inds
-function and then highlight the values that were interpolated.  Here, we
-generated some synthetic data, removed some values, and then plotted the
-original data, data with missing values and highlighted the missing datapoints
-with stars.
+When a dataset contains missing (NaN) entries, `hyp.plot` fills them in
+before reducing and plotting, using probabilistic principal components
+analysis (PPCA) by default. Here a random walk through 10 dimensions is
+generated, some of its entries are removed, and the original and imputed
+versions are plotted together. The first figure lets the imputation happen
+implicitly inside `hyp.plot`; the second uses `hyp.tools.missing_inds` to
+find the rows that contained missing values and marks them with stars, so
+you can see exactly which points were interpolated.
 """
 
 # Code source: Andrew Heusser
 # License: MIT
 
-# import
-from scipy.linalg import toeplitz
-import numpy as np
 from copy import copy
+
+import numpy as np
+from scipy.linalg import toeplitz
+
 import hypertools as hyp
 
-# simulate data (seeded so the figure is reproducible)
+# simulate a 10-D random walk (seeded so the figures are reproducible)
 np.random.seed(123)
 K = 10 - toeplitz(np.arange(10))
 data1 = np.cumsum(np.random.multivariate_normal(np.zeros(10), K, 250), axis=0)
-data2 = copy(data1)
 
-# randomly remove 5% of the data
-missing = .05
-inds = [(i,j) for i in range(data1.shape[0]) for j in range(data1.shape[1])]
-missing_data = [inds[i] for i in np.random.choice(len(inds), int(len(inds)*missing), replace=False)]
-for i,j in missing_data:
-    data2[i,j]=np.nan
 
-# reduce the data
-data1_r,data2_r = hyp.reduce([data1, data2], ndims=3)
+def remove_entries(data, fraction):
+    """Return a copy of `data` with `fraction` of its entries set to NaN."""
+    missing = copy(data)
+    n_missing = int(missing.size * fraction)
+    flat = np.random.choice(missing.size, n_missing, replace=False)
+    rows, cols = np.unravel_index(flat, missing.shape)
+    missing[rows, cols] = np.nan
+    return missing
 
-# pull out missing inds
-missing_inds = hyp.tools.missing_inds(data2)
-missing_data = data2_r[missing_inds, :]
 
-# plot
-hyp.plot([data1_r, data2_r, missing_data], ['-', '--', '*'],
+# %%
+# Implicit imputation: remove 10% of the entries and plot both versions.
+# `hyp.plot` fills the NaNs with PPCA on its way to the figure, so the dotted
+# (imputed) trajectory tracks the solid (original) one closely.
+data2 = remove_entries(data1, 0.10)
+hyp.plot([data1, data2], linestyle=['-', ':'], legend=['Original', 'PPCA'])
+
+# %%
+# Marking the interpolated points: remove 5% of the entries, reduce both
+# datasets to 3-D (which imputes the missing values), then use
+# `hyp.tools.missing_inds` to pull out the rows that had missing values and
+# draw them as stars on top of the two trajectories.
+data3 = remove_entries(data1, 0.05)
+data1_r, data3_r = hyp.reduce([data1, data3], ndims=3)
+
+missing_inds = hyp.tools.missing_inds(data3)
+missing_points = data3_r[missing_inds, :]
+
+hyp.plot([data1_r, data3_r, missing_points], ['-', '--', '*'],
          legend=['Full', 'Missing', 'Missing Points'])

@@ -1,7 +1,7 @@
 # Animated Thumbnails Fix
 
 ## Problem
-The gallery thumbnails for animated examples (chemtrails, animate_MDS, animate_spin, animate, precog, save_movie) were not displaying as animated GIFs. Instead, they showed static PNG thumbnails or placeholder images.
+The gallery thumbnails for animated examples (animate_trails, animate_spin, animate, save_movie) were not displaying as animated GIFs. Instead, they showed static PNG thumbnails or placeholder images.
 
 ## Root Cause
 Sphinx-gallery ignores the `sphinx_gallery_thumbnail_path` directive when it points to GIF files and generates PNG thumbnails instead. The GIF files are properly stored in version control but need to be manually copied and HTML references updated after the build.
@@ -53,11 +53,9 @@ python post_build.py
 ## Files Involved
 
 ### Animated Examples with Custom Thumbnails
-- `examples/chemtrails.py` → `sphx_glr_chemtrails_thumb.gif`
-- `examples/animate_MDS.py` → `sphx_glr_animate_MDS_thumb.gif`  
+- `examples/animate_trails.py` → `sphx_glr_animate_trails_thumb.gif`
 - `examples/animate_spin.py` → `sphx_glr_animate_spin_thumb.gif`
 - `examples/animate.py` → `sphx_glr_animate_thumb.gif`
-- `examples/precog.py` → `sphx_glr_precog_thumb.gif`
 - `examples/save_movie.py` → `sphx_glr_save_movie_thumb.gif`
 
 ### Static Examples with Custom Thumbnails

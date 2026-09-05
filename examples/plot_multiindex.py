@@ -7,7 +7,7 @@ MultiIndex DataFrames
 A DataFrame with a row `MultiIndex` (2 or more levels) is automatically
 expanded by `hyp.plot` into one "leaf" trace per unique index combination,
 plus one thicker, more opaque "mean" trace per level of grouping above the
-leaves (GH #95). Color is assigned by the top-level index value; leaves
+leaves. Color is assigned by the top-level index value; leaves
 are thin and faint, and each successive level of averaging gets a thicker
 line and higher alpha, up to a fully opaque top-level mean that also
 carries the legend label.
