@@ -54,6 +54,18 @@ _FONT_FILE_EXTS = ('.ttf', '.otf', '.ttc')
 # identically everywhere. It covers Latin/Greek/Cyrillic -- broader scripts
 # (CJK, emoji, Indic) are far too large to bundle and are reached through the
 # per-glyph fallback stack below instead.
+#
+# Two faces are bundled -- NotoSans-Regular.ttf and NotoSans-Bold.ttf -- both
+# Noto Sans Version 2.008, from the SAME upstream file (byte-identical to the
+# already-vendored Regular; googlefonts/noto-fonts, the archived repo named
+# in fonts/README.md), so `fontweight='bold'` resolves to a real bold face
+# instead of silently falling back to Regular (GH #285):
+#   Regular: https://raw.githubusercontent.com/googlefonts/noto-fonts/main/hinted/ttf/NotoSans/NotoSans-Regular.ttf
+#            sha256 b85c38ecea8a7cfb39c24e395a4007474fa5a4fc864f6ee33309eb4948d232d5
+#   Bold:    https://raw.githubusercontent.com/googlefonts/noto-fonts/main/hinted/ttf/NotoSans/NotoSans-Bold.ttf
+#            sha256 c976e4b1b99edc88775377fcc21692ca4bfa46b6d6ca6522bfda505b28ff9d6a
+# Both ship under the SIL Open Font License 1.1 (fonts/OFL.txt); see
+# fonts/README.md for full provenance.
 _BUNDLED_FAMILY = 'Noto Sans'
 _BUNDLED_FONT_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
