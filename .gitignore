@@ -47,3 +47,4 @@ notes/bluesky-launch/
 # AGENTS.md too, because `graft tests` walks the filesystem, not git.
 AGENTS.md
 .omo/
+notes/colab/
