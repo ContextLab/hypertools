@@ -14,14 +14,16 @@ This example fits a shallow `Autoencoder` and a `VariationalAutoencoder` on
 the same data and compares them against PCA: three 2-D embeddings of a
 noisy spiral manifold embedded in 10-D, with each point colored by its
 position along the spiral, so a reducer that unfolds the manifold shows a
-smooth color gradient.
+smooth color gradient. Passing `reduce=` a LIST gives one panel per reducer
+(`panels=True`), so all three embeddings are computed and drawn by a single
+`hyp.plot` call instead of three separate `hyp.reduce` calls plus a
+hand-built grid.
 """
 
 # Code source: Contextual Dynamics Laboratory
 # License: MIT
 
 import numpy as np
-import matplotlib.pyplot as plt
 import hypertools as hyp
 
 rng = np.random.default_rng(0)
@@ -42,20 +44,12 @@ ae_kwargs = {'epochs': 30, 'batch_size': 32, 'random_state': 0}
 vae_kwargs = {'epochs': 100, 'batch_size': 32, 'random_state': 0,
               'kl_weight': 0.001}
 
-pca_out = hyp.reduce(data, reduce='PCA', ndims=2)
-ae_out = hyp.reduce(
-    data, reduce={'model': 'Autoencoder', 'kwargs': ae_kwargs}, ndims=2)
-vae_out = hyp.reduce(
-    data,
-    reduce={'model': 'VariationalAutoencoder', 'kwargs': vae_kwargs},
-    ndims=2)
-
-fig, axes = plt.subplots(1, 3, figsize=(15, 5))
-for ax, (name, out) in zip(
-        axes, [('PCA (linear)', pca_out), ('Autoencoder', ae_out),
-               ('VariationalAutoencoder', vae_out)]):
-    # the embeddings are already 2-D, so reduce=None plots them as they are;
-    # hue=t colors each point by its position along the spiral
-    hyp.plot(out, '.', hue=t, palette='viridis', reduce=None, ndims=2,
-             ax=ax, title=name)
-plt.tight_layout()
+# reduce=[...] draws one panel per reducer, each fitting its own full
+# pipeline on `data`; hue=t colors each point (in every panel) by its
+# position along the spiral. panels=(1, 3) matches the original one-row
+# layout (True/'auto' would pick a squarer 2x2 grid instead).
+fig = hyp.plot(
+    data, '.', hue=t, palette='viridis', ndims=2, panels=(1, 3),
+    reduce=['PCA', {'model': 'Autoencoder', 'kwargs': ae_kwargs},
+            {'model': 'VariationalAutoencoder', 'kwargs': vae_kwargs}],
+    title=['PCA (linear)', 'Autoencoder', 'VariationalAutoencoder'])

@@ -22,7 +22,6 @@ reasonably smooth timeseries -- its panel keeps every row.
 
 # import
 import numpy as np
-import matplotlib.pyplot as plt
 import hypertools as hyp
 
 # load example data and knock out some values
@@ -49,10 +48,9 @@ kalman_imputed = hyp.impute(missing, model='Kalman')
 # reduce/plot for that timepoint). Kalman fills every row, so nothing to drop.
 ppca_plottable = ppca_imputed.dropna(axis=0, how='all')
 
-# plot side by side
-fig, axes = plt.subplots(1, 2, subplot_kw={'projection': '3d'})
-hyp.plot(ppca_plottable, ax=axes[0],
-         title=f'PPCA ({n_rows - len(ppca_plottable)} unfillable rows dropped)')
-hyp.plot(kalman_imputed, ax=axes[1], title='Kalman (all rows filled)')
-plt.tight_layout()
-plt.show()
+# plot side by side: one panel per imputed dataset, sharing a single reduce
+# fit across both (panels=True)
+fig = hyp.plot(
+    [ppca_plottable, kalman_imputed], panels=True,
+    title=[f'PPCA ({n_rows - len(ppca_plottable)} unfillable rows dropped)',
+           'Kalman (all rows filled)'])

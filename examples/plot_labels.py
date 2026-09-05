@@ -4,9 +4,10 @@
 Labeling your datapoints
 =============================
 
-This is an example of how to use the `label(s)` kwarg, which must be a list the
-length of the number of datapoints (rows) you have in the matrix.  Here, we
-are simply labeling the first datapoint for each matrix in the list.
+This is an example of how to use the `labels=` kwarg. Passed one entry per
+DATASET (rather than one per row), each dataset is annotated once, at the
+row named by `label_anchor=` -- here `label_anchor='first'` (the default)
+labels the first datapoint of each matrix in the list.
 """
 
 # Code source: Andrew Heusser
@@ -18,16 +19,9 @@ import hypertools as hyp
 # load example data
 data = hyp.load('weights_sample')
 
-# simulate labels
-labels=[]
-for idx,i in enumerate(data):
-    tmp=[]
-    for iidx,ii in enumerate(i):
-        if iidx==0:
-            tmp.append('Subject ' + str(idx))
-        else:
-            tmp.append(None)
-    labels.append(tmp)
+# one label per dataset -- 'Subject 0', 'Subject 1', ... -- anchored to the
+# first row of each dataset
+labels = [f'Subject {idx}' for idx in range(len(data))]
 
 # plot
-hyp.plot(data, fmt='.', labels=labels)
+hyp.plot(data, fmt='.', labels=labels, label_anchor='first')

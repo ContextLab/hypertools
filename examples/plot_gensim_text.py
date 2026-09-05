@@ -22,7 +22,6 @@ point in the right-hand panel.
 # Code source: Contextual Dynamics Laboratory
 # License: MIT
 
-import matplotlib.pyplot as plt
 import hypertools as hyp
 
 docs = [
@@ -38,20 +37,25 @@ docs = [
 ]
 topics = (['pets'] * 3) + (['finance'] * 3) + (['astronomy'] * 3)
 
-fig, axes = plt.subplots(1, 2, figsize=(12, 5),
-                         subplot_kw={'projection': '3d'})
+# These two panels differ in vectorizer=/semantic= -- upstream embedding
+# choices that panels=/reduce=[...] cannot express (both only vary the
+# final reduce= step of ONE shared pipeline, not the text-embedding stage
+# itself), so we keep the explicit-axes form, via hyp.subplots (a thin
+# wrapper over plt.subplots that pre-sets the 3-D projection and hands back
+# a flat axes array).
+fig, axes = hyp.subplots(1, 2, size=[12, 5])
 
 # gensim Word2Vec: average trained word vectors per document (no
 # semantic-stage model -- semantic=None). corpus=docs trains the model on
 # these documents themselves.
 hyp.plot(docs, 'o', vectorizer='Word2Vec', semantic=None, corpus=docs,
-         hue=topics, ax=axes[0],
+         hue=topics, ax=axes[0], show=False,
          title='gensim Word2Vec (averaged word vectors)')
 
 # CountVectorizer -> gensim LdaModel: bag-of-words counts, then topic
 # proportions from a Latent Dirichlet Allocation model
 hyp.plot(docs, 'o', vectorizer='CountVectorizer',
          semantic={'model': 'LdaModel', 'kwargs': {'num_topics': 3}},
-         corpus=docs, hue=topics, ax=axes[1],
+         corpus=docs, hue=topics, ax=axes[1], show=False,
          title='CountVectorizer + gensim LdaModel')
-plt.tight_layout()
+fig.tight_layout()

@@ -19,7 +19,6 @@ from each and plotting it in a 2x2 grid: one panel per source.
 # Code source: Contextual Dynamics Laboratory
 # License: MIT
 
-import matplotlib.pyplot as plt
 import hypertools as hyp
 
 # Three of these four sources (seaborn, FiveThirtyEight, Kaggle) fetch over
@@ -53,16 +52,22 @@ for title, loader, clean in sources:
 # automatically by hyp.plot. The rows of these tabular datasets are
 # unordered samples, so each is drawn as points ('.') rather than as a
 # connected line.
+#
+# These four sources are unrelated domains with different column counts and
+# meanings (iris measurements, penguin measurements, Bechdel-test numeric
+# columns, ...), so there is no single shared pipeline fit that would make
+# sense across them -- hyp.plot's panels= draws one dataset per panel through
+# ONE shared fit, which requires a common column space. We keep the
+# explicit-axes form instead, via hyp.subplots (a thin wrapper over
+# plt.subplots that pre-sets the 3-D projection and hands back a flat axes
+# array), and fit each source's own pipeline independently as before.
 n = max(len(loaded), 1)
 ncols = 2 if n > 1 else 1
 nrows = (n + ncols - 1) // ncols
-fig, axes = plt.subplots(nrows, ncols,
-                         subplot_kw={'projection': '3d'},
-                         figsize=(5 * ncols, 5 * nrows),
-                         squeeze=False)
-for ax in axes.flat:
+fig, axes = hyp.subplots(nrows, ncols, size=[5 * ncols, 5 * nrows])
+for ax in axes:
     ax.set_axis_off()  # hide any unused panels
-for (title, data), ax in zip(loaded, axes.flat):
+for (title, data), ax in zip(loaded, axes):
     ax.set_axis_on()
-    hyp.plot(data, '.', ax=ax, title=title)
-plt.tight_layout()
+    hyp.plot(data, '.', ax=ax, title=title, show=False)
+fig.tight_layout()
