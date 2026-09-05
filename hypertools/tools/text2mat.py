@@ -1,5 +1,20 @@
+"""Text-to-matrix conversion: `text2mat()` and the sklearn -> gensim ->
+HuggingFace vectorizer=/semantic= name-resolution order (GH #198).
+
+Hugging Face model path (`_hf_fallback_model`/`_HFTextModel.transform`):
+before the lazy `sentence_transformers` import, this module sets
+`HF_HUB_DISABLE_PROGRESS_BARS=1`, `HF_HUB_VERBOSITY=error`, and
+`TOKENIZERS_PARALLELISM=false` via `os.environ.setdefault(...)` (GH #285).
+`huggingface_hub`/`transformers`/`sentence_transformers` read these
+variables at import time, so callers no longer need to set them by hand
+before importing hypertools (as the tutorial notebooks used to) -- and a
+caller's own explicit setting always wins, since `setdefault` never
+overwrites an already-set value.
+"""
+
 import numpy as np
 import inspect
+import os
 import warnings
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
@@ -129,6 +144,16 @@ def _hf_fallback_model(name):
             scipy.sparse.csr_matrix
                 The embedded documents as a sparse matrix.
             """
+            # `huggingface_hub`/`transformers`/`sentence_transformers` read
+            # these three environment variables AT IMPORT TIME, so they must
+            # be set immediately before the lazy import below -- setting
+            # them any later (e.g. inside `apply_text_model`, after the
+            # import) is a no-op (GH #285). `setdefault` leaves a user's own
+            # explicit setting untouched. Values match the ones every
+            # tutorial notebook used to set by hand before this fix.
+            os.environ.setdefault('HF_HUB_DISABLE_PROGRESS_BARS', '1')
+            os.environ.setdefault('HF_HUB_VERBOSITY', 'error')
+            os.environ.setdefault('TOKENIZERS_PARALLELISM', 'false')
             from .._shared.lazy_import import lazy_import
             lazy_import('sentence_transformers', purpose=f'the {name!r} text model')   # [text]
             from datawrangler.zoo.text import apply_text_model
