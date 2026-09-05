@@ -59,7 +59,6 @@ import urllib.request
 from typing import NamedTuple
 
 import numpy as np
-import pandas as pd
 
 import hypertools as hyp
 
@@ -105,7 +104,7 @@ def fetch_temperatures():
             os.replace(dest + '.part', dest)   # never a truncated cache
         # the archive carries '<City>' (absolute) and '<City>_anomaly'
         # columns; its complete rows end in August 2013
-        recent = pd.read_csv(dest).dropna().tail(N_MONTHS)
+        recent = hyp.load(dest).dropna().tail(N_MONTHS)
         return [recent[cities].to_numpy(float)
                 for cities in REGIONS.values()]
     except Exception as error:
