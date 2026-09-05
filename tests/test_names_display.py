@@ -91,8 +91,13 @@ class _FakeShell:
 
 def _count_shows(monkeypatch):
     import plotly.io as pio
+    from hypertools.plot import plotly_backend
     calls = {'n': 0}
     monkeypatch.setattr(pio, 'show', lambda fig, *a, **k: calls.__setitem__('n', calls['n'] + 1))
+    # plotly's own display hook calls pio.show only when a default renderer
+    # is configured; headless CI has none, so pin a mime renderer for the test
+    monkeypatch.setattr(pio.renderers, 'default', 'json')
+    monkeypatch.setattr(plotly_backend, '_PENDING_DISPLAY', [])
     return calls
 
 
@@ -133,8 +138,11 @@ def test_plotly_two_figures_in_one_cell_display_in_creation_order(monkeypatch):
     pytest.importorskip('plotly')
     import IPython
     import plotly.io as pio
+    from hypertools.plot import plotly_backend
     order = []
     monkeypatch.setattr(pio, 'show', lambda fig, *a, **k: order.append(fig))
+    monkeypatch.setattr(pio.renderers, 'default', 'json')
+    monkeypatch.setattr(plotly_backend, '_PENDING_DISPLAY', [])
     shell = _FakeShell()
     monkeypatch.setattr(IPython, 'get_ipython', lambda: shell)
     a = hyp.plot(_datasets(1), backend='plotly', show=True)

@@ -5,10 +5,15 @@ demand, from the ONE declaration of the extras in pyproject.toml.
 import os
 import shutil
 import subprocess
+import re
 import sys
-import tomllib
 
 import pytest
+
+try:
+    import tomllib                      # Python 3.11+
+except ImportError:                     # 3.10: parse the one table we need
+    tomllib = None
 
 from hypertools._shared import lazy_import as L
 from tests._netskip import skip_on_transient_network
@@ -17,8 +22,34 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def _pyproject_extras():
-    with open(os.path.join(REPO, 'pyproject.toml'), 'rb') as f:
-        return tomllib.load(f)['project']['optional-dependencies']
+    path = os.path.join(REPO, 'pyproject.toml')
+    if tomllib is not None:
+        with open(path, 'rb') as f:
+            return tomllib.load(f)['project']['optional-dependencies']
+    # Python 3.10 has no tomllib: read the [project.optional-dependencies]
+    # table by hand. Its values are `name = ["spec", ...]` lists; comments and
+    # bracketed extras such as "pydata-wrangler[hf]" both contain `]`, so
+    # strip comments first and then walk each list tracking quotes and depth.
+    with open(path, encoding='utf-8') as f:
+        text = f.read()
+    table = text.split('[project.optional-dependencies]', 1)[1]
+    table = re.sub(r'#[^\n]*', '', table)
+    extras = {}
+    for m in re.finditer(r'^([\w-]+)\s*=\s*\[', table, re.M):
+        i, depth, in_str = m.end(), 1, False
+        while depth:
+            ch = table[i]
+            if ch == '"':
+                in_str = not in_str
+            elif not in_str and ch == '[':
+                depth += 1
+            elif not in_str and ch == ']':
+                depth -= 1
+            i += 1
+        extras[m.group(1)] = re.findall(r'"([^"]+)"', table[m.end():i - 1])
+        if re.match(r'\s*\n\[', table[i:]):          # next table starts
+            break
+    return extras
 
 
 def test_extra_requirements_are_read_from_pyproject_not_a_second_list():

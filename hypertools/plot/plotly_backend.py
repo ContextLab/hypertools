@@ -1763,7 +1763,11 @@ def _display_at_cell_end(fig):
     if shell is None or not hasattr(shell, 'events'):
         fig.show()
         return
-    if not _PENDING_DISPLAY:
+    # register on THIS shell unless already registered (keyed on the shell's
+    # own callback list, not on the queue being empty: a callback that raised
+    # in an earlier cell must not leave later cells unregistered)
+    callbacks = getattr(shell.events, 'callbacks', {})
+    if _flush_pending_display not in callbacks.get('post_execute', []):
         shell.events.register('post_execute', _flush_pending_display)
     _PENDING_DISPLAY.append(fig)
 
