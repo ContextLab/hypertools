@@ -135,7 +135,10 @@ def test_the_market_section_describes_the_notebook_it_links():
             'market_sectors.ipynb builds a MultiIndex; retitle its '
             'docs/tutorials.rst section to the hierarchy framing')
     else:
-        assert "align='HyperAlign'" in code, (
+        # the notebook hyperaligns either through plot's align= or through
+        # hyp.align(..., model='HyperAlign') (the native call it uses since
+        # 27d00387, 2026-09-05)
+        assert re.search(r"(align|model)='HyperAlign'", code), (
             'the market notebook neither builds a hierarchy nor hyperaligns; '
             'this test does not know what its section should say')
         assert 'hyperalign' in section and 'mean' in section, (
