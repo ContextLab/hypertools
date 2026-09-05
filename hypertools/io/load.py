@@ -172,12 +172,17 @@ def load(
         legacy=False,
         split=None,
         streaming=False,
-        trust=False
+        trust=False,
+        cache=False,
+        offline=False,
+        decode_labels=True,
+        **source_kwargs
 ):
     """
     Load data from a built-in example dataset, a scikit-learn or seaborn
-    named dataset, a local file, a Hugging Face dataset, Google Drive,
-    Dropbox, or any URL
+    named dataset, a built-in synthetic dataset, a web source
+    (Wikipedia/Yahoo Finance/SEC), a local file, a Hugging Face dataset,
+    Google Drive, Dropbox, or any URL
 
     A string is interpreted by trying, in order:
 
@@ -194,7 +199,10 @@ def load(
        ``seaborn.get_dataset_names()`` (e.g. ``'penguins'``, ``'tips'``,
        ``'titanic'``), loaded via ``seaborn.load_dataset()`` and returned
        unchanged. This is a network lookup (cached per-process); if it
-       can't reach the seaborn-data repo, this step is skipped
+       can't reach the seaborn-data repo, this step is skipped. (A
+       registered synthetic dataset name -- step 6 below -- is actually
+       resolved here, ahead of this lookup, so it never pays for the
+       network round trip; no synthetic name collides with a seaborn one)
     4. a FiveThirtyEight dataset, explicit prefix
        ``'fivethirtyeight/<slug>'`` (e.g. ``'fivethirtyeight/bechdel'``),
        where ``<slug>`` is the dataset's folder in
@@ -207,22 +215,50 @@ def load(
        ``kagglehub.dataset_download`` (the ``[kaggle]`` extra installs
        itself on first use).
        Every CSV/TSV file in the dataset is loaded the same way as step 4
-    6. a path to a local file (.geo/pickle, .npy/.npz, .csv/.tsv/.txt,
+    6. a built-in **synthetic** dataset name -- generated on the spot,
+       never fetched, and fully reproducible given ``random_state=``
+       (``seed=`` is accepted as an alias). The registered names and their
+       keyword arguments are the single source of truth in
+       :data:`hypertools.io.sources.SYNTHETIC_DATASETS` (see also
+       :func:`hypertools.io.sources.synthetic_dataset_docs`); as of this
+       writing they are:
+
+       * ``random_walk`` -- Gaussian random walk (kwargs: ``n_samples``,
+         ``n_features``, ``step``, ``drift``)
+       * ``helix`` -- 3D helix (kwargs: ``n_samples``, ``turns``,
+         ``noise``, ``radius``, ``pitch``)
+       * ``lorenz`` -- Lorenz attractor trajectory (kwargs: ``n_samples``,
+         ``sigma``, ``rho``, ``beta``, ``dt``, ``x0``)
+       * ``blobs``, ``moons``, ``swiss_roll``, ``s_curve`` -- thin
+         wrappers around the matching ``sklearn.datasets.make_*``
+         function, returned as a DataFrame with a ``'target'`` (or, for
+         the manifold datasets, a position) column
+
+       Every synthetic dataset also accepts ``n_datasets=<int>`` (default
+       1): when greater than 1, the result is a *list* of that many
+       independently seeded datasets -- one hypertools multi-dataset, the
+       same shape ``hypertools.load('weights')`` returns
+    7. a web source with an explicit prefix -- ``'wikipedia:<Title>'``
+       (kwargs: ``lang``, ``intro``, ``timeout``), ``'yahoo:<TICKER>'``
+       (kwargs: ``start``, ``end``, ``interval``, ``timeout``), or
+       ``'sec:<TICKER>'`` (kwargs: ``concept``, ``timeout``) -- see
+       :func:`hypertools.io.sources.web_source` for details on each
+    8. a path to a local file (.geo/pickle, .npy/.npz, .csv/.tsv/.txt,
        .json, .parquet, .mat, .xlsx/.xls; gzip-compressed variants (.gz)
        are decompressed transparently). Files with no extension are
        parsed by content sniffing; files with any other extension raise
        an error unless their content matches a recognized binary format
        (pickle/npy/zip)
-    7. a Hugging Face dataset id such as ``'scikit-learn/iris'``
+    9. a Hugging Face dataset id such as ``'scikit-learn/iris'``
        (pass ``streaming=True`` for a streaming dataset, which can be
        passed straight to :func:`hypertools.plot`)
-    8. a Google Sheets URL (``docs.google.com/spreadsheets/d/<id>``),
-       loaded via its CSV export
-    9. a Google Drive URL or bare file id (large files behind Drive's
-       "can't scan this file for viruses" interstitial are followed
-       automatically)
-    10. a Dropbox URL or shared-link path
-    11. any other URL, with or without an ``https://`` scheme
+    10. a Google Sheets URL (``docs.google.com/spreadsheets/d/<id>``),
+        loaded via its CSV export
+    11. a Google Drive URL or bare file id (large files behind Drive's
+        "can't scan this file for viruses" interstitial are followed
+        automatically)
+    12. a Dropbox URL or shared-link path
+    13. any other URL, with or without an ``https://`` scheme
 
     .. note::
         Precedence: a built-in example dataset name (step 1) always wins,
@@ -233,18 +269,28 @@ def load(
         (columns like ``'sepal_length'``), since both define an ``'iris'``
         name. Because these resolvers run before local-file resolution, a
         local file whose name (without an extension) matches a
-        scikit-learn or seaborn dataset name is shadowed -- pass a path
-        with an extension, or an absolute/relative path containing a
-        ``/``, to force local-file resolution.
+        scikit-learn, seaborn, or synthetic dataset name is shadowed --
+        pass a path with an extension, or an absolute/relative path
+        containing a ``/``, to force local-file resolution.
 
-        The ``'fivethirtyeight/'`` and ``'kaggle/'`` prefixes (steps 4-5)
-        are explicit: a name starting with one of them is always treated
-        as that source, so a same-named relative local path (e.g. a local
+        The ``'fivethirtyeight/'``, ``'kaggle/'``, ``'wikipedia:'``,
+        ``'yahoo:'`` and ``'sec:'`` prefixes (steps 4-5 and 7) are
+        explicit: a name starting with one of them is always treated as
+        that source, so a same-named relative local path (e.g. a local
         file ``fivethirtyeight/bechdel``) is shadowed -- prepend ``'./'``
         to force local-file resolution. For the same reason, a prefixed
         name that then fails (unknown slug/dataset id, no CSV/TSV files
-        found, malformed id) raises immediately instead of falling
-        through to the remaining steps.
+        found, malformed id, unreachable web source) raises immediately
+        instead of falling through to the remaining steps.
+
+        Any keyword argument that isn't ``reduce``/``ndims``/``align``/
+        ``normalize``/``legacy``/``split``/``streaming``/``trust``/
+        ``cache``/``offline``/``decode_labels`` is collected into
+        ``**source_kwargs`` and handed to whichever of the synthetic
+        (step 6) or web (step 7) resolvers matches; passing one with any
+        other kind of source -- including already-loaded data -- raises
+        ``TypeError`` naming it, so a misspelled keyword can't be
+        silently dropped.
 
     Examples
     --------
@@ -262,6 +308,13 @@ def load(
     >>> weights = hypertools.load('weights')  # built-in name always wins
     >>> type(weights).__name__, len(weights)
     ('list', 36)
+    >>> walk = hypertools.load('random_walk', n_samples=40, n_features=5,
+    ...                        random_state=0)  # a synthetic dataset
+    >>> walk.shape
+    (40, 5)
+    >>> hypertools.load('blobs', n_samples=30, centers=3,
+    ...                 random_state=1).columns.tolist()
+    ['dim_0', 'dim_1', 'target']
 
     A **list of strings** resolves element-wise and returns a list of
     datasets that can be passed to any hypertools function.
@@ -411,6 +464,41 @@ def load(
         created or trust.
         Local files are never subject to this policy.
 
+    cache : bool
+        Any URL/Google-Sheets/Drive/Dropbox download (steps 9-13) only:
+        when True, the downloaded bytes are stored on disk (under
+        ``hypertools.io.sources.url_cache_dir()``, override with the
+        ``HYPERTOOLS_URL_CACHE`` environment variable) and reused on a
+        later call instead of re-downloading. Default False -- matching
+        ``trust``, hypertools does not write to disk unless asked.
+
+    offline : bool
+        Same sources as ``cache``: when True, read ONLY from that on-disk
+        cache and never open a connection, raising
+        :class:`~hypertools.io.sources.HypertoolsOfflineError` (a
+        subclass of ``HypertoolsIOError``) naming the cache path when the
+        source was never cached. Load the source once with ``cache=True``
+        while online to populate the cache first.
+
+    decode_labels : bool
+        Hugging Face datasets only: by default (True), any top-level
+        ``ClassLabel`` feature column is decoded from its integer codes to
+        the string names the dataset itself defines (matching what a
+        streaming load already exposes). Pass ``decode_labels=False`` to
+        keep the raw integer codes.
+
+    **source_kwargs
+        Extra keyword arguments for a built-in **synthetic** dataset name
+        (step 6, e.g. ``hypertools.load('random_walk', n_samples=500,
+        random_state=0)``) or an explicit web-source prefix (step 7, e.g.
+        ``hypertools.load('yahoo:AAPL', start='2020-01-01')``). See those
+        steps above, :data:`hypertools.io.sources.SYNTHETIC_DATASETS` and
+        :func:`hypertools.io.sources.web_source` for the accepted names.
+        Passing any of these with a dataset that doesn't consume them
+        (a built-in/scikit-learn/seaborn/fivethirtyeight/kaggle/local-file
+        source, or already-loaded data) raises ``TypeError`` naming the
+        unexpected keyword(s) rather than silently ignoring them.
+
     Returns
     -------
     data : numpy array, DataFrame, list, or IterableDataset
@@ -422,14 +510,27 @@ def load(
     if _is_loaded(dataset):
         # already-loaded data (DataFrame / ndarray / list of those) passes
         # through unchanged; a list of arrays is ONE multi-dataset, kept
-        # together so reduce/align/normalize below treat it as a unit
+        # together so reduce/align/normalize below treat it as a unit.
+        # source_kwargs (synthetic-dataset / web-source keyword arguments)
+        # cannot apply to data that is already in memory -- silently
+        # dropping them would hide a typo, so this raises instead.
+        if source_kwargs:
+            raise TypeError(
+                'hypertools.load: unexpected keyword argument(s) '
+                f'{sorted(source_kwargs)} -- these are only accepted for '
+                'named/path/URL sources (e.g. a synthetic dataset name or '
+                'a "wikipedia:"/"yahoo:"/"sec:" source), not for '
+                'already-loaded data (a DataFrame/ndarray/list of those '
+                'was passed)')
         geo_data = dataset
     elif isinstance(dataset, (list, tuple)):
         # anything else list-shaped resolves element-wise (names, paths,
         # URLs, and in-memory data may be mixed) to a list of datasets
         return [load(d, reduce=reduce, ndims=ndims, align=align,
                      normalize=normalize, legacy=legacy, split=split,
-                     streaming=streaming, trust=trust)
+                     streaming=streaming, trust=trust, cache=cache,
+                     offline=offline, decode_labels=decode_labels,
+                     **source_kwargs)
                 for d in dataset]
     elif not isinstance(dataset, (str, os.PathLike)):
         raise TypeError(
@@ -440,7 +541,9 @@ def load(
     else:
         dataset = os.fspath(dataset)
         geo_data = _resolve(dataset, legacy=legacy, split=split,
-                            streaming=streaming, trust=trust)
+                            streaming=streaming, trust=trust, cache=cache,
+                            offline=offline, decode_labels=decode_labels,
+                            **source_kwargs)
         if dataset in EXAMPLE_DATA and dataset.endswith('_model'):
             # a fitted sklearn.pipeline.Pipeline, not data: returned as-is
             return geo_data
@@ -492,12 +595,30 @@ def _is_loaded(dataset):
         all(isinstance(d, _LOADED_TYPES) for d in dataset)
 
 
-def _resolve(dataset, *, legacy, split, streaming, trust):
+def _resolve(dataset, *, legacy, split, streaming, trust, cache=False,
+            offline=False, decode_labels=True, **source_kwargs):
     """Resolve a string dataset name / path / URL to its raw contents
     (a fitted *_model Pipeline, a DataGeometry from a hosted or legacy
     file, or plain arrays/DataFrames/lists) via the resolution chain
-    documented on :func:`load`."""
+    documented on :func:`load`.
+
+    ``source_kwargs`` are only ever consumed by a synthetic dataset name
+    (step 6) or an explicit web-source prefix (step 7, handled inside
+    :func:`~hypertools.io.sources.load_source`); every other resolver in
+    this chain (built-in/scikit-learn/seaborn/fivethirtyeight/kaggle/local
+    file) takes no extra keyword arguments, so a match there while
+    ``source_kwargs`` is non-empty raises ``TypeError`` naming the
+    misspelled/misplaced keyword(s) rather than silently ignoring them.
+    """
+    def _reject_kwargs(resolver_label):
+        if source_kwargs:
+            raise TypeError(
+                f'hypertools.load: unexpected keyword argument(s) '
+                f'{sorted(source_kwargs)} for {resolver_label} {dataset!r} '
+                '-- it takes no extra keyword arguments')
+
     if dataset in EXAMPLE_DATA.keys():
+        _reject_kwargs('built-in example dataset')
         geo_data = _load_example_data(dataset)   # *_model -> Pipeline
     else:
         # resolution chain, right after built-in names: scikit-learn's
@@ -505,34 +626,53 @@ def _resolve(dataset, *, legacy, split, streaming, trust):
         # io.sources; scikit-learn wins over seaborn for names both
         # define, e.g. 'iris'), before falling back to local file ->
         # Hugging Face -> Google Sheets -> Google Drive -> Dropbox ->
-        # generic URL.
+        # generic URL. A registered SYNTHETIC dataset name (step 6) is
+        # checked here too, right after scikit-learn and before seaborn:
+        # seaborn.get_dataset_names() is a real network call (cached only
+        # after the first one succeeds), and no synthetic name collides
+        # with a seaborn dataset name, so resolving synthetic names first
+        # changes no precedence but spares e.g. hyp.load('random_walk')
+        # an unnecessary network round trip.
         from .sources import sklearn_dataset, seaborn_dataset, \
-            fivethirtyeight_dataset, kaggle_dataset, SKLEARN_DATASETS
+            fivethirtyeight_dataset, kaggle_dataset, synthetic_dataset, \
+            SKLEARN_DATASETS, SYNTHETIC_DATASETS
         extra_attempts = [
             'built-in example dataset: not one of '
             f'{sorted(EXAMPLE_DATA)}']
         geo_data = sklearn_dataset(dataset)
+        if geo_data is not None:
+            _reject_kwargs('scikit-learn bundled dataset')
         if geo_data is None:
             extra_attempts.append(
                 'scikit-learn bundled dataset: not one of '
                 f'{sorted(SKLEARN_DATASETS)}')
-            geo_data = seaborn_dataset(dataset)
-            if geo_data is None:
-                extra_attempts.append(
-                    'seaborn dataset: not found via '
-                    'seaborn.get_dataset_names() (or that lookup failed, '
-                    'e.g. no network access)')
-                # explicit prefixes -- 'fivethirtyeight/<slug>' and
-                # 'kaggle/<owner>/<dataset>' are unambiguous, so a
-                # matching-but-failing name raises directly instead of
-                # falling through to the attempts digest below
-                geo_data = fivethirtyeight_dataset(dataset)
+            if dataset in SYNTHETIC_DATASETS:
+                geo_data = synthetic_dataset(dataset, **source_kwargs)
+            else:
+                geo_data = seaborn_dataset(dataset)
+                if geo_data is not None:
+                    _reject_kwargs('seaborn dataset')
                 if geo_data is None:
-                    geo_data = kaggle_dataset(dataset)
+                    extra_attempts.append(
+                        'seaborn dataset: not found via '
+                        'seaborn.get_dataset_names() (or that lookup '
+                        'failed, e.g. no network access)')
+                    # explicit prefixes -- 'fivethirtyeight/<slug>' and
+                    # 'kaggle/<owner>/<dataset>' are unambiguous, so a
+                    # matching-but-failing name raises directly instead of
+                    # falling through to the attempts digest below
+                    geo_data = fivethirtyeight_dataset(dataset)
+                    if geo_data is not None:
+                        _reject_kwargs('fivethirtyeight dataset')
+                    if geo_data is None:
+                        geo_data = kaggle_dataset(dataset)
+                        if geo_data is not None:
+                            _reject_kwargs('Kaggle dataset')
 
         if geo_data is None:
             dataset_path = Path(expanduser(expandvars(dataset))).resolve()
             if dataset_path.is_file():
+                _reject_kwargs('local file')
                 if legacy:
                     geo_data = _load_legacy(dataset_path)
                 else:
@@ -541,7 +681,10 @@ def _resolve(dataset, *, legacy, split, streaming, trust):
                 from .sources import load_source
                 geo_data = load_source(dataset, split=split,
                                        streaming=streaming, trust=trust,
-                                       extra_attempts=extra_attempts)
+                                       cache=cache, offline=offline,
+                                       decode_labels=decode_labels,
+                                       extra_attempts=extra_attempts,
+                                       **source_kwargs)
     return geo_data
 
 
