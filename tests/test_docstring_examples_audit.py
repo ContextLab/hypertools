@@ -27,6 +27,9 @@ MODULES_WITH_EXAMPLES = [
     'hypertools.impute.impute',
     'hypertools.manip.manip',
     'hypertools.tools.normalize',
+    'hypertools.tools.text_windows',
+    'hypertools.tools.damage',
+    'hypertools.tools.stack',
 ]
 
 

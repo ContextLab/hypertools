@@ -29,6 +29,9 @@ from .tools.analyze import analyze
 from .reduce.reduce import reduce
 from .align.align import align
 from .tools.normalize import normalize
+from .tools.damage import damage
+from .tools.stack import stack
+from .tools.text_windows import text_windows
 from .reduce.describe import describe
 from .cluster.cluster import cluster
 from .core.model import apply_model, supported_models
@@ -51,4 +54,5 @@ __all__ = [
     'apply_model', 'supported_models', 'Pipeline',
     'set_interactive_backend', 'HyperAnimation', 'FrameContext', 'io',
     'HypertoolsError', 'HypertoolsBackendError', 'HypertoolsIOError',
+    'damage', 'stack', 'text_windows',
 ]
