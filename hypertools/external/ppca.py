@@ -4,6 +4,10 @@
 # as a standalone module (replacing the unmaintained pca-magic dependency). A
 # full copy of the Apache License 2.0 ships alongside this file as
 # LICENSE-APACHE-2.0.txt; see THIRD_PARTY_NOTICES.md for provenance.
+# 2026-09-04: the EM convergence objective computes log|Sx| with
+# numpy.linalg.slogdet instead of log(det(Sx)), which underflowed to log(0)
+# (a "divide by zero encountered in log" RuntimeWarning) for a few dozen or
+# more latent dimensions and then fell back to a sign-flipped value.
 #
 #  Copyright 2015 Allen Tran
 #
@@ -153,9 +157,19 @@ class PPCA(object):
             ss = (np.sum((recon-data)**2) + N*np.sum(CC*Sx) + missing*ss0)/(N*D)
 
             # calc diff for convergence
-            det = np.log(np.linalg.det(Sx))
-            if np.isinf(det):
-                det = abs(np.linalg.slogdet(Sx)[1])
+            #
+            # log|Sx| via slogdet, NOT log(det(Sx)): Sx = inv(I + C'C/ss) is
+            # SPD with every eigenvalue in (0, 1], so for a few dozen latent
+            # dimensions np.linalg.det(Sx) underflows to 0.0 and np.log of it
+            # emitted "RuntimeWarning: divide by zero encountered in log"
+            # (seen 2026-09-04 imputing a 200 x 100 matrix with ~5% NaNs at
+            # the default d = 99). The upstream fallback for that case,
+            # abs(slogdet(Sx)[1]), also FLIPPED the sign of the log-det term
+            # (log|Sx| <= 0 here), so the objective was inconsistent between
+            # iterations that underflowed and ones that did not. slogdet
+            # computes the same quantity as log(det) (to rounding) when the latter
+            # is representable, so well-conditioned fits are unchanged.
+            det = np.linalg.slogdet(Sx)[1]
             v1 = N*(D*np.log(ss) + np.trace(Sx) - det) \
                 + np.trace(XX) - missing*np.log(ss0)
             diff = abs(v1/v0 - 1)

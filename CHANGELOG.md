@@ -422,6 +422,12 @@ input too.
   destroys the inlet on `close()`, on leaving a `with` block, on garbage
   collection, on the silent-source abort, and at interpreter exit.
 
+- **PPCA imputation warned `divide by zero encountered in log` on data with a
+  few dozen or more features** (`hyp.impute(model='PPCA')` and the NaN fill
+  `hyp.plot` applies at format time). The EM objective computed
+  `log(det(Sx))`, which underflowed to `log(0)` and then fell back to a
+  sign-flipped value; it now uses `slogdet`, identical to rounding wherever
+  the old value was representable.
 - **Every continuous-hue matplotlib plot rendered fully opaque**, whatever
   `alpha=` was set to. `_apply_multicolor_lines` never read alpha from its
   per-trace kwargs, and the artists carrying the alpha are exactly the
