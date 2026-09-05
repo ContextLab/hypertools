@@ -331,6 +331,34 @@ input too.
   downloaded Chrome needs (`apt-get install -y libatk1.0-0
   libatk-bridge2.0-0 libatspi2.0-0 libxcomposite1`; measured 2026-09-04),
   installing Chrome, or saving with `backend='matplotlib'`.
+- **Under the plotly backend, a figure kept in a variable was not displayed
+  in a notebook.** `fig = hyp.plot(x)` drew nothing (on Colab, where
+  `backend='auto'` resolves to plotly, 29 of the feature tour's plot cells
+  were blank; measured 2026-09-04): the backend never called `fig.show()`
+  inside IPython, because doing so drew a figure that was also the cell's
+  last expression twice, and drew it mid-cell, ahead of the matplotlib
+  figures flushed at the end. `plot()` now queues the figure for a one-shot
+  IPython `post_execute` callback (registered after matplotlib-inline's
+  flush, so it runs after it) that skips any figure the rich-display hook
+  already showed. The returned figure is still a
+  `plotly.graph_objects.Figure` (a subclass). Both usages draw exactly once,
+  in cell order.
+- **Inside IPython, a matplotlib backend that cannot be switched to raised
+  the GUI toolkit's own error instead of `HypertoolsBackendError`.**
+  `set_interactive_backend` switches via the `%matplotlib` magic in a
+  notebook, and the magic imports the toolkit itself, so `'TkAgg'` without
+  `_tkinter` or `'GTK3Agg'` without `gi` escaped as a raw
+  `ModuleNotFoundError` (and a missing display as `TclError`), while a
+  plain script already raised the documented `HypertoolsBackendError`.
+  The notebook path now raises `HypertoolsBackendError` too, with the
+  toolkit's error chained as the cause.
+- **Drawing into a caller-supplied `ax=` warned `Glyph 8722 (MINUS SIGN)
+  missing from font(s) Noto Sans` for every negative tick.** The bundled
+  Noto Sans has no U+2212. hypertools' own axes carry the whole font stack,
+  so matplotlib's per-glyph fallback reaches DejaVu Sans, but axes created
+  outside hypertools' rc context keep the `sans-serif` alias, which resolves
+  to one font with no fallback. hypertools now formats negatives with an
+  ASCII minus (`axes.unicode_minus = False`) while it draws.
 
 - **Every continuous-hue matplotlib plot rendered fully opaque**, whatever
   `alpha=` was set to. `_apply_multicolor_lines` never read alpha from its

@@ -6540,6 +6540,15 @@ def plot(
             # one leaves the other resolving through matplotlib's stock list.
             plt.rcParams['font.family'] = _font_stack
             plt.rcParams['font.sans-serif'] = _font_stack
+            # The bundled Noto Sans has no U+2212 MINUS SIGN. hypertools' own
+            # axes carry the whole stack, so matplotlib's per-glyph fallback
+            # reaches DejaVu Sans; a caller-supplied `ax=` was created outside
+            # this context, its tick labels carry the 'sans-serif' ALIAS, and
+            # an alias resolves to ONE font (Noto Sans) with no fallback -- so
+            # the layout pass below warned "Glyph 8722 missing from font(s)
+            # Noto Sans" on every negative tick (1.1 feature tour, 2026-09-04).
+            # Format negatives with ASCII '-' while hypertools draws.
+            plt.rcParams['axes.unicode_minus'] = False
 
             # draw the plot
             fig, ax, data, line_ani = _draw(

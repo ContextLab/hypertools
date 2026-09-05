@@ -1483,7 +1483,7 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         traces.append(_colorbar_trace(go, colorbar_info, ndims,
                                       legend_present=legend is not None))
 
-    fig = go.Figure(data=traces)
+    fig = _hyper_figure_class()(data=traces)
 
     # match matplotlib: centered black title (12pt, converted via the
     # module's shared PT_TO_PX = 100/72 rule and rounded to a whole pixel:
@@ -1691,19 +1691,57 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
             # html with the embedded frames capped (total duration and
             # rotations preserved, so pacing stays identical).
             _show_sphinx_gallery(fig)
-        elif not _in_interactive_shell():
-            # Plain script (no IPython frontend): nothing else will display the
-            # figure, so show it here. In an interactive notebook we DON'T call
-            # fig.show(): plot() RETURNS the Figure, and the notebook frontend
-            # rich-displays that return value exactly once. Calling fig.show()
-            # too rendered it TWICE, and -- since fig.show() fires mid-cell,
-            # before matplotlib's end-of-cell flush -- made plotly figures jump
-            # ahead of matplotlib ones (Jeremy's QC 2026-07 double-display /
-            # ordering report). Assign the result or use show=False to hold the
-            # Figure without displaying it.
+        elif _in_interactive_shell():
+            # Interactive notebook: display at the END of the cell (after
+            # matplotlib-inline's own flush, so plotly figures keep their
+            # place behind matplotlib ones drawn in the same cell) and only
+            # if the cell's rich-display hook has not already shown this
+            # figure as its last expression. See HyperPlotlyFigure.
+            _display_at_cell_end(fig)
+        else:
+            # Plain script (no IPython frontend): nothing else will display
+            # the figure, so show it here.
             fig.show()
 
     return fig
+
+
+_HYPER_FIGURE_CLASS = None
+
+
+def _hyper_figure_class():
+    """The ``plotly.graph_objects.Figure`` subclass ``plot()`` returns, built
+    on first use because plotly is an optional dependency."""
+    global _HYPER_FIGURE_CLASS
+    if _HYPER_FIGURE_CLASS is None:
+        import plotly.graph_objects as go
+
+        class HyperPlotlyFigure(go.Figure):
+            """A ``plotly.graph_objects.Figure`` that ``plot()`` displays ONCE, at
+            the end of the notebook cell.
+
+            ``plot(..., show=True)`` on the matplotlib backend shows the figure at the
+            end of the cell whether or not the caller keeps it (``fig = hyp.plot(x)``
+            still draws). Until 1.1 the plotly backend never called ``fig.show()``
+            inside IPython: calling it drew the figure TWICE when the figure was
+            also the cell's last expression, and drew it mid-cell, ahead of the
+            matplotlib figures flushed at the end (Jeremy's QC 2026-07 report). The
+            cost was that ``fig = hyp.plot(x)`` drew nothing (measured 2026-09-04 on
+            Colab, where ``backend='auto'`` resolves to plotly: 29 of the feature
+            tour's plot cells were blank).
+
+            Now ``plot()`` queues the figure for a one-shot IPython ``post_execute``
+            callback, registered after matplotlib-inline's flush so it runs after
+            it, and the callback skips any figure this hook has already displayed.
+            Both usages draw exactly once, in cell order.
+            """
+
+            def _ipython_display_(self):
+                self._hyp_displayed = True
+                super()._ipython_display_()
+
+        _HYPER_FIGURE_CLASS = HyperPlotlyFigure
+    return _HYPER_FIGURE_CLASS
 
 
 def _in_interactive_shell():
@@ -1714,6 +1752,40 @@ def _in_interactive_shell():
         return get_ipython() is not None
     except Exception:
         return False
+
+
+_PENDING_DISPLAY = []       # figures queued for the end of the running cell
+
+
+def _display_at_cell_end(fig):
+    """Queue ``fig`` for display when the current IPython cell finishes."""
+    from IPython import get_ipython
+    shell = get_ipython()
+    if shell is None or not hasattr(shell, 'events'):
+        fig.show()
+        return
+    if not _PENDING_DISPLAY:
+        shell.events.register('post_execute', _flush_pending_display)
+    _PENDING_DISPLAY.append(fig)
+
+
+def _flush_pending_display():
+    """The one-shot ``post_execute`` callback: show every queued figure the
+    rich-display hook has not shown, then unregister."""
+    from IPython import get_ipython
+    import plotly.io as pio
+    figs, _PENDING_DISPLAY[:] = list(_PENDING_DISPLAY), []
+    shell = get_ipython()
+    if shell is not None and hasattr(shell, 'events'):
+        try:
+            shell.events.unregister('post_execute', _flush_pending_display)
+        except ValueError:
+            pass
+    for fig in figs:
+        if getattr(fig, '_hyp_displayed', False):
+            fig._hyp_displayed = False
+            continue
+        pio.show(fig)
 
 
 _SG_MAX_EMBEDDED_FRAMES = 150

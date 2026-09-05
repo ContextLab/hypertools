@@ -815,6 +815,7 @@ def _switch_backend_notebook(backend):
     backend = backend.as_ipython()
     tmp_stdout = StringIO()
     exc = None
+    switch_exc = None
 
     with redirect_stdout(tmp_stdout):
         try:
@@ -822,9 +823,22 @@ def _switch_backend_notebook(backend):
         except KeyError as e:
             exc = e
             IPYTHON_INSTANCE.run_line_magic("matplotlib", "-l")
+        except Exception as e:
+            # The magic imports the GUI toolkit itself, so a backend that
+            # cannot run here surfaces as the toolkit's own error --
+            # ModuleNotFoundError (no `_tkinter`, no `gi`), TclError (no
+            # display), ... -- which used to escape unwrapped from the
+            # notebook path while the script path raised the documented
+            # HypertoolsBackendError (measured 2026-09-04, 1.1 feature tour).
+            switch_exc = e
 
     output_msg = tmp_stdout.getvalue().strip()
     tmp_stdout.close()
+    if switch_exc is not None:
+        raise HypertoolsBackendError(
+            f'Failed to switch the matplotlib backend to "{backend}" via '
+            f"IPython: {type(switch_exc).__name__}: {switch_exc}"
+        ) from switch_exc
     if exc is not None:
         # just in case something else was somehow sent to stdout while
         # redirected, or if we managed to catch a different KeyError

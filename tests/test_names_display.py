@@ -66,19 +66,93 @@ def test_names_and_legend_list_conflict_raises():
 
 # --- double-display ----------------------------------------------------
 
-def test_plotly_show_not_called_in_interactive_shell(monkeypatch):
-    pytest.importorskip('plotly')
-    import plotly.graph_objects as go
-    import IPython
+class _FakeEvents:
+    def __init__(self):
+        self.callbacks = {}
+
+    def register(self, name, cb):
+        self.callbacks.setdefault(name, []).append(cb)
+
+    def unregister(self, name, cb):
+        self.callbacks[name].remove(cb)
+
+    def fire(self, name):
+        for cb in list(self.callbacks.get(name, [])):
+            cb()
+
+
+class _FakeShell:
+    """Enough of an InteractiveShell for the display path: a post_execute
+    event registry and an execution count."""
+    def __init__(self):
+        self.events = _FakeEvents()
+        self.execution_count = 1
+
+
+def _count_shows(monkeypatch):
+    import plotly.io as pio
     calls = {'n': 0}
-    monkeypatch.setattr(go.Figure, 'show',
-                        lambda self, *a, **k: calls.__setitem__('n', calls['n'] + 1))
-    # simulate an interactive notebook: the returned figure auto-displays, so
-    # fig.show() must NOT be called (that was the double display)
-    monkeypatch.setattr(IPython, 'get_ipython', lambda: object())
+    monkeypatch.setattr(pio, 'show', lambda fig, *a, **k: calls.__setitem__('n', calls['n'] + 1))
+    return calls
+
+
+def test_plotly_plot_displays_once_at_the_end_of_the_cell(monkeypatch):
+    """`fig = hyp.plot(x)` draws in a notebook (as on matplotlib), but only
+    when the cell finishes -- after matplotlib-inline's flush -- not mid-cell."""
+    pytest.importorskip('plotly')
+    import IPython
+    calls = _count_shows(monkeypatch)
+    shell = _FakeShell()
+    monkeypatch.setattr(IPython, 'get_ipython', lambda: shell)
     fig = hyp.plot(_datasets(2), backend='plotly', show=True)
-    assert calls['n'] == 0
-    assert fig is not None  # figure still returned for the user
+    assert calls['n'] == 0                       # nothing mid-cell
+    assert shell.events.callbacks['post_execute']
+    shell.events.fire('post_execute')            # the cell ends
+    assert calls['n'] == 1
+    assert not shell.events.callbacks['post_execute']   # one-shot
+    assert fig is not None
+
+
+def test_plotly_plot_as_the_last_expression_is_not_drawn_twice(monkeypatch):
+    pytest.importorskip('plotly')
+    import IPython
+    calls = _count_shows(monkeypatch)
+    shell = _FakeShell()
+    monkeypatch.setattr(IPython, 'get_ipython', lambda: shell)
+    fig = hyp.plot(_datasets(2), backend='plotly', show=True)
+    fig._ipython_display_()                      # the rich-display hook (cell ends with `fig`)
+    assert calls['n'] == 1
+    shell.events.fire('post_execute')
+    assert calls['n'] == 1                       # skipped: already displayed
+    shell.execution_count += 1
+    fig._ipython_display_()                      # a later cell displays it again
+    assert calls['n'] == 2
+
+
+def test_plotly_two_figures_in_one_cell_display_in_creation_order(monkeypatch):
+    pytest.importorskip('plotly')
+    import IPython
+    import plotly.io as pio
+    order = []
+    monkeypatch.setattr(pio, 'show', lambda fig, *a, **k: order.append(fig))
+    shell = _FakeShell()
+    monkeypatch.setattr(IPython, 'get_ipython', lambda: shell)
+    a = hyp.plot(_datasets(1), backend='plotly', show=True)
+    b = hyp.plot(_datasets(2), backend='plotly', show=True)
+    shell.events.fire('post_execute')
+    assert order == [a, b]
+
+
+def test_plotly_show_false_defers_entirely_to_the_display_hook(monkeypatch):
+    pytest.importorskip('plotly')
+    import IPython
+    calls = _count_shows(monkeypatch)
+    shell = _FakeShell()
+    monkeypatch.setattr(IPython, 'get_ipython', lambda: shell)
+    fig = hyp.plot(_datasets(2), backend='plotly', show=False)
+    assert calls['n'] == 0 and 'post_execute' not in shell.events.callbacks
+    fig._ipython_display_()
+    assert calls['n'] == 1
 
 
 def test_plotly_show_called_in_plain_script(monkeypatch):
