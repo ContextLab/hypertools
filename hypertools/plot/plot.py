@@ -2020,15 +2020,27 @@ def plot(
         exclusive with `pipeline=` (default: None).
 
     pipeline : hypertools.Pipeline or None
-        A previously-FITTED `Pipeline` (e.g. from
-        ``hyp.analyze(data, ..., return_model=True)`` or this function's
-        own `return_model=True` bundle's `'pipeline'` key) to apply to `x`
-        via `.transform` instead of fitting new `manip`/`normalize`/
-        `reduce`/`align`/`cluster` models (GH #227) -- e.g. fit on dataset
-        A via ``p = hyp.analyze(A, manip='Smooth', reduce='PCA',
+        A `Pipeline` to run in place of the `manip`/`normalize`/`reduce`/
+        `align`/`cluster` stages (GH #227). A previously-FITTED pipeline
+        (e.g. from ``hyp.analyze(data, ..., return_model=True)`` or this
+        function's own `return_model=True` bundle's `'pipeline'` key) is
+        applied to `x` via `.transform` -- never refit -- e.g. fit on
+        dataset A via ``p = hyp.analyze(A, manip='Smooth', reduce='PCA',
         align='HyperAlign', return_model=True)[1]`` and reuse those exact
         fitted parameters on a structurally-identical dataset B via
-        ``hyp.plot(B, pipeline=p)``. Mutually exclusive with `manip=`/
+        ``hyp.plot(B, pipeline=p)``. A pipeline that is NOT yet fitted
+        (`p.is_fitted` is False) is fit on `x` first, exactly as an
+        unfitted instance passed to `reduce=` would be, and the fitted
+        object is what `return_model=True` hands back. Hand-built
+        pipelines whose steps are raw scikit-learn estimators, e.g.
+        ``hyp.Pipeline([('reduce', PCA(n_components=3))])`` (fitted or
+        not), are applied to each of `x`'s datasets separately (fit, when
+        needed, on all of their rows stacked, as `reduce=` does); those
+        steps take one array at a time, whereas the dispatcher pipelines
+        `analyze`/`plot` build take the whole list. A bare fitted stage
+        object (a `Reducer`/`Aligner`/... from a dispatcher's
+        `return_model=True`) is accepted as a one-step pipeline.
+        Mutually exclusive with `manip=`/
         `normalize=`/`reduce=`/`ndims=`/`align=`/`cluster=` (each must be
         left at its default) -- passing both raises `ValueError` naming the
         conflicting kwarg(s). `resample=` is still applied (as sugar, before
@@ -3969,6 +3981,24 @@ def plot(
                 "as sugar -- see pipeline='s docstring)."
             )
 
+    # A bare stage object handed in as pipeline= (e.g. the fitted Reducer from
+    # hyp.reduce(..., return_model=True)) is a one-step pipeline: wrap it, so
+    # the fit-or-transform replay below (and the return_model bundle) always
+    # sees a hypertools Pipeline. Anything without a transform method is not
+    # a pipeline at all -- reported here, before format_data runs.
+    if pipeline is not None:
+        from ..core.pipeline import Pipeline as _HypPipeline
+        if not isinstance(pipeline, _HypPipeline):
+            if not hasattr(pipeline, 'transform'):
+                raise TypeError(
+                    "pipeline= expects a hypertools.Pipeline (e.g. "
+                    "hyp.Pipeline([('reduce', PCA(n_components=3))]), or the "
+                    "one returned by hyp.analyze/hyp.plot with "
+                    f"return_model=True); got {type(pipeline).__name__}: "
+                    f"{pipeline!r}. To name stages directly, use the "
+                    "manip=/normalize=/reduce=/align=/cluster= kwargs.")
+            pipeline = _HypPipeline([pipeline])
+
     # A whole already-fitted Pipeline belongs in pipeline=, not a single stage
     # kwarg: passing one as reduce=/manip=/etc would apply it as that ONE stage
     # and then plot re-applies the reduce stage to enforce ndims, double-applying
@@ -4384,14 +4414,47 @@ def plot(
                 "it to every dataset.")
 
         if pipeline is not None:
-            # pipeline= (GH #227): apply the fitted Pipeline's stages via
-            # .transform (never refit) instead of fitting new manip=/
-            # normalize=/reduce=/align=/cluster= models. reduce=/ndims=/
-            # normalize=/align=/cluster=/manip= were already validated
-            # (above) to still be at their defaults, so they are safely
-            # omitted here -- pipeline= governs every stage.
-            xform, _ = analyze(raw, pipeline=pipeline, internal=True,
-                               impute=impute, return_model=True)
+            # pipeline= (GH #227): apply the Pipeline's stages instead of
+            # fitting new manip=/normalize=/reduce=/align=/cluster= models.
+            # reduce=/ndims=/normalize=/align=/cluster=/manip= were already
+            # validated (above) to still be at their defaults, so they are
+            # safely omitted here -- pipeline= governs every stage.
+            #
+            # Fit-or-transform, as the dispatchers do with an instance:
+            # a fitted pipeline is applied via .transform (never refit);
+            # an unfitted one is fit on `raw` first. The dispatcher
+            # pipelines hyp.analyze/hyp.plot build (every step a
+            # `_DispatchStep`, which stacks/unstacks lists itself) take
+            # the whole list of datasets; a hand-built pipeline with raw
+            # scikit-learn steps (`hyp.Pipeline([('reduce', PCA(3))])`)
+            # cannot -- its steps take one array at a time -- so it is
+            # applied to each dataset separately, and fit (when needed)
+            # on all of their rows stacked, exactly as hyp.reduce fits
+            # (previously every such pipeline died here in
+            # Pipeline._reraise_with_list_hint's "does not accept a list
+            # of datasets" TypeError, or in NotFittedError when unfitted).
+            if pipeline._steps_accept_lists():
+                if not pipeline.is_fitted:
+                    pipeline.fit(raw)
+                xform, _ = analyze(raw, pipeline=pipeline, internal=True,
+                                   impute=impute, return_model=True)
+            else:
+                if pipeline.is_fitted:
+                    xform = [np.asarray(pipeline.transform(r)) for r in raw]
+                elif len(raw) == 1:
+                    xform = [np.asarray(pipeline.fit_transform(raw[0]))]
+                else:
+                    pipeline.fit(np.vstack([np.asarray(r) for r in raw]))
+                    xform = [np.asarray(pipeline.transform(r)) for r in raw]
+                for _i, _xi in enumerate(xform):
+                    if _xi.ndim != 2:
+                        raise ValueError(
+                            f"pipeline= produced a {_xi.ndim}-D result of "
+                            f"shape {_xi.shape} for dataset {_i}; plot() "
+                            "needs one 2-D (observations x dimensions) "
+                            "array per dataset. A pipeline ending in a "
+                            "clusterer yields labels -- pass those as "
+                            "hue= instead, and plot the step before it.")
         else:
             xform = analyze(
                 raw,

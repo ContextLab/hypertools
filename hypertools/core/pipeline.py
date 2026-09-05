@@ -161,11 +161,36 @@ def _accepts_list_input(model):
     """Whether a resolved step can legitimately consume a LIST of datasets
     (hypertools' own stage wrappers and dispatcher steps do; raw
     scikit-learn estimators do not)."""
-    if isinstance(model, (Pipeline, _DispatchStep)):
+    if isinstance(model, _DispatchStep):
         return True
+    if isinstance(model, Pipeline):
+        return model._steps_accept_lists()
     from ..align.common import Aligner
     from ..manip.common import Manipulator
     return isinstance(model, (Aligner, Manipulator))
+
+
+def _step_is_fitted(model):
+    """Whether a resolved step already carries fitted parameters.
+
+    hypertools' own stage objects (`_DispatchStep`, nested `Pipeline`,
+    `Reducer`/`Clusterer`/`Aligner`/`Manipulator`) all expose an
+    `is_fitted` property; a raw scikit-learn estimator is asked via
+    `sklearn.utils.validation.check_is_fitted` (its `__sklearn_is_fitted__`
+    hook, else any learned trailing-underscore attribute). Anything that
+    reports nothing either way counts as NOT fitted, so the caller fits it
+    -- the safe direction for a step that is stateless anyway."""
+    if isinstance(model, (Pipeline, _DispatchStep)):
+        return model.is_fitted
+    flag = getattr(model, 'is_fitted', None)
+    if isinstance(flag, bool):
+        return flag
+    from sklearn.utils.validation import check_is_fitted
+    try:
+        check_is_fitted(model)
+    except (NotFittedError, TypeError, ValueError):
+        return False
+    return True
 
 
 def _base_name(model):
@@ -391,6 +416,9 @@ class Pipeline(BaseEstimator):
         a class, an already-constructed (or already-fitted) instance, a
         dict spec (`{'model': ..., 'args': [...], 'kwargs': {...}}` or the
         legacy `{'model': ..., 'params': {...}}`), or a nested `Pipeline`.
+        Raw scikit-learn-API estimators (e.g. ``PCA(n_components=3)``,
+        fitted or not) are accepted as-is; see the Notes on what they
+        receive.
         Bare specs are auto-named after their resolved class (lowercased),
         with a numeric suffix on collision (`'hyperalign'`, then
         `'hyperalign-1'`). Explicit names must be UNIQUE: duplicates raise
@@ -436,6 +464,16 @@ class Pipeline(BaseEstimator):
     `apply_model`'s 'auto' mode for the same model -- e.g. a raw
     GaussianMixture step yields hard labels here but membership
     probabilities (predict_proba) through `apply_model`.
+
+    `is_fitted` is True once `fit`/`fit_transform` has run, OR when every
+    step was already fitted when the pipeline was assembled (e.g.
+    ``Pipeline([('reduce', fitted_pca)])``), so such a pipeline can be
+    `transform`-ed straight away. `hyp.plot(x, pipeline=p)` uses this
+    flag: a fitted `p` is applied via `transform` (never refit), an
+    unfitted one is fit on `x` first -- and a pipeline with raw
+    scikit-learn steps is applied to each of `x`'s datasets separately
+    (fit, when needed, on all of their rows stacked), since those steps
+    cannot take the list `plot` otherwise hands a pipeline.
 
     Examples
     --------
@@ -489,8 +527,21 @@ class Pipeline(BaseEstimator):
 
     @property
     def is_fitted(self):
-        """True once `fit`/`fit_transform` has been called at least once."""
-        return self._is_fitted
+        """True once `fit`/`fit_transform` has been called at least once,
+        or when every step was ALREADY fitted at construction (a pipeline
+        assembled from fitted instances, e.g. ``Pipeline([fitted_pca])``,
+        needs no fit of its own before `transform`)."""
+        if self._is_fitted:
+            return True
+        return bool(self.steps) and all(
+            _step_is_fitted(model) for _, model in self.steps)
+
+    def _steps_accept_lists(self):
+        """Whether EVERY step can consume a list of datasets (True for the
+        dispatcher pipelines `build_pipeline`/`hyp.plot`/`hyp.analyze`
+        build; False as soon as one raw scikit-learn step is present, which
+        must be fed one array at a time -- see `hyp.plot`'s `pipeline=`)."""
+        return all(_accepts_list_input(model) for _, model in self.steps)
 
     def fit(self, data):
         """Fit every step in order (see `fit_transform`); returns `self`."""
@@ -644,7 +695,7 @@ class Pipeline(BaseEstimator):
         is grouped into its leaves first, so the pipeline `hyp.plot` hands
         back for a hierarchical frame re-applies to that frame (see
         `_regroup_hierarchical_input`)."""
-        if not self._is_fitted:
+        if not self.is_fitted:
             raise NotFittedError('Pipeline must be fit before transform')
         out = self._regroup_hierarchical_input(data)
         for name, model in self.steps:
