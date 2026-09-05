@@ -200,6 +200,31 @@ and reaches flat `hyp.predict` callers.
   tutorial adds Chronos, the projectile tutorial compares scikit-learn
   imputers with Kalman; tutorials load Hugging Face data through `hyp.load`,
   save mp4 clips, and no longer silence warnings.
+- **Multi-panel static plots.** `hyp.plot([...], panels=True | 'auto' | ncols
+  | (nrows, ncols), title=[...])` draws one panel per dataset in one figure
+  with a single shared pipeline fit (so panels are comparable), hides spare
+  axes and lays them out; `reduce=[...]` gives one panel per reducer;
+  `hyp.subplots(nrows, ncols, ndims=3)` builds a flat, 3-D-ready axes grid for
+  callers who still want `ax=`. On plotly the panels are `make_subplots`
+  scenes. `return_model=True` adds `axes`, `panels` and `panel_models`
+  (GH #285).
+- **Title styling on every frame.** `title_kwargs=dict(size=, weight=,
+  family=, color=, y=)` is applied by hypertools' own title updater,
+  including per-segment `title=` lists; `title_color=` takes one colour per
+  segment or a callable; `title_wrap=N` hard-wraps titles (`\n` on
+  matplotlib, `<br>` on plotly). A resolved `font=` now reaches per-segment
+  animation titles too (previously only rcParams could size them) (GH #285).
+- **Per-dataset `hue=` and `labels=`.** `hue=` accepts one scalar per dataset
+  (broadcast over its rows); `labels=` accepts one entry per dataset, placed
+  by `label_anchor='first' | 'center' | 'last' | int` (GH #285).
+- **Legends under matrix / mixture hue.** A matrix-valued `hue=` (or
+  `hue_mode='mixture'`) now draws a legend with one swatch per hue column
+  instead of dropping it; `legend_kwargs=` reaches `ax.legend` and
+  `legend_colors=` recolours or replaces the entries (GH #285).
+- **The resolved colour scale is exposed.** `return_model=True` bundles
+  `['colors']` (kind, palette, cmap, norm, vmin, vmax, per-group colours,
+  labels) and `HyperAnimation.colors` carries the same object, so a companion
+  panel can reuse the library's mapping (GH #285).
 - **Synthetic datasets from `hyp.load`.** `hyp.load('random_walk' | 'helix' |
   'lorenz' | 'blobs' | 'moons' | 'swiss_roll' | 's_curve', random_state=...,
   n_datasets=...)` generates seeded example data (scikit-learn kwargs pass
@@ -502,6 +527,9 @@ input too.
   `log(det(Sx))`, which underflowed to `log(0)` and then fell back to a
   sign-flipped value; it now uses `slogdet`, identical to rounding wherever
   the old value was representable.
+- **`labels=` annotations were drawn on pyplot's current axes, not the `ax=`
+  passed in,** so panel labels stacked on one axes; and a colour-list
+  colorbar (`color=['red', ...]`) raised `IndexError` (GH #285).
 - **`hyp.plot(docs, vectorizer='all-MiniLM-L6-v2')` crashed with the default
   `semantic=`/`corpus=`.** The gensim-only auto-skip of the topic-model stage
   did not cover Hugging Face vectorizers, so the call (the one the optional
