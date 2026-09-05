@@ -200,6 +200,14 @@ and reaches flat `hyp.predict` callers.
   tutorial adds Chronos, the projectile tutorial compares scikit-learn
   imputers with Kalman; tutorials load Hugging Face data through `hyp.load`,
   save mp4 clips, and no longer silence warnings.
+- **`hyp.plot(x, pipeline=p)` accepts hand-built pipelines.** A `hyp.Pipeline`
+  whose steps are raw scikit-learn estimators (fitted or not) or a bare
+  fitted stage object replays through `plot`: an unfitted pipeline is fit on
+  `x`, raw steps are applied to each dataset in turn, and a step that yields
+  labels rather than coordinates raises an error pointing at `hue=`.
+  `Pipeline.is_fitted` is `True` for a pipeline assembled from already-fitted
+  steps. Previously such pipelines raised `NotFittedError` or an sklearn
+  dimension error from inside the replay.
 - **`hyp.load` passes already-loaded data through.** A DataFrame, a numpy
   array, or a list/tuple of those comes back unchanged (with the same
   `reduce`/`ndims`/`align`/`normalize` post-processing loaded data gets),
