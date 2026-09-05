@@ -163,6 +163,17 @@ and reaches flat `hyp.predict` callers.
   hypertools never downloads the image -- fetch and cache it yourself, then
   pass the path.
 
+- **`hue_mode=` says how a matrix `hue` is read.** `'mixture'` blends each
+  row through `palette` as weights, one palette colour per COLUMN whatever
+  the width, which is what a hierarchy needs to give each leaf one primary
+  and every derived mean the blend of its children. `'rgb'` reduces the
+  matrix to three min-max scaled channels used directly as (r, g, b), which
+  is what a wide matrix does by default. The default stays the historical
+  width rule (`None`), so existing figures do not repaint; `hue_mode=` is
+  only meaningful for a matrix `hue`, and `hue_mode='mixture'` combined with
+  `color_reduce=` raises rather than picking a winner. Documented in
+  `docs/hierarchy.rst`.
+
 ### Changed / validation
 
 These turn previously-accepted input into rejected input. Each was
@@ -670,13 +681,12 @@ items under **Changed** below alter how existing figures LOOK.
   `IndexError`. It now takes the same dataset-to-run mapping the matplotlib
   side uses, and both backends draw the same forecast from the same anchor.
 
-  ANIMATED plots still draw no forecast under `hue=`/`cluster=`, but now say
-  so instead of failing silently. The per-frame schedule maps frame-grid rows
-  onto each dataset's raw observations, and regrouping leaves only per-run
-  traces to reveal. **Both** backends now refuse: plotly's static block fires
-  whenever there is no per-frame schedule -- exactly the state this refusal
-  creates -- so it warned "no forecast is drawn" and then drew the
-  full-history forecast, visible from frame 0.
+  Animated plots under `hue=`/`cluster=` are covered by the previous entry.
+  An interim build had refused them with a reason instead of failing
+  silently, and plotly's static block, which fires whenever there is no
+  per-frame schedule, had warned "no forecast is drawn" and then drawn the
+  full-history forecast, visible from frame 0; both behaviours are
+  superseded.
 
 - **`return_model=True` reports forecasts it could not draw, and says so.**
   `bundle['predict']` gains **`drawn`** (bool) and **`draw_reason`** (`None`,

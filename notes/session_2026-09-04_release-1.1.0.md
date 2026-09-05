@@ -92,3 +92,9 @@ DECISION for Jeremy: (a) 1.1.1 right after 1.1.0, or (b) fold into 1.1.0 = new r
 ## 19:40 RE-CUT of 1.1.0 (Jeremy's choice 1): fold the nbAgg fix into the release
 
 master: cherry-picked 8055ce62 -> 363f7018 (nbAgg fix) and 5368beed -> f5580f1e (538 test hardening); .gitignore ignore line + this note follow. Then: gates + full suite on master, republish gallery manifest from the new HEAD (built notebooks unchanged: examples/ and docs/conf.py identical), rebuild dist, push master, CI, MOVE the v1.1.0 tag (force-push; nothing on PyPI/conda yet), tag CI, then the comprehensive GitHub release draft from the FULL CHANGELOG (1.1.0 + unpublished 1.0.1).
+- 19:50 re-cut HEAD **b94b09ab** (2dea6c29 + 363f7018 nbAgg fix + f5580f1e 538 hardening + b94b09ab ignore/notes). Gates 22 passed; gallery manifest republished from b94b09ab (docs-notebooks 47d4a0b -> d06fa57; built notebooks unchanged, examples/conf identical); gallery gate 1 passed. dist REBUILT from b94b09ab, twine PASSED, fix in sdist, smoke OK.
+  CURRENT digests (supersede the 2dea6c29 ones; upload ONLY these, only if v1.1.0 -> b94b09ab):
+    b53f40a8efa7e51564360f018e300d3b0af343c9628240fa6790d4e212a4d591  dist/hypertools-1.1.0-py3-none-any.whl
+    a7b2131d1e965d48e565a158a26bbf8add01e1073907b1635a55cbcd5061165e  dist/hypertools-1.1.0.tar.gz
+  Waiting: full suite on master (then push), release-notes draft (subagent, from the FULL changelog).
+- 20:05 release-notes drafting (subagent, full changelog) surfaced two CHANGELOG defects: `hue_mode=` (new in 1.1, absent at v1.0.0) was undocumented -> Added bullet (grounded in the plot() docstring + docs/hierarchy.rst); a 1.0.1 paragraph still said animated plots draw no forecast under hue=/cluster=, contradicting the preceding entry -> rewritten as superseded. New HEAD follows; manifest + dist + suite redone from it.
