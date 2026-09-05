@@ -63,7 +63,10 @@ liblsl to complain about at kernel/interpreter teardown; 1.1's first cut
 destroyed it but ``close_stream()``ed first, which is the race above.
 """
 
+import math
+import random
 import threading
+import time
 import warnings
 import weakref
 
@@ -384,3 +387,198 @@ class LSLStream:
     def __repr__(self):
         state = 'closed' if self.closed else 'open'
         return f'<LSLStream {self._criterion} ({state})>'
+
+
+def synthetic_outlet(name='HypertoolsSyntheticStream', n_channels=6,
+                      rate=100.0, stream_type='EEG', push_interval=0.01,
+                      noise=0.05, seed=None):
+    """Start a REAL `pylsl.StreamOutlet` on a background daemon thread,
+    continuously pushing synthetic samples -- for exercising
+    :func:`lsl_stream` (or any other LSL consumer) without real acquisition
+    hardware. This is the same generator the LSL tutorial
+    (``docs/tutorials/lsl_streaming.ipynb``) and the LSL test suite
+    (``tests/test_lsl_streaming.py``) each used to hand-roll; both now call
+    this instead.
+
+    Signal definition
+    ------------------
+    Sample `i` of channel `c` (`c` in ``range(n_channels)``) is::
+
+        sin(2*pi*(0.5 + 0.1*c) * i/rate) + noise * N(0, 1)
+
+    i.e. channel `c` oscillates at ``(0.5 + 0.1*c)`` Hz -- distinct but
+    related frequencies, easy to tell apart in a plot -- plus Gaussian
+    noise with standard deviation `noise`.
+
+    Parameters
+    ----------
+    name : str
+        The LSL stream's ``name`` property (what `hyp.io.lsl_stream(name=
+        ...)` matches against). Must be unique on the network to avoid
+        resolving someone else's outlet.
+    n_channels : int
+        Number of channels to push per sample (default: 6).
+    rate : float
+        Nominal sampling rate in Hz, both the LSL stream's declared rate
+        and the one used in the signal formula above (default: 100.0).
+    stream_type : str
+        The LSL stream's ``type`` property (default: ``'EEG'``).
+    push_interval : float
+        Seconds to sleep between pushes on the background thread (default:
+        0.01). Independent of `rate`: it is what actually paces the
+        thread, while `rate` only feeds the signal formula and the
+        stream's declared nominal rate.
+    noise : float
+        Standard deviation of the Gaussian noise added to each channel
+        (default: 0.05). 0 disables noise.
+    seed : int, optional
+        Seed for the noise generator, for reproducible samples. None
+        (default) uses fresh, non-reproducible randomness.
+
+    Returns
+    -------
+    outlet : SyntheticOutlet
+        A handle with ``.stop()`` (stop the background thread; idempotent),
+        ``.thread`` (the `threading.Thread` pushing samples), ``.info``
+        (the `pylsl.StreamInfo` the outlet was created with), and
+        ``.closed``. Also usable as a context manager -- ``with
+        hyp.io.lsl.synthetic_outlet(...) as outlet:`` -- which calls
+        ``.stop()`` on exit.
+
+    Raises
+    ------
+    ImportError
+        If `pylsl` is not installed and could not be installed on demand.
+    TypeError
+        If `name` or `stream_type` is not a non-empty string.
+    ValueError
+        If `n_channels` is not a positive integer, or `rate`,
+        `push_interval` is not a positive number, or `noise` is negative.
+
+    Examples
+    --------
+    >>> import hypertools as hyp
+    >>> outlet = hyp.io.lsl.synthetic_outlet('Demo')  # doctest: +SKIP
+    >>> stream = hyp.io.lsl_stream(name='Demo', timeout=5.0)  # doctest: +SKIP
+    >>> hyp.plot(stream, stream_init=200, stream_chunk=20)  # doctest: +SKIP
+    >>> stream.close()  # doctest: +SKIP
+    >>> outlet.stop()  # doctest: +SKIP
+
+    or, equivalently, scoped to a block:
+
+    >>> with hyp.io.lsl.synthetic_outlet('Demo') as outlet:  # doctest: +SKIP
+    ...     with hyp.io.lsl_stream(name='Demo') as stream:
+    ...         hyp.plot(stream, stream_init=200, stream_chunk=20)
+    """
+    if not isinstance(name, str) or not name:
+        raise TypeError(
+            f'name= must be a non-empty string (the LSL stream\'s "name" '
+            f'property); got {name!r}.')
+    if not isinstance(stream_type, str) or not stream_type:
+        raise TypeError(
+            f'stream_type= must be a non-empty string (the LSL stream\'s '
+            f'"type" property, e.g. \'EEG\'); got {stream_type!r}.')
+    if isinstance(n_channels, bool) or not isinstance(n_channels, int) \
+            or n_channels < 1:
+        raise ValueError(
+            f'n_channels= must be a positive integer; got {n_channels!r}.')
+    if isinstance(rate, bool) or not isinstance(rate, (int, float)) \
+            or rate <= 0:
+        raise ValueError(f'rate= must be a positive number; got {rate!r}.')
+    if isinstance(push_interval, bool) \
+            or not isinstance(push_interval, (int, float)) \
+            or push_interval <= 0:
+        raise ValueError(
+            f'push_interval= must be a positive number; got '
+            f'{push_interval!r}.')
+    if isinstance(noise, bool) or not isinstance(noise, (int, float)) \
+            or noise < 0:
+        raise ValueError(
+            f'noise= must be a non-negative number; got {noise!r}.')
+
+    pylsl = _import_pylsl()
+
+    info = pylsl.StreamInfo(name, stream_type, n_channels, rate, 'float32',
+                            f'hypertools-synthetic-{name}')
+    outlet = pylsl.StreamOutlet(info)
+    stop_event = threading.Event()
+    rng = random.Random(seed)
+    dt = 1.0 / rate
+
+    def _sample(i):
+        t = i * dt
+        return [
+            math.sin(2 * math.pi * (0.5 + 0.1 * c) * t) + noise * rng.gauss(0, 1)
+            for c in range(n_channels)
+        ]
+
+    def _push():
+        i = 0
+        while not stop_event.is_set():
+            outlet.push_sample(_sample(i))
+            i += 1
+            time.sleep(push_interval)
+
+    thread = threading.Thread(target=_push, daemon=True)
+    thread.start()
+
+    return SyntheticOutlet(outlet, thread, stop_event, info)
+
+
+class SyntheticOutlet:
+    """Handle for a synthetic `pylsl.StreamOutlet` running on a background
+    daemon thread. Returned by :func:`synthetic_outlet`; not meant to be
+    constructed directly.
+
+    Holds its own reference to the underlying `pylsl.StreamOutlet` --
+    deliberately mirroring a plain module-level ``outlet = pylsl.
+    StreamOutlet(...)`` global, which is what the tutorial and this
+    function's callers had before this helper existed. That matters at
+    interpreter exit: a script/notebook that never calls `stop()` still
+    has a live outlet when the process exits, and :class:`LSLStream`'s own
+    teardown (see the module docstring, *Teardown*) depends on ANY
+    `pylsl.StreamOutlet` the script created surviving until its
+    `weakref.finalize` at-exit hook has destroyed the inlet -- destroying
+    the outlet first (e.g. by letting it be garbage-collected earlier,
+    were this handle not to hold it) can reintroduce the same
+    ``ERR| Stream transmission broke off`` liblsl logs that hook exists to
+    prevent (`tests/test_lsl_streaming.py::test_teardown_leaves_no_
+    liblsl_error[never_closed]`, which failed under exactly that
+    arrangement during development).  So ``stop()`` alone does not free
+    the outlet -- drop every reference to this handle afterwards (as
+    `test_lsl_stream_raises_when_source_stops_delivering` does) if a test
+    needs the outlet actually gone.
+    """
+
+    def __init__(self, outlet, thread, stop_event, info):
+        self._outlet = outlet
+        self.thread = thread
+        self._stop_event = stop_event
+        self.info = info
+        self._closed = False
+
+    @property
+    def closed(self):
+        """True once the background thread has been stopped (see
+        :meth:`stop`)."""
+        return self._closed
+
+    def stop(self, timeout=5.0):
+        """Stop the background push thread and wait (up to `timeout`
+        seconds) for it to exit. Idempotent."""
+        if self._closed:
+            return
+        self._stop_event.set()
+        self.thread.join(timeout=timeout)
+        self._closed = True
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        self.stop()
+        return False
+
+    def __repr__(self):
+        state = 'stopped' if self.closed else 'running'
+        return f'<SyntheticOutlet {self.info.name()!r} ({state})>'

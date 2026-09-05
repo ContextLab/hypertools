@@ -258,20 +258,98 @@ def test_lsl_stream_resolves_by_type(outlet_stream):
 def test_lsl_stream_name_takes_precedence_over_type():
     # two simultaneous outlets with different types; name= must pick the
     # exact one requested even though type= alone would be ambiguous
+    _require_outlets()
     name_a = f'HypertoolsTestStreamA-{time.time_ns()}'
     name_b = f'HypertoolsTestStreamB-{time.time_ns()}'
-    thread_a, stop_a = _start_outlet(name_a, stream_type='EEG')
-    thread_b, stop_b = _start_outlet(name_b, stream_type='EEG')
+    outlet_a = hyp.io.lsl.synthetic_outlet(name_a, n_channels=N_CHANNELS,
+                                          stream_type='EEG')
+    outlet_b = hyp.io.lsl.synthetic_outlet(name_b, n_channels=N_CHANNELS,
+                                          stream_type='EEG')
     try:
         stream = hyp.io.lsl_stream(name=name_b, type='EEG', timeout=5.0)
         sample = next(stream)
         assert len(sample) == N_CHANNELS
     finally:
-        stop_a.set()
-        stop_b.set()
-        thread_a.join(timeout=5.0)
-        thread_b.join(timeout=5.0)
-        assert not thread_a.is_alive() and not thread_b.is_alive()
+        outlet_a.stop()
+        outlet_b.stop()
+        assert not outlet_a.thread.is_alive() and not outlet_b.thread.is_alive()
+
+
+# ------------------------------------------- hyp.io.lsl.synthetic_outlet()
+
+
+def test_synthetic_outlet_validates_arguments():
+    # validation happens before pylsl is even imported, so this runs with
+    # or without pylsl installed (mirrors test_timeout_raises_hypertools_
+    # io_error's pattern for lsl_stream's own validation)
+    with pytest.raises(TypeError):
+        hyp.io.lsl.synthetic_outlet(123)
+    with pytest.raises(TypeError):
+        hyp.io.lsl.synthetic_outlet('x', stream_type=123)
+    with pytest.raises(ValueError):
+        hyp.io.lsl.synthetic_outlet('x', n_channels=0)
+    with pytest.raises(ValueError):
+        hyp.io.lsl.synthetic_outlet('x', rate=-1)
+    with pytest.raises(ValueError):
+        hyp.io.lsl.synthetic_outlet('x', push_interval=0)
+    with pytest.raises(ValueError):
+        hyp.io.lsl.synthetic_outlet('x', noise=-0.1)
+
+
+@requires_pylsl
+def test_synthetic_outlet_is_discoverable_by_lsl_stream():
+    _require_outlets()
+    name = f'HypertoolsSyntheticTest-{time.time_ns()}'
+    outlet = hyp.io.lsl.synthetic_outlet(name)
+    try:
+        stream = hyp.io.lsl_stream(name=name, timeout=5.0)
+        assert is_stream(stream)
+        stream.close()
+    finally:
+        outlet.stop()
+        assert not outlet.thread.is_alive()
+
+
+@requires_pylsl
+def test_synthetic_outlet_samples_have_n_channels():
+    _require_outlets()
+    name = f'HypertoolsSyntheticTest-{time.time_ns()}'
+    outlet = hyp.io.lsl.synthetic_outlet(name, n_channels=6)
+    try:
+        stream = hyp.io.lsl_stream(name=name, timeout=5.0)
+        sample = next(stream)
+        assert len(sample) == 6
+        stream.close()
+    finally:
+        outlet.stop()
+
+
+@requires_pylsl
+def test_synthetic_outlet_stop_ends_the_thread():
+    _require_outlets()
+    name = f'HypertoolsSyntheticTest-{time.time_ns()}'
+    outlet = hyp.io.lsl.synthetic_outlet(name)
+    assert outlet.thread.is_alive()
+    assert not outlet.closed
+
+    outlet.stop()
+
+    assert not outlet.thread.is_alive()
+    assert outlet.closed
+    outlet.stop()  # idempotent
+    assert outlet.closed
+
+
+@requires_pylsl
+def test_synthetic_outlet_context_manager_stops_it():
+    _require_outlets()
+    name = f'HypertoolsSyntheticTest-{time.time_ns()}'
+    with hyp.io.lsl.synthetic_outlet(name) as outlet:
+        assert not outlet.closed
+        thread = outlet.thread
+        assert thread.is_alive()
+    assert outlet.closed
+    assert not thread.is_alive()
 
 
 # -------------------------------------------------------------- timeout
@@ -615,15 +693,15 @@ def test_minimum_really_is_forwarded_to_the_byprop_resolver(outlet_stream):
     where the default `minimum=1` may return the first and warn about
     nothing."""
     second = f'HypertoolsTestStream-second-{time.time_ns()}'
-    thread, stop = _start_outlet(second, stream_type='EEG')
+    outlet = hyp.io.lsl.synthetic_outlet(second, n_channels=N_CHANNELS,
+                                        stream_type='EEG')
     try:
         with pytest.warns(RuntimeWarning, match='LSL streams match'):
             stream = hyp.io.lsl_stream(type='EEG', timeout=10.0, minimum=2)
         stream.close()
     finally:
-        stop.set()
-        thread.join(timeout=5.0)
-        assert not thread.is_alive()
+        outlet.stop()
+        assert not outlet.thread.is_alive()
 
 
 @requires_pylsl
@@ -644,17 +722,20 @@ def test_lsl_stream_raises_when_source_stops_delivering():
     import gc
 
     name = f'HypertoolsStallTest-{threading.get_ident()}-{time.time_ns()}'
-    thread, stop = _start_outlet(name)
+    _require_outlets()
+    outlet = hyp.io.lsl.synthetic_outlet(name, n_channels=N_CHANNELS)
     try:
         stream = hyp.io.lsl_stream(name=name, timeout=2.0)
         # receive at least one real sample while the outlet is alive
         assert len(next(stream)) == N_CHANNELS
     finally:
-        stop.set()
-        thread.join(timeout=5.0)
-        assert not thread.is_alive()
-    # the outlet object was owned by the pusher thread's closure; force
-    # its destruction so the stream goes truly silent
+        outlet.stop()
+        assert not outlet.thread.is_alive()
+    # the outlet object was owned by the pusher thread's closure (the
+    # SyntheticOutlet handle itself holds no reference -- see the
+    # hypertools.io.lsl module); force its destruction so the stream goes
+    # truly silent
+    del outlet
     gc.collect()
 
     deadline = time.time() + 30.0
@@ -737,30 +818,14 @@ def test_plot_stream_leaves_the_stream_open_for_reuse(outlet_stream):
 
 
 _TEARDOWN_SCRIPT = """
-    import sys, threading, time
+    import sys, time
     import matplotlib
     matplotlib.use('Agg')
-    import numpy as np
-    import pylsl
     import hypertools as hyp
 
     MODE = sys.argv[1]
     NAME = 'HypertoolsTeardownTest-%d' % time.time_ns()
-    info = pylsl.StreamInfo(NAME, 'EEG', 6, 100.0, 'float32',
-                            'hypertools-test-' + NAME)
-    outlet = pylsl.StreamOutlet(info)
-    stop = threading.Event()
-
-    def _push():
-        i = 0
-        while not stop.is_set():
-            outlet.push_sample([float(np.sin(0.02 * i * (c + 1)))
-                                for c in range(6)])
-            i += 1
-            time.sleep(0.01)
-
-    thread = threading.Thread(target=_push, daemon=True)
-    thread.start()
+    outlet = hyp.io.lsl.synthetic_outlet(NAME, n_channels=6)
 
     stream = hyp.io.lsl_stream(name=NAME, timeout=5.0)
     fig = hyp.plot(stream, stream_init=40, stream_chunk=20, stream_max=120,
@@ -773,8 +838,7 @@ _TEARDOWN_SCRIPT = """
         pass                    # a script/notebook that just exits
     else:
         raise AssertionError(MODE)
-    stop.set()
-    thread.join(timeout=5.0)
+    outlet.stop()
     print('SUBPROCESS_OK')
 """
 
@@ -807,29 +871,15 @@ _TUTORIAL_UNDER_LOAD_SCRIPT = """
     import sys, threading, time
     import matplotlib
     matplotlib.use('Agg')
-    import numpy as np
-    import pylsl
     import hypertools as hyp
 
     SAVE_PATH, CYCLES = sys.argv[1], int(sys.argv[2])
     NAME = 'HypertoolsTutorialLoadTest-%d' % time.time_ns()
-    info = pylsl.StreamInfo(NAME, 'EEG', 6, 100.0, 'float32',
-                            'hypertools-test-' + NAME)
-    outlet = pylsl.StreamOutlet(info)
-    stop = threading.Event()
-
-    def _push():                       # the tutorial's synthetic outlet
-        i = 0
-        while not stop.is_set():
-            outlet.push_sample([float(np.sin(2 * np.pi * (0.5 + 0.1 * c)
-                                             * i * 0.02)) for c in range(6)])
-            i += 1
-            time.sleep(0.01)
-
-    threading.Thread(target=_push, daemon=True).start()
+    outlet = hyp.io.lsl.synthetic_outlet(NAME, n_channels=6, noise=0.0)
 
     # a busy interpreter: pure-Python threads that hold the GIL while the
     # stream is being closed (what a live kernel's own threads do)
+    stop = threading.Event()
     hogging = threading.Event()
 
     def _hog():
@@ -857,7 +907,8 @@ _TUTORIAL_UNDER_LOAD_SCRIPT = """
         hogging.clear()
         sys.setswitchinterval(0.005)
         assert stream.closed
-    stop.set()                         # ... then the outlet goes away
+    stop.set()                         # stop the GIL-hogging threads ...
+    outlet.stop()                      # ... then the outlet goes away
     time.sleep(0.3)
     print('SUBPROCESS_OK')
 """
