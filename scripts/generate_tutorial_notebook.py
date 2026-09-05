@@ -1,7 +1,8 @@
 """Regenerate a launch tutorial notebook from its example script.
 
 Usage: .venv/bin/python scripts/generate_tutorial_notebook.py [stem ...]
-       (no stems = all five), then execute with scripts/execute_tutorial.py.
+       (no stems = every SPECS entry), then execute with
+       scripts/execute_tutorial.py.
 
 Each notebook is derived from ONE example under examples/ (the Plan 4
 loader/builder scripts): the module docstring becomes the intro, the code is
@@ -11,6 +12,8 @@ becomes the "load and build" cell, and a save cell writes the mp4 the final
 markdown cell embeds. The Colab install cell and the notebook metadata are
 carried over byte-identical from the notebook being replaced, so the
 release-time flip of the install cell keeps working on the regenerated file.
+A stem whose notebook does not exist yet (a NEW spec) takes both from
+``TEMPLATE`` instead, so its install cell matches the hand-written tutorials.
 
 Why a script and not a hand edit: the five notebooks were regenerated five
 times on 2026-09-03 alone, and a hand-split drifts from the example it
@@ -28,6 +31,8 @@ import textwrap
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EXAMPLES = os.path.join(ROOT, 'examples')
 TUTORIALS = os.path.join(ROOT, 'docs', 'tutorials')
+#: the install cell and metadata a brand-new notebook starts from
+TEMPLATE = os.path.join(TUTORIALS, 'cluster.ipynb')
 DRAW_LAST = '_ = anim.draw_frame(anim.n_frames - 1)   # the fully revealed frame\n'
 
 #: notebook stem -> (example module, mp4 dpi, [(heading, prose, first symbol)])
@@ -145,6 +150,26 @@ SPECS = {
          '`on_frame` hook re-applies the larger, lowered title style on '
          'every frame.', 'construct_artifact'),
     ]),
+    'animate_forecast': ('animate_forecast', 100, [
+        ('## 1. Imports, the regions, and the clip constants',
+         'Three regions of six cities each, every region spanning both '
+         'hemispheres so its year is a loop rather than a line; the five-year '
+         'window, the twelve-month horizon and the frame budget.', None),
+        ('## 2. The archive, with a synthetic fallback',
+         'The fetcher is the only code in this notebook that touches the '
+         'network: the paper\'s temperature archive, cached once. If it is '
+         'unavailable a seeded synthetic set of three seasonal regions takes '
+         'its place, and `fixture_data` is that same payload, so no test '
+         'fetches anything.', 'Climate'),
+        ('## 3. One call: an animated forecast with a fading fan',
+         '`predict=\'Kalman\'` with `animate=True` refits on every distinct '
+         'revealed history and re-anchors the forecast on the last revealed '
+         'month; `forecast_trail=True` keeps the earlier fits as a fading '
+         'fan. `forecast_hue=`, `forecast_palette=` and `forecast_fmt=` '
+         'restyle only the forecasts, and `slow_warning_seconds=None` '
+         'silences the long-schedule notice for a wait that is known.',
+         'construct_artifact'),
+    ]),
 }
 
 
@@ -207,7 +232,7 @@ def cell(kind, text, execution_count=None):
 def build(stem):
     module, dpi, spec = SPECS[stem]
     path = os.path.join(TUTORIALS, stem + '.ipynb')
-    with open(path) as handle:
+    with open(path if os.path.exists(path) else TEMPLATE) as handle:
         old = json.load(handle)
     install = old['cells'][0]
     assert 'pip install' in ''.join(install['source']), path

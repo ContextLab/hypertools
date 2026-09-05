@@ -114,6 +114,9 @@ SCRIPT_BUDGETS = {
     'examples/animate_conversation.py': 140,
     # morph: 69. The title restyle hook and its constants.
     'examples/animate_morph_zoo.py': 70,
+    # forecast: 84 (measured 2026-09-04). Three regions' weather, one
+    # predict='Kalman' forecast fan restyled by forecast_hue/palette/fmt.
+    'examples/animate_forecast.py': 85,
 }
 
 #: script stem -> notebook, so the derivation below has something to pair.
@@ -123,6 +126,7 @@ NOTEBOOKS = {
     'examples/animate_painting_embeddings.py': 'docs/tutorials/painting_embeddings.ipynb',
     'examples/animate_conversation.py': 'docs/tutorials/conversation_shape.ipynb',
     'examples/animate_morph_zoo.py': 'docs/tutorials/morph_shapes_zoo.ipynb',
+    'examples/animate_forecast.py': 'docs/tutorials/animate_forecast.ipynb',
 }
 
 #: (path, max_code_lines) for every gated file -- scripts as chosen,
@@ -817,6 +821,8 @@ STATED_ARTIFACT = {
     # comment used to say "for the 5 clouds = 9 segments", counting the
     # shapes rather than what the call receives; corrected in the file.)
     'animate_morph_zoo': dict(min_frames=600, morph=11),
+    # forecast (added 2026-09-04): duration=12 x frame_rate=15 = 180 frames.
+    'animate_forecast': dict(min_frames=180),
 }
 
 
@@ -1074,7 +1080,7 @@ def test_examples_produce_their_stated_artifact(stem):
 
 LAUNCH_NOTEBOOKS = ('market_sectors', 'weather_decades',
                     'painting_embeddings', 'conversation_shape',
-                    'morph_shapes_zoo')
+                    'morph_shapes_zoo', 'animate_forecast')
 
 
 def _is_install_cell(source):
@@ -1127,6 +1133,8 @@ EXPECTED_VISIBLE_OUTPUTS = {
     'painting_embeddings': {4, 5},
     'conversation_shape': {5, 6},
     'morph_shapes_zoo': {4, 5},
+    # three-section notebook, added 2026-09-04 (measured the same way)
+    'animate_forecast': {4, 5},
 }
 
 

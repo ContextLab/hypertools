@@ -53,6 +53,56 @@ Cluster
 
   tutorials/cluster.ipynb
 
+Loading and saving data
+-----------------------
+
+``hyp.load`` for hosted, scikit-learn, local-file, URL and streamed Hugging Face data; ``hyp.save`` round trips; ``save_path=`` and ``HypertoolsIOError``.
+
+.. toctree::
+  :maxdepth: 2
+
+  tutorials/io.ipynb
+
+Manipulating data and animating windows and trails
+--------------------------------------------------
+
+Smooth, Resample, ZScore and Normalize, chained and via ``manip=``; ``animate='window'`` with ``focused=``; chemtrails, precog and bullettime.
+
+.. toctree::
+  :maxdepth: 2
+
+  tutorials/manip.ipynb
+
+Fitted models and pipelines
+---------------------------
+
+``return_model=True`` on every dispatcher, ``.transform`` on held-out data, ``pipeline=`` replay, ``apply_model`` modes, ``supported_models()`` and ``Pipeline``.
+
+.. toctree::
+  :maxdepth: 2
+
+  tutorials/pipelines.ipynb
+
+Hierarchical DataFrames
+-----------------------
+
+A column MultiIndex plotted as leaves plus means, continuous ``hue=`` carried through, ``hyp.predict`` and ``predict=`` per group, the bundle's ``trace_data`` and ``trace_metadata``, the refused calls, and the row form.
+
+.. toctree::
+  :maxdepth: 2
+
+  tutorials/hierarchy.ipynb
+
+Forecasting three regions' weather while it is drawn
+----------------------------------------------------
+
+An animated ``predict='Kalman'`` with a ``forecast_trail`` fan, restyled by ``forecast_hue``, ``forecast_palette`` and ``forecast_fmt``.
+
+.. toctree::
+  :maxdepth: 2
+
+  tutorials/animate_forecast.ipynb
+
 Plotting text
 ----------------
 
@@ -61,8 +111,8 @@ Plotting text
 
   tutorials/text.ipynb
 
-Visualizing Hugging Face embeddings
------------------------------------
+News headlines in embedding space: a Hugging Face dataset meets sentence transformers
+-------------------------------------------------------------------------------------
 
 .. toctree::
   :maxdepth: 2
@@ -85,8 +135,8 @@ Mapping Wikipedia with modern text embeddings
 
   tutorials/wikipedia_embeddings.ipynb
 
-Visualizing the shape of a conversation
----------------------------------------
+Reddit thread trajectories: one stroke per utterance, one color per speaker
+---------------------------------------------------------------------------
 
 .. toctree::
   :maxdepth: 2

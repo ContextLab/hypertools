@@ -183,6 +183,23 @@ and reaches flat `hyp.predict` callers.
   `min=-1, max=1` is exactly the "centre and scale into the unit cube" recipe
   the morph gallery examples used to hand-roll. Lists share one centre and
   scale; `return_model=True` reuse and `inverse_transform` work.
+- **Gallery and tutorials reorganized and completed (issue #284).** The
+  gallery merges its duplicate pages (digits/TSNE/UMAP into one; PPCA into
+  missing-data; MDS into the animation page; chemtrails and precog into one
+  trails page; the three cluster pages into one), drops the shape-morph
+  subset of the morph zoo, computes the story-trajectories page live, orders
+  pages by topic, and uses public calls throughout (`hyp.load('digits')`,
+  `hyp.align(model='Procrustes')`, text via `hyp.plot(vectorizer=...)`,
+  `Normalize(mode='isotropic')`, `alpha=` on morphs). Five new tutorials:
+  hierarchical DataFrames, loading and saving, fitted models and pipelines,
+  manipulation with window and trail animations, and an animated forecast
+  (new gallery example `animate_forecast`). The plot, align, analyze and
+  reduce tutorials were rebuilt to exercise every stage and argument they
+  describe (names, colorbar, alpha, font, label_alpha, impute, resample,
+  animate, the plotly backend, saving, the exception classes); the stock
+  tutorial adds Chronos, the projectile tutorial compares scikit-learn
+  imputers with Kalman; tutorials load Hugging Face data through `hyp.load`,
+  save mp4 clips, and no longer silence warnings.
 - **Optional extras install themselves on demand.** The first call that
   needs plotly, kaleido, HF text embeddings, skaters (`Laplace`),
   chronos-forecasting (`Chronos`), torch (autoencoder reducers), gensim,
