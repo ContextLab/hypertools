@@ -200,6 +200,53 @@ and reaches flat `hyp.predict` callers.
   tutorial adds Chronos, the projectile tutorial compares scikit-learn
   imputers with Kalman; tutorials load Hugging Face data through `hyp.load`,
   save mp4 clips, and no longer silence warnings.
+- **Synthetic datasets from `hyp.load`.** `hyp.load('random_walk' | 'helix' |
+  'lorenz' | 'blobs' | 'moons' | 'swiss_roll' | 's_curve', random_state=...,
+  n_datasets=...)` generates seeded example data (scikit-learn kwargs pass
+  through; `n_datasets > 1` returns a list), replacing the random-walk,
+  helix and blob generators every tutorial wrote by hand (GH #285).
+- **Web sources.** `hyp.load('wikipedia:<Title>')` (plain-text extract;
+  `'A|B'` returns a list), `hyp.load('yahoo:<TICKER>', start=, end=,
+  interval=)` (daily OHLCV through explicit epoch bounds) and
+  `hyp.load('sec:<TICKER>', concept=)` (XBRL company facts) (GH #285).
+- **URL download cache.** `hyp.load(url, cache=True)` keeps an atomic on-disk
+  copy under `~/hypertools_data/urls` (`HYPERTOOLS_URL_CACHE` overrides) and
+  `offline=True` reads only the cache, raising `HypertoolsOfflineError`
+  naming the path when a file is missing (GH #285).
+- **`hyp.text_windows`, `hyp.damage`, `hyp.stack`.** Sliding word / sentence /
+  character windows over one or many documents (with the min-windows guard
+  and `max_chars` truncation the examples wrote by hand); reproducible NaN
+  knock-out of scattered cells and/or whole rows on arrays and DataFrames
+  (returns the damaged copy and, optionally, the mask); and a builder for the
+  column-hierarchical DataFrame `plot`/`predict` read from nested dicts or
+  lists, with optional `aggregate=` group traces (GH #285).
+- **Several forecasters in one call, backtests, and imputer scoring.**
+  `hyp.predict(x, model=[...])` returns `{name: forecast}`;
+  `hyp.predict(x, model=[...], holdout=k)` fits on the head and scores the
+  held-out tail (MAE / RMSE / MAPE, `per_column=`, `return_forecasts=`) against
+  every model plus an always-present naive last-value baseline, with
+  `scores.attrs['best']` and `['beats_baseline']`; `hyp.impute(x, model=[...],
+  truth=full)` scores imputers on the damaged cells only, with a column-mean
+  baseline and an `unscored` column for rows a model left NaN (GH #285).
+- **`Smooth(center=False, min_periods=)` and a `Delay` manipulator.** A
+  trailing (causal) boxcar identical to `pandas.rolling(...).mean()`, and a
+  Takens time-delay embedding (`hyp.manip(x, model='Delay', tau=, dims=)`)
+  (GH #285).
+- **Alignment quality score.** `hyp.align(..., return_score=True)` returns the
+  dispersion (or `score_metric='isc'`) before and after alignment;
+  `hypertools.align.score.alignment_score` is the standalone form (GH #285).
+- **`palette=` takes a `{category: color}` dict and per-dataset palette
+  specs.** Unnamed categories keep their default-palette colour and unknown
+  keys raise; a list with one palette spec per dataset (`['image:a.png',
+  'image:b.png', 'viridis']`) colours each dataset from its own palette;
+  `image_palette()` gains `max_luminance=`/`min_luminance=`, also as
+  `palette='image:p.png?max_luminance=0.6'` (GH #285).
+- **A synthetic LSL outlet.** `hypertools.io.lsl.synthetic_outlet(name,
+  n_channels=6, rate=100.0)` runs a real `pylsl.StreamOutlet` on a background
+  thread for demos and tests (GH #285).
+- **Bundled Noto Sans Bold.** `fontweight='bold'` now renders a real bold face
+  (SIL OFL 1.1, same Noto Sans 2.008 source as the Regular face) instead of
+  silently falling back to Regular (GH #285).
 - **`hyp.plot(x, pipeline=p)` accepts hand-built pipelines.** A `hyp.Pipeline`
   whose steps are raw scikit-learn estimators (fitted or not) or a bare
   fitted stage object replays through `plot`: an unfitted pipeline is fit on
@@ -229,6 +276,19 @@ and reaches flat `hyp.predict` callers.
   the manual `pip install "hypertools[<extra>]"` command, as before.
 
 ### Changed / validation
+
+- **`hyp.load('wiki')` and `hyp.load('nips')` return a flat list of strings**
+  (one document per entry), like `hyp.load('sotus')`; previously a list
+  holding one `(n, 1)` object array. Update any
+  `[str(p) for p in x[0].ravel()]` call site to use the list directly. The
+  documents are byte-identical to the pre-1.0 originals (GH #285).
+- **Non-streaming Hugging Face loads decode `ClassLabel` columns** to their
+  string names (`decode_labels=False` keeps the integers), matching a
+  streaming load (GH #285).
+- **The Hugging Face text and dataset paths set `HF_HUB_DISABLE_PROGRESS_BARS`,
+  `HF_HUB_VERBOSITY` and `TOKENIZERS_PARALLELISM`** (via `setdefault`, so an
+  explicit setting wins) before importing the libraries that read them, so
+  no notebook needs the env-var preamble (GH #285).
 
 These turn previously-accepted input into rejected input. Each was
 previously ambiguous or silently lossy.
