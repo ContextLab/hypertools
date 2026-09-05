@@ -671,10 +671,10 @@ def test_lsl_stream_raises_when_source_stops_delivering():
 
 
 def _inlet_ref(stream):
-    """A weakref to the pylsl.StreamInlet behind `stream`. It dies exactly
-    when pylsl's `StreamInlet.__del__` (`lsl_destroy_inlet`) has run, which
-    is the ONLY pylsl call that fully shuts the inlet down (see the
-    `hypertools.io.lsl` module docstring)."""
+    """A weakref to the pylsl.StreamInlet behind `stream`. It dies when the
+    stream has dropped the inlet -- which it does only after destroying
+    it (`lsl_destroy_inlet`, the ONLY liblsl call that fully shuts an
+    inlet down; see the `hypertools.io.lsl` module docstring)."""
     import weakref
     return weakref.ref(stream._inlet)
 
@@ -801,3 +801,97 @@ def test_teardown_leaves_no_liblsl_error(mode):
     assert 'SUBPROCESS_OK' in result.stdout
     assert 'broke off' not in result.stderr, result.stderr
     assert 'ERR|' not in result.stderr, result.stderr
+
+
+_TUTORIAL_UNDER_LOAD_SCRIPT = """
+    import sys, threading, time
+    import matplotlib
+    matplotlib.use('Agg')
+    import numpy as np
+    import pylsl
+    import hypertools as hyp
+
+    SAVE_PATH, CYCLES = sys.argv[1], int(sys.argv[2])
+    NAME = 'HypertoolsTutorialLoadTest-%d' % time.time_ns()
+    info = pylsl.StreamInfo(NAME, 'EEG', 6, 100.0, 'float32',
+                            'hypertools-test-' + NAME)
+    outlet = pylsl.StreamOutlet(info)
+    stop = threading.Event()
+
+    def _push():                       # the tutorial's synthetic outlet
+        i = 0
+        while not stop.is_set():
+            outlet.push_sample([float(np.sin(2 * np.pi * (0.5 + 0.1 * c)
+                                             * i * 0.02)) for c in range(6)])
+            i += 1
+            time.sleep(0.01)
+
+    threading.Thread(target=_push, daemon=True).start()
+
+    # a busy interpreter: pure-Python threads that hold the GIL while the
+    # stream is being closed (what a live kernel's own threads do)
+    hogging = threading.Event()
+
+    def _hog():
+        x = 0
+        while not stop.is_set():
+            if hogging.is_set():
+                x += 1
+            else:
+                time.sleep(0.01)
+
+    for _ in range(8):
+        threading.Thread(target=_hog, daemon=True).start()
+
+    for k in range(CYCLES):
+        stream = hyp.io.lsl_stream(name=NAME, timeout=5.0)
+        fig = hyp.plot(stream, stream_init=200, stream_chunk=20,
+                       stream_max=600, save_path=SAVE_PATH, frame_rate=5,
+                       show=False)
+        assert fig.stream_info['n_samples'] >= 600, fig.stream_info
+        hogging.set()
+        sys.setswitchinterval(0.1)
+        time.sleep(0.3)
+        stream.close()                 # the tutorial's clean-up cell ...
+        time.sleep(0.3)
+        hogging.clear()
+        sys.setswitchinterval(0.005)
+        assert stream.closed
+    stop.set()                         # ... then the outlet goes away
+    time.sleep(0.3)
+    print('SUBPROCESS_OK')
+"""
+
+
+@requires_pylsl
+def test_tutorial_close_under_load_leaves_no_liblsl_error(tmp_path):
+    """The LSL tutorial's own sequence -- outlet thread, `hyp.plot(stream,
+    stream_init=200, stream_chunk=20, stream_max=600, save_path=.mp4,
+    frame_rate=5)`, `stream.close()`, stop the outlet -- must not log
+    liblsl's ``ERR| Stream transmission broke off`` at `close()`.
+
+    `close()` used to `close_stream()` the inlet and only then destroy
+    it. liblsl 1.17.7 (data_receiver.cpp) logs that line from the
+    receiver thread whenever a cancelled read fails while the
+    connection's shutdown flag is still clear -- and `close_stream()`
+    never sets that flag, only a destroy does. So the two calls raced
+    the receiver thread, and a busy interpreter (a kernel's threads
+    holding the GIL between the two ctypes calls) made it lose: 4 of 6
+    executions of docs/tutorials/lsl_streaming.ipynb logged the line
+    into the clean-up cell. The GIL hogs below reproduce that on demand:
+    3 cycles under load hit 9 of 12 cycles (4 of 4 processes) with the
+    old release path, 0 of 12 with a direct `lsl_destroy_inlet` (which
+    sets the flag BEFORE cancelling, and joins the receiver thread).
+    Real outlet, real inlet, real subprocess stderr; no mocks."""
+    _require_outlets()
+    result = subprocess.run(
+        [sys.executable, '-c', textwrap.dedent(_TUTORIAL_UNDER_LOAD_SCRIPT),
+         str(tmp_path / 'lsl_streaming.mp4'), '3'],
+        capture_output=True, text=True, timeout=300,
+    )
+    assert result.returncode == 0, (
+        f"stdout={result.stdout}\nstderr={result.stderr}")
+    assert 'SUBPROCESS_OK' in result.stdout
+    assert 'broke off' not in result.stderr, result.stderr
+    assert 'ERR|' not in result.stderr, result.stderr
+    assert (tmp_path / 'lsl_streaming.mp4').stat().st_size > 0

@@ -34,18 +34,33 @@ moment ANY of these happens:
   (and with them any `pylsl.StreamOutlet` the script created) are torn
   down.
 
-Releasing means ``close_stream()`` followed by DESTROYING the inlet
-(dropping the last reference, so pylsl's ``StreamInlet.__del__`` runs
-``lsl_destroy_inlet``). Both steps matter: measured against liblsl 1.17.7,
-``close_stream()`` only sets a flag and cancels the inlet's sockets, and its
-data thread keeps logging ``data_receiver.cpp:344 ERR| Stream transmission
-broke off (Input stream error.); re-connecting...`` if the outlet
-disappears first -- liblsl suppresses that message only once the inlet is
-shut down, which is what destroying it does. Before 1.1 the inlet lived in
-a generator's closure and was ``close_stream()``ed only when the generator
-was closed, so a notebook that simply moved on (or a script that exited)
-left the inlet alive for liblsl to complain about at kernel/interpreter
-teardown.
+Releasing means DESTROYING the inlet -- liblsl's ``lsl_destroy_inlet``,
+called directly on the handle (`_destroy_inlet`), not merely dropping the
+Python reference and not ``close_stream()``. The distinction is what keeps
+teardown silent, and it was measured against liblsl 1.17.7 (source:
+``data_receiver.cpp``, ``inlet_connection.cpp``):
+
+* ``close_stream()`` sets ``closing_stream_`` and cancels the inlet's
+  socket. The receiver thread's blocked read then fails with
+  ``Input stream error.`` and lands in a catch block that logs
+  ``data_receiver.cpp:344 ERR| Stream transmission broke off (Input stream
+  error.); re-connecting...`` unless the connection's ``shutdown_`` flag
+  is already set -- and ``close_stream()`` never sets it. Following it
+  with a destroy is a race between the receiver thread reaching that
+  catch block and the destroy setting ``shutdown_``: lost 4 times in 6
+  kernel runs of the LSL tutorial (a busy interpreter delays the main
+  thread between the two calls), and reproducible on demand by hogging
+  the GIL around ``close()`` (tests/test_lsl_streaming.py).
+* ``lsl_destroy_inlet`` runs ``inlet_connection::disengage()``, which sets
+  ``shutdown_`` FIRST, then cancels, then joins the receiver thread -- so
+  the catch block is gated off before the read can fail, and nothing of
+  the inlet survives the call. 0 errors in every run.
+
+Before 1.1 the inlet lived in a generator's closure and was
+``close_stream()``ed only when the generator was closed, so a notebook
+that simply moved on (or a script that exited) left the inlet alive for
+liblsl to complain about at kernel/interpreter teardown; 1.1's first cut
+destroyed it but ``close_stream()``ed first, which is the race above.
 """
 
 import threading
@@ -251,18 +266,34 @@ def lsl_stream(name=None, type=None, timeout=10.0, **resolve_kwargs):
     return LSLStream(inlet, criterion, pull_timeout, max_silent_pulls)
 
 
+def _destroy_inlet(inlet):
+    """Shut a `pylsl.StreamInlet` down NOW: liblsl's ``lsl_destroy_inlet``
+    on its handle, then null the handle so pylsl's own ``StreamInlet.__del__``
+    (which calls the same function on ``self.obj``) becomes a no-op --
+    ``lsl_destroy_inlet(NULL)`` is ``delete nullptr`` in liblsl, a no-op --
+    whenever it eventually runs, however many references to the Python
+    object still exist. Deliberately NOT preceded by ``close_stream()``:
+    see the module docstring, *Teardown*."""
+    import sys
+    # the CDLL is the `lib` global of StreamInlet's own module in every
+    # pylsl layout (`pylsl.inlet` since 1.17, `pylsl.pylsl` before) -- the
+    # same object `StreamInlet.__del__` calls into
+    lib = sys.modules[type(inlet).__module__].lib
+    handle, inlet.obj = inlet.obj, None
+    if handle:
+        lib.lsl_destroy_inlet(handle)
+
+
 def _release_inlet(box):
-    """Shut a `pylsl.StreamInlet` down for good: `close_stream()`, then drop
-    the last reference so pylsl's `StreamInlet.__del__` destroys it
-    (`lsl_destroy_inlet`). `box` is the one-element list that owned the
-    inlet, so emptying it IS dropping the last reference (CPython frees it
-    on the spot). Called at most once per inlet -- `weakref.finalize`
-    detaches itself after its first call."""
+    """Release the `pylsl.StreamInlet` owned by `box` (a one-element list):
+    destroy it (see `_destroy_inlet`) and drop the reference. Called at
+    most once per inlet -- `weakref.finalize` detaches itself after its
+    first call."""
     if not box:
         return
     inlet = box.pop()
     try:
-        inlet.close_stream()
+        _destroy_inlet(inlet)
     finally:
         del inlet
 
@@ -275,8 +306,9 @@ class LSLStream:
     Iterating pulls one sample per ``next()`` (an infinite stream that
     raises :class:`~hypertools.core.exceptions.HypertoolsIOError` when the
     source goes silent for ~`timeout` seconds, closing itself first).
-    ``close()`` releases the inlet -- ``close_stream()`` and destroy --
-    and so does leaving a ``with`` block, garbage collection, and
+    ``close()`` destroys the inlet (liblsl's ``lsl_destroy_inlet``, at
+    once, whatever else still references it), and so does leaving a
+    ``with`` block, garbage collection, and
     interpreter exit (:func:`weakref.finalize`); see the module docstring,
     *Teardown*. A closed stream raises ``StopIteration``, like a closed
     generator, and ``close()`` is idempotent. Passes
@@ -312,8 +344,9 @@ class LSLStream:
         return not self._box
 
     def close(self):
-        """Release the LSL inlet: ``close_stream()`` it, then destroy it.
-        Idempotent; afterwards ``next()`` raises ``StopIteration``."""
+        """Release the LSL inlet: destroy it (liblsl's ``lsl_destroy_inlet``)
+        right now. Idempotent; afterwards ``next()`` raises
+        ``StopIteration``."""
         with self._lock:
             self._finalizer()
 

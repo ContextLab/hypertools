@@ -1,7 +1,7 @@
 """
-=================
+==================
 Gensim text models
-=================
+==================
 
 `hyp.plot` accepts text directly. Its ``vectorizer=``/``semantic=`` string
 specs resolve in three tiers: scikit-learn's built-ins, then
