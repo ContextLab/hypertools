@@ -41,9 +41,10 @@ as **`LICENSE-APACHE-2.0.txt`** and applies to both components below.
 
 ## SIL Open Font License 1.1 component
 
-### Noto Sans (`fonts/NotoSans-Regular.ttf`)
+### Noto Sans (`fonts/NotoSans-Regular.ttf`, `fonts/NotoSans-Bold.ttf`)
 
 - **Upstream:** Google Noto Fonts (https://github.com/notofonts/latin-greek-cyrillic)
 - **License:** SIL Open Font License, Version 1.1 — the full text ships as
   `fonts/OFL.txt`; provenance is documented in `fonts/README.md`.
-- **Modifications:** none (the font file is bundled unmodified).
+- **Modifications:** none (both font files are bundled unmodified; the Bold
+  face, Noto Sans 2.008 like the Regular one, was added in 1.1.0).
