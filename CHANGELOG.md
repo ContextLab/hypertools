@@ -200,14 +200,36 @@ and reaches flat `hyp.predict` callers.
   tutorial adds Chronos, the projectile tutorial compares scikit-learn
   imputers with Kalman; tutorials load Hugging Face data through `hyp.load`,
   save mp4 clips, and no longer silence warnings.
+- **Animation callbacks know where the reveal is.** `FrameContext.progress`
+  (0 to 1 over the clip, every style and backend) and `window_bounds`, and
+  `revealed_counts` is now populated on parallel, `'window'` and `'spin'`
+  reveals instead of `None` (GH #285).
+- **Titles that follow the data.** `title=` accepts a callable `ctx -> str`
+  and a `'{index:%B %Y}'` pattern formatted from a DataFrame's row index at
+  the reveal head, on both backends, styled by `title_kwargs=`,
+  `title_color=` and `font=`; an animated 3-D plot with a multi-line (or
+  `title_wrap=`-wrapped) title now reserves room for every line (GH #285).
+- **`animate='morph', loop=True`** closes the sequence on the first cloud's
+  own sampled points, so a looping morph needs no hand-made sample (GH #285).
+- **`dataset_fade={'floor': f, 'decay': d}`** fades already-revealed datasets
+  by recency on serial reveals (`floor + (1 - floor) * decay**k`; matplotlib
+  alpha, plotly opacity) (GH #285).
+- **`companion=` panels.** 2-D panels laid out beside an animation and
+  revealed in lockstep with it (a revealed series, a smoothed mean, a head
+  marker); matplotlib only, plotly raises `NotImplementedError` (GH #285).
+- **`HyperAnimation.drawn_extent(frames=None)`** returns the union bounding
+  box of everything drawn over the clip, in figure fractions (GH #285).
 - **Multi-panel static plots.** `hyp.plot([...], panels=True | 'auto' | ncols
   | (nrows, ncols), title=[...])` draws one panel per dataset in one figure
   with a single shared pipeline fit (so panels are comparable), hides spare
   axes and lays them out; `reduce=[...]` gives one panel per reducer;
   `hyp.subplots(nrows, ncols, ndims=3)` builds a flat, 3-D-ready axes grid for
-  callers who still want `ax=`. On plotly the panels are `make_subplots`
-  scenes. `return_model=True` adds `axes`, `panels` and `panel_models`
-  (GH #285).
+  callers who still want `ax=`. `panel_fit='shared'` (default) fits the
+  pipeline once across all datasets; `'independent'` fits it per panel.
+  Per-panel axis labels come from DataFrame columns as in the single-axes
+  call. On plotly the panels are `make_subplots` scenes and
+  `return_model=True` returns the same bundle as matplotlib, which adds
+  `axes`, `panels` and `panel_models` (GH #285).
 - **Title styling on every frame.** `title_kwargs=dict(size=, weight=,
   family=, color=, y=)` is applied by hypertools' own title updater,
   including per-segment `title=` lists; `title_color=` takes one colour per
