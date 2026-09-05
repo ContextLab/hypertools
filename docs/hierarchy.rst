@@ -47,6 +47,23 @@ is a market with two sectors, each measured three ways:
    >>> market.shape
    (40, 6)
 
+You rarely need to spell the ``MultiIndex`` out: :func:`hypertools.stack`
+builds the same frame from the per-group datasets, nesting dicts (or lists
+with ``names=``) one level per grouping level, with ``level_names=`` naming
+every level down to the feature axis:
+
+.. doctest::
+
+   >>> built = hyp.stack({'Market': {'Tech': market['Market']['Tech'],
+   ...                               'Energy': market['Market']['Energy']}},
+   ...                   level_names=['Market', 'Sector', 'Measure'])
+   >>> built.equals(market)
+   True
+
+``aggregate='mean'`` appends a per-group mean trace at every level, the
+form the plotting code derives itself, so a frame built with it plots the
+same panel of leaves plus means.
+
 ``Measure`` is the innermost level, so ``Measure`` is the feature axis and
 ``(Market, Sector)`` does the grouping. Each group becomes one leaf, and
 each leaf is **flattened onto the feature axis**: its columns become the
