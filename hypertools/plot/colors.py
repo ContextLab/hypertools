@@ -20,6 +20,13 @@ import pandas as pd
 # (release-1.0 audit, F02-001/F24-004)
 NAN_COLOR = (0.75, 0.75, 0.75)
 
+#: The palette every entry point here falls back to when none is given (and
+#: `plot()`'s own default). Named once so the "categories missing from a
+#: `palette=` dict fall back to the default palette" rule in
+#: `resolve_category_colors` cannot drift away from what an unspecified
+#: `palette=` would have drawn.
+DEFAULT_PALETTE = 'hls'
+
 
 def is_missing_label(value):
     """True for every spelling of "no label given": `None`, NaN, `pd.NA`.
@@ -64,15 +71,16 @@ def mat2colors(m, palette='hls', n_bins=100):
           component color or the uniform blend. For arbitrary
           high-dimensional matrices, reduce to 3 columns first (see
           ``plot()``'s ``color_reduce=``).
-    palette : str, list of colors, or matplotlib.colors.Colormap
+    palette : str, list of colors, dict, or matplotlib.colors.Colormap
         Base colors: a seaborn/matplotlib palette name, an explicit list of
         colors (hex strings like '#ff0000', named colors like 'red', or
-        RGB(A) tuples), or a matplotlib Colormap instance (sampled evenly).
-        Default: 'hls'. For CONTINUOUS (1D numeric) input, a list shorter
-        than `n_bins` is blended into a smooth gradient using the listed
-        colors as anchors (seaborn ``blend_palette`` semantics); for
-        categorical/matrix input the list must supply at least one color
-        per category/column.
+        RGB(A) tuples), a matplotlib Colormap instance (sampled evenly), or
+        -- for CATEGORICAL input only -- a ``{category: color}`` dict (see
+        `resolve_category_colors`). Default: 'hls'. For CONTINUOUS (1D
+        numeric) input, a list shorter than `n_bins` is blended into a
+        smooth gradient using the listed colors as anchors (seaborn
+        ``blend_palette`` semantics); for categorical/matrix input the list
+        must supply at least one color per category/column.
     n_bins : int
         Resolution used when binning continuous 1D values (default: 100).
         Must be a positive integer.
@@ -123,9 +131,12 @@ def mat2colors(m, palette='hls', n_bins=100):
     if not _is_numeric(m):
         labels = _flatten_if_nested(m)
         categories = list(sorted(set(labels), key=list(labels).index))
-        base = _get_palette(palette, len(categories), sns)
-        return np.asarray(
-            [base[categories.index(label)] for label in labels], dtype=float)
+        # `resolve_category_colors` is the ONE place a category order is
+        # turned into colors, so a `palette=` dict, a list, a name and a
+        # Colormap all mean the same thing here, in `plot()`'s legend, and
+        # in either backend
+        mapping = resolve_category_colors(palette, categories)
+        return np.asarray([mapping[label] for label in labels], dtype=float)
 
     m = np.asarray(m, dtype=np.float64)
 
@@ -300,6 +311,89 @@ IMAGE_PALETTE_PREFIX = 'image:'
 #: salient ABOUT, so `image_palette` orders by population instead.
 _ACHROMATIC_EPS = 0.02
 
+#: sRGB relative-luminance weights (Rec. 709, as used by WCAG's contrast
+#: definition): ``L = 0.2126 R + 0.7152 G + 0.0722 B`` over RGB in [0, 1].
+#: Named once so `luminance` and `image_palette`'s `max_luminance=` /
+#: `min_luminance=` bounds cannot disagree about what "too bright" means.
+LUMINANCE_WEIGHTS = (0.2126, 0.7152, 0.0722)
+
+#: Options `palette='image:<path>?<key>=<value>&...'` may carry, and the
+#: type each is read as. They are exactly the tunable arguments of
+#: `image_palette`, so the declarative string form can reach everything the
+#: function call can.
+_IMAGE_SPEC_OPTIONS = {'max_luminance': float, 'min_luminance': float,
+                       'n_colors': int, 'resize': int, 'random_state': int}
+
+
+def luminance(colors):
+    """Relative luminance of one color, or of a sequence of colors.
+
+    ``L = 0.2126 R + 0.7152 G + 0.0722 B`` (`LUMINANCE_WEIGHTS`) over sRGB
+    components in [0, 1]: 0 is black, 1 is white, and the weights are the
+    Rec. 709 luminance coefficients, so a saturated yellow scores far
+    higher than an equally saturated blue -- which is the point, since what
+    this measures is how legible a color is against a WHITE page.
+
+    Accepts anything matplotlib accepts as a color (hex string, named
+    color, RGB(A) tuple/array), or a sequence of them; an alpha channel is
+    ignored.
+
+    Returns
+    -------
+    float, or numpy.ndarray of shape (n,)
+        A scalar for a single color, one value per entry for a sequence.
+    """
+    from matplotlib.colors import to_rgb
+
+    weights = np.asarray(LUMINANCE_WEIGHTS, dtype=float)
+    if _is_color(colors):
+        return float(np.asarray(to_rgb(colors), dtype=float) @ weights)
+    try:
+        rgb = np.asarray([to_rgb(c) for c in colors], dtype=float)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            "luminance() takes a matplotlib color (hex string, named "
+            f"color, RGB(A) tuple) or a sequence of them; got {colors!r} "
+            f"({exc})") from exc
+    return np.asarray(rgb @ weights, dtype=float)
+
+
+def _parse_image_spec(spec):
+    """Split an image palette spec into ``(source, image_palette kwargs)``.
+
+    ``'starry_night.jpg'`` -> ``('starry_night.jpg', {})``, and
+    ``'starry_night.jpg?max_luminance=0.6&n_colors=8'`` ->
+    ``('starry_night.jpg', {'max_luminance': 0.6, 'n_colors': 8})``.
+
+    A REAL path always wins: if a file exists at the literal text, it is
+    used verbatim, so a filename that happens to contain '?' (or '=', or
+    '&') is never mangled. Only when no such file exists, and every
+    ``key=value`` after the last '?' names one of `_IMAGE_SPEC_OPTIONS`, is
+    the tail read as options; anything else is left alone so the caller
+    still gets `image_palette`'s "could not find an image at ..." error
+    naming the path they actually typed.
+    """
+    import os
+
+    text = str(spec).strip()
+    if '?' not in text or os.path.exists(os.path.expanduser(text)):
+        return text, {}
+    path, _, query = text.rpartition('?')
+    options = {}
+    for item in query.split('&'):
+        key, sep, value = item.partition('=')
+        key = key.strip()
+        if not sep or key not in _IMAGE_SPEC_OPTIONS:
+            return text, {}
+        try:
+            options[key] = _IMAGE_SPEC_OPTIONS[key](value.strip())
+        except ValueError:
+            raise ValueError(
+                f"palette='{IMAGE_PALETTE_PREFIX}{text}': could not read "
+                f"{key}={value.strip()!r} as a "
+                f"{_IMAGE_SPEC_OPTIONS[key].__name__}") from None
+    return path, options
+
 
 def _image_pixels(image, resize):
     """(n_pixels, 3) float RGB in [0, 1] from a path, PIL image, or array."""
@@ -327,7 +421,9 @@ def _image_pixels(image, resize):
     return np.asarray(im, dtype=np.float64).reshape(-1, 3) / 255.0
 
 
-def image_palette(image, n_colors=IMAGE_PALETTE_N, resize=200, random_state=0):
+def image_palette(image, n_colors=IMAGE_PALETTE_N, resize=200,
+                  random_state=0, max_luminance=None,
+                  min_luminance=None):
     """Extract a color palette from an image, most VISUALLY SALIENT first.
 
     Parameters
@@ -345,13 +441,38 @@ def image_palette(image, n_colors=IMAGE_PALETTE_N, resize=200, random_state=0):
         Longest edge the image is thumbnailed to before clustering
         (default 200). Clustering cost is linear in pixel count.
     random_state : int
-        Seed for the k-means fit, so repeated calls are identical.
+        Seed for the k-means fit, so repeated calls return the same palette
+        (to within ~1e-15 per channel: k-means' threaded reductions sum in
+        whatever order the threads finish, so the centers are reproducible
+        but not bit-identical -- compare extracted colors with
+        ``np.allclose``, never ``==``).
+    max_luminance : float or None
+        Drop extracted colors BRIGHTER than this (default None: keep all).
+        Luminance is ``0.2126 R + 0.7152 G + 0.0722 B`` over RGB in [0, 1]
+        (`luminance` / `LUMINANCE_WEIGHTS`). Filtering happens AFTER the
+        salience ordering, so ``image_palette(path, max_luminance=0.6)[0]``
+        is "the most salient color that is still legible on a white page":
+        The Great Wave's two most salient clusters are its cream sky and
+        foam (luminance 0.88 and 0.94), and this is what steps past them to
+        its Prussian blue.
+    min_luminance : float or None
+        Drop extracted colors DARKER than this (default None: keep all) --
+        the same filter from the other end, for artwork whose salient
+        colors are near-black on a dark page.
 
     Returns
     -------
     palette : numpy.ndarray
         (k, 3) float RGB in [0, 1], k <= n_colors, ordered most salient
         first.
+
+    Raises
+    ------
+    ValueError
+        If a luminance bound excludes EVERY extracted color. The message
+        reports the luminances actually measured, because the fix (widen
+        the bound, raise `n_colors` so more clusters are extracted, or use
+        a different image) depends on which of them it was.
 
     Notes
     -----
@@ -370,9 +491,11 @@ def image_palette(image, n_colors=IMAGE_PALETTE_N, resize=200, random_state=0):
     array([0.16, 0.24, 0.55])
 
     The same extraction is reachable declaratively from any plotting call
-    that takes a palette::
+    that takes a palette, luminance bounds included::
 
         hyp.plot(x, hue=values, palette='image:starry_night.jpg')
+        hyp.plot(x, hue=values,
+                 palette='image:great_wave.jpg?max_luminance=0.6')
     """
     from sklearn.cluster import KMeans
 
@@ -380,6 +503,7 @@ def image_palette(image, n_colors=IMAGE_PALETTE_N, resize=200, random_state=0):
             or isinstance(n_colors, bool) or n_colors < 1):
         raise ValueError(
             f"n_colors= must be a positive integer; got {n_colors!r}")
+    lo, hi = _luminance_bounds(min_luminance, max_luminance)
     px = _image_pixels(image, resize)
     if len(px) == 0:
         raise ValueError("image_palette() got an image with no pixels")
@@ -399,7 +523,47 @@ def image_palette(image, n_colors=IMAGE_PALETTE_N, resize=200, random_state=0):
             continue
         seen.add(key)
         out.append(centers[i])
+    if lo > 0.0 or hi < 1.0:
+        lums = luminance(np.asarray(out, dtype=float))
+        kept = [c for c, value in zip(out, np.atleast_1d(lums))
+                if lo <= value <= hi]
+        if not kept:
+            raise ValueError(
+                f"image_palette(): none of the {len(out)} color(s) "
+                f"extracted from this image have luminance in "
+                f"[{lo:g}, {hi:g}] (measured: "
+                f"{[round(float(v), 3) for v in np.atleast_1d(lums)]}). "
+                "Widen the bound, raise n_colors= so more clusters are "
+                "extracted, or use a different image.")
+        out = kept
     return np.asarray(out, dtype=float)
+
+
+def _luminance_bounds(min_luminance, max_luminance):
+    """Validated ``(lo, hi)`` luminance window; `None` means "no bound"."""
+    bounds = []
+    for name, value, default in (('min_luminance', min_luminance, 0.0),
+                                 ('max_luminance', max_luminance, 1.0)):
+        if value is None:
+            bounds.append(default)
+            continue
+        if isinstance(value, bool) or not isinstance(
+                value, (int, float, np.integer, np.floating)):
+            raise ValueError(
+                f"{name}= must be a number in [0, 1] (relative luminance, "
+                f"0.2126 R + 0.7152 G + 0.0722 B) or None; got {value!r}")
+        value = float(value)
+        if not 0.0 <= value <= 1.0:
+            raise ValueError(
+                f"{name}= must be in [0, 1] (relative luminance); "
+                f"got {value!r}")
+        bounds.append(value)
+    lo, hi = bounds
+    if lo > hi:
+        raise ValueError(
+            f"min_luminance={lo!r} is greater than max_luminance={hi!r}, "
+            "so no color could ever satisfy both")
+    return lo, hi
 
 
 # palettes that wrap the hue circle end-to-end: sampling them over the full
@@ -448,9 +612,23 @@ def _image_palette_list(source, n_colors, sns, continuous):
     color and leaves the most salient anchor first; cycling the anchors
     would silently give two categories the same color, which is the
     ambiguity the short-list error exists to prevent. A single-color image
-    is the one case interpolation cannot serve, and it raises."""
-    colors = [tuple(c) for c in image_palette(
-        source, n_colors=IMAGE_PALETTE_N if continuous else max(n_colors, 1))]
+    is the one case interpolation cannot serve, and it raises.
+
+    The spec may carry `image_palette` options after a '?'
+    (``'wave.jpg?max_luminance=0.6'``); an explicit ``n_colors`` there
+    overrides the count chosen above (see `_parse_image_spec`). A LUMINANCE
+    BOUND can only ever discard colors, so a bounded spec extracts at least
+    `IMAGE_PALETTE_N` anchors however few are asked for, and the survivors
+    are taken most-salient-first: extracting k=1 and then filtering it
+    would leave a one-category plot with the image's average color or with
+    nothing at all."""
+    path, options = _parse_image_spec(source)
+    wanted = IMAGE_PALETTE_N if continuous else max(n_colors, 1)
+    if options.get('max_luminance') is not None or \
+            options.get('min_luminance') is not None:
+        wanted = max(wanted, IMAGE_PALETTE_N)
+    options.setdefault('n_colors', wanted)
+    colors = [tuple(c) for c in image_palette(path, **options)]
     if continuous or len(colors) >= n_colors:
         return colors
     if len(colors) == 1:
@@ -481,6 +659,15 @@ def _get_palette(palette, n_colors, sns, continuous=False):
         raise ValueError(
             "palette= must be a seaborn/matplotlib palette name, a list of "
             "colors, or a matplotlib Colormap; got None")
+    if isinstance(palette, collections.abc.Mapping):
+        raise ValueError(
+            "palette= was given as a dict, which maps hue CATEGORIES to "
+            "colors (palette={'Alice': '#E4572E', 'Bob': 'C0'}). Resolving "
+            "it needs the category names, so it is supported for a "
+            f"CATEGORICAL hue only; this call needs {n_colors} color(s) "
+            "with no categories attached (a continuous or matrix hue, a "
+            "colorbar, or one color per dataset). Pass a palette name, a "
+            "list of colors, or a matplotlib Colormap here.")
     if isinstance(palette, str):
         if palette.startswith(IMAGE_PALETTE_PREFIX):
             # resolve to a color LIST and fall through to the list handling
@@ -499,6 +686,15 @@ def _get_palette(palette, n_colors, sns, continuous=False):
     try:
         colors = [to_rgb(c) for c in palette]
     except (ValueError, TypeError) as exc:
+        if _looks_like_dataset_palettes(palette):
+            raise ValueError(
+                f"palette={palette!r} is a list of PER-DATASET palettes "
+                "(at least one entry is itself a palette, not a color). "
+                "plot() resolves that form against the datasets you passed "
+                "-- one entry per dataset -- so it cannot be used here, "
+                f"where a single palette of {n_colors} color(s) is needed. "
+                "Pass one palette name, list of colors, or Colormap.") \
+                from exc
         raise ValueError(
             "palette= must be a seaborn/matplotlib palette name, a list of "
             "colors (hex strings, named colors, or RGB(A) tuples), or a "
@@ -521,6 +717,290 @@ def _get_palette(palette, n_colors, sns, continuous=False):
             "required (one per category/component); pass at least "
             f"{n_colors} colors, a palette name, or a matplotlib Colormap")
     return colors[:n_colors]
+
+
+def _is_color(value):
+    """True if matplotlib can read `value` as a single color."""
+    from matplotlib.colors import to_rgb
+    try:
+        to_rgb(value)
+    except (ValueError, TypeError):
+        return False
+    return True
+
+
+def _names_a_palette(name):
+    """True if seaborn/matplotlib know `name` as a palette or colormap."""
+    import seaborn as sns
+    try:
+        sns.color_palette(name, 1)
+    except (ValueError, TypeError, KeyError):
+        return False
+    return True
+
+
+def _is_palette_spec(value):
+    """True if `value` can stand alone as one dataset's `palette=`.
+
+    That is: a color (a one-color palette), an ``'image:<path>'`` string, a
+    seaborn/matplotlib palette NAME, a `Colormap`, a `{category: color}`
+    dict, or a non-empty sequence of colors.
+    """
+    from matplotlib.colors import Colormap
+
+    if isinstance(value, (Colormap, collections.abc.Mapping)):
+        return True
+    if isinstance(value, str):
+        return (value.startswith(IMAGE_PALETTE_PREFIX) or _is_color(value)
+                or _names_a_palette(value))
+    if _is_color(value):
+        return True
+    if isinstance(value, (list, tuple, np.ndarray)):
+        entries = list(value)
+        return bool(entries) and all(_is_color(c) for c in entries)
+    return False
+
+
+def _looks_like_dataset_palettes(palette):
+    """True if `palette` is a sequence with at least one non-color entry
+    that IS a palette -- the shape `dataset_palettes` claims."""
+    if isinstance(palette, (str, collections.abc.Mapping)):
+        return False
+    if not isinstance(palette, (list, tuple, np.ndarray)):
+        return False
+    entries = list(palette)
+    return bool(entries) and any(
+        not _is_color(e) and _is_palette_spec(e) for e in entries)
+
+
+def resolve_category_colors(palette, categories,
+                            default_palette=DEFAULT_PALETTE):
+    """Ordered ``{category: (r, g, b)}`` for a CATEGORICAL hue.
+
+    The single place a category order becomes colors, so the matplotlib
+    renderer, the plotly renderer, the legend and the colorbar all read the
+    same mapping instead of each re-deriving one (they used to, and a
+    `palette=` dict would have had to be taught to three of them
+    separately).
+
+    Parameters
+    ----------
+    palette : str, list of colors, dict, matplotlib.colors.Colormap
+        Everything `mat2colors`/`plot()` document, plus a
+        ``{category: color}`` DICT that names the color for each category
+        explicitly::
+
+            hyp.plot(x, hue=speakers, palette={'Alice': '#E4572E',
+                                               'Bob': '#17BEBB'})
+
+        With a dict the category ORDER stops mattering: a caller no longer
+        has to compute first-appearance order by hand so a list palette
+        lines up with the right speaker. Categories NOT named in the dict
+        fall back to `default_palette` ('hls'), each keeping the color that
+        palette would have given it at its own position in `categories` --
+        so naming a subset shifts nothing else. Colors are not checked for
+        collisions: an explicitly named color may coincide with a fallback
+        one, and that is the caller's choice to make.
+    categories : sequence
+        The categories, in the order they are drawn. Duplicates are
+        collapsed (first appearance kept), so a raw list of per-observation
+        labels may be passed directly. Entries need only be hashable --
+        strings, ints, bools, tuples and enums all work.
+    default_palette : str, list of colors, or Colormap
+        What categories missing from a `palette=` DICT are colored from
+        (default `DEFAULT_PALETTE`). Ignored for every other `palette=`
+        form.
+
+    Returns
+    -------
+    dict
+        ``{category: (r, g, b)}`` in `categories` order (a plain dict, so
+        insertion order IS the drawn order). Empty in, empty out.
+
+    Raises
+    ------
+    ValueError
+        If the dict names a key that is not one of `categories` (the
+        message lists the categories that were seen -- a misspelled or
+        stale key is otherwise silently ignored, which is exactly the bug
+        an explicit mapping is meant to remove), or if one of its values is
+        not a color.
+    """
+    cats = list(dict.fromkeys(categories))
+    if not cats:
+        return {}
+    if not isinstance(palette, collections.abc.Mapping):
+        colors = get_palette_colors(palette, len(cats))
+        return {c: tuple(float(v) for v in colors[i])
+                for i, c in enumerate(cats)}
+
+    from matplotlib.colors import to_rgb
+
+    # match by the category itself; fall back to matching its str() so a
+    # dict keyed {0: 'red'} still reaches an integer hue that plot() has
+    # stringified for its legend (and vice versa)
+    by_str = {}
+    for key in palette:
+        by_str.setdefault(str(key), key)
+    used, resolved = set(), {}
+    for cat in cats:
+        key = None
+        try:
+            if cat in palette:
+                key = cat
+        except TypeError:            # unhashable category: str() match only
+            pass
+        if key is None:
+            key = by_str.get(str(cat))
+        if key is not None:
+            used.add(key)
+            try:
+                resolved[cat] = to_rgb(palette[key])
+            except (ValueError, TypeError) as exc:
+                raise ValueError(
+                    f"palette[{key!r}] = {palette[key]!r} is not a color "
+                    "(hex string, named color, or RGB(A) tuple)") from exc
+    unknown = [k for k in palette if k not in used]
+    if unknown:
+        raise ValueError(
+            f"palette= names {len(unknown)} categor"
+            f"{'y' if len(unknown) == 1 else 'ies'} that this plot does not "
+            f"have: {unknown!r}. The categories seen were {cats!r}. Remove "
+            "the extra key(s), or check for a typo -- categories you do not "
+            f"name are colored from the default palette "
+            f"({default_palette!r}).")
+    fallback = get_palette_colors(default_palette, len(cats))
+    return {c: resolved[c] if c in resolved
+            else tuple(float(v) for v in fallback[i])
+            for i, c in enumerate(cats)}
+
+
+def dataset_palettes(palette, n_datasets):
+    """Split a PER-DATASET `palette=` list into one palette spec per dataset.
+
+    `palette=` has always meant one palette for the WHOLE plot. This adds a
+    second reading -- one palette per dataset,
+    ``palette=['image:wave.jpg', 'image:starry_night.jpg', 'viridis']`` --
+    without touching the first, under one rule:
+
+        A list/tuple whose every entry is a COLOR is a list of colors, as
+        it has always been. A list with at least one entry that is NOT a
+        color but IS a palette (an ``'image:<path>'`` string, a palette
+        name, a `Colormap`, a `{category: color}` dict, or a nested list of
+        colors) is a list of per-dataset palettes.
+
+    Nothing that worked before changes meaning: ``['red', '#00ff00',
+    (0, 0, 1)]`` stays one three-color palette, because every entry is a
+    color. And an entry of a per-dataset list may still be a single color
+    ('red' = a one-color palette for that dataset), because the rule looks
+    at the list as a whole, not at each entry.
+
+    Parameters
+    ----------
+    palette : any `palette=` value
+        Only a list/tuple/ndarray can be per-dataset; a string, dict,
+        `Colormap` or None never is.
+    n_datasets : int
+        How many datasets are being drawn.
+
+    Returns
+    -------
+    list or None
+        `n_datasets` palette specs -- each usable anywhere `palette=` is --
+        or None when `palette` is a single whole-plot palette, which tells
+        the caller to keep doing exactly what it does today. A ONE-entry
+        per-dataset list is broadcast to every dataset.
+
+    Raises
+    ------
+    ValueError
+        If the list is per-dataset but has neither 1 nor `n_datasets`
+        entries, or if an entry is neither a color nor a resolvable palette
+        (a typo'd color name reads as a palette name; the message says so).
+    """
+    if (palette is None or isinstance(palette, (str, collections.abc.Mapping))
+            or not isinstance(palette, (list, tuple, np.ndarray))):
+        return None
+    entries = list(palette)
+    if not entries or all(_is_color(e) for e in entries):
+        # empty (its own error, downstream) or the historical color list
+        return None
+    if (not isinstance(n_datasets, (int, np.integer))
+            or isinstance(n_datasets, bool) or n_datasets < 1):
+        raise ValueError(
+            f"n_datasets= must be a positive integer; got {n_datasets!r}")
+    bad = [e for e in entries if not _is_palette_spec(e)]
+    if bad:
+        raise ValueError(
+            f"palette={palette!r} has entries that are neither a color nor "
+            f"a palette: {bad!r}. Either every entry must be a color (one "
+            "palette of explicit colors for the whole plot) or every entry "
+            "must be a palette -- a palette name, 'image:<path>', a "
+            "Colormap, a {category: color} dict, or a list of colors -- one "
+            "per dataset.")
+    if len(entries) == 1:
+        return entries * n_datasets
+    if len(entries) != n_datasets:
+        raise ValueError(
+            f"palette= lists {len(entries)} per-dataset palettes but "
+            f"{n_datasets} dataset(s) were passed. Give one palette per "
+            "dataset (or one to use for all of them). If you meant a "
+            "single palette of explicit colors, every entry has to be a "
+            "color -- at least one of these is not.")
+    return entries
+
+
+def palette_lead_color(spec):
+    """The one color that REPRESENTS a palette: its lead color.
+
+    For ``'image:<path>'`` that is the most visually salient color of the
+    image -- `image_palette`'s first entry, from its full default six
+    anchors, with any ``?max_luminance=``/``?min_luminance=`` bound in the
+    spec applied first. (Asking `get_palette_colors` for ONE color from an
+    image instead runs k-means with k=1, which returns the image's AVERAGE
+    color: muddy, and never the vivid one salience ordering exists to
+    find.) For every other palette form it is the first color the palette
+    yields.
+
+    A bare color string ('red') is a one-color palette. A string that names
+    BOTH a palette and a color ('gray', 'grey', 'pink') is read as the
+    PALETTE, because that is what `palette=` has always meant everywhere
+    else, and one spelling of a color must not mean two different things in
+    two places.
+
+    Used to give each dataset a single color when `palette=` is a
+    per-dataset list (see `dataset_palettes`).
+    """
+    from matplotlib.colors import to_rgb
+
+    if isinstance(spec, str):
+        if spec.startswith(IMAGE_PALETTE_PREFIX):
+            source, options = _parse_image_spec(
+                spec[len(IMAGE_PALETTE_PREFIX):])
+            return tuple(float(v) for v in image_palette(source, **options)[0])
+        if not _names_a_palette(spec) and _is_color(spec):
+            return tuple(float(v) for v in to_rgb(spec))
+    return tuple(float(v) for v in get_palette_colors(spec, 1)[0])
+
+
+def dataset_colors(palette, n_datasets):
+    """One representative RGB per dataset, per-dataset palettes honored.
+
+    ``(n_datasets, 3)`` float array. With a per-dataset `palette=` list
+    (see `dataset_palettes`) each dataset gets its own palette's
+    `palette_lead_color`; otherwise this is exactly
+    ``get_palette_colors(palette, n_datasets)``, i.e. today's colors.
+
+    Note for callers that currently hand `palette` to seaborn directly:
+    seaborn CYCLES a color list that is shorter than `n_datasets`, while
+    `get_palette_colors` raises. Where that difference matters, call
+    `dataset_palettes` and fall back to the existing seaborn call when it
+    returns None.
+    """
+    specs = dataset_palettes(palette, n_datasets)
+    if specs is None:
+        return get_palette_colors(palette, n_datasets)
+    return np.asarray([palette_lead_color(s) for s in specs], dtype=float)
 
 
 # Legacy continuous-color helpers live in _shared.helpers (import *-ed widely);
