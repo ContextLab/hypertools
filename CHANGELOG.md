@@ -442,6 +442,16 @@ input too.
   `log(det(Sx))`, which underflowed to `log(0)` and then fell back to a
   sign-flipped value; it now uses `slogdet`, identical to rounding wherever
   the old value was representable.
+- **`hyp.plot(docs, vectorizer='all-MiniLM-L6-v2')` crashed with the default
+  `semantic=`/`corpus=`.** The gensim-only auto-skip of the topic-model stage
+  did not cover Hugging Face vectorizers, so the call (the one the optional
+  dependencies guide advertises) embedded the whole hosted `'wiki'` corpus
+  (3,136 documents, ~13 s) and then died inside sklearn with "Negative values
+  in data passed to LatentDirichletAllocation.fit". Pretrained embedding
+  vectorizers now resolve the default semantic stage to none silently, never
+  load or embed a corpus, and an explicit `semantic='NMF'` raises a clear
+  hypertools `ValueError` before any corpus work. Explicit `semantic=None,
+  corpus=None` and the CountVectorizer defaults are unchanged.
 - **Every continuous-hue matplotlib plot rendered fully opaque**, whatever
   `alpha=` was set to. `_apply_multicolor_lines` never read alpha from its
   per-trace kwargs, and the artists carrying the alpha are exactly the

@@ -29,8 +29,9 @@ The extras
      - pydata-wrangler[hf] (torch, transformers, sentence-transformers,
        tokenizers, datasets)
      - Hugging Face text embeddings, e.g.
-       ``hyp.plot(texts, vectorizer='all-MiniLM-L6-v2')``, and
-       ``hyp.load`` of Hugging Face datasets
+       ``hyp.plot(texts, vectorizer='all-MiniLM-L6-v2')`` (the semantic
+       stage defaults to none and ``corpus`` is unused for embedding
+       vectorizers), and ``hyp.load`` of Hugging Face datasets
    * - ``predict``
      - skaters
      - the ``Laplace`` ensemble forecaster for ``hyp.predict``

@@ -143,7 +143,10 @@ def format_data(x, vectorizer='CountVectorizer',
 
     semantic : str, dict, class or class instance
         Text model to use to transform text data. Built-in options are
-        'LatentDirichletAllocation' or 'NMF' (default: LDA). To change default
+        'LatentDirichletAllocation' or 'NMF' (default: LDA for count
+        vectorizers; for embedding vectorizers -- gensim or Hugging Face
+        model ids -- the semantic stage defaults to none and `corpus` is
+        unused). To change default
         parameters, set to a dictionary e.g. {'model' : 'NMF', 'kwargs' :
         {'n_components' : 10}} (the legacy {'model', 'params'} form is also
         still accepted). See

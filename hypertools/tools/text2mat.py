@@ -109,6 +109,13 @@ def _hf_fallback_model(name):
         documents with the named model when `.transform()` is called.
     """
     class _HFTextModel(BaseEstimator, TransformerMixin):
+        # A pretrained embedding model: `fit` is a no-op and `transform`
+        # returns continuous (often negative) sentence embeddings rather
+        # than word counts, so `text2mat` skips its default topic-model
+        # semantic stage for this vectorizer and never loads or embeds a
+        # corpus for it (see `_is_pretrained_vectorizer`).
+        _hypertools_pretrained = True
+
         def fit(self, X, y=None):
             """No-op fit (the pretrained HuggingFace model needs no fitting); marks `self` as fitted."""
             self.fitted_ = True
@@ -186,6 +193,35 @@ def _resolve_registry_name(name, registry, kind):
     registry[name] = _hf_fallback_model(name)  # tier 3: HuggingFace
 
 
+def _is_pretrained_vectorizer(vectorizer, name):
+    """Whether a vectorizer= spec resolves to a pretrained embedding model.
+
+    Parameters
+    ----------
+
+    vectorizer : str, dict, class or class instance
+        The vectorizer= spec, AFTER `_resolve_registry_name` has run on
+        its name (so a Hugging Face name is already in `vectorizer_models`).
+
+    name : str or None
+        `_spec_model_name(vectorizer)`.
+
+    Returns
+    -------
+
+    pretrained : bool
+        True if the class (or instance) the spec resolves to carries a
+        truthy `_hypertools_pretrained` attribute -- the Hugging Face
+        sentence-transformers tier (`_hf_fallback_model`), or a user
+        class/instance that marks itself the same way. Such a vectorizer
+        needs no fitting and emits continuous embeddings, so the default
+        topic-model semantic stage does not apply to it and `corpus=` is
+        unused.
+    """
+    cls = vectorizer_models.get(name) if name is not None else vectorizer
+    return bool(getattr(cls, '_hypertools_pretrained', False))
+
+
 def text2mat(data, vectorizer='CountVectorizer',
              semantic='LatentDirichletAllocation', corpus='wiki'):
     """
@@ -219,10 +255,18 @@ def text2mat(data, vectorizer='CountVectorizer',
 
     semantic : str, dict, class or class instance
         Text model to use to transform text data. Built-in options are
-        'LatentDirichletAllocation' or 'NMF' (default: LDA). String names
-        are resolved using the same three-tier order as `vectorizer`
-        (sklearn -> gensim -> HuggingFace, GH #198); the gensim tier adds
-        'LdaModel', 'LsiModel', and 'HdpModel'. To change default
+        'LatentDirichletAllocation' or 'NMF' (default: LDA for count
+        vectorizers; for embedding vectorizers -- gensim 'Word2Vec'/
+        'Doc2Vec'/'FastText', or a Hugging Face sentence-transformers model
+        -- the semantic stage defaults to none and `corpus` is unused, since
+        a topic model cannot consume continuous embeddings; a gensim
+        vectorizer warns when it skips the stage, a Hugging Face one skips
+        it silently, and an explicit 'NMF' with a Hugging Face vectorizer
+        raises `ValueError`). Pass None to skip the semantic stage
+        explicitly. String names are resolved using the same three-tier
+        order as `vectorizer` (sklearn -> gensim -> HuggingFace, GH #198);
+        the gensim tier adds 'LdaModel', 'LsiModel', and 'HdpModel'. To
+        change default
         parameters, set to a dictionary e.g. {'model' : 'NMF', 'kwargs' :
         {'n_components' : 10}} (the legacy {'model', 'params'} form is also
         still accepted). See
@@ -237,7 +281,9 @@ def text2mat(data, vectorizer='CountVectorizer',
     corpus : list (or list of lists) of text samples or 'wiki', 'nips', 'sotus'.
          Text to use to fit the semantic model (optional). If set to 'wiki', 'nips'
          or 'sotus' and the default semantic and vectorizer models are used, a
-         pretrained model will be loaded which can save a lot of time.
+         pretrained model will be loaded which can save a lot of time. Unused
+         (never loaded or embedded) when the vectorizer is a pretrained
+         Hugging Face embedding model and there is no semantic stage.
 
     Returns
     -------
@@ -274,6 +320,65 @@ def text2mat(data, vectorizer='CountVectorizer',
                 f'list of lists of them), or one of the hosted corpus '
                 f"names 'wiki'/'nips'/'sotus'; got "
                 f'{type(corpus).__name__}: {corpus!r}.')
+    # GH #198: resolve vectorizer=/semantic= string specs (including the
+    # 'model' name inside a dict spec) through the sklearn -> gensim ->
+    # HuggingFace order before the existing str/dict/class dispatch below
+    # ever runs -- once resolved, the name is a plain `vectorizer_models`/
+    # `texts` registry key like any built-in scikit-learn one. This runs
+    # BEFORE the corpus block so the embedding-vectorizer decision that
+    # follows is made before any corpus is loaded or embedded.
+    _vname = _spec_model_name(vectorizer)
+    if _vname is not None:
+        _resolve_registry_name(_vname, vectorizer_models, 'vectorizer')
+    _sname = _spec_model_name(semantic)
+    if _sname is not None:
+        _resolve_registry_name(_sname, texts, 'semantic')
+
+    # GH #198 (QC P1-2): embedding vectorizers emit continuous, often-
+    # negative document vectors, which the default topic-model semantic
+    # stage (LatentDirichletAllocation / NMF) cannot consume ("Negative
+    # values in data passed to ..."). Running a topic model on embeddings
+    # is not meaningful anyway, so skip the semantic stage in that
+    # combination rather than crashing:
+    #   - gensim vectorizers (Word2Vec/Doc2Vec/FastText) skip it with a
+    #     clear warning; pass semantic=None explicitly to silence it.
+    #   - pretrained embedding vectorizers (the Hugging Face tier, marked
+    #     `_hypertools_pretrained`) skip it SILENTLY when `semantic` is the
+    #     function default (LDA): that is the resolved default for an
+    #     embedding vectorizer, not a user mistake. With no semantic stage
+    #     there is nothing left to fit, so `corpus` is dropped here and a
+    #     hosted corpus name is never downloaded or embedded. (Before this
+    #     guard, `hyp.plot(docs, vectorizer='all-MiniLM-L6-v2')` embedded
+    #     the entire hosted 'wiki' corpus -- 3,136 documents, ~13 s -- and
+    #     then crashed inside `LatentDirichletAllocation.fit`.) An explicit
+    #     non-default topic model ('NMF', or a dict spec) raises a clear
+    #     ValueError before any corpus work instead of sklearn's internal
+    #     "Negative values" error after it.
+    if (_vname in _GENSIM_VECTORIZER_NAMES
+            and isinstance(semantic, str)
+            and semantic in ('LatentDirichletAllocation', 'NMF')):
+        warnings.warn(
+            f"vectorizer={_vname!r} produces continuous embeddings that "
+            f"the {semantic} semantic model cannot consume; skipping the "
+            f"semantic stage and returning the embeddings directly. Pass "
+            f"semantic=None to silence this warning.",
+            UserWarning, stacklevel=2)
+        semantic = None
+    elif _is_pretrained_vectorizer(vectorizer, _vname):
+        if semantic == 'LatentDirichletAllocation':
+            semantic = None
+        elif _sname in ('LatentDirichletAllocation', 'NMF'):
+            raise ValueError(
+                f"semantic={_sname!r} cannot be used with "
+                f"vectorizer={_vname!r}: a pretrained embedding vectorizer "
+                f"produces continuous (often negative) embeddings, not the "
+                f"word counts the {_sname} topic model requires. Pass "
+                f"semantic=None (the default for embedding vectorizers) to "
+                f"return the embeddings directly, or pair {_sname!r} with a "
+                f"count vectorizer ('CountVectorizer' or 'TfidfVectorizer').")
+        if semantic is None:
+            corpus = None  # nothing to fit: the corpus would go unused
+
     if corpus is not None:
         if isinstance(corpus, str) and \
                 corpus not in ('wiki', 'nips', 'sotus'):
@@ -316,18 +421,6 @@ def text2mat(data, vectorizer='CountVectorizer',
         else:
             corpus = np.array([corpus])
 
-    # GH #198: resolve vectorizer=/semantic= string specs (including the
-    # 'model' name inside a dict spec) through the sklearn -> gensim ->
-    # HuggingFace order before the existing str/dict/class dispatch below
-    # ever runs -- once resolved, the name is a plain `vectorizer_models`/
-    # `texts` registry key like any built-in scikit-learn one.
-    _vname = _spec_model_name(vectorizer)
-    if _vname is not None:
-        _resolve_registry_name(_vname, vectorizer_models, 'vectorizer')
-    _sname = _spec_model_name(semantic)
-    if _sname is not None:
-        _resolve_registry_name(_sname, texts, 'semantic')
-
     vtype = _check_mtype(vectorizer)
     if vtype == 'str':
         vectorizer_params = default_params(vectorizer) or {}
@@ -345,24 +438,6 @@ def text2mat(data, vectorizer='CountVectorizer',
                                'method following the scikit-learn API. See here '
                                'for more details: '
                                'https://scikit-learn.org/stable/data_transforms.html')
-    # GH #198 (QC P1-2): embedding vectorizers (gensim Word2Vec/Doc2Vec/
-    # FastText) emit continuous, often-negative document vectors, which the
-    # default topic-model semantic stage (LatentDirichletAllocation / NMF)
-    # cannot consume ("Negative values in data passed to ..."). Running a
-    # topic model on embeddings is not meaningful anyway, so skip the
-    # semantic stage in that combination with a clear warning rather than
-    # crashing. Pass semantic=None explicitly to silence this.
-    if (isinstance(vectorizer, str) and vectorizer in _GENSIM_VECTORIZER_NAMES
-            and isinstance(semantic, str)
-            and semantic in ('LatentDirichletAllocation', 'NMF')):
-        warnings.warn(
-            f"vectorizer={vectorizer!r} produces continuous embeddings that "
-            f"the {semantic} semantic model cannot consume; skipping the "
-            f"semantic stage and returning the embeddings directly. Pass "
-            f"semantic=None to silence this warning.",
-            UserWarning, stacklevel=2)
-        semantic = None
-
     ttype = _check_mtype(semantic)
     if ttype == 'str':
         text_params = default_params(semantic) or {}

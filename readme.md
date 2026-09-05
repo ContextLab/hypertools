@@ -100,9 +100,10 @@ HyperTools 1.0 modernizes the toolbox while keeping the familiar API:
   vectorizer='Word2Vec', semantic=None, reduce='PCA')` (and
   `hyp.tools.text2mat`) add `Word2Vec`/`Doc2Vec`/`FastText` vectorizers and
   `LdaModel`/`LsiModel`/`HdpModel` semantic models, from the `[gensim]`
-  extra (installed on demand) -- pass `semantic=None` with an
-  embedding vectorizer like `Word2Vec` since the default LDA semantic stage
-  rejects negative embedding values. Note that non-default vectorizers
+  extra (installed on demand) -- with an embedding vectorizer (gensim, or a
+  Hugging Face model id like `'all-MiniLM-L6-v2'`) the default LDA semantic
+  stage is skipped automatically (gensim warns; pass `semantic=None` to
+  silence it) and `corpus` is unused. Note that non-default vectorizers
   train on the default `corpus='wiki'` corpus the first time, which can
   take a couple of minutes even for tiny inputs; pass `corpus=` a list of
   your own documents to train on those instead.

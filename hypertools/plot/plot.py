@@ -2795,8 +2795,11 @@ def plot(
 
     vectorizer : str, dict, class or class instance
         The vectorizer to use. Built-in options are 'CountVectorizer' or
-        'TfidfVectorizer'. To change default parameters, set to a dictionary
-        e.g. {'model' : 'CountVectorizer', 'kwargs' : {'max_features' : 10}}
+        'TfidfVectorizer'; a name not found there is looked up as a gensim
+        model ('Word2Vec', 'Doc2Vec', 'FastText'), then as a Hugging Face
+        sentence-transformers model id (e.g. 'all-MiniLM-L6-v2'). To change
+        default parameters, set to a dictionary e.g.
+        {'model' : 'CountVectorizer', 'kwargs' : {'max_features' : 10}}
         (the legacy {'model', 'params'} form is also still accepted). See
         https://scikit-learn.org/stable/api/sklearn.feature_extraction.html
         for details. You can also specify your own vectorizer model as a class,
@@ -2807,7 +2810,12 @@ def plot(
 
     semantic : str, dict, class or class instance
         Text model to use to transform text data. Built-in options are
-        'LatentDirichletAllocation' or 'NMF' (default: LDA). To change default
+        'LatentDirichletAllocation' or 'NMF' (default: LDA for count
+        vectorizers; for embedding vectorizers -- gensim or Hugging Face --
+        the semantic stage defaults to none and `corpus` is unused, since a
+        topic model cannot consume continuous embeddings; an explicit 'NMF'
+        with a Hugging Face vectorizer raises `ValueError`). Pass None to
+        skip the semantic stage explicitly. To change default
         parameters, set to a dictionary e.g. {'model' : 'NMF', 'kwargs' :
         {'n_components' : 10}} (the legacy {'model', 'params'} form is also
         still accepted). See
@@ -2822,7 +2830,9 @@ def plot(
     corpus : list (or list of lists) of text samples or 'wiki', 'nips', 'sotus'.
         Text to use to fit the semantic model (optional). If set to 'wiki', 'nips'
         or 'sotus' and the default semantic and vectorizer models are used, a
-        pretrained model will be loaded which can save a lot of time.
+        pretrained model will be loaded which can save a lot of time. Unused
+        (never loaded or embedded) when the vectorizer is a pretrained
+        Hugging Face embedding model and there is no semantic stage.
 
     ax : matplotlib.Axes or plotly.graph_objects.Figure
         The surface to draw into: a matplotlib Axes for the matplotlib
