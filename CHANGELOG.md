@@ -200,6 +200,12 @@ and reaches flat `hyp.predict` callers.
   tutorial adds Chronos, the projectile tutorial compares scikit-learn
   imputers with Kalman; tutorials load Hugging Face data through `hyp.load`,
   save mp4 clips, and no longer silence warnings.
+- **`hyp.load` passes already-loaded data through.** A DataFrame, a numpy
+  array, or a list/tuple of those comes back unchanged (with the same
+  `reduce`/`ndims`/`align`/`normalize` post-processing loaded data gets),
+  so one `hyp.load` call can be the entry point over mixed names and
+  in-memory data; other types still raise `TypeError`. Previously any
+  non-string raised.
 - **Optional extras install themselves on demand.** The first call that
   needs plotly, kaleido, HF text embeddings, skaters (`Laplace`),
   chronos-forecasting (`Chronos`), torch (autoencoder reducers), gensim,

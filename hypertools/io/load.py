@@ -269,9 +269,28 @@ def load(
 
     Parameters
     ----------
-    dataset : string, path-like, or list of strings
+    dataset : string, path-like, DataFrame, numpy array, or list of those
         The name of a built-in example dataset (listed below), a dataset
         name resolvable per the steps above, or a file path / URL.
+
+        Data that is already loaded -- a pandas DataFrame, a numpy array,
+        or a list/tuple of DataFrames/arrays (one hypertools dataset per
+        element, the same shape ``hypertools.load('weights')`` returns) --
+        is passed through unchanged, so ``hypertools.load`` can serve as a
+        uniform entry point over a mix of names and in-memory data:
+
+        >>> import numpy as np
+        >>> arr = np.zeros((10, 3))
+        >>> hypertools.load(arr) is arr
+        True
+        >>> [type(d).__name__ for d in hypertools.load([arr, 'spiral'])]
+        ['ndarray', 'list']
+
+        The ``reduce``/``ndims``/``align``/``normalize`` options apply to
+        passed-through data exactly as they do to loaded data (a list of
+        arrays is analyzed as one multi-dataset, e.g. aligned across its
+        elements). Any other type (a dict, a number, a list mixing in such
+        a value) raises ``TypeError``.
 
         `weights` is a list of numpy arrays, one PER SUBJECT (36 arrays,
         each 300 timepoints x 100 parameters, float32), containing brain
@@ -398,25 +417,86 @@ def load(
         data is returned directly.
 
     """
-    # lists of strings resolve element-wise to a list of datasets
-    if isinstance(dataset, (list, tuple)):
+    if _is_loaded(dataset):
+        # already-loaded data (DataFrame / ndarray / list of those) passes
+        # through unchanged; a list of arrays is ONE multi-dataset, kept
+        # together so reduce/align/normalize below treat it as a unit
+        geo_data = dataset
+    elif isinstance(dataset, (list, tuple)):
+        # anything else list-shaped resolves element-wise (names, paths,
+        # URLs, and in-memory data may be mixed) to a list of datasets
         return [load(d, reduce=reduce, ndims=ndims, align=align,
                      normalize=normalize, legacy=legacy, split=split,
                      streaming=streaming, trust=trust)
                 for d in dataset]
-
-    if not isinstance(dataset, (str, os.PathLike)):
+    elif not isinstance(dataset, (str, os.PathLike)):
         raise TypeError(
             'hypertools.load: dataset must be a string (a dataset name, '
-            'file path, or URL), a path-like object, or a list/tuple of '
-            f'strings; got {type(dataset).__name__}')
-    dataset = os.fspath(dataset)
-
-    if dataset in EXAMPLE_DATA.keys():
-        geo_data = _load_example_data(dataset)
-        if dataset.endswith('_model'):
-            # geo_data is a sklearn.pipeline.Pipeline, not a DataGeometry
+            'file path, or URL), a path-like object, an already-loaded '
+            'pandas DataFrame or numpy array, or a list/tuple of those; '
+            f'got {type(dataset).__name__}')
+    else:
+        dataset = os.fspath(dataset)
+        geo_data = _resolve(dataset, legacy=legacy, split=split,
+                            streaming=streaming, trust=trust)
+        if dataset in EXAMPLE_DATA and dataset.endswith('_model'):
+            # a fitted sklearn.pipeline.Pipeline, not data: returned as-is
             return geo_data
+
+    from .streaming import is_stream
+    if is_stream(geo_data):
+        if any(v is not None and v is not False
+              for v in (reduce, ndims, align, normalize)):
+            raise ValueError(
+                'reduce/ndims/align/normalize cannot be applied to a '
+                'streaming dataset at load time; pass the stream to '
+                'hypertools.plot(), which fits models on the first '
+                'stream_init samples')
+        return geo_data
+
+    if any(v is not None and v is not False
+          for v in (reduce, ndims, align, normalize)):
+        reduce = reduce or 'IncrementalPCA'
+        # shapes-zoo/datasaurus entries are plain arrays/DataFrames/lists
+        # rather than DataGeometry objects
+        raw = geo_data.get_data() if isinstance(geo_data, DataGeometry) \
+            else geo_data
+        return analyze(raw,
+                       reduce=reduce,
+                       ndims=ndims,
+                       align=align,
+                       normalize=normalize)
+
+    # hypertools 1.0 users never receive a geo: extract the raw data (list
+    # of arrays / DataFrame) from any DataGeometry unpickled from a hosted
+    # or legacy file. Everything else passes through unchanged -- checked
+    # by type, NOT by duck-typed hasattr('get_data'), so unrelated objects
+    # that happen to expose a get_data() method (e.g. a pickled matplotlib
+    # Line2D) round-trip intact (QC 2026-07, F20-save-004).
+    return geo_data.get_data() if isinstance(geo_data, DataGeometry) \
+        else geo_data
+
+
+_LOADED_TYPES = (pd.DataFrame, np.ndarray)
+
+
+def _is_loaded(dataset):
+    """True when `dataset` is already-loaded data that :func:`load` passes
+    through: a DataFrame, a numpy array, or a non-empty list/tuple made
+    only of those (one hypertools multi-dataset)."""
+    if isinstance(dataset, _LOADED_TYPES):
+        return True
+    return isinstance(dataset, (list, tuple)) and len(dataset) > 0 and \
+        all(isinstance(d, _LOADED_TYPES) for d in dataset)
+
+
+def _resolve(dataset, *, legacy, split, streaming, trust):
+    """Resolve a string dataset name / path / URL to its raw contents
+    (a fitted *_model Pipeline, a DataGeometry from a hosted or legacy
+    file, or plain arrays/DataFrames/lists) via the resolution chain
+    documented on :func:`load`."""
+    if dataset in EXAMPLE_DATA.keys():
+        geo_data = _load_example_data(dataset)   # *_model -> Pipeline
     else:
         # resolution chain, right after built-in names: scikit-learn's
         # small bundled datasets, then seaborn's named datasets (see
@@ -460,39 +540,7 @@ def load(
                 geo_data = load_source(dataset, split=split,
                                        streaming=streaming, trust=trust,
                                        extra_attempts=extra_attempts)
-
-    from .streaming import is_stream
-    if is_stream(geo_data):
-        if any(v is not None and v is not False
-              for v in (reduce, ndims, align, normalize)):
-            raise ValueError(
-                'reduce/ndims/align/normalize cannot be applied to a '
-                'streaming dataset at load time; pass the stream to '
-                'hypertools.plot(), which fits models on the first '
-                'stream_init samples')
-        return geo_data
-
-    if any(v is not None and v is not False
-          for v in (reduce, ndims, align, normalize)):
-        reduce = reduce or 'IncrementalPCA'
-        # shapes-zoo/datasaurus entries are plain arrays/DataFrames/lists
-        # rather than DataGeometry objects
-        raw = geo_data.get_data() if isinstance(geo_data, DataGeometry) \
-            else geo_data
-        return analyze(raw,
-                       reduce=reduce,
-                       ndims=ndims,
-                       align=align,
-                       normalize=normalize)
-
-    # hypertools 1.0 users never receive a geo: extract the raw data (list
-    # of arrays / DataFrame) from any DataGeometry unpickled from a hosted
-    # or legacy file. Everything else passes through unchanged -- checked
-    # by type, NOT by duck-typed hasattr('get_data'), so unrelated objects
-    # that happen to expose a get_data() method (e.g. a pickled matplotlib
-    # Line2D) round-trip intact (QC 2026-07, F20-save-004).
-    return geo_data.get_data() if isinstance(geo_data, DataGeometry) \
-        else geo_data
+    return geo_data
 
 
 def _load_local(dataset_path):

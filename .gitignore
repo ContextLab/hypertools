@@ -48,3 +48,6 @@ notes/bluesky-launch/
 AGENTS.md
 .omo/
 notes/colab/
+
+# Playwright MCP session scratch (screenshots, traces)
+.playwright-mcp/
