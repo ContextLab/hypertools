@@ -663,3 +663,141 @@ def test_lsl_stream_raises_when_source_stops_delivering():
             next(stream)  # drains any buffered samples, then must raise
     assert time.time() < deadline, \
         'generator kept yielding (or blocking) instead of raising'
+    # the silence abort is terminal: the inlet is released with it
+    assert stream.closed
+
+
+# ----------------------------------------------- deterministic teardown
+
+
+def _inlet_ref(stream):
+    """A weakref to the pylsl.StreamInlet behind `stream`. It dies exactly
+    when pylsl's `StreamInlet.__del__` (`lsl_destroy_inlet`) has run, which
+    is the ONLY pylsl call that fully shuts the inlet down (see the
+    `hypertools.io.lsl` module docstring)."""
+    import weakref
+    return weakref.ref(stream._inlet)
+
+
+@requires_pylsl
+def test_close_destroys_the_inlet_and_is_idempotent(outlet_stream):
+    stream = hyp.io.lsl_stream(name=outlet_stream, timeout=5.0)
+    assert len(next(stream)) == N_CHANNELS
+    assert not stream.closed
+    ref = _inlet_ref(stream)
+    assert ref() is not None
+
+    stream.close()
+
+    assert stream.closed
+    assert ref() is None, 'pylsl.StreamInlet survived close(): the inlet ' \
+                          'was only close_stream()ed, not destroyed'
+    # a closed stream is exhausted, exactly like a closed generator ...
+    with pytest.raises(StopIteration):
+        next(stream)
+    # ... and closing it again is a no-op
+    stream.close()
+    assert stream.closed
+
+
+@requires_pylsl
+def test_context_manager_closes_the_inlet(outlet_stream):
+    with hyp.io.lsl_stream(name=outlet_stream, timeout=5.0) as stream:
+        assert is_stream(stream)
+        assert len(next(stream)) == N_CHANNELS
+        ref = _inlet_ref(stream)
+    assert stream.closed
+    assert ref() is None
+
+
+@requires_pylsl
+def test_dropping_the_last_reference_destroys_the_inlet(outlet_stream):
+    import gc
+    stream = hyp.io.lsl_stream(name=outlet_stream, timeout=5.0)
+    assert len(next(stream)) == N_CHANNELS
+    ref = _inlet_ref(stream)
+    del stream
+    gc.collect()
+    assert ref() is None, 'a garbage-collected stream left its inlet alive'
+
+
+@requires_pylsl
+def test_plot_stream_leaves_the_stream_open_for_reuse(outlet_stream):
+    # hyp.plot stops PULLING at stream_max; it does not own the stream, so
+    # the caller decides when the inlet goes (the tutorial closes it
+    # explicitly, before tearing down its outlet)
+    stream = hyp.io.lsl_stream(name=outlet_stream, timeout=5.0)
+    with pytest.warns(RuntimeWarning, match='outside the display box'):
+        hyp.plot(stream, show=False, stream_init=20, stream_chunk=10,
+                 stream_max=40)
+    assert not stream.closed
+    assert len(next(stream)) == N_CHANNELS
+    stream.close()
+    assert stream.closed
+
+
+_TEARDOWN_SCRIPT = """
+    import sys, threading, time
+    import matplotlib
+    matplotlib.use('Agg')
+    import numpy as np
+    import pylsl
+    import hypertools as hyp
+
+    MODE = sys.argv[1]
+    NAME = 'HypertoolsTeardownTest-%d' % time.time_ns()
+    info = pylsl.StreamInfo(NAME, 'EEG', 6, 100.0, 'float32',
+                            'hypertools-test-' + NAME)
+    outlet = pylsl.StreamOutlet(info)
+    stop = threading.Event()
+
+    def _push():
+        i = 0
+        while not stop.is_set():
+            outlet.push_sample([float(np.sin(0.02 * i * (c + 1)))
+                                for c in range(6)])
+            i += 1
+            time.sleep(0.01)
+
+    thread = threading.Thread(target=_push, daemon=True)
+    thread.start()
+
+    stream = hyp.io.lsl_stream(name=NAME, timeout=5.0)
+    fig = hyp.plot(stream, stream_init=40, stream_chunk=20, stream_max=120,
+                   show=False)
+    assert fig.stream_info['n_samples'] >= 120, fig.stream_info
+
+    if MODE == 'closed_first':
+        stream.close()          # the tutorial's clean-up cell
+    elif MODE == 'never_closed':
+        pass                    # a script/notebook that just exits
+    else:
+        raise AssertionError(MODE)
+    stop.set()
+    thread.join(timeout=5.0)
+    print('SUBPROCESS_OK')
+"""
+
+
+@requires_pylsl
+@pytest.mark.parametrize('mode', ['closed_first', 'never_closed'])
+def test_teardown_leaves_no_liblsl_error(mode):
+    """Streaming into hyp.plot and exiting -- with or without an explicit
+    `close()` -- must not leave a pylsl.StreamInlet for liblsl to complain
+    about. Before the fix, exiting with the stream still open logged
+    ``data_receiver.cpp:344 ERR| Stream transmission broke off (Input
+    stream error.); re-connecting...`` to stderr (measured 3/3 runs on
+    2026-09-04): the inlet's data thread outlived the outlet, and
+    `close_stream()` alone does not silence it (liblsl only suppresses the
+    message once the inlet is DESTROYED). Real outlet, real inlet, real
+    interpreter exit, in a subprocess so stderr is the process's own."""
+    _require_outlets()
+    result = subprocess.run(
+        [sys.executable, '-c', textwrap.dedent(_TEARDOWN_SCRIPT), mode],
+        capture_output=True, text=True, timeout=120,
+    )
+    assert result.returncode == 0, (
+        f"stdout={result.stdout}\nstderr={result.stderr}")
+    assert 'SUBPROCESS_OK' in result.stdout
+    assert 'broke off' not in result.stderr, result.stderr
+    assert 'ERR|' not in result.stderr, result.stderr

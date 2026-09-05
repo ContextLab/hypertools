@@ -220,6 +220,7 @@ I/O
   :toctree:
 
   io.lsl_stream
+  io.LSLStream
 
 Exceptions
 ------------------

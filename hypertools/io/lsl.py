@@ -16,9 +16,41 @@ dependency -- it wraps the native `liblsl` library used by essentially
 every LSL-speaking acquisition device/app
 (https://labstreaminglayer.org) -- the `[lsl]` extra, installed on
 first use.
+
+Teardown
+--------
+The iterator `lsl_stream()` returns is an :class:`LSLStream`. It owns the
+`pylsl.StreamInlet` it pulls from, and releases it deterministically the
+moment ANY of these happens:
+
+* ``stream.close()`` is called (idempotent; a closed stream raises
+  ``StopIteration``, like a closed generator);
+* the ``with hyp.io.lsl_stream(...) as stream:`` block exits;
+* the stream aborts because the source went silent
+  (:class:`~hypertools.core.exceptions.HypertoolsIOError`);
+* the last reference to the stream is dropped (garbage collection), or
+  the interpreter/kernel exits with the stream still open -- via
+  :func:`weakref.finalize`, whose at-exit hook runs BEFORE module globals
+  (and with them any `pylsl.StreamOutlet` the script created) are torn
+  down.
+
+Releasing means ``close_stream()`` followed by DESTROYING the inlet
+(dropping the last reference, so pylsl's ``StreamInlet.__del__`` runs
+``lsl_destroy_inlet``). Both steps matter: measured against liblsl 1.17.7,
+``close_stream()`` only sets a flag and cancels the inlet's sockets, and its
+data thread keeps logging ``data_receiver.cpp:344 ERR| Stream transmission
+broke off (Input stream error.); re-connecting...`` if the outlet
+disappears first -- liblsl suppresses that message only once the inlet is
+shut down, which is what destroying it does. Before 1.1 the inlet lived in
+a generator's closure and was ``close_stream()``ed only when the generator
+was closed, so a notebook that simply moved on (or a script that exited)
+left the inlet alive for liblsl to complain about at kernel/interpreter
+teardown.
 """
 
+import threading
 import warnings
+import weakref
 
 
 def _import_pylsl():
@@ -97,11 +129,19 @@ def lsl_stream(name=None, type=None, timeout=10.0, **resolve_kwargs):
 
     Returns
     -------
-    stream : generator
-        An infinite generator yielding one sample (a list of channel
-        values) per call, pulled from a `pylsl.StreamInlet` opened on the
-        first resolved stream (a ``RuntimeWarning`` names the chosen
-        stream when several match). NOTE that the multi-match check is
+    stream : LSLStream
+        An infinite iterator yielding one sample (a list of channel
+        values) per ``next()``, pulled from a `pylsl.StreamInlet` opened on
+        the first resolved stream (a ``RuntimeWarning`` names the chosen
+        stream when several match). Call ``stream.close()`` -- or use it
+        as a context manager, ``with hyp.io.lsl_stream(...) as stream:``
+        -- to release the inlet; it is also released when the stream is
+        garbage-collected, when it aborts on a silent source, and at
+        interpreter exit (see the module docstring, *Teardown*).
+        ``stream.closed`` reports the state; a closed stream raises
+        ``StopIteration``. `hyp.plot` does NOT close the stream when it
+        stops at ``stream_max=`` -- the stream is yours to reuse or close.
+        NOTE that the multi-match check is
         best-effort: LSL resolution returns as soon as at least one
         stream matches, so a second matching outlet that announces
         itself a moment later goes undetected and the first stream is
@@ -131,6 +171,12 @@ def lsl_stream(name=None, type=None, timeout=10.0, **resolve_kwargs):
     >>> import hypertools as hyp
     >>> stream = hyp.io.lsl_stream(type='EEG', timeout=5.0)  # doctest: +SKIP
     >>> hyp.plot(stream, stream_init=200, stream_chunk=20)  # doctest: +SKIP
+    >>> stream.close()  # release the LSL inlet  # doctest: +SKIP
+
+    or, equivalently, scoped to a block:
+
+    >>> with hyp.io.lsl_stream(type='EEG') as stream:  # doctest: +SKIP
+    ...     hyp.plot(stream, stream_init=200, stream_chunk=20)
     """
     from ..core.exceptions import HypertoolsIOError
 
@@ -202,24 +248,106 @@ def lsl_stream(name=None, type=None, timeout=10.0, **resolve_kwargs):
     pull_timeout = min(1.0, timeout) if timeout else 1.0
     max_silent_pulls = max(1, int(round(timeout / pull_timeout))) if timeout else 10
 
-    def _samples():
-        try:
-            silent_pulls = 0
-            while True:
-                sample, _timestamp = inlet.pull_sample(timeout=pull_timeout)
-                if sample is None:
-                    silent_pulls += 1
-                    if silent_pulls >= max_silent_pulls:
-                        raise HypertoolsIOError(
-                            f'LSL stream ({criterion}) stopped delivering '
-                            f'samples: nothing received for ~'
-                            f'{silent_pulls * pull_timeout:.1f}s. The source '
-                            f'may have disconnected.'
-                        )
-                    continue
-                silent_pulls = 0
-                yield sample
-        finally:
-            inlet.close_stream()
+    return LSLStream(inlet, criterion, pull_timeout, max_silent_pulls)
 
-    return _samples()
+
+def _release_inlet(box):
+    """Shut a `pylsl.StreamInlet` down for good: `close_stream()`, then drop
+    the last reference so pylsl's `StreamInlet.__del__` destroys it
+    (`lsl_destroy_inlet`). `box` is the one-element list that owned the
+    inlet, so emptying it IS dropping the last reference (CPython frees it
+    on the spot). Called at most once per inlet -- `weakref.finalize`
+    detaches itself after its first call."""
+    if not box:
+        return
+    inlet = box.pop()
+    try:
+        inlet.close_stream()
+    finally:
+        del inlet
+
+
+class LSLStream:
+    """Iterator of per-sample vectors from a `pylsl.StreamInlet`, with
+    deterministic teardown. Returned by :func:`lsl_stream`; not meant to be
+    constructed directly.
+
+    Iterating pulls one sample per ``next()`` (an infinite stream that
+    raises :class:`~hypertools.core.exceptions.HypertoolsIOError` when the
+    source goes silent for ~`timeout` seconds, closing itself first).
+    ``close()`` releases the inlet -- ``close_stream()`` and destroy --
+    and so does leaving a ``with`` block, garbage collection, and
+    interpreter exit (:func:`weakref.finalize`); see the module docstring,
+    *Teardown*. A closed stream raises ``StopIteration``, like a closed
+    generator, and ``close()`` is idempotent. Passes
+    `hypertools.io.streaming.is_stream`.
+    """
+
+    def __init__(self, inlet, criterion, pull_timeout, max_silent_pulls):
+        from ..core.exceptions import HypertoolsIOError
+        self._error_type = HypertoolsIOError
+        self._criterion = criterion
+        self._pull_timeout = pull_timeout
+        self._max_silent_pulls = max_silent_pulls
+        self._silent_pulls = 0
+        # the pull and the release are serialized so close() from another
+        # thread (or from the at-exit hook) can never destroy the inlet
+        # mid-pull; RLock because the silence abort closes from inside
+        # __next__.
+        self._lock = threading.RLock()
+        # the inlet lives in a box owned by BOTH this object and its
+        # finalizer, so the finalizer can release it whether it fires from
+        # close(), from garbage collection, or at interpreter exit.
+        self._box = [inlet]
+        self._finalizer = weakref.finalize(self, _release_inlet, self._box)
+
+    @property
+    def _inlet(self):
+        """The live `pylsl.StreamInlet`, or None once closed."""
+        return self._box[0] if self._box else None
+
+    @property
+    def closed(self):
+        """True once the inlet has been released (see :meth:`close`)."""
+        return not self._box
+
+    def close(self):
+        """Release the LSL inlet: ``close_stream()`` it, then destroy it.
+        Idempotent; afterwards ``next()`` raises ``StopIteration``."""
+        with self._lock:
+            self._finalizer()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        self.close()
+        return False
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        with self._lock:
+            inlet = self._inlet
+            if inlet is None:
+                raise StopIteration
+            while True:
+                sample, _timestamp = inlet.pull_sample(
+                    timeout=self._pull_timeout)
+                if sample is not None:
+                    self._silent_pulls = 0
+                    return sample
+                self._silent_pulls += 1
+                if self._silent_pulls >= self._max_silent_pulls:
+                    silent = self._silent_pulls * self._pull_timeout
+                    self.close()
+                    raise self._error_type(
+                        f'LSL stream ({self._criterion}) stopped delivering '
+                        f'samples: nothing received for ~{silent:.1f}s. The '
+                        f'source may have disconnected.'
+                    )
+
+    def __repr__(self):
+        state = 'closed' if self.closed else 'open'
+        return f'<LSLStream {self._criterion} ({state})>'

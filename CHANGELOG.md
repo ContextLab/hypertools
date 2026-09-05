@@ -411,7 +411,16 @@ input too.
   so matplotlib's per-glyph fallback reaches DejaVu Sans, but axes created
   outside hypertools' rc context keep the `sans-serif` alias, which resolves
   to one font with no fallback. hypertools now formats negatives with an
-  ASCII minus (`axes.unicode_minus = False`) while it draws.
+  ASCII minus (`axes.unicode_minus = False`) while it draws, and gives a
+  caller-supplied axes' tick labels the same font list its own axes use, so
+  a label formatted before the call (measured again by a later panel's
+  layout) falls back to DejaVu for the glyph.
+- **An LSL stream left open logged a liblsl error at exit.** `hyp.io.lsl_stream()`
+  only `close_stream()`ed its `pylsl.StreamInlet`, and only when the generator
+  was closed, so a notebook or script that just moved on saw `ERR| Stream
+  transmission broke off` at teardown. The stream is now an `LSLStream` that
+  destroys the inlet on `close()`, on leaving a `with` block, on garbage
+  collection, on the silent-source abort, and at interpreter exit.
 
 - **Every continuous-hue matplotlib plot rendered fully opaque**, whatever
   `alpha=` was set to. `_apply_multicolor_lines` never read alpha from its
