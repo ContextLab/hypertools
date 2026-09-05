@@ -52,6 +52,13 @@ class HyperAnimation(tuple):
     ``.on_frame(callback)`` registers a per-frame callback (matplotlib
     only -- see ``hyp.plot``'s ``on_frame=`` docstring for the
     backend-portable form and the ``FrameContext`` it receives).
+
+    ``.colors`` holds the resolved colour scale of the plot that produced
+    the animation (the same dict ``return_model=True`` puts in
+    ``bundle['colors']``: kind, palette, cmap, norm, vmin, vmax, the
+    per-group colours and their labels), so a companion panel can reuse the
+    library's mapping. ``.drawn_extent(frames=None)`` measures the union
+    bounding box of everything the animation draws.
     """
 
     def __new__(cls, figure, animation, frame_hooks=None):
