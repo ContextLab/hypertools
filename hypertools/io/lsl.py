@@ -22,15 +22,8 @@ import warnings
 
 
 def _import_pylsl():
-    try:
-        import pylsl
-    except ImportError as exc:
-        raise ImportError(
-            'lsl_stream() requires pylsl (which wraps the native liblsl '
-            'library used by Lab Streaming Layer). Install it with '
-            'pip install "hypertools[lsl]"'
-        ) from exc
-    return pylsl
+    from .._shared.lazy_import import lazy_import
+    return lazy_import('pylsl', purpose='lsl_stream() (Lab Streaming Layer)')   # installs [lsl] on demand
 
 
 def _ambiguity_caveat(any_stream):

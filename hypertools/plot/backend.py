@@ -1163,14 +1163,15 @@ class set_interactive_backend:
                 # at plot time) if the requested preference can't be honored
                 # (QC audit 2026-07, F06-008). Lazy import avoids a
                 # backend <-> plotly_backend import cycle at module load.
-                from .plotly_backend import _has_plotly
+                from .._shared.lazy_import import lazy_import
 
-                if not _has_plotly():
+                try:
+                    lazy_import('plotly', purpose='the plotly backend')
+                except ImportError as e:
                     warnings.warn(
                         "set_interactive_backend('plotly'): plotly is not "
-                        "installed, so plots will fall back to matplotlib. "
-                        "To use the plotly backend, run:\n"
-                        '    pip install "hypertools[interactive]"'
+                        f"installed and could not be installed ({e}), so "
+                        "plots will fall back to matplotlib."
                     )
             self.new_is_different = False
             self.backend_switched = False

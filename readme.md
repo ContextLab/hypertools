@@ -195,6 +195,25 @@ Then, navigate to the folder and type:
 
 (These instructions assume that you have [pip](https://pip.pypa.io/en/stable/installing/) installed on your system)
 
+### Optional extras install themselves on demand
+
+The optional features listed under *What's new* (the plotly backend, HF text
+embeddings, the `Laplace` and `Chronos` forecasters, autoencoder reducers,
+gensim vectorizers, Kaggle loading, LSL streaming, 3-D density iso-surfaces,
+`.xlsx` loading) are declared as extras in `pyproject.toml`:
+`pip install "hypertools[interactive]"`, `hypertools[text]`,
+`hypertools[predict]`, `hypertools[predict-hf]`, `hypertools[torch]`,
+`hypertools[gensim]`, `hypertools[kaggle]`, `hypertools[lsl]`,
+`hypertools[density3d]`, `hypertools[io]`. You do not have to install them
+ahead of time: the first call that needs one installs that extra's
+requirements into the running interpreter (printing a one-line notice) and
+carries on. hypertools itself is never reinstalled, so a development or
+branch install stays as it is. Static image export with the plotly backend
+also provisions what kaleido needs on first use (a Chrome build and, on
+Debian/Ubuntu images such as Colab and Kaggle, the system libraries it
+lacks). Set `HYPERTOOLS_AUTO_INSTALL=0` to turn this off; a missing extra
+then raises `ImportError` with the manual `pip install` command.
+
 ## Requirements
 
 + python>=3.10

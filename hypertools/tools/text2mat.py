@@ -122,6 +122,8 @@ def _hf_fallback_model(name):
             scipy.sparse.csr_matrix
                 The embedded documents as a sparse matrix.
             """
+            from .._shared.lazy_import import lazy_import
+            lazy_import('sentence_transformers', purpose=f'the {name!r} text model')   # [text]
             from datawrangler.zoo.text import apply_text_model
             from scipy import sparse
             embedded = apply_text_model(name, list(X), mode='transform')

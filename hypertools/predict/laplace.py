@@ -44,14 +44,8 @@ from .common import Forecaster
 
 
 def _import_laplace():
-    try:
-        from skaters.api import laplace
-    except ImportError as e:
-        raise ImportError(
-            'skaters is required for the Laplace forecaster; install it with '
-            'pip install "hypertools[predict]"'
-        ) from e
-    return laplace
+    from .._shared.lazy_import import lazy_import
+    return lazy_import('skaters.api', purpose='the Laplace forecaster').laplace   # [predict]
 
 
 def _forecast_column(x, n_steps):

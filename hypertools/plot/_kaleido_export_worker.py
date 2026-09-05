@@ -54,6 +54,8 @@ def main(argv):
 
     # one shared headless-Chrome session for every frame (fast); if it wedges,
     # the parent kills this whole process, so no in-process recovery is needed
+    from .._shared.lazy_import import ensure_kaleido_chrome
+    ensure_kaleido_chrome()
     with _shared_kaleido_session():
         for i, snapshot in enumerate(_frame_snapshots(fig)):
             # RESUME: skip frames a previous attempt already rendered, so a

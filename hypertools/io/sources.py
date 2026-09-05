@@ -449,13 +449,8 @@ def kaggle_dataset(name):
             "(from https://www.kaggle.com/datasets/uciml/iris).")
     owner, dataset_slug = parts
 
-    try:
-        import kagglehub
-    except ImportError as e:
-        raise ImportError(
-            f"{name!r} looks like a Kaggle dataset id, but the "
-            "`kagglehub` package is not installed. Install it with "
-            "`pip install hypertools[kaggle]`.") from e
+    from .._shared.lazy_import import lazy_import
+    kagglehub = lazy_import('kagglehub', purpose=f'loading the Kaggle dataset {name!r}')
 
     try:
         download_path = Path(

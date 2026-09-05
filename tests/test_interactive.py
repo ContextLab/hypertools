@@ -138,8 +138,9 @@ def test_plotly_draw_2d():
 
 
 def test_plot_backend_plotly_end_to_end():
+    import plotly.graph_objects as go
     fig = plot(walk, backend='plotly', show=False)
-    assert type(fig).__module__.startswith('plotly')
+    assert isinstance(fig, go.Figure)      # a hypertools subclass of the plotly Figure
     # transformed data is still available via return_model
     result = plot(walk, backend='plotly', show=False, return_model=True)
     assert result['xform_data'] is not None

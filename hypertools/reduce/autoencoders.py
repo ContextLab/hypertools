@@ -45,11 +45,14 @@ the standardization is undone in `inverse_transform`, so training is
 stable even on unscaled data.
 """
 import numpy as np
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
 from sklearn.base import BaseEstimator
 from sklearn.exceptions import NotFittedError
+
+from .._shared.lazy_import import lazy_import
+
+torch = lazy_import('torch', purpose='the autoencoder reducers')   # installs [torch] on demand
+nn = torch.nn
+F = torch.nn.functional
 
 
 def _resolve_device(device):

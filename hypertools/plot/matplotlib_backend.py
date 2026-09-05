@@ -43,7 +43,6 @@ from .trails import (RunWindow, anim_window_bounds, broadcast_trail_flag,
 from . import morph as _morph
 from .density import (
     DENSITY_DEFAULTS,
-    HAS_SKIMAGE,
     POOLED_COLOR,
     alpha_colormap,
     bbox_extent,
@@ -53,6 +52,7 @@ from .density import (
     kde_grid_2d,
     kde_grid_3d,
     resolve_grid,
+    skimage_measure,
     resolve_iso_fracs_alphas,
 )
 
@@ -115,7 +115,7 @@ def _draw_one_density_3d(ax, pts, spec, color, label="", boost=1.0):
     if kde is None:
         return
     alpha_scale = spec["alpha"] / DENSITY_DEFAULTS["alpha"] * boost
-    if HAS_SKIMAGE:
+    if skimage_measure() is not None:     # installs [density3d] on demand
         gridsize = resolve_grid(spec, 3)
         _, _, _, D, lo, spacing = kde_grid_3d(pts, kde, gridsize=gridsize)
         from mpl_toolkits.mplot3d.art3d import Poly3DCollection

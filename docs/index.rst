@@ -20,6 +20,15 @@ sample Jupyter notebooks, click
 `here <https://github.com/ContextLab/hypertools-paper-notebooks>`_ and to
 read the paper, click `here <https://arxiv.org/abs/1701.08290>`_.
 
+Optional features (the plotly backend, HF text embeddings, the ``Laplace``
+and ``Chronos`` forecasters, autoencoder reducers, gensim vectorizers, Kaggle
+loading, LSL streaming, 3-D density iso-surfaces, ``.xlsx`` loading) are
+``pip`` extras of ``hypertools``, and they install themselves on demand: the
+first call that needs one installs that extra's requirements and carries on,
+printing a one-line notice. Set ``HYPERTOOLS_AUTO_INSTALL=0`` to disable
+this; a missing extra then raises ``ImportError`` with the manual
+``pip install "hypertools[<extra>]"`` command.
+
 Some key features of HyperTools are:
 
 1. Functions for plotting high-dimensional datasets in 2/3D, statically,

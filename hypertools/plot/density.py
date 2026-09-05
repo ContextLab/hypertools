@@ -27,6 +27,7 @@ __all__ = [
     "DENSITY_DEFAULTS",
     "POOLED_COLOR",
     "HAS_SKIMAGE",
+    "skimage_measure",
     "DENSITY_BOOST_GAMMA",
     "DENSITY_BOOST_MAX",
     "MAX_VOLUME_OPACITY",
@@ -99,6 +100,21 @@ try:
 except ImportError:
     _skimage_measure = None
     HAS_SKIMAGE = False
+
+
+def skimage_measure():
+    """scikit-image's ``measure`` module, installed on demand the first time a
+    3-D density iso-surface needs it; None if it cannot be provided (the
+    caller falls back to a scatter 'fog' and says so)."""
+    global _skimage_measure, HAS_SKIMAGE
+    if _skimage_measure is None:
+        from .._shared.lazy_import import lazy_import
+        try:
+            _skimage_measure = lazy_import('skimage.measure', purpose='3-D density iso-surfaces')
+            HAS_SKIMAGE = True
+        except ImportError:
+            return None
+    return _skimage_measure
 
 
 def _validate_density_dict(d):
@@ -425,10 +441,12 @@ def iso_surfaces_3d(D, lo, spacing, fracs=(0.10, 0.35, 0.65)):
     at the grid's actual value range). Requires :data:`HAS_SKIMAGE`; callers
     must check that themselves (and fall back to the scatter-fog
     alternative) since raising here would defeat that fallback."""
-    if not HAS_SKIMAGE:
+    measure = skimage_measure()
+    if measure is None:
         raise RuntimeError(
             "scikit-image is required for 3-D iso-surface density "
-            "rendering; call sites should check HAS_SKIMAGE first."
+            "rendering and could not be installed; call sites should check "
+            "skimage_measure() first."
         )
     dmax = D.max()
     meshes = []
@@ -439,7 +457,7 @@ def iso_surfaces_3d(D, lo, spacing, fracs=(0.10, 0.35, 0.65)):
         if level <= D.min() or level >= dmax:
             continue
         try:
-            verts, faces, _, _ = _skimage_measure.marching_cubes(
+            verts, faces, _, _ = measure.marching_cubes(
                 D, level=level, spacing=spacing)
         except (ValueError, RuntimeError):
             continue

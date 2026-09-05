@@ -174,6 +174,20 @@ and reaches flat `hyp.predict` callers.
   `color_reduce=` raises rather than picking a winner. Documented in
   `docs/hierarchy.rst`.
 
+- **Optional extras install themselves on demand.** The first call that
+  needs plotly, kaleido, HF text embeddings, skaters (`Laplace`),
+  chronos-forecasting (`Chronos`), torch (autoencoder reducers), gensim,
+  kagglehub, pylsl, scikit-image (3-D density iso-surfaces) or openpyxl
+  installs that extra's requirements into the running interpreter, prints a
+  one-line notice, and carries on; hypertools itself is never reinstalled.
+  The requirement strings are read from the installed package metadata, so
+  `pyproject.toml` stays the single declaration of every extra
+  (`hypertools._shared.lazy_import`). Static image export with the plotly
+  backend provisions kaleido's Chrome the same way, plus the four system
+  libraries a fresh Colab/Kaggle image lacks. `HYPERTOOLS_AUTO_INSTALL=0`
+  disables installation: a missing extra then raises `ImportError` naming
+  the manual `pip install "hypertools[<extra>]"` command, as before.
+
 ### Changed / validation
 
 These turn previously-accepted input into rejected input. Each was
@@ -272,15 +286,20 @@ previously ambiguous or silently lossy.
   returned animation's `.figure` instead, and that several panels in one
   animation are laid out in the DATA (translate each group into its own
   region of one shared frame) and drawn with a single call.
-- **`ax=` is rejected under the plotly backend.** A matplotlib Axes cannot
-  host a plotly figure; before 1.1 the plotly backend built its own
-  `plotly.graph_objects.Figure` and left the axes you passed empty (on
-  Colab, where `backend='auto'` resolves to plotly, a two-panel
-  before/after layout drawn with `ax=axes[0]`/`ax=axes[1]` showed two empty
-  3-D cubes; measured 2026-09-04). `plot(..., ax=, backend='plotly')`, and
-  `ax=` inside `set_interactive_backend('plotly')`, now raise `ValueError`
-  before any analysis runs. Fix: drop `ax=`, or draw that call with
-  `backend='matplotlib'` / `with hyp.set_interactive_backend('matplotlib'):`.
+- **`ax=` under the plotly backend draws into a plotly Figure; a
+  matplotlib Axes is refused.** `ax=` names the surface to draw into. With
+  the plotly backend that is the `plotly.graph_objects.Figure` an earlier
+  `hyp.plot` returned: `fig = hyp.plot(A); hyp.plot(B, ax=fig)` appends
+  B's traces (data, legend and colorbar entries) to `fig` and returns it,
+  the caller's layout untouched; `animate=` is refused with it, as with a
+  matplotlib Axes. A matplotlib Axes under plotly now raises `ValueError`
+  before any analysis runs (before 1.1 the plotly backend built its own
+  Figure and left the axes you passed empty: on Colab, where
+  `backend='auto'` resolves to plotly, a two-panel before/after layout
+  showed two empty 3-D cubes; measured 2026-09-04). A plotly Figure passed
+  to a matplotlib draw is a `TypeError`. Fix for the refused case: pass the
+  plotly Figure, drop `ax=`, or draw that call with `backend='matplotlib'`
+  / `with hyp.set_interactive_backend('matplotlib'):`.
 
 ### Bug fixes
 

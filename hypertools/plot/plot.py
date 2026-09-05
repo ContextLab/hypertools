@@ -58,6 +58,15 @@ from .forecast import (FORECAST_ALPHA_SCALE, forecast_alpha,
 # `markeredgecolor=`, `dashes=`) has no plotly equivalent and is silently
 # unusable there; `plot()` warns (once, naming every such kwarg) rather
 # than silently dropping it with no feedback at all.
+def _is_plotly_figure(obj):
+    """True for a plotly Figure (without importing plotly when it is absent)."""
+    try:
+        from plotly.basedatatypes import BaseFigure
+    except ImportError:
+        return False
+    return isinstance(obj, BaseFigure)
+
+
 _PLOTLY_MAPPED_KWARGS = frozenset(
     {'color', 'alpha', 'linewidth', 'markersize', 'marker', 'linestyle',
      'label'})
@@ -3352,25 +3361,38 @@ def plot(
 
     # ax= must be a matplotlib Axes; a bad value crashed deep inside the
     # backend with "'str' object has no attribute 'name'" (F10-015).
+    # ax= names the surface to draw INTO: a matplotlib Axes for the
+    # matplotlib backend, or a plotly Figure (the object an earlier
+    # `hyp.plot` returned) for the plotly backend, whose traces are appended
+    # to it. Until 1.1 the plotly backend silently ignored a matplotlib Axes
+    # (the figure was built as a plotly Figure and the caller's axes left
+    # empty; measured 2026-09-04 on Colab, where 'auto' resolves to plotly:
+    # a two-panel before/after layout showed two empty 3-D cubes).
+    _plotly_into = None
     if ax is not None:
         import matplotlib.axes as _mpl_axes
-        if not isinstance(ax, _mpl_axes.Axes):
+        _is_mpl_axes = isinstance(ax, _mpl_axes.Axes)
+        _is_plotly_fig = _is_plotly_figure(ax)
+        if not _is_mpl_axes and not _is_plotly_fig:
             raise TypeError(
                 "ax= must be a matplotlib Axes (2-D) or Axes3D (3-D) "
-                f"instance; got {type(ax).__name__!r}.")
-        # A matplotlib Axes cannot host a plotly figure. Until 1.1 the plotly
-        # backend silently ignored ax=: the figure was built as a plotly
-        # Figure and the caller's axes were left empty (measured 2026-09-04
-        # on Colab, where 'auto' resolves to plotly: a two-panel before/after
-        # layout showed two empty 3-D cubes). Refuse, as animate= does.
+                "instance, or a plotly Figure to draw into with the plotly "
+                f"backend; got {type(ax).__name__!r}.")
         if resolve_backend(backend) == "plotly":
-            raise ValueError(
-                "ax= is a matplotlib Axes, and the plotly backend cannot draw "
-                "into it: the figure would be built as a plotly Figure and "
-                "the axes you passed left empty. Drop ax= (plotly returns a "
-                "Figure you can compose yourself), or draw this call with "
-                "matplotlib: hyp.plot(..., backend='matplotlib'), or "
-                "`with hyp.set_interactive_backend('matplotlib'):`.")
+            if _is_mpl_axes:
+                raise ValueError(
+                    "ax= is a matplotlib Axes, and the plotly backend cannot "
+                    "draw into it. Pass a plotly Figure instead (the one an "
+                    "earlier hyp.plot returned) to draw into it, drop ax= to "
+                    "get a new Figure, or draw this call with matplotlib: "
+                    "hyp.plot(..., backend='matplotlib') or "
+                    "`with hyp.set_interactive_backend('matplotlib'):`.")
+            _plotly_into = ax
+            ax = None
+        elif _is_plotly_fig:
+            raise TypeError(
+                "ax= is a plotly Figure, but this call draws with matplotlib; "
+                "pass backend='plotly' (or a matplotlib Axes).")
 
     # a bare scalar is plotted as a single 1-D point -- warn rather than
     # doing so silently (D11-014).
@@ -6439,6 +6461,7 @@ def plot(
             _apply_extra_kwargs(kwargs_list, kwargs)
         fig = plotly_draw(
             xform,
+            into=_plotly_into,
             # the same run -> dataset -> rows mapping the matplotlib updaters
             # pace their reveal with, so neither backend re-derives it
             ownership=_ownership,

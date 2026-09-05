@@ -37,15 +37,11 @@ import numpy as np
 from scipy import sparse
 from sklearn.base import BaseEstimator, TransformerMixin
 
-try:
-    import gensim  # noqa: F401
-except ImportError as exc:
-    raise ImportError(
-        'hypertools.tools.gensim_models requires gensim. Install it with '
-        'pip install "hypertools[gensim]"'
-    ) from exc
+from .._shared.lazy_import import lazy_import
 
-from gensim.utils import simple_preprocess
+lazy_import('gensim', purpose='hypertools.tools.gensim_models')   # installs [gensim] on demand
+
+from gensim.utils import simple_preprocess  # noqa: E402  (after the on-demand install above)
 
 
 def _tokenize(doc):

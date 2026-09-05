@@ -26,6 +26,7 @@ import sys
 import threading
 import warnings
 
+from .._shared.lazy_import import lazy_import, ensure_kaleido_chrome
 import numpy as np
 
 from .meshutil import (blinn_phong_vertex_colors, points_enclosed,
@@ -257,9 +258,8 @@ def resolve_backend(backend):
             return 'plotly'
         return 'matplotlib'
     if backend == 'plotly' and not _has_plotly():
-        raise ImportError(
-            "The plotly backend requires plotly. Install it with:\n"
-            "    pip install hypertools[interactive]")
+        # installs the [interactive] extra on demand (see _shared.lazy_import)
+        lazy_import('plotly', purpose='the plotly backend')
     return backend
 
 
@@ -493,7 +493,8 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 morph_tags=None, morph_colors=None, morph_samples=None,
                 font=None, font_extra=None, label_alpha=0.5, xlabel=None,
                 ylabel=None, zlabel=None, antialias=True, frame_hooks=None,
-                segment_titles=None, ownership=None, forecast_reveal=None):
+                segment_titles=None, ownership=None, forecast_reveal=None,
+                into=None):
     """Render grouped datasets with plotly, mirroring _draw's contract and
     the matplotlib renderer's appearance.
 
@@ -1649,6 +1650,17 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                        # clock is driven from (see `_run_window`)
                        ownership=ownership)
 
+    if into is not None:
+        # `ax=<plotly Figure>`: draw INTO the caller's figure. The traces
+        # (data, legend and colorbar entries) are appended; the caller's
+        # layout is theirs to keep.
+        if animate:
+            raise ValueError(
+                "ax= (a plotly Figure) cannot be combined with animate=: an "
+                "animated plot builds its own figure and frames.")
+        into.add_traces(list(fig.data))
+        fig = into
+
     if save_path is not None:
         ext = save_path.lower().rsplit('.', 1)[-1]
         if ext == 'html':
@@ -1658,27 +1670,10 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
             _export_animation_file(fig, save_path, frame_rate, duration,
                                    size)
         else:
-            try:
-                fig.write_image(save_path)
-            except RuntimeError as e:
-                # kaleido 1.x renders through a headless Chrome and raises a
-                # RuntimeError when it finds none -- the state of every fresh
-                # Colab/Kaggle kernel (measured 2026-09-04). Name the fix.
-                if 'chrome' not in str(e).lower():
-                    raise
-                from .._shared.exceptions import HypertoolsIOError
-                raise HypertoolsIOError(
-                    f"could not write {save_path!r}: plotly's static image "
-                    "export (kaleido) needs a Chrome/Chromium binary and "
-                    "found none it can run. Fetch one for kaleido with "
-                    "`import plotly.io as pio; pio.get_chrome()` (about "
-                    "150 MB); on Colab and Kaggle also install the system "
-                    "libraries that Chrome needs and the image lacks "
-                    "(`apt-get install -y libatk1.0-0 libatk-bridge2.0-0 "
-                    "libatspi2.0-0 libxcomposite1`; measured 2026-09-04). "
-                    "Or install Chrome, or save this figure with the "
-                    "matplotlib backend: hyp.plot(..., save_path=..., "
-                    f"backend='matplotlib'). kaleido said: {e}") from e
+            # kaleido renders through a headless Chrome; provision one (and,
+            # on Colab/Kaggle, the libraries it needs) on demand.
+            ensure_kaleido_chrome()
+            fig.write_image(save_path)
 
     if show:
         import plotly.io as pio
@@ -1807,6 +1802,7 @@ def _show_sphinx_gallery(fig):
     snapshot = go.Figure(fig)
     snapshot.frames = ()
     snapshot.layout.updatemenus = ()
+    ensure_kaleido_chrome()
     snapshot.write_image(base + '.png')
 
     light = fig

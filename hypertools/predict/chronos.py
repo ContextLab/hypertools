@@ -27,15 +27,10 @@ from .common import Forecaster
 
 
 def _import_chronos():
-    try:
-        import torch
-        from chronos import ChronosPipeline
-    except ImportError as e:
-        raise ImportError(
-            'chronos-forecasting and torch are required for the Chronos '
-            'forecaster; install them with pip install "hypertools[predict-hf]"'
-        ) from e
-    return torch, ChronosPipeline
+    from .._shared.lazy_import import lazy_import
+    chronos = lazy_import('chronos', purpose='the Chronos forecaster')   # [predict-hf], pulls torch
+    torch = lazy_import('torch', purpose='the Chronos forecaster')
+    return torch, chronos.ChronosPipeline
 
 
 def fitter(data, **kwargs):
