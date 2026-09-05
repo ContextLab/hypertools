@@ -3358,6 +3358,19 @@ def plot(
             raise TypeError(
                 "ax= must be a matplotlib Axes (2-D) or Axes3D (3-D) "
                 f"instance; got {type(ax).__name__!r}.")
+        # A matplotlib Axes cannot host a plotly figure. Until 1.1 the plotly
+        # backend silently ignored ax=: the figure was built as a plotly
+        # Figure and the caller's axes were left empty (measured 2026-09-04
+        # on Colab, where 'auto' resolves to plotly: a two-panel before/after
+        # layout showed two empty 3-D cubes). Refuse, as animate= does.
+        if resolve_backend(backend) == "plotly":
+            raise ValueError(
+                "ax= is a matplotlib Axes, and the plotly backend cannot draw "
+                "into it: the figure would be built as a plotly Figure and "
+                "the axes you passed left empty. Drop ax= (plotly returns a "
+                "Figure you can compose yourself), or draw this call with "
+                "matplotlib: hyp.plot(..., backend='matplotlib'), or "
+                "`with hyp.set_interactive_backend('matplotlib'):`.")
 
     # a bare scalar is plotted as a single 1-D point -- warn rather than
     # doing so silently (D11-014).

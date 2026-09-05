@@ -1658,7 +1658,24 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
             _export_animation_file(fig, save_path, frame_rate, duration,
                                    size)
         else:
-            fig.write_image(save_path)
+            try:
+                fig.write_image(save_path)
+            except RuntimeError as e:
+                # kaleido 1.x renders through a headless Chrome and raises a
+                # RuntimeError when it finds none -- the state of every fresh
+                # Colab/Kaggle kernel (measured 2026-09-04). Name the fix.
+                if 'chrome' not in str(e).lower():
+                    raise
+                from .._shared.exceptions import HypertoolsIOError
+                raise HypertoolsIOError(
+                    f"could not write {save_path!r}: plotly's static image "
+                    "export (kaleido) needs a Chrome/Chromium binary and "
+                    "found none. Fetch one for kaleido with "
+                    "`import plotly.io as pio; pio.get_chrome()` (about "
+                    "150 MB; the usual fix on Colab and Kaggle), install "
+                    "Chrome, or save this figure with the matplotlib "
+                    "backend: hyp.plot(..., save_path=..., "
+                    f"backend='matplotlib'). kaleido said: {e}") from e
 
     if show:
         import plotly.io as pio

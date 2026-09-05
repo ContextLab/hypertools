@@ -272,6 +272,15 @@ previously ambiguous or silently lossy.
   returned animation's `.figure` instead, and that several panels in one
   animation are laid out in the DATA (translate each group into its own
   region of one shared frame) and drawn with a single call.
+- **`ax=` is rejected under the plotly backend.** A matplotlib Axes cannot
+  host a plotly figure; before 1.1 the plotly backend built its own
+  `plotly.graph_objects.Figure` and left the axes you passed empty (on
+  Colab, where `backend='auto'` resolves to plotly, a two-panel
+  before/after layout drawn with `ax=axes[0]`/`ax=axes[1]` showed two empty
+  3-D cubes; measured 2026-09-04). `plot(..., ax=, backend='plotly')`, and
+  `ax=` inside `set_interactive_backend('plotly')`, now raise `ValueError`
+  before any analysis runs. Fix: drop `ax=`, or draw that call with
+  `backend='matplotlib'` / `with hyp.set_interactive_backend('matplotlib'):`.
 
 ### Bug fixes
 
@@ -313,6 +322,12 @@ input too.
   `FuncAnimation` subclass (`hypertools.plot.animate.HyperFuncAnimation`)
   whose `_stop` ignores the repeat call; `isinstance(anim.animation,
   matplotlib.animation.FuncAnimation)` still holds.
+- **A plotly `save_path=` to a raster/PDF format on a machine without
+  Chrome failed with kaleido's bare `RuntimeError`.** kaleido 1.x renders
+  through a headless Chrome, which a fresh Colab or Kaggle kernel does not
+  have. The failure is now a `HypertoolsIOError` naming the file, the
+  cause, and the three ways out: `import plotly.io as pio; pio.get_chrome()`
+  (about 150 MB), installing Chrome, or saving with `backend='matplotlib'`.
 
 - **Every continuous-hue matplotlib plot rendered fully opaque**, whatever
   `alpha=` was set to. `_apply_multicolor_lines` never read alpha from its
