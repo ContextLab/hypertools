@@ -189,3 +189,8 @@ Wave 2 (after L): M = the 3 morph files + morph_shapes_zoo regen (clip must stay
     2377d73549d41848261d673c454300466081518da2cb4da51d506af28e9f5aa4  dist/hypertools-1.1.0.tar.gz
   colab-validation-1.1.0 deleted. NO further master commits (this notes file is committed on dev-1.0 afterwards). Next: CI green -> `git tag -fa v1.1.0 7b1b779b && git push -f origin v1.1.0` -> tag CI -> `gh release create v1.1.0 --draft --notes-file notes/release_notes_v1.1.0_draft.md` -> pause.
 - 18:40 CI on 7b1b779b FAILED on every matrix job: two new tests in tests/test_anim_title_lines.py hard-coded font-metric constants measured under matplotlib 3.10.8 (probe increments equal to 1e-6; single-line height 5.04 in); CI runs matplotlib 3.11.1 (probe 0.2034/0.2368, height 5.107). Fixed the TESTS to be metric-relative (probe the animation's own axes; increments within 30%). Re-cut #3 follows (new release commit; manifest/dist/push redone).
+- 19:00 RE-CUT #3: RELEASE COMMIT = master **e0f13311** (pushed; CI poll armed). Manifest docs-notebooks da69f00 (source_commit e0f13311, CDN confirmed). Gates passed. dist REBUILT from e0f13311 (twine PASSED x2):
+  CURRENT digests (supersede ALL earlier; upload ONLY these, only if v1.1.0 -> e0f13311):
+    025ad3c6816a465c5bb1d7887dab802f043b89e2c540badb2aa34c53cb9bfb66  dist/hypertools-1.1.0-py3-none-any.whl
+    74c5c5bdab66c1732c70e56b7271719dd7574a7b43dda40cf6439be53133671f  dist/hypertools-1.1.0.tar.gz
+- 19:40 CI on e0f13311: 3.10 jobs FAILED (tests/test_tools_damage.py precondition assumed pandas' to_numpy() is read-only; older pandas on the 3.10 job returns a writeable copy) -> precondition relaxed to the ordering only (the explicit read-only array in the same test covers writeability). Re-cut #4.

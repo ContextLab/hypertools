@@ -166,8 +166,12 @@ def test_read_only_fortran_ordered_input_is_written_through():
     values = np.asfortranarray(np.arange(60.0).reshape(15, 4))
     frame = pd.DataFrame(values, columns=list('abcd'))
     raw = frame.to_numpy()
-    # the conditions that make a naive .ravel() write vanish
-    assert raw.flags.f_contiguous and not raw.flags.writeable
+    # the conditions that make a naive .ravel() write vanish: recent pandas
+    # hands back a read-only, Fortran-ordered view; older pandas (the
+    # Python 3.10 CI job) returns a writeable copy, so only the ordering is
+    # a precondition here -- the explicit read-only array below covers the
+    # rest on every pandas
+    assert raw.flags.f_contiguous
 
     damaged = damage(frame, frac=0.2, seed=0)
     assert int(damaged.isna().to_numpy().sum()) == round(0.2 * 60)
