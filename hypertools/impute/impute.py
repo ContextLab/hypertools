@@ -26,11 +26,13 @@ import numpy as np
 import pandas as pd
 import datawrangler as dw
 
+from .backtest import imputer_collection, score_imputations
 from .common import Imputer
 from .ppca import PPCA
 from .sklearn_imputers import SimpleImputer, KNNImputer, IterativeImputer
 from .kalman import Kalman
 from ..core.shared import supported_names, unpack_model
+from ..predict.backtest import spec_name
 
 
 IMPUTERS = [PPCA, SimpleImputer, KNNImputer, IterativeImputer, Kalman]
@@ -161,6 +163,25 @@ def _mismatched_columns(data):
 
 
 @dw.decorate.funnel
+def _wrangle(data, **kwargs):
+    """Run `data` through the SAME datawrangler funnel `_wrangled_impute`
+    uses, and hand back the resulting DataFrame(s) instead of imputing.
+
+    The scoring path (``truth=``) needs the wrangled frames to locate the
+    damaged cells (``isnan``) and to name the columns of the scores frame;
+    going through the funnel keeps ``truth=`` accepting exactly what
+    `impute` accepts.
+    """
+    return data
+
+
+def _score_datasets(data):
+    """The wrangled dataset(s) ``truth=`` scores, always as a list."""
+    frames = _wrangle(data)
+    return frames if isinstance(frames, list) else [frames]
+
+
+@dw.decorate.funnel
 def _wrangled_impute(data, model='PPCA', return_model=False, **kwargs):
     """Funnel-wrapped core of `impute` (see its docstring)."""
     if isinstance(data, list) and len(data) == 0:
@@ -287,7 +308,8 @@ def _wrangled_impute(data, model='PPCA', return_model=False, **kwargs):
     return (result, resolved) if return_model else result
 
 
-def impute(data, model='PPCA', return_model=False, **kwargs):
+def impute(data, model='PPCA', return_model=False, truth=None, mask=None,
+           metrics=None, per_column=False, return_imputed=False, **kwargs):
     """Fill missing (NaN) values in `data`, preserving its shape.
 
     Observed (non-NaN) values are preserved exactly by every model; only
@@ -312,9 +334,23 @@ def impute(data, model='PPCA', return_model=False, **kwargs):
         raises the no-observations error naming its shape, not the
         all-NaN one).
 
-    model : str, dict, class, or Imputer instance
+    model : str, dict, class, Imputer instance, or a COLLECTION of these
         Which imputer to use (default: 'PPCA', matching the pre-1.0
-        `format_data` default). A string is one of `IMPUTERS`' names (PPCA,
+        `format_data` default).
+
+        SEVERAL IMPUTERS AT ONCE (1.2). A LIST or TUPLE of specs fills the
+        data with each of them and returns a ``{name: imputed}`` dict in
+        the order given. Names come from the specs (a string's registry
+        spelling, a dict spec's inner model, a class/instance's
+        ``__name__``) and repeats are numbered ``Kalman``, ``Kalman (2)``,
+        ...; pass a DICT MAPPING NAMES TO SPECS -- ``model={'5-NN':
+        {'model': 'KNNImputer', 'kwargs': {'n_neighbors': 5}}}`` -- to name
+        them yourself. (A dict carrying any of
+        ``model``/``args``/``kwargs``/``params`` is a single spec, not a
+        mapping.) ``'truth'`` and ``'mean'`` are reserved names. With
+        ``truth=``, the collection becomes one scored ROW per imputer.
+
+        A string is one of `IMPUTERS`' names (PPCA,
         SimpleImputer, KNNImputer, IterativeImputer, Kalman); names are
         matched case-insensitively ('ppca' works too). A dict may be
         `{'model': ..., 'params': {...}}` (deprecated) or
@@ -329,6 +365,50 @@ def impute(data, model='PPCA', return_model=False, **kwargs):
         can be passed back as `model=` on future calls with new data
         (default: False). (When mismatched-column datasets are imputed
         independently, a LIST of fitted imputers is returned instead.)
+        With a COLLECTION of models it returns ``({name: imputed}, {name:
+        model})``; it is not supported with ``truth=``.
+
+    truth : DataFrame/array (or list of these), or None
+        SCORE the imputers instead of returning the filled data (1.2). The
+        COMPLETE version of `data` -- same shape, cell for cell -- from
+        which `data`'s NaNs were removed (e.g. by `hyp.tools.damage`).
+        Every model in `model` is fit, and each is scored on the DAMAGED
+        CELLS ONLY: the entries that are NaN in `data`. Observed cells are
+        never scored -- every imputer passes them through untouched, so
+        including them would only dilute the comparison.
+
+    mask : boolean array (or list of these), or None
+        RESTRICT scoring to a subset of the damaged cells, e.g. only the
+        rows of a simulated occlusion (`mask` is intersected with the NaN
+        mask, so cells that were never missing are excluded either way).
+        Same shape as `data`; only valid alongside ``truth=``. Score the
+        occluded band and the scattered dropouts separately by calling
+        twice with complementary masks.
+
+    metrics : str or sequence of str
+        Which metrics to score, from ``'mae'``, ``'rmse'``, ``'mape'``
+        (default: all three, in that order). Column labels are the
+        upper-cased names. MAPE is a PERCENTAGE and is nan-safe on zeros:
+        cells whose true value is exactly 0 are dropped from its average
+        (all-zero truth gives NaN) rather than turning the column into
+        ``inf``. The FIRST metric is the RANKING metric behind
+        ``attrs['best']``.
+
+    per_column : bool
+        False (default) averages each metric over the columns (and, for a
+        list of datasets, over the datasets), giving ONE row per model.
+        True returns the LONG form instead: one row per model x
+        (dataset x) column -- the per-axis error table -- indexed by a
+        MultiIndex; ``.reset_index()`` for a fully tidy frame. A column
+        with no damaged cells scores NaN over ``n=0`` entries. The verdict
+        in ``attrs`` is computed from the averaged form either way.
+
+    return_imputed : bool
+        With ``truth=``, also return the imputations that were scored:
+        ``(scores, {name: imputed, 'mean': baseline, 'truth': truth})``
+        (default: False). Values a model could not fill stay NaN there, as
+        they do in a plain `impute` call. For a LIST of datasets each value is a list of
+        frames, one per dataset, in input order.
 
     **kwargs
         Passed through to the imputer's constructor when `model` resolves
@@ -344,6 +424,47 @@ def impute(data, model='PPCA', return_model=False, **kwargs):
     in, lists out: a single input dataset returns a single imputed
     DataFrame.
 
+    A COLLECTION of models (see `model`) returns a ``{name: imputed}``
+    dict whose values are exactly what a single-model call would have
+    returned.
+
+    With ``truth=``, a scores DataFrame instead (see Notes) -- or
+    ``(scores, imputations)`` with ``return_imputed=True``.
+
+    Notes
+    -----
+    **Scoring (``truth=``).** The returned frame has one ROW per imputer,
+    in the order they were given, plus an always-present ``'mean'`` row:
+    the column-mean baseline (each column's observed mean, which is what
+    `SimpleImputer` fills and what every cross-column imputer is reduced
+    to on a fully-missing row). Its COLUMNS are the requested metrics
+    (``MAE``, ``RMSE``, ``MAPE``), ``n`` (how many damaged cells were
+    scored) and ``unscored`` (damaged cells the model left NaN -- ``PPCA``
+    cannot fill a fully-missing row, GH #169 -- which are counted, and
+    warned about, rather than silently dropped, since a model scored on
+    fewer, easier cells is not comparable to one that filled them all). Multi-column data is scored per column and averaged;
+    ``per_column=True`` keeps the per-column (per-axis) rows.
+
+    HOW TO READ IT. ``scores.attrs`` carries the verdict:
+    ``attrs['best']`` (the row with the lowest value of the ranking metric
+    -- the FIRST entry of `metrics` -- among the real models, EXCLUDING the
+    baseline), ``attrs['best_score']``, ``attrs['baseline']`` (``'mean'``),
+    ``attrs['baseline_score']`` and ``attrs['beats_baseline']`` -- True
+    only when the best model's score is strictly BELOW the baseline's. An
+    imputer that cannot beat a column mean has not earned its complexity.
+    TIES on the ranking metric go to the model listed FIRST (a stable
+    comparison, so the verdict is reproducible); models whose ranking
+    metric is NaN are never chosen as best, and ``attrs['best']`` is None
+    if nothing scored.
+
+    The verdict lives in ``attrs`` rather than in a ``best`` column on
+    purpose: it is one fact about the whole comparison, and a column would
+    repeat it on every row, force a non-numeric column into an otherwise
+    all-numeric frame (breaking ``scores.mean()`` and ``.plot.bar()``), and
+    be meaningless on a per-column slice. pandas does not propagate
+    ``attrs`` through every operation -- read the verdict from the frame
+    `impute` returned, not from a slice of it.
+
     Examples
     --------
     >>> import numpy as np
@@ -356,7 +477,62 @@ def impute(data, model='PPCA', return_model=False, **kwargs):
     (40, 5)
     >>> bool(np.isnan(filled.to_numpy()).any())
     False
+
+    Several imputers at once, scored on the damaged cells against the
+    complete data (the ``'mean'`` baseline row is always included):
+
+    >>> truth = np.cumsum(np.random.default_rng(0).standard_normal((40, 5)),
+    ...                   axis=0)
+    >>> scores = hyp.impute(x, model=['PPCA', 'KNNImputer'], truth=truth)
+    >>> list(scores.index)
+    ['PPCA', 'KNNImputer', 'mean']
+    >>> list(scores.columns)
+    ['MAE', 'RMSE', 'MAPE', 'n', 'unscored']
+    >>> int(scores.loc['PPCA', 'n'])
+    1
+    >>> scores.attrs['baseline']
+    'mean'
     """
     data = _normalize_data(data)
+
+    # MULTI-MODEL / SCORING dispatch (GH #285). Both are strictly opt-in:
+    # `model` is a collection only when it is a list/tuple/name-mapping, and
+    # the scoring path only runs for a non-None `truth`, so the single-model
+    # path below is unchanged.
+    collection = imputer_collection(model, valid=supported_names(IMPUTERS))
+    if return_imputed and truth is None:
+        raise ValueError(
+            'return_imputed=True only applies to a scored comparison; pass '
+            'truth= (the complete data to score the filled cells against), '
+            'or drop return_imputed to get the imputed data itself.')
+    if truth is None and mask is not None:
+        raise ValueError(
+            'mask= only applies to a scored comparison; pass truth= (the '
+            'complete data) to score the masked cells against it.')
+    if truth is not None:
+        if return_model:
+            raise ValueError(
+                'return_model=True is not supported with truth=: a scored '
+                'comparison fits one imputer per model spec and reports '
+                'scores. Use return_imputed=True for the scored '
+                'imputations.')
+        if collection is not None:
+            names, specs = collection
+        else:
+            names, specs = [spec_name(model, supported_names(IMPUTERS))], [model]
+        return score_imputations(
+            _score_datasets(data), impute, names, specs, truth, mask=mask,
+            metrics=metrics, per_column=per_column,
+            return_imputed=return_imputed, kwargs=kwargs)
+    if collection is not None:
+        names, specs = collection
+        results = {name: impute(data, model=spec, return_model=return_model,
+                                **kwargs)
+                   for name, spec in zip(names, specs)}
+        if return_model:
+            return ({name: r[0] for name, r in results.items()},
+                    {name: r[1] for name, r in results.items()})
+        return results
+
     return _wrangled_impute(data, model=model, return_model=return_model,
                             **kwargs)

@@ -26,6 +26,7 @@ import numpy as np
 import pandas as pd
 import datawrangler as dw
 
+from .backtest import backtest_predict, model_collection, spec_name
 from .common import Forecaster
 from .kalman import Kalman
 from .gp import GaussianProcess
@@ -227,6 +228,26 @@ def _resolve_forecaster_spec(model, kwargs):
 
 
 @dw.decorate.funnel
+def _wrangle(data, **kwargs):
+    """Run `data` through the SAME datawrangler funnel `_wrangled_predict`
+    uses, and hand back the resulting DataFrame(s) instead of forecasting.
+
+    The backtesting path (``holdout=``) has to SPLIT the data before any
+    forecaster sees it, which means it needs the wrangled frames -- their
+    index carries the time axis the held-out rows are compared on. Doing it
+    through the funnel (rather than `pd.DataFrame(...)`) keeps `holdout=`
+    accepting exactly what `predict` accepts.
+    """
+    return data
+
+
+def _holdout_datasets(data):
+    """The wrangled dataset(s) `holdout=` scores, always as a list."""
+    frames = _wrangle(data)
+    return frames if isinstance(frames, list) else [frames]
+
+
+@dw.decorate.funnel
 def _wrangled_predict(data, model='Kalman', t=10, return_model=False, **kwargs):
     """Funnel-wrapped core of `predict` (see its docstring)."""
     t = _validate_horizon(t)
@@ -259,7 +280,8 @@ def _wrangled_predict(data, model='Kalman', t=10, return_model=False, **kwargs):
     return (forecasts, resolved) if return_model else forecasts
 
 
-def predict(data, model='Kalman', t=10, return_model=False, **kwargs):
+def predict(data, model='Kalman', t=10, return_model=False, holdout=None,
+            metrics=None, per_column=False, return_forecasts=False, **kwargs):
     """Forecast `t` new rows continuing each input dataset.
 
     Parameters
@@ -327,8 +349,23 @@ def predict(data, model='Kalman', t=10, return_model=False, **kwargs):
         list/tuple -- the hierarchy determines the whole group list, which
         cannot be reconciled with a caller-supplied list of datasets.
 
-    model : str, dict, class, or Forecaster instance
-        Which forecaster to use (default: 'Kalman'). A string is one of
+    model : str, dict, class, Forecaster instance, or a COLLECTION of these
+        Which forecaster to use (default: 'Kalman').
+
+        SEVERAL MODELS AT ONCE (1.2). A LIST or TUPLE of specs forecasts
+        each of them and returns a ``{name: forecast}`` dict in the order
+        given -- the shape ``hyp.plot(..., predict=['Kalman', 'ARIMA'])``
+        consumes. Names come from the specs (a string's registry spelling,
+        a dict spec's inner model, a class/instance's ``__name__``) and
+        repeats are numbered ``Kalman``, ``Kalman (2)``, ...; pass a DICT
+        MAPPING NAMES TO SPECS -- ``model={'tiny Chronos': {'model':
+        'Chronos', 'kwargs': {...}}}`` -- to name them yourself. (A dict
+        carrying any of ``model``/``args``/``kwargs``/``params`` is a
+        single spec, not a mapping.) ``'truth'`` is reserved as a name.
+        With ``holdout=``, the collection becomes one scored ROW per model
+        instead.
+
+        A string is one of
         `FORECASTERS`' names (Kalman, GaussianProcess, AutoRegressor, ARIMA,
         Laplace, Chronos); the short alias `'GP'` also resolves to
         GaussianProcess, and names are matched case-insensitively
@@ -377,7 +414,50 @@ def predict(data, model='Kalman', t=10, return_model=False, **kwargs):
         it can be passed back as `model=` on future calls with new data
         (default: False). On hierarchical input this returns PARALLEL
         SEQUENCES -- ``([f0, f1, ...], [m0, m1, ...])``, mirroring the flat
-        ``(forecast, model)`` shape -- rather than a list of pairs.
+        ``(forecast, model)`` shape -- rather than a list of pairs. With a
+        COLLECTION of models it returns ``({name: forecast}, {name:
+        model})``; it is not supported with ``holdout=``.
+
+    holdout : int, float, True, or None
+        BACKTEST instead of forecasting (1.2). Fit each model on the HEAD
+        of the data, forecast the held-out TAIL, and return a scores frame
+        comparing every model against the rows that actually happened. An
+        int holds out that many rows; a float in (0, 1) holds out that
+        FRACTION of them (rounded, at least 1); ``True`` holds out exactly
+        `t` rows. The head must keep at least 2 rows.
+
+        **`t` is not consulted** for an int/float `holdout`: the horizon IS
+        the number of held-out rows, or the forecast would not line up
+        one-to-one with the truth. (Use ``holdout=True`` to say "hold out
+        `t` rows".) The horizon used is reported in the frame's ``horizon``
+        column.
+
+        Not available on HIERARCHICAL input (which group is scored would
+        have to become a fourth axis of the frame); slice the groups and
+        backtest them one at a time.
+
+    metrics : str or sequence of str
+        Which metrics to score, from ``'mae'``, ``'rmse'``, ``'mape'``
+        (default: all three, in that order). Column labels are the
+        upper-cased names. MAPE is a PERCENTAGE and is nan-safe on zeros:
+        entries whose actual value is exactly 0 are dropped from its
+        average (all-zero truth gives NaN) rather than turning the column
+        into ``inf``. The FIRST metric is the RANKING metric behind
+        ``attrs['best']``.
+
+    per_column : bool
+        False (default) averages each metric over the columns (and, for a
+        list of datasets, over the datasets), giving ONE row per model.
+        True returns the LONG form instead: one row per model x
+        (dataset x) column, indexed by a MultiIndex -- ``.reset_index()``
+        for a fully tidy frame. The verdict in ``attrs`` is computed from
+        the averaged form either way.
+
+    return_forecasts : bool
+        With ``holdout=``, also return the forecasts that were scored:
+        ``(scores, {name: forecast, 'naive': baseline, 'truth': held_out})``
+        (default: False). For a LIST of datasets each value is a list of
+        frames, one per dataset, in input order.
 
     **kwargs
         Passed through to the forecaster's constructor when `model`
@@ -395,8 +475,52 @@ def predict(data, model='Kalman', t=10, return_model=False, **kwargs):
     per group in input order -- or, with ``return_model=True``, the parallel
     ``([f0, f1, ...], [m0, m1, ...])`` pair described there.
 
+    A COLLECTION of models (see `model`) returns a ``{name: forecast}``
+    dict whose values are exactly what a single-model call would have
+    returned (a DataFrame, or a list of them for list/hierarchical input).
+
+    With ``holdout=``, a scores DataFrame instead (see Notes) -- or
+    ``(scores, forecasts)`` with ``return_forecasts=True``.
+
     Notes
     -----
+    **Backtesting (``holdout=``).** The returned frame has one ROW per
+    model, in the order the models were given, plus an always-present
+    ``'naive'`` row: the last-value-carried-forward baseline (each column's
+    last OBSERVED training value, repeated over the horizon), which is the
+    textbook random-walk benchmark for a timeseries. Its COLUMNS are the
+    requested metrics (``MAE``, ``RMSE``, ``MAPE``), ``n`` (how many
+    predicted/actual pairs were scored), ``unscored`` (held-out values the
+    model failed to produce -- returned as NaN -- which are counted, and
+    warned about, rather than silently dropped, since a model scored on
+    fewer entries is not comparable to one scored on all of them) and
+    ``horizon`` (the number of held-out rows). Multi-column data is scored
+    per column and averaged; ``per_column=True`` keeps the per-column rows.
+
+    HOW TO READ IT. ``scores.attrs`` carries the verdict:
+    ``attrs['best']`` (the row with the lowest value of the ranking metric
+    -- the FIRST entry of `metrics` -- among the real models, EXCLUDING the
+    baseline, so what it names can always be handed back to `predict`),
+    ``attrs['best_score']``, ``attrs['baseline']`` (``'naive'``),
+    ``attrs['baseline_score']``, and ``attrs['beats_baseline']`` -- True
+    only when the best model's score is strictly BELOW the baseline's. A
+    model that does not beat the naive baseline has not earned its
+    complexity, whatever its absolute error looks like. TIES on the ranking
+    metric go to the model listed FIRST (the comparison is stable, so
+    re-running with the same specs gives the same verdict); models whose
+    ranking metric is NaN (nothing scoreable) are never chosen as best, and
+    ``attrs['best']`` is None if no model scored at all.
+
+    The verdict lives in ``attrs`` rather than in a ``best`` column on
+    purpose: it is one fact about the whole comparison, and a column would
+    repeat it on every row, force a non-numeric column into an otherwise
+    all-numeric frame (breaking ``scores.mean()``, ``.plot.bar()`` and the
+    describe-style bar chart), and become meaningless on a per-column
+    slice. Note that pandas does not propagate ``attrs`` through every
+    operation -- read the verdict from the frame `predict` returned, not
+    from a slice of it.
+
+
     **Forecasts are not scale-invariant, so normalize heterogeneous
     features first.** These are fitted statistical models, not scale-free
     transforms: their priors, initial covariances and convergence criteria
@@ -435,8 +559,70 @@ def predict(data, model='Kalman', t=10, return_model=False, **kwargs):
     ...     columns=columns)
     >>> [f.shape for f in hyp.predict(df, model='Kalman', t=5)]
     [(5, 3), (5, 3)]
+
+    Several models at once -- one forecast per model, keyed by name:
+
+    >>> forecasts = hyp.predict(x, model=['Kalman', 'AutoRegressor'], t=5)
+    >>> {name: f.shape for name, f in forecasts.items()}
+    {'Kalman': (5, 3), 'AutoRegressor': (5, 3)}
+
+    Backtest them against the last 5 rows, naive baseline included:
+
+    >>> scores = hyp.predict(x, model=['Kalman', 'AutoRegressor'], holdout=5)
+    >>> list(scores.index)
+    ['Kalman', 'AutoRegressor', 'naive']
+    >>> list(scores.columns)
+    ['MAE', 'RMSE', 'MAPE', 'n', 'unscored', 'horizon']
+    >>> scores.attrs['best'] in ('Kalman', 'AutoRegressor')
+    True
+    >>> isinstance(scores.attrs['beats_baseline'], bool)
+    True
     """
     data = _normalize_data(data)
+
+    # MULTI-MODEL / BACKTEST dispatch (GH #285). Both are strictly opt-in:
+    # `model` is a collection only when it is a list/tuple/name-mapping, and
+    # the scoring path only runs for a non-None `holdout`, so the
+    # single-model forecast path below is byte-for-byte what it was.
+    collection = model_collection(
+        model, valid=supported_names(FORECASTERS),
+        aliases=_FORECASTER_ALIASES, caller='hyp.predict')
+    if return_forecasts and holdout is None:
+        raise ValueError(
+            'return_forecasts=True only applies to a backtest; pass '
+            'holdout= (the rows to hold out and score against), or drop '
+            'return_forecasts to get the forecasts themselves.')
+    if holdout is not None:
+        if return_model:
+            raise ValueError(
+                'return_model=True is not supported with holdout=: a '
+                'backtest fits one model per model spec and reports scores. '
+                'Use return_forecasts=True for the scored forecasts, then '
+                'refit on the full data with the winning spec.')
+        if isinstance(data, pd.DataFrame) and (data.index.nlevels >= 2
+                                               or data.columns.nlevels >= 2):
+            raise ValueError(
+                'holdout= is not supported on hierarchical (MultiIndex) '
+                'input; slice the groups and backtest them one at a time.')
+        if collection is not None:
+            names, specs = collection
+        else:
+            names = [spec_name(model, supported_names(FORECASTERS),
+                               _FORECASTER_ALIASES)]
+            specs = [model]
+        return backtest_predict(
+            _holdout_datasets(data), predict, t, holdout, names, specs,
+            metrics=metrics, per_column=per_column,
+            return_forecasts=return_forecasts, kwargs=kwargs)
+    if collection is not None:
+        names, specs = collection
+        results = {name: predict(data, model=spec, t=t,
+                                 return_model=return_model, **kwargs)
+                   for name, spec in zip(names, specs)}
+        if return_model:
+            return ({name: r[0] for name, r in results.items()},
+                    {name: r[1] for name, r in results.items()})
+        return results
 
     # imported INSIDE the function on purpose: `predict` re-enters itself
     # once per group below, and a function-level import resolves each name on
