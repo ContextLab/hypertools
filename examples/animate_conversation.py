@@ -44,13 +44,12 @@ pulled together by the repeated words "said Alice" rather than by their
 content. Who is speaking is carried by the colour (paths and title alike)
 and the legend.
 
-**Embeddings & graceful degradation.** Sentence embeddings come from the
-``[text]`` extra. hypertools installs that extra on demand the first time
-an embedding model is requested, but this example checks for it up front
-(so a run never pauses for a download) and, when it is absent, uses
-``vectorizer='TfidfVectorizer'`` instead; the pipeline (embed -> reduce
--> disjoint per-turn paths -> serial reveal coloured by speaker) is
-identical either way.
+**Embeddings.** Sentence embeddings come from the ``[text]`` extra, which
+hypertools installs on demand the first time an embedding model is
+requested; nothing here checks for it. The test-suite drives the same
+pipeline (embed -> reduce -> disjoint per-turn paths -> serial reveal
+coloured by speaker) through ``fixture_data``, which embeds with
+``vectorizer='TfidfVectorizer'`` so no test downloads a model.
 """
 
 # Code source: Contextual Dynamics Laboratory
@@ -61,11 +60,7 @@ from typing import NamedTuple
 
 import hypertools as hyp
 
-try:
-    import sentence_transformers  # noqa: F401 -- only asks whether [text] is installed
-    VECTORIZER = 'all-MiniLM-L6-v2'
-except ImportError:
-    VECTORIZER = 'TfidfVectorizer'
+VECTORIZER = 'all-MiniLM-L6-v2'
 
 SPEAKER_COLOR = {
     'Alice': '#E4572E', 'Hatter': '#3F72AF', 'March Hare': '#5B8C5A',

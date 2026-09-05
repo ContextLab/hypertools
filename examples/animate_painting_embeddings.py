@@ -28,11 +28,11 @@ text side is fully offline and deterministic). Each canvas is downloaded
 once from Wikimedia Commons and cached; if an image cannot be fetched, a
 hand-picked representative colour is used instead, the thumbnail slot shows
 a flat swatch of that colour, and the run says so. Sentence embeddings come
-from the ``[text]`` extra. hypertools installs that extra on demand the
-first time an embedding model is requested, but this example checks for it
-up front (so a run never pauses for a download) and, when it is absent,
-uses ``vectorizer='TfidfVectorizer'`` instead; the pipeline (embed -> reduce
-together -> one cloud/colour per painting -> spin) is identical either way.
+from the ``[text]`` extra, which hypertools installs on demand the first
+time an embedding model is requested; nothing here checks for it. The
+test-suite drives the same pipeline (embed -> reduce together -> one
+cloud/colour per painting -> spin) through ``fixture_data``, which embeds
+with ``vectorizer='TfidfVectorizer'`` so no test downloads a model.
 """
 
 # Code source: Contextual Dynamics Laboratory
@@ -60,11 +60,7 @@ FILEPATH = 'https://commons.wikimedia.org/wiki/Special:FilePath/'
 PALETTE_FIXTURE = os.path.join(
     os.path.dirname(os.path.abspath(__file__)) if '__file__' in globals()
     else os.getcwd(), 'data', 'painting_palette_fixture.png')
-try:
-    import sentence_transformers  # noqa: F401 -- only asks whether [text] is installed
-    VECTORIZER = 'all-MiniLM-L6-v2'
-except ImportError:
-    VECTORIZER = 'TfidfVectorizer'
+VECTORIZER = 'all-MiniLM-L6-v2'
 
 PAINTINGS = {
     'Starry Night': {
