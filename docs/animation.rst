@@ -41,6 +41,26 @@ reveal on **both** backends:
 
     hyp.plot(data, '-', animate=True, order='serial', chemtrails=True)
 
+Fading earlier datasets
+------------------------
+
+``dataset_fade=`` fades already-revealed datasets by how long ago they were
+revealed, on a serial reveal, so recent history reads brightest:
+
+.. code-block:: python
+
+    hyp.plot([a, b, c], '-', animate=True, order='serial',
+             dataset_fade={'floor': 0.15, 'decay': 0.7})
+
+The alpha for dataset ``i`` is ``floor + (1 - floor) * decay ** (current -
+i)``, where ``current`` is the dataset being revealed right now; ``floor``
+is what an infinitely old dataset fades to and ``decay`` is the per-dataset
+falloff. It applies before any ``on_frame=`` callback, so a callback can
+still override one dataset's alpha. It requires a serial reveal
+(``animate='serial'`` or ``order='serial'``); a parallel animation has no
+"how long ago" to decay over and raises ``ValueError``. Supported on both
+backends -- matplotlib alpha, plotly per-frame trace opacity.
+
 Titles that change with the animation
 -------------------------------------
 
@@ -56,6 +76,48 @@ transitions are left blank automatically:
 Anywhere else a non-string ``title=`` raises ``TypeError``. Use ``names=``
 for per-dataset legend entries and ``labels=`` for per-observation
 annotations.
+
+``title=`` also accepts two DYNAMIC forms, on both backends. A **callable**
+gets that frame's :class:`~hypertools.FrameContext`, the same object
+``on_frame=`` receives, and returns the string to draw:
+
+.. code-block:: python
+
+    hyp.plot(data, '-', animate=True,
+             title=lambda ctx: f'{ctx.progress:.0%} through')
+
+A **format pattern** containing ``{index`` reads the row index of a
+pandas DataFrame or Series input at the reveal head -- a ``DatetimeIndex``
+is the intended case:
+
+.. code-block:: python
+
+    df = pd.DataFrame(data, index=pd.date_range('2020-01-01', periods=12,
+                                                 freq='MS'))
+    hyp.plot(df, '-', animate=True, title='{index:%B %Y}')
+
+This needs an input carrying a non-default index; without one it raises
+``ValueError`` before the pipeline runs. Style either form with
+``title_kwargs=``, ``title_color=`` and ``font=``, exactly like a fixed
+title:
+
+.. code-block:: python
+
+    hyp.plot(data, '-', animate=True, title='{index:%B %Y}',
+             title_kwargs={'size': 14, 'weight': 'bold'},
+             title_color='darkred')
+
+``title_wrap=`` hard-wraps a long title at a character count, on either
+form:
+
+.. code-block:: python
+
+    hyp.plot(data, '-', animate=True,
+             title='A rather long title that should wrap nicely',
+             title_wrap=20)
+
+A multi-line title (explicit newlines, or from ``title_wrap=``) now
+reserves room for every line above an animated 3-D plot, not just one.
 
 Per-dataset styling
 -------------------
@@ -89,6 +151,25 @@ restores the guarantee that no real data point is ever dropped:
 An explicit ``morph_samples=`` always wins, and below the threshold
 ``simplify`` does nothing at all.
 
+Looping a morph
+---------------
+
+``loop=True`` closes an ``animate='morph'`` sequence: after the last cloud,
+it transitions back to the first one and holds it again, so a looping
+player never hard-cuts from the last shape to the first:
+
+.. code-block:: python
+
+    hyp.plot([a, b, c], '-', animate='morph', loop=True)
+
+The closing hold reuses the FIRST cloud's own already-sampled points, so
+the loop point does not jump the way appending ``clouds[0]`` as one more
+dataset would. ``n`` clouds give ``2(n + 1) - 1`` hold/transition segments
+instead of ``2n - 1``. ``title=`` still takes one entry per dataset, not
+one per segment. Raises ``ValueError`` for every other ``animate=`` mode,
+since those already end where a repeat would start. Supported on both
+backends.
+
 Per-frame callbacks
 -------------------
 
@@ -105,9 +186,10 @@ both backends** and is the portable form:
     hyp.plot(data, '-', animate=True, on_frame=label_frame)
 
 The context carries the frame index and total, the resolved ``style`` and
-``order``, the arrays being drawn, the serial-reveal counts, and -- for
-morphs -- ``segment_index`` and ``segment_kind``. All of those are the same
-on either backend.
+``order``, the arrays being drawn, how far the reveal has gotten
+(``revealed_counts``, ``window_bounds``), overall progress through the clip
+(``progress``), and -- for morphs -- ``segment_index`` and
+``segment_kind``. All of those are the same on either backend.
 
 What you *do* with the context is usually backend-specific, because
 ``ctx.figure``, ``ctx.axes`` and ``ctx.artists`` are backend-native. The
@@ -301,6 +383,32 @@ backend-native (on plotly ``ctx.axes`` is ``None`` and ``ctx.artists`` are
 that frame's traces), so a callback that touches them is backend-specific
 code. Each backend does guarantee that a mutation you make is retained in
 the frame it renders.
+
+Reveal progress in callbacks
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``ctx.progress`` is how far through the whole clip the current frame is, in
+``[0, 1]`` -- ``0.0`` on the first frame, ``1.0`` on the last. It is
+populated on every style and both backends, including ``'spin'`` and
+``'morph'``, where no dataset reveals row by row:
+
+.. code-block:: python
+
+    def label(ctx):
+        print(f'{ctx.progress:.0%} through, revealed {ctx.revealed_counts}')
+
+    hyp.plot(data, '-', animate=True, on_frame=label)
+
+``ctx.revealed_counts`` is the number of rows of each drawn dataset
+currently on screen, one entry per dataset. As of 1.1.0 it is populated for
+``'parallel'``, ``'window'`` and ``'spin'`` too, not just serial reveals --
+before, every style but serial reported ``None``. ``ctx.window_bounds`` is
+the ``(start, end)`` row range actually visible for each dataset: ``start``
+is 0 for an ordinary cumulative reveal and greater than 0 once a sliding
+window (``animate='window'``, or a trail flag) has moved past a dataset's
+beginning, and ``end`` always equals ``revealed_counts[i]``. Both are
+``None`` for ``animate='morph'``, which interpolates whole clouds rather
+than revealing rows.
 
 Forecasting during an animation
 --------------------------------
@@ -560,6 +668,50 @@ What ``animate='morph'`` does
 ``NotImplementedError`` with ``predict=``. A morph interpolates between point
 *clouds*, so there is no time axis to forecast along -- this is a statement
 about what a morph means, not a gap to be filled later.
+
+Companion panels
+-----------------
+
+``companion=`` (matplotlib only) draws extra 2-D panels beside an animated
+plot, revealed in lockstep with it -- a linked time-series panel that used
+to require building a second axes by hand and driving it from an
+``on_frame=`` hook:
+
+.. code-block:: python
+
+    hyp.plot(data, '-', animate=True,
+             companion={'kind': 'series', 'data': data[:, 0],
+                        'ylabel': 'x[0]'})
+
+Each panel is a dict naming the series to draw (``data``, read against the
+same rows a ``title='{index...}'`` pattern reads), whether it reveals up to
+the head or is drawn whole (``reveal``), an optional rolling-mean trend
+line (``smooth``), and layout (``position``, ``size``, ``pad``). What it
+does NOT do: no 3-D companion panels, no panel with its own animation
+schedule, no legend or colorbar of its own, and no interaction with ``ax=``
+or ``panels=``. There is no plotly support -- an animated plotly figure is
+a list of frame payloads over one figure's traces, so a companion panel
+would need its own subplot layout and per-frame payloads; passing
+``companion=`` under ``backend='plotly'`` raises ``NotImplementedError``.
+
+Measuring what was drawn
+--------------------------
+
+``anim.drawn_extent()`` returns the union bounding box of everything the
+animation actually draws, measured from rendered pixels rather than data
+limits, as a ``matplotlib.transforms.Bbox`` in figure fractions:
+
+.. code-block:: python
+
+    anim = hyp.plot(data, '-', animate=True)
+    bbox = anim.drawn_extent()
+
+By default it samples 12 frames evenly across the clip, since a 3-D
+animation's drawn extent changes with the camera angle and one frame is
+not representative. Pass an int for a different sample size, or an
+iterable of frame indices to measure exactly those. It costs one full
+canvas render per sampled frame and leaves the figure showing the last
+frame it measured.
 
 Migrating from ``_func``/``_args``
 ----------------------------------

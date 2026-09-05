@@ -16,6 +16,7 @@
       ~HyperAnimation.__init__
       ~HyperAnimation.count
       ~HyperAnimation.draw_frame
+      ~HyperAnimation.drawn_extent
       ~HyperAnimation.index
       ~HyperAnimation.on_frame
       ~HyperAnimation.save

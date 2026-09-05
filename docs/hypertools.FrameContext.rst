@@ -28,10 +28,12 @@ hypertools.FrameContext
       ~FrameContext.current_index
       ~FrameContext.datasets
       ~FrameContext.order
+      ~FrameContext.progress
       ~FrameContext.revealed_counts
       ~FrameContext.segment_index
       ~FrameContext.segment_kind
       ~FrameContext.style
+      ~FrameContext.window_bounds
       ~FrameContext.frame
       ~FrameContext.n_frames
       ~FrameContext.figure
