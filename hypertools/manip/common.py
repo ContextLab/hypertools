@@ -3,14 +3,14 @@
 A Manipulator wraps a (fitter, transformer, required-params) triple: `fit`
 runs the fitter and stores the returned dict as attributes; `transform` runs
 the transformer with those params. Child classes (Normalize, ZScore, Smooth,
-Resample) supply the three pieces plus their defaults.
+Resample, Delay) supply the three pieces plus their defaults.
 """
 from sklearn.base import BaseEstimator
 from sklearn.exceptions import NotFittedError
 
 
 class Manipulator(BaseEstimator):
-    """Base class for `Normalize`/`ZScore`/`Smooth`/`Resample`.
+    """Base class for `Normalize`/`ZScore`/`Smooth`/`Resample`/`Delay`.
 
     Parameters
     ----------
@@ -137,7 +137,7 @@ class Manipulator(BaseEstimator):
         Invertible manipulators (`ZScore`, `Normalize`) supply an `inverter`
         that reconstructs the pre-transform values from their fitted
         parameters (mean/std, or min-max baseline/peak). Lossy ones
-        (`Smooth`, `Resample`) have no inverter and raise
+        (`Smooth`, `Resample`, `Delay`) have no inverter and raise
         `NotImplementedError`. Lets a `hypertools.Pipeline` round-trip
         `inverse_transform` through a leading `ZScore`/`Normalize` step.
 

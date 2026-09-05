@@ -25,11 +25,12 @@ from .normalize import Normalize
 from .zscore import ZScore
 from .smooth import Smooth
 from .resample import Resample
+from .delay import Delay
 from ..core.shared import unpack_model, require_data, no_observations_message
 from ..core.pipeline import Pipeline
 
 
-MANIPULATORS = [Normalize, ZScore, Smooth, Resample]
+MANIPULATORS = [Normalize, ZScore, Smooth, Resample, Delay]
 
 
 def _supported_names():
@@ -183,7 +184,7 @@ def manip(data, model="ZScore", return_model=False, normalize=None, reduce=None,
         unchanged (matching `align`/`cluster`/`reduce`'s skip contract).
 
         - A string is one of `MANIPULATORS`' names (Normalize, ZScore,
-          Smooth, Resample).
+          Smooth, Resample, Delay).
         - A dict may be the canonical
           ``{'model': ..., 'args': [...], 'kwargs': {...}}`` or the LEGACY
           ``{'model': ..., 'params': {...}}`` form (accepted for backward

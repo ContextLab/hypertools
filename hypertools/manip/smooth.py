@@ -90,6 +90,46 @@ def _resolve_kernel(kwargs):
     return kernel, False
 
 
+def _resolve_center(kwargs):
+    """Validate `center=` and `min_periods=` up front, and enforce which
+    kernels support `center=False` (GH #285).
+
+    `center=`/`min_periods=` deliberately reuse pandas' own
+    `rolling(...)` vocabulary (rather than an `align='center'|'trailing'`
+    kwarg) since `hypertools`' cross-module API already has an unrelated
+    top-level `align=` (the alignment STAGE, e.g. `HyperAlign`); a
+    same-named `Smooth` kwarg would collide with it in
+    `hyp.manip`/`hyp.plot`/`hyp.analyze`.
+
+    Only `kernel='boxcar'` has an unambiguous, well-established trailing
+    (causal) definition: a plain moving average, exactly
+    `pd.Series(x).rolling(kernel_width, min_periods=...).mean()`. Neither
+    `scipy.signal.savgol_filter` nor `scipy.ndimage.gaussian_filter1d`
+    ships a causal/one-sided variant, and there is no single canonical way
+    to build one (a truncated one-sided Gaussian and a causal Savitzky-
+    Golay fit are both used in the literature, with different tradeoffs) --
+    shipping an ad hoc version here would be a silent, unreviewable
+    correctness risk. So `center=False` is refused for `'savgol'`/
+    `'gaussian'` with a clear `ValueError` pointing at `kernel='boxcar'`
+    (or `center=True`) instead, rather than guessing.
+
+    `min_periods=` (pandas-style: the number of non-NaN values required
+    before a window produces a value) is only meaningful for the trailing
+    (`center=False`) boxcar path; passing it with `center=True` raises
+    `ValueError` rather than silently ignoring it.
+    """
+    center = kwargs.get('center', True)
+    if not isinstance(center, bool):
+        raise ValueError(f'invalid Smooth center {center!r}; must be True or False')
+    min_periods = kwargs.get('min_periods', None)
+    if center and min_periods is not None:
+        raise ValueError(
+            "min_periods is only meaningful with center=False (a centered "
+            "kernel has no partial-window/warm-up region); pass "
+            "center=False or drop min_periods.")
+    return center, min_periods
+
+
 def _smooth_dataset(data, **kwargs):
     """Smooth ONE DataFrame (axis=0 base case) column by column.
 
@@ -101,6 +141,13 @@ def _smooth_dataset(data, **kwargs):
     """
     smoothed = data.copy()
     branch, use_legacy_var = _resolve_kernel(kwargs)
+    center, min_periods = _resolve_center(kwargs)
+    if not center and branch != 'boxcar':
+        raise ValueError(
+            f"center=False is only supported for kernel='boxcar' (got "
+            f"kernel={branch!r}); savgol/gaussian have no unambiguous "
+            "causal (trailing) definition. Use kernel='boxcar', or "
+            "center=True (the default).")
     # NaN handling (2026-07 release audit, final wave item 16): missing
     # values used to behave differently per kernel -- savgol propagated or
     # crashed with a raw scipy error, while gaussian/boxcar silently SPREAD
@@ -121,9 +168,13 @@ def _smooth_dataset(data, **kwargs):
     # clear, actionable errors for kernel_width edge cases (QC 2026-07): scipy
     # otherwise raises opaque "window_length must be <= size of x" /
     # "polyorder must be less than window_length" from deep in savgol_filter.
+    # A trailing boxcar has no such requirement -- pandas rolling handles a
+    # window wider than the data gracefully via min_periods (and min_periods=1
+    # is exactly the documented expanding-start use case), so this guard is
+    # centered-kernel only.
     kw = kwargs.get('kernel_width')
     n_rows = data.shape[0]
-    if kw is not None and kw > n_rows:
+    if center and kw is not None and kw > n_rows:
         raise ValueError(
             f"kernel_width ({kw}) is larger than the number of samples "
             f"({n_rows}); use a kernel_width <= {n_rows}.")
@@ -134,7 +185,15 @@ def _smooth_dataset(data, **kwargs):
             "(or use kernel='gaussian'/'boxcar').")
     for c in data.columns:
         values = np.asarray(data[c], dtype=float)
-        if branch == 'gaussian':
+        if not center:
+            # byte-identical to pd.Series(values).rolling(kernel_width,
+            # min_periods=...).mean() (GH #285): min_periods defaults to
+            # kernel_width (pandas' own default), giving NaN for the first
+            # kernel_width - 1 rows; min_periods=1 gives an expanding start.
+            effective_min_periods = kwargs['kernel_width'] if min_periods is None else min_periods
+            smoothed_values = pd.Series(values).rolling(
+                window=kwargs['kernel_width'], min_periods=effective_min_periods).mean().to_numpy()
+        elif branch == 'gaussian':
             sigma = np.sqrt(kwargs['var']) if use_legacy_var else kwargs['kernel_width'] / 4
             smoothed_values = gaussian_filter1d(values, sigma=sigma)
         elif branch == 'boxcar':
@@ -223,18 +282,24 @@ def transformer(data, **kwargs):
     # for list input, and so the effective width matches the warning text
     # (audit F14-008: the old code warned "Rounding ... to the nearest
     # integer" but then TRUNCATED, e.g. 11.7 -> 11 instead of 12 -> odd 13).
+    # center=False (GH #285) skips the ODD-integer bump: a trailing
+    # (causal) boxcar window has no symmetry requirement -- pandas rolling
+    # accepts any positive integer window, and forcing it odd would make
+    # `center=False, kernel_width=12` (the weather-tutorial's
+    # `rolling(12).mean()` recipe) silently smooth over a different width.
+    center = kwargs.get('center', True)
     kw = kwargs.get('kernel_width')
     if kw is not None:
         if kw != int(np.round(kw)):
             warnings.warn('Rounding smoothing kernel width to the nearest integer')
         kw = int(np.round(kw))
-        if kw % 2 != 1:
+        if center and kw % 2 != 1:
             warnings.warn('Increasing smoothing kernel width by 1 (must be odd)')
             kw += 1
         if kw <= 0:
+            requirement = 'a positive odd integer' if center else 'a positive integer'
             raise ValueError(
-                'kernel_width must be a positive odd integer; got '
-                f'{kwargs["kernel_width"]!r}')
+                f'kernel_width must be {requirement}; got {kwargs["kernel_width"]!r}')
         kwargs = dw.core.update_dict(kwargs, {'kernel_width': kw})
 
     return _transform(data, **kwargs)
@@ -302,6 +367,46 @@ class Smooth(Manipulator):
         (via ``return_model=True``) clips to the NEW data's own range,
         never the fit-time range.
 
+    center : bool
+        Where the smoothing window sits relative to each output sample
+        (GH #285, pandas' own `rolling(...)` vocabulary -- NOT
+        `align='center'|'trailing'`, since `hypertools`'s cross-module
+        API already has an unrelated top-level `align=` for the
+        alignment STAGE, e.g. `HyperAlign`; a same-named `Smooth` kwarg
+        would collide with it in `hyp.manip`/`hyp.plot`/`hyp.analyze`).
+        Defaults to `True` (unchanged pre-existing behavior for all
+        three kernels: a symmetric window straddling each sample, no
+        NaNs introduced).
+
+        - `False`: a CAUSAL (backward-looking, trailing) window ending
+          at each sample -- only supported for `kernel='boxcar'`, where
+          it is byte-identical to
+          ``pd.Series(x).rolling(kernel_width, min_periods=min_periods).mean()``
+          (NaN for the first `kernel_width - 1` rows with the default
+          `min_periods`). `kernel_width` is NOT forced odd for
+          `center=False` (a causal window has no symmetry requirement).
+          Requesting `center=False` with `kernel='savgol'`/`'gaussian'`
+          raises `ValueError`: neither `scipy.signal.savgol_filter` nor
+          `scipy.ndimage.gaussian_filter1d` has a causal/one-sided
+          variant, and there is no single canonical way to build one (a
+          truncated one-sided Gaussian and a causal Savitzky-Golay fit
+          are both used in the literature, with different tradeoffs) --
+          shipping an ad hoc version would be a silent correctness risk,
+          so this is refused rather than guessed. Use `kernel='boxcar'`
+          for a trailing smoother, or `center=True` (the default) for
+          savgol/gaussian.
+
+    min_periods : int or None
+        Only meaningful for `center=False` (pandas-rolling-style): the
+        minimum number of non-NaN values in the trailing window before
+        it produces a value. `None` (default) uses `kernel_width` itself
+        (pandas' own default: NaN for the first `kernel_width - 1`
+        rows). `min_periods=1` gives an expanding start (the first
+        output sample is the input itself, the second is a 2-sample
+        average, etc., with no leading NaNs). Passing a non-`None` value
+        together with `center=True` raises `ValueError` (a centered
+        kernel has no partial-window/warm-up region for it to control).
+
     Notes
     -----
     Smoothing is applied PER DATASET: each element of a list input is
@@ -324,15 +429,31 @@ class Smooth(Manipulator):
     >>> out = Smooth(kernel_width=11).fit_transform(df)
     >>> out.shape
     (50, 1)
+
+    A trailing (causal) boxcar moving average, matching
+    ``pd.Series(x).rolling(12).mean()`` exactly (NaN for the first 11
+    rows):
+
+    >>> df2 = pd.DataFrame({'y': np.arange(20, dtype=float)})
+    >>> out2 = Smooth(kernel='boxcar', kernel_width=12,
+    ...                center=False).fit_transform(df2)
+    >>> bool(out2['y'].iloc[:11].isna().all())
+    True
+    >>> import pandas as pd
+    >>> expected = df2['y'].rolling(12).mean()
+    >>> bool(np.allclose(out2['y'].to_numpy(), expected.to_numpy(),
+    ...                   equal_nan=True))
+    True
     """
 
     # noinspection PyShadowingBuiltins
     def __init__(self, axis=0, kernel=None, mode='savgol', kernel_width=11, order=3, var=300,
-                 maintain_bounds=True):
+                 maintain_bounds=True, center=True, min_periods=None):
         required = ['axis', 'mode', 'kernel_width', 'order', 'var', 'maintain_bounds']
         super().__init__(axis=axis, fitter=fitter, transformer=transformer, data=None, mode=mode,
                          kernel=kernel, kernel_width=kernel_width, order=order, var=var,
-                         maintain_bounds=maintain_bounds, required=required)
+                         maintain_bounds=maintain_bounds, center=center, min_periods=min_periods,
+                         required=required)
 
         self.axis = axis
         self.fitter = fitter
@@ -344,4 +465,6 @@ class Smooth(Manipulator):
         self.order = order
         self.var = var
         self.maintain_bounds = maintain_bounds
+        self.center = center
+        self.min_periods = min_periods
         self.required = required
