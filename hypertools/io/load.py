@@ -53,7 +53,8 @@ EXAMPLE_DATA = {
 #                    frame's original integer index restored (datasaurus; see
 #                    _DATASAURUS_INDEX_STARTS)
 #   parquet       -> DataFrame (columns + index preserved by parquet)
-#   jsongz_text   -> [ (n, 1) object array of document strings ] (wiki/nips)
+#   jsongz_text   -> flat list of document strings (wiki/nips; GH #285 --
+#                    matches jsongz_strlist/sotus's shape, see _parse_rehosted)
 #   jsongz_strlist -> flat list of document strings (sotus's 29 speeches)
 _REHOSTED = {
     'weights': 'npz_list', 'weights_avg': 'npz_list',
@@ -121,9 +122,11 @@ def _parse_rehosted(path, name):
         import json
         with gzip.open(path, 'rt', encoding='utf-8') as f:
             docs = json.load(f)
-        if fmt == 'jsongz_strlist':
-            return [str(d) for d in docs]     # sotus: flat list of speeches
-        return [np.array(docs, dtype=object).reshape(-1, 1)]
+        # GH #285: both formats return a flat list of strings (one document
+        # per entry) -- wiki/nips used to come back as a list holding a
+        # single (n, 1) object array, inconsistent with sotus's flat list;
+        # unified here so all three hosted text corpora share one shape.
+        return [str(d) for d in docs]
     # npz variants (content-sniffed by np.load regardless of the cache
     # filename having no extension); allow_pickle=False -> no code execution
     with np.load(path, allow_pickle=False) as z:
@@ -313,12 +316,11 @@ def load(
         `sotus` is a list of 29 State of the Union addresses (1989-2018),
         as strings.
 
-        `wiki` is a list holding one (3136, 1) numpy object array of
-        wikipedia page texts, used to fit `wiki_model`.
+        `wiki` is a list of 3,136 wikipedia page texts (strings), used to
+        fit `wiki_model`.
 
-        `nips` is a list holding one (7241, 1) numpy object array of NIPS
-        conference paper texts (~181 MB download), used to fit
-        `nips_model`.
+        `nips` is a list of NIPS conference paper texts (strings, ~181 MB
+        download), used to fit `nips_model`.
 
         `wiki_model`, `nips_model`, and `sotus_model` are sklearn
         Pipelines (CountVectorizer -> LatentDirichletAllocation, 50

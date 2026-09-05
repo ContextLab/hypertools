@@ -38,7 +38,7 @@
   "nips": {
     "independent_evidence": true,
     "legacy_artifact_sha256": "e240532dab310652bb489b4f0880af9f681652708dfe60ac3d6ff4e4ee4aaffc",
-    "legacy_canonical_hash": "5388c7ca7f4150160bd7053fb0153ace3aae6301f1ab3fc5f4b7400ee0d41f99",
+    "legacy_canonical_hash": "dc0e039d305e4e1aa94c58a6dd5c78becb75073404b8e05ba67524c8b397c3a7",
     "legacy_source": "1FV7xT2hVgZ1sXfMvAdP1jRsK_dWhp49I"
   },
   "sotus": {
@@ -93,7 +93,7 @@
   "wiki": {
     "independent_evidence": true,
     "legacy_artifact_sha256": "722d20a286edfad607904123d7756b95fb49e72e037af5d091422c994c4893be",
-    "legacy_canonical_hash": "a1b158c47786b80bce2736735fffe517e9e11388db862f6a357214c78f3e2cac",
+    "legacy_canonical_hash": "750d4b264dae6e13792796988e0af76e593571d927f9dcd982294d338e92a5e9",
     "legacy_source": "1NUqm3svfu2rrFH04xmLbOh0u5WyTe9mh"
   }
 }

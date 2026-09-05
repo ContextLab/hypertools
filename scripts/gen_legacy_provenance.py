@@ -46,6 +46,7 @@ import hypertools as hyp                       # noqa: E402,F401
 L = importlib.import_module('hypertools.io.load')  # noqa: E402
 from hypertools.datageometry import DataGeometry  # noqa: E402
 from hypertools.io.sources import parse_drive_interstitial  # noqa: E402
+import numpy as np                              # noqa: E402
 import pandas as pd                            # noqa: E402
 from pathlib import Path                        # noqa: E402
 from test_dataset_compat import _canonical_sha256  # noqa: E402
@@ -143,7 +144,16 @@ def legacy_load(name, verified_bytes, workdir):
     geo = L._unpickle_example(Path(tmp))
     if name == 'mushrooms' and isinstance(geo, DataGeometry):
         geo.data = pd.DataFrame(geo.data)
-    return geo.get_data() if isinstance(geo, DataGeometry) else geo
+    data = geo.get_data() if isinstance(geo, DataGeometry) else geo
+    if name in ('wiki', 'nips'):
+        # The legacy pickles hold the text corpora as one (n, 1) object array;
+        # since 1.1.0 (GH #285) hyp.load returns the same documents as a flat
+        # list of strings, like 'sotus'. Normalize the CONTAINER only, so the
+        # hash still proves that every document is byte-identical to the
+        # pre-1.0 original (verified 2026-09-05: 3136 wiki / 7241 nips docs
+        # equal under both loaders).
+        data = [str(doc) for doc in np.asarray(data[0], dtype=object).ravel()]
+    return data
 
 
 BASELINE = json.loads(open(os.path.join(
