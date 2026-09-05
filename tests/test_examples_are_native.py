@@ -199,6 +199,15 @@ DEFECT_MARKERS = {
                     "go through PillowWriter; see animate.py's writer "
                     "dispatch and plot()'s save_path docstring"),
     r'morph_schedule|frame_to_segment': 'the morph schedule is the library\'s business',
+    # audit 3 (2026-09-04, issue #284): re-implementations of public calls
+    # found across examples/ and docs/tutorials/ and replaced.
+    r'\bload_digits\b': "use hyp.load('digits') (a DataFrame with a `target` column)",
+    r'\bload_dataset\(': "use hyp.load('<owner>/<dataset>', split=..., streaming=...)",
+    r'\btext2mat\(': "use hyp.plot(docs, vectorizer=..., semantic=..., corpus=...)",
+    r'hypertools\.align\.procrustes': "use hyp.align(data, model='Procrustes')",
+    r'import sentence_transformers': ("delete the guard: vectorizer='<hf-model-id>' "
+                                      "installs the text extra on demand"),
+    r'find_spec\(': 'delete the guard: optional extras install themselves on demand',
 }
 
 def _read(path):
