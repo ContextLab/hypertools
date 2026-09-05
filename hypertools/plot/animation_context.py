@@ -161,10 +161,48 @@ class FrameContext:
         ``None``. **This does not distinguish a morph hold from a morph
         transition** -- both sweep 0 -> 1 over their own segment. Use
         `segment_kind` for that.
+    progress : float or None
+        How far through the WHOLE animation this frame is, in [0, 1]:
+        ``frame / (n_frames - 1)``, so frame 0 is 0.0 and the last frame is
+        1.0 (a one-frame animation is 0.0 -- the same
+        ``/ max(1, n_frames - 1)`` guard the serial reveal schedule itself
+        uses). Populated on EVERY style and both backends, including
+        ``'spin'`` and ``'morph'``, where no dataset reveals row by row and
+        `revealed_counts` says nothing about elapsed time.
+
+        This is the number four of the five animated gallery examples used
+        to recompute by hand as ``ctx.frame / max(1, ctx.n_frames - 1)``
+        before interpolating it into a date index (GH #285). ``None`` only
+        on the synthetic context a STATIC plot's callable ``title=`` gets
+        -- there ``frame`` is ``None`` too and `progress` is pinned to 1.0
+        (a static figure is the finished animation), so `progress` is in
+        fact never ``None`` in an animation.
     revealed_counts : tuple of int or None
-        Number of rows of each dataset currently drawn. ``None`` for
-        parallel and morph animations -- ``None`` is preserved as
-        ``None``, never normalized to an empty tuple.
+        Number of rows of each drawn dataset currently on screen -- one
+        entry per entry of `datasets`, in the same order.
+
+        * serial: rows revealed so far, counting from row 0 (cumulative).
+        * parallel / ``'window'``: the head window's END row, i.e. how many
+          rows the sweep has reached. With ``animate='window'`` (or any
+          trail flag) the window's START is > 0, so `revealed_counts` is
+          NOT the number of rows VISIBLE -- read `window_bounds` for that.
+        * ``'spin'``: every dataset's full row count, on every frame --
+          ``'spin'`` draws the whole trajectory each frame.
+        * ``'morph'``: ``None``. A morph interpolates whole clouds; no
+          dataset reveals row by row, so there is no count to report.
+          ``None`` is preserved as ``None``, never normalized to an empty
+          tuple.
+
+        Before 1.1.x this was populated on the serial paths only, and every
+        other style reported ``None`` (GH #285).
+    window_bounds : tuple of (int, int) or None
+        The ``(start, end)`` row bounds of each drawn dataset's visible head
+        window, so ``datasets[i][start:end]`` is exactly what frame is
+        drawing. ``start`` is 0 for cumulative (serial, plain parallel)
+        reveals and > 0 once a sliding window (``animate='window'``, or a
+        ``focused=``/trail window) has moved past a dataset's beginning.
+        ``end`` always equals ``revealed_counts[i]``. ``None`` for
+        ``'morph'``, exactly like `revealed_counts`.
     segment_index : int or None
         For ``animate='morph'``, the index into the hold/morph schedule
         (``hypertools.plot.morph.frame_to_segment``). ``None`` otherwise.
@@ -176,9 +214,9 @@ class FrameContext:
 
     Notes
     -----
-    ``artists``, ``datasets`` and ``revealed_counts`` are always TUPLES
-    (``revealed_counts`` is ``None`` or a tuple). This is a public
-    guarantee, not an accident of whichever branch built the frame.
+    ``artists``, ``datasets``, ``revealed_counts`` and ``window_bounds``
+    are always TUPLES (the last two are ``None`` or a tuple). This is a
+    public guarantee, not an accident of whichever branch built the frame.
 
     Eleven separate call sites record frame state -- seven matplotlib
     updaters and four plotly frame-build branches -- and each has a
@@ -199,8 +237,8 @@ class FrameContext:
     mutating them is what the hook is for. What is fixed is MEMBERSHIP.
     """
 
-    frame: int
-    n_frames: int
+    frame: Optional[int]
+    n_frames: Optional[int]
     figure: Any
     axes: Any
     artists: Tuple[Any, ...] = ()
@@ -210,17 +248,40 @@ class FrameContext:
     current_index: Optional[int] = None
     current_fraction: Optional[float] = None
     revealed_counts: Optional[Tuple[int, ...]] = None
+    window_bounds: Optional[Tuple[Tuple[int, int], ...]] = None
     segment_index: Optional[int] = None
     segment_kind: Optional[str] = None
+    progress: Optional[float] = None
 
     def __post_init__(self):
-        """Canonicalize the container types. `object.__setattr__` is the
-        documented way to assign inside a frozen dataclass."""
+        """Canonicalize the container types and derive `progress`.
+
+        `object.__setattr__` is the documented way to assign inside a
+        frozen dataclass.
+
+        `progress` is DERIVED here rather than at the eleven recorders, for
+        the same reason the container coercion is: every recorder already
+        passes `frame` and `n_frames`, so deriving it once covers all of
+        them -- and covers any branch added later without that branch
+        having to know. An explicitly-passed `progress` is kept as given
+        (that is how a static plot's synthetic context pins it to 1.0 with
+        no frame index at all).
+        """
         object.__setattr__(self, 'artists', tuple(self.artists))
         object.__setattr__(self, 'datasets', tuple(self.datasets))
         if self.revealed_counts is not None:
             object.__setattr__(self, 'revealed_counts',
                                tuple(self.revealed_counts))
+        if self.window_bounds is not None:
+            object.__setattr__(self, 'window_bounds',
+                               tuple((int(a), int(b))
+                                     for a, b in self.window_bounds))
+        if (self.progress is None and self.frame is not None
+                and self.n_frames is not None):
+            span = max(1, int(self.n_frames) - 1)
+            object.__setattr__(
+                self, 'progress',
+                min(1.0, max(0.0, int(self.frame) / span)))
 
 
 class FrameHooks:

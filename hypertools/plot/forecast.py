@@ -156,9 +156,12 @@ def revealed_raw_counts(n_raw, n_grid, num, total_frames):
     `update_lines_parallel` reveals `data[start:end]` of the FRAME-GRID array,
     where `end` comes from `trails.anim_window_bounds` -- the one
     implementation of the reveal, called from `matplotlib_backend.py:1185`. It
-    is reused here rather than re-derived (`FrameContext.revealed_counts` is
-    documented ``None`` for parallel animations, so it cannot serve). `end`
-    does not depend on the trail window, so 0 is passed for it.
+    is reused here rather than re-derived. (Since GH #285
+    `FrameContext.revealed_counts` IS populated for parallel animations, but
+    it counts FRAME-GRID rows -- what the artist drew -- while this function
+    answers the different question of how many RAW analyze-space rows that
+    corresponds to, which is what the forecast anchor needs.) `end` does not
+    depend on the trail window, so 0 is passed for it.
 
     `plot._interp_anim_line` puts frame-grid row ``j`` at RAW parameter
     position ``j * (n_raw - 1) / (n_grid - 1)`` with exact endpoints, so the

@@ -222,5 +222,105 @@ def _save_animated_svg(line_ani, save_path, frame_rate):
     line_ani.save(save_path, writer=collector)
 
 
+#: How many frames `drawn_extent` samples when the caller does not say.
+#: The drawn extent of an animated 3-D plot changes with the camera angle,
+#: so it has to be measured over the orbit rather than on one frame; 12
+#: samples cover a full turn's 90-degree symmetry period three times, and
+#: cost 12 canvas renders rather than one per frame.
+DRAWN_EXTENT_SAMPLES = 12
+
+
+def drawn_extent(anim, frames=None, threshold=5):
+    """The union bounding box of everything an animation DRAWS, measured
+    from rendered pixels (GH #285).
+
+    Parameters
+    ----------
+    anim : hypertools.plot.hyper_animation.HyperAnimation
+        The animation to measure. Reached as ``anim.drawn_extent(...)``.
+    frames : int, iterable of int, or None, optional
+        Which frames to measure. ``None`` (default) samples
+        `DRAWN_EXTENT_SAMPLES` frames evenly across the animation; an int
+        `n` samples `n` frames evenly; an iterable measures exactly those
+        frame indices.
+    threshold : int, optional
+        How far (0-255, per channel) a pixel must differ from the figure's
+        own background colour to count as drawn. The default 5 treats
+        anything below 250 on a white figure as ink -- faint antialiasing
+        included.
+
+    Returns
+    -------
+    matplotlib.transforms.Bbox
+        In FIGURE fractions: ``(0, 0)`` is the bottom-left corner of the
+        canvas and ``(1, 1)`` the top-right, y increasing UPWARD (the
+        `Figure.transFigure` convention, not the top-down pixel one). Read
+        the corners as ``bbox.p0`` / ``bbox.p1``, or use ``bbox.x0``,
+        ``bbox.width`` and friends. Convert to axes fractions with
+        ``bbox.transformed(ax.transAxes.inverted())``.
+
+    Notes
+    -----
+    COST: one full canvas render per sampled frame, plus one pass over the
+    rendered pixels. On a 640x504 figure that is a few milliseconds each;
+    on a large figure with surfaces it is not cheap, which is why the
+    default samples 12 frames rather than all of them.
+
+    This DRAWS the sampled frames, so the figure is left showing the last
+    one measured. Frames are idempotent and order-independent by contract
+    (see `FrameContext`), so redraw whichever frame you want afterwards
+    with ``anim.draw_frame(i)``.
+
+    Measuring pixels rather than asking the artists is deliberate: an
+    animated 3-D plot's wireframe box is re-projected every frame from the
+    camera angle, and its drawn size has no artist-level accessor that
+    accounts for the projection. The pixels are the one record of what was
+    actually drawn.
+    """
+    import numpy as _np
+    from matplotlib.transforms import Bbox
+    from matplotlib.colors import to_rgb
+
+    fig = anim.figure
+    n_frames = anim.n_frames
+    if frames is None:
+        frames = DRAWN_EXTENT_SAMPLES
+    if isinstance(frames, (int, _np.integer)) and not isinstance(frames, bool):
+        count = max(1, min(int(frames), n_frames))
+        frames = sorted({int(round(v)) for v in
+                         _np.linspace(0, n_frames - 1, count)})
+    else:
+        frames = [int(f) for f in frames]
+    if not frames:
+        raise ValueError(
+            "drawn_extent needs at least one frame to measure; got an empty "
+            "frames= sequence.")
+
+    bg = _np.array([round(c * 255) for c in to_rgb(fig.get_facecolor())])
+    lo = _np.full(2, _np.inf)
+    hi = _np.full(2, -_np.inf)
+    for i in frames:
+        anim.draw_frame(i)                    # validates the index for us
+        fig.canvas.draw()
+        rgb = _np.asarray(fig.canvas.buffer_rgba())[..., :3].astype(int)
+        ink = _np.abs(rgb - bg).max(-1) > threshold
+        rows, cols = _np.nonzero(ink)
+        if rows.size == 0:
+            continue                          # a blank frame draws nothing
+        n_rows, n_cols = ink.shape
+        lo = _np.minimum(lo, [cols.min() / n_cols,
+                              1 - (rows.max() + 1) / n_rows])
+        hi = _np.maximum(hi, [(cols.max() + 1) / n_cols,
+                              1 - rows.min() / n_rows])
+    if not _np.isfinite(lo).all():
+        raise ValueError(
+            "drawn_extent found nothing drawn on any of the "
+            f"{len(frames)} sampled frames: every pixel matched the "
+            "figure's background. Raise threshold= only makes this "
+            "stricter -- check that the animation actually draws something "
+            "at these frame indices.")
+    return Bbox([list(lo), list(hi)])
+
+
 # public alias
 save_animation = _save_animation

@@ -90,6 +90,183 @@ def _apply_title(ax, text, font=None, title_kwargs=None):
     return ax.set_title(text)
 
 
+# --------------------------------------------------------------------------
+# companion= panels (GH #285): extra 2-D panels laid out beside an animated
+# plot and revealed in lockstep with it. `plot.py` validates the specs and
+# drives the per-frame reveal; the drawing lives here, beside every other
+# matplotlib artist hypertools creates.
+# --------------------------------------------------------------------------
+
+#: Vertical (or horizontal) gap, in figure fractions, between a companion
+#: panel and the plot it hangs off. Small and fixed: the caller's knobs are
+#: `size` (how much of the figure the panel gets) and `pad` (how much of
+#: that is left for the panel's own ticks and label).
+COMPANION_GAP = 0.02
+
+#: The full, unrevealed series is drawn once underneath in this grey, so the
+#: revealed part reads against the shape it is filling in.
+COMPANION_GHOST_COLOR = '0.85'
+
+
+def _companion_xy(data):
+    """`(x, y)` for a companion panel's ``data``: one column is y against
+    row number, two columns are (x, y)."""
+    if data.shape[1] == 1:
+        return np.arange(data.shape[0], dtype=float), data[:, 0]
+    return data[:, 0], data[:, 1]
+
+
+def _companion_rolling_mean(y, window):
+    """Trailing rolling mean of `y` over `window` rows, NaN until the window
+    is full -- the same convention `pandas.Series.rolling(window).mean()`
+    uses, so a caller who computed one by hand gets the identical line."""
+    out = np.full(y.shape[0], np.nan)
+    if window <= y.shape[0]:
+        c = np.concatenate([[0.0], np.cumsum(y)])
+        out[window - 1:] = (c[window:] - c[:-window]) / window
+    return out
+
+
+def _grow_for_companion(fig, spec):
+    """Make room for one companion panel by GROWING the figure, keeping
+    every existing axes at exactly the absolute size it already had, and
+    return the new panel's rect in the new figure's fractions.
+
+    Growing rather than shrinking is the same decision (and the same
+    reasoning) as `plot._reserve_animated_3d_title_margin`: an animated 3-D
+    axes is deliberately maximised to the full canvas so a rotating zoomed
+    cube never clips, and shrinking it to make room would shrink the
+    rendered cube with it.
+    """
+    w_in, h_in = fig.get_size_inches()
+    size = spec['size']
+    if spec['position'] == 'bottom':
+        extra = h_in * size / (1.0 - size)
+        new_w, new_h = w_in, h_in + extra
+        for axes in fig.axes:
+            pos = axes.get_position()
+            axes.set_position([pos.x0, (pos.y0 * h_in + extra) / new_h,
+                               pos.width, pos.height * h_in / new_h])
+    else:
+        extra = w_in * size / (1.0 - size)
+        new_w, new_h = w_in + extra, h_in
+        for axes in fig.axes:
+            pos = axes.get_position()
+            axes.set_position([pos.x0 * w_in / new_w, pos.y0,
+                               pos.width * w_in / new_w, pos.height])
+    try:
+        fig.set_layout_engine('none')
+    except Exception:                                    # noqa: BLE001
+        pass
+    fig.set_size_inches(new_w, new_h)
+    pad = spec['pad']
+    if spec['position'] == 'bottom':
+        height = size - pad - COMPANION_GAP
+        if height <= 0:
+            raise ValueError(
+                f"companion= panel: size={size} leaves no room for the "
+                f"panel once pad={pad} is reserved below it for its ticks "
+                "and label; raise size= or lower pad=.")
+        return [0.12, pad, 0.80, height]
+    width = size - pad - COMPANION_GAP
+    if width <= 0:
+        raise ValueError(
+            f"companion= panel: size={size} leaves no room for the panel "
+            f"once pad={pad} is reserved to its left for its ticks and "
+            "label; raise size= or lower pad=.")
+    return [1.0 - size + pad, 0.15, width, 0.75]
+
+
+def add_companion_panel(fig, spec, cmap=None, norm=None, font=None):
+    """Draw one `companion=` panel and return the state its per-frame
+    updater needs (GH #285).
+
+    The panel shows the whole series once, faintly, then reveals it: a line
+    (or, with ``hue=``, a `LineCollection` coloured through the plot's own
+    colour scale) up to the reveal head, an optional trailing rolling mean,
+    and an optional marker on the head itself.
+    """
+    from matplotlib.collections import LineCollection
+
+    rect = _grow_for_companion(fig, spec)
+    pax = fig.add_axes(rect)
+    x, y = _companion_xy(spec['data'])
+    color = spec['color'] or 'C0'
+
+    pax.plot(x, y, color=COMPANION_GHOST_COLOR, linewidth=0.6)
+    points = np.column_stack([x, y])
+    segments = np.stack([points[:-1], points[1:]], axis=1)
+    if spec['hue'] is not None:
+        # the PLOT's own resolved colour scale when there is one (a
+        # continuous `hue=` gives `colorbar_info` a cmap and a norm), so the
+        # panel and the trajectory it accompanies read the same value the
+        # same way; otherwise a plain linear scale over the panel's own
+        # values.
+        if cmap is None or norm is None:
+            from matplotlib.colors import Normalize
+            cmap = plt.get_cmap('viridis') if cmap is None else cmap
+            norm = Normalize(float(np.nanmin(spec['hue'])),
+                             float(np.nanmax(spec['hue'])))
+        revealed = pax.add_collection(
+            LineCollection([], cmap=cmap, norm=norm, linewidths=1.2))
+        head_colors = [cmap(norm(v)) for v in spec['hue']]
+    else:
+        revealed = LineCollection([], colors=[color], linewidths=1.2)
+        pax.add_collection(revealed)
+        head_colors = None
+    trend = None
+    rolling = None
+    if spec['smooth'] is not None:
+        rolling = _companion_rolling_mean(y, spec['smooth'])
+        (trend,) = pax.plot([], [], color='black', linewidth=1.4)
+    head = None
+    if spec['marker']:
+        # clip_on=False so the marker stays whole at either end of the span
+        (head,) = pax.plot([], [], 'o', markersize=7,
+                           markeredgecolor='black', color=color,
+                           clip_on=False)
+    span = float(np.nanmax(y) - np.nanmin(y)) or 1.0
+    pax.set_xlim(float(np.nanmin(x)), float(np.nanmax(x)))
+    pax.set_ylim(float(np.nanmin(y)) - 0.05 * span,
+                 float(np.nanmax(y)) + 0.05 * span)
+    pax.spines[['top', 'right']].set_visible(False)
+    label_kw = {} if font is None else {'fontproperties': font}
+    if spec['xlabel'] is not None:
+        pax.set_xlabel(spec['xlabel'], **label_kw)
+    if spec['ylabel'] is not None:
+        pax.set_ylabel(spec['ylabel'], **label_kw)
+    if font is not None:
+        for text in pax.get_xticklabels() + pax.get_yticklabels():
+            text.set_fontproperties(font)
+    return dict(axes=pax, x=x, y=y, segments=segments, revealed=revealed,
+                hue=spec['hue'], head_colors=head_colors, trend=trend,
+                rolling=rolling, head=head, reveal=spec['reveal'],
+                n_rows=spec['data'].shape[0])
+
+
+def update_companion_panel(panel, i):
+    """Reveal a companion panel up to (and including) input row `i`.
+
+    Every artist is ASSIGNED on every call, never left untouched -- the
+    portable-callback rule in `FrameContext`: matplotlib redelivers the same
+    artists each frame, so a skipped assignment leaves the previous frame's
+    state on screen.
+    """
+    i = int(min(max(i, 0), panel['n_rows'] - 1))
+    if not panel['reveal']:
+        i = panel['n_rows'] - 1
+    panel['revealed'].set_segments(panel['segments'][:i])
+    if panel['hue'] is not None:
+        panel['revealed'].set_array(panel['hue'][1:i + 1])
+    if panel['trend'] is not None:
+        panel['trend'].set_data(panel['x'][:i + 1], panel['rolling'][:i + 1])
+    if panel['head'] is not None:
+        panel['head'].set_data([panel['x'][i]], [panel['y'][i]])
+        if panel['head_colors'] is not None:
+            panel['head'].set_markerfacecolor(panel['head_colors'][i])
+    return panel
+
+
 def _legend_proxy_handles(entries, fmt=None):
     """`Line2D` proxy handles for explicit legend entries (GH #285).
 
@@ -535,6 +712,7 @@ def _draw(
     morph_tags=None,
     morph_colors=None,
     morph_samples=None,
+    morph_loop=False,
     font=None,
     label_alpha=0.5,
     xlabel=None,
@@ -1280,6 +1458,11 @@ def _draw(
         # globally.
         windows = []
         window_spcs = []
+        # GH #285: the drawn head window per run, published as
+        # `FrameContext.revealed_counts` / `.window_bounds` below. Collected
+        # in the same loop that slices the artists, so what the context
+        # reports and what the frame draws cannot drift apart.
+        head_bounds = []
         for i, (line, data, trail) in enumerate(itertools.zip_longest(
                 lines, data_lines, trail_lines)):
 
@@ -1296,6 +1479,7 @@ def _draw(
                 win = RunWindow(_s, _e, _ts, max(0, _e - 1), True,
                                 data.shape[0])
             start, end = win.head_start, win.head_end
+            head_bounds.append((start, end))
 
             # antialias: each artist draws the SMOOTH curve spanning the same
             # rows it would otherwise have drawn raw (`_aa_window`).
@@ -1346,7 +1530,8 @@ def _draw(
                 artists=list(lines) + [t for t in trail_lines if t is not None],
                 datasets=list(data_lines), style=animate, order='parallel',
                 current_index=None, current_fraction=None,
-                revealed_counts=None)
+                revealed_counts=tuple(e for _, e in head_bounds),
+                window_bounds=tuple(head_bounds))
         return lines, trail_lines
 
     def update_lines_spin(
@@ -1417,7 +1602,12 @@ def _draw(
                 frame=int(num), n_frames=int(total_frames),
                 artists=list(lines), datasets=list(data_lines), style=animate,
                 order='parallel', current_index=None, current_fraction=None,
-                revealed_counts=None)
+                # 'spin' draws every dataset in FULL on every frame (only
+                # the camera moves), so every row is revealed from frame 0
+                # -- reporting None here left a caller no way to tell that
+                # apart from "this backend does not know" (GH #285).
+                revealed_counts=tuple(d.shape[0] for d in data_lines),
+                window_bounds=tuple((0, d.shape[0]) for d in data_lines))
         return lines
 
     def update_lines_serial(
@@ -1539,7 +1729,10 @@ def _draw(
                 artists=list(lines) + [t for t in trail_lines if t is not None],
                 datasets=list(data_lines), style='serial', order='serial',
                 current_index=_idx, current_fraction=_frac,
-                revealed_counts=_counts)
+                revealed_counts=_counts,
+                # a serial reveal is cumulative: every dataset's window
+                # starts at row 0 (GH #285).
+                window_bounds=tuple((0, c) for c in _counts))
         return lines
 
     def update_morph(num, morph_state, cube_scale, azimuths, zoom=1, elev=10):
@@ -1685,6 +1878,7 @@ def _draw(
         morph_tags=None,
         morph_colors=None,
         morph_samples=None,
+        morph_loop=False,
     ):
         """Build and run a 3D matplotlib `FuncAnimation` for `x` (parallel/spin/serial/morph/window styles).
 
@@ -1716,6 +1910,9 @@ def _draw(
             Camera elevation angle in degrees (default: 10).
         style : {'parallel', 'spin', 'serial', 'morph', 'window'}, optional
             Which animation style/update-callback to use (default: 'parallel').
+        morph_loop : bool, optional
+            ``loop=True`` on `plot`: close the morph sequence by returning
+            to the FIRST cloud, reusing its sampled points (GH #285).
         morph_tags, morph_colors, morph_samples : optional
             Parameters controlling the `style='morph'` traveling
             point-cloud animation (see `hypertools.plot.morph`).
@@ -1872,7 +2069,16 @@ def _draw(
             clouds = [np.asarray(x[i], dtype=np.float64)[:, :3]
                      for i in morph_indices]
             sampled, dup_masks = _morph.sample_and_match_clouds(
-                clouds, morph_samples=morph_samples)
+                clouds, morph_samples=morph_samples, loop=morph_loop)
+            if morph_loop:
+                # `loop=True` returns ONE more cloud than it was given --
+                # the closing repeat of cloud 0 (GH #285). Extend the
+                # sequence-position -> dataset-index map to match, so the
+                # closing hold reports (and titles itself as) dataset
+                # `morph_indices[0]`, and every downstream consumer
+                # (`ds_colors`, `n_morph_datasets`, `frame_counts`) counts
+                # the extra segment pair.
+                morph_indices = morph_indices + [morph_indices[0]]
             ds_colors = [
                 tuple(morph_colors[i]) if morph_colors is not None
                 else (0.2, 0.4, 0.8)
@@ -2218,6 +2424,7 @@ def _draw(
             _windows = dataset_window_bounds(
                 num, total_frames, ownership,
                 [d.shape[0] for d in data_lines], tail_duration)
+        head_bounds = []                                    # GH #285
         for i, (line, data, trail) in enumerate(itertools.zip_longest(
                 lines, data_lines, trail_lines)):
             # same F05-001/F05-008/F04-003/F05-012 slicing fixes as the 3-D
@@ -2230,6 +2437,7 @@ def _draw(
                 win = RunWindow(_s, _e, _ts, max(0, _e - 1), True,
                                 data.shape[0])
             start, end = win.head_start, win.head_end
+            head_bounds.append((start, end))
             # antialias: draw the smooth curve spanning the same rows
             n_rows = data.shape[0]
             if trail is not None:
@@ -2256,7 +2464,8 @@ def _draw(
                 artists=list(lines) + [t for t in trail_lines if t is not None],
                 datasets=list(data_lines), style=animate, order='parallel',
                 current_index=None, current_fraction=None,
-                revealed_counts=None)
+                revealed_counts=tuple(e for _, e in head_bounds),
+                window_bounds=tuple(head_bounds))
         return lines, trail_lines
 
     def update_lines_serial_2d(num, data_lines, lines, trail_lines,
@@ -2322,7 +2531,8 @@ def _draw(
                 artists=list(lines) + [t for t in trail_lines if t is not None],
                 datasets=list(data_lines), style='serial', order='serial',
                 current_index=_idx, current_fraction=_frac,
-                revealed_counts=_counts)
+                revealed_counts=_counts,
+                window_bounds=tuple((0, c) for c in _counts))
         return lines
 
     def update_morph_2d(num, morph_state):
@@ -2386,6 +2596,7 @@ def _draw(
         morph_tags=None,
         morph_colors=None,
         morph_samples=None,
+        morph_loop=False,
     ):
         """2D counterpart of `animate_plot3D`: build and run a fixed-viewport `FuncAnimation` (no camera rotation).
 
@@ -2507,7 +2718,10 @@ def _draw(
             clouds = [np.asarray(x[i], dtype=np.float64)[:, :2]
                      for i in morph_indices]
             sampled, dup_masks = _morph.sample_and_match_clouds(
-                clouds, morph_samples=morph_samples)
+                clouds, morph_samples=morph_samples, loop=morph_loop)
+            if morph_loop:
+                # see the identical note in `animate_plot3D` above
+                morph_indices = morph_indices + [morph_indices[0]]
             ds_colors = [
                 tuple(morph_colors[i]) if morph_colors is not None
                 else (0.2, 0.4, 0.8)
@@ -2662,6 +2876,7 @@ def _draw(
             morph_tags=morph_tags,
             morph_colors=morph_colors,
             morph_samples=morph_samples,
+            morph_loop=morph_loop,
         )
 
         # dispatch animation

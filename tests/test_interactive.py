@@ -13,6 +13,27 @@ from hypertools.plot.interactive import (
     _camera_eye,
 )
 from hypertools.plot.plot import plot
+import importlib
+
+_backend_state = importlib.import_module('hypertools.plot.backend')
+
+
+@pytest.fixture(autouse=True)
+def _no_preferred_backend():
+    """`resolve_backend('auto')` honours a backend set earlier through
+    `set_interactive_backend`, and other test modules leave one set (the
+    on_frame hook tests end on `set_interactive_backend('matplotlib')`).
+    Start every test here from the library's import-time state and put the
+    module's globals back afterwards, so the environment-detection tests do
+    not depend on test order."""
+    saved = {k: getattr(_backend_state, k) for k in
+             ('PREFERRED_RENDER_BACKEND', 'HYPERTOOLS_BACKEND', 'BACKEND_WARNING')}
+    _backend_state.PREFERRED_RENDER_BACKEND = None
+    try:
+        yield
+    finally:
+        for k, v in saved.items():
+            setattr(_backend_state, k, v)
 
 
 walk = np.cumsum(np.random.default_rng(0).standard_normal((80, 5)), axis=0)

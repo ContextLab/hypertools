@@ -107,7 +107,7 @@ def smoothstep(t):
     return t * t * (3.0 - 2.0 * t)
 
 
-def sample_and_match_clouds(clouds, morph_samples=None, seed=0):
+def sample_and_match_clouds(clouds, morph_samples=None, seed=0, loop=False):
     """Pad every cloud in `clouds` up to the LARGEST (post-`morph_samples`-
     cap) cloud's point count by duplicating points at random (seeded), then
     chain-match consecutive clouds with the Hungarian algorithm.
@@ -145,12 +145,28 @@ def sample_and_match_clouds(clouds, morph_samples=None, seed=0):
     seed : int, optional
         Seed for the sampling RNG (``numpy.random.default_rng``), default 0
         -- deterministic and reproducible across calls.
+    loop : bool, optional
+        Close the morph sequence (GH #285). When ``True`` a repeat of
+        ``clouds[0]`` is appended AFTER capping and padding and BEFORE the
+        chain-matching pass, so the returned lists have ``len(clouds) + 1``
+        entries and the closing cloud is the SAME sampled point set the
+        opening hold draws -- only its ROW ORDER differs, because the final
+        transition Hungarian-matches it against its predecessor.
+
+        Reusing the sample is the whole point of the flag. Appending
+        ``clouds[0]`` to the input list instead makes this function treat
+        it as a sixth, independent cloud and, whenever the
+        `morph_samples` cap actually bites, draw a FRESH random subset for
+        it -- so the closing hold and the opening hold would show
+        different points, and the loop would visibly jump. That is exactly
+        why ``examples/animate_morph_zoo.py`` sampled its clouds by hand
+        before calling `plot`; with ``loop=True`` it no longer has to.
 
     Returns
     -------
     (sampled, dup_masks) : (list of (n, d) ndarray, list of (n,) bool ndarray)
-        `sampled`: one padded+matched cloud per input, same length as
-        `clouds`, each with exactly `n` rows (`n` = the largest capped
+        `sampled`: one padded+matched cloud per input (plus ONE more when
+        ``loop=True``), each with exactly `n` rows (`n` = the largest capped
         cloud's point count). ``sampled[0]`` is padded but unmatched
         (nothing precedes it); every subsequent ``sampled[k]`` is
         REORDERED so row ``i`` is the optimal (minimum total travel
@@ -199,6 +215,14 @@ def sample_and_match_clouds(clouds, morph_samples=None, seed=0):
             full.append(np.vstack([c, c[dup_idx]]))
             mask[m:] = True
         dup_masks.append(mask)
+
+    if loop:
+        # the loop-closing repeat, reusing cloud 0's ALREADY-CAPPED,
+        # ALREADY-PADDED rows (never a fresh `rng.choice`) -- appended
+        # before the chain-matching pass below so the closing transition is
+        # matched against its predecessor exactly like every other one.
+        full.append(full[0].copy())
+        dup_masks.append(dup_masks[0].copy())
 
     for i in range(len(full) - 1):
         cost = cdist(full[i], full[i + 1])

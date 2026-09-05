@@ -33,7 +33,7 @@ from ..tools.format_data import format_data
 from .matplotlib_backend import _draw, _apply_title
 from .backend import manage_backend
 from .plotly_backend import resolve_backend
-from .animation_context import FrameHooks
+from .animation_context import FrameContext, FrameHooks
 from .animate import _save_animation
 from .surface import broadcast_surface, normalize_surface_arg
 from .density import broadcast_density, normalize_density_arg
@@ -1431,6 +1431,384 @@ def _validate_title_wrap(title_wrap):
     return int(title_wrap)
 
 
+# --------------------------------------------------------------------------
+# GH #285 (animation group): dynamic `title=`, `loop=`, `dataset_fade=` and
+# `companion=`. Every one of them is opt-in and defaults to the exact
+# pre-1.1.x behaviour.
+# --------------------------------------------------------------------------
+
+#: Substring that turns a `title=` string into a per-frame format PATTERN.
+#: A title is only treated as a pattern when it contains this literally, so
+#: every ordinary title -- including one with braces in it, e.g.
+#: ``title='f(x) = {a, b}'`` -- keeps being drawn verbatim.
+_TITLE_INDEX_FIELD = '{index'
+
+
+def _title_is_pattern(title):
+    """Is this `title=` string a per-frame ``{index...}`` pattern (GH #285)?"""
+    return isinstance(title, str) and _TITLE_INDEX_FIELD in title
+
+
+def _capture_row_indices(x):
+    """The row index of each input dataset, or None where there isn't one.
+
+    Called once, at the top of `plot()`, BEFORE `format_data` turns pandas
+    objects into float arrays and throws their index away -- which is why
+    `title='{index:%B %Y}'` could not be resolved downstream without this.
+
+    Returns ``None`` when no input carries a usable (non-default) index at
+    all, so the common case allocates nothing and stores nothing.
+    """
+    def _index_of(item):
+        if isinstance(item, (pd.DataFrame, pd.Series)):
+            idx = item.index
+            # a plain 0..n-1 RangeIndex carries no information a row number
+            # does not already carry; treat it as "no index" so the error
+            # message for a pattern title names the real problem.
+            if isinstance(idx, pd.RangeIndex) and idx.start == 0 \
+                    and idx.step == 1:
+                return None
+            return idx
+        return None
+
+    items = x if isinstance(x, (list, tuple)) else [x]
+    indices = []
+    for item in items:
+        if isinstance(item, (list, tuple)):
+            indices.extend(_index_of(sub) for sub in item)
+        else:
+            indices.append(_index_of(item))
+    return indices if any(i is not None for i in indices) else None
+
+
+def _validate_dynamic_title(title, animate, row_indices):
+    """Split `title=` into its static and DYNAMIC (per-frame) halves.
+
+    Returns ``(static_title, dynamic)`` where `dynamic` is ``None`` for the
+    ordinary forms and otherwise a callable ``ctx -> str`` (GH #285).
+
+    Two dynamic forms are accepted:
+
+    * a **callable** ``ctx -> str``, evaluated once per frame with that
+      frame's `FrameContext`;
+    * a **format pattern** containing ``{index`` -- e.g.
+      ``title='{index:%B %Y}'`` -- formatted per frame with ``index=`` set
+      to the input's own row-index value under the reveal head.
+
+    The pattern form needs an index to read, so it raises here (before the
+    pipeline runs) when no input carried one.
+    """
+    if callable(title):
+        return None, title
+    if not _title_is_pattern(title):
+        return title, None
+    if not animate:
+        # a static plot has one row-index value that means anything: the
+        # last one. Resolved right here, so nothing per-frame is installed.
+        return None, _make_title_pattern_resolver(title, row_indices)
+    if row_indices is None:
+        raise ValueError(
+            f"title={title!r} is a per-frame format pattern (it contains "
+            f"'{_TITLE_INDEX_FIELD}'), but the data passed to plot() has no "
+            "row index to read: pass a pandas DataFrame or Series with a "
+            "DatetimeIndex (or any other non-default index), pass a "
+            "callable title (ctx -> str) instead, or drop the braces for a "
+            "fixed title.")
+    return None, _make_title_pattern_resolver(title, row_indices)
+
+
+def _title_head_row(ctx, n_rows):
+    """The input row the animation's reveal head is on, for a `{index...}`
+    title pattern (GH #285).
+
+    ONE rule, deliberately, because a per-style rule would make the same
+    pattern mean different things on the same data:
+
+    * **serial** reveals (``order='serial'``, ``animate='morph'``): the
+      last revealed row of the dataset being revealed right now, rescaled
+      onto the input's own row count (`plot` interpolates line data onto
+      the frame grid, so a drawn row is not an input row).
+    * **every other animated style** (``True``/``'parallel'``/
+      ``'window'``/``'spin'``): ``round(ctx.progress * (n_rows - 1))`` --
+      all datasets advance together, so the head fraction IS the
+      animation's progress. This is byte-for-byte the arithmetic
+      `animate_weather_decades.py` and `animate_market_sectors.py` spelled
+      out by hand before this existed.
+    * **static** plots (``ctx.frame is None``, `progress` pinned to 1.0):
+      the LAST row -- a static figure is the finished animation.
+
+    Note what this means for ``'spin'`` and ``'morph'``: neither reveals
+    rows, so the pattern simply sweeps the index over the clip's running
+    time rather than tracking a drawn point.
+    """
+    if n_rows <= 0:
+        return 0
+    frac = 1.0 if ctx.progress is None else float(ctx.progress)
+    if ctx.order == 'serial' and ctx.current_index is not None \
+            and ctx.revealed_counts is not None:
+        i = ctx.current_index
+        if i < len(ctx.revealed_counts) and i < len(ctx.datasets):
+            drawn = len(ctx.datasets[i])
+            if drawn > 1:
+                frac = (ctx.revealed_counts[i] - 1) / (drawn - 1)
+    return int(min(n_rows - 1, max(0, round(frac * (n_rows - 1)))))
+
+
+def _make_title_pattern_resolver(pattern, row_indices):
+    """A ``ctx -> str`` that formats `pattern` with the row index under the
+    reveal head (GH #285). See `_title_head_row` for what "the head" means.
+
+    The FIRST input that carries an index is the one read: a list of
+    datasets sharing one calendar (the market/weather shape) has one
+    answer, and a caller whose datasets disagree wants a callable, not a
+    pattern.
+    """
+    index = None
+    if row_indices is not None:
+        index = next((i for i in row_indices if i is not None), None)
+
+    def _resolve(ctx):
+        if index is None:
+            return pattern
+        value = index[_title_head_row(ctx, len(index))]
+        return pattern.format(index=value)
+    return _resolve
+
+
+def _validate_loop(loop, style):
+    """`loop=True` closes an ``animate='morph'`` sequence (GH #285).
+
+    Returns the resolved boolean for the morph path. Raises for every other
+    style, rather than silently doing nothing: there is no general "loop"
+    concept on the reveal styles (they already end where a repeat would
+    start), so accepting it there would be a no-op the caller could not
+    see.
+    """
+    if not loop:
+        return False
+    if _raw_animate_style(style) != 'morph':
+        raise ValueError(
+            "loop=True is only supported for animate='morph' (it closes the "
+            "morph sequence by returning to the first cloud, reusing its "
+            "sampled points); got animate="
+            f"{style!r}. For a looping player on the other styles, save the "
+            "animation as a .gif/.apng -- those loop by default.")
+    return True
+
+
+def _validate_dataset_fade(dataset_fade, style, order):
+    """`dataset_fade=` -> ``(floor, decay)`` or None (GH #285).
+
+    Accepts ``{'floor': f, 'decay': d}`` (``floor`` defaults to 0.0) or the
+    positional ``(floor, decay)`` pair. Serial-only, because the effect is
+    defined in terms of "datasets revealed since": a parallel animation
+    reveals them all at once, so there is no ``k`` to raise `decay` to.
+    """
+    if dataset_fade is None:
+        return None
+    if isinstance(dataset_fade, dict):
+        unknown = set(dataset_fade) - {'floor', 'decay'}
+        if unknown:
+            raise ValueError(
+                f"dataset_fade= got unknown key(s) {sorted(unknown)}; the "
+                "supported keys are 'floor' (the alpha an infinitely old "
+                "dataset fades to) and 'decay' (the per-dataset falloff).")
+        if 'decay' not in dataset_fade:
+            raise ValueError(
+                "dataset_fade= needs a 'decay' entry (the per-dataset "
+                "falloff, e.g. dataset_fade={'floor': 0.15, 'decay': 0.7}).")
+        floor, decay = dataset_fade.get('floor', 0.0), dataset_fade['decay']
+    elif isinstance(dataset_fade, (list, tuple)) and len(dataset_fade) == 2:
+        floor, decay = dataset_fade
+    else:
+        raise TypeError(
+            "dataset_fade= must be a dict {'floor': ..., 'decay': ...} or a "
+            f"(floor, decay) pair; got {type(dataset_fade).__name__}: "
+            f"{dataset_fade!r}.")
+    floor, decay = float(floor), float(decay)
+    if not 0.0 <= floor <= 1.0:
+        raise ValueError(
+            f"dataset_fade='s floor must be between 0 and 1 (it is an "
+            f"alpha); got {floor}.")
+    if not 0.0 < decay <= 1.0:
+        raise ValueError(
+            f"dataset_fade='s decay must be greater than 0 and at most 1 "
+            f"(it is multiplied once per dataset of age); got {decay}.")
+    if not style:
+        raise ValueError(
+            "dataset_fade= requires an animated plot; pass animate='serial' "
+            "(or animate=True with order='serial').")
+    if order != 'serial' or _raw_animate_style(style) == 'morph':
+        # `animate='morph'` resolves to order='serial', but it interpolates
+        # whole clouds instead of revealing datasets one at a time -- there
+        # is no "revealed since" to decay over, and `revealed_counts` is
+        # None there by contract. Refused explicitly rather than left to
+        # no-op silently.
+        raise ValueError(
+            "dataset_fade= fades datasets by how long ago they were "
+            "revealed, which only exists for a serial reveal; got "
+            f"animate={style!r}, order={order!r}. Pass animate='serial' (or "
+            "animate=True with order='serial').")
+    return floor, decay
+
+
+def dataset_fade_alpha(index, current, revealed, floor, decay):
+    """The alpha `dataset_fade=` gives dataset `index` on a frame where
+    dataset `current` is being revealed (GH #285).
+
+    ``floor + (1 - floor) * decay ** (current - index)`` for an
+    already-revealed dataset, 1.0 for the one being revealed now, and 0.0
+    for one that has not started -- or that has exactly one point drawn,
+    which is a stray vertex rather than a trajectory.
+
+    Public and importable because it is the whole contract: a caller
+    reproducing or extending the effect in an `on_frame=` hook should be
+    able to call the same function the library does, not transcribe it.
+    """
+    if index > current or revealed < 2:
+        return 0.0
+    if index == current:
+        return 1.0
+    return floor + (1.0 - floor) * decay ** (current - index)
+
+
+def _make_dataset_fade_updater(floor, decay):
+    """The internal per-frame updater `dataset_fade=` installs (GH #285).
+
+    ``ctx.artists`` is heads first, then trails (`FrameContext`), so the
+    head/trail split is by COUNT against ``revealed_counts``, exactly as
+    the hook in ``examples/animate_conversation.py`` had to do by hand. A
+    dataset's head and its trail take the SAME alpha -- deliberately not
+    the library's 0.3x trail convention, because on a serial reveal the
+    trail IS the already-revealed part of the current dataset and at 0.3x
+    the dataset being revealed reads as the faintest thing on screen.
+
+    Assigns on EVERY artist on EVERY frame (the portable-callback rule in
+    `FrameContext`), so the effect is identical whether the backend hands
+    back shared artists (matplotlib) or per-frame trace payloads (plotly).
+    """
+    def _update(ctx):
+        current, counts = ctx.current_index, ctx.revealed_counts
+        if current is None or counts is None:
+            return
+        n = len(counts)
+        for i, artist in enumerate(ctx.artists):
+            # heads are artists 0..n-1; trails (when any) follow in the
+            # same dataset order, so artist n + i belongs to dataset i.
+            dataset = i if i < n else i - n
+            if dataset >= n:
+                continue
+            alpha = dataset_fade_alpha(dataset, current, counts[dataset],
+                                       floor, decay)
+            if hasattr(artist, 'set_alpha'):          # matplotlib artist
+                artist.set_alpha(alpha)
+            else:                                     # plotly trace
+                artist.opacity = alpha
+    return _update
+
+
+#: Every key a `companion=` panel spec accepts (GH #285).
+_COMPANION_KEYS = frozenset({
+    'kind', 'data', 'reveal', 'smooth', 'marker', 'position', 'size',
+    'xlabel', 'ylabel', 'color', 'hue', 'pad',
+})
+
+
+def _validate_companion(companion, animate, backend_name):
+    """Normalize `companion=` into a list of panel specs (GH #285).
+
+    Each spec is a dict describing ONE extra 2-D panel drawn from the same
+    data and revealed in lockstep with the main animation. See `plot`'s own
+    `companion=` docstring for the full contract and for what it
+    deliberately does not do.
+    """
+    if companion is None:
+        return None
+    specs = ([companion] if isinstance(companion, dict)
+             else list(companion))
+    if not animate:
+        raise ValueError(
+            "companion= panels are revealed in lockstep with an animation; "
+            "pass animate=True (or 'serial'/'spin'/'window'). For a static "
+            "multi-panel figure use panels=/hyp.subplots.")
+    if backend_name == 'plotly':
+        raise NotImplementedError(
+            "companion= panels are matplotlib-only. On plotly an animation "
+            "is a list of go.Frame payloads over ONE figure's traces, so a "
+            "companion xy subplot would have to be laid out with "
+            "make_subplots (mixing a 'scene' and an 'xy' cell) and have its "
+            "own per-frame trace payloads built inside the frame loop -- "
+            "separate work from the matplotlib artists this draws. Pass "
+            "backend='matplotlib' for companion= panels, or drop "
+            "companion=.")
+    out = []
+    for i, spec in enumerate(specs):
+        if not isinstance(spec, dict):
+            raise TypeError(
+                f"companion= takes a dict (or a list of dicts) describing "
+                f"each extra panel; entry {i} is a "
+                f"{type(spec).__name__}.")
+        unknown = set(spec) - _COMPANION_KEYS
+        if unknown:
+            raise ValueError(
+                f"companion= entry {i} got unknown key(s) "
+                f"{sorted(unknown)}; supported keys are "
+                f"{sorted(_COMPANION_KEYS)}.")
+        kind = spec.get('kind', 'series')
+        if kind != 'series':
+            raise ValueError(
+                f"companion= entry {i}: kind={kind!r} is not supported; the "
+                "only panel kind in 1.1 is 'series' (a revealed 2-D "
+                "time-series line).")
+        if 'data' not in spec:
+            raise ValueError(
+                f"companion= entry {i} has no data=; pass the series to "
+                "draw, as (n_rows,), (n_rows, 1) or (n_rows, 2) -- two "
+                "columns are read as (x, y).")
+        data = np.asarray(spec['data'], dtype=float)
+        if data.ndim == 1:
+            data = data[:, None]
+        if data.ndim != 2 or data.shape[1] not in (1, 2):
+            raise ValueError(
+                f"companion= entry {i}: data must be (n_rows,), "
+                f"(n_rows, 1) or (n_rows, 2); got shape {data.shape}.")
+        if data.shape[0] < 2:
+            raise ValueError(
+                f"companion= entry {i}: data needs at least 2 rows to draw "
+                f"a series; got {data.shape[0]}.")
+        position = spec.get('position', 'bottom')
+        if position not in ('bottom', 'right'):
+            raise ValueError(
+                f"companion= entry {i}: position must be 'bottom' or "
+                f"'right'; got {position!r}.")
+        smooth = spec.get('smooth')
+        if smooth is not None:
+            smooth = int(smooth)
+            if smooth < 2:
+                raise ValueError(
+                    f"companion= entry {i}: smooth= is a rolling-mean "
+                    f"window in rows and must be at least 2; got {smooth}.")
+        hue = spec.get('hue')
+        if hue is not None:
+            hue = np.asarray(hue, dtype=float).ravel()
+            if hue.shape[0] != data.shape[0]:
+                raise ValueError(
+                    f"companion= entry {i}: hue= has {hue.shape[0]} values "
+                    f"but data has {data.shape[0]} rows.")
+        size = float(spec.get('size', 0.35))
+        if not 0.05 <= size <= 0.8:
+            raise ValueError(
+                f"companion= entry {i}: size= is the panel's share of the "
+                f"figure and must be between 0.05 and 0.8; got {size}.")
+        out.append(dict(kind=kind, data=data, reveal=bool(spec.get(
+            'reveal', True)), smooth=smooth, marker=bool(spec.get(
+                'marker', True)), position=position, size=size,
+            xlabel=spec.get('xlabel'), ylabel=spec.get('ylabel'),
+            color=spec.get('color'), hue=hue,
+            pad=float(spec.get('pad', 0.10))))
+    return out
+
+
 def _validate_legend_kwargs(legend_kwargs):
     """`legend_kwargs=` is a dict forwarded to `Axes.legend`."""
     if legend_kwargs is None:
@@ -1766,6 +2144,42 @@ def _panel_titles(title, n_panels):
     return [title] * n_panels
 
 
+
+def _dataframe_axis_labels(x):
+    """The df2mat-transformed column labels of a SINGLE input DataFrame, or
+    None (release-1.0 audit, F08-plot-inputs-016).
+
+    They become the default `xlabel`/`ylabel`/(`zlabel`) when the drawn
+    axes end up corresponding 1:1 to those columns -- i.e. the transformed
+    data is 2-D or 3-D, so no real dimensionality reduction mixed them.
+    User-passed labels always win.
+
+    Factored out of `plot()` so `panels=` can derive the SAME labels for
+    each panel (GH #285): a panel is drawn from its dataset's
+    already-analyzed rows, i.e. through `transform=`, which is exactly the
+    case `plot()` refuses to infer labels for -- so 13 DataFrames with
+    named x/y columns lost every axis label under ``panels=True`` while the
+    same 13 single-axes calls kept them.
+    """
+    lbl_df = None
+    if isinstance(x, pd.DataFrame):
+        lbl_df = x
+    elif (isinstance(x, (list, tuple)) and len(x) == 1
+          and isinstance(x[0], pd.DataFrame)):
+        lbl_df = x[0]
+    if (lbl_df is None or lbl_df.shape[1] > 3
+            or lbl_df.index.nlevels != 1
+            or isinstance(lbl_df.columns, (pd.RangeIndex, pd.MultiIndex))
+            or lbl_df.columns.duplicated().any()):
+        return None
+    try:
+        from ..tools.df2mat import df2mat as _df2mat
+        from ..tools.format_data import _prepare_df
+        return _df2mat(_prepare_df(lbl_df, warn=False),
+                       return_labels=True)[1]
+    except Exception:            # noqa: BLE001 - label sugar never breaks a plot
+        return None
+
 def _plot_panels(x, panels, call_kwargs, _name='panels'):
     """Draw one STATIC panel per dataset (or per `reduce=` entry) in a
     single figure -- the implementation behind `hyp.plot(..., panels=)`.
@@ -1833,9 +2247,29 @@ def _plot_panels(x, panels, call_kwargs, _name='panels'):
     # re-shows: this function owns the figure, the save and the display.
     shared = dict(call_kwargs)
     for key in ('title', 'show', 'save_path', 'return_model', 'panels',
-                'subplots', 'ax'):
+                'subplots', 'ax', 'panel_fit'):
         shared.pop(key, None)
     shared['show'] = False
+
+    # panel_fit= (GH #285): 'shared' (the default, and everything before
+    # 1.1.x) fits ONE pipeline across every dataset and gives each panel its
+    # slice of the result; 'independent' fits the pipeline per panel,
+    # exactly as a per-panel ``hyp.plot(x[i], ax=ax)`` loop does. Clouds of
+    # very different scale (examples/plot_shapes_zoo.py's seven shapes) come
+    # out skewed under a shared fit, because one shared reduction is
+    # dominated by whichever cloud is largest.
+    panel_fit = call_kwargs.get('panel_fit', 'shared') or 'shared'
+    if panel_fit not in ('shared', 'independent'):
+        raise ValueError(
+            f"panel_fit= must be 'shared' (one pipeline fit across every "
+            f"dataset, the default) or 'independent' (one fit per panel); "
+            f"got {panel_fit!r}.")
+    if per_panel_reduce and panel_fit == 'independent':
+        raise ValueError(
+            "panel_fit='independent' is not meaningful with a list-valued "
+            f"reduce=: {_name}= then draws one panel per REDUCER, and each "
+            "of those panels already runs its own full pipeline over every "
+            "dataset.")
 
     if per_panel_reduce:
         panel_data = [x] * n_panels
@@ -1843,6 +2277,20 @@ def _plot_panels(x, panels, call_kwargs, _name='panels'):
         for spec in reduce_spec:
             kw = dict(shared)
             kw['reduce'] = spec
+            panel_kwargs.append(kw)
+    elif panel_fit == 'independent':
+        # one FULL pipeline per panel: each panel call is byte-for-byte the
+        # ``hyp.plot(datasets[i], ax=axes[i], ...)`` the caller would have
+        # written, so nothing here fixes or slices the analysis. The raw
+        # dataset is handed over untouched, which also means `plot()`
+        # derives that panel's DataFrame-column axis labels itself.
+        panel_data = [[d] for d in datasets]
+        panel_kwargs = []
+        for i in range(n_panels):
+            kw = dict(shared)
+            for key in _PANEL_PER_DATASET_KWARGS:
+                if key in kw:
+                    kw[key] = _panel_slice_per_dataset(kw[key], i, n_panels)
             panel_kwargs.append(kw)
     else:
         # ONE shared fit across every dataset: run the very call the user
@@ -1885,6 +2333,20 @@ def _plot_panels(x, panels, call_kwargs, _name='panels'):
                         kw[key], i, lengths)
             if kw.get('labels') is not None:
                 kw['labels'] = _panel_slice_labels(kw['labels'], i, lengths)
+            # DataFrame-column axis labels (GH #285): a shared-fit panel is
+            # drawn through `transform=`, which is exactly the case
+            # `plot()` refuses to infer labels for -- so derive them here,
+            # from the panel's OWN input dataset, under the same rule
+            # (2-D/3-D, one drawn axis per named column). An explicit
+            # xlabel=/ylabel=/zlabel= still wins.
+            _labels = _dataframe_axis_labels(datasets[i])
+            if (_labels is not None
+                    and len(_labels) == int(np.asarray(xform[i]).shape[1])
+                    and len(_labels) in (2, 3)):
+                for _key, _value in zip(('xlabel', 'ylabel', 'zlabel'),
+                                        _labels):
+                    if kw.get(_key) is None:
+                        kw[_key] = str(_value)
             panel_kwargs.append(kw)
 
     if backend == 'plotly':
@@ -1909,9 +2371,7 @@ def _plot_panels(x, panels, call_kwargs, _name='panels'):
 
     if save_path is not None:
         fig.savefig(save_path)
-    if show:
-        plt.show()
-    else:
+    if not show:
         # same canvas-preserving close plot() itself does for show=False
         # (matplotlib >= 3.11 detaches the real canvas on plt.close, which
         # would leave the returned Figure unable to render or re-save).
@@ -1919,6 +2379,15 @@ def _plot_panels(x, panels, call_kwargs, _name='panels'):
         plt.close(fig)
         if fig.canvas is not live_canvas:
             fig.set_canvas(live_canvas)
+    # NOTE: `show=True` deliberately does NOT call `plt.show()` -- it leaves
+    # the figure registered with pyplot, exactly as the single-axes path
+    # does (see `show=`'s own docstring: "the matplotlib backend registers
+    # the figure with pyplot but does not itself call plt.show()"). The
+    # unconditional `plt.show()` this replaces made every panel grid built
+    # under a non-interactive backend -- i.e. every gallery/docs build,
+    # which runs on Agg -- emit "UserWarning: FigureCanvasAgg is
+    # non-interactive, and thus cannot be shown", and displayed the figure
+    # twice in a notebook.
 
     if return_model:
         bundle = {
@@ -1939,7 +2408,20 @@ def _plot_panels_plotly(panel_data, panel_kwargs, titles, nrows, ncols,
     """`panels=` under the plotly backend: the same grid, built with
     `plotly.subplots.make_subplots` (3-D panels get ``type='scene'``
     cells). Each panel is drawn by an ordinary `plot()` call and its traces
-    (plus its scene/axis configuration) are transplanted into the cell."""
+    (plus its scene/axis configuration) are transplanted into the cell.
+
+    `return_model=True` gets the SAME bundle shape the matplotlib panel
+    path returns -- ``fig``, ``axes``, ``panels``, ``panel_models``,
+    ``xform_data``, ``colors`` (GH #285). Before this, every inner call was
+    forced to ``return_model=False`` and a bare ``go.Figure`` came back, so
+    ``hyp.plot(x, panels=True, return_model=True, backend='plotly')``
+    silently dropped the bundle and the caller's ``bundle['panels']`` raised
+    a ``KeyError`` out of ``BaseFigure.__getitem__`` -- a wrong-shape return
+    reported as a plotly internals error. ``axes`` here holds the layout
+    objects the panels were transplanted into (one ``layout.scene*`` per
+    panel for 3-D, one ``(xaxis, yaxis)`` pair for 2-D), which is plotly's
+    equivalent of the matplotlib bundle's ``Axes`` list.
+    """
     from plotly.subplots import make_subplots
     cell = {'type': 'scene'} if ndims >= 3 else {'type': 'xy'}
     fig = make_subplots(rows=nrows, cols=ncols,
@@ -1947,17 +2429,29 @@ def _plot_panels_plotly(panel_data, panel_kwargs, titles, nrows, ncols,
                                for _ in range(nrows)],
                         subplot_titles=[t if t is not None else ''
                                         for t in titles])
+    return_model = bool(call_kwargs.get('return_model', False))
+    panel_models = []
+    panel_axes = []
     for i, (data, kw) in enumerate(zip(panel_data, panel_kwargs)):
         row, col = i // ncols + 1, i % ncols + 1
         kw = dict(kw)
-        kw.update(show=False, save_path=None, return_model=False,
+        kw.update(show=False, save_path=None, return_model=return_model,
                   title=None, size=None, backend='plotly')
-        panel = plot(data, **kw)
+        result = plot(data, **kw)
+        panel = result['fig'] if return_model else result
+        if return_model:
+            panel_models.append(result)
         for trace in panel.data:
             fig.add_trace(trace, row=row, col=col)
-        if ndims >= 3 and panel.layout.scene is not None:
+        if ndims >= 3:
             key = 'scene' if i == 0 else f'scene{i + 1}'
-            fig.layout[key].update(panel.layout.scene.to_plotly_json())
+            if panel.layout.scene is not None:
+                fig.layout[key].update(panel.layout.scene.to_plotly_json())
+            panel_axes.append(fig.layout[key])
+        else:
+            xkey = 'xaxis' if i == 0 else f'xaxis{i + 1}'
+            ykey = 'yaxis' if i == 0 else f'yaxis{i + 1}'
+            panel_axes.append((fig.layout[xkey], fig.layout[ykey]))
     fig.update_layout(showlegend=bool(call_kwargs.get('legend')))
     if call_kwargs.get('size') is not None:
         width, height = call_kwargs['size']
@@ -1972,6 +2466,19 @@ def _plot_panels_plotly(panel_data, panel_kwargs, titles, nrows, ncols,
             fig.write_image(save_path)
     if call_kwargs.get('show', True):
         fig.show()
+    if return_model:
+        # the SAME keys, in the same meaning, as the matplotlib panel
+        # bundle below -- a caller must not have to branch on backend to
+        # read a panel grid's model.
+        return {
+            'fig': fig,
+            'axes': panel_axes,
+            'panels': (nrows, ncols),
+            'panel_models': panel_models,
+            'xform_data': [m['xform_data'][0] if len(m['xform_data']) == 1
+                           else m['xform_data'] for m in panel_models],
+            'colors': panel_models[0].get('colors') if panel_models else None,
+        }
     return fig
 
 
@@ -2033,6 +2540,9 @@ def plot(
     frame_rate=30,
     focused=None,
     morph_samples=None,
+    loop=False,
+    dataset_fade=None,
+    companion=None,
     on_frame=None,
     simplify=True,
     interactive=False,
@@ -2061,6 +2571,7 @@ def plot(
     zlabel=None,
     panels=None,
     subplots=None,
+    panel_fit='shared',
     title_kwargs=None,
     title_color=None,
     title_wrap=None,
@@ -2750,6 +3261,38 @@ def plot(
         ``names=`` for per-dataset legend entries, or ``labels=`` for
         per-observation annotations. Rendered identically on the
         matplotlib and plotly backends.
+
+        Two DYNAMIC forms re-title the plot every frame (GH #285), both
+        styled by `title_kwargs=`/`title_color=`/`font=` exactly like a
+        fixed title, and both supported on either backend:
+
+        * a **callable** ``ctx -> str``, given that frame's
+          ``FrameContext`` (the same object `on_frame=` receives), e.g.
+          ``title=lambda ctx: f'{ctx.progress:.0%} through'``;
+        * a **format pattern** containing ``{index``, e.g.
+          ``title='{index:%B %Y}'``, formatted with ``index=`` set to the
+          input's own row-index value under the reveal head. This needs a
+          pandas DataFrame/Series input carrying a non-default index (a
+          ``DatetimeIndex`` is the intended case); with none, it raises
+          ``ValueError`` before the pipeline runs. The FIRST input that
+          carries an index is the one read. A title with braces that does
+          NOT contain ``{index`` is drawn verbatim, as always.
+
+        **Where the reveal head is.** One rule, so the same pattern means
+        the same thing on the same data: for a serial reveal it is the
+        last revealed row of the dataset being revealed right now; for
+        every other animated style (``True``/``'parallel'``/``'window'``/
+        ``'spin'``/``'morph'``) it is
+        ``round(ctx.progress * (n_rows - 1))``, since those advance every
+        dataset together -- note that ``'spin'`` and ``'morph'`` reveal no
+        rows at all, so there the pattern simply sweeps the index over the
+        clip's running time. On a STATIC plot the dynamic form is resolved
+        ONCE, into an ordinary title, from a context describing the
+        finished figure: ``frame`` and ``n_frames`` are ``None``,
+        ``progress`` is 1.0, ``revealed_counts`` is every dataset's full
+        row count, and ``figure``/``axes`` are ``None`` (the figure is
+        built FROM the title, so it does not exist yet) -- which makes a
+        pattern title on a static plot show the LAST index value.
 
     title_kwargs : dict
         Styling for whatever title is drawn, applied by hypertools' own
@@ -3581,12 +4124,123 @@ def plot(
         Must be a positive integer (or None); anything else
         raises ``ValueError``. Ignored for every other `animate` mode.
 
+    loop (``animate='morph'`` only) : bool
+        Close the morph sequence: after the last cloud, transition back to
+        the FIRST one and hold it again, so a looping player never hard-cuts
+        from the last shape to the first. `n` clouds then give
+        ``2(n + 1) - 1`` hold/transition segments instead of ``2n - 1``, and
+        the closing hold is titled (and coloured) like the opening one --
+        `title=` still takes one entry per DATASET, not one per segment.
+
+        The closing cloud reuses the FIRST cloud's already-sampled points,
+        which is the whole reason this exists: appending ``clouds[0]`` to
+        the input list yourself makes hypertools treat it as one more
+        independent dataset, so whenever `morph_samples=` actually bites it
+        draws a FRESH random subset for the repeat and the loop point
+        visibly jumps (and, separately, the duplicate shifts the shared
+        mean-centring every dataset is drawn through). Default ``False``.
+        Raises ``ValueError`` for every other `animate` mode -- the reveal
+        styles already end where a repeat would start, so there is nothing
+        for it to close. Supported on both backends.
+
+    dataset_fade (serial reveals only) : dict, tuple, or None
+        Fade already-revealed datasets by how long ago they were revealed,
+        so a serial animation shows recent history brightest.
+        ``{'floor': 0.15, 'decay': 0.7}`` (or the positional
+        ``(0.15, 0.7)``) gives dataset ``i`` the alpha
+
+        .. code-block:: text
+
+            0.0                                  i not revealed yet, or
+                                                 only one point drawn
+            1.0                                  i is being revealed now
+            floor + (1 - floor) * decay ** (current - i)   otherwise
+
+        where ``current`` is ``ctx.current_index``. ``floor`` (default 0.0)
+        is what an infinitely old dataset fades to, and ``decay`` is the
+        per-dataset falloff; both are checked (0 <= floor <= 1,
+        0 < decay <= 1). A dataset's head and its trail take the SAME alpha
+        -- deliberately not hypertools' usual 0.3x trail convention,
+        because on a serial reveal the trail IS the already-revealed part
+        of the dataset being revealed, and at 0.3x the newest dataset would
+        read as the faintest thing on screen.
+
+        Applied by an internal per-frame updater that runs BEFORE any
+        `on_frame=` callback, so a callback can still override one
+        dataset's alpha. ``chemtrails``/``precog``/``bullettime`` fade
+        WITHIN one trajectory; this fades ACROSS datasets, and the two
+        compose. Serial-only (``animate='serial'``, or ``order='serial'``):
+        a parallel animation reveals every dataset at once, so there is no
+        "how long ago" to decay over, and it raises ``ValueError``.
+        Default None. Supported on both backends (matplotlib alpha, plotly
+        per-frame trace opacity).
+
+    companion (matplotlib only) : dict, list of dict, or None
+        Extra 2-D panels drawn beside an animated plot and revealed in
+        LOCKSTEP with it -- the linked time-series panel that used to
+        require building a second axes by hand and driving it from an
+        `on_frame=` hook (``ax=`` plus ``animate=`` raises; several
+        animated panels in one figure are not otherwise supported).
+
+        Each panel is a dict:
+
+        ``kind``
+            ``'series'`` -- the only kind in 1.1.
+        ``data``
+            The series to draw: ``(n_rows,)`` or ``(n_rows, 1)`` for y
+            against row number, or ``(n_rows, 2)`` read as ``(x, y)``.
+            Its rows are the INPUT's rows: the panel's reveal head is the
+            same row a ``title='{index...}'`` pattern reads (see `title`),
+            so a panel and a date title can never disagree.
+        ``reveal``
+            ``True`` (default) reveals the series up to the head; ``False``
+            draws it whole on every frame.
+        ``smooth``
+            An int rolling-mean window (>= 2) drawn as a black trend line
+            over the revealed part, NaN until the window fills -- the same
+            convention as ``pandas.Series.rolling(w).mean()``. Default
+            None (no trend line).
+        ``marker``
+            ``True`` (default) puts a dot on the head.
+        ``hue``
+            One value per row: the revealed line is drawn as a
+            colour-mapped ``LineCollection`` through the PLOT's own colour
+            scale when it has one (a continuous ``hue=``), else a linear
+            scale over these values. Default None (a solid ``color``).
+        ``position``
+            ``'bottom'`` (default) or ``'right'``.
+        ``size``
+            The panel's share of the finished figure, 0.05-0.8 (default
+            0.35). The figure GROWS to make room -- the animated axes keeps
+            the exact absolute size it had, so the plot itself is
+            unchanged.
+        ``pad``
+            How much of `size` is left for the panel's own ticks and label
+            (default 0.10, in figure fractions).
+        ``color``, ``xlabel``, ``ylabel``
+            Line colour and axis labels.
+
+        What this deliberately does NOT do: no 3-D companion panels, no
+        panel with its own animation schedule (it always follows the main
+        reveal), no legend or colorbar of its own, no interaction with
+        ``ax=`` or ``panels=``, and no plotly support -- on plotly an
+        animation is a list of ``go.Frame`` payloads over one figure's
+        traces, so a companion xy panel would need ``make_subplots`` layout
+        and its own per-frame trace payloads; ``backend='plotly'`` with
+        ``companion=`` raises ``NotImplementedError`` naming the backend.
+        For a static multi-panel figure use `panels=`. Default None.
+
     on_frame : callable
         Called after each animation frame is drawn, with a single
-        ``FrameContext`` argument exposing the frame index, the axes and
-        drawn artists, the arrays being animated, and -- for serial-style
-        animations -- which dataset is being revealed, how far through it,
-        and the exact per-dataset reveal counts. For ``animate='morph'`` it
+        ``FrameContext`` argument exposing the frame index, ``progress``
+        (0..1 through the whole clip, on every style), the axes and
+        drawn artists, the arrays being animated, per-dataset
+        ``revealed_counts`` and ``window_bounds`` (populated on the
+        parallel, ``'window'`` and ``'spin'`` paths too since 1.1.x, so a
+        hook no longer has to recompute the head from
+        ``frame / (n_frames - 1)``), and -- for serial-style
+        animations -- which dataset is being revealed and how far through
+        it. For ``animate='morph'`` it
         also reports ``segment_index`` and ``segment_kind`` ('hold' or
         'transition'). Use this instead of reaching into matplotlib's
         private ``FuncAnimation._func``. On MATPLOTLIB, callbacks may also
@@ -3767,11 +4421,20 @@ def plot(
         ``subplots=`` is an accepted alias (passing both raises).
 
         The analysis pipeline (`manip`/`normalize`/`reduce`/`align`) is fit
-        ONCE across ALL the datasets -- exactly as the equivalent
-        single-axes call fits it -- and each panel then draws its own
-        dataset's rows from that shared fit, so every panel shares one set
-        of components and the panels are comparable. (Each panel's box is
-        scaled to its own contents, as a per-panel ``ax=`` call is today.)
+        ONCE across ALL the datasets by default -- exactly as the
+        equivalent single-axes call fits it -- and each panel then draws
+        its own dataset's rows from that shared fit, so every panel shares
+        one set of components and the panels are comparable. (Each panel's
+        box is scaled to its own contents, as a per-panel ``ax=`` call is
+        today.) Pass ``panel_fit='independent'`` to fit per panel instead.
+
+        Axis labels are derived per panel from that panel's own DataFrame
+        column names, under the same rule a single-axes call uses (2-D or
+        3-D, one drawn axis per named column); an explicit
+        `xlabel=`/`ylabel=`/`zlabel=` still wins.
+
+        Like the single-axes path, ``show=True`` registers the figure with
+        pyplot and does NOT call ``plt.show()`` itself (see `show=`).
 
         If `reduce=` is a LIST, the panels are one per REDUCER instead --
         ``reduce=['PCA', 'UMAP', 'TSNE']`` draws every dataset three times,
@@ -3788,7 +4451,12 @@ def plot(
         does combining it with `ax=` or `explore=True`. Under
         `backend='plotly'` the same grid is built with
         `plotly.subplots.make_subplots` (3-D panels as ``type='scene'``
-        cells). Default None (one axes, as before).
+        cells), and `return_model=True` returns the SAME bundle keys there
+        as on matplotlib (``fig``, ``axes``, ``panels``, ``panel_models``,
+        ``xform_data``, ``colors``) -- ``axes`` holding the layout objects
+        the panels were transplanted into (one ``layout.scene*`` per 3-D
+        panel, an ``(xaxis, yaxis)`` pair per 2-D one). Default None (one
+        axes, as before).
 
         See also `hypertools.plot.plot.subplots`, a thin
         ``(fig, flat_axes)`` helper for grids you want to fill yourself.
@@ -3796,6 +4464,24 @@ def plot(
     subplots : bool, int, (nrows, ncols), or None
         Alias for `panels=` (matching the name of the matplotlib call it
         replaces). Passing both raises ``ValueError``.
+
+    panel_fit : {'shared', 'independent'}
+        How `panels=` fits the analysis pipeline (GH #285). Ignored without
+        `panels=`/`subplots=`.
+
+        ``'shared'`` (default, and the only behaviour before 1.1.x) fits
+        `manip`/`normalize`/`reduce`/`align` ONCE across every dataset and
+        gives each panel its slice of the result, so the panels share one
+        set of components and are directly comparable.
+
+        ``'independent'`` fits the pipeline per panel: each panel call is
+        exactly the ``hyp.plot(x[i], ax=axes[i], ...)`` you would have
+        written by hand, down to the coordinates. Use it when the datasets
+        differ enough in scale or shape that one shared fit is dominated by
+        the largest of them -- ``examples/plot_shapes_zoo.py``'s seven
+        shapes reduced separately is the case that motivated it.
+        ``panel_fit='independent'`` with a list-valued `reduce=` raises: a
+        per-reducer grid already runs a full pipeline per panel.
 
     frame_kwargs : dict
         Keyword arguments for styling the frame drawn around the plot.
@@ -4298,6 +4984,14 @@ def plot(
         _panel_call.update(kwargs)
         return _plot_panels(x, _panels_spec, _panel_call, _name=_panels_name)
 
+    # GH #285: a `title='{index:%B %Y}'` pattern reads the INPUT's own row
+    # index, and `format_data` (below) turns pandas objects into float
+    # arrays and drops it -- so capture it here, before anything touches
+    # `x`. Returns None (and stores nothing) unless some input actually
+    # carries a non-default index. Placed AFTER the panels= branch above,
+    # which rebuilds each panel call from `locals()`.
+    _row_indices = _capture_row_indices(x)
+
     # fmt: accept plain-bytes format strings like np.bytes_ (F01-017) --
     # decoded here once so every downstream fmt consumer sees str.
     if isinstance(fmt, bytes):
@@ -4634,7 +5328,15 @@ def plot(
                 f"forecast was requested; pass predict= (e.g. "
                 f"predict='Kalman') or drop "
                 f"{'these' if len(_given) > 1 else 'it'}.")
+    # GH #285: a callable `title=` (ctx -> str) or a `{index...}` format
+    # pattern is resolved per frame, so it is split off BEFORE the
+    # per-segment check below -- which only ever sees the static forms it
+    # already understood.
+    title, _dynamic_title = _validate_dynamic_title(title, animate,
+                                                    _row_indices)
     _segment_titles = _validate_title(title, style=animate, order=order)
+    # GH #285: `loop=True` closes an animate='morph' sequence.
+    _morph_loop = _validate_loop(loop, animate)
 
     # GH #285: title styling (`title_kwargs=`, `title_color=`,
     # `title_wrap=`) and explicit legend entries (`legend_kwargs=`,
@@ -4666,6 +5368,14 @@ def plot(
     # name every OTHER downstream consumer expects) once streaming inputs
     # have already returned early, below.
     _resolved_order = _resolve_order(animate, order)
+
+    # GH #285: `dataset_fade=` (serial cross-dataset recency fade) and
+    # `companion=` (linked animated 2-D panels). Both need the RESOLVED
+    # order/backend, and both fail fast here rather than at draw time.
+    _dataset_fade = _validate_dataset_fade(dataset_fade, animate,
+                                           _resolved_order)
+    _companion = _validate_companion(companion, animate,
+                                     resolve_backend(backend))
 
     # fail-fast on on_frame= (plan 1.1 Task 7, same precedent as title=/
     # order= above): needs only its own callability and the raw animate=
@@ -5315,24 +6025,7 @@ def plot(
     # standard analysis pipeline.
     _df_axis_labels = None
     if transform is None and pipeline is None:
-        _lbl_df = None
-        if isinstance(x, pd.DataFrame):
-            _lbl_df = x
-        elif (isinstance(x, (list, tuple)) and len(x) == 1
-              and isinstance(x[0], pd.DataFrame)):
-            _lbl_df = x[0]
-        if (_lbl_df is not None and _lbl_df.shape[1] <= 3
-                and _lbl_df.index.nlevels == 1
-                and not isinstance(_lbl_df.columns,
-                                   (pd.RangeIndex, pd.MultiIndex))
-                and not _lbl_df.columns.duplicated().any()):
-            try:
-                from ..tools.df2mat import df2mat as _df2mat
-                from ..tools.format_data import _prepare_df
-                _df_axis_labels = _df2mat(_prepare_df(_lbl_df, warn=False),
-                                          return_labels=True)[1]
-            except Exception:
-                _df_axis_labels = None  # never let label sugar break a plot
+        _df_axis_labels = _dataframe_axis_labels(x)
 
     # analyze the data
     raw = None
@@ -6776,6 +7469,23 @@ def plot(
     if _segment_titles is not None:
         title = None      # the axes title is driven per frame, not statically
 
+    # A dynamic (callable / `{index...}`) title on a STATIC plot is
+    # resolved ONCE, right here, into an ordinary string -- so both
+    # backends draw it through exactly the path a literal `title=` takes,
+    # and nothing per-frame is installed (GH #285). The context it gets
+    # describes a FINISHED figure: `frame`/`n_frames` are None (there are
+    # no frames), `progress` is pinned to 1.0, `revealed_counts` is every
+    # dataset's full row count, and `figure`/`axes` are None because the
+    # figure is built FROM the title and so does not exist yet.
+    if _dynamic_title is not None and not animate:
+        title = str(_dynamic_title(FrameContext(
+            frame=None, n_frames=None, figure=None, axes=None,
+            datasets=tuple(xform), style=False, order=order,
+            revealed_counts=tuple(len(d) for d in xform),
+            window_bounds=tuple((0, len(d)) for d in xform),
+            progress=1.0)))
+        _dynamic_title = None
+
     # title_wrap= (GH #285): hard-wrap every title at N characters, AFTER
     # per-segment resolution so a scalar title and each entry of a
     # per-segment list wrap identically. The line break is the drawing
@@ -7618,6 +8328,34 @@ def plot(
     # `HyperAnimation.__new__` would never be seen by the closure).
     _frame_hooks = FrameHooks([on_frame] if on_frame is not None else [])
 
+    # GH #285: `dataset_fade=` -- per-dataset alpha by how long ago each
+    # dataset was revealed. An INTERNAL updater (not a user callback), so
+    # it runs BEFORE any `on_frame=` the caller registered and a hook that
+    # wants to override one dataset's alpha still can. Registered here,
+    # above the backend split, because `FrameContext` is backend-neutral:
+    # the same updater sets a matplotlib artist's alpha and a plotly
+    # trace's opacity.
+    if _dataset_fade is not None:
+        _frame_hooks.add_internal(_make_dataset_fade_updater(*_dataset_fade))
+
+    # GH #285: a callable / `{index...}` `title=` on an ANIMATED plot.
+    # `_dynamic_title_text` is how the plotly backend reads back the text
+    # this updater computed: plotly builds each frame's layout inside its
+    # own frame loop and calls `dispatch` there, so the updater runs at
+    # exactly the right moment but cannot reach that frame's `layout` dict
+    # itself. On matplotlib the updater sets the title directly, through
+    # the same `_apply_title` the static and per-segment paths use, so
+    # `font=`/`title_kwargs=`/`title_color=` style it identically.
+    _dynamic_title_text = {}
+    if _dynamic_title is not None:
+        def _update_dynamic_title(ctx, _fn=_dynamic_title):
+            text = str(_fn(ctx))
+            _dynamic_title_text['text'] = text
+            if ctx.axes is not None:
+                _apply_title(ctx.axes, text, font=_artist_font,
+                             title_kwargs=_title_kwargs)
+        _frame_hooks.add_internal(_update_dynamic_title)
+
     # interactive (plotly) backend: render with plotly and skip the
     # matplotlib pipeline entirely. backend='auto' resolves to plotly only
     # on Colab/Kaggle (see hypertools.plot.plotly_backend for the policy).
@@ -7717,6 +8455,9 @@ def plot(
             morph_tags=morph_tags,
             morph_colors=morph_colors,
             morph_samples=morph_samples,
+            morph_loop=_morph_loop,
+            dynamic_title=(_dynamic_title_text
+                           if _dynamic_title is not None else None),
             font=_artist_font,
             font_extra=_plotly_font_extra,
             label_alpha=resolved_label_alpha,
@@ -7817,6 +8558,7 @@ def plot(
                 morph_tags=morph_tags,
                 morph_colors=morph_colors,
                 morph_samples=morph_samples,
+                morph_loop=_morph_loop,
                 font=_artist_font,
                 label_alpha=resolved_label_alpha,
                 xlabel=xlabel,
@@ -8207,10 +8949,29 @@ def plot(
             # axes already leave normal title room) are never touched.
             if (ax is not None and line_ani is not None
                     and xform[0].shape[1] >= 3
-                    and (title is not None or _segment_titles is not None)):
+                    and (title is not None or _segment_titles is not None
+                         or _dynamic_title is not None)):
+                # a dynamic (callable / `{index...}`) title has no text yet:
+                # resolve FRAME 0's, purely to count its lines. That is a
+                # real frame-0 context, not a synthetic one, and the
+                # resolver is a pure function of the context by contract
+                # (`FrameContext`), so this cannot disagree with what the
+                # per-frame updater will set a moment later -- and if the
+                # resolver is going to fail, it fails HERE, before the
+                # animation runs, instead of inside the first frame.
+                _probe_title = None
+                if _dynamic_title is not None:
+                    _probe_title = str(_dynamic_title(FrameContext(
+                        frame=0, n_frames=int(line_ani._save_count),
+                        figure=fig, axes=ax, datasets=tuple(xform),
+                        style=animate, order=order,
+                        current_index=0 if order == 'serial' else None,
+                        revealed_counts=tuple(1 for _ in xform))))
                 _reserve_animated_3d_title_margin(
                     fig, ax,
-                    fontsize=(_title_kwargs or {}).get('fontsize'))
+                    fontsize=(_title_kwargs or {}).get('fontsize'),
+                    n_lines=_title_line_count(title, _segment_titles,
+                                              _probe_title))
 
             # tighten layout (static plots only: animated axes are given
             # the full canvas so rotating zoomed cubes don't clip, and
@@ -8243,6 +9004,39 @@ def plot(
             if ((legend is not None or _final_legend_entries is not None)
                     and ax is not None):
                 _fit_right_legend(fig, ax)
+
+            # companion= panels (GH #285): extra 2-D panels laid out beside
+            # the animated plot and revealed in lockstep with it. Created
+            # LAST, after the title margin, the colorbar and the legend fit
+            # have all finished resizing/repositioning things, because each
+            # panel grows the figure and shifts every existing axes to keep
+            # its absolute size -- running before any of those would let
+            # them undo the shift. The reveal head is the SAME one a
+            # `{index...}` title reads (`_title_head_row`), so a panel and a
+            # date title can never disagree about where the head is.
+            if _companion is not None and ax is not None:
+                from .matplotlib_backend import (add_companion_panel,
+                                                 update_companion_panel)
+                _cmap = _cnorm = None
+                if colorbar_info is not None:
+                    _cmap = colorbar_info.get('cmap')
+                    _cnorm = colorbar_info.get('norm')
+                _panels_drawn = [
+                    add_companion_panel(fig, spec, cmap=_cmap, norm=_cnorm,
+                                        font=_artist_font)
+                    for spec in _companion]
+
+                def _update_companions(ctx, _drawn=_panels_drawn):
+                    for panel in _drawn:
+                        update_companion_panel(
+                            panel, _title_head_row(ctx, panel['n_rows']))
+                _frame_hooks.add_internal(_update_companions)
+                # draw frame 0 into the panels now, so a figure that is
+                # SAVED as a still (or inspected before the animation runs)
+                # already shows the reveal's first frame rather than empty
+                # artists.
+                for _panel in _panels_drawn:
+                    update_companion_panel(_panel, 0)
 
             # save. `fig.savefig`, NOT `plt.savefig` (release-1.0 audit,
             # F09-001: `plt.savefig` writes pyplot's CURRENT figure, so
@@ -8948,9 +9742,17 @@ def _add_right_colorbar(fig, ax, mappable, pad_in=0.2, width_in=0.35,
     return cbar
 
 
-def _animated_3d_title_line_height_in(ax, probe='Xygj', fontsize=None):
-    """The true rendered height (inches) of one line of `ax.title`'s
+def _animated_3d_title_line_height_in(ax, probe='Xygj', fontsize=None,
+                                      n_lines=1):
+    """The true rendered height (inches) of `n_lines` lines of `ax.title`'s
     resolved font.
+
+    `n_lines` (GH #285) repeats the probe text across that many lines and
+    measures the result, so multi-line titles reserve the room matplotlib
+    will actually use INCLUDING the linespacing between lines -- computing
+    ``n_lines * one_line`` instead would under-reserve by the leading. The
+    default ``n_lines=1`` measures exactly the single-line probe it always
+    did, so single-line reservations are byte-identical.
 
     Measured on a THROWAWAY `Figure`/`Axes` -- never `ax`'s own real
     figure. The first attempt at this measured directly against the real
@@ -9012,7 +9814,8 @@ def _animated_3d_title_line_height_in(ax, probe='Xygj', fontsize=None):
 
     probe_fig = Figure()
     probe_ax = probe_fig.add_subplot()
-    probe_ax.set_title(probe, fontproperties=ax.title.get_fontproperties())
+    probe_ax.set_title('\n'.join([probe] * max(1, int(n_lines))),
+                       fontproperties=ax.title.get_fontproperties())
     # `title_kwargs={'size': ...}` (GH #285) is the one thing that CAN put
     # the real title at a size rcParams does not know about -- including
     # for a per-segment list, whose text does not exist yet when this runs
@@ -9027,7 +9830,26 @@ def _animated_3d_title_line_height_in(ax, probe='Xygj', fontsize=None):
     return height_px / probe_fig.dpi
 
 
-def _reserve_animated_3d_title_margin(fig, ax, pad_in=0.08, fontsize=None):
+def _title_line_count(*titles):
+    """The most lines any of these titles needs (GH #285).
+
+    A title may be a string, a per-segment list of them, or None; a
+    ``title_wrap=`` has already inserted its own newlines by the time this
+    runs, so counting ``'\n'`` covers both an explicitly multi-line title
+    and a wrapped one.
+    """
+    n = 1
+    for title in titles:
+        if title is None:
+            continue
+        for text in ([title] if isinstance(title, str) else list(title)):
+            if isinstance(text, str):
+                n = max(n, text.count('\n') + 1)
+    return n
+
+
+def _reserve_animated_3d_title_margin(fig, ax, pad_in=0.08, fontsize=None,
+                                      n_lines=1):
     """Grow the figure so an animated 3-D plot's title has room to render.
 
     `matplotlib_backend.animate_plot3D` deliberately maximises the 3-D axes
@@ -9050,7 +9872,15 @@ def _reserve_animated_3d_title_margin(fig, ax, pad_in=0.08, fontsize=None):
     (`plotly_backend.py`'s ``t=40 if (title or segment_titles) else 10``,
     `ccbb28c3`) exactly.
 
-    Fix: grow the FIGURE height by the real measured title-line height
+    `n_lines` (GH #285) is how many lines the tallest title actually has:
+    the probe measured ONE line whatever the title said, so a
+    ``title='two\nlines'`` (or a `title_wrap=`-wrapped one) grew the figure
+    by a single line height and its second line ran straight off the top of
+    the canvas -- which is exactly what `animate_conversation.py`'s
+    ``make_room_for_title`` had to work around. ``n_lines=1`` reserves
+    byte-for-byte what it always did.
+
+    Fix: grow the FIGURE height by the real measured title height
     (`_animated_3d_title_line_height_in`) plus `pad_in`, and reposition the
     already-created, already-populated axes to occupy exactly the same
     ABSOLUTE size it already had -- not a smaller, re-shrunk one -- at the
@@ -9085,7 +9915,7 @@ def _reserve_animated_3d_title_margin(fig, ax, pad_in=0.08, fontsize=None):
     pos = ax.get_position()
     bottom_in, height_in = pos.y0 * h_in, pos.height * h_in
     new_h_in = (h_in + _animated_3d_title_line_height_in(
-        ax, fontsize=fontsize) + pad_in)
+        ax, fontsize=fontsize, n_lines=n_lines) + pad_in)
     # a persistent layout engine would silently undo the manual
     # set_position below on the next draw/save (see _fit_right_legend's
     # identical guard, same reasoning).

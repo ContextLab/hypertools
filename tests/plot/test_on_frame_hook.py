@@ -63,8 +63,15 @@ def test_parallel_mode_reports_no_serial_position():
                         frame_rate=2, on_frame=seen.append, show=False)
     _drive(ani, 2)
     assert all(ctx.current_index is None for ctx in seen)
-    assert all(ctx.revealed_counts is None for ctx in seen)
+    assert all(ctx.current_fraction is None for ctx in seen)
     assert all(ctx.order == 'parallel' for ctx in seen)
+    # `revealed_counts` USED to be None here as well. Since GH #285 it is
+    # populated on the parallel/'window'/'spin' paths too (a parallel
+    # reveal has a head; what it does not have is a serial POSITION), so
+    # only the serial-position fields say "not applicable" now. See
+    # tests/test_anim_progress.py for the counts' own contract.
+    assert all(ctx.revealed_counts is not None for ctx in seen)
+    assert all(len(ctx.revealed_counts) == 3 for ctx in seen)
 
 
 def test_frame_context_style_docstring_lists_parallel():
@@ -616,7 +623,7 @@ def test_plotly_non_spin_frames_are_isolated_per_frame(style):
 
 
 @pytest.mark.parametrize('backend,style', [
-    ('matplotlib', True),        # revealed_counts is None
+    ('matplotlib', True),        # revealed_counts from the head windows
     ('matplotlib', 'serial'),    # revealed_counts from serial_reveal_counts
     ('matplotlib', 'morph'),     # artists=[morph_state["artist"]]
     ('plotly', True),            # artists=frame_traces

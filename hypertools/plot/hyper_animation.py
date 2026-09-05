@@ -104,12 +104,13 @@ class HyperAnimation(tuple):
         otherwise.
 
         `n` clouds give ``2n - 1`` segments: `n` holds interleaved with
-        `n - 1` transitions, beginning and ending on a hold. There is NO
-        implicit closing transition back to the first cloud -- a caller who
-        wants the animation to loop seamlessly appends ``clouds[0]``
-        themselves, as ``examples/animate_morph_zoo.py`` does (5 shapes plus
-        the repeat = 6 clouds = 11 segments). Measured against
-        ``morph.segment_frame_counts``: 2 clouds -> 3, 3 -> 5, 5 -> 9.
+        `n - 1` transitions, beginning and ending on a hold. There is no
+        closing transition back to the first cloud unless you ask for one:
+        ``hyp.plot(..., animate='morph', loop=True)`` adds it (GH #285),
+        giving ``2(n + 1) - 1`` segments and reusing the first cloud's own
+        sampled points so the loop point does not jump. Measured against
+        ``morph.segment_frame_counts``: 2 clouds -> 3, 3 -> 5, 5 -> 9; with
+        ``loop=True``, 5 clouds -> 11.
         """
         return getattr(self[1], '_hyp_morph_segments', None)
 
@@ -128,6 +129,24 @@ class HyperAnimation(tuple):
                 f'{self.n_frames - 1}')
         self[1]._func(frame, *self[1]._args)
         return self
+
+    def drawn_extent(self, frames=None, threshold=5):
+        """The union bounding box of everything this animation DRAWS,
+        measured from rendered pixels, in FIGURE fractions (GH #285).
+
+        ``frames=None`` (the default) samples 12 frames evenly across the
+        animation -- the drawn extent of a 3-D plot changes with the camera
+        angle, so one frame is not representative. Pass an int for a
+        different sample size, or an iterable of frame indices to measure
+        exactly those. Returns a ``matplotlib.transforms.Bbox`` with y
+        increasing UPWARD (``bbox.p0`` is the bottom-left corner).
+
+        Costs one full canvas render per sampled frame, and leaves the
+        figure showing the last frame it measured. See
+        :func:`hypertools.plot.animate.drawn_extent` for the full contract.
+        """
+        from .animate import drawn_extent as _drawn_extent
+        return _drawn_extent(self, frames=frames, threshold=threshold)
 
     def on_frame(self, callback):
         """Register `callback` to run after every drawn frame.

@@ -590,6 +590,8 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 surface_colors=None, surface_point_colors=None,
                 density=None, density_colors=None,
                 morph_tags=None, morph_colors=None, morph_samples=None,
+                morph_loop=False,
+                dynamic_title=None,
                 font=None, font_extra=None, label_alpha=0.5, xlabel=None,
                 ylabel=None, zlabel=None, antialias=True, frame_hooks=None,
                 segment_titles=None, ownership=None, forecast_reveal=None,
@@ -701,6 +703,16 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         Resolved per-trace colors for morph interpolation.
     morph_samples : int or None
         Optional point-count cap for morphing datasets.
+    morph_loop : bool
+        `plot`'s ``loop=``: close an ``animate='morph'`` sequence by
+        returning to the FIRST cloud, reusing its sampled points (GH #285).
+    dynamic_title : dict or None
+        Where a callable / ``{index...}`` `title=` leaves each frame's text
+        (GH #285). `plot` registers an internal frame updater that writes
+        ``dynamic_title['text']`` while `frame_hooks.dispatch` runs, and
+        each frame-build branch below reads it back into that frame's
+        ``layout.title`` -- the updater sees the right frame's context but
+        cannot reach the ``go.Frame`` being assembled around it.
     font : matplotlib.font_manager.FontProperties or None
         Resolved font (family name is applied to layout.font; see below).
     label_alpha : float
@@ -1449,7 +1461,13 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         clouds0 = [np.atleast_2d(np.asarray(data[i], dtype=np.float64))[:, :_morph_ncols]
                   for i in morph_indices_3d]
         sampled0, dup_masks0 = _morph.sample_and_match_clouds(
-            clouds0, morph_samples=morph_samples)
+            clouds0, morph_samples=morph_samples, loop=morph_loop)
+        if morph_loop:
+            # `loop=True` returns ONE more cloud than it was given (GH
+            # #285): extend the sequence-position -> dataset-index map so
+            # every consumer counts the closing repeat, exactly as
+            # `matplotlib_backend.animate_plot3D` does.
+            morph_indices_3d = morph_indices_3d + [morph_indices_3d[0]]
         ds_colors0 = [
             tuple(morph_colors[i]) if morph_colors is not None
             else (0.2, 0.4, 0.8)
@@ -1815,6 +1833,8 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                        data_trace_start=data_trace_start,
                        morph_tags=morph_tags, morph_colors=morph_colors,
                        morph_samples=morph_samples,
+                       morph_loop=morph_loop,
+                       dynamic_title=dynamic_title,
                        morph_trace_start=morph_trace_start_3d,
                        morph_mesh_trace_start=morph_mesh_trace_start_3d,
                        morph_surface_spec=morph_surface_spec_3d,
@@ -3282,6 +3302,8 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                    surface_trace_start=None,
                    surface_dataset_indices=None, data_trace_start=0,
                    morph_tags=None, morph_colors=None, morph_samples=None,
+                   morph_loop=False,
+                   dynamic_title=None,
                    morph_trace_start=None, morph_mesh_trace_start=None,
                    morph_surface_spec=None, surface_point_colors=None,
                    morph_sampled=None, morph_dup_masks=None,
@@ -3644,8 +3666,25 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                     frame=k, n_frames=n_frames, artists=_frame_artists,
                     datasets=tuple(data), style='spin', order='parallel',
                     current_index=None, current_fraction=None,
-                    revealed_counts=None)
+                    # 'spin' draws every dataset in FULL on every frame --
+                    # matplotlib's `update_lines_spin` publishes the same
+                    # counts (GH #285).
+                    revealed_counts=tuple(
+                        np.atleast_2d(np.asarray(a)).shape[0] for a in data),
+                    window_bounds=tuple(
+                        (0, np.atleast_2d(np.asarray(a)).shape[0])
+                        for a in data))
                 frame_hooks.dispatch(fig, None)
+                if dynamic_title is not None and 'text' in dynamic_title:
+                    # GH #285: a callable / `{index...}` title=, computed
+                    # for THIS frame by the internal updater `dispatch`
+                    # just ran (plot.py). `.setdefault` for the same reason
+                    # the per-segment branches use it: a 3-D scene_camera
+                    # layout may already be in `frame_kwargs['layout']`.
+                    frame_kwargs.setdefault('layout', {})['title'] = (
+                        _frame_title_dict(dynamic_title['text'], 0,
+                                          segment_title_style,
+                                          segment_title_colors))
             frames.append(go.Frame(**frame_kwargs))
     elif animate == 'morph' and ndims in (2, 3):
         # Hungarian-matched point-cloud morph (maintainer request): ONE
@@ -3660,7 +3699,6 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
         # identical decision -- `plot.py` already warns once if the caller
         # passed a non-default `rotations=`/`zoom=` for 2-D data).
         morph_indices = [i for i, t in enumerate(morph_tags or []) if t]
-        n_morph_datasets = len(morph_indices)
         _morph_ncols = 3 if ndims >= 3 else 2
         clouds = [np.atleast_2d(np.asarray(data[i], dtype=np.float64))[:, :_morph_ncols]
                  for i in morph_indices]
@@ -3672,7 +3710,14 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
             sampled, dup_masks = morph_sampled, morph_dup_masks
         else:
             sampled, dup_masks = _morph.sample_and_match_clouds(
-                clouds, morph_samples=morph_samples)
+                clouds, morph_samples=morph_samples, loop=morph_loop)
+        if morph_loop:
+            # see the note in `plotly_draw`'s own setup pass above. Done
+            # AFTER the reuse branch too, because `morph_sampled` was
+            # already built with `loop=morph_loop` there and so already
+            # carries the closing cloud.
+            morph_indices = morph_indices + [morph_indices[0]]
+        n_morph_datasets = len(morph_indices)
         ds_colors = [
             tuple(morph_colors[i]) if morph_colors is not None
             else (0.2, 0.4, 0.8)
@@ -3782,6 +3827,16 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                     revealed_counts=None, segment_index=seg_idx,
                     segment_kind='hold' if seg_idx % 2 == 0 else 'transition')
                 frame_hooks.dispatch(fig, None)
+                if dynamic_title is not None and 'text' in dynamic_title:
+                    # GH #285: a callable / `{index...}` title=, computed
+                    # for THIS frame by the internal updater `dispatch`
+                    # just ran (plot.py). `.setdefault` for the same reason
+                    # the per-segment branches use it: a 3-D scene_camera
+                    # layout may already be in `frame_kwargs['layout']`.
+                    frame_kwargs.setdefault('layout', {})['title'] = (
+                        _frame_title_dict(dynamic_title['text'], 0,
+                                          segment_title_style,
+                                          segment_title_colors))
             frames.append(go.Frame(**frame_kwargs))
     elif animate == 'serial':
         # datasets appear one at a time, each growing into place while
@@ -3941,8 +3996,19 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                     frame=k, n_frames=n_frames, artists=tuple(frame_traces),
                     datasets=tuple(data), style='serial', order='serial',
                     current_index=_serial_idx, current_fraction=_serial_frac,
-                    revealed_counts=tuple(_shown))
+                    revealed_counts=tuple(_shown),
+                    window_bounds=tuple((0, c) for c in _shown))
                 frame_hooks.dispatch(fig, None)
+                if dynamic_title is not None and 'text' in dynamic_title:
+                    # GH #285: a callable / `{index...}` title=, computed
+                    # for THIS frame by the internal updater `dispatch`
+                    # just ran (plot.py). `.setdefault` for the same reason
+                    # the per-segment branches use it: a 3-D scene_camera
+                    # layout may already be in `frame_kwargs['layout']`.
+                    frame_kwargs.setdefault('layout', {})['title'] = (
+                        _frame_title_dict(dynamic_title['text'], 0,
+                                          segment_title_style,
+                                          segment_title_colors))
             frames.append(go.Frame(**frame_kwargs))
     else:
         # focused=/tail_duration= (round17 #8, GH #275): `focused` governs
@@ -3993,6 +4059,10 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
             windows_by_index = {}
             window_colors_by_index = {}
             forecast_anchors = {}
+            # GH #285: the drawn head window per dataset, published as
+            # `FrameContext.revealed_counts` / `.window_bounds` below, from
+            # the same `_run_window` call that slices the traces.
+            head_bounds = []
             for idx, arr in enumerate(data):
                 arr = np.atleast_2d(np.asarray(arr, dtype=np.float64))
                 # PER DATASET, exactly as the matplotlib renderer paces it:
@@ -4003,6 +4073,7 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                 _win = _run_window(frame_windows, idx, arr.shape[0],
                                    k, n_frames, window_frames)
                 start, end = _win.head_start, _win.head_end
+                head_bounds.append((start, end))
                 seg = arr[start:end]
                 windows_by_index[idx] = seg
                 forecast_anchors[idx] = max(0, end - 1)
@@ -4101,8 +4172,19 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                     frame=k, n_frames=n_frames, artists=tuple(frame_traces),
                     datasets=tuple(data), style=animate, order='parallel',
                     current_index=None, current_fraction=None,
-                    revealed_counts=None)
+                    revealed_counts=tuple(e for _, e in head_bounds),
+                    window_bounds=tuple(head_bounds))
                 frame_hooks.dispatch(fig, None)
+                if dynamic_title is not None and 'text' in dynamic_title:
+                    # GH #285: a callable / `{index...}` title=, computed
+                    # for THIS frame by the internal updater `dispatch`
+                    # just ran (plot.py). `.setdefault` for the same reason
+                    # the per-segment branches use it: a 3-D scene_camera
+                    # layout may already be in `frame_kwargs['layout']`.
+                    frame_kwargs.setdefault('layout', {})['title'] = (
+                        _frame_title_dict(dynamic_title['text'], 0,
+                                          segment_title_style,
+                                          segment_title_colors))
             frames.append(go.Frame(**frame_kwargs))
 
     fig.frames = frames
