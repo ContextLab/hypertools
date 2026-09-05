@@ -16,9 +16,12 @@ the turns one at a time with ``chemtrails=True`` leaving the spoken path
 behind each head. ``title=`` carries one string per turn -- just the words
 being spoken, wrapped onto two lines when a turn is long so nothing runs off
 the figure -- and the library's own reveal schedule advances it; the title
-never names the speaker, because the *colour* does: an ``on_frame`` hook
-tints the title with the current speaker's colour every frame, and the
-legend maps colours to names.
+never names the speaker, because the *colour* does: ``title_color=`` takes
+one colour per turn and the library retints the title with the current
+speaker's colour every frame, while ``title_kwargs={'size': ...}`` sets its
+size (and the library now reserves the animated 3-D title's own vertical
+margin, sized to the tallest wrapped title, so the figure never has to grow
+by hand); the legend maps colours to names.
 
 The one bespoke effect left is a **recency fade** across turns: the current
 turn is opaque, earlier turns recede slowly (a turn keeps most of its
@@ -225,48 +228,6 @@ def recency_fade(ctx):
         trail.set_alpha(alpha)
 
 
-def speaker_title(speakers):
-    """Per-frame hook: tint the title with the colour of whoever is speaking.
-
-    The title text itself is the library's job (``title=`` per turn, advanced
-    by the serial reveal), but ``ax.set_title`` runs every frame and resets
-    the colour and size along with the text, so both have to be re-applied
-    AFTER it -- user hooks run after the library's own updaters, and this
-    one assigns them on every frame rather than only when the speaker
-    changes (the portable callback rule, see turn_alpha).
-    """
-    def _tint(ctx):
-        ctx.axes.title.set_color(SPEAKER_COLOR[speakers[ctx.current_index]])
-        ctx.axes.title.set_fontsize(TITLE_SIZE)
-    return _tint
-
-
-def make_room_for_title(fig, ax, n_lines):
-    """Grow the figure so an `n_lines`-line title clears the top of the box.
-
-    hyp.plot reserves exactly ONE title line above an animated 3-D axes (it
-    grows the canvas rather than shrinking the axes, so the cube's geometry
-    is identical at every camera angle). A wrapped, two-line title extends
-    UPWARD from that strip (the title is baseline-anchored), so the extra
-    lines would run off the top of the figure. Same recipe as the library's:
-    add the missing line heights to the figure height and re-seat the axes
-    at the bottom with the same absolute size, which keeps the box and its
-    legend exactly where they were.
-    """
-    w_in, h_in = fig.get_size_inches()
-    line_in = TITLE_SIZE / 72 * 1.2                   # matplotlib linespacing
-    # the library's strip was sized for ONE rcParams-size line; this adds
-    # the extra lines at TITLE_SIZE, the growth of the first line to that
-    # size, and a little clear air above it all
-    extra_in = (n_lines * line_in
-                - ax.title.get_fontsize() / 72 * 1.2 + 0.12)
-    pos = ax.get_position()
-    new_h = h_in + extra_in
-    fig.set_size_inches(w_in, new_h)
-    ax.set_position([pos.x0, pos.y0 * h_in / new_h,
-                     pos.width, pos.height * h_in / new_h])
-
-
 def construct_artifact(data):
     """`data.turns` / `data.speakers` in, the animation out. Returns the
     HyperAnimation wrapper: `.on_frame()` lives on it, not on the
@@ -292,12 +253,11 @@ def construct_artifact(data):
         linewidth=1.6,
         animate=True, order='serial', chemtrails=True,
         tail_duration=TAIL_SECONDS, title=titles,
+        title_kwargs={'size': TITLE_SIZE},
+        title_color=[SPEAKER_COLOR[s] for s in data.speakers],
         duration=30, rotations=2, frame_rate=16, elev=16, size=(8, 8),
         show=False)
-    make_room_for_title(anim.figure, anim.figure.axes[0],
-                        max(t.count('\n') + 1 for t in titles))
     anim.on_frame(recency_fade)
-    anim.on_frame(speaker_title(data.speakers))
     return anim
 
 

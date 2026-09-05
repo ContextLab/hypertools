@@ -109,9 +109,11 @@ SCRIPT_BUDGETS = {
     # orbit places the text column, the widest text places the thumbnails
     # (equal gaps), the title sits on the measured box top.
     'examples/animate_painting_embeddings.py': 220,
-    # conversation: 136. The wrapped per-turn titles, the speaker-tint hook
-    # and the figure-growing helper that makes room for two title lines.
-    'examples/animate_conversation.py': 140,
+    # conversation: 116 (2026-09-05: the speaker-tint hook and the
+    # figure-growing helper are gone -- title_color= and the library's own
+    # multi-line title reservation replaced them). The wrapped per-turn
+    # titles and the recency fade remain.
+    'examples/animate_conversation.py': 120,
     # morph: 69. The title restyle hook and its constants.
     'examples/animate_morph_zoo.py': 70,
     # forecast: 84 (measured 2026-09-04). Three regions' weather, one
