@@ -50,21 +50,15 @@ def test_list_in_list_out():
 
 
 def test_friendly_import_error_when_chronos_missing(monkeypatch):
-    # `from a.b import c` resolves via sys.modules (safe); `import a.b.c as x`
-    # walks attributes from the top (unsafe -- `hypertools.predict` the
-    # attribute is shadowed by `hyp.predict` the dispatcher function).
-    from hypertools.predict import chronos as chronos_mod
-    import builtins
-
-    real_import = builtins.__import__
-
-    def fake_import(name, *args, **kwargs):
-        if name == 'chronos':
-            raise ImportError('no module named chronos')
-        return real_import(name, *args, **kwargs)
-
-    monkeypatch.setattr(builtins, '__import__', fake_import)
+    """With automatic installation disabled, a missing optional module raises
+    an ImportError naming the manual `pip install "hypertools[...]"` command
+    (with it enabled, `lazy_import` would install the extra instead -- not
+    something a unit test should do). `sys.modules[name] = None` is how the
+    import system marks a module as unimportable."""
+    from hypertools.predict import chronos as mod
+    monkeypatch.setenv('HYPERTOOLS_AUTO_INSTALL', '0')
+    monkeypatch.setitem(__import__('sys').modules, 'chronos', None)
 
     df = _make_df(n=30)
-    with pytest.raises(ImportError, match='hypertools\\[predict-hf\\]'):
-        chronos_mod.Chronos().fit(df)
+    with pytest.raises(ImportError, match=r'hypertools\[predict-hf\]'):
+        mod.Chronos().fit(df)

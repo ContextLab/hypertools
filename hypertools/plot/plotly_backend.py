@@ -519,6 +519,10 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         Legend labels (one per trace); None hides the legend.
     title : str or None
         Figure title.
+    into : plotly.graph_objects.Figure or None
+        Draw INTO this figure (the caller's `ax=` under the plotly backend):
+        the traces are appended to it and it is returned; its layout is left
+        alone. None (default) builds a new figure. Not allowed with `animate`.
     animate : bool or str
         Animation style (False for static; True/'parallel'/'spin'/
         'serial'/'window'/'morph'). 'serial' composes with the

@@ -70,21 +70,15 @@ def test_large_horizon_single_factory_call_handles_it():
 
 
 def test_friendly_import_error_when_skaters_missing(monkeypatch):
-    # see the comment in test_kalman.py's analogous test: `from a.b import c`
-    # resolves via sys.modules (safe), `import a.b.c as x` walks attributes
-    # from the top (unsafe -- `hypertools.predict` is shadowed by `hyp.predict`).
-    from hypertools.predict import laplace as laplace_mod
-    import builtins
-
-    real_import = builtins.__import__
-
-    def fake_import(name, *args, **kwargs):
-        if name == 'skaters.api':
-            raise ImportError('no module named skaters')
-        return real_import(name, *args, **kwargs)
-
-    monkeypatch.setattr(builtins, '__import__', fake_import)
+    """With automatic installation disabled, a missing optional module raises
+    an ImportError naming the manual `pip install "hypertools[...]"` command
+    (with it enabled, `lazy_import` would install the extra instead -- not
+    something a unit test should do). `sys.modules[name] = None` is how the
+    import system marks a module as unimportable."""
+    from hypertools.predict import laplace as mod
+    monkeypatch.setenv('HYPERTOOLS_AUTO_INSTALL', '0')
+    monkeypatch.setitem(__import__('sys').modules, 'skaters.api', None)
 
     df = _make_df(n=30)
-    with pytest.raises(ImportError, match='hypertools\\[predict\\]'):
-        laplace_mod.Laplace().fit_predict(df, t=5)
+    with pytest.raises(ImportError, match=r'hypertools\[predict\]'):
+        mod.Laplace().fit_predict(df, t=5)
