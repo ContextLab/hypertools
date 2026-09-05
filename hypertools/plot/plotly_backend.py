@@ -1670,11 +1670,14 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 raise HypertoolsIOError(
                     f"could not write {save_path!r}: plotly's static image "
                     "export (kaleido) needs a Chrome/Chromium binary and "
-                    "found none. Fetch one for kaleido with "
+                    "found none it can run. Fetch one for kaleido with "
                     "`import plotly.io as pio; pio.get_chrome()` (about "
-                    "150 MB; the usual fix on Colab and Kaggle), install "
-                    "Chrome, or save this figure with the matplotlib "
-                    "backend: hyp.plot(..., save_path=..., "
+                    "150 MB); on Colab and Kaggle also install the system "
+                    "libraries that Chrome needs and the image lacks "
+                    "(`apt-get install -y libatk1.0-0 libatk-bridge2.0-0 "
+                    "libatspi2.0-0 libxcomposite1`; measured 2026-09-04). "
+                    "Or install Chrome, or save this figure with the "
+                    "matplotlib backend: hyp.plot(..., save_path=..., "
                     f"backend='matplotlib'). kaleido said: {e}") from e
 
     if show:

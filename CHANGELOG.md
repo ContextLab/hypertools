@@ -326,8 +326,11 @@ input too.
   Chrome failed with kaleido's bare `RuntimeError`.** kaleido 1.x renders
   through a headless Chrome, which a fresh Colab or Kaggle kernel does not
   have. The failure is now a `HypertoolsIOError` naming the file, the
-  cause, and the three ways out: `import plotly.io as pio; pio.get_chrome()`
-  (about 150 MB), installing Chrome, or saving with `backend='matplotlib'`.
+  cause, and the ways out: `import plotly.io as pio; pio.get_chrome()`
+  (about 150 MB) plus, on Colab and Kaggle, the four system libraries the
+  downloaded Chrome needs (`apt-get install -y libatk1.0-0
+  libatk-bridge2.0-0 libatspi2.0-0 libxcomposite1`; measured 2026-09-04),
+  installing Chrome, or saving with `backend='matplotlib'`.
 
 - **Every continuous-hue matplotlib plot rendered fully opaque**, whatever
   `alpha=` was set to. `_apply_multicolor_lines` never read alpha from its
