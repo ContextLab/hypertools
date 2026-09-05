@@ -24,6 +24,36 @@ Kaggle's now-retired "No Free Hunch" blog
 ([archived copy](http://web.archive.org/web/20191202152212/http://blog.kaggle.com:80/2017/04/10/exploring-the-structure-of-high-dimensional-data-with-hypertools-in-kaggle-kernels/)).
 For a general overview, you may find [this talk](https://www.youtube.com/watch?v=hb_ER9RGtOM) useful (given as part of the [MIND Summer School](https://summer-mind.github.io) at Dartmouth).
 
+## What's new in 1.1
+
+HyperTools 1.1 makes hierarchical (`MultiIndex`) DataFrames a first-class
+input, grows the animation API, installs optional extras on demand, and folds
+into the library the code its own examples used to write by hand:
+
++ **One call, many panels:** `hyp.plot([a, b, c], panels=True, title=[...])`
+  draws one panel per dataset (or `reduce=['PCA', 'UMAP']` one per reducer)
+  with a shared or independent pipeline fit.
++ **Data in one line:** `hyp.load('random_walk' | 'helix' | 'lorenz' | 'blobs'
+  | ...)` generates seeded example data; `hyp.load('wikipedia:<Title>')`,
+  `hyp.load('yahoo:<TICKER>', start=, end=)` and `hyp.load('sec:<TICKER>')`
+  fetch live text and market data; `cache=True` / `offline=True` keep URL
+  downloads on disk.
++ **Forecast comparisons:** `hyp.predict(x, model=['Kalman', 'ARIMA', 'GP'],
+  holdout=30)` scores every model against a naive baseline; `hyp.plot(x,
+  predict=[...], truth=held_out)` overlays them with the actual continuation.
++ **Helpers for the data you feed in:** `hyp.text_windows` (sliding text
+  windows), `hyp.damage` (reproducible missing data), `hyp.stack`
+  (hierarchical frames), `Smooth(center=False)` (trailing means), the `Delay`
+  embedding, and `hyp.align(..., return_score=True)`.
++ **Animations that know where they are:** `ctx.progress` and populated
+  reveal counts in `on_frame` callbacks, titles from a callable or a
+  `'{index:%B %Y}'` date pattern, `dataset_fade=`, `companion=` panels,
+  `loop=True` morphs, and `title_kwargs=` / `title_wrap=` styling.
+
+See the [changelog](https://github.com/ContextLab/hypertools/blob/master/CHANGELOG.md) for the complete list, and the
+[optional dependencies guide](https://hypertools.readthedocs.io/en/latest/optional_dependencies.html)
+for how extras install themselves.
+
 ## What's new in 1.0
 
 HyperTools 1.0 modernizes the toolbox while keeping the familiar API:

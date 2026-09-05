@@ -200,6 +200,26 @@ and reaches flat `hyp.predict` callers.
   tutorial adds Chronos, the projectile tutorial compares scikit-learn
   imputers with Kalman; tutorials load Hugging Face data through `hyp.load`,
   save mp4 clips, and no longer silence warnings.
+- **Real axis units for 1-D and 2-D plots.** `axis_scale='data'` keeps the
+  pipeline output's own coordinates (for `reduce=None` the raw columns) with
+  fixed joint limits for animations, on both backends; `xlim=`/`ylim=` set
+  them explicitly. `axis_scale='unit'` (the default) is unchanged and now
+  documented: 2-D plots are mean-centred, rescaled into the unit box and
+  pinned to (-1.1, 1.1) (GH #285).
+- **`ndims=1` is a time-series mode.** Each column becomes one line against
+  the row index (a DatetimeIndex gives real dates; arrays use 0..n-1), 2+
+  columns are allowed and legend-named by column, `axis_scale` defaults to
+  `'data'`, and animations reveal along x. Previously `ndims=1` drew one
+  column rescaled into [-1, 1] at 0..n-1 and refused 2+ columns (GH #285).
+- **`truth=` beside a forecast.** `hyp.plot(train, predict='Chronos', t=30,
+  truth=held_out)` draws the actual continuation in the same space, styled
+  distinctly and role-tagged `'truth'`, static and animated, on both
+  backends; `truth` is validated against `t` (GH #285).
+- **Several forecasters on one plot.** `predict=['Kalman', 'ARIMA', 'GP']` (or
+  `{name: spec}`) draws one legend-labelled overlay per model, coloured from
+  `forecast_palette`, with `forecast_fmt` per model; works with `truth=`,
+  animations and plotly. The `return_model` bundle keys the forecasts by
+  model name (GH #285).
 - **Animation callbacks know where the reveal is.** `FrameContext.progress`
   (0 to 1 over the clip, every style and backend) and `window_bounds`, and
   `revealed_counts` is now populated on parallel, `'window'` and `'spin'`

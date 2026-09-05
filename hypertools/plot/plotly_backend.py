@@ -384,6 +384,29 @@ def _labeled_axis_layout(base, label, scene=False):
     return layout
 
 
+def _data_axis_layout(label, limit=None, date=False):
+    """A VISIBLE plotly axis in the data's own units (GH #285,
+    ``axis_scale='data'``).
+
+    The opposite of `_labeled_axis_layout`'s historical default: ticks,
+    tick labels and the zero line stay on, because reading real values off
+    the axis is the entire point of `axis_scale='data'`. `limit` is an
+    explicit ``(low, high)`` range (plotly autoranges when it is None) and
+    `date=True` marks the axis as a date axis, for the epoch-millisecond x
+    values `ndims=1` series mode emits from a `DatetimeIndex`.
+    """
+    layout = dict(visible=True, showticklabels=True, showgrid=False,
+                  zeroline=False, showline=True, ticks='outside',
+                  linecolor='black', mirror=False)
+    if label is not None:
+        layout['title'] = dict(text=label)
+    if limit is not None:
+        layout['range'] = [limit[0], limit[1]]
+    if date:
+        layout['type'] = 'date'
+    return layout
+
+
 def _build_aa_curves(data, fmt, antialias, morph_tags=None):
     """One ``(dense, step)`` pair per dataset, for DRAW-TIME line smoothing.
 
@@ -596,7 +619,10 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 ylabel=None, zlabel=None, antialias=True, frame_hooks=None,
                 segment_titles=None, ownership=None, forecast_reveal=None,
                 into=None, title_kwargs=None, title_segment_colors=None,
-                legend_kwargs=None, legend_entries=None):
+                legend_kwargs=None, legend_entries=None,
+                axis_scale='unit', xlim=None, ylim=None, x_date=False,
+                truths=None, forecast_labels=None,
+                forecast_datasets=None):
     """Render grouped datasets with plotly, mirroring _draw's contract and
     the matplotlib renderer's appearance.
 
@@ -608,7 +634,37 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     ----------
     data : list of numpy.ndarray
         One (n_i, d) array per trace, d in (1, 2, 3), already centered and
-        scaled to [-1, 1] by `plot.py`.
+        scaled to [-1, 1] by `plot.py` -- unless `axis_scale='data'`, in
+        which case these are the pipeline's own (unscaled) coordinates.
+    axis_scale : {'unit', 'data'}
+        GH #285. 'unit' (default, and everything before it) draws the frame
+        square and pins both 2-D axes to (-1.1, 1.1). 'data' draws no
+        square, leaves the axes visible with real ticks, and takes its
+        ranges from `xlim`/`ylim` (or plotly's autorange when both are
+        None) -- the matplotlib backend's `frame_2d` under plotly's
+        vocabulary.
+    xlim, ylim : (low, high) or None
+        Explicit axis ranges, applied under `axis_scale='data'`.
+    x_date : bool
+        The x values are epoch MILLISECONDS (what `plot()`'s ndims=1 series
+        mode emits for a `DatetimeIndex` under the plotly backend); marks
+        the x axis `type='date'` so plotly renders real dates.
+    truths : list of numpy.ndarray or None
+        GH #285. One seam-prepended ACTUAL continuation per drawn trace
+        (`plot`'s `truth=`), already in display space. Drawn as one solid,
+        fully-opaque, marked trace per dataset, tagged
+        ``meta['hyp_forecast_role'] = 'truth'`` -- the plotly half of
+        `plot._draw_truth_overlays`.
+    forecast_datasets : list of int or None
+        GH #285. Which SOURCE DATASET each forecast belongs to, for
+        ``meta['hyp_dataset']``. `None` means "forecast i is dataset i"; the
+        multi-model `predict=` form passes a real map, since it draws one
+        forecast per (model, dataset) pair.
+    forecast_labels : list of str or None
+        GH #285. One legend label per forecast, for the multi-model
+        `predict=['Kalman', 'ARIMA', ...]` form; the traces are
+        `showlegend=True` (once per model) instead of the usual
+        `showlegend=False`. `None` keeps every forecast out of the legend.
     fmt : list of str or None
         Matplotlib-style format strings, one per trace (None -> '-').
     kwargs_list : list of dict or None
@@ -1254,12 +1310,26 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 # `point_colors` for the same reason it is the right index
                 # into `kwargs_list`/`data`.
                 anchor_color=_hue_anchor_color(point_colors, src))
-            fc_common = dict(mode='lines', showlegend=False,
+            # multi-model predict= (GH #285): one legend entry per MODEL.
+            # Every other call keeps the historical showlegend=False -- a
+            # forecast that inherits its trace's identity needs no key.
+            fc_name = (forecast_labels[i]
+                       if forecast_labels is not None
+                       and i < len(forecast_labels) else None)
+            fc_show = bool(fc_name is not None
+                           and fc_name not in forecast_labels[:i])
+            fc_common = dict(mode='lines', showlegend=fc_show,
                              hoverinfo='skip',
                              line=fc_line,
-                             meta=dict(hyp_forecast_role='static',
-                                       hyp_dataset=i, hyp_forecast_age=0,
-                                       hyp_forecast_alpha=fc_alpha))
+                             meta=dict(
+                                 hyp_forecast_role='static',
+                                 hyp_dataset=(forecast_datasets[i]
+                                              if forecast_datasets is not None
+                                              else i),
+                                 hyp_forecast_age=0,
+                                 hyp_forecast_alpha=fc_alpha))
+            if fc_name is not None:
+                fc_common['name'] = fc_name
             # antialias=: a forecast trace is always a LINE, so smooth it the
             # same way as any other line (matching `plot._draw_forecast_
             # overlays`, which does exactly this on the matplotlib side) --
@@ -1374,6 +1444,49 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                                 (kwargs_list[_r] or {}).get('alpha'))),
                         override=_ov)[0].get('color')
                     for _r in range(len(data))})
+
+    # truth= (GH #285): each trace's ACTUAL continuation, drawn beside the
+    # forecast it is compared against -- the plotly half of
+    # `plot._draw_truth_overlays`, with the same styling policy (the
+    # observed trace's colour and width, SOLID, fully opaque, with markers
+    # on the observations) and the same `hyp_forecast_role='truth'` tag.
+    # Appended AFTER the forecast block and BEFORE the trail traces, and
+    # never rewritten per frame: it is what happened, not a prediction being
+    # refitted as the reveal advances.
+    if truths is not None:
+        from .plot import TRUTH_STYLE
+        for i, tr in enumerate(truths):
+            src = (forecast_owner[i]
+                   if forecast_owner is not None and i < len(forecast_owner)
+                   else i)
+            src = src if src < len(data) else len(data) - 1
+            tr = np.atleast_2d(np.asarray(tr, dtype=np.float64))
+            tr_line, _ = _forecast_style_from(
+                kwargs_list[src] or {}, fmt[src], alpha=1.0,
+                anchor_color=_hue_anchor_color(point_colors, src))
+            tr_line = dict(tr_line)
+            tr_line['dash'] = 'solid'
+            tr_draw, tr_step = (antialias_line(tr) if antialias else (tr, 1))
+            tr_common = dict(
+                mode='lines+markers', showlegend=bool(i == 0 and legend
+                                                      is not None),
+                name='truth', hoverinfo='skip', line=tr_line,
+                marker=dict(size=TRUTH_STYLE['markersize'],
+                            color=tr_line.get('color')),
+                meta=dict(hyp_forecast_role='truth', hyp_dataset=i,
+                          hyp_forecast_age=0, hyp_forecast_alpha=1.0))
+            if ndims >= 3:
+                traces.append(go.Scatter3d(x=tr_draw[:, 0], y=tr_draw[:, 1],
+                                           z=tr_draw[:, 2], **tr_common))
+            elif ndims == 2:
+                traces.append(go.Scatter(x=tr_draw[:, 0], y=tr_draw[:, 1],
+                                         **tr_common))
+            else:
+                arr2 = np.atleast_2d(np.asarray(data[src],
+                                                dtype=np.float64))
+                traces.append(go.Scatter(
+                    x=_aa_x(tr_step, arr2.shape[0] - 1, tr_draw.shape[0]),
+                    y=tr_draw[:, 0], **tr_common))
 
     # low-opacity trail traces for chemtrails (past) / precog (future) /
     # bullettime (both) on window animations, mirroring the matplotlib
@@ -1751,12 +1864,18 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
             aspectmode='manual',
             aspectratio=dict(x=1.0, y=1.0, z=0.75),
         )
-    elif ndims == 2:
+    elif ndims == 2 and axis_scale != 'data':
         # matplotlib stretches the 2D frame to fill the axes region (no
         # equal-aspect constraint), so the plotly frame does the same
         layout['xaxis'] = _labeled_axis_layout({'range': [-1.1, 1.1]}, xlabel)
         layout['yaxis'] = _labeled_axis_layout({'range': [-1.1, 1.1]}, ylabel)
         layout['shapes'] = [_square_shape()]
+    elif axis_scale == 'data':
+        # GH #285: real units. No frame square, no unit range, and the axes
+        # keep plotly's own ticks/labels -- the plotly half of
+        # `matplotlib_backend._draw`'s axis_scale='data' branch.
+        layout['xaxis'] = _data_axis_layout(xlabel, xlim, date=x_date)
+        layout['yaxis'] = _data_axis_layout(ylabel, ylim)
     else:
         layout['xaxis'] = _labeled_axis_layout({}, xlabel)
         layout['yaxis'] = _labeled_axis_layout({}, ylabel)

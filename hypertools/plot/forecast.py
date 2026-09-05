@@ -554,6 +554,28 @@ class ForecastSchedule:
             return np.zeros((0, self.histories[0].shape[1]))
         return np.vstack(rows)
 
+    def pin_ramp(self, column, steps):
+        """Replace `column` of every path with an exact arithmetic ramp.
+
+        `ndims=1` series mode (GH #285) draws each column against its row
+        INDEX, which it materialises as an extra x column before forecasting
+        -- so the model also "forecasts" a perfectly regular ramp. Its x
+        values are an extrapolation the PLOT is entitled to decide (the
+        index continues by one observation per step, exactly), not something
+        to inherit from a fit, so they are pinned here: displacement row `k`
+        of dataset `i` gets ``k * steps[i]``, leaving the forecast VALUE
+        columns untouched.
+
+        `steps` is one x-step per dataset, in the schedule's own dataset
+        order. Mutates in place and returns `self` (schedules are built and
+        immediately handed on, never shared).
+        """
+        for (i, _rows), path in self._paths.items():
+            if path is None:
+                continue
+            path[:, column] = np.arange(len(path), dtype=float) * steps[i]
+        return self
+
     def to_display(self, transform):
         """A copy of this schedule with every history mapped through
         `transform`, so `polyline()` returns display-box coordinates."""
@@ -571,6 +593,93 @@ class ForecastSchedule:
         out._paths = {key: (None if p is None else 2.0 * p / transform.scale)
                       for key, p in self._paths.items()}
         return out
+
+
+class MultiModelSchedule:
+    """Several `ForecastSchedule`s -- one per model -- behind ONE flat index.
+
+    `predict=['Kalman', 'ARIMA', 'GP']` (GH #285) draws one overlay per
+    model per dataset. Everything downstream of the schedule (the live/trail
+    artists, `_update_forecasts`, the plotly frame builder) is written
+    against a single flat "forecast index", so rather than teach each of
+    them about models, the per-model schedules are addressed here through
+    the SAME index the flat `raw_forecasts` list uses: MODEL-MAJOR, i.e.
+    ``index = model_number * n_datasets + dataset_number``, matching
+    ``hyp.predict``'s ``{name: [one forecast per dataset]}`` return order.
+
+    Only the methods the drawing code actually calls are forwarded; each is
+    the corresponding `ForecastSchedule` method on the sub-schedule that
+    owns the index.
+    """
+
+    def __init__(self, schedules, names=None):
+        if not schedules:
+            raise ValueError(
+                'MultiModelSchedule needs at least one ForecastSchedule.')
+        self.schedules = list(schedules)
+        self.names = list(names) if names is not None else None
+        self.per_model = self.schedules[0].n_datasets
+        self.n_datasets = self.per_model * len(self.schedules)
+        self.n_frames = self.schedules[0].n_frames
+        self.t = self.schedules[0].t
+        self.n_fits = sum(s.n_fits for s in self.schedules)
+
+    def _locate(self, index):
+        """(sub-schedule, dataset index within it) for a flat index."""
+        return (self.schedules[index // self.per_model],
+                index % self.per_model)
+
+    def revealed_rows(self, dataset, frame):
+        """The ORIGINAL row indices this model/dataset slot has revealed
+        at `frame` (see `ForecastSchedule.revealed_rows`)."""
+        sched, i = self._locate(dataset)
+        return sched.revealed_rows(i, frame)
+
+    def revealed(self, dataset, frame):
+        """How many raw rows this model/dataset slot has revealed at
+        `frame` (see `ForecastSchedule.revealed`)."""
+        sched, i = self._locate(dataset)
+        return sched.revealed(i, frame)
+
+    def anchor(self, dataset, frame):
+        """The last revealed observation this slot's forecast starts from
+        (see `ForecastSchedule.anchor`)."""
+        sched, i = self._locate(dataset)
+        return sched.anchor(i, frame)
+
+    def path(self, dataset, frame):
+        """This slot's displacement path at `frame`, or None (see
+        `ForecastSchedule.path`)."""
+        sched, i = self._locate(dataset)
+        return sched.path(i, frame)
+
+    def polyline(self, dataset, frame):
+        """The DRAWN forecast for this slot at `frame`, or None (see
+        `ForecastSchedule.polyline`)."""
+        sched, i = self._locate(dataset)
+        return sched.polyline(i, frame)
+
+    def stacked_paths(self):
+        """Every vertex every model will ever draw (see
+        `ForecastSchedule.stacked_paths`)."""
+        rows = [s.stacked_paths() for s in self.schedules]
+        rows = [r for r in rows if len(r)]
+        if not rows:
+            return self.schedules[0].stacked_paths()
+        return np.vstack(rows)
+
+    def pin_ramp(self, column, steps):
+        """Pin `column` of every model's paths to an exact ramp (see
+        `ForecastSchedule.pin_ramp`); every model shares one x axis."""
+        for sched in self.schedules:
+            sched.pin_ramp(column, steps)
+        return self
+
+    def to_display(self, transform):
+        """A copy with every model's schedule mapped through `transform`
+        (see `ForecastSchedule.to_display`)."""
+        return MultiModelSchedule(
+            [s.to_display(transform) for s in self.schedules], self.names)
 
 
 #: Past forecasts retained by `forecast_trail=True`.

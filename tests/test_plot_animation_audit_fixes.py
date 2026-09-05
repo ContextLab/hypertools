@@ -328,9 +328,19 @@ def test_azim_honored_as_start_angle(style):
 # ---------------------------------------------------------------------------
 
 def test_1d_animate_raises_value_error():
+    # 1-D DATA (one column, no reduction) still cannot animate in 2-D/3-D
+    # space, and the refusal is a ValueError, not a bare assert.
     with pytest.raises(ValueError,
                        match='only supported for 2-D or 3-D'):
-        hyp.plot(_walk(60, 5), ndims=1, animate=True, show=False)
+        hyp.plot(_walk(60, 1), ndims=2, reduce=None, animate=True, show=False)
+
+
+def test_ndims_1_series_mode_animates():
+    # since 1.1.0 (GH #285) ndims=1 is a time-series mode: each column is a
+    # line against the row index, and it reveals along x
+    result = hyp.plot(_walk(60, 5), ndims=1, animate=True, show=False)
+    assert isinstance(result, hyp.HyperAnimation)
+    plt.close('all')
 
 
 # ---------------------------------------------------------------------------

@@ -290,6 +290,34 @@ def _legend_proxy_handles(entries, fmt=None):
             for label, color in entries]
 
 
+def legend_call_kwargs(is_3d=False, zlabel=None, font=None,
+                       legend_kwargs=None):
+    """The `ax.legend(...)` keyword arguments hypertools draws a legend with.
+
+    Factored out of `_draw` (GH #285) so `plot()` can REBUILD the legend
+    with identical placement/styling after it adds a labelled overlay
+    (a multi-model `predict=` fan, or `truth=`) -- the legend is built
+    inside `_draw`, before those artists exist, and a rebuild that guessed
+    at the placement would move the legend on exactly the figures that
+    gained an entry.
+    """
+    # a 3-D zlabel is drawn in the axes' right margin -- exactly where
+    # the legend is anchored -- so shift the legend further right when
+    # both are requested (release-1.0 audit, F10-005: the zlabel text
+    # rendered directly on top of the legend's first entry).
+    _legend_x = 1.18 if (zlabel is not None and is_3d) else 1.02
+    call = dict(loc='center left', bbox_to_anchor=(_legend_x, 0.5),
+                borderaxespad=0.0, frameon=False)
+    if font is not None:
+        call['prop'] = font
+    # `legend_kwargs=` (GH #285) is applied LAST, so a caller's
+    # loc=/bbox_to_anchor=/frameon=/fontsize= wins over the defaults
+    # above -- which is the whole point of the kwarg.
+    if legend_kwargs:
+        call.update(legend_kwargs)
+    return call
+
+
 def _recolor_legend_handles(legend, colors):
     """Apply `legend_colors=`'s plain colour list to an already-built
     legend, in entry order (GH #285)."""
@@ -312,9 +340,15 @@ def _resolve_surface_color(spec, fallback_rgb):
     return mcolors.to_rgb(spec["color"]) if spec["color"] is not None else fallback_rgb
 
 
-def _draw_one_density_2d(ax, pts, spec, color, label=""):
+def _draw_one_density_2d(ax, pts, spec, color, label="", clip_unit=True):
     """Draw a single subtle alpha-ramped ``imshow`` KDE layer for one
-    dataset (or the pooled cloud), below the data (``zorder=-1``)."""
+    dataset (or the pooled cloud), below the data (``zorder=-1``).
+
+    `clip_unit` (GH #285): clip the glow to hypertools' unit frame square,
+    which only exists under ``axis_scale='unit'``. Under ``'data'`` the
+    drawn coordinates are the data's own and there is no square, so
+    clipping to ``[-1, 1]`` would erase the whole layer -- the KDE is left
+    unclipped there instead."""
     kde = fit_kde(pts, dataset_label=label)
     if kde is None:
         return
@@ -323,6 +357,9 @@ def _draw_one_density_2d(ax, pts, spec, color, label=""):
     cmap = alpha_colormap(color, spec["alpha"])
     im = ax.imshow(Z, origin="lower", extent=extent, aspect="auto",
                    cmap=cmap, interpolation="bilinear", zorder=-1)
+    im.set_label("_nolegend_")
+    if not clip_unit:
+        return
     # clip the KDE glow to the drawn frame box: the density grid extends
     # ~15% beyond the data bounds (and the KDE bandwidth blows up for tiny
     # n), so for sparse data the haze flooded the figure margins OUTSIDE
@@ -332,22 +369,23 @@ def _draw_one_density_2d(ax, pts, spec, color, label=""):
     # frame rectangle is fixed in data coordinates.
     im.set_clip_path(patches.Rectangle((-1.0, -1.0), 2.0, 2.0,
                                        transform=ax.transData))
-    im.set_label("_nolegend_")
 
 
-def _draw_density_2d(ax, points_list, density, density_colors):
+def _draw_density_2d(ax, points_list, density, density_colors,
+                     clip_unit=True):
     """Draw each dataset's (or, with ``per_group=False``, one pooled) 2-D
     KDE density layer (GH #108/#191)."""
     if density[0] is not None and not density[0].get("per_group", True):
         all_pts = np.vstack([np.asarray(p)[:, :2] for p in points_list])
         _draw_one_density_2d(ax, all_pts, density[0], POOLED_COLOR,
-                             label=" (pooled)")
+                             label=" (pooled)", clip_unit=clip_unit)
         return
     for i, (pts, spec) in enumerate(zip(points_list, density)):
         if spec is None:
             continue
         _draw_one_density_2d(ax, np.asarray(pts)[:, :2], spec,
-                             density_colors[i], label=f" {i}")
+                             density_colors[i], label=f" {i}",
+                             clip_unit=clip_unit)
 
 
 def _draw_one_density_3d(ax, pts, spec, color, label="", boost=1.0):
@@ -724,6 +762,10 @@ def _draw(
     legend_kwargs=None,
     legend_entries=None,
     legend_colors=None,
+    axis_scale='unit',
+    xlim=None,
+    ylim=None,
+    x_date=False,
 ):
     """
     Draws the plot
@@ -753,6 +795,24 @@ def _draw(
     both cases take one code path; it passes None for anything whose traces do
     not correspond to input datasets (marker-only categorical regrouping
     groups globally by category), and those keep `anim_window_bounds` directly.
+
+    `axis_scale` (GH #285): ``'unit'`` (the historical behaviour) draws the
+    hypertools frame square and pins the 2-D axes to ``(-1.1, 1.1)`` --
+    `plot()` has already mean-centred and rescaled the data into ``[-1, 1]``
+    for it. ``'data'`` draws NO frame square, leaves matplotlib's own ticks
+    and spines visible, and takes its limits from `xlim`/`ylim` (which
+    `plot()` computes from the full data, forecasts included, so an
+    animation's viewport never jumps) or from matplotlib's autoscale when
+    both are None. 3-D is always ``'unit'`` (`plot()` refuses the other).
+
+    `xlim`/`ylim` (GH #285): explicit ``(low, high)`` axis limits, honoured
+    on every non-``'unit'`` 2-D/1-D path (static and animated). ``None``
+    leaves the axis alone.
+
+    `x_date` (GH #285): the x values are matplotlib date numbers
+    (`matplotlib.dates.date2num`), as `ndims=1` series mode produces from a
+    `DatetimeIndex`; puts a date locator/formatter on the x axis so the
+    ticks read as real dates.
 
     `frame_hooks` (the public `on_frame=` hook, plan 1.1 Task 7): a
     `hypertools.plot.animation_context.FrameHooks` registry, created once by
@@ -1389,6 +1449,27 @@ def _draw(
                 **square_kwargs
             )
         )
+
+    def frame_2d(ax):
+        """Draw the 2-D frame and set the 2-D axis limits for `axis_scale`.
+
+        ``'unit'`` (the default, and everything drawn before GH #285) draws
+        hypertools' frame square and pins both axes to ``(-1.1, 1.1)``,
+        because `plot()` has already rescaled the data into ``[-1, 1]``.
+        ``'data'`` draws no square and applies `xlim`/`ylim` when `plot()`
+        computed (or the caller passed) them, leaving matplotlib's autoscale
+        in charge otherwise. Called by BOTH the static 2-D path and
+        `animate_plot2D`, so the two cannot drift apart.
+        """
+        if axis_scale != 'data':
+            plot_square(ax, **frame_kwargs)
+            ax.set_xlim(-1.1, 1.1)
+            ax.set_ylim(-1.1, 1.1)
+            return
+        if xlim is not None:
+            ax.set_xlim(*xlim)
+        if ylim is not None:
+            ax.set_ylim(*ylim)
 
     def update_lines_parallel(
         num,
@@ -2769,15 +2850,17 @@ def _draw(
                 artist=morph_artist, indices=morph_indices,
             )
 
-        # border square + fixed axes limits (matches the static 2-D path)
-        plot_square(ax, **frame_kwargs)
-        ax.set_xlim(-1.1, 1.1)
-        ax.set_ylim(-1.1, 1.1)
+        # border square + fixed axes limits (matches the static 2-D path).
+        # Under axis_scale='data' the limits are FIXED from the full data
+        # (computed by `plot()`, forecasts included) rather than autoscaled
+        # per frame, so the viewport never jumps mid-animation.
+        frame_2d(ax)
 
         # density= (GH #108/#191): computed ONCE from the FULL dataset,
         # same as every animated 3-D style -- see `animate_plot3D`.
         if density is not None:
-            _draw_density_2d(ax, x, density, density_colors)
+            _draw_density_2d(ax, x, density, density_colors,
+                             clip_unit=axis_scale != 'data')
 
         # one implementation, shared with the plotly backend AND with the
         # forecast reveal schedule `plot()` builds (see `trails`)
@@ -2928,12 +3011,9 @@ def _draw(
 
         elif x[0].shape[1] == 2:
 
-            # plot square
-            plot_square(ax, **frame_kwargs)
-
-            # set axes
-            ax.set_xlim(-1.1, 1.1)
-            ax.set_ylim(-1.1, 1.1)
+            # plot square + axis limits (see `frame_2d`: axis_scale='data'
+            # draws no square and keeps the data's own coordinates)
+            frame_2d(ax)
 
             # surface= (GH #109): smooth filled hull outlines, below the data
             if surface is not None:
@@ -2943,7 +3023,16 @@ def _draw(
             # density= (GH #108/#191): subtle KDE density shading, one
             # layer per dataset (or one pooled layer), below the data
             if density is not None:
-                _draw_density_2d(ax, data, density, density_colors)
+                _draw_density_2d(ax, data, density, density_colors,
+                                 clip_unit=axis_scale != 'data')
+
+        else:
+            # 1-D: no frame to draw, but explicit limits still apply (GH
+            # #285 -- `ndims=1` series mode uses them for the reveal axis)
+            if xlim is not None:
+                ax.set_xlim(*xlim)
+            if ylim is not None:
+                ax.set_ylim(*ylim)
 
         # set line_ani to empty
         line_ani = None
@@ -2961,7 +3050,25 @@ def _draw(
     # axis unglobally "off" so its label artist(s) still draw; byte-
     # identical to plain `set_axis_off()` otherwise (also verified
     # empirically: 0 changed pixels when no label is requested).
-    if xlabel is None and ylabel is None and zlabel is None:
+    #
+    # axis_scale='data' (GH #285) is the deliberate exception: its whole
+    # point is that the drawn coordinates ARE the data's own, so its ticks
+    # and spines stay on (matplotlib's defaults) and only the top/right
+    # spines are dropped, the way a plain time-series panel is drawn.
+    if axis_scale == 'data':
+        for _side in ('top', 'right'):
+            if _side in ax.spines:
+                ax.spines[_side].set_visible(False)
+        if xlabel is not None:
+            ax.set_xlabel(xlabel)
+        if ylabel is not None:
+            ax.set_ylabel(ylabel)
+        if x_date:
+            # the x column holds `date2num` day numbers (see `plot()`'s
+            # ndims=1 series mode); without a date converter they would tick
+            # as five-digit floats
+            ax.xaxis_date()
+    elif xlabel is None and ylabel is None and zlabel is None:
         ax.set_axis_off()
     elif hasattr(ax, "get_proj"):
         # 3-D: Axes3D's own `_axis3don` flag gates panes/gridlines/ticks/
@@ -3023,23 +3130,9 @@ def _draw(
     # own fontproperties, so this also fixes multibyte legend clipping
     # without any change needed there.
     if legend is not None or legend_entries is not None:
-        # a 3-D zlabel is drawn in the axes' right margin -- exactly where
-        # the legend is anchored -- so shift the legend further right when
-        # both are requested (release-1.0 audit, F10-005: the zlabel text
-        # rendered directly on top of the legend's first entry).
-        _legend_x = 1.02
-        if zlabel is not None and hasattr(ax, "get_proj"):
-            _legend_x = 1.18
-        _legend_call = dict(loc='center left',
-                            bbox_to_anchor=(_legend_x, 0.5),
-                            borderaxespad=0.0, frameon=False)
-        if font is not None:
-            _legend_call['prop'] = font
-        # `legend_kwargs=` (GH #285) is applied LAST, so a caller's
-        # loc=/bbox_to_anchor=/frameon=/fontsize= wins over the defaults
-        # above -- which is the whole point of the kwarg.
-        if legend_kwargs:
-            _legend_call.update(legend_kwargs)
+        _legend_call = legend_call_kwargs(
+            is_3d=hasattr(ax, "get_proj"), zlabel=zlabel, font=font,
+            legend_kwargs=legend_kwargs)
         if legend_entries is not None:
             # explicit entries (matrix/mixture hue palette swatches, or
             # `legend_colors=[(label, color), ...]`): proxy handles, since
