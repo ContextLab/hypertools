@@ -6626,6 +6626,22 @@ def plot(
                 ownership=_ownership,
             )
 
+            # A caller-supplied ax= was created outside this rc context, so
+            # its tick labels carry the 'sans-serif' ALIAS, which matplotlib
+            # resolves to ONE font with no per-glyph fallback; a label
+            # formatted with the Unicode minus before this call then warns
+            # "Glyph 8722 missing from font(s) Noto Sans" (the bundled font
+            # has no U+2212) the next time anything measures it. Give those
+            # labels the same font LIST hypertools' own axes get, so the
+            # per-glyph fallback reaches DejaVu Sans (2026-09-05, seen on
+            # the two-panel align tutorial).
+            if _user_supplied_ax and ax is not None:
+                for _axis in (getattr(ax, 'xaxis', None),
+                              getattr(ax, 'yaxis', None),
+                              getattr(ax, 'zaxis', None)):
+                    if _axis is not None:
+                        _axis.set_tick_params(labelfontfamily=_font_stack)
+
             # predict=: overlay one forecast trace per input dataset
             # (GH #169), styled to match its source line -- same colour,
             # linestyle and linewidth, at half its alpha
