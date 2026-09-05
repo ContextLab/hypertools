@@ -7,6 +7,7 @@ MultiIndex regrouping, color/legend/colorbar resolution, streaming
 dispatch, and save/return handling) plus its private helpers. Low-level
 drawing lives in `matplotlib_backend` and `plotly_backend`.
 """
+import collections.abc
 import copy
 import inspect
 import os
@@ -24,10 +25,12 @@ from ..tools.analyze import analyze
 from ..cluster.cluster import cluster as clusterer, mixture_models, \
     models as hard_cluster_models
 from .colors import (mat2colors, colors2groups, get_palette_colors,
-                     continuous_colormap, NAN_COLOR, is_missing_label)
+                     continuous_colormap, NAN_COLOR, is_missing_label,
+                     resolve_category_colors, dataset_palettes,
+                     palette_lead_color, dataset_colors)
 from ..reduce.reduce import reduce as reducer
 from ..tools.format_data import format_data
-from .matplotlib_backend import _draw
+from .matplotlib_backend import _draw, _apply_title
 from .backend import manage_backend
 from .plotly_backend import resolve_backend
 from .animation_context import FrameHooks
@@ -152,10 +155,36 @@ def _seaborn_palette_arg(palette, n_colors):
     interception `palette=` needs -- every call site below hands its palette
     straight to seaborn without going through `colors._get_palette`, so
     intercepting only there would leave `sns.set_palette` (and so EVERY
-    matplotlib plot call) raising on an image palette."""
+    matplotlib plot call) raising on an image palette.
+
+    GH #285 adds two more forms seaborn cannot read:
+
+    - a PER-DATASET list of palettes (``palette=['image:wave.jpg',
+      'viridis', ...]``, see `colors.dataset_palettes`) resolves to each
+      palette's `palette_lead_color`, one colour per dataset -- which is
+      exactly what this cycling palette is for.
+    - a ``{category: color}`` DICT names CATEGORIES, and the groups these
+      call sites cycle over are datasets, not categories. The ambient cycle
+      is therefore given the DEFAULT palette (seaborn would raise on the
+      dict itself), and it is never what a dict palette ends up drawing:
+      every path that knows its category order
+      (`_categorical_color_label_maps`, the partially-labeled hue branch,
+      the marker regroup, and the discrete colorbar) resolves the dict by
+      NAME through `colors.resolve_category_colors` and sets explicit
+      colours. A dict with NO categorical hue at all is rejected outright
+      -- by `colors._get_palette`, when the figure's colour scale is
+      resolved -- rather than silently drawing in the default palette."""
+    import collections.abc
+
     from matplotlib.colors import Colormap
 
-    from .colors import IMAGE_PALETTE_PREFIX
+    from .colors import DEFAULT_PALETTE, IMAGE_PALETTE_PREFIX
+    if isinstance(palette, collections.abc.Mapping):
+        return [tuple(c) for c in get_palette_colors(DEFAULT_PALETTE,
+                                                     n_colors)]
+    _specs = dataset_palettes(palette, n_colors)
+    if _specs is not None:
+        return [tuple(palette_lead_color(spec)) for spec in _specs]
     if isinstance(palette, Colormap) or (
             isinstance(palette, str)
             and palette.startswith(IMAGE_PALETTE_PREFIX)):
@@ -374,6 +403,8 @@ def _categorical_color_label_maps(hue, palette, explicit_colors,
     palette (plain string/int categorical, hard clustering) it is resolved
     here from `palette`. `sort_numeric` selects sorted-numeric drawn order
     (integer hue / cluster ids) over first-appearance order (string hue)."""
+    import collections.abc
+
     import seaborn as sns
     appear = list(dict.fromkeys(hue))
     if sort_numeric:
@@ -386,6 +417,20 @@ def _categorical_color_label_maps(hue, palette, explicit_colors,
     if (isinstance(explicit_colors, (list, tuple))
             and len(explicit_colors) == len(drawn)):
         cat_color = {c: explicit_colors[i] for i, c in enumerate(drawn)}
+    elif isinstance(palette, collections.abc.Mapping):
+        # palette= as a {category: color} DICT (GH #285): resolved by NAME,
+        # so the caller no longer has to work out first-appearance order by
+        # hand to line a colour list up with the right category. `hue` has
+        # already been turned into group IDS by this point, so the names to
+        # match on are `group_labels` (the category names), falling back to
+        # the ids' own str() for hue sources that have no separate names
+        # (cluster labels).
+        _names = (list(group_labels)
+                  if isinstance(group_labels, (list, tuple))
+                  and len(group_labels) == len(drawn)
+                  else [str(c) for c in drawn])
+        _by_name = resolve_category_colors(palette, _names)
+        cat_color = {c: _by_name[_names[i]] for i, c in enumerate(drawn)}
     else:
         pal = sns.color_palette(
             _seaborn_palette_arg(palette, len(drawn)), len(drawn))
@@ -1233,6 +1278,703 @@ def _resolve_animate_mode(animate, n_datasets, order='parallel'):
     return mode, morph_tags, order
 
 
+# ---------------------------------------------------------------------------
+# GH #285: multi-panel static composition (`panels=`/`subplots=`), title
+# styling (`title_kwargs=`/`title_color=`/`title_wrap=`) and explicit legend
+# entries (`legend_kwargs=`/`legend_colors=`). Every helper below is additive:
+# with all of the new kwargs left at their `None` defaults each one either
+# short-circuits or reproduces the exact call hypertools made before.
+# ---------------------------------------------------------------------------
+
+#: Short aliases accepted in `title_kwargs=`, mapped onto the matplotlib
+#: `Text` property names `Axes.set_title` understands. `color`, `alpha`,
+#: `y`, `pad`, `loc`, `rotation` and `linespacing` need no alias -- those
+#: already ARE the matplotlib names.
+_TITLE_KWARG_ALIASES = {
+    'size': 'fontsize',
+    'weight': 'fontweight',
+    'family': 'fontfamily',
+    'style': 'fontstyle',
+    'variant': 'fontvariant',
+    'stretch': 'fontstretch',
+}
+
+#: Every key `title_kwargs=` accepts after alias resolution. Checked up
+#: front so a typo raises a message naming `title_kwargs=` instead of
+#: matplotlib's `AttributeError: Unknown property ...` from inside
+#: `Text.update`, thrown at draw time with no mention of the kwarg.
+_TITLE_KWARG_KEYS = frozenset({
+    'fontsize', 'fontweight', 'fontfamily', 'fontstyle', 'fontvariant',
+    'fontstretch', 'fontproperties', 'color', 'alpha', 'y', 'pad', 'loc',
+    'rotation', 'linespacing', 'backgroundcolor', 'zorder', 'wrap',
+    'horizontalalignment', 'verticalalignment', 'ha', 'va',
+})
+
+#: `title_kwargs=` keys plotly's `layout.title` can express, and where.
+#: Anything else warns (naming the backend and the keys) rather than
+#: silently rendering a differently-styled title than matplotlib would.
+_PLOTLY_TITLE_KEYS = {
+    'fontsize': ('font', 'size'),
+    'fontfamily': ('font', 'family'),
+    'fontweight': ('font', 'weight'),
+    'fontstyle': ('font', 'style'),
+    'color': ('font', 'color'),
+    'y': ('y',),
+}
+
+
+def _normalize_title_kwargs(title_kwargs, _name='title_kwargs'):
+    """Resolve `title_kwargs=`'s short aliases and reject unknown keys.
+
+    Returns None for None (the default), so every call site can keep the
+    exact pre-GH-#285 `set_title` call when nothing was asked for.
+    """
+    if title_kwargs is None:
+        return None
+    if not isinstance(title_kwargs, dict):
+        raise TypeError(
+            f"{_name}= must be a dict of title styling options (e.g. "
+            f"{{'size': 20, 'weight': 'bold', 'color': 'k', 'y': 0.93}}); "
+            f"got {type(title_kwargs).__name__}: {title_kwargs!r}.")
+    resolved = {}
+    for key, value in title_kwargs.items():
+        name = _TITLE_KWARG_ALIASES.get(key, key)
+        if name not in _TITLE_KWARG_KEYS:
+            raise ValueError(
+                f"{_name}={{{key!r}: ...}} is not a supported title "
+                f"styling option. Supported keys (short aliases in "
+                f"parentheses): {sorted(_TITLE_KWARG_KEYS)} "
+                f"(aliases: {sorted(_TITLE_KWARG_ALIASES)}).")
+        resolved[name] = value
+    return resolved
+
+
+def _is_single_color(value):
+    """Whether `value` is ONE matplotlib color rather than a SEQUENCE of
+    them. A string ('red', '#666666', 'C0') always is; a 3/4-tuple of plain
+    numbers is an RGB(A) triple, not three separate colors -- which is the
+    only genuine ambiguity `title_color=`/`legend_colors=` have to settle."""
+    if isinstance(value, str):
+        return True
+    if isinstance(value, (list, tuple)) and len(value) in (3, 4):
+        return all(isinstance(c, (int, float, np.integer, np.floating))
+                   and not isinstance(c, bool) for c in value)
+    return False
+
+
+def _validate_title_color(title_color, segment_titles):
+    """Split `title_color=` into (scalar color, per-segment sequence).
+
+    A single color (string or RGB(A) tuple) styles whatever title is drawn.
+    A SEQUENCE of colors -- or a callable ``ctx -> color`` -- tints each
+    segment of a serial/morph `title=` LIST, so it is only meaningful
+    alongside one.
+    """
+    if title_color is None:
+        return None, None
+    if callable(title_color) or (
+            not _is_single_color(title_color)
+            and isinstance(title_color, (list, tuple, np.ndarray))):
+        if segment_titles is None:
+            raise ValueError(
+                "title_color= was given one color per segment (or a "
+                "callable), but title= is not a per-segment list. Pass a "
+                "single color to style the whole figure's title, or pass "
+                "title= as a list (with animate='serial'/'morph') to tint "
+                "each segment's own title.")
+        if not callable(title_color) and len(title_color) != len(segment_titles):
+            raise ValueError(
+                f"title_color has {len(title_color)} entries but title= "
+                f"has {len(segment_titles)}; pass one color per title "
+                "segment, one single color for all of them, or a callable "
+                "taking the frame context.")
+        return None, title_color
+    return title_color, None
+
+
+def _segment_title_color(per_segment, idx, ctx):
+    """The color for segment `idx` from `title_color=`'s per-segment form."""
+    if callable(per_segment):
+        return per_segment(ctx)
+    return per_segment[min(idx, len(per_segment) - 1)]
+
+
+def _wrap_title_text(title, width, newline='\n'):
+    """`textwrap.fill` a title (or every entry of a per-segment title list)
+    at `width` characters, joined with `newline` -- ``'\\n'`` for
+    matplotlib, ``'<br>'`` for plotly, which is that backend's line break.
+
+    A no-op (returns `title` unchanged) when `title_wrap=` is None, so the
+    default path never even imports textwrap.
+    """
+    if width is None or title is None:
+        return title
+    import textwrap
+    if isinstance(title, (list, tuple)):
+        return [_wrap_title_text(t, width, newline) for t in title]
+    return newline.join(textwrap.wrap(str(title), width) or [''])
+
+
+def _validate_title_wrap(title_wrap):
+    """`title_wrap=` is a positive integer column count, or None."""
+    if title_wrap is None:
+        return None
+    if isinstance(title_wrap, bool) or not isinstance(
+            title_wrap, (int, np.integer)):
+        raise TypeError(
+            f"title_wrap= must be an integer number of characters to wrap "
+            f"titles at (e.g. title_wrap=40), or None; got "
+            f"{type(title_wrap).__name__}: {title_wrap!r}.")
+    if title_wrap < 1:
+        raise ValueError(
+            f"title_wrap= must be at least 1 character; got {title_wrap}.")
+    return int(title_wrap)
+
+
+def _validate_legend_kwargs(legend_kwargs):
+    """`legend_kwargs=` is a dict forwarded to `Axes.legend`."""
+    if legend_kwargs is None:
+        return None
+    if not isinstance(legend_kwargs, dict):
+        raise TypeError(
+            f"legend_kwargs= must be a dict of options forwarded to "
+            f"matplotlib's Axes.legend (e.g. {{'loc': 'upper left', "
+            f"'fontsize': 8, 'frameon': False}}); got "
+            f"{type(legend_kwargs).__name__}: {legend_kwargs!r}.")
+    return dict(legend_kwargs)
+
+
+def _normalize_legend_colors(legend_colors):
+    """Split `legend_colors=` into its two accepted forms.
+
+    Returns ``(colors, entries)``: `colors` is a plain list of colors that
+    RECOLORS the legend entries hypertools would draw anyway (one per
+    entry, in order); `entries` is a list of ``(label, color)`` pairs that
+    REPLACES the legend outright with exactly those entries. Exactly one of
+    the two is ever non-None.
+    """
+    if legend_colors is None:
+        return None, None
+    if not isinstance(legend_colors, (list, tuple, np.ndarray)):
+        raise TypeError(
+            f"legend_colors= must be a list of colors (one per legend "
+            f"entry) or a list of (label, color) pairs; got "
+            f"{type(legend_colors).__name__}: {legend_colors!r}.")
+    items = list(legend_colors)
+    if not items:
+        raise ValueError("legend_colors= is empty; pass at least one entry.")
+    is_pairs = [isinstance(el, (list, tuple)) and len(el) == 2
+                and isinstance(el[0], str) and not _is_single_color(el)
+                for el in items]
+    if all(is_pairs):
+        return None, [(str(lbl), col) for lbl, col in items]
+    if any(is_pairs):
+        raise ValueError(
+            "legend_colors= mixes plain colors with (label, color) pairs; "
+            "pass either one color per legend entry (recoloring the "
+            "entries hypertools draws) or (label, color) pairs for every "
+            "entry (replacing the legend outright).")
+    return items, None
+
+
+def subplots(nrows=1, ncols=1, ndims=3, size=None, **fig_kw):
+    """Create a figure and a FLAT array of hypertools-ready axes (GH #285).
+
+    A thin wrapper over `matplotlib.pyplot.subplots` that sets the 3-D
+    projection for you (`ndims=3`, the hypertools default) and always hands
+    back the axes as a 1-D array in row-major order, so the
+    ``fig, axes = plt.subplots(2, 3, subplot_kw={'projection': '3d'});
+    axes = axes.ravel()`` preamble that every hand-built hypertools panel
+    grid starts with becomes one call::
+
+        fig, axes = hyp.subplots(2, 3)
+        for ax, data in zip(axes, datasets):
+            hyp.plot(data, ax=ax, show=False)
+
+    For the common case -- one dataset per panel, one shared reduction --
+    pass ``panels=`` to `hyp.plot` instead; this helper is for grids you
+    want to fill yourself (mixing hypertools panels with your own).
+
+    Parameters
+    ----------
+    nrows, ncols : int
+        Grid shape (default 1x1).
+    ndims : int
+        3 (default) gives every panel a 3-D projection; 1 or 2 gives
+        ordinary 2-D axes. Matches `hyp.plot`'s `ndims=`.
+    size : [width, height] or None
+        Figure size in inches (`figsize`); `None` keeps matplotlib's.
+    **fig_kw
+        Forwarded to `matplotlib.pyplot.subplots` (`sharex=`, `dpi=`,
+        `gridspec_kw=`, an explicit `subplot_kw=`, ...).
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+    axes : numpy.ndarray
+        A FLAT (1-D) array of ``nrows * ncols`` axes, row-major -- no
+        ``.ravel()`` needed, and a 1x1 grid still returns a length-1 array
+        rather than a bare Axes, so the same loop works for any grid.
+    """
+    if ndims not in (1, 2, 3):
+        raise ValueError(
+            f"ndims must be 1, 2 or 3 (the plot dimensionality each panel "
+            f"is drawn in); got {ndims!r}.")
+    subplot_kw = dict(fig_kw.pop('subplot_kw', None) or {})
+    if ndims >= 3:
+        subplot_kw.setdefault('projection', '3d')
+    if size is not None:
+        fig_kw.setdefault('figsize', tuple(size))
+    fig, axes = plt.subplots(nrows, ncols, subplot_kw=subplot_kw, **fig_kw)
+    flat = np.empty(nrows * ncols, dtype=object)
+    flat[:] = list(np.ravel(np.asarray(axes, dtype=object)))
+    return fig, flat
+
+
+def _resolve_panel_grid(panels, n_panels, _name='panels'):
+    """Resolve `panels=` into an ``(nrows, ncols)`` grid holding at least
+    `n_panels` cells.
+
+    ``True``/``'auto'`` picks a near-square grid (at most ``ceil(sqrt(n))``
+    columns, so 3 datasets -> 2x2 with one spare hidden, 6 -> 3x2); an
+    ``int`` is the number of COLUMNS; an ``(nrows, ncols)`` pair is used
+    verbatim (and must have room for every panel).
+    """
+    if panels is True or (isinstance(panels, str) and panels == 'auto'):
+        ncols = int(np.ceil(np.sqrt(n_panels)))
+        return int(np.ceil(n_panels / ncols)), ncols
+    if isinstance(panels, (tuple, list)) and len(panels) == 2 \
+            and all(isinstance(v, (int, np.integer))
+                    and not isinstance(v, bool) for v in panels):
+        nrows, ncols = int(panels[0]), int(panels[1])
+        if nrows < 1 or ncols < 1:
+            raise ValueError(
+                f"{_name}=(nrows, ncols) must both be >= 1; got "
+                f"({nrows}, {ncols}).")
+        if nrows * ncols < n_panels:
+            raise ValueError(
+                f"{_name}=({nrows}, {ncols}) has {nrows * ncols} cells but "
+                f"{n_panels} panels need to be drawn; enlarge the grid or "
+                f"pass {_name}=True to size it automatically.")
+        return nrows, ncols
+    if isinstance(panels, (int, np.integer)) and not isinstance(panels, bool):
+        ncols = int(panels)
+        if ncols < 1:
+            raise ValueError(
+                f"{_name}=<int> is the number of COLUMNS and must be >= 1; "
+                f"got {ncols}.")
+        return int(np.ceil(n_panels / ncols)), ncols
+    raise ValueError(
+        f"{_name}= must be True, 'auto', an int number of columns, or an "
+        f"(nrows, ncols) pair; got {panels!r}.")
+
+
+#: `plot()` keywords that carry ONE entry per DATASET when passed as a
+#: list, and are therefore narrowed to the panel's own dataset by
+#: `_plot_panels`. Anything not listed here is forwarded unchanged.
+_PANEL_PER_DATASET_KWARGS = (
+    'fmt', 'color', 'colors', 'alpha', 'markers', 'markersize', 'linewidth',
+    'linestyles', 'names', 'chemtrails', 'precog', 'bullettime', 'surface',
+    'density',
+)
+
+#: ...and the one that carries a value per OBSERVATION (flat), a
+#: sub-sequence per dataset (nested), or one scalar per dataset (GH #285's
+#: broadcast form). `labels=` has the same three shapes but a DIFFERENT
+#: per-dataset meaning (annotate once, at `label_anchor=`), so it gets its
+#: own slicer below rather than sharing this one.
+_PANEL_PER_OBSERVATION_KWARGS = ('hue',)
+
+
+def _panel_slice_per_dataset(value, index, n_datasets):
+    """Narrow a per-dataset list down to panel `index`'s single dataset."""
+    if isinstance(value, (list, tuple)) and len(value) == n_datasets \
+            and not _is_single_color(value):
+        return [value[index]]
+    return value
+
+
+def _panel_slice_per_observation(value, index, lengths):
+    """Narrow a per-observation (`hue=`/`labels=`) argument to one panel.
+
+    Three accepted shapes, in the order they are tested: a NESTED sequence
+    (one sub-sequence per dataset) is indexed; a FLAT sequence of one entry
+    per observation is sliced by that dataset's row range; anything else
+    (a scalar, a per-dataset scalar broadcast, an unrecognized length) is
+    forwarded unchanged so `plot()`'s own validation reports it.
+    """
+    n_datasets = len(lengths)
+    if not isinstance(value, (list, tuple, np.ndarray, pd.Series, pd.Index)):
+        return value
+    seq = list(value)
+    if len(seq) == n_datasets and all(
+            np.ndim(el) >= 1 and len(el) == n for el, n in zip(seq, lengths)):
+        return [seq[index]]
+    if len(seq) == n_datasets and all(np.ndim(el) == 0 for el in seq):
+        # per-DATASET scalar broadcast (GH #285): one value per dataset
+        return [seq[index]] * lengths[index]
+    if len(seq) == int(sum(lengths)):
+        start = int(sum(lengths[:index]))
+        return seq[start:start + lengths[index]]
+    return value
+
+
+def _matrix_hue_legend_entries(hue_array, palette, legend, column_names):
+    """One legend proxy entry per hue-matrix COLUMN (GH #285).
+
+    A matrix/mixture `hue=` blends a palette colour per observation, so
+    there are no discrete traces to label and hypertools used to drop any
+    `legend=` with a warning -- leaving every such figure to hand-build
+    `Line2D` proxies (`examples/animate_market_sectors.py`). The palette
+    entries the blend is made OF are a perfectly good key, so build one
+    swatch per column instead: labelled from an explicit ``legend=[...]``
+    list, else the hue DataFrame's own column names, else ``1..k``.
+
+    Returns a list of ``(label, color)`` pairs, or None when the matrix is
+    literal RGB (`hue_mode='rgb'`/`color_reduce=`), where the columns are
+    colour channels rather than palette weights and no key exists.
+    """
+    n_columns = int(hue_array.shape[1])
+    colors = get_palette_colors(palette, n_columns)
+    if isinstance(legend, (list, tuple)):
+        if len(legend) != n_columns:
+            raise ValueError(
+                f"legend was given as a list of length {len(legend)}, but "
+                f"the matrix hue= has {n_columns} columns; under a "
+                "matrix/mixture hue the legend names one entry per hue "
+                "COLUMN (the palette colours the per-observation blend is "
+                "made of).")
+        labels = [str(el) for el in legend]
+    elif column_names is not None and len(column_names) == n_columns:
+        labels = [str(name) for name in column_names]
+    else:
+        labels = [str(i + 1) for i in range(n_columns)]
+    return [(label, tuple(np.asarray(color, dtype=float)[:3]))
+            for label, color in zip(labels, colors)]
+
+
+def _resolve_label_anchor(label_anchor, length):
+    """Row index inside a dataset that a per-dataset `labels=` entry is
+    attached to (GH #285): ``'first'`` (default), ``'center'``/``'middle'``,
+    ``'last'``, or an explicit integer index (negative counts from the end,
+    exactly like a Python list index)."""
+    if label_anchor is None or label_anchor == 'first':
+        return 0
+    if label_anchor in ('center', 'middle'):
+        return length // 2
+    if label_anchor == 'last':
+        return length - 1
+    if isinstance(label_anchor, (int, np.integer)) \
+            and not isinstance(label_anchor, bool):
+        index = int(label_anchor)
+        if index < 0:
+            index += length
+        if not 0 <= index < length:
+            raise ValueError(
+                f"label_anchor={label_anchor} is out of range for a "
+                f"dataset with {length} observations.")
+        return index
+    raise ValueError(
+        f"label_anchor= must be 'first', 'center', 'last', or an integer "
+        f"row index; got {label_anchor!r}.")
+
+
+def _is_per_dataset_labels(labels, dataset_lengths):
+    """Whether `labels=` carries one entry per DATASET rather than one per
+    OBSERVATION (GH #285).
+
+    True only for a list of exactly ``len(dataset_lengths)`` scalar
+    entries (strings or None -- a nested per-dataset list is the existing
+    per-observation form) when that is NOT also the total observation
+    count. When the two counts coincide (every dataset holds one row) both
+    readings annotate the same points, so the existing per-observation
+    path handles it and nothing changes.
+    """
+    if not isinstance(labels, (list, tuple)):
+        return False
+    if len(labels) != len(dataset_lengths) or len(dataset_lengths) < 1:
+        return False
+    if sum(dataset_lengths) == len(labels):
+        return False
+    return all(el is None or isinstance(el, str) for el in labels)
+
+
+def _expand_dataset_labels(labels, dataset_lengths, label_anchor):
+    """Turn a per-DATASET `labels=` list into the per-observation nested
+    form the rest of `plot()` (and both backends) already understand: one
+    sub-list per dataset, all None except the anchor row (GH #285).
+
+    Left untouched -- and `label_anchor=` rejected -- when `labels=` is
+    already per-observation, so the historical meaning is unchanged.
+    """
+    if labels is None:
+        return labels
+    if not _is_per_dataset_labels(labels, dataset_lengths):
+        if label_anchor is not None:
+            raise ValueError(
+                f"label_anchor={label_anchor!r} positions a per-DATASET "
+                f"labels= list (one string per dataset, annotating each "
+                f"dataset once), but labels= has {len(labels)} entries for "
+                f"{len(dataset_lengths)} dataset(s) -- it is being read as "
+                "one entry per observation, which is already positioned. "
+                "Drop label_anchor=, or pass one label per dataset.")
+        return labels
+    expanded = []
+    for label, length in zip(labels, dataset_lengths):
+        column = [None] * length
+        if label is not None and length:
+            column[_resolve_label_anchor(label_anchor, length)] = label
+        expanded.append(column)
+    return expanded
+
+
+def _panel_slice_labels(value, index, lengths):
+    """Narrow `labels=` to one panel.
+
+    Unlike `hue=`, a per-DATASET `labels=` entry annotates its dataset ONCE
+    (at `label_anchor=`), so it stays a single per-dataset entry for the
+    panel's own call to expand -- broadcasting it over the rows the way a
+    per-dataset hue is broadcast would label every observation.
+    """
+    n_datasets = len(lengths)
+    if not isinstance(value, (list, tuple, np.ndarray)):
+        return value
+    seq = list(value)
+    if len(seq) == n_datasets and any(
+            isinstance(el, (list, tuple, np.ndarray)) for el in seq):
+        return [seq[index]]                       # nested per-dataset form
+    if _is_per_dataset_labels(seq, lengths):
+        return [seq[index]]                       # per-dataset strings
+    if len(seq) == int(sum(lengths)):             # flat, per observation
+        start = int(sum(lengths[:index]))
+        return seq[start:start + lengths[index]]
+    return value
+
+
+def _panel_titles(title, n_panels):
+    """One title per panel from `title=`: a list is used as-is (its length
+    must match), a single string names every panel, `None` names none."""
+    if title is None:
+        return [None] * n_panels
+    if isinstance(title, (list, tuple)):
+        if len(title) != n_panels:
+            raise ValueError(
+                f"title has {len(title)} entries but there are {n_panels} "
+                f"panels; with panels= pass exactly one title per panel "
+                f"(or a single string for all of them).")
+        return list(title)
+    return [title] * n_panels
+
+
+def _plot_panels(x, panels, call_kwargs, _name='panels'):
+    """Draw one STATIC panel per dataset (or per `reduce=` entry) in a
+    single figure -- the implementation behind `hyp.plot(..., panels=)`.
+
+    Two modes, chosen by `reduce=`:
+
+    - `reduce=` a LIST/tuple -> one panel per reducer, each panel drawing
+      EVERY dataset reduced with that reducer (a full pipeline per panel;
+      this is what a reducer comparison figure wants).
+    - otherwise -> one panel per dataset. The analysis pipeline
+      (`manip`/`normalize`/`reduce`/`align`) is fit ONCE across ALL
+      datasets, exactly as the equivalent single-axes call does, and each
+      panel then draws its own dataset's already-reduced rows -- so every
+      panel shares one set of components and the panels are comparable.
+      Each panel's box is scaled to its own contents, exactly as a
+      per-panel `hyp.plot(..., ax=ax)` call is today.
+    """
+    if call_kwargs.get('animate'):
+        raise ValueError(
+            f"{_name}= draws several STATIC panels in one figure and "
+            f"cannot be combined with animate={call_kwargs['animate']!r}: "
+            "an animation owns its whole figure (one axes, one clock). "
+            "Lay several trajectories out in the DATA instead (see the "
+            "ax= docstring), or drop animate= for a static panel grid.")
+    if call_kwargs.get('ax') is not None:
+        raise ValueError(
+            f"{_name}= creates its own figure and axes, so it cannot also "
+            "draw into a caller-supplied ax=. Pass one or the other (use "
+            "hyp.subplots(nrows, ncols) + ax= to fill a grid yourself).")
+    if call_kwargs.get('explore'):
+        raise ValueError(
+            f"{_name}= cannot be combined with explore=True (the explore "
+            "hover annotations are wired to a single axes).")
+
+    reduce_spec = call_kwargs.get('reduce')
+    per_panel_reduce = isinstance(reduce_spec, (list, tuple))
+    datasets = list(x) if isinstance(x, (list, tuple)) else None
+
+    if per_panel_reduce:
+        n_panels = len(reduce_spec)
+        if n_panels < 1:
+            raise ValueError(
+                "reduce= was given an empty list; pass one reducer per "
+                "panel (e.g. reduce=['PCA', 'UMAP', 'TSNE']).")
+    else:
+        if datasets is None or len(datasets) < 2:
+            raise ValueError(
+                f"{_name}= draws one panel per dataset, so it needs a LIST "
+                f"of at least two datasets (or a list-valued reduce=, e.g. "
+                f"reduce=['PCA', 'UMAP'], for one panel per reducer); got "
+                f"{type(x).__name__}"
+                + (f" of length {len(datasets)}" if datasets is not None
+                   else "") + ".")
+        n_panels = len(datasets)
+
+    nrows, ncols = _resolve_panel_grid(panels, n_panels, _name=_name)
+    titles = _panel_titles(call_kwargs.get('title'), n_panels)
+    ndims = call_kwargs.get('ndims', 3)
+    show = call_kwargs.get('show', True)
+    save_path = call_kwargs.get('save_path')
+    return_model = call_kwargs.get('return_model', False)
+    backend = resolve_backend(call_kwargs.get('backend', 'auto'))
+
+    # every panel call draws into the grid, silently, and never saves or
+    # re-shows: this function owns the figure, the save and the display.
+    shared = dict(call_kwargs)
+    for key in ('title', 'show', 'save_path', 'return_model', 'panels',
+                'subplots', 'ax'):
+        shared.pop(key, None)
+    shared['show'] = False
+
+    if per_panel_reduce:
+        panel_data = [x] * n_panels
+        panel_kwargs = []
+        for spec in reduce_spec:
+            kw = dict(shared)
+            kw['reduce'] = spec
+            panel_kwargs.append(kw)
+    else:
+        # ONE shared fit across every dataset: run the very call the user
+        # would have made without panels=, take its analyzed (pre-display-
+        # rescale) data, and throw its figure away. Going through plot()
+        # itself -- rather than re-deriving format_data/analyze here -- is
+        # what makes "the panels share the pipeline exactly as the
+        # single-axes call does" true by construction rather than by
+        # transcription.
+        probe_kwargs = dict(shared)
+        probe_kwargs.update(return_model=True, show=False, save_path=None,
+                            colorbar=None, legend=None, labels=None,
+                            names=None, predict=None, surface=None,
+                            density=None, title=None)
+        with warnings.catch_warnings():
+            # whatever this call would warn about, the per-panel calls
+            # below warn about again -- from the user's own kwargs, with
+            # the user's own stacklevel. Warning twice is noise.
+            warnings.simplefilter('ignore')
+            probe = plot(x, **probe_kwargs)
+        probe_fig = probe.get('fig')
+        if isinstance(probe_fig, plt.Figure):
+            plt.close(probe_fig)
+        xform = probe['xform_data']
+        lengths = [int(np.asarray(xi).shape[0]) for xi in xform]
+        panel_data = [[np.asarray(xi)] for xi in xform]
+        panel_kwargs = []
+        for i in range(n_panels):
+            kw = dict(shared)
+            # the analysis already ran (above); each panel DRAWS its slice
+            kw.update(transform=[np.asarray(xform[i])], reduce=None,
+                      normalize=None, align=None, manip=None, pipeline=None,
+                      impute=None, resample=None, random_state=None)
+            for key in _PANEL_PER_DATASET_KWARGS:
+                if key in kw:
+                    kw[key] = _panel_slice_per_dataset(kw[key], i, n_panels)
+            for key in _PANEL_PER_OBSERVATION_KWARGS:
+                if kw.get(key) is not None:
+                    kw[key] = _panel_slice_per_observation(
+                        kw[key], i, lengths)
+            if kw.get('labels') is not None:
+                kw['labels'] = _panel_slice_labels(kw['labels'], i, lengths)
+            panel_kwargs.append(kw)
+
+    if backend == 'plotly':
+        return _plot_panels_plotly(panel_data, panel_kwargs, titles,
+                                   nrows, ncols, ndims, call_kwargs)
+
+    fig, axes = subplots(nrows, ncols, ndims=ndims,
+                         size=call_kwargs.get('size'))
+    panel_axes = []
+    panel_models = []
+    for i in range(n_panels):
+        kw = dict(panel_kwargs[i])
+        kw.update(ax=axes[i], title=titles[i], show=False, save_path=None,
+                  return_model=return_model, size=None)
+        result = plot(panel_data[i], **kw)
+        if return_model:
+            panel_models.append(result)
+        panel_axes.append(axes[i])
+    for spare in axes[n_panels:]:
+        spare.set_visible(False)
+    fig.tight_layout()
+
+    if save_path is not None:
+        fig.savefig(save_path)
+    if show:
+        plt.show()
+    else:
+        # same canvas-preserving close plot() itself does for show=False
+        # (matplotlib >= 3.11 detaches the real canvas on plt.close, which
+        # would leave the returned Figure unable to render or re-save).
+        live_canvas = fig.canvas
+        plt.close(fig)
+        if fig.canvas is not live_canvas:
+            fig.set_canvas(live_canvas)
+
+    if return_model:
+        bundle = {
+            'fig': fig,
+            'axes': panel_axes,
+            'panels': (nrows, ncols),
+            'panel_models': panel_models,
+            'xform_data': [m['xform_data'][0] if len(m['xform_data']) == 1
+                           else m['xform_data'] for m in panel_models],
+            'colors': panel_models[0].get('colors') if panel_models else None,
+        }
+        return bundle
+    return fig
+
+
+def _plot_panels_plotly(panel_data, panel_kwargs, titles, nrows, ncols,
+                        ndims, call_kwargs):
+    """`panels=` under the plotly backend: the same grid, built with
+    `plotly.subplots.make_subplots` (3-D panels get ``type='scene'``
+    cells). Each panel is drawn by an ordinary `plot()` call and its traces
+    (plus its scene/axis configuration) are transplanted into the cell."""
+    from plotly.subplots import make_subplots
+    cell = {'type': 'scene'} if ndims >= 3 else {'type': 'xy'}
+    fig = make_subplots(rows=nrows, cols=ncols,
+                        specs=[[dict(cell) for _ in range(ncols)]
+                               for _ in range(nrows)],
+                        subplot_titles=[t if t is not None else ''
+                                        for t in titles])
+    for i, (data, kw) in enumerate(zip(panel_data, panel_kwargs)):
+        row, col = i // ncols + 1, i % ncols + 1
+        kw = dict(kw)
+        kw.update(show=False, save_path=None, return_model=False,
+                  title=None, size=None, backend='plotly')
+        panel = plot(data, **kw)
+        for trace in panel.data:
+            fig.add_trace(trace, row=row, col=col)
+        if ndims >= 3 and panel.layout.scene is not None:
+            key = 'scene' if i == 0 else f'scene{i + 1}'
+            fig.layout[key].update(panel.layout.scene.to_plotly_json())
+    fig.update_layout(showlegend=bool(call_kwargs.get('legend')))
+    if call_kwargs.get('size') is not None:
+        width, height = call_kwargs['size']
+        fig.update_layout(width=width * 100, height=height * 100)
+    save_path = call_kwargs.get('save_path')
+    if save_path is not None:
+        if save_path.lower().rsplit('.', 1)[-1] == 'html':
+            fig.write_html(save_path)
+        else:
+            from .._shared.lazy_import import ensure_kaleido_chrome
+            ensure_kaleido_chrome()
+            fig.write_image(save_path)
+    if call_kwargs.get('show', True):
+        fig.show()
+    return fig
+
+
 @manage_backend
 def plot(
     x,
@@ -1317,6 +2059,14 @@ def plot(
     xlabel=None,
     ylabel=None,
     zlabel=None,
+    panels=None,
+    subplots=None,
+    title_kwargs=None,
+    title_color=None,
+    title_wrap=None,
+    label_anchor=None,
+    legend_kwargs=None,
+    legend_colors=None,
     **kwargs,
 ):
     """
@@ -1708,6 +2458,47 @@ def plot(
         ``hypertools.plot.colors.image_palette`` for the extraction itself
         (and to choose a different number of colors). hypertools never
         downloads the image: fetch and cache it yourself, then pass the path.
+        The spec takes optional query parameters --
+        ``'image:art.jpg?max_luminance=0.6&n_colors=8'`` -- which are
+        forwarded to `image_palette` (see it for the full set), so a
+        too-bright or too-dark image can be bounded without a second call.
+
+        A ``{category: color}`` DICT names the color for each category of a
+        categorical `hue=` explicitly::
+
+            hyp.plot(x, hue=speakers,
+                     palette={'Alice': '#E4572E', 'Bob': '#17BEBB'})
+
+        With a dict the category ORDER stops mattering -- no more working
+        out first-appearance order by hand so that a color list lines up
+        with the right speaker. Categories the dict does NOT name keep the
+        color the default palette ('hls') would give them at their own
+        position, so naming a subset shifts nothing else, and a key that
+        matches no category raises ``ValueError`` listing the categories
+        that were seen (a stale or misspelled key is exactly what an
+        explicit mapping exists to catch). Resolved by name on both
+        backends, and on the legend and the colorbar. A dict needs
+        categories to name, so passing one with no categorical `hue=` --
+        where the drawn groups are datasets -- raises ``ValueError`` rather
+        than quietly falling back to the default palette.
+
+        A list of PALETTES is read as one palette PER DATASET::
+
+            hyp.plot([a, b, c], palette=['image:wave.jpg',
+                                         'image:starry_night.jpg',
+                                         'viridis'])
+
+        each dataset drawing in its own palette's lead color (for an image
+        palette, its most salient color). The disambiguation rule, in full:
+        a list whose entries are ALL colors is one palette of explicit
+        colors, exactly as it has always been (``['red', '#00ff00', (0, 0,
+        1)]`` is unchanged); a list with at least one entry that is NOT a
+        color but IS a palette -- a palette name, an ``'image:<path>'``
+        spec, a `Colormap`, a ``{category: color}`` dict, or a nested list
+        of colors -- is per-dataset. A ONE-entry list is broadcast to every
+        dataset. A per-dataset list must have 1 or ``len(x)`` entries, and
+        cannot be combined with a continuous `hue=` (there is no single
+        ramp to map values through -- ``ValueError``).
 
     hue : list, numpy array, pandas Series/Index/Categorical, or 2D matrix
         Values used to color the plot, one per observation, matched to the
@@ -1755,6 +2546,20 @@ def plot(
         one hue sub-sequence per dataset, each matching that dataset's length
         (e.g. ``hyp.plot([d0, d1], hue=[h0, h1])``); it is flattened to one
         value (or matrix row) per observation.
+
+        It may also carry one SCALAR per dataset, broadcast over that
+        dataset's rows -- ``hyp.plot(windows, hue=speakers)`` instead of
+        ``hue=[[speaker] * len(w) for speaker, w in zip(speakers,
+        windows)]`` -- so datasets sharing a value share a colour. The
+        exact rule: this reading applies only when `hue` is a list/tuple of
+        exactly ``len(x)`` entries, NONE of them a sequence (a sequence per
+        entry is the nested form above), there is more than one dataset,
+        and ``len(hue)`` is not also the total observation count. When it
+        IS the observation count -- every dataset holding exactly one row
+        -- both readings produce the identical per-observation hue, so the
+        per-observation one is kept and nothing changes; and a SINGLE
+        dataset is never broadcast, so ``hyp.plot(x, hue=['a'])`` keeps its
+        existing per-observation meaning.
 
         Over a **column MultiIndex** the same nesting means one sequence per
         LEAF (each of ``len(x)`` values), and a flat sequence of ``len(x)``
@@ -1821,6 +2626,19 @@ def plot(
         both counts. If no label is wanted for a particular point, input
         None for that entry.
 
+        `labels` may instead carry one entry PER DATASET -- one string (or
+        None) for each of the ``len(x)`` datasets -- which annotates each
+        dataset ONCE, at the row `label_anchor=` names (the first
+        observation by default). ``hyp.plot(paintings, labels=titles,
+        label_anchor='center')`` replaces building an all-None
+        per-observation list with one string dropped into the middle of
+        each sub-list. The disambiguation is by shape, not by a flag: this
+        reading applies only when every entry is a bare string (or None) --
+        a sub-LIST per dataset is the per-observation nested form above --
+        and only when the dataset count is not also the total observation
+        count, in which case the two readings annotate the same points
+        anyway and the per-observation one is kept.
+
         In an ANIMATION whose frame grid is coarser than the data (fewer
         than one frame per sample), each label is attached to the nearest
         drawn frame point, so labels are never silently dropped.
@@ -1830,6 +2648,15 @@ def plot(
         `layout.scene.annotations` (3D) or `layout.annotations` (2D), at
         the same data coordinates, honoring the resolved `font=` (see
         below) the same way the legend/colorbar/title do.
+
+    label_anchor : 'first', 'center', 'last', int, or None
+        Where a PER-DATASET `labels=` list attaches its annotation inside
+        each dataset: the first observation (default), the middle one, the
+        last one, or an explicit row index (negative counts from the end,
+        like a Python list index). Only meaningful alongside the
+        per-dataset form of `labels=` described above; passing it with a
+        per-observation `labels=` raises ``ValueError`` (those labels are
+        already positioned). Default None (behaves as ``'first'``).
 
     label_alpha : float or None
         Opacity of the translucent background box drawn behind each
@@ -1860,6 +2687,36 @@ def plot(
         with a continuous or matrix-valued `hue` any legend is dropped
         with a ``UserWarning`` (that path colors by value, so there are
         no discrete groups to name).
+
+        Under a matrix-valued (mixture) `hue=` the blended per-observation
+        colours have no discrete traces to label, so hypertools used to
+        drop the legend with a warning. It now builds one proxy swatch per
+        hue COLUMN instead -- the palette colours the blend is made of --
+        labelled from an explicit ``legend=[...]`` list (which must then
+        have one entry per hue column), else the hue DataFrame's own column
+        names, else ``1..k``. A literal-RGB matrix hue (`hue_mode='rgb'` or
+        `color_reduce=`) and a 1-D continuous hue still have no finite key
+        and still drop the legend with a warning (use `colorbar=` there).
+
+    legend_kwargs : dict
+        Extra keyword arguments forwarded to matplotlib's `Axes.legend`
+        (`{'loc': 'upper left', 'fontsize': 8, 'frameon': False, 'ncol':
+        2}`), or to plotly's ``layout.legend`` (`{'x': 0.02, 'y': 0.98,
+        'orientation': 'h'}`) under `backend='plotly'`. Applied LAST, so
+        anything given here wins over hypertools' own defaults (a
+        frameless legend centred outside the right edge). Default None.
+
+    legend_colors : list of colors, or list of (label, color) pairs
+        An explicit override of the legend's swatches. A plain list of
+        colors -- one per legend entry, in order -- RECOLORS the entries
+        hypertools would draw anyway (matplotlib only; the plotly legend
+        takes its swatches from the traces themselves, so this form raises
+        ``NotImplementedError`` there). A list of ``(label, color)`` pairs
+        REPLACES the legend outright with exactly those entries, on both
+        backends -- which is how a figure adds a key entry no trace
+        corresponds to (e.g. a grey "Market" line alongside per-sector
+        swatches). Mixing the two forms raises ``ValueError``. Default
+        None.
 
     colorbar : bool or dict
         If True, draws a colorbar reflecting the color mapping in use
@@ -1893,6 +2750,47 @@ def plot(
         ``names=`` for per-dataset legend entries, or ``labels=`` for
         per-observation annotations. Rendered identically on the
         matplotlib and plotly backends.
+
+    title_kwargs : dict
+        Styling for whatever title is drawn, applied by hypertools' own
+        title setter -- including on EVERY FRAME of an animation with a
+        per-segment `title=` list, which previously reset the title's
+        styling each frame and had to be re-applied from an `on_frame=`
+        callback. Keys are matplotlib `Text` properties as `Axes.set_title`
+        takes them, plus short aliases: ``size`` (``fontsize``), ``weight``
+        (``fontweight``), ``family`` (``fontfamily``), ``style``,
+        ``variant``, ``stretch``, and the already-real names ``color``,
+        ``alpha``, ``y``, ``pad``, ``loc``, ``rotation``, ``linespacing``,
+        ``backgroundcolor``. An unknown key raises ``ValueError`` naming
+        the supported set. A ``size`` given here also sizes the top-margin
+        probe that reserves room for an animated 3-D title, so a larger
+        title still fits on the canvas.
+
+        On `backend='plotly'` the size/family/weight/style/colour/y keys
+        map onto ``layout.title``; anything plotly's title cannot express
+        (``pad``, ``loc``, ``backgroundcolor``, ``linespacing``, ...) is
+        reported in one ``UserWarning`` naming the backend and the keys.
+        Default None (titles look exactly as they always have).
+
+    title_color : color, list of colors, or callable
+        A single color styles the whole figure's title (shorthand for
+        ``title_kwargs={'color': ...}``). A LIST of colors tints each
+        segment of a per-segment `title=` list -- one per segment, so each
+        dataset's title can carry that dataset's own colour -- and requires
+        `title=` to be such a list. A CALLABLE receives the per-frame
+        `FrameContext` (see `on_frame=`) and returns the colour for that
+        frame; being frame-driven it is matplotlib-only, and raises
+        ``NotImplementedError`` under `backend='plotly'`, whose frames are
+        all built up front. Default None.
+
+    title_wrap : int or None
+        Hard-wrap every title at this many characters (`textwrap.fill`), so
+        a long title stays inside the canvas instead of running off it.
+        Applied after per-segment resolution, so a scalar title and every
+        entry of a per-segment list wrap identically; the line break is the
+        backend's own (a newline for matplotlib, ``'<br>'`` for plotly).
+        Note that an animated 3-D title still reserves top margin for ONE
+        line, so a very tall wrap can overflow there. Default None.
 
     font : None, str, or matplotlib.font_manager.FontProperties
         Controls the font used for every text surface hypertools draws,
@@ -2856,6 +3754,49 @@ def plot(
         panels out in the DATA instead (translate each column group into its
         own region of one shared frame) and make a single plot call.
 
+    panels : bool, int, (nrows, ncols), or None
+        Draw one STATIC panel per dataset in a single figure, instead of
+        every dataset on one axes -- the built-in form of the
+        ``fig, axes = plt.subplots(nrows, ncols,
+        subplot_kw={'projection': '3d'}); for ax, d in zip(axes.ravel(),
+        data): hyp.plot(d, ax=ax, show=False); plt.tight_layout()`` grid.
+        ``True`` (or ``'auto'``) sizes a near-square grid; an ``int`` is
+        the number of COLUMNS; an ``(nrows, ncols)`` pair is used verbatim
+        and must have room for every panel. Spare cells are hidden, the
+        layout is tightened, and the one `Figure` is returned.
+        ``subplots=`` is an accepted alias (passing both raises).
+
+        The analysis pipeline (`manip`/`normalize`/`reduce`/`align`) is fit
+        ONCE across ALL the datasets -- exactly as the equivalent
+        single-axes call fits it -- and each panel then draws its own
+        dataset's rows from that shared fit, so every panel shares one set
+        of components and the panels are comparable. (Each panel's box is
+        scaled to its own contents, as a per-panel ``ax=`` call is today.)
+
+        If `reduce=` is a LIST, the panels are one per REDUCER instead --
+        ``reduce=['PCA', 'UMAP', 'TSNE']`` draws every dataset three times,
+        once per reducer, each panel running its own full pipeline.
+
+        `title=` takes one string per panel (or one string for all of
+        them). Per-dataset arguments given as lists (`hue=`, `labels=`,
+        `names=`, `color=`, `fmt=`, `alpha=`, `markers=`, `linestyles=`,
+        `surface=`, `density=`, ...) are narrowed to each panel's own
+        dataset; `legend=`/`colorbar=` are drawn per panel.
+
+        STATIC ONLY: combining `panels=` with any truthy `animate=` raises
+        ``ValueError`` (an animation owns its whole figure -- see `ax=`), as
+        does combining it with `ax=` or `explore=True`. Under
+        `backend='plotly'` the same grid is built with
+        `plotly.subplots.make_subplots` (3-D panels as ``type='scene'``
+        cells). Default None (one axes, as before).
+
+        See also `hypertools.plot.plot.subplots`, a thin
+        ``(fig, flat_axes)`` helper for grids you want to fill yourself.
+
+    subplots : bool, int, (nrows, ncols), or None
+        Alias for `panels=` (matching the name of the matplotlib call it
+        replaces). Passing both raises ``ValueError``.
+
     frame_kwargs : dict
         Keyword arguments for styling the frame drawn around the plot.
         For 3D plots, the frame is a cube and `frame_kwargs` are
@@ -3165,15 +4106,31 @@ def plot(
 
     return_model : bool
         If True, return a dict bundle
-        ``{'fig': ..., 'xform_data': ..., 'trace_data': ...,
+        ``{'fig': ..., 'colors': ..., 'xform_data': ..., 'trace_data': ...,
         'trace_metadata': ..., 'animation': ..., 'pipeline': ...,
         'models': ..., 'predict': ...}`` instead of the bare figure, where
-        ``xform_data`` is the normalized/reduced/aligned data, ``animation``
+        ``colors`` is the RESOLVED colour scale this figure draws with (see
+        below), ``xform_data`` is the normalized/reduced/aligned data,
+        ``animation``
         is the ``matplotlib.animation.Animation`` handle (``None`` unless
         ``animate=True`` with the matplotlib backend) -- this is the RAW
         handle, never wrapped in a ``HyperAnimation``, so it has no
         ``.on_frame()``; pass ``on_frame=`` to this call instead, which
-        still fires regardless of ``return_model=``. ``pipeline`` is a
+        still fires regardless of ``return_model=``.
+
+        ``colors`` is the colour scale hypertools actually resolved, so a
+        caller can reproduce this figure's mapping in a companion panel
+        instead of guessing at it: ``{'kind': 'continuous'|'discrete'|
+        'blend', 'palette': ..., 'cmap': <matplotlib Colormap>, 'norm':
+        <Normalize or BoundaryNorm>, 'vmin': ..., 'vmax': ..., 'colors':
+        <(n, 3) RGB array, discrete only>, 'labels': [...], 'categories':
+        {label: rgb}}``. It is built from the same inputs `colorbar=` is,
+        at the same point in the pipeline, so the two can never disagree --
+        but unlike the colorbar it is always present and never raises.
+        ``HyperAnimation.colors`` (the object an animated call returns)
+        exposes the identical dict.
+
+        ``pipeline`` is a
         fitted `hypertools.Pipeline` covering whichever of `manip=`/
         `normalize=`/`reduce=`/`align=`/`cluster=` ran (the SAME `pipeline=`
         object passed in, if any; `None` when `transform=` was used, since
@@ -3323,6 +4280,23 @@ def plot(
     # kwarg (plus a did-you-mean hint), BEFORE the expensive analyze/
     # reduce/align pipeline runs.
     _validate_extra_plot_kwargs(kwargs)
+
+    # panels=/subplots= (GH #285): compose several STATIC panels in one
+    # figure. Handled by re-entering plot() once per panel, so this branch
+    # runs BEFORE any other local exists -- `locals()` here is exactly this
+    # call's own arguments, which is what each panel call is rebuilt from.
+    if panels is not None and subplots is not None:
+        raise ValueError(
+            "panels= and subplots= are aliases for the same option; pass "
+            "only one of them.")
+    _panels_spec = panels if panels is not None else subplots
+    if _panels_spec is not None and _panels_spec is not False:
+        _panels_name = 'panels' if panels is not None else 'subplots'
+        _panel_call = {k: v for k, v in locals().items()
+                       if k not in ('x', 'kwargs', 'panels', 'subplots',
+                                    '_panels_spec', '_panels_name')}
+        _panel_call.update(kwargs)
+        return _plot_panels(x, _panels_spec, _panel_call, _name=_panels_name)
 
     # fmt: accept plain-bytes format strings like np.bytes_ (F01-017) --
     # decoded here once so every downstream fmt consumer sees str.
@@ -3661,6 +4635,22 @@ def plot(
                 f"predict='Kalman') or drop "
                 f"{'these' if len(_given) > 1 else 'it'}.")
     _segment_titles = _validate_title(title, style=animate, order=order)
+
+    # GH #285: title styling (`title_kwargs=`, `title_color=`,
+    # `title_wrap=`) and explicit legend entries (`legend_kwargs=`,
+    # `legend_colors=`). Validated here, next to `title=`'s own check, so a
+    # bad value fails before the pipeline runs rather than at draw time.
+    # Every one of them is None by default, and each helper short-circuits
+    # on None, so the un-styled path is exactly what it was.
+    _title_kwargs = _normalize_title_kwargs(title_kwargs)
+    _title_wrap = _validate_title_wrap(title_wrap)
+    _title_color, _title_segment_colors = _validate_title_color(
+        title_color, _segment_titles)
+    if _title_color is not None:
+        _title_kwargs = dict(_title_kwargs or {})
+        _title_kwargs.setdefault('color', _title_color)
+    _legend_kwargs = _validate_legend_kwargs(legend_kwargs)
+    _legend_recolor, _legend_entries = _normalize_legend_colors(legend_colors)
 
     # fail-fast on order= (same precedent as title= above): it depends only
     # on the raw animate= argument (via `_raw_animate_style`), never on
@@ -4408,6 +5398,11 @@ def plot(
         # labels= carries one entry per observation (F01-010/F10-011):
         # validate BEFORE the pipeline runs, mirroring hue='s check.
         if labels is not None:
+            # per-DATASET labels= (GH #285) are expanded to the historical
+            # per-observation nested form FIRST, so the check below (and
+            # every consumer downstream) is unchanged.
+            labels = _expand_dataset_labels(
+                labels, [ri.shape[0] for ri in raw], label_anchor)
             _validate_labels_length(labels, [ri.shape[0] for ri in raw])
 
         # a per-dataset fmt LIST must match the dataset count
@@ -4486,6 +5481,13 @@ def plot(
             )
     else:
         xform = transform
+        if labels is not None:
+            # transform= skips the pipeline (and the per-observation check
+            # above), but a per-DATASET labels= list still expands here
+            # (GH #285) -- this is the path `panels=` draws every panel on.
+            labels = _expand_dataset_labels(
+                labels, [np.asarray(xi).shape[0] for xi in xform],
+                label_anchor)
 
     # Return data that has been normalized and possibly reduced and/or aligned
     xform_data = copy.copy(xform)
@@ -4734,6 +5736,11 @@ def plot(
     # entries of a partially-labeled hue; F02-013), so legend=True and the
     # discrete colorbar can label every trace without a length mismatch.
     hue_group_labels = None
+    # GH #285: proxy legend entries [(label, color), ...] built for a
+    # matrix/mixture hue, whose blended per-observation colours have no
+    # drawn trace to carry a legend label. None on every other path.
+    _hue_legend_entries = None
+    _hue_column_names = None
     # A MultiIndex hierarchy's per-trace labels, kept for the colorbar
     # alone so that `legend=False` cannot un-name it (set in the hierarchy
     # branch below; stays None on every other input).
@@ -5350,6 +6357,11 @@ def plot(
         # `[]` on a Series is LABEL-based indexing (release-1.0 audit,
         # F02-003). A single-column DataFrame keeps its existing
         # matrix-hue handling via np.asarray below.
+        # a matrix hue's own column names are the natural legend labels
+        # for its palette swatches (GH #285); captured before hue is
+        # turned into a bare array below.
+        _hue_column_names = (list(hue.columns)
+                             if isinstance(hue, pd.DataFrame) else None)
         if isinstance(hue, (pd.Series, pd.Index, pd.Categorical)):
             hue = hue.tolist()
 
@@ -5369,6 +6381,30 @@ def plot(
             for h in hue:
                 flat_hue.extend(list(h))
             hue = flat_hue
+
+        # PER-DATASET hue (GH #285): one SCALAR per dataset, broadcast over
+        # that dataset's rows -- `hue=speakers` instead of
+        # `hue=[[speaker] * len(window) for speaker, window in ...]`.
+        #
+        # The disambiguation rule, in full: this fires only when `hue` is a
+        # list/tuple of exactly `len(xform)` SCALAR entries (no sub-
+        # sequences: those are the nested per-dataset form handled just
+        # above) AND that length is not also the total observation count.
+        # When it IS the observation count -- i.e. every dataset holds
+        # exactly one row -- the two readings produce the identical
+        # per-observation hue, so the existing flat path is left to handle
+        # it and nothing changes. A single dataset (`len(xform) == 1`) is
+        # never broadcast either, so `hyp.plot(x, hue=['a'])` keeps its
+        # existing meaning (one entry per observation, and the existing
+        # length error when x has more than one row).
+        elif (isinstance(hue, (list, tuple)) and len(xform) > 1
+                and len(hue) == len(xform)
+                and sum(len(xi) for xi in xform) != len(hue)
+                and all(np.ndim(h) == 0 for h in hue)):
+            broadcast_hue = []
+            for value, xi in zip(hue, xform):
+                broadcast_hue.extend([value] * len(xi))
+            hue = broadcast_hue
 
         # classify the hue argument: per-observation numeric matrix
         # (mixture proportions, model weights, ...), continuous 1D values,
@@ -5473,9 +6509,18 @@ def plot(
             # via collections (lines) or scatter (markers), and -- for
             # animations -- passed through to each frame as point_colors.
             multicolor_hue = np.asarray(hue_array, dtype=np.float64)
-            if legend is True:
-                warnings.warn("legend is not supported for continuous or "
-                              "matrix-valued hue; ignoring legend.", stacklevel=external_stacklevel())
+            if legend is True or isinstance(legend, (list, tuple)):
+                if hue_is_matrix and not multicolor_hue_is_rgb:
+                    # GH #285: a MATRIX hue has a finite key after all --
+                    # one palette colour per column -- so draw proxy
+                    # swatches instead of discarding the legend.
+                    _hue_legend_entries = _matrix_hue_legend_entries(
+                        hue_array, palette, legend, _hue_column_names)
+                else:
+                    warnings.warn(
+                        "legend is not supported for continuous or "
+                        "RGB-valued hue; ignoring legend.",
+                        stacklevel=external_stacklevel())
                 legend = None
             hue = None
 
@@ -5490,9 +6535,15 @@ def plot(
                 group_colors[gid]
                 for gid in sorted(set(group_ids), key=group_ids.index)
             ]
-            if legend is True:
-                warnings.warn("legend is not supported for matrix-valued "
-                              "hue; ignoring legend.", stacklevel=external_stacklevel())
+            if legend is True or isinstance(legend, (list, tuple)):
+                if not multicolor_hue_is_rgb:
+                    _hue_legend_entries = _matrix_hue_legend_entries(
+                        hue_array, palette, legend, _hue_column_names)
+                else:
+                    warnings.warn(
+                        "legend is not supported for RGB-valued hue; "
+                        "ignoring legend.",
+                        stacklevel=external_stacklevel())
                 legend = None
             hue = group_ids
 
@@ -5559,13 +6610,15 @@ def plot(
                     # legend sentinel at the reader
                     _run_cat_names = ['the unlabeled group' if c is None
                                       else str(c) for c in _cats]
-                    _base = get_palette_colors(palette,
-                                               len(hue_category_names))
-                    _named_idx = {c: i for i, c
-                                  in enumerate(hue_category_names)}
+                    # by NAME, not by position (GH #285), so a
+                    # `palette={'a': '#E4572E', ...}` dict colours the
+                    # categories it names and leaves the rest on the
+                    # default palette at their own positions.
+                    _base = resolve_category_colors(palette,
+                                                    hue_category_names)
                     mpl_kwargs["color"] = [
                         _UNLABELED_HUE_COLOR if c is None
-                        else tuple(_base[_named_idx[c]]) for c in _cats]
+                        else tuple(_base[c]) for c in _cats]
                     hue = group_by_category(hue)
 
         # reshape the data according to group
@@ -5616,6 +6669,20 @@ def plot(
                                     key=lambda i: _appear[i])
                     xform = [xform[i] for i in _order]
                     labels = [labels[i] for i in _order]
+            # palette= as a {category: color} DICT (GH #285): the MARKER
+            # (globally regrouped) categorical path takes its colours from
+            # the ambient seaborn cycle, which knows nothing about category
+            # names -- so resolve them explicitly here, in drawn-group
+            # order. The line path already did this via
+            # `_categorical_color_label_maps`, and both now read one
+            # mapping (`colors.resolve_category_colors`).
+            if (isinstance(palette, collections.abc.Mapping)
+                    and "color" not in mpl_kwargs
+                    and hue_group_labels is not None
+                    and len(hue_group_labels) == len(xform)):
+                _named = resolve_category_colors(palette, hue_group_labels)
+                mpl_kwargs["color"] = [tuple(_named[c])
+                                       for c in hue_group_labels]
             _hue_regrouped_counts = (_n_datasets_before_hue, len(xform))
             # a PURE line cannot render a single-observation category -- it
             # draws NOTHING (and crashed animated interpolation, F02-002).
@@ -5708,6 +6775,17 @@ def plot(
                                       n_datasets=len(xform))
     if _segment_titles is not None:
         title = None      # the axes title is driven per frame, not statically
+
+    # title_wrap= (GH #285): hard-wrap every title at N characters, AFTER
+    # per-segment resolution so a scalar title and each entry of a
+    # per-segment list wrap identically. The line break is the drawing
+    # backend's own: '\n' for matplotlib, '<br>' for plotly.
+    if _title_wrap is not None:
+        _wrap_break = ('<br>' if resolve_backend(backend) == 'plotly'
+                       else '\n')
+        title = _wrap_title_text(title, _title_wrap, _wrap_break)
+        _segment_titles = _wrap_title_text(_segment_titles, _title_wrap,
+                                           _wrap_break)
 
     # round17 #9 (GH #123): animate='morph' now supports 2-D as well as
     # 3-D data, matching every other animate style -- only 1-D (and any
@@ -5965,10 +7043,38 @@ def plot(
     # decision (post cluster/hue reshape, post legend-label resolution) but
     # BEFORE interpolation (which doesn't change the mapping, only the
     # point density) -- shared by both the matplotlib and plotly backends.
+    # GH #285: the legend entries hypertools draws as explicit proxy
+    # handles. `legend_colors=` given as (label, color) pairs REPLACES the
+    # legend outright; otherwise the matrix/mixture-hue palette swatches
+    # (if any) are used, and a plain `legend_colors=` colour LIST recolours
+    # whichever of the two ends up drawn.
+    _final_legend_entries = _legend_entries or _hue_legend_entries
+    if _final_legend_entries is not None and _legend_recolor is not None:
+        if len(_legend_recolor) != len(_final_legend_entries):
+            raise ValueError(
+                f"legend_colors has {len(_legend_recolor)} entries but the "
+                f"legend has {len(_final_legend_entries)}; pass one color "
+                "per legend entry, or pass (label, color) pairs to define "
+                "the entries outright.")
+        _final_legend_entries = [
+            (label, color) for (label, _), color
+            in zip(_final_legend_entries, _legend_recolor)]
+
     colorbar_info = _build_colorbar_info(
         colorbar, hue, multicolor_hue, cluster, n_clusters, xform,
         mpl_kwargs, legend, palette, hue_group_labels=hue_group_labels,
         hierarchy_labels=_mi_colorbar_labels)
+
+    # GH #285: the same mapping, always resolved (never raising) and never
+    # gated on colorbar=, for `return_model=True`'s bundle['colors'] and
+    # `HyperAnimation.colors`. Computed HERE, at the same point in the
+    # pipeline as colorbar_info, so the two can never disagree about what
+    # the figure is coloured by.
+    colors_info = _build_colors_info(
+        hue, multicolor_hue, cluster, n_clusters, xform, mpl_kwargs,
+        legend, palette, hue_group_labels=hue_group_labels,
+        hierarchy_labels=_mi_colorbar_labels,
+        legend_entries=_final_legend_entries)
 
     # interpolate if its a line plot. animate='morph' treats every dataset
     # as a POINT CLOUD (Hungarian-matched to its neighbors in `morph.py`),
@@ -6517,6 +7623,23 @@ def plot(
     # on Colab/Kaggle (see hypertools.plot.plotly_backend for the policy).
     if resolve_backend(backend) == "plotly":
         from .plotly_backend import plotly_draw
+        # a CALLABLE title_color= is handed the matplotlib FrameContext the
+        # per-frame hook builds; plotly frames are all constructed up front
+        # from a schedule, with no such context to hand it.
+        if callable(_title_segment_colors):
+            raise NotImplementedError(
+                "title_color= as a callable is matplotlib-only: the "
+                "plotly backend builds every animation frame up front and "
+                "has no per-frame context to call it with. Pass a LIST of "
+                "colours (one per title segment) for backend='plotly'.")
+        if _legend_recolor is not None and _final_legend_entries is None:
+            raise NotImplementedError(
+                "legend_colors= as a plain colour list recolours the "
+                "legend handles matplotlib builds; the plotly backend has "
+                "no separate legend handles to recolour (its legend "
+                "swatches come from the traces themselves). Pass "
+                "legend_colors=[(label, color), ...] to define the "
+                "entries outright for backend='plotly'.")
 
         # GH #206: warn (once, listing every offending kwarg) about extra
         # kwargs that reached `mpl_kwargs` (via the `**kwargs` passthrough
@@ -6602,6 +7725,10 @@ def plot(
             zlabel=zlabel,
             frame_hooks=_frame_hooks,
             segment_titles=_segment_titles,
+            title_kwargs=_title_kwargs,
+            title_segment_colors=_title_segment_colors,
+            legend_kwargs=_legend_kwargs,
+            legend_entries=_final_legend_entries,
         )
         ax = None
         data = xform
@@ -6697,6 +7824,11 @@ def plot(
                 zlabel=zlabel,
                 frame_hooks=_frame_hooks,
                 ownership=_ownership,
+                title_kwargs=_title_kwargs,
+                legend_kwargs=_legend_kwargs,
+                legend_entries=_final_legend_entries,
+                legend_colors=(None if _final_legend_entries is not None
+                               else _legend_recolor),
             )
 
             # A caller-supplied ax= was created outside this rc context, so
@@ -7058,7 +8190,10 @@ def plot(
             # though it touches the title, not the artists, so ordering
             # relative to `on_frame=`'s own callbacks does not matter).
             if _segment_titles is not None and line_ani is not None:
-                _frame_hooks.add(_make_title_updater(_segment_titles, ax))
+                _frame_hooks.add(_make_title_updater(
+                    _segment_titles, ax, font=_artist_font,
+                    title_kwargs=_title_kwargs,
+                    segment_colors=_title_segment_colors))
 
             # animated 3-D titles need a reserved top margin or they render
             # entirely off-canvas -- animate_plot3D's full-canvas axes
@@ -7073,7 +8208,9 @@ def plot(
             if (ax is not None and line_ani is not None
                     and xform[0].shape[1] >= 3
                     and (title is not None or _segment_titles is not None)):
-                _reserve_animated_3d_title_margin(fig, ax)
+                _reserve_animated_3d_title_margin(
+                    fig, ax,
+                    fontsize=(_title_kwargs or {}).get('fontsize'))
 
             # tighten layout (static plots only: animated axes are given
             # the full canvas so rotating zoomed cubes don't clip, and
@@ -7103,7 +8240,8 @@ def plot(
             # `_draw` above regardless of `animate`, and is static across
             # every animation frame, so fitting it once here -- exactly like
             # the colorbar above -- is enough; no per-frame work needed).
-            if legend is not None and ax is not None:
+            if ((legend is not None or _final_legend_entries is not None)
+                    and ax is not None):
                 _fit_right_legend(fig, ax)
 
             # save. `fig.savefig`, NOT `plt.savefig` (release-1.0 audit,
@@ -7308,6 +8446,7 @@ def plot(
             mark_draw_started(line_ani)
         return {
             "fig": fig,
+            "colors": colors_info,
             "xform_data": xform_data,
             "trace_data": trace_data,
             "trace_metadata": trace_metadata,
@@ -7341,7 +8480,13 @@ def plot(
     # `fig, anim = hyp.plot(...)` keeps working too.
     if line_ani is not None:
         from .hyper_animation import HyperAnimation
-        return HyperAnimation(fig, line_ani, frame_hooks=_frame_hooks)
+        _hyper_anim = HyperAnimation(fig, line_ani, frame_hooks=_frame_hooks)
+        # GH #285: the resolved colour scale, so a companion panel can
+        # reuse hypertools' own mapping instead of rebuilding it (see
+        # `_build_colors_info`). Same object the return_model bundle
+        # exposes as bundle['colors'].
+        _hyper_anim.colors = colors_info
+        return _hyper_anim
 
     return fig
 
@@ -7410,20 +8555,8 @@ def _build_colorbar_info(colorbar, hue, multicolor_hue, cluster, n_clusters,
             "color, so there is nothing to map on a colorbar."
         )
 
-    explicit_colors = mpl_kwargs.get('color')
-    if (isinstance(explicit_colors, (list, tuple))
-            and len(explicit_colors) == n_groups):
-        # the mixture-blend paths (cluster=<mixture model> or matrix hue,
-        # animated) set an EXPLICIT per-group color list -- reuse it
-        # verbatim so the colorbar swatches exactly match the drawn lines.
-        colors = np.asarray(explicit_colors)[:, :3]
-    else:
-        # everything else (categorical hue, non-mixture cluster/n_clusters,
-        # or a plain list of datasets) is colored from the ambient palette
-        # in dataset/group order -- exactly what sns.set_palette (mpl) /
-        # the per-trace sns.color_palette (plotly) assign when drawing.
-        colors = get_palette_colors(palette, n_groups)
-
+    # labels FIRST (GH #285): a `palette=` dict is keyed by category name,
+    # so the colours cannot be resolved until the group names are known.
     if isinstance(legend, list):
         labels = list(legend)
     elif (hierarchy_labels is not None
@@ -7440,6 +8573,35 @@ def _build_colorbar_info(colorbar, hue, multicolor_hue, cluster, n_clusters,
         labels = list(hue_group_labels)
     else:
         labels = [i + 1 for i in range(n_groups)]
+
+    explicit_colors = mpl_kwargs.get('color')
+    if (isinstance(explicit_colors, (list, tuple))
+            and len(explicit_colors) == n_groups):
+        # the mixture-blend paths (cluster=<mixture model> or matrix hue,
+        # animated) set an EXPLICIT per-group color list -- reuse it
+        # verbatim so the colorbar swatches exactly match the drawn lines.
+        # Resolved through matplotlib's own colour parser rather than
+        # `np.asarray(...)[:, :3]`, which only works for a list of numeric
+        # RGB(A) tuples: a user-supplied `color=['red', 'green']` is a list
+        # of NAMES, and indexing that 1-D array of strings raised
+        # "IndexError: too many indices for array" (GH #285, found by the
+        # always-on colour-scale resolution `bundle['colors']` added there).
+        from matplotlib.colors import to_rgba_array
+        colors = to_rgba_array(explicit_colors)[:, :3]
+    elif isinstance(palette, collections.abc.Mapping):
+        # a {category: color} dict names the SWATCHES, so index it by the
+        # group names resolved above rather than by position (GH #285).
+        _named = resolve_category_colors(palette, labels)
+        colors = np.asarray([_named[lbl] for lbl in labels])
+    else:
+        # everything else (categorical hue, non-mixture cluster/n_clusters,
+        # or a plain list of datasets) is colored from the ambient palette
+        # in dataset/group order -- exactly what sns.set_palette (mpl) /
+        # the per-trace sns.color_palette (plotly) assign when drawing.
+        # `dataset_colors` (not `get_palette_colors`) so a PER-DATASET
+        # `palette=` list resolves to each dataset's own lead colour, the
+        # same colour the drawn trace gets (GH #285).
+        colors = dataset_colors(palette, n_groups)
 
     # A trace labeled '_nolegend_' (e.g. every MultiIndex leaf and
     # intermediate-level mean, GH #95 -- only the TOP-level mean of each
@@ -7466,6 +8628,75 @@ def _build_colorbar_info(colorbar, hue, multicolor_hue, cluster, n_clusters,
         'ticks': ticks,
         'location': location,
     }
+
+
+def _build_colors_info(hue, multicolor_hue, cluster, n_clusters, xform,
+                       mpl_kwargs, legend, palette, hue_group_labels=None,
+                       hierarchy_labels=None, legend_entries=None):
+    """The RESOLVED colour scale this figure draws with (GH #285).
+
+    `_build_colorbar_info` already computes exactly this mapping, but only
+    when a `colorbar=` was asked for -- and it raises when there is nothing
+    finite to put on a colorbar. This wraps it so the answer is always
+    available for the `return_model=True` bundle's ``'colors'`` key (and
+    `HyperAnimation.colors`), letting a caller rebuild hypertools' own
+    mapping in a companion panel instead of guessing at it (which is what
+    `examples/animate_weather_decades.py` had to do: a hand-built
+    ``Normalize(mean.min(), mean.max())`` + ``plt.get_cmap('RdBu_r')``).
+
+    Returns a dict:
+
+    - ``kind``: ``'continuous'``, ``'discrete'``, or ``'blend'`` (a
+      per-observation matrix/mixture blend with no finite group set).
+    - ``palette``: the palette argument as resolved for drawing.
+    - ``cmap``/``norm``: matplotlib objects ready to build a
+      `ScalarMappable` from -- a `Normalize` + continuous colormap for
+      continuous hue, a `ListedColormap` + `BoundaryNorm` for groups.
+    - ``vmin``/``vmax``: the ACTUAL hue value range (continuous only).
+    - ``colors``: one RGB triple per drawn group (discrete only).
+    - ``labels``: the group names matching ``colors``.
+    - ``categories``: ``{label: rgb}``, the same mapping keyed by name.
+    """
+    from matplotlib.colors import BoundaryNorm, ListedColormap, Normalize
+
+    try:
+        info = _build_colorbar_info(
+            {}, hue, multicolor_hue, cluster, n_clusters, xform, mpl_kwargs,
+            legend, palette, hue_group_labels=hue_group_labels,
+            hierarchy_labels=hierarchy_labels)
+    except ValueError:
+        info = None
+
+    if info is None:
+        if multicolor_hue is not None:
+            return {'kind': 'blend', 'palette': palette, 'cmap': None,
+                    'norm': None, 'vmin': None, 'vmax': None,
+                    'colors': None, 'labels': None,
+                    'categories': dict(legend_entries or [])}
+        # no grouping at all: one dataset, one colour
+        colors = np.asarray(dataset_colors(palette, max(len(xform), 1)))
+        return {'kind': 'discrete', 'palette': palette,
+                'cmap': ListedColormap(colors), 'norm': None,
+                'vmin': None, 'vmax': None, 'colors': colors,
+                'labels': [i + 1 for i in range(len(colors))],
+                'categories': {}}
+
+    if info['kind'] == 'continuous':
+        return {'kind': 'continuous', 'palette': palette,
+                'cmap': continuous_colormap(palette),
+                'norm': Normalize(vmin=info['vmin'], vmax=info['vmax']),
+                'vmin': info['vmin'], 'vmax': info['vmax'],
+                'colors': None, 'labels': None, 'categories': {}}
+
+    colors = np.asarray(info['colors'])
+    labels = list(info['labels'])
+    return {'kind': 'discrete', 'palette': palette,
+            'cmap': ListedColormap(colors),
+            'norm': BoundaryNorm(np.arange(len(colors) + 1) - 0.5,
+                                 len(colors)),
+            'vmin': None, 'vmax': None, 'colors': colors, 'labels': labels,
+            'categories': {str(label): tuple(color)
+                           for label, color in zip(labels, colors)}}
 
 
 def _apply_font_to_colorbar(cbar, font):
@@ -7717,7 +8948,7 @@ def _add_right_colorbar(fig, ax, mappable, pad_in=0.2, width_in=0.35,
     return cbar
 
 
-def _animated_3d_title_line_height_in(ax, probe='Xygj'):
+def _animated_3d_title_line_height_in(ax, probe='Xygj', fontsize=None):
     """The true rendered height (inches) of one line of `ax.title`'s
     resolved font.
 
@@ -7782,6 +9013,12 @@ def _animated_3d_title_line_height_in(ax, probe='Xygj'):
     probe_fig = Figure()
     probe_ax = probe_fig.add_subplot()
     probe_ax.set_title(probe, fontproperties=ax.title.get_fontproperties())
+    # `title_kwargs={'size': ...}` (GH #285) is the one thing that CAN put
+    # the real title at a size rcParams does not know about -- including
+    # for a per-segment list, whose text does not exist yet when this runs
+    # -- so it is measured explicitly rather than inferred.
+    if fontsize is not None:
+        probe_ax.title.set_fontsize(fontsize)
     with plt.rc_context(matplotlib.rcParamsDefault):
         canvas = FigureCanvasAgg(probe_fig)
         canvas.draw()
@@ -7790,7 +9027,7 @@ def _animated_3d_title_line_height_in(ax, probe='Xygj'):
     return height_px / probe_fig.dpi
 
 
-def _reserve_animated_3d_title_margin(fig, ax, pad_in=0.08):
+def _reserve_animated_3d_title_margin(fig, ax, pad_in=0.08, fontsize=None):
     """Grow the figure so an animated 3-D plot's title has room to render.
 
     `matplotlib_backend.animate_plot3D` deliberately maximises the 3-D axes
@@ -7847,7 +9084,8 @@ def _reserve_animated_3d_title_margin(fig, ax, pad_in=0.08):
     w_in, h_in = fig.get_size_inches()
     pos = ax.get_position()
     bottom_in, height_in = pos.y0 * h_in, pos.height * h_in
-    new_h_in = h_in + _animated_3d_title_line_height_in(ax) + pad_in
+    new_h_in = (h_in + _animated_3d_title_line_height_in(
+        ax, fontsize=fontsize) + pad_in)
     # a persistent layout engine would silently undo the manual
     # set_position below on the next draw/save (see _fit_right_legend's
     # identical guard, same reasoning).
@@ -8069,7 +9307,8 @@ def _apply_multicolor_lines(ax, xform, line_colors, kwargs_list):
         coll._hyp_trace_index = i
 
 
-def _make_title_updater(titles, axes):
+def _make_title_updater(titles, axes, font=None, title_kwargs=None,
+                        segment_colors=None):
     """Set the axes title from the frame context (plan 1.1 Task 8).
 
     Morph transitions are blanked so only fully-formed clouds are named. The
@@ -8078,6 +9317,19 @@ def _make_title_updater(titles, axes):
     0->1 over their own segment, so a fraction cannot tell them apart. For
     non-morph serial reveals `segment_kind` is always None, so every frame
     falls through to the `current_index` branch below.
+
+    `font`/`title_kwargs`/`segment_colors` (GH #285) are re-applied on
+    EVERY frame, because `set_title` resets the title Text's styling each
+    time -- which is why three of the launch examples used to carry an
+    `on_frame=` callback whose only job was to restyle the title after this
+    updater ran. `font` fixes the bug that a resolved `font=` reached the
+    STATIC title but never a per-segment one; `title_kwargs` carries
+    size/weight/colour/y (a bare `font=` is only ever a family, so before
+    this those could come from nothing but rcParams); `segment_colors` is
+    `title_color=`'s per-segment form -- one colour per segment, or a
+    callable taking the frame context. All three default to None, in which
+    case this makes the exact bare `axes.set_title(text)` call it always
+    did.
     """
     def _update(ctx):
         if ctx.segment_kind == 'transition':
@@ -8086,7 +9338,12 @@ def _make_title_updater(titles, axes):
         idx = ctx.current_index
         if idx is None:
             return
-        axes.set_title(titles[min(idx, len(titles) - 1)])
+        idx = min(idx, len(titles) - 1)
+        kwargs = title_kwargs
+        if segment_colors is not None:
+            kwargs = dict(kwargs or {})
+            kwargs['color'] = _segment_title_color(segment_colors, idx, ctx)
+        _apply_title(axes, titles[idx], font=font, title_kwargs=kwargs)
     return _update
 
 

@@ -478,6 +478,105 @@ def _run_window(frame_windows, idx, n_rows, num, total_frames,
     return RunWindow(start, end, trail_stop, max(0, end - 1), True, n_rows)
 
 
+#: `title_kwargs=` keys (already alias-resolved by `plot._normalize_title_kwargs`)
+#: that plotly's `layout.title` can express, and where each one lands.
+#: `fontsize` is in POINTS on the matplotlib side and pixels here, so it goes
+#: through the module's PT_TO_PX rule exactly like the default title size.
+_PLOTLY_TITLE_PROPS = {
+    'fontsize': ('font', 'size'),
+    'fontfamily': ('font', 'family'),
+    'fontweight': ('font', 'weight'),
+    'fontstyle': ('font', 'style'),
+    'fontvariant': ('font', 'variant'),
+    'color': ('font', 'color'),
+    'y': ('y',),
+}
+
+
+def _plotly_title_overrides(title_kwargs):
+    """Split `title_kwargs=` into plotly `layout.title` properties (GH #285).
+
+    Returns ``(title_props, font_props)``. Anything plotly's title cannot
+    express (matplotlib-only placement/box options such as `pad`, `loc`,
+    `backgroundcolor`, `linespacing`) is reported in ONE warning naming the
+    backend and the keys, rather than silently rendering a title styled
+    differently from the matplotlib one.
+    """
+    if not title_kwargs:
+        return {}, {}
+    title_props, font_props, unsupported = {}, {}, []
+    for key, value in title_kwargs.items():
+        target = _PLOTLY_TITLE_PROPS.get(key)
+        if target is None:
+            unsupported.append(key)
+        elif target[0] == 'font':
+            font_props[target[1]] = (round(value * PT_TO_PX)
+                                     if target[1] == 'size'
+                                     and isinstance(value, (int, float))
+                                     else value)
+        else:
+            title_props[target[0]] = value
+    import plotly.graph_objects as go
+    valid = getattr(go.layout.title.Font, '_valid_props', None)
+    if valid:
+        rejected = [k for k in font_props if k not in valid]
+        for key in rejected:
+            font_props.pop(key)
+        unsupported.extend(rejected)
+    if unsupported:
+        warnings.warn(
+            f"backend='plotly' cannot map the following title_kwargs to a "
+            f"layout.title property and will ignore them: "
+            f"{sorted(unsupported)}. Supported (after alias resolution): "
+            f"{sorted(_PLOTLY_TITLE_PROPS)}.",
+            UserWarning, stacklevel=3)
+    return title_props, font_props
+
+
+def _frame_title_dict(text, index, style, segment_colors):
+    """One animation frame's `layout.title` (GH #285).
+
+    With no `title_kwargs=`/`title_color=`/`font=` in play this is exactly
+    the bare ``dict(text=...)`` plotly frames carried before; otherwise the
+    resolved style is re-applied on EVERY frame, because a frame's layout
+    patch replaces the title outright.
+    """
+    if not style and not segment_colors:
+        return dict(text=text)
+    title = dict(style or {})
+    title['text'] = text
+    if segment_colors is not None:
+        color = (segment_colors[min(index, len(segment_colors) - 1)]
+                 if not callable(segment_colors) else None)
+        if color is not None:
+            title['font'] = {**title.get('font', {}),
+                             'color': _to_plotly_color(color)}
+    return title
+
+
+def _plotly_legend_entry_traces(entries, ndims):
+    """Invisible traces that exist only to carry an explicit legend entry
+    (GH #285) -- plotly's equivalent of matplotlib's proxy `Line2D` handles.
+
+    Used for a matrix/mixture `hue=`'s palette swatches and for
+    `legend_colors=[(label, color), ...]`, neither of which corresponds to a
+    drawn trace. A 3-D figure needs `Scatter3d` (a 2-D `Scatter` cannot live
+    in a `scene`), so the trace type follows `ndims`.
+    """
+    import plotly.graph_objects as go
+    traces = []
+    for label, color in entries:
+        common = dict(mode='lines', name=str(label), showlegend=True,
+                      hoverinfo='skip',
+                      line=dict(color=_to_plotly_color(color), width=2))
+        if ndims >= 3:
+            traces.append(go.Scatter3d(x=[None], y=[None], z=[None],
+                                       **common))
+        else:
+            traces.append(go.Scatter(x=[None], y=[None], **common))
+    return traces
+
+
 def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 title=None, animate=False, size=None, show=True,
                 save_path=None, frame_rate=30, duration=30, rotations=1,
@@ -494,7 +593,8 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 font=None, font_extra=None, label_alpha=0.5, xlabel=None,
                 ylabel=None, zlabel=None, antialias=True, frame_hooks=None,
                 segment_titles=None, ownership=None, forecast_reveal=None,
-                into=None):
+                into=None, title_kwargs=None, title_segment_colors=None,
+                legend_kwargs=None, legend_entries=None):
     """Render grouped datasets with plotly, mirroring _draw's contract and
     the matplotlib renderer's appearance.
 
@@ -641,6 +741,30 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         updaters make, for the reason the `trails` module exists: a window
         arithmetic transcribed separately into this backend once blanked a
         5-row dataset for 9 of its 15 frames.
+    title_kwargs : dict or None
+        Alias-resolved title styling (`hyp.plot`'s `title_kwargs=`). Its
+        size/family/weight/style/colour/y keys map onto `layout.title`
+        (see `_plotly_title_overrides`, which warns by name about the
+        matplotlib-only ones); applied to both the static title and every
+        per-frame title of a serial/morph animation.
+
+    title_segment_colors : list of colors or None
+        `hyp.plot`'s `title_color=` in its per-segment form -- one colour
+        per `segment_titles` entry, re-applied on every frame. The
+        callable form is matplotlib-only and is rejected in `plot()`
+        before reaching here.
+
+    legend_kwargs : dict or None
+        Extra `layout.legend` properties, merged over hypertools' defaults
+        last so the caller's values win.
+
+    legend_entries : list of (label, color) or None
+        Explicit legend entries with no drawn trace behind them -- a
+        matrix/mixture `hue=`'s palette swatches, or `legend_colors=` given
+        as (label, color) pairs. Rendered as data-free traces (plotly's
+        equivalent of matplotlib proxy handles); see
+        `_plotly_legend_entry_traces`.
+
     segment_titles : list of str or None
         Per-segment titles for serial-style animations (`_validate_title`'s
         resolved list, plan 1.1 Task 8) -- `None` for every static or
@@ -1553,7 +1677,7 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     layout = dict(
         paper_bgcolor='white',
         plot_bgcolor='white',
-        showlegend=legend is not None,
+        showlegend=legend is not None or bool(legend_entries),
         margin=dict(l=10, r=margin_r,
                     t=40 if (title or segment_titles) else 10, b=10),
         legend=dict(bgcolor='rgba(255,255,255,0.8)',
@@ -1574,15 +1698,20 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         # family: the resolved font (GH #205) when given/auto-detected,
         # else the historical hardcoded default (ASCII-only regression:
         # byte-identical to before this kwarg existed).
+        _title_font = dict(color='black',
+                           size=round(12 * PT_TO_PX),
+                           family=font_family if font_family is not None
+                           else 'DejaVu Sans, Arial, sans-serif')
+        # title_kwargs= (GH #285): size/colour/family/weight/style/y, the
+        # plotly-expressible half of matplotlib's set_title kwargs.
+        _title_props, _title_font_props = _plotly_title_overrides(
+            title_kwargs)
+        _title_font.update(_title_font_props)
         layout['title'] = dict(text=title, x=0.5, xanchor='center',
                                xref='paper',
                                y=0.97, yanchor='top',
-                               font=dict(color='black',
-                                         size=round(12 * PT_TO_PX),
-                                         family=font_family if font_family
-                                                is not None else
-                                                'DejaVu Sans, Arial, '
-                                                'sans-serif'))
+                               font=_title_font)
+        layout['title'].update(_title_props)
     size = size if size is not None else DEFAULT_FIGSIZE
     layout['width'] = int(size[0] * 100)
     layout['height'] = int(size[1] * 100)
@@ -1620,6 +1749,12 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     # space, x/y/z); 2-D annotations live in layout.annotations (data
     # space via xref/yref='x'/'y', since the default paper-relative refs
     # would ignore the actual data coordinates).
+    # explicit legend entries (GH #285): a matrix/mixture hue's palette
+    # swatches, or `legend_colors=[(label, color), ...]`. Added as
+    # data-free traces, plotly's equivalent of matplotlib proxy handles.
+    if legend_entries:
+        fig.add_traces(_plotly_legend_entry_traces(legend_entries, ndims))
+
     if labels is not None:
         point_annotations = _build_point_annotations(
             data, labels, ndims, font_family, label_alpha=label_alpha)
@@ -1632,7 +1767,30 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                     ann.setdefault('yref', 'y')
                 layout['annotations'] = point_annotations
 
+    # legend_kwargs= (GH #285): plotly `layout.legend` properties, applied
+    # last so a caller's x/y/orientation/font/bgcolor wins over the
+    # hypertools defaults above -- the same precedence the matplotlib
+    # backend gives it over its own `Axes.legend` defaults.
+    if legend_kwargs:
+        layout['legend'] = {**layout['legend'], **legend_kwargs}
+
     fig.update_layout(**layout)
+
+    # GH #285: per-frame (serial/morph) titles carry the same resolved
+    # font/`title_kwargs=` styling the static title does -- previously each
+    # frame's title reset to plotly's defaults, which is the plotly half of
+    # the same bug matplotlib's `_make_title_updater` had.
+    _segment_title_style = None
+    if segment_titles is not None:
+        _seg_props, _seg_font = _plotly_title_overrides(title_kwargs)
+        _seg_font.setdefault('family',
+                             font_family if font_family is not None
+                             else 'DejaVu Sans, Arial, sans-serif')
+        _seg_font.setdefault('size', round(12 * PT_TO_PX))
+        _seg_font.setdefault('color', 'black')
+        _segment_title_style = dict(x=0.5, xanchor='center', xref='paper',
+                                    y=0.97, yanchor='top', font=_seg_font)
+        _segment_title_style.update(_seg_props)
 
     if animate:
         _add_animation(fig, data, ndims, animate, frame_rate, duration,
@@ -1664,6 +1822,8 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                        morph_alphas=morph_alphas0,
                        aa_curves=aa_curves, frame_hooks=frame_hooks,
                        segment_titles=segment_titles,
+                       segment_title_style=_segment_title_style,
+                       segment_title_colors=title_segment_colors,
                        # the run -> dataset -> rows mapping the reveal
                        # clock is driven from (see `_run_window`)
                        ownership=ownership)
@@ -2929,6 +3089,14 @@ def _colorbar_trace(go, colorbar_info, ndims, legend_present):
         # value mapping trims cyclic palettes so its endpoints stay
         # distinguishable (release-1.0 audit, F01-013) -- the colorbar must
         # show exactly the colors `mat2colors` assigned to the points.
+        # A CONTINUOUS colorbar needs ONE palette to sample across the
+        # value range. A `{category: color}` dict resolves here (read as an
+        # ordered list of colours); a PER-DATASET palette LIST (GH #285) is
+        # n separate palettes with no single ramp between them, and
+        # `colors._get_palette` already rejects it by name -- from
+        # `mat2colors`, when the per-point colours are computed, which is
+        # strictly before this colorbar is built. No second check here: it
+        # could never fire.
         from .colors import continuous_colormap
         colors = continuous_colormap(colorbar_info['palette']).colors
         colorscale = _colors_to_plotly_colorscale(colors)
@@ -3118,7 +3286,9 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                    morph_surface_spec=None, surface_point_colors=None,
                    morph_sampled=None, morph_dup_masks=None,
                    morph_alphas=None, aa_curves=None,
-                   frame_hooks=None, segment_titles=None, ownership=None,
+                   frame_hooks=None, segment_titles=None,
+                   segment_title_style=None, segment_title_colors=None,
+                   ownership=None,
                    forecast_frame_colors=None, forecast_reveal=None):
     """Attach frames + play controls: 'spin' rotates the camera; True /
     'parallel' reveals trajectories through a sliding time window; 'morph'
@@ -3592,10 +3762,11 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                 # plain assignment) so this does not clobber the
                 # scene_camera layout key the ndims>=3 block above may have
                 # just set, and is not clobbered by it either.
-                _text = ('' if seg_idx % 2 else
-                         segment_titles[min(_dataset_idx,
-                                            len(segment_titles) - 1)])
-                frame_kwargs.setdefault('layout', {})['title'] = dict(text=_text)
+                _seg_i = min(_dataset_idx, len(segment_titles) - 1)
+                _text = '' if seg_idx % 2 else segment_titles[_seg_i]
+                frame_kwargs.setdefault('layout', {})['title'] = (
+                    _frame_title_dict(_text, _seg_i, segment_title_style,
+                                      segment_title_colors))
             if frame_hooks is not None:
                 frame_hooks.record(
                     frame=k, n_frames=n_frames, artists=tuple(frame_traces),
@@ -3760,9 +3931,11 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                 # `.setdefault` (not a plain assignment) so a 3-D
                 # scene_camera layout set by the ndims>=3 block above is
                 # preserved, not clobbered.
-                frame_kwargs.setdefault('layout', {})['title'] = dict(
-                    text=segment_titles[min(_serial_idx,
-                                            len(segment_titles) - 1)])
+                _seg_i = min(_serial_idx, len(segment_titles) - 1)
+                frame_kwargs.setdefault('layout', {})['title'] = (
+                    _frame_title_dict(segment_titles[_seg_i], _seg_i,
+                                      segment_title_style,
+                                      segment_title_colors))
             if frame_hooks is not None:
                 frame_hooks.record(
                     frame=k, n_frames=n_frames, artists=tuple(frame_traces),

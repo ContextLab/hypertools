@@ -302,7 +302,7 @@ def test_all_names_resolve_and_cover_documented_api():
                   'io', 'HypertoolsError', 'HypertoolsBackendError',
                   'HypertoolsIOError',
                   # 1.1.0 (GH #285): the hand-written helpers folded in
-                  'text_windows', 'damage', 'stack'}
+                  'text_windows', 'damage', 'stack', 'subplots'}
     assert set(hyp.__all__) == documented
     for name in hyp.__all__:
         assert getattr(hyp, name) is not None

@@ -57,6 +57,78 @@ from .density import (
 )
 
 
+def _apply_title(ax, text, font=None, title_kwargs=None):
+    """Set `ax`'s title, honoring the resolved `font=` and `title_kwargs=`
+    (GH #285).
+
+    With `title_kwargs=None` this makes EXACTLY the call hypertools has
+    always made (`ax.set_title(text)`, or `ax.set_title(text,
+    fontproperties=font)` when a `font=` was resolved), so an un-styled
+    title's Text artist is byte-identical to before.
+
+    `fontproperties` is inserted BEFORE the individual font properties,
+    because `set_title` applies its kwargs in dict order and a
+    `fontproperties` REPLACES the Text's whole FontProperties, size
+    included (measured on matplotlib 3.10: `set_title(t, fontsize=31,
+    fontproperties=fp)` renders at fp's own 10pt, while the same call with
+    the two swapped renders at 31). So `title_kwargs={'size': 20}` beats
+    the resolved font's size -- which is what asking for a size means.
+
+    Lives here, in the backend, so `plot.py`'s per-frame title updater and
+    the static draw below set titles through one function -- the split
+    between them is exactly the bug GH #285 reports (a resolved `font=`
+    reached the static title and never a per-segment one).
+    """
+    if title_kwargs:
+        kwargs = {}
+        if font is not None and 'fontproperties' not in title_kwargs:
+            kwargs['fontproperties'] = font
+        kwargs.update(title_kwargs)
+        return ax.set_title(text, **kwargs)
+    if font is not None:
+        return ax.set_title(text, fontproperties=font)
+    return ax.set_title(text)
+
+
+def _legend_proxy_handles(entries, fmt=None):
+    """`Line2D` proxy handles for explicit legend entries (GH #285).
+
+    `entries` is a list of ``(label, color)`` pairs -- from a matrix/
+    mixture `hue=`'s palette columns, or from an explicit
+    `legend_colors=[(label, color), ...]`. Each is drawn as a short line
+    swatch, or as a marker swatch when the plot's own `fmt` draws markers
+    only, so the key looks like the artists it names.
+    """
+    from matplotlib.lines import Line2D
+    style = {'linestyle': '-', 'linewidth': 2, 'marker': None}
+    first_fmt = fmt[0] if isinstance(fmt, (list, tuple)) and fmt else fmt
+    if isinstance(first_fmt, str) and _process_plot_format is not None:
+        try:
+            linestyle, marker, _ = _process_plot_format(first_fmt)
+        except Exception:  # noqa: BLE001 - an unparseable fmt keeps the line
+            linestyle, marker = '-', None
+        if linestyle in (None, 'None') and marker not in (None, 'None'):
+            style = {'linestyle': 'None', 'marker': marker, 'markersize': 8}
+    return [Line2D([], [], color=color, label=label, **style)
+            for label, color in entries]
+
+
+def _recolor_legend_handles(legend, colors):
+    """Apply `legend_colors=`'s plain colour list to an already-built
+    legend, in entry order (GH #285)."""
+    handles = legend.legend_handles
+    if len(colors) != len(handles):
+        raise ValueError(
+            f"legend_colors has {len(colors)} entries but the legend has "
+            f"{len(handles)}; pass one color per legend entry, or pass "
+            "(label, color) pairs to define the entries outright.")
+    for handle, color in zip(handles, colors):
+        for setter in ('set_color', 'set_markerfacecolor',
+                       'set_markeredgecolor'):
+            if hasattr(handle, setter):
+                getattr(handle, setter)(color)
+
+
 def _resolve_surface_color(spec, fallback_rgb):
     """Base RGB for one dataset's surface: `spec['color']` if given,
     otherwise the dataset's own drawn color (`fallback_rgb`)."""
@@ -470,6 +542,10 @@ def _draw(
     zlabel=None,
     frame_hooks=None,
     ownership=None,
+    title_kwargs=None,
+    legend_kwargs=None,
+    legend_entries=None,
+    legend_colors=None,
 ):
     """
     Draws the plot
@@ -748,7 +824,15 @@ def _draw(
                 )
                 if data[0].shape[-1] > 2:
                     x2, y2, _ = proj3d.proj_transform(x[0], x[1], x[2], proj)
-                    label = plt.annotate(
+                    # `ax.annotate`, NOT `plt.annotate`: pyplot's version
+                    # draws on the CURRENT axes, which is not this call's
+                    # `ax` whenever the caller supplied one (`ax=`, and so
+                    # every panel of a `panels=` grid) -- every label then
+                    # landed on whichever axes happened to be current, all
+                    # of them on the same one (GH #285). Identical to the
+                    # previous call when `ax` IS the current axes, which is
+                    # every plot that creates its own figure.
+                    label = ax.annotate(
                         labels[idx],
                         xy=(x2, y2),
                         xytext=(-20, 20),
@@ -764,7 +848,7 @@ def _draw(
                     labels_and_points.append((label, x[0], x[1], x[2]))
                 elif data[0].shape[-1] == 2:
                     x2, y2 = x[0], x[1]
-                    label = plt.annotate(
+                    label = ax.annotate(
                         labels[idx],
                         xy=(x2, y2),
                         xytext=(-20, 20),
@@ -932,7 +1016,7 @@ def _draw(
 
         # Project 3d data space to 2d data space
         x2, y2, _ = proj3d.proj_transform(
-            point[0], point[1], point[2], plt.gca().get_proj()
+            point[0], point[1], point[2], ax.get_proj()
         )
         # Convert 2d data space to 2d screen space
         x3, y3 = ax.transData.transform((x2, y2))
@@ -991,7 +1075,7 @@ def _draw(
             )
 
         _explore_font_kwargs = {} if font is None else dict(fontproperties=font)
-        annotate_plot_explore.label = plt.annotate(
+        annotate_plot_explore.label = ax.annotate(
             label,
             xy=(x2, y2),
             xytext=(-20, 20),
@@ -2715,10 +2799,7 @@ def _draw(
 
     # add title
     if title is not None:
-        if font is not None:
-            ax.set_title(title, fontproperties=font)
-        else:
-            ax.set_title(title)
+        _apply_title(ax, title, font=font, title_kwargs=title_kwargs)
 
     # add legend: to the RIGHT of the plot, vertically centered on the
     # box (never overlapping the data). `prop=font` (GH #205) applies the
@@ -2726,7 +2807,7 @@ def _draw(
     # (plot.py) measures the legend's true extent from these Text artists'
     # own fontproperties, so this also fixes multibyte legend clipping
     # without any change needed there.
-    if legend is not None:
+    if legend is not None or legend_entries is not None:
         # a 3-D zlabel is drawn in the axes' right margin -- exactly where
         # the legend is anchored -- so shift the legend further right when
         # both are requested (release-1.0 audit, F10-005: the zlabel text
@@ -2734,12 +2815,26 @@ def _draw(
         _legend_x = 1.02
         if zlabel is not None and hasattr(ax, "get_proj"):
             _legend_x = 1.18
-        legend_kwargs = dict(loc='center left',
-                             bbox_to_anchor=(_legend_x, 0.5),
-                             borderaxespad=0.0, frameon=False)
+        _legend_call = dict(loc='center left',
+                            bbox_to_anchor=(_legend_x, 0.5),
+                            borderaxespad=0.0, frameon=False)
         if font is not None:
-            legend_kwargs['prop'] = font
-        ax.legend(**legend_kwargs)
+            _legend_call['prop'] = font
+        # `legend_kwargs=` (GH #285) is applied LAST, so a caller's
+        # loc=/bbox_to_anchor=/frameon=/fontsize= wins over the defaults
+        # above -- which is the whole point of the kwarg.
+        if legend_kwargs:
+            _legend_call.update(legend_kwargs)
+        if legend_entries is not None:
+            # explicit entries (matrix/mixture hue palette swatches, or
+            # `legend_colors=[(label, color), ...]`): proxy handles, since
+            # no drawn artist carries these labels.
+            ax.legend(handles=_legend_proxy_handles(legend_entries, fmt),
+                      **_legend_call)
+        else:
+            _legend_artist = ax.legend(**_legend_call)
+            if legend_colors is not None:
+                _recolor_legend_handles(_legend_artist, legend_colors)
 
     if size is not None:
         fig.set_size_inches(size)

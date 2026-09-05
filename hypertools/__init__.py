@@ -20,7 +20,7 @@ on the ``plot`` function) and raises ImportError. Use
 """
 
 from .config import __version__  # noqa: F401 (re-export; deliberately excluded from __all__, see below)
-from .plot.plot import plot
+from .plot.plot import plot, subplots
 from .plot.backend import set_interactive_backend
 from .plot.hyper_animation import HyperAnimation
 from .plot.animation_context import FrameContext
@@ -54,5 +54,5 @@ __all__ = [
     'apply_model', 'supported_models', 'Pipeline',
     'set_interactive_backend', 'HyperAnimation', 'FrameContext', 'io',
     'HypertoolsError', 'HypertoolsBackendError', 'HypertoolsIOError',
-    'damage', 'stack', 'text_windows',
+    'damage', 'stack', 'text_windows', 'subplots',
 ]

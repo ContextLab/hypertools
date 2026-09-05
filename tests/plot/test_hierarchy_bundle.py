@@ -50,7 +50,8 @@ def test_no_return_data_parameter_exists():
 def test_bundle_keys_are_stable():
     out = hyp.plot(flat_data(), '-', return_model=True, show=False)
     assert set(out) == {'fig', 'xform_data', 'trace_data', 'trace_metadata',
-                        'animation', 'pipeline', 'models', 'predict'}
+                        'animation', 'pipeline', 'models', 'predict',
+                        'colors'}
 
 
 def test_flat_input_bundle_is_unchanged():

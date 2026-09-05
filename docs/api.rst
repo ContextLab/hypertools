@@ -121,6 +121,7 @@ Plot
   :toctree:
 
   plot
+  subplots
   HyperAnimation
   FrameContext
 
