@@ -182,8 +182,45 @@ def _apply_format_data(data):
     return rewrapped if was_list else rewrapped[0]
 
 
+def _compute_score(return_score, score_metric, before_data, after_data):
+    """Build the `{'before', 'after', 'metric'}` score dict for `align`'s
+    `return_score=True` (GH #285), or `None` when `return_score` is False.
+
+    `before_data`/`after_data` are each either a single DataFrame/array or a
+    list of them (whatever `align` had on hand at that return point); both
+    are normalized to list form before delegating to
+    `hypertools.align.score.alignment_score`, which raises a clear
+    `ValueError` for ragged (unequal-shape) input.
+    """
+    if not return_score:
+        return None
+    from .score import alignment_score
+    before_list = before_data if isinstance(before_data, list) else [before_data]
+    after_list = after_data if isinstance(after_data, list) else [after_data]
+    return alignment_score(before_list, aligned=after_list, metric=score_metric)
+
+
+def _build_return(result, return_model, model, return_score, score):
+    """Assemble `align`'s return value from whichever of `return_model=`/
+    `return_score=` are set (GH #285).
+
+    Order (documented on `align`'s docstring): `result` alone; `(result,
+    model)` for `return_model=True` only (unchanged from before GH #285, so
+    existing callers are unaffected); `(result, score)` for `return_score=True`
+    only; `(result, model, score)` when both are True.
+    """
+    if return_model and return_score:
+        return result, model, score
+    if return_model:
+        return result, model
+    if return_score:
+        return result, score
+    return result
+
+
 @dw.decorate.funnel
 def _align(data, model='HyperAlign', return_model=False,
+           return_score=False, score_metric='dispersion',
            manip=None, normalize=None, reduce=None, ndims=None, cluster=None,
            format_data=True, **kwargs):
     """`@dw.decorate.funnel`-wrapped implementation of `align` (below).
@@ -229,11 +266,28 @@ def _align(data, model='HyperAlign', return_model=False,
     # .transform, BEFORE _resolve_align_spec below -- otherwise unpack_model
     # raises "unknown model: Pipeline" (QC 2026-07). Redundant stage kwargs are
     # warned + ignored (the Pipeline already encodes them).
+    # the alignment-quality score (GH #285) compares equal-shape data before
+    # vs. after the ALIGN stage specifically; that pairing is undefined
+    # inside a multi-stage Pipeline (manip/normalize/reduce also reshape and
+    # rescale the data), so return_score= is rejected up front rather than
+    # silently scoring something else.
+    if return_score and any(
+            stage is not None for stage in (manip, normalize, reduce, cluster)):
+        raise ValueError(
+            "return_score=True is only supported for the plain align stage; "
+            "it cannot be combined with manip=/normalize=/reduce=/cluster= "
+            "(the alignment-quality score compares data before vs. after "
+            "alignment specifically, which is undefined inside a multi-stage "
+            "pipeline). Call hyp.align(data, model=..., return_score=True) "
+            "on its own.")
+
     from ..core.shared import is_reused_pipeline
     if is_reused_pipeline(model, {'manip': manip, 'normalize': normalize,
                                   'reduce': reduce, 'cluster': cluster}, 'model'):
-        result = _match_input_shape(_to_arrays(model.transform(data)), was_list)
-        return (result, model) if return_model else result
+        raw = _to_arrays(model.transform(data))
+        result = _match_input_shape(raw, was_list)
+        score = _compute_score(return_score, score_metric, data, raw)
+        return _build_return(result, return_model, model, return_score, score)
 
     resolved = _resolve_align_spec(model, kwargs)
 
@@ -253,8 +307,10 @@ def _align(data, model='HyperAlign', return_model=False,
         # no-op (model=None or model=False): hand the data back unchanged
         # (numerically identical, converted to the array/list shape align
         # always returns) -- no trimming, padding, or format_data pass
-        result = _match_input_shape(_to_arrays(data), was_list)
-        return (result, None) if return_model else result
+        raw = _to_arrays(data)
+        result = _match_input_shape(raw, was_list)
+        score = _compute_score(return_score, score_metric, data, raw)
+        return _build_return(result, return_model, None, return_score, score)
 
     if format_data:
         data = _apply_format_data(data)
@@ -262,11 +318,15 @@ def _align(data, model='HyperAlign', return_model=False,
     # an already-fitted Aligner (returned from an earlier
     # return_model=True call) is reused via `transform`, never refit
     if isinstance(resolved, Aligner) and resolved.is_fitted:
-        result = _match_input_shape(_to_arrays(resolved.transform(data)), was_list)
-        return (result, resolved) if return_model else result
+        raw = _to_arrays(resolved.transform(data))
+        result = _match_input_shape(raw, was_list)
+        score = _compute_score(return_score, score_metric, data, raw)
+        return _build_return(result, return_model, resolved, return_score, score)
 
-    result = _match_input_shape(_to_arrays(resolved.fit_transform(data)), was_list)
-    return (result, resolved) if return_model else result
+    raw = _to_arrays(resolved.fit_transform(data))
+    result = _match_input_shape(raw, was_list)
+    score = _compute_score(return_score, score_metric, data, raw)
+    return _build_return(result, return_model, resolved, return_score, score)
 
 
 def _match_input_shape(result, was_list):
@@ -290,6 +350,7 @@ def _to_arrays(result):
 
 
 def align(data, model='HyperAlign', return_model=False,
+          return_score=False, score_metric='dispersion',
           manip=None, normalize=None, reduce=None, ndims=None, cluster=None,
           format_data=True, **kwargs):
     """
@@ -338,6 +399,20 @@ def align(data, model='HyperAlign', return_model=False,
         `manip=`/`normalize=`/`reduce=`/`cluster=` made multiple stages run
         (default: False).
 
+    return_score : bool
+        If True, also return an alignment-quality score dict comparing the
+        data before vs. after alignment (GH #285): see
+        `hypertools.align.score.alignment_score` for the two supported
+        `score_metric=` values (`'dispersion'`, the default, and `'isc'`).
+        Only supported for the plain align stage -- raises `ValueError` if
+        combined with `manip=`/`normalize=`/`reduce=`/`cluster=`, since the
+        before/after pairing is undefined inside a multi-stage pipeline
+        (default: False).
+
+    score_metric : {'dispersion', 'isc'}
+        Which score `return_score=True` computes -- see
+        `hypertools.align.score.alignment_score` (default: `'dispersion'`).
+
     manip, normalize, reduce, cluster : model spec or None
         Cross-module stage kwargs (GH #138): when any of these is given,
         the other stages also run (via
@@ -373,9 +448,13 @@ def align(data, model='HyperAlign', return_model=False,
         API, which return numpy arrays; note that `hyp.manip` instead
         returns pandas DataFrames): a list input
         returns a list, a single bare array/DataFrame returns a single
-        array. Output rows follow the FIRST dataset's index order. If
-        `return_model=True`, an `(aligned, model)` tuple is returned
-        instead.
+        array. Output rows follow the FIRST dataset's index order. The
+        return value depends on `return_model=`/`return_score=`: neither ->
+        `aligned`; `return_model=True` only -> `(aligned, model)`;
+        `return_score=True` only -> `(aligned, score)`; both -> `(aligned,
+        model, score)` (`model` always comes right after `aligned`, matching
+        the pre-existing `return_model=True` return shape, with `score`
+        appended last).
 
     Raises
     ------
@@ -447,6 +526,7 @@ def align(data, model='HyperAlign', return_model=False,
                 'higher-dimensional stack -- e.g. list(x) for a 3-D '
                 'array x.')
     return _align(data, model=model, return_model=return_model,
+                  return_score=return_score, score_metric=score_metric,
                   manip=manip, normalize=normalize, reduce=reduce,
                   ndims=ndims, cluster=cluster, format_data=format_data,
                   **kwargs)
