@@ -174,6 +174,15 @@ and reaches flat `hyp.predict` callers.
   `color_reduce=` raises rather than picking a winner. Documented in
   `docs/hierarchy.rst`.
 
+- **`Normalize` gains `mode='isotropic'`: one shared centre and scale for the
+  whole table.** The default `mode='minmax'` rescales every column on its own
+  and so distorts a point cloud's shape; `mode='isotropic'` subtracts the
+  centroid and divides EVERY column by one scalar (the largest absolute
+  deviation from the centroid), mapping the cloud into `[min, max]` with the
+  centroid at the midpoint and its shape (angles, distance ratios) intact.
+  `min=-1, max=1` is exactly the "centre and scale into the unit cube" recipe
+  the morph gallery examples used to hand-roll. Lists share one centre and
+  scale; `return_model=True` reuse and `inverse_transform` work.
 - **Optional extras install themselves on demand.** The first call that
   needs plotly, kaleido, HF text embeddings, skaters (`Laplace`),
   chronos-forecasting (`Chronos`), torch (autoencoder reducers), gensim,
