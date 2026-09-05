@@ -88,6 +88,7 @@ Align
   :toctree:
 
   align.procrustes
+  align.score.alignment_score
 
 Cluster
 ------------------
@@ -221,6 +222,7 @@ I/O
 
   io.lsl_stream
   io.LSLStream
+  io.lsl.synthetic_outlet
 
 Exceptions
 ------------------
@@ -238,6 +240,13 @@ data shapes) raise standard `ValueError`/`TypeError` with actionable messages.
 
 Tools
 ------------------
+.. autosummary::
+  :toctree:
+
+  text_windows
+  damage
+  stack
+
 .. autosummary::
   :toctree:
 

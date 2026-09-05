@@ -300,7 +300,9 @@ def test_all_names_resolve_and_cover_documented_api():
                   'Pipeline', 'set_interactive_backend', 'HyperAnimation',
                   'FrameContext',
                   'io', 'HypertoolsError', 'HypertoolsBackendError',
-                  'HypertoolsIOError'}
+                  'HypertoolsIOError',
+                  # 1.1.0 (GH #285): the hand-written helpers folded in
+                  'text_windows', 'damage', 'stack'}
     assert set(hyp.__all__) == documented
     for name in hyp.__all__:
         assert getattr(hyp, name) is not None
