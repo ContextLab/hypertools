@@ -643,8 +643,10 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         ranges from `xlim`/`ylim` (or plotly's autorange when both are
         None) -- the matplotlib backend's `frame_2d` under plotly's
         vocabulary.
-    xlim, ylim : (low, high) or None
-        Explicit axis ranges, applied under `axis_scale='data'`.
+    xlim : (low, high) or None
+        Explicit x range, applied under `axis_scale='data'`.
+    ylim : (low, high) or None
+        Explicit y range, applied under `axis_scale='data'`.
     x_date : bool
         The x values are epoch MILLISECONDS (what `plot()`'s ndims=1 series
         mode emits for a `DatetimeIndex` under the plotly backend); marks
@@ -771,6 +773,9 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         cannot reach the ``go.Frame`` being assembled around it.
     font : matplotlib.font_manager.FontProperties or None
         Resolved font (family name is applied to layout.font; see below).
+    font_extra : str or None
+        An auto-detected extra family appended to the font stack to cover
+        glyphs the resolved font lacks (see the family-stack note below).
     label_alpha : float
         Opacity of the label annotations' background box (default 0.5).
     xlabel : str or None
