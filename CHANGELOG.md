@@ -380,6 +380,14 @@ input too.
   plain script already raised the documented `HypertoolsBackendError`.
   The notebook path now raises `HypertoolsBackendError` too, with the
   toolkit's error chained as the cause.
+- **`alpha=` was ignored by `animate='morph'`.** The value landed on the
+  per-dataset line artists, which a morph keeps hidden, and never on the one
+  travelling point cloud that is drawn (plotly dropped it the same way), so
+  fading the cloud meant reaching into the figure with `set_alpha` after the
+  call. The cloud now takes the alpha on the same hold/transition schedule as
+  its colour: a hold draws the held dataset's alpha, a transition eases from
+  the departing dataset's alpha to the arriving one's, and a scalar `alpha=`
+  is constant throughout. Plots that pass no `alpha=` are unchanged.
 - **Drawing into a caller-supplied `ax=` warned `Glyph 8722 (MINUS SIGN)
   missing from font(s) Noto Sans` for every negative tick.** The bundled
   Noto Sans has no U+2212. hypertools' own axes carry the whole font stack,

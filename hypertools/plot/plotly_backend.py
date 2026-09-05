@@ -1410,6 +1410,7 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     # `_add_animation`'s 'morph' branch.
     morph_trace_start_3d = None
     morph_mesh_trace_start_3d = None
+    morph_alphas0 = None
     if morph_tags is not None and ndims in (2, 3):
         pts0 = sampled0[0]
         # full-sample morphs (maintainer request, 2026-07-06 follow-up):
@@ -1419,7 +1420,19 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         # branch below and `hypertools.plot.morph.morph_visible_mask`).
         hide0 = _morph.morph_visible_mask(dup_masks0, 0)
         draw_pts0 = pts0[~hide0] if hide0 is not None else pts0
-        color0_str = _rgb_string(ds_colors0[0])
+        # GH #284: `alpha=` reaches the traveling cloud. The morph-tagged
+        # datasets' own traces are never built (skipped in the data loop
+        # above), so the alpha each of them carries in `kwargs_list` is
+        # applied HERE instead -- folded into the marker's rgba string, the
+        # way every other trace in this module carries its alpha (see
+        # `_to_plotly_color` in the data loop) -- on the same hold/morph
+        # schedule as the color (`_morph.morph_alpha`); all-`None` keeps
+        # the plain opaque `_rgb_string` colour, as before.
+        morph_alphas0 = [(kwargs_list[i] or {}).get('alpha')
+                         for i in morph_indices_3d]
+        alpha0 = _morph.morph_alpha(morph_alphas0, 0, 0, 1)
+        color0_str = (_rgb_string(ds_colors0[0]) if alpha0 is None
+                      else _to_plotly_color(ds_colors0[0], alpha0))
         # matplotlib's morph trace always draws marker='.' (see
         # `MORPH_DEFAULT_MARKERSIZE_PT`'s docstring) -- so the plotly
         # counterpart always applies the dot-marker scale, and falls back
@@ -1648,6 +1661,7 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                        morph_mesh_trace_start=morph_mesh_trace_start_3d,
                        morph_surface_spec=morph_surface_spec_3d,
                        morph_sampled=sampled0, morph_dup_masks=dup_masks0,
+                       morph_alphas=morph_alphas0,
                        aa_curves=aa_curves, frame_hooks=frame_hooks,
                        segment_titles=segment_titles,
                        # the run -> dataset -> rows mapping the reveal
@@ -3102,7 +3116,8 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                    morph_tags=None, morph_colors=None, morph_samples=None,
                    morph_trace_start=None, morph_mesh_trace_start=None,
                    morph_surface_spec=None, surface_point_colors=None,
-                   morph_sampled=None, morph_dup_masks=None, aa_curves=None,
+                   morph_sampled=None, morph_dup_masks=None,
+                   morph_alphas=None, aa_curves=None,
                    frame_hooks=None, segment_titles=None, ownership=None,
                    forecast_frame_colors=None, forecast_reveal=None):
     """Attach frames + play controls: 'spin' rotates the camera; True /
@@ -3522,14 +3537,20 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
             hide = _morph.morph_visible_mask(dup_masks, seg_idx)
             draw_pts = pts[~hide] if hide is not None else pts
 
+            # GH #284: the cloud's `alpha=` rides in the marker's rgba
+            # string on the same schedule as its colour (see the initial
+            # morph trace in `plotly_draw`); `None` keeps it opaque.
+            alpha = _morph.morph_alpha(morph_alphas, seg_idx, step, n_steps)
+            color_str = (_rgb_string(color) if alpha is None
+                         else _to_plotly_color(color, alpha))
             if ndims >= 3:
                 frame_traces = [go.Scatter3d(
                     x=draw_pts[:, 0], y=draw_pts[:, 1], z=draw_pts[:, 2],
-                    marker=dict(color=_rgb_string(color)))]
+                    marker=dict(color=color_str))]
             else:
                 frame_traces = [go.Scatter(
                     x=draw_pts[:, 0], y=draw_pts[:, 1],
-                    marker=dict(color=_rgb_string(color)))]
+                    marker=dict(color=color_str))]
             if morph_mesh_trace_start is not None:
                 view = view_vector(elev, angle)
                 light_kw = mpl_lighting_kwargs(morph_surface_spec)

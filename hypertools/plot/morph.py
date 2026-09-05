@@ -53,6 +53,7 @@ __all__ = [
     "morph_positions",
     "interpolate_color",
     "morph_color",
+    "morph_alpha",
     "resolve_morph_rotations",
     "segment_azimuths",
     "morph_schedule",
@@ -377,6 +378,36 @@ def morph_color(colors, seg_idx, step, n_steps):
     k = seg_idx // 2
     t = float(smoothstep(step / max(1, n_steps - 1)))
     return interpolate_color(colors[k], colors[k + 1], t)
+
+
+def morph_alpha(alphas, seg_idx, step, n_steps):
+    """Drawn alpha (opacity) for segment `seg_idx` at local `step` (of
+    `n_steps`), on the SAME schedule as :func:`morph_positions` and
+    :func:`morph_color` (GH #284: ``alpha=`` reaches the traveling cloud).
+
+    `alphas` holds one entry per morphing dataset, in morph order: the
+    dataset's own ``alpha=`` (a float in ``[0, 1]``) or ``None`` when none
+    was given. Returns ``None`` -- "leave the artist at its default" --
+    when every entry is ``None``, so an animation that never asked for an
+    alpha is drawn exactly as before. Otherwise a HOLD (even `seg_idx`)
+    is the held dataset's own alpha, and a MORPH (odd) eases (smoothstep,
+    matching the position/color easing) from the departing dataset's
+    alpha to the arriving one's, an unset entry counting as opaque
+    (``1.0``) -- the same rule every other animation style applies to a
+    per-dataset ``alpha=`` list, restated for one artist that stands in
+    for several datasets in turn.
+    """
+    if alphas is None or all(a is None for a in alphas):
+        return None
+    vals = [1.0 if a is None else float(a) for a in alphas]
+    if seg_idx % 2 == 0:
+        return vals[seg_idx // 2]
+    k = seg_idx // 2
+    t = float(smoothstep(step / max(1, n_steps - 1)))
+    # `a + t * (b - a)` (not `(1 - t) * a + t * b`) so a scalar `alpha=`
+    # (every entry equal) stays EXACTLY that value on every transition
+    # frame instead of drifting by a float ulp.
+    return vals[k] + t * (vals[k + 1] - vals[k])
 
 
 def resolve_morph_rotations(rotations, n_datasets):

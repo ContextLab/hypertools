@@ -11,8 +11,8 @@ mesh is recomputed from the travelling cloud on every frame, shaded with a
 two-light Blinn-Phong model and backface-culled for the current camera
 angle, so a blue-teal "skin" flows continuously from the bunny to the cube,
 the sphere, the teapot and the vase as the points underneath rearrange
-themselves -- all from one `hyp.plot` call. The points stay visible as a
-faint black texture under the surface.
+themselves -- all from one `hyp.plot` call. `alpha=0.25` keeps the points
+visible as a faint black texture under the surface.
 
 A convex hull cannot reproduce concave features, so the holds on concave
 shapes (the bunny, the teapot's spout and handle) render as smooth, rounded
@@ -88,15 +88,7 @@ surface_spec = {
     'keep_points': True,
 }
 
-fig, ani = hyp.plot(clouds, fmt='.', color='k', markersize=0.6,
+fig, ani = hyp.plot(clouds, fmt='.', color='k', markersize=0.6, alpha=0.25,
                     animate='morph', rotations=rotations,
                     duration=12, frame_rate=30,
                     morph_samples=n_points, surface=surface_spec)
-
-# fade the point layer to a subtle texture underneath the hull surface.
-# NOTE: under animate='morph' the per-dataset lines are hidden and the
-# VISIBLE traveling point cloud is a separate artist; alpha= on the hyp.plot
-# call reaches only the hidden per-dataset lines (the visible cloud's alpha
-# stays unset), so select the visible line and fade it directly
-visible_lines = [ln for ln in fig.axes[0].get_lines() if ln.get_visible()]
-visible_lines[-1].set_alpha(0.25)

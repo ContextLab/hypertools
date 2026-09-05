@@ -1497,6 +1497,12 @@ def _draw(
         artist.set_data(draw_pts[:, 0], draw_pts[:, 1])
         artist.set_3d_properties(draw_pts[:, 2])
         artist.set_color(color)
+        # GH #284: `alpha=` follows the same hold/morph schedule as color;
+        # `None` (no alpha given) leaves the artist's default untouched.
+        alpha = _morph.morph_alpha(morph_state.get("alphas"), seg_idx,
+                                   step, n_steps)
+        if alpha is not None:
+            artist.set_alpha(alpha)
 
         # surface= (GH #109/morph): the traveling cloud's own hull (if it
         # has a surface spec) is rebuilt from its CURRENT interpolated
@@ -1832,10 +1838,23 @@ def _draw(
             _mkw = (kwargs_list[mesh_slot]
                    if isinstance(kwargs_list[mesh_slot], dict) else {})
             morph_markersize = _mkw.get("markersize") or 1.5
+            # GH #284: `alpha=` (scalar, or the per-dataset list) lands in
+            # each morph-tagged dataset's kwargs, but those datasets' own
+            # `lines` are hidden above -- the ONE visible artist is this
+            # cloud, so it takes the held/departing dataset's alpha on the
+            # same hold/morph schedule as its color (`_morph.morph_alpha`).
+            # `None` throughout (no alpha asked for) leaves it at the
+            # matplotlib default, exactly as before.
+            ds_alphas = [
+                (kwargs_list[i] if isinstance(kwargs_list[i], dict)
+                 else {}).get("alpha")
+                for i in morph_indices
+            ]
             (morph_artist,) = ax.plot(
                 first_draw[:, 0], first_draw[:, 1], first_draw[:, 2],
                 linestyle="None", marker=".", markersize=morph_markersize,
                 color=ds_colors[0],
+                alpha=_morph.morph_alpha(ds_alphas, 0, 0, 1),
             )
             morph_artist.set_label("_nolegend_")
             # axes-box slicing fix (see `plot_cube`): unclip the traveling
@@ -1847,6 +1866,7 @@ def _draw(
 
             morph_state = dict(
                 sampled=sampled, dup_masks=dup_masks, colors=ds_colors,
+                alphas=ds_alphas,
                 artist=morph_artist, mesh_slot=mesh_slot,
                 surface_spec=morph_surface_spec, indices=morph_indices,
             )
@@ -2242,6 +2262,10 @@ def _draw(
         artist = morph_state["artist"]
         artist.set_data(draw_pts[:, 0], draw_pts[:, 1])
         artist.set_color(color)
+        alpha = _morph.morph_alpha(morph_state.get("alphas"), seg_idx,
+                                   step, n_steps)
+        if alpha is not None:
+            artist.set_alpha(alpha)
 
         _sync_anim_labels(num, 0, hide_all=True)
         if frame_hooks is not None:
@@ -2427,15 +2451,23 @@ def _draw(
             _mkw = (kwargs_list[mesh_slot]
                    if isinstance(kwargs_list[mesh_slot], dict) else {})
             morph_markersize = _mkw.get("markersize") or 1.5
+            # GH #284: see the identical note in `animate_plot3D`.
+            ds_alphas = [
+                (kwargs_list[i] if isinstance(kwargs_list[i], dict)
+                 else {}).get("alpha")
+                for i in morph_indices
+            ]
             (morph_artist,) = ax.plot(
                 first_draw[:, 0], first_draw[:, 1],
                 linestyle="None", marker=".", markersize=morph_markersize,
                 color=ds_colors[0],
+                alpha=_morph.morph_alpha(ds_alphas, 0, 0, 1),
             )
             morph_artist.set_label("_nolegend_")
 
             morph_state = dict(
                 sampled=sampled, dup_masks=dup_masks, colors=ds_colors,
+                alphas=ds_alphas,
                 artist=morph_artist, indices=morph_indices,
             )
 
