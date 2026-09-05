@@ -46,7 +46,6 @@ computed live.
 
 # sphinx_gallery_thumbnail_path = '_static/thumbnails/sphx_glr_plot_story_trajectories_thumb.gif'
 
-import numpy as np
 
 import hypertools as hyp
 
@@ -58,23 +57,15 @@ manip_spec = [{'model': 'Smooth', 'kwargs': {'kernel_width': 41}}, 'ZScore']
 manip_data = hyp.manip(data, model=manip_spec)
 
 # ALIGN in the 100-hub space (10 hyperalignment iterations), THEN reduce
-aligned = hyp.align(manip_data,
-                    model='HyperAlign', n_iter=10)
+aligned, score = hyp.align(manip_data, model='HyperAlign', n_iter=10,
+                           return_score=True)
 
-
-def dispersion(trajectories):
-    """Mean distance of the subjects to their shared centroid at each
-    timepoint, averaged over timepoints and divided by the overall cloud
-    scale (so it is comparable before and after alignment)."""
-    stack = np.stack([np.asarray(t) for t in trajectories])   # (subj, t, d)
-    centroid = stack.mean(axis=0, keepdims=True)
-    spread = np.linalg.norm(stack - centroid, axis=2).mean()
-    scale = np.linalg.norm(stack - stack.mean(axis=(0, 1)), axis=2).mean()
-    return spread / scale
-
-
-print(f'dispersion before alignment: {dispersion(manip_data):.2f}')
-print(f'dispersion after alignment:  {dispersion(aligned):.2f}')
+# `return_score=True` reports the alignment's dispersion score -- the mean
+# distance of the subjects to their shared centroid at each timepoint,
+# averaged over timepoints and divided by the overall cloud scale, so it is
+# comparable before and after alignment (`hypertools.align.score`)
+print(f"dispersion before alignment: {score['before']:.2f}")
+print(f"dispersion after alignment:  {score['after']:.2f}")
 
 # one bold color per subject from the 'husl' palette; a short sliding
 # 'window' trail (focused=1.5 s) lets you watch all 36 subjects move
