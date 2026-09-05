@@ -10,18 +10,28 @@ A string may name (tried in this order):
    (``fivethirtyeight_dataset``)
 5. a Kaggle dataset, explicit prefix ``'kaggle/<owner>/<dataset>'``
    (``kaggle_dataset``)
-6. a path to a local file
-7. a Hugging Face dataset (including streaming datasets)
-8. a Google Sheets URL
-9. a Google Drive URL or bare file ID
-10. a Dropbox URL or shared-link path
-11. any other URL (with or without an ``https://`` scheme)
+6. a built-in SYNTHETIC dataset name -- ``'random_walk'``, ``'helix'``,
+   ``'lorenz'``, ``'blobs'``, ``'moons'``, ``'swiss_roll'``, ``'s_curve'``
+   (``synthetic_dataset``; generated on the spot, never fetched)
+7. a web source, explicit prefix ``'wikipedia:'``, ``'yahoo:'`` or
+   ``'sec:'`` (``web_source``)
+8. a path to a local file
+9. a Hugging Face dataset (including streaming datasets)
+10. a Google Sheets URL
+11. a Google Drive URL or bare file ID
+12. a Dropbox URL or shared-link path
+13. any other URL (with or without an ``https://`` scheme)
 
-Steps 4 and 5 are explicit, unambiguous prefixes: unlike the scikit-learn/
-seaborn name lookups (which silently fall through to the next resolver when
-they don't recognize a name), a string that starts with ``'fivethirtyeight/'``
-or ``'kaggle/'`` unambiguously names that source, so a failure there raises
+Steps 4, 5 and 7 are explicit, unambiguous prefixes: unlike the scikit-learn/
+seaborn/synthetic name lookups (which silently fall through to the next
+resolver when they don't recognize a name), a string that starts with
+``'fivethirtyeight/'``, ``'kaggle/'``, ``'wikipedia:'``, ``'yahoo:'`` or
+``'sec:'`` unambiguously names that source, so a failure there raises
 immediately instead of falling through the rest of the chain.
+
+Any URL download (steps 10-13) can be cached on disk with ``cache=True``
+and replayed from that cache without touching the network with
+``offline=True`` (see :func:`url_cache_dir`).
 
 Lists of strings resolve element-wise to a list of datasets.
 
@@ -178,6 +188,19 @@ class HypertoolsTrustError(ValueError):
     ``EmptyDataError``, or ``json.JSONDecodeError`` from a genuinely
     malformed payload -- fall through to the "Tried, in order" digest
     instead of escaping raw.
+    """
+
+
+class HypertoolsOfflineError(HypertoolsIOError):
+    """Raised when ``offline=True`` was passed and the URL has no cached
+    copy to read (GH #285).
+
+    Subclasses :class:`~hypertools.core.exceptions.HypertoolsIOError`, so
+    existing handlers still catch it; ``load_source`` keys on this
+    specific type to let it ESCAPE the per-branch "tried, in order"
+    digest -- an offline miss is a deliberate, self-explanatory refusal
+    (the message names the cache path to populate), not one failed guess
+    among several.
     """
 
 
@@ -498,15 +521,889 @@ def _table_file_keys(root, files):
             for f in files}
 
 
+# ---------------------------------------------------------------------------
+# Synthetic (generated) datasets -- GH #285
+#
+# Every other resolver in this module fetches or reads data; these MAKE it.
+# They are registered by name in SYNTHETIC_DATASETS below, resolved by
+# :func:`synthetic_dataset` (which returns None for an unknown name, the same
+# "not mine" convention :func:`sklearn_dataset` and :func:`seaborn_dataset`
+# use), and every one of them is deterministic given ``random_state``.
+# ---------------------------------------------------------------------------
+
+def _synthetic_rng(random_state):
+    """``numpy.random.Generator`` for a hypertools ``random_state``.
+
+    Accepts None (fresh entropy), an int seed, a ``SeedSequence``, an
+    existing ``Generator``, or a legacy ``RandomState`` (whose own bit
+    generator is reused, so a caller threading a ``RandomState`` through
+    still gets a reproducible stream)."""
+    if isinstance(random_state, np.random.RandomState):
+        return np.random.default_rng(random_state.bit_generator)
+    return np.random.default_rng(random_state)
+
+
+def _synthetic_frame(x, target=None, target_name='target'):
+    """(n_samples, n_features) array -> DataFrame with ``dim_0 ... dim_k``
+    columns, plus ``target_name`` appended when scikit-learn gave us labels
+    or manifold positions (mirroring :func:`sklearn_dataset`, which appends
+    the bundled datasets' target the same way)."""
+    df = pd.DataFrame(
+        np.asarray(x, dtype=float),
+        columns=[f'dim_{i}' for i in range(np.shape(x)[1])])
+    if target is not None:
+        df[target_name] = target
+    return df
+
+
+def random_walk(n_samples=300, n_features=10, step=1.0, drift=0.0,
+                random_state=None):
+    """A Gaussian random walk: the cumulative sum of ``n_samples`` i.i.d.
+    normal steps in ``n_features`` dimensions.
+
+    Parameters
+    ----------
+    n_samples : int
+        Number of timepoints (rows).
+    n_features : int
+        Number of dimensions (columns).
+    step : float
+        Standard deviation of each step.
+    drift : float
+        Mean of each step (0 for an unbiased walk).
+    random_state : int, SeedSequence, Generator, RandomState, or None
+        Seed. The same seed always produces the same walk.
+
+    Returns
+    -------
+    numpy.ndarray
+        ``(n_samples, n_features)`` float array, rows ordered in time.
+    """
+    rng = _synthetic_rng(random_state)
+    steps = rng.normal(loc=drift, scale=step, size=(int(n_samples),
+                                                    int(n_features)))
+    return np.cumsum(steps, axis=0)
+
+
+def helix(n_samples=300, turns=3.0, noise=0.0, radius=1.0, pitch=1.0,
+          random_state=None):
+    """A 3D helix (spiral) sampled at ``n_samples`` evenly spaced angles.
+
+    Parameters
+    ----------
+    n_samples : int
+        Number of points (rows).
+    turns : float
+        Number of complete revolutions.
+    noise : float
+        Standard deviation of optional Gaussian noise added to every
+        coordinate (0 for a noiseless helix).
+    radius : float
+        Radius of the circle traced in the x/y plane.
+    pitch : float
+        Rise along z per full revolution.
+    random_state : int, SeedSequence, Generator, RandomState, or None
+        Seed for the noise (ignored when ``noise`` is 0, in which case the
+        result is fully deterministic).
+
+    Returns
+    -------
+    numpy.ndarray
+        ``(n_samples, 3)`` float array of x, y, z coordinates.
+    """
+    t = np.linspace(0.0, 2.0 * np.pi * float(turns), int(n_samples))
+    xyz = np.column_stack([radius * np.cos(t),
+                           radius * np.sin(t),
+                           pitch * t / (2.0 * np.pi)])
+    if noise:
+        xyz = xyz + _synthetic_rng(random_state).normal(
+            scale=float(noise), size=xyz.shape)
+    return xyz
+
+
+def lorenz(n_samples=2000, sigma=10.0, rho=28.0, beta=8.0 / 3.0, dt=0.01,
+           x0=None, random_state=None):
+    """A trajectory of the Lorenz system, integrated with fixed-step RK4.
+
+    ``dx/dt = sigma * (y - x)``, ``dy/dt = x * (rho - z) - y``,
+    ``dz/dt = x * y - beta * z``.
+
+    Parameters
+    ----------
+    n_samples : int
+        Number of integration steps to return (rows), spaced ``dt`` apart.
+    sigma, rho, beta : float
+        The system's parameters (the defaults are Lorenz's classic
+        butterfly-attractor values).
+    dt : float
+        Integration step size.
+    x0 : sequence of 3 floats or None
+        Initial condition. When None (the default), it is ``(1, 1, 1)``
+        plus a small random perturbation drawn from ``random_state``, so
+        ``n_datasets > 1`` yields nearby trajectories that diverge -- the
+        butterfly effect itself.
+    random_state : int, SeedSequence, Generator, RandomState, or None
+        Seed for that perturbation (unused when ``x0`` is given, which
+        makes the result fully deterministic).
+
+    Returns
+    -------
+    numpy.ndarray
+        ``(n_samples, 3)`` float array of x, y, z coordinates in time
+        order.
+    """
+    n_samples = int(n_samples)
+    if x0 is None:
+        state = np.array([1.0, 1.0, 1.0]) + _synthetic_rng(
+            random_state).normal(scale=1e-3, size=3)
+    else:
+        state = np.asarray(x0, dtype=float).ravel()
+        if state.size != 3:
+            raise HypertoolsIOError(
+                f'lorenz: x0 must have 3 elements (x, y, z); got '
+                f'{state.size}')
+
+    def _deriv(s):
+        x, y, z = s
+        return np.array([sigma * (y - x),
+                         x * (rho - z) - y,
+                         x * y - beta * z])
+
+    out = np.empty((n_samples, 3), dtype=float)
+    dt = float(dt)
+    for i in range(n_samples):
+        out[i] = state
+        k1 = _deriv(state)
+        k2 = _deriv(state + 0.5 * dt * k1)
+        k3 = _deriv(state + 0.5 * dt * k2)
+        k4 = _deriv(state + dt * k3)
+        state = state + (dt / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4)
+    return out
+
+
+def _sklearn_synthetic(maker, target_name):
+    """Wrap a ``sklearn.datasets.make_*`` generator as a hypertools
+    synthetic dataset: every keyword argument is passed straight through
+    to scikit-learn (so its own defaults and validation apply), and the
+    ``(X, y)`` pair it returns becomes one DataFrame with the labels /
+    manifold positions appended as ``target_name``."""
+    def _make(random_state=None, **kwargs):
+        from sklearn import datasets as sk_datasets
+        x, y = getattr(sk_datasets, maker)(random_state=random_state,
+                                           **kwargs)
+        return _synthetic_frame(x, y, target_name)
+    return _make
+
+
+blobs = _sklearn_synthetic('make_blobs', 'target')
+moons = _sklearn_synthetic('make_moons', 'target')
+swiss_roll = _sklearn_synthetic('make_swiss_roll', 't')
+s_curve = _sklearn_synthetic('make_s_curve', 't')
+
+# name -> (generator, one-line description). The descriptions are the
+# single source of truth for the synthetic half of hyp.load's docstring
+# and docs/io.rst -- see synthetic_dataset_docs().
+SYNTHETIC_DATASETS = {
+    'random_walk': (
+        random_walk,
+        'Gaussian random walk: (n_samples, n_features) array, cumulative '
+        'sum of normal steps. kwargs: n_samples=300, n_features=10, '
+        'step=1.0, drift=0.0'),
+    'helix': (
+        helix,
+        '3D helix: (n_samples, 3) array. kwargs: n_samples=300, '
+        'turns=3.0, noise=0.0, radius=1.0, pitch=1.0'),
+    'lorenz': (
+        lorenz,
+        "Lorenz attractor trajectory (fixed-step RK4): (n_samples, 3) "
+        'array. kwargs: n_samples=2000, sigma=10.0, rho=28.0, beta=8/3, '
+        'dt=0.01, x0=None'),
+    'blobs': (
+        blobs,
+        'isotropic Gaussian blobs via sklearn.datasets.make_blobs: '
+        "DataFrame of dim_* columns + a 'target' cluster label. Its "
+        'kwargs (n_samples, n_features, centers, cluster_std, ...) pass '
+        'straight through'),
+    'moons': (
+        moons,
+        'two interleaving half-circles via sklearn.datasets.make_moons: '
+        "DataFrame of dim_0/dim_1 + a 'target' label. Its kwargs "
+        '(n_samples, noise, ...) pass straight through'),
+    'swiss_roll': (
+        swiss_roll,
+        'Swiss-roll manifold via sklearn.datasets.make_swiss_roll: '
+        "DataFrame of dim_0/1/2 + 't', the position along the roll. Its "
+        'kwargs (n_samples, noise, hole, ...) pass straight through'),
+    's_curve': (
+        s_curve,
+        'S-curve manifold via sklearn.datasets.make_s_curve: DataFrame of '
+        "dim_0/1/2 + 't', the position along the curve. Its kwargs "
+        '(n_samples, noise, ...) pass straight through'),
+}
+
+
+def synthetic_dataset_docs(indent='    '):
+    """The registered synthetic datasets as a reStructuredText bullet
+    list, so ``hyp.load``'s docstring and ``docs/io.rst`` can list them
+    without duplicating :data:`SYNTHETIC_DATASETS`."""
+    return '\n'.join(f'{indent}* ``{name}`` -- {doc}'
+                     for name, (_, doc) in SYNTHETIC_DATASETS.items())
+
+
+def synthetic_dataset(name, n_datasets=1, random_state=None, seed=None,
+                      **kwargs):
+    """Generate one of the built-in synthetic datasets by name (GH #285).
+
+    Unlike every other resolver in this module, nothing is fetched or read
+    from disk: the data is generated on the spot and is fully reproducible
+    given ``random_state``.
+
+    Parameters
+    ----------
+    name : str
+        One of :data:`SYNTHETIC_DATASETS` (``'random_walk'``, ``'helix'``,
+        ``'lorenz'``, ``'blobs'``, ``'moons'``, ``'swiss_roll'``,
+        ``'s_curve'``).
+    n_datasets : int
+        How many independent datasets to generate (default 1). When
+        greater than 1 the result is a *list* of that many datasets -- one
+        hypertools multi-dataset, exactly the shape
+        ``hypertools.load('weights')`` returns -- each generated from its
+        own seed derived deterministically from ``random_state``.
+    random_state : int, SeedSequence, Generator, RandomState, or None
+        Seed. ``seed=`` is accepted as an alias (hypertools uses
+        ``random_state`` throughout its sklearn-facing API, and ``seed``
+        in its plotting/animation API; passing both raises unless they
+        are equal).
+    **kwargs
+        Passed to the named generator (see :data:`SYNTHETIC_DATASETS` and
+        the per-generator docstrings). An unknown keyword raises
+        ``TypeError`` from the generator itself.
+
+    Returns
+    -------
+    data : numpy.ndarray, pandas.DataFrame, list, or None
+        The generated dataset (a list when ``n_datasets > 1``). None when
+        ``name`` isn't a registered synthetic dataset -- callers should
+        treat this as "not mine" and continue down the resolution chain,
+        exactly like :func:`sklearn_dataset`.
+    """
+    if not isinstance(name, str):
+        return None
+    entry = SYNTHETIC_DATASETS.get(name)
+    if entry is None:
+        return None
+    maker = entry[0]
+
+    if seed is not None:
+        if random_state is not None and random_state is not seed \
+                and random_state != seed:
+            raise HypertoolsIOError(
+                f'{name!r}: pass either random_state= or its alias seed=, '
+                f'not both with different values (got '
+                f'random_state={random_state!r}, seed={seed!r})')
+        random_state = seed
+
+    try:
+        n_datasets = int(n_datasets)
+    except (TypeError, ValueError) as e:
+        raise HypertoolsIOError(
+            f'{name!r}: n_datasets must be a positive integer; got '
+            f'{n_datasets!r}') from e
+    if n_datasets < 1:
+        raise HypertoolsIOError(
+            f'{name!r}: n_datasets must be a positive integer; got '
+            f'{n_datasets}')
+
+    if n_datasets == 1:
+        return maker(random_state=random_state, **kwargs)
+    # independent-but-reproducible seeds for the list case: one
+    # SeedSequence spawn per dataset when a seed was given, plain None
+    # (fresh entropy) when it wasn't
+    if random_state is None:
+        seeds = [None] * n_datasets
+    else:
+        base = random_state if isinstance(random_state, np.random.SeedSequence) \
+            else np.random.SeedSequence(
+                _synthetic_rng(random_state).integers(2 ** 63))
+        seeds = [int(child.generate_state(1)[0])
+                 for child in base.spawn(n_datasets)]
+    return [maker(random_state=s, **kwargs) for s in seeds]
+
+
+# ---------------------------------------------------------------------------
+# Web sources -- explicit 'wikipedia:' / 'yahoo:' / 'sec:' prefixes (GH #285)
+#
+# Like 'fivethirtyeight/' and 'kaggle/', these prefixes are unambiguous: a
+# matching-but-failing name raises instead of falling through the rest of the
+# chain. Wikipedia's and the SEC's access policies both ask for a
+# User-Agent naming the client and a contact address, so every request here
+# goes out with _contact_user_agent() rather than the bare 'hypertools' UA.
+# ---------------------------------------------------------------------------
+
+WEB_SOURCE_PREFIXES = ('wikipedia:', 'yahoo:', 'sec:')
+
+# Matches an explicit web-source prefix followed by something non-blank, so
+# ordinary prose ('wikipedia: the free encyclopedia') is not mistaken for a
+# source name in is_loadable_string().
+_WEB_PREFIX_RE = re.compile(r'^(wikipedia|yahoo|sec):\S')
+
+_PROJECT_CONTACT_FALLBACK = 'contextualdynamics@gmail.com'
+_contact_ua_cache = None
+
+_SEC_TICKERS_URL = 'https://www.sec.gov/files/company_tickers.json'
+_SEC_CONCEPT_URL = ('https://data.sec.gov/api/xbrl/companyconcept/'
+                    'CIK{cik:010d}/{taxonomy}/{concept}.json')
+_SEC_FACTS_URL = ('https://data.sec.gov/api/xbrl/companyfacts/'
+                  'CIK{cik:010d}.json')
+# XBRL taxonomies tried, in order, when the caller doesn't name one: the
+# default concept (shares outstanding) is a 'dei' cover-page fact, while
+# financial-statement concepts (Revenues, Assets, ...) live in 'us-gaap'.
+_SEC_TAXONOMIES = ('dei', 'us-gaap')
+_sec_cik_cache = None
+
+_YAHOO_CHART_URL = 'https://query1.finance.yahoo.com/v8/finance/chart/{ticker}'
+
+
+def _contact_user_agent():
+    """Request headers whose User-Agent names hypertools, its version, and
+    the project's contact address.
+
+    Wikipedia's User-Agent policy and the SEC's fair-access policy both ask
+    automated clients to identify themselves with a contact, and the SEC
+    returns 403 without one. The address is read from the *installed
+    package metadata* (``Author-email``), which pip generates from
+    ``pyproject.toml``'s ``authors`` -- so ``pyproject.toml`` stays the
+    single declaration, and this still works from a wheel, where the file
+    itself isn't shipped. Falls back to the project address if the metadata
+    can't be read (e.g. hypertools imported from a source tree that was
+    never installed).
+
+    The string is deliberately ``hypertools/<version> (<contact>)`` with
+    NO project URL in it: measured 2026-09-05, sec.gov's WAF answers HTTP
+    403 to an otherwise identical User-Agent that contains a ``https://``
+    URL, while both Wikipedia and the SEC accept the contact-only form.
+    """
+    global _contact_ua_cache
+    if _contact_ua_cache is None:
+        contact, ver = _PROJECT_CONTACT_FALLBACK, 'unknown'
+        try:
+            from importlib.metadata import metadata as _metadata
+            from importlib.metadata import version as _version
+            md = _metadata('hypertools')
+            raw = md.get('Author-email') or md.get('Maintainer-email') or ''
+            match = re.search(r'<([^>]+@[^>]+)>', raw)
+            if match:
+                contact = match.group(1)
+            elif '@' in raw:
+                contact = raw.strip()
+            ver = _version('hypertools')
+        except Exception:
+            pass
+        _contact_ua_cache = {'User-Agent': f'hypertools/{ver} ({contact})'}
+    return dict(_contact_ua_cache)
+
+
+def web_source(name, **kwargs):
+    """Dispatch an explicit web-source prefix (GH #285).
+
+    ``'wikipedia:<Title>'`` -> :func:`wikipedia_source`,
+    ``'yahoo:<TICKER>'`` -> :func:`yahoo_source`,
+    ``'sec:<TICKER>'`` -> :func:`sec_source`. Returns None (only) when
+    ``name`` carries none of those prefixes, so callers can continue down
+    the resolution chain; a prefixed name that fails raises
+    :class:`~hypertools.core.exceptions.HypertoolsIOError`.
+    """
+    if not isinstance(name, str):
+        return None
+    if name.startswith('wikipedia:'):
+        return wikipedia_source(name, **kwargs)
+    if name.startswith('yahoo:'):
+        return yahoo_source(name, **kwargs)
+    if name.startswith('sec:'):
+        return sec_source(name, **kwargs)
+    return None
+
+
+def _web_get(url, params=None, timeout=30, label=''):
+    """GET a web-source URL with the contact User-Agent, wrapping transport
+    failures in HypertoolsIOError and retrying transient 5xx gateway errors
+    the same way the fivethirtyeight loader does."""
+    headers = _contact_user_agent()
+    delay, last_exc = 1.0, None
+    for attempt in range(3):
+        try:
+            resp = requests.get(url, params=params, headers=headers,
+                                timeout=timeout)
+        except requests.RequestException as e:
+            last_exc = e
+            if attempt == 2:
+                raise HypertoolsIOError(
+                    f'could not reach {label or url}: '
+                    f'{type(e).__name__}: {e}') from e
+        else:
+            if resp.status_code not in _TRANSIENT_STATUS or attempt == 2:
+                return resp
+        time.sleep(delay)
+        delay *= 2
+    raise last_exc  # unreachable: the loop always returns or raises
+
+
+def wikipedia_source(name, lang='en', intro=False, timeout=30):
+    """Plain-text extract of one or more Wikipedia articles (GH #285).
+
+    ``name`` is ``'wikipedia:<Title>'``. Several articles can be requested
+    at once by separating their titles with ``'|'``
+    (``'wikipedia:Physics|Chemistry'``), which returns a list of strings in
+    the order asked for; passing a *list* of ``'wikipedia:...'`` names to
+    :func:`hypertools.load` does the same thing.
+
+    Titles are fetched from the MediaWiki action API
+    (``action=query&prop=extracts&explaintext=1``) with redirects followed,
+    so ``'wikipedia:NYC'`` resolves to "New York City". Note that MediaWiki
+    caps a full-text extract request at ONE title per request, so a
+    multi-title name issues one request per title.
+
+    Parameters
+    ----------
+    name : str
+        ``'wikipedia:<Title>'``, or ``'wikipedia:<A>|<B>|<C>'``.
+    lang : str
+        Wikipedia language edition (default ``'en'`` ->
+        en.wikipedia.org).
+    intro : bool
+        If True, return only the lead section (``exintro``) instead of the
+        whole article.
+    timeout : float
+        Per-request timeout, in seconds.
+
+    Returns
+    -------
+    text : str or list of str
+        The article's plain text; a list when several titles were asked
+        for.
+    """
+    if not isinstance(name, str) or not name.startswith('wikipedia:'):
+        return None
+    raw = name[len('wikipedia:'):].strip()
+    titles = [t.strip() for t in raw.split('|') if t.strip()]
+    if not titles:
+        raise HypertoolsIOError(
+            f"{name!r} is missing an article title -- expected "
+            "'wikipedia:<Title>', e.g. 'wikipedia:Dartmouth College' "
+            "(several titles can be separated by '|').")
+
+    api = f'https://{lang}.wikipedia.org/w/api.php'
+    extracts = []
+    for title in titles:
+        params = {'action': 'query', 'prop': 'extracts', 'explaintext': 1,
+                  'redirects': 1, 'format': 'json', 'formatversion': 2,
+                  'titles': title}
+        if intro:
+            params['exintro'] = 1
+        resp = _web_get(api, params=params, timeout=timeout,
+                        label=f'the MediaWiki API at {api}')
+        if resp.status_code >= 400:
+            raise HypertoolsIOError(
+                f'the MediaWiki API at {api} returned HTTP '
+                f'{resp.status_code} for {title!r}.')
+        try:
+            pages = resp.json()['query']['pages']
+        except (ValueError, KeyError) as e:
+            raise HypertoolsIOError(
+                f'unexpected response from the MediaWiki API at {api} for '
+                f'{title!r}: {type(e).__name__}: {e}') from e
+        if not pages:
+            raise HypertoolsIOError(
+                f'no Wikipedia article matched {title!r} on '
+                f'{lang}.wikipedia.org.')
+        page = pages[0]
+        if page.get('missing'):
+            raise HypertoolsIOError(
+                f'{title!r} is not a {lang}.wikipedia.org article title '
+                '(the page does not exist). Titles are case-sensitive '
+                'after the first letter; underscores and spaces are '
+                'equivalent.')
+        text = (page.get('extract') or '').strip()
+        if not text:
+            raise HypertoolsIOError(
+                f'the Wikipedia article {page.get("title", title)!r} '
+                'returned an empty plain-text extract (it may be a '
+                'disambiguation or redirect-only page).')
+        extracts.append(text)
+    return extracts[0] if len(extracts) == 1 else extracts
+
+
+def _to_epoch(value, default):
+    """Epoch seconds from a date-like value (str, date, datetime, pandas
+    Timestamp) or a number already in epoch seconds; ``default`` when
+    None."""
+    if value is None:
+        return int(default)
+    if isinstance(value, bool):
+        raise HypertoolsIOError(f'invalid date bound: {value!r}')
+    if isinstance(value, (int, float, np.integer, np.floating)):
+        return int(value)
+    try:
+        return int(pd.Timestamp(value).timestamp())
+    except (ValueError, TypeError) as e:
+        raise HypertoolsIOError(
+            f'could not interpret {value!r} as a date; pass a string '
+            "('2020-01-01'), a datetime/date, or epoch seconds."
+        ) from e
+
+
+def yahoo_source(name, start=None, end=None, interval='1d', timeout=30):
+    """Daily (or other-interval) price history for one ticker from Yahoo
+    Finance's v8 chart endpoint (GH #285).
+
+    ``name`` is ``'yahoo:<TICKER>'``, e.g. ``'yahoo:AAPL'``.
+
+    The request always carries EXPLICIT ``period1``/``period2`` epoch
+    bounds. ``range=max&interval=1d`` silently degrades to 3-month bars
+    (measured 2026-09-03: AAPL came back with 169 rows since 1984), so the
+    range form is deliberately not used.
+
+    Parameters
+    ----------
+    name : str
+        ``'yahoo:<TICKER>'``.
+    start, end : str, date, datetime, epoch seconds, or None
+        Inclusive window bounds. Defaults: the epoch (1970-01-01) and
+        "now", i.e. the ticker's whole history.
+    interval : str
+        Yahoo's bar size -- ``'1d'`` (default), ``'1wk'``, ``'1mo'``, or an
+        intraday size such as ``'1h'`` (intraday data is only served for
+        recent windows).
+    timeout : float
+        Request timeout, in seconds.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Indexed by a ``DatetimeIndex`` named ``'date'`` (bar timestamps
+        normalized to midnight), with float columns ``open``, ``high``,
+        ``low``, ``close``, ``volume`` and, when Yahoo provides it,
+        ``adj_close`` (split/dividend-adjusted). Rows are in time order;
+        gaps Yahoo reports as nulls stay NaN rather than being dropped.
+    """
+    if not isinstance(name, str) or not name.startswith('yahoo:'):
+        return None
+    ticker = name[len('yahoo:'):].strip()
+    if not ticker:
+        raise HypertoolsIOError(
+            f"{name!r} is missing a ticker symbol -- expected "
+            "'yahoo:<TICKER>', e.g. 'yahoo:AAPL'.")
+
+    params = {'period1': _to_epoch(start, 0),
+              'period2': _to_epoch(end, time.time() + 86400),
+              'interval': interval}
+    url = _YAHOO_CHART_URL.format(ticker=ticker)
+    resp = _web_get(url, params=params, timeout=timeout,
+                    label=f"Yahoo Finance's chart API for {ticker!r}")
+    try:
+        payload = resp.json()
+    except ValueError as e:
+        raise HypertoolsIOError(
+            f'Yahoo Finance returned a non-JSON response (HTTP '
+            f'{resp.status_code}) for {ticker!r}: {type(e).__name__}: {e}'
+        ) from e
+    chart = payload.get('chart') or {}
+    error = chart.get('error')
+    if error:
+        raise HypertoolsIOError(
+            f'Yahoo Finance rejected {ticker!r}: '
+            f'{error.get("description", error)} (HTTP {resp.status_code}). '
+            'Check the symbol on https://finance.yahoo.com.')
+    results = chart.get('result') or []
+    if not results:
+        raise HypertoolsIOError(
+            f'Yahoo Finance returned no result for {ticker!r} (HTTP '
+            f'{resp.status_code}).')
+    result = results[0]
+    stamps = result.get('timestamp')
+    if not stamps:
+        raise HypertoolsIOError(
+            f'Yahoo Finance returned no {interval} bars for {ticker!r} in '
+            f'the requested window ({params["period1"]}..'
+            f'{params["period2"]}, epoch seconds). Widen start=/end=, or '
+            'note that intraday intervals are only served for recent '
+            'windows.')
+    quote = (result.get('indicators') or {}).get('quote') or [{}]
+    quote = quote[0]
+    index = pd.to_datetime(stamps, unit='s').normalize()
+    index.name = 'date'
+    frame = {}
+    for col in ('open', 'high', 'low', 'close', 'volume'):
+        if quote.get(col) is not None:
+            frame[col] = pd.Series(quote[col], index=index, dtype=float)
+    adj = (result.get('indicators') or {}).get('adjclose')
+    if adj and adj[0].get('adjclose') is not None:
+        frame['adj_close'] = pd.Series(adj[0]['adjclose'], index=index,
+                                       dtype=float)
+    if not frame:
+        raise HypertoolsIOError(
+            f'Yahoo Finance returned bars for {ticker!r} with no price '
+            'columns.')
+    order = [c for c in ('open', 'high', 'low', 'close', 'adj_close',
+                         'volume') if c in frame]
+    return pd.DataFrame(frame, columns=order).sort_index()
+
+
+def _sec_cik_map(timeout=30):
+    """``{TICKER: CIK}`` from the SEC's public ticker file, cached
+    per-process (it is ~800 KB and changes rarely)."""
+    global _sec_cik_cache
+    if _sec_cik_cache is None:
+        resp = _web_get(_SEC_TICKERS_URL, timeout=timeout,
+                        label="the SEC's company_tickers.json")
+        if resp.status_code >= 400:
+            raise HypertoolsIOError(
+                f'the SEC ticker file ({_SEC_TICKERS_URL}) returned HTTP '
+                f'{resp.status_code}. The SEC requires a User-Agent with a '
+                'contact address; hypertools sends one, so this is most '
+                'likely a rate limit (10 requests/second) or an outage.')
+        try:
+            rows = resp.json()
+        except ValueError as e:
+            raise HypertoolsIOError(
+                f'could not parse the SEC ticker file: '
+                f'{type(e).__name__}: {e}') from e
+        _sec_cik_cache = {str(row['ticker']).upper(): int(row['cik_str'])
+                          for row in rows.values()}
+    return _sec_cik_cache
+
+
+def _sec_facts_frame(facts, unit, dedupe):
+    """XBRL fact records ({unit: [fact, ...]}) -> DataFrame indexed by
+    period end."""
+    rows = []
+    for unit_name, records in facts.items():
+        if unit is not None and unit_name != unit:
+            continue
+        for record in records:
+            rows.append({**record, 'unit': unit_name})
+    if not rows:
+        return None
+    frame = pd.DataFrame(rows)
+    frame = frame.rename(columns={'val': 'value'})
+    for col in ('end', 'start', 'filed'):
+        if col in frame:
+            frame[col] = pd.to_datetime(frame[col], errors='coerce')
+    frame['value'] = pd.to_numeric(frame['value'], errors='coerce')
+    sort_cols = [c for c in ('end', 'filed') if c in frame]
+    frame = frame.sort_values(sort_cols)
+    if dedupe:
+        # one value per period end: the LATEST filing wins over amendments
+        frame = frame.drop_duplicates('end', keep='last')
+    frame = frame.set_index('end')
+    order = [c for c in ('value', 'unit', 'start', 'filed', 'form', 'fy',
+                         'fp', 'frame', 'accn') if c in frame.columns]
+    return frame[order + [c for c in frame.columns if c not in order]]
+
+
+def sec_source(name, concept='EntityCommonStockSharesOutstanding',
+               taxonomy=None, unit=None, dedupe=True, timeout=30):
+    """One XBRL concept's reported values for a filer, from the SEC's
+    public company-facts API (GH #285).
+
+    ``name`` is ``'sec:<TICKER>'``, e.g. ``'sec:AAPL'``. The ticker is
+    mapped to its CIK through the SEC's ``company_tickers.json`` (cached
+    per-process).
+
+    The per-concept ``companyconcept`` endpoint is tried first and the
+    complete ``companyfacts`` file is used as a fallback, because
+    ``companyconcept`` comes back EMPTY for some filers whose
+    ``companyfacts`` carries the same concept (measured 2026-09-03: ABT and
+    KO for the default shares-outstanding concept).
+
+    Every request carries a User-Agent with the project's contact address,
+    as the SEC's fair-access policy requires (it answers 403 without one).
+
+    Parameters
+    ----------
+    name : str
+        ``'sec:<TICKER>'``.
+    concept : str
+        XBRL concept/tag name (default
+        ``'EntityCommonStockSharesOutstanding'``, the cover-page share
+        count). Financial-statement concepts (``'Revenues'``,
+        ``'Assets'``, ...) work too.
+    taxonomy : str or None
+        XBRL taxonomy holding the concept (``'dei'``, ``'us-gaap'``, ...).
+        None (the default) tries ``'dei'`` then ``'us-gaap'``, and lets the
+        companyfacts fallback search every taxonomy the filer reports.
+    unit : str or None
+        Keep only facts reported in this unit (e.g. ``'shares'``,
+        ``'USD'``). None keeps every unit and labels each row in a
+        ``'unit'`` column.
+    dedupe : bool
+        When True (default), keep one row per period end -- the most
+        recently filed value, so an amended figure supersedes the
+        original. False returns every filed fact, amendments included.
+    timeout : float
+        Per-request timeout, in seconds.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Indexed by period end (``DatetimeIndex`` named ``'end'``), with a
+        numeric ``'value'`` column plus the fact's metadata (``unit``,
+        ``start``, ``filed``, ``form``, ``fy``, ``fp``, ``frame``,
+        ``accn``) where the SEC reports it.
+    """
+    if not isinstance(name, str) or not name.startswith('sec:'):
+        return None
+    ticker = name[len('sec:'):].strip().upper()
+    if not ticker:
+        raise HypertoolsIOError(
+            f"{name!r} is missing a ticker symbol -- expected "
+            "'sec:<TICKER>', e.g. 'sec:AAPL'.")
+    ciks = _sec_cik_map(timeout=timeout)
+    if ticker not in ciks:
+        raise HypertoolsIOError(
+            f'{ticker!r} is not in the SEC ticker file '
+            f'({_SEC_TICKERS_URL}), so hypertools cannot map it to a CIK. '
+            'Only SEC registrants (US-listed filers) are there; check the '
+            'symbol at https://www.sec.gov/cgi-bin/browse-edgar?action='
+            'getcompany.')
+    cik = ciks[ticker]
+    taxonomies = (taxonomy,) if taxonomy else _SEC_TAXONOMIES
+
+    for tax in taxonomies:
+        url = _SEC_CONCEPT_URL.format(cik=cik, taxonomy=tax, concept=concept)
+        resp = _web_get(url, timeout=timeout,
+                        label=f"the SEC's companyconcept API for {ticker}")
+        if resp.status_code == 404:
+            continue
+        if resp.status_code >= 400:
+            raise HypertoolsIOError(
+                f'the SEC companyconcept API returned HTTP '
+                f'{resp.status_code} for {ticker} ({tax}/{concept}): {url}')
+        try:
+            units = resp.json().get('units') or {}
+        except ValueError:
+            units = {}
+        frame = _sec_facts_frame(units, unit, dedupe)
+        if frame is not None and len(frame):
+            return frame
+
+    # companyconcept was missing or EMPTY -- fall back to the filer's
+    # complete facts file, which carries the same concept for filers whose
+    # per-concept endpoint returns nothing
+    url = _SEC_FACTS_URL.format(cik=cik)
+    resp = _web_get(url, timeout=timeout,
+                    label=f"the SEC's companyfacts API for {ticker}")
+    if resp.status_code >= 400:
+        raise HypertoolsIOError(
+            f'the SEC companyfacts API returned HTTP {resp.status_code} '
+            f'for {ticker} (CIK {cik:010d}): {url}')
+    try:
+        all_facts = resp.json().get('facts') or {}
+    except ValueError as e:
+        raise HypertoolsIOError(
+            f'could not parse the SEC companyfacts response for {ticker}: '
+            f'{type(e).__name__}: {e}') from e
+    search = taxonomies if taxonomy else tuple(all_facts)
+    for tax in search:
+        entry = (all_facts.get(tax) or {}).get(concept)
+        if not entry:
+            continue
+        frame = _sec_facts_frame(entry.get('units') or {}, unit, dedupe)
+        if frame is not None and len(frame):
+            return frame
+    raise HypertoolsIOError(
+        f'the SEC reports no {concept!r} facts for {ticker} (CIK '
+        f'{cik:010d})'
+        + (f' in the {taxonomy!r} taxonomy' if taxonomy else '')
+        + (f' in unit {unit!r}' if unit else '')
+        + '. Browse what the filer does report at '
+        f'https://data.sec.gov/api/xbrl/companyfacts/CIK{cik:010d}.json.')
+
+
+# ---------------------------------------------------------------------------
+# On-disk cache for arbitrary URL downloads (GH #285)
+# ---------------------------------------------------------------------------
+
+def url_cache_dir():
+    """Directory holding cached URL downloads.
+
+    Defaults to ``urls/`` inside the same ``~/hypertools_data`` directory
+    the built-in example datasets are cached in (``hypertools.io.load.
+    DATA_DIR``); set ``HYPERTOOLS_URL_CACHE`` to put it somewhere else
+    (useful for tests and for read-only home directories)."""
+    override = os.environ.get('HYPERTOOLS_URL_CACHE')
+    if override:
+        return Path(override).expanduser()
+    from .load import DATA_DIR
+    return Path(DATA_DIR) / 'urls'
+
+
+def cached_url_path(url):
+    """Path this URL's cached copy lives at: the SHA-256 of the full URL
+    (so query strings and rlkey tokens can't collide), keeping the URL's
+    filename extension when it has a recognized one so the cached file is
+    still identifiable by hand."""
+    import hashlib
+    digest = hashlib.sha256(url.encode('utf-8')).hexdigest()
+    suffix = Path(url.split('?')[0].rstrip('/')).suffix.lower()
+    if suffix not in _SUPPORTED_EXTENSIONS:
+        suffix = ''
+    return url_cache_dir() / f'{digest}{suffix}'
+
+
+def _write_cached(path, raw, name_hint):
+    """Write ``raw`` into the cache atomically: a per-process ``.part``
+    file, then ``os.replace``, so an interrupted download can never leave a
+    truncated file that later runs would trust. The download's filename
+    hint is stored beside it so a cache hit parses the payload exactly the
+    way the live download did."""
+    import json
+    path.parent.mkdir(parents=True, exist_ok=True)
+    part = path.with_name(f'{path.name}.{os.getpid()}.part')
+    part.write_bytes(raw)
+    os.replace(part, path)
+    if name_hint:
+        meta = path.with_name(f'{path.name}.meta.json')
+        meta_part = meta.with_name(f'{meta.name}.{os.getpid()}.part')
+        meta_part.write_text(json.dumps({'url_name_hint': name_hint}),
+                             encoding='utf-8')
+        os.replace(meta_part, meta)
+
+
+def _read_cached(path):
+    """``(bytes, name_hint)`` from a cached download, or None when it isn't
+    cached."""
+    import json
+    if not path.is_file():
+        return None
+    meta = path.with_name(f'{path.name}.meta.json')
+    name_hint = None
+    if meta.is_file():
+        try:
+            name_hint = json.loads(meta.read_text(encoding='utf-8')).get(
+                'url_name_hint')
+        except (ValueError, OSError):
+            name_hint = None
+    return path.read_bytes(), name_hint
+
+
 def is_loadable_string(s):
     """Cheap (no-network) check: could this string plausibly name a data
     source? Used to decide whether to route strings through load() rather
     than treating them as raw text to embed."""
     from .load import EXAMPLE_DATA
-    if not isinstance(s, str) or not s.strip() or any(c.isspace()
-                                                      for c in s.strip()):
+    if not isinstance(s, str):
         return False
-    if s in EXAMPLE_DATA:
+    # explicit web-source prefixes are checked BEFORE the whitespace guard,
+    # since article titles contain spaces ('wikipedia:Dartmouth College');
+    # the pattern requires a non-blank character right after the colon, so
+    # ordinary prose ('wikipedia: the free encyclopedia') is not matched
+    if _WEB_PREFIX_RE.match(s.strip()):
+        return True
+    if not s.strip() or any(c.isspace() for c in s.strip()):
+        return False
+    if s in EXAMPLE_DATA or s in SYNTHETIC_DATASETS:
         return True
     if s.startswith('fivethirtyeight/') or s.startswith('kaggle/'):
         return True
@@ -530,8 +1427,9 @@ def is_loadable_string(s):
 
 
 def load_source(source, split=None, streaming=False, trust=False,
-                extra_attempts=None):
-    """Resolve one non-builtin string source (steps 6-11 of the chain --
+                extra_attempts=None, cache=False, offline=False,
+                decode_labels=True, **source_kwargs):
+    """Resolve one non-builtin string source (steps 6-13 of the chain --
     built-in/scikit-learn/seaborn names and the explicit
     fivethirtyeight/kaggle prefixes, steps 1-5, are tried by
     :func:`hypertools.load` before this function is called).
@@ -551,14 +1449,49 @@ def load_source(source, split=None, streaming=False, trust=False,
     descriptions of resolvers already attempted by the caller (e.g. the
     scikit-learn/seaborn dataset-name lookups), so the final error message
     reflects the whole chain.
+
+    ``cache``/``offline`` govern the on-disk URL cache (see
+    :func:`url_cache_dir`): ``cache=True`` stores every URL/Drive/Dropbox/
+    Sheets download and reuses it next time, ``offline=True`` reads ONLY
+    from that cache and raises rather than touching the network.
+    ``decode_labels`` is threaded to :func:`_load_hf`. Any remaining
+    keyword arguments belong to the synthetic (step 6) and web-prefix
+    (step 7) sources and are passed to whichever of those matches; passing
+    them with any other kind of source raises ``TypeError``, so a typo
+    can't be silently ignored.
     """
     attempts = list(extra_attempts) if extra_attempts else []
+
+    # 6. built-in synthetic dataset: generated, never fetched. Checked
+    # before local-file resolution, so the same shadowing rule as the
+    # scikit-learn/seaborn names applies (pass './helix' or a path with an
+    # extension to load a local file of that name instead).
+    synthetic = synthetic_dataset(source, **source_kwargs) \
+        if source in SYNTHETIC_DATASETS else None
+    if synthetic is not None:
+        return synthetic
+    attempts.append('synthetic dataset: not one of '
+                    f'{sorted(SYNTHETIC_DATASETS)}')
+
+    # 7. web source with an explicit prefix ('wikipedia:', 'yahoo:',
+    # 'sec:'): unambiguous, so a failure raises rather than falling
+    # through the rest of the chain
+    if isinstance(source, str) and source.startswith(WEB_SOURCE_PREFIXES):
+        return web_source(source, **source_kwargs)
+
+    if source_kwargs:
+        raise TypeError(
+            f'hypertools.load: unexpected keyword argument(s) '
+            f'{sorted(source_kwargs)} for {source!r}. Extra keywords are '
+            'only accepted by the synthetic datasets '
+            f'({sorted(SYNTHETIC_DATASETS)}) and the web sources '
+            f'({list(WEB_SOURCE_PREFIXES)}).')
 
     is_url_like = source.startswith(('http://', 'https://')) \
         or 'drive.google.com' in source or 'docs.google.com' in source \
         or 'dropbox.com' in source
 
-    # 6. local file (skipped for explicit URLs, which are never local
+    # 8. local file (skipped for explicit URLs, which are never local
     # paths -- the digest used to list a slash-collapsed 'https:/...'
     # local-file attempt for URL inputs, QC 2026-07 F19-013)
     if not is_url_like:
@@ -576,56 +1509,60 @@ def load_source(source, split=None, streaming=False, trust=False,
         else:
             attempts.append(f'local file: not found at {path}')
 
-    # 7. Hugging Face dataset (skip for obvious URLs)
+    # 9. Hugging Face dataset (skip for obvious URLs)
     if not is_url_like and _HF_ID_RE.match(source):
         try:
-            return _load_hf(source, split=split, streaming=streaming)
+            return _load_hf(source, split=split, streaming=streaming,
+                            decode_labels=decode_labels)
         except ImportError:
             raise
         except Exception as e:  # dataset not found, gated, etc.
             attempts.append(f'Hugging Face dataset: {type(e).__name__}: '
                             f'{str(e).splitlines()[0][:120]}')
 
-    # 8. Google Sheets URL -> CSV export (checked before generic Drive id
+    # 10. Google Sheets URL -> CSV export (checked before generic Drive id
     # extraction, since a Sheets URL also matches the '/d/<id>' pattern)
     sheet_url = _normalize_google_sheet(source)
     if sheet_url is not None:
         try:
-            raw, name_hint = _fetch_bytes(sheet_url)
+            raw, name_hint = _fetch_bytes(sheet_url, cache=cache,
+                                          offline=offline)
             return _parse_payload(raw, name_hint or 'sheet.csv',
                                   trust=trust, remote=True)
-        except HypertoolsTrustError:
+        except (HypertoolsTrustError, HypertoolsOfflineError):
             raise
         except Exception as e:
             attempts.append(f'Google Sheets: {type(e).__name__}: {e}')
 
-    # 9. Google Drive URL or bare ID
+    # 11. Google Drive URL or bare ID
     drive_id = _extract_drive_id(source)
     if drive_id is not None:
         url = f'https://drive.google.com/uc?export=download&id={drive_id}'
         try:
-            raw, name_hint = _fetch_bytes(url)
+            raw, name_hint = _fetch_bytes(url, cache=cache,
+                                          offline=offline)
             return _parse_payload(raw, name_hint or source,
                                   trust=trust, remote=True)
-        except HypertoolsTrustError:
+        except (HypertoolsTrustError, HypertoolsOfflineError):
             raise
         except Exception as e:
             attempts.append(f'Google Drive ({drive_id}): '
                             f'{type(e).__name__}: {e}')
 
-    # 10. Dropbox URL or shared-link path
+    # 12. Dropbox URL or shared-link path
     dropbox_url = _normalize_dropbox(source)
     if dropbox_url is not None:
         try:
-            raw, name_hint = _fetch_bytes(dropbox_url)
+            raw, name_hint = _fetch_bytes(dropbox_url, cache=cache,
+                                          offline=offline)
             return _parse_payload(raw, name_hint or source,
                                   trust=trust, remote=True)
-        except HypertoolsTrustError:
+        except (HypertoolsTrustError, HypertoolsOfflineError):
             raise
         except Exception as e:
             attempts.append(f'Dropbox: {type(e).__name__}: {e}')
 
-    # 11. any URL, with or without a scheme
+    # 13. any URL, with or without a scheme
     url = None
     if source.startswith(('http://', 'https://')):
         url = source
@@ -647,10 +1584,11 @@ def load_source(source, split=None, streaming=False, trust=False,
             'https:// prefix')
     if url is not None:
         try:
-            raw, name_hint = _fetch_bytes(url)
+            raw, name_hint = _fetch_bytes(url, cache=cache,
+                                          offline=offline)
             return _parse_payload(raw, name_hint or source,
                                   trust=trust, remote=True)
-        except HypertoolsTrustError:
+        except (HypertoolsTrustError, HypertoolsOfflineError):
             raise
         except Exception as e:
             attempts.append(f'URL ({url}): {type(e).__name__}: {e}')
@@ -674,7 +1612,8 @@ def _closest_dataset_name(source):
     from .load import EXAMPLE_DATA
     if not isinstance(source, str):
         return None
-    candidates = set(EXAMPLE_DATA) | set(SKLEARN_DATASETS)
+    candidates = set(EXAMPLE_DATA) | set(SKLEARN_DATASETS) | \
+        set(SYNTHETIC_DATASETS)
     if _seaborn_names_cache:
         candidates |= set(_seaborn_names_cache)
     matches = difflib.get_close_matches(
@@ -693,17 +1632,65 @@ def load_local_file(path):
     return _parse_payload(path.read_bytes(), path.name)
 
 
-def _load_hf(name, split=None, streaming=False):
+def _load_hf(name, split=None, streaming=False, decode_labels=True):
+    """Load a Hugging Face dataset by id.
+
+    A non-streaming load returns a DataFrame. ``ClassLabel`` columns are
+    decoded to their string names by default (GH #285): the integer codes
+    ``Dataset.to_pandas()`` produces are meaningless without the feature
+    spec, and a streaming load already exposes the dataset's own label
+    names, so the two paths now agree. Pass ``decode_labels=False`` to
+    keep the raw integer codes.
+
+    A streaming load returns the ``IterableDataset`` unchanged, for
+    :func:`hypertools.plot` to consume chunk by chunk.
+    """
+    # quiet the Hugging Face download/progress chatter unless the user has
+    # said otherwise -- these are read at IMPORT time by huggingface_hub and
+    # tokenizers, so they have to be set before the lazy import below (the
+    # same thing hypertools.tools.text2mat does before importing
+    # sentence-transformers). setdefault: an explicit value always wins.
+    os.environ.setdefault('HF_HUB_DISABLE_PROGRESS_BARS', '1')
+    os.environ.setdefault('HF_HUB_VERBOSITY', 'error')
+    os.environ.setdefault('TOKENIZERS_PARALLELISM', 'false')
     from .._shared.lazy_import import lazy_import
-    load_dataset = lazy_import('datasets', purpose=f'loading the Hugging Face dataset {name!r}').load_dataset
-    ds = load_dataset(name, split=split, streaming=streaming)
+    datasets = lazy_import('datasets', purpose=f'loading the Hugging Face dataset {name!r}')
+    ds = datasets.load_dataset(name, split=split, streaming=streaming)
     if split is None and hasattr(ds, 'keys'):  # (Iterable)DatasetDict
         keys = list(ds.keys())
         pick = 'train' if 'train' in keys else keys[0]
         ds = ds[pick]
     if streaming:
         return ds  # IterableDataset: stream it straight into hyp.plot
-    return ds.to_pandas()
+    df = ds.to_pandas()
+    if decode_labels:
+        df = _decode_class_labels(df, getattr(ds, 'features', None),
+                                  datasets.ClassLabel)
+    return df
+
+
+def _decode_class_labels(df, features, class_label_type):
+    """Replace every integer-coded ``ClassLabel`` column of ``df`` with its
+    string names, in place (GH #285).
+
+    Only top-level ``ClassLabel`` features are decoded; nested ones (e.g.
+    a ``Sequence`` of ``ClassLabel``, as token-classification datasets
+    use) keep their integer codes, since their names are per-element and
+    the column holds arrays rather than scalars. Out-of-range or null
+    codes are left as-is rather than raising."""
+    for col, feature in (features or {}).items():
+        if not isinstance(feature, class_label_type) or col not in df:
+            continue
+        names = list(feature.names)
+
+        def _name(code, names=names):
+            if pd.isna(code):
+                return code
+            code = int(code)
+            return names[code] if 0 <= code < len(names) else code
+
+        df[col] = df[col].map(_name)
+    return df
 
 
 def _extract_drive_id(s):
@@ -747,13 +1734,20 @@ def _looks_like_html(raw, ctype):
     return raw[:1] == b'<' and ('html' in ctype or b'<html' in raw[:512].lower())
 
 
+def _name_hint_from_url(url):
+    """Filename hint from a URL's own tail (the fallback when a response
+    carries no Content-Disposition, and the only hint available for a
+    cached download read back without headers)."""
+    tail = url.split('?')[0].rstrip('/').rsplit('/', 1)[-1]
+    return tail if '.' in tail else None
+
+
 def _name_hint(resp, url):
     dispo = resp.headers.get('Content-Disposition', '')
     m = re.search(r'filename="?([^";]+)"?', dispo)
     if m:
         return m.group(1)
-    tail = url.split('?')[0].rstrip('/').rsplit('/', 1)[-1]
-    return tail if '.' in tail else None
+    return _name_hint_from_url(url)
 
 
 def parse_drive_interstitial(html):
@@ -768,11 +1762,39 @@ def parse_drive_interstitial(html):
     return action_url, params
 
 
-def _fetch_bytes(url, timeout=60):
+def _fetch_bytes(url, timeout=60, cache=False, offline=False):
     """Download url -> (bytes, filename_hint). Automatically follows the
     Google Drive large-file virus-scan interstitial (a confirm form served
     in place of the file); raises on HTTP errors and on any other HTML
-    interstitial (e.g. rate-limit/permission pages)."""
+    interstitial (e.g. rate-limit/permission pages).
+
+    ``cache=True`` serves the download from the on-disk cache
+    (:func:`url_cache_dir`) when it is already there, and stores it there
+    (atomically) when it isn't. ``offline=True`` reads ONLY from that
+    cache and never opens a connection: an uncached URL raises
+    :class:`~hypertools.core.exceptions.HypertoolsIOError` naming the
+    cache path it looked for. The default (``cache=False,
+    offline=False``) downloads without writing anything to disk, exactly
+    as before.
+    """
+    if cache or offline:
+        path = cached_url_path(url)
+        hit = _read_cached(path)
+        if hit is not None:
+            raw, name_hint = hit
+            if not raw:
+                raise HypertoolsIOError(
+                    f'the cached copy of {url} at {path} is empty (0 '
+                    'bytes) -- delete it and retry to re-download.')
+            return raw, name_hint or _name_hint_from_url(url)
+        if offline:
+            raise HypertoolsOfflineError(
+                f'offline=True, but {url} is not in the hypertools URL '
+                f'cache (looked for {path}). Load it once with '
+                'cache=True while online -- or set HYPERTOOLS_URL_CACHE '
+                'to the directory holding an existing cache -- then '
+                'offline=True will read it from there.')
+
     resp = requests.get(url, headers=_UA, timeout=timeout,
                         allow_redirects=True)
     resp.raise_for_status()
@@ -799,9 +1821,15 @@ def _fetch_bytes(url, timeout=60):
                 f'{url} returned an HTML page instead of data (rate '
                 'limit, permission page, or a link that needs a '
                 'direct-download form)')
-        return raw, _name_hint(resp, action_url)
+        name_hint = _name_hint(resp, action_url)
+        if cache:
+            _write_cached(cached_url_path(url), raw, name_hint)
+        return raw, name_hint
 
-    return raw, _name_hint(resp, url)
+    name_hint = _name_hint(resp, url)
+    if cache:
+        _write_cached(cached_url_path(url), raw, name_hint)
+    return raw, name_hint
 
 
 # Transparent gzip decompression is capped so a tiny payload that inflates
