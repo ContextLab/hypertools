@@ -67,6 +67,7 @@ The dev-1.0 refactor moved several tools into their own top-level subpackages (e
 - `hypertools/predict/` - Forecasting models (`predict.py`, `arima.py`, `autoreg.py`, `gp.py`, `kalman.py`, `laplace.py`, `chronos.py`, `common.py`)
 - `hypertools/impute/` - Imputation models (`impute.py`, `ppca.py`, `kalman.py`, `sklearn_imputers.py`, `common.py`)
 - `hypertools/core/` - Shared config/exceptions and `apply_model()`/`Pipeline` (`configurator.py`, `exceptions.py`, `model.py`, `pipeline.py`, `shared.py`)
+- `hypertools/_shared/lazy_import.py` - On-demand installation of optional extras: `lazy_import(module, purpose=)` imports a module and, if it is missing, pip-installs the hypertools extra that provides it (requirement strings read from the installed package metadata, so `pyproject.toml` is the single declaration; only the import-name -> extra map lives in the module), then imports again. `HYPERTOOLS_AUTO_INSTALL=0` disables it. `ensure_kaleido_chrome()` provisions Chrome (and, on Debian/Ubuntu images, its system libraries) for plotly static export. Every optional-dependency site goes through it; never hand-write a `pip install` hint elsewhere.
 
 **Plot Module** (`hypertools/plot/`)
 - `plot.py` - Main plotting interface and logic

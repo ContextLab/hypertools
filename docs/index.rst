@@ -27,7 +27,8 @@ loading, LSL streaming, 3-D density iso-surfaces, ``.xlsx`` loading) are
 first call that needs one installs that extra's requirements and carries on,
 printing a one-line notice. Set ``HYPERTOOLS_AUTO_INSTALL=0`` to disable
 this; a missing extra then raises ``ImportError`` with the manual
-``pip install "hypertools[<extra>]"`` command.
+``pip install "hypertools[<extra>]"`` command. See
+:doc:`optional_dependencies` for the full list.
 
 Some key features of HyperTools are:
 
@@ -58,6 +59,7 @@ Some key features of HyperTools are:
    pipeline_order
    hierarchy
    animation
+   optional_dependencies
    tutorials
    auto_examples/index
 

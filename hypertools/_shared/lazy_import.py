@@ -45,6 +45,7 @@ EXTRA_FOR_MODULE = {
     'openpyxl': 'io',
     'sentence_transformers': 'text',
     'transformers': 'text',
+    'datasets': 'text',
 }
 
 #: Debian/Ubuntu packages a downloaded Chrome needs and a fresh Colab/Kaggle
@@ -52,6 +53,9 @@ EXTRA_FOR_MODULE = {
 #: libatk-bridge-2.0.so.0, libatspi.so.0, libXcomposite.so.1).
 CHROME_APT_PACKAGES = ('libatk1.0-0', 'libatk-bridge2.0-0', 'libatspi2.0-0',
                        'libxcomposite1')
+
+#: ceiling for the apt step (a fresh Colab kernel measured ~30 s; 2026-09-04)
+APT_TIMEOUT_SECONDS = 600
 
 _kaleido_ready = False
 
@@ -177,10 +181,15 @@ def _apt_install(packages):
             return False
         cmd = ['sudo', '-n', *cmd]
     _notice(f'installing the system libraries Chrome needs ({" ".join(packages)}) ...')
+    env = dict(os.environ, DEBIAN_FRONTEND='noninteractive')
     try:
-        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        # no inherited stdin (a dpkg prompt must never wait on a kernel's
+        # stdin) and a hard ceiling, so a wedged apt cannot hang the caller
+        subprocess.run(cmd, check=True, env=env, stdin=subprocess.DEVNULL,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                       timeout=APT_TIMEOUT_SECONDS)
         return True
-    except (subprocess.CalledProcessError, OSError):
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError):
         return False
 
 

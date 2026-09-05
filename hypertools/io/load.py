@@ -201,8 +201,8 @@ def load(
        ``{filename: DataFrame}``
     5. a Kaggle dataset, explicit prefix ``'kaggle/<owner>/<dataset>'``
        (e.g. ``'kaggle/uciml/iris'``), downloaded anonymously via
-       ``kagglehub.dataset_download`` (requires the optional
-       ``kagglehub`` dependency -- ``pip install hypertools[kaggle]``).
+       ``kagglehub.dataset_download`` (the ``[kaggle]`` extra installs
+       itself on first use).
        Every CSV/TSV file in the dataset is loaded the same way as step 4
     6. a path to a local file (.geo/pickle, .npy/.npz, .csv/.tsv/.txt,
        .json, .parquet, .mat, .xlsx/.xls; gzip-compressed variants (.gz)
@@ -328,7 +328,7 @@ def load(
         LatentDirichletAllocation and NMF (GH #174); and the torch autoencoders
         Autoencoder, DeepAutoencoder, SparseAutoencoder,
         ConvolutionalAutoencoder, SequenceAutoencoder and
-        VariationalAutoencoder (GH #162, `pip install "hypertools[torch]"`).
+        VariationalAutoencoder (GH #162; the `[torch]` extra installs itself on first use).
         Can be passed as a string, or for finer control as a dictionary, e.g.
         reduce={'model': 'PCA', 'kwargs': {'whiten': True}}. See scikit-learn
         model docs for details on parameters supported for each model.

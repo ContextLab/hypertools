@@ -74,9 +74,9 @@ def _gensim_model_for(name, kind):
     ------
 
     ImportError
-        If `name` is a recognized gensim model name but the optional
-        `gensim` dependency is not installed. Names the pip extra needed
-        to fix it (`pip install "hypertools[gensim]"`).
+        If `name` is a recognized gensim model name but the `[gensim]`
+        extra could not be installed on demand (the message names the
+        manual `pip install "hypertools[gensim]"` command).
     """
     names = (_GENSIM_VECTORIZER_NAMES if kind == 'vectorizer'
              else _GENSIM_SEMANTIC_NAMES)
@@ -201,8 +201,8 @@ def text2mat(data, vectorizer='CountVectorizer',
         The vectorizer to use. A string name is resolved in three tiers
         (GH #198): (1) the built-in scikit-learn registry --
         'CountVectorizer' or 'TfidfVectorizer'; (2) if not found there, the
-        gensim wrapper registry (`hypertools.tools.gensim_models`, requires
-        `pip install "hypertools[gensim]"`) -- 'Word2Vec', 'Doc2Vec', or
+        gensim wrapper registry (`hypertools.tools.gensim_models`; the
+        `[gensim]` extra installs itself on first use) -- 'Word2Vec', 'Doc2Vec', or
         'FastText'; (3) if still not found, the name is treated as a
         Hugging Face sentence-transformers model name/id (e.g.
         'all-MiniLM-L6-v2'), via data-wrangler's HF embedding support. To

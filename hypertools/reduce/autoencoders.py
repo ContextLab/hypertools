@@ -5,11 +5,11 @@ small `torch.nn.Module` autoencoder and its own training loop, registered
 in `hypertools.reduce.common.REDUCERS` (resolved lazily -- see
 `hypertools.reduce.common.resolve_reducer`, mirroring how `'UMAP'` is
 resolved) so `import hypertools` never requires `torch` to be installed.
-`torch` ships as the optional `[torch]` extra (`pip install
-"hypertools[torch]"`); this module is only ever imported once a caller
-actually asks for one of the six names below, at which point a missing
-`torch` surfaces as a friendly `ImportError` (see
-`hypertools.reduce.common.resolve_reducer`).
+`torch` ships as the optional `[torch]` extra; this module is only ever
+imported once a caller actually asks for one of the six names below, at
+which point a missing `torch` is installed on demand
+(`hypertools._shared.lazy_import`) and, only if that fails, surfaces as an
+`ImportError` naming the manual command.
 
 Variant selection guidance
 ---------------------------

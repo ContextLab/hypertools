@@ -7,8 +7,9 @@ Autoencoder reducers
 `Autoencoder` (shallow), `SparseAutoencoder`, `DeepAutoencoder`,
 `ConvolutionalAutoencoder`, `SequenceAutoencoder`, and
 `VariationalAutoencoder`. They are used exactly like any other `reduce=`
-model -- by name, with parameters passed via the dict spec -- and require
-the optional ``torch`` dependency (``pip install "hypertools[torch]"``).
+model -- by name, with parameters passed via the dict spec -- and use
+the optional ``torch`` extra, which hypertools installs on demand the first
+time one is fit (pre-install it with ``pip install "hypertools[torch]"``).
 This example fits a shallow `Autoencoder` and a `VariationalAutoencoder` on
 the same data and compares them against PCA.
 """

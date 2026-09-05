@@ -12,8 +12,8 @@ estimator (via ``sklearn.base.BaseEstimator``/``TransformerMixin``), so
 any scikit-learn-shaped model) needs no gensim-specific special-casing.
 
 This module is imported lazily -- only when a gensim model name is actually
-requested -- and requires the optional ``gensim`` dependency
-(``pip install "hypertools[gensim]"``).
+requested -- and installs the optional ``gensim`` dependency (the
+``[gensim]`` extra) on first use.
 
 Vectorizer-stage models (``Word2VecVectorizer``, ``Doc2VecVectorizer``,
 ``FastTextVectorizer``) turn a list of raw text documents into one

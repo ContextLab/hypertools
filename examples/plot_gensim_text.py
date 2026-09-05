@@ -8,7 +8,9 @@ three tiers (GH #198): scikit-learn's built-ins, then
 `gensim <https://radimrehurek.com/gensim/>`_'s models -- `'Word2Vec'`,
 `'Doc2Vec'`, `'FastText'` (vectorizer tier), and `'LdaModel'`, `'LsiModel'`,
 `'HdpModel'` (semantic tier) -- then HuggingFace sentence-transformers.
-gensim is an optional dependency (``pip install "hypertools[gensim]"``).
+gensim is an optional extra that hypertools installs on demand the first
+time a gensim model is requested (pre-install it with
+``pip install "hypertools[gensim]"``).
 This example embeds a small multi-topic corpus with gensim's Word2Vec
 (averaged word vectors, no semantic-stage model) and separately with
 CountVectorizer + gensim's LDA, then plots both.

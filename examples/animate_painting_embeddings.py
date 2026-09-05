@@ -27,9 +27,11 @@ description.
 text side is fully offline and deterministic). Each canvas is downloaded
 once from Wikimedia Commons and cached; if an image cannot be fetched, a
 hand-picked representative colour is used instead, the thumbnail slot shows
-a flat swatch of that colour, and the run says so. Text embedding needs the
-``[text]`` extra (``pip install "hypertools[text]"``); without it,
-``vectorizer='TfidfVectorizer'`` is used, and the pipeline (embed -> reduce
+a flat swatch of that colour, and the run says so. Sentence embeddings come
+from the ``[text]`` extra. hypertools installs that extra on demand the
+first time an embedding model is requested, but this example checks for it
+up front (so a run never pauses for a download) and, when it is absent,
+uses ``vectorizer='TfidfVectorizer'`` instead; the pipeline (embed -> reduce
 together -> one cloud/colour per painting -> spin) is identical either way.
 """
 

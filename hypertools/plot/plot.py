@@ -2400,8 +2400,8 @@ def plot(
 
     backend : str
         Rendering backend: 'matplotlib' (the classic renderer),
-        'plotly' (interactive; requires plotly -- install with
-        `pip install hypertools[interactive]`), or 'auto' (default), which
+        'plotly' (interactive; the `[interactive]` extra installs itself on
+        first use), or 'auto' (default), which
         uses plotly on Google Colab / Kaggle notebooks where interactivity
         matters most and matplotlib everywhere else. With the plotly backend,
         the return value is a plotly Figure (any animation frames are
@@ -2768,8 +2768,10 @@ def plot(
         (and any `save_path=` export) is done -- including animated figures
         on non-GUI backends -- so batch-export loops never accumulate open
         figures. Note that show=True displays the figure in notebook/
-        IPython contexts (and the plotly backend calls its own renderer in
-        scripts); in a plain non-interactive Python script the matplotlib
+        IPython contexts (the plotly backend displays it once, at the end
+        of the cell, whether or not you keep the returned figure; in a
+        script it calls its own renderer); in a plain non-interactive
+        Python script the matplotlib
         backend registers the figure with pyplot but does not itself call
         ``plt.show()`` -- call ``plt.show()`` yourself to open a window.
         Default: True.
@@ -2809,8 +2811,13 @@ def plot(
         or 'sotus' and the default semantic and vectorizer models are used, a
         pretrained model will be loaded which can save a lot of time.
 
-    ax : matplotlib.Axes
-        Axis handle to plot the figure.
+    ax : matplotlib.Axes or plotly.graph_objects.Figure
+        The surface to draw into: a matplotlib Axes for the matplotlib
+        backend, or, with the plotly backend, the plotly Figure an earlier
+        `hyp.plot` returned -- this call's traces are appended to it and it
+        is returned (its layout is left alone). A matplotlib Axes under
+        plotly raises `ValueError`; a plotly Figure under matplotlib raises
+        `TypeError`.
 
         STATIC PLOTS ONLY. An animated plot (any truthy ``animate=``) owns
         its own figure: it creates one, draws there, and returns it, so an
@@ -3060,8 +3067,9 @@ def plot(
         translucent iso-surfaces via `skimage.measure.marching_cubes`
         (`levels` shells spanning 10%-65% of peak density, alphas ramping
         0.03-0.07, both scaled by `alpha / 0.2`; see the `levels` entry
-        above for the exact spacing) when scikit-image is installed
-        (``pip install hypertools[density3d]``); otherwise it falls back to
+        above for the exact spacing); scikit-image (the `[density3d]`
+        extra) installs itself on first use, and only if that is not
+        possible does it fall back to
         a translucent scatter "fog" (4000 points resampled from the KDE,
         `alpha` 0.03 scaled the same way) and emits a `UserWarning`
         suggesting the extra or ``backend='plotly'`` (which always renders

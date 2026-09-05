@@ -135,11 +135,11 @@ def _draw_one_density_3d(ax, pts, spec, color, label="", boost=1.0):
             ax.add_collection3d(coll)
     else:
         warnings.warn(
-            f"density: scikit-image is not installed -- dataset{label}'s "
-            "3-D density falls back to a translucent scatter 'fog' instead "
-            "of smooth iso-surfaces. Install it with `pip install "
-            "hypertools[density3d]`, or use backend='plotly' for full "
-            "volumetric rendering.",
+            f"density: scikit-image is not installed and could not be "
+            f"installed on demand -- dataset{label}'s 3-D density falls back "
+            "to a translucent scatter 'fog' instead of smooth iso-surfaces. "
+            "Install it with `pip install \"hypertools[density3d]\"`, or use "
+            "backend='plotly' for full volumetric rendering.",
             UserWarning,
             stacklevel=external_stacklevel())
         rng = np.random.default_rng()

@@ -42,7 +42,7 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True,
         LatentDirichletAllocation and NMF (GH #174); and the torch autoencoders
         Autoencoder, DeepAutoencoder, SparseAutoencoder,
         ConvolutionalAutoencoder, SequenceAutoencoder and
-        VariationalAutoencoder (GH #162, `pip install "hypertools[torch]"`).
+        VariationalAutoencoder (GH #162; the `[torch]` extra installs itself on first use).
         Can be passed as a string, or for finer control as a dictionary, e.g.
         reduce={'model': 'PCA', 'kwargs': {'whiten': True}}. See scikit-learn
         model docs for details on parameters supported for each model.

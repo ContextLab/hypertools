@@ -233,7 +233,7 @@ On matplotlib you can attach a callback to an animation you already have::
 **This is not available on plotly, and cannot be.** An animated matplotlib
 plot returns a :class:`~hypertools.HyperAnimation`, whose frames are drawn
 lazily at render time -- so there is still a window in which to register.
-An animated plotly plot returns a plain ``plotly.graph_objects.Figure``:
+An animated plotly plot returns a ``plotly.graph_objects.Figure``:
 its frames are *already built* by the time ``plot()`` returns, so there is
 no later frame to call back into, and the returned object has no
 ``.on_frame()`` method.

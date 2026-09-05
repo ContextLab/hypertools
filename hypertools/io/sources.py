@@ -694,14 +694,8 @@ def load_local_file(path):
 
 
 def _load_hf(name, split=None, streaming=False):
-    try:
-        from datasets import load_dataset
-    except ImportError as e:
-        raise ImportError(
-            f'{name!r} looks like a Hugging Face dataset id, but the '
-            "`datasets` package is not installed. Install it with "
-            '`pip install "hypertools[text]"` (which pulls it in via '
-            "pydata-wrangler[hf]), or `pip install datasets` directly.") from e
+    from .._shared.lazy_import import lazy_import
+    load_dataset = lazy_import('datasets', purpose=f'loading the Hugging Face dataset {name!r}').load_dataset
     ds = load_dataset(name, split=split, streaming=streaming)
     if split is None and hasattr(ds, 'keys'):  # (Iterable)DatasetDict
         keys = list(ds.keys())
@@ -933,6 +927,8 @@ def _parse_payload(raw, name_hint='', trust=False, remote=False):
     if ext == '.mat':
         return _unpack_mat(raw)
     if ext == '.xlsx':
+        from .._shared.lazy_import import lazy_import
+        lazy_import('openpyxl', purpose='.xlsx files')     # installs [io] on demand
         return pd.read_excel(io.BytesIO(raw))
     if ext == '.xls':
         return _read_xls(raw)

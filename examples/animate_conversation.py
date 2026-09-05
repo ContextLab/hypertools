@@ -44,9 +44,11 @@ pulled together by the repeated words "said Alice" rather than by their
 content. Who is speaking is carried by the colour (paths and title alike)
 and the legend.
 
-**Embeddings & graceful degradation.** Text embedding needs the ``[text]``
-extra (``pip install "hypertools[text]"``); without it,
-``vectorizer='TfidfVectorizer'`` is used, and the pipeline (embed -> reduce
+**Embeddings & graceful degradation.** Sentence embeddings come from the
+``[text]`` extra. hypertools installs that extra on demand the first time
+an embedding model is requested, but this example checks for it up front
+(so a run never pauses for a download) and, when it is absent, uses
+``vectorizer='TfidfVectorizer'`` instead; the pipeline (embed -> reduce
 -> disjoint per-turn paths -> serial reveal coloured by speaker) is
 identical either way.
 """

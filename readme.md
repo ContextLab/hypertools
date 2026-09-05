@@ -94,12 +94,13 @@ HyperTools 1.0 modernizes the toolbox while keeping the familiar API:
   'Autoencoder')` supports six torch-backed autoencoder reducers
   (`Autoencoder`, `DeepAutoencoder`, `SparseAutoencoder`,
   `ConvolutionalAutoencoder`, `SequenceAutoencoder`,
-  `VariationalAutoencoder`), gated behind `pip install "hypertools[torch]"`.
+  `VariationalAutoencoder`), from the `[torch]` extra (installed on demand
+  the first time one is fit).
 + **gensim text vectorizers/semantic models (optional):** `hyp.plot(texts,
   vectorizer='Word2Vec', semantic=None, reduce='PCA')` (and
   `hyp.tools.text2mat`) add `Word2Vec`/`Doc2Vec`/`FastText` vectorizers and
-  `LdaModel`/`LsiModel`/`HdpModel` semantic models, gated behind
-  `pip install "hypertools[gensim]"` -- pass `semantic=None` with an
+  `LdaModel`/`LsiModel`/`HdpModel` semantic models, from the `[gensim]`
+  extra (installed on demand) -- pass `semantic=None` with an
   embedding vectorizer like `Word2Vec` since the default LDA semantic stage
   rejects negative embedding values. Note that non-default vectorizers
   train on the default `corpus='wiki'` corpus the first time, which can
@@ -107,18 +108,18 @@ HyperTools 1.0 modernizes the toolbox while keeping the familiar API:
   your own documents to train on those instead.
 + **LSL streaming (optional):** `hyp.io.lsl_stream(type='EEG')` resolves a
   live Lab Streaming Layer stream and wraps it for `hyp.plot(...,
-  stream_init=200, stream_chunk=20)`, gated behind
-  `pip install "hypertools[lsl]"`.
+  stream_init=200, stream_chunk=20)`, from the `[lsl]` extra (installed
+  on demand).
 + **`hyp.predict`/`hyp.impute`:** `hyp.predict(data, model='Kalman', t=10)`
   forecasts `t` new rows continuing each dataset. `Kalman`, `GaussianProcess`,
   `AutoRegressor`, and `ARIMA` work with the base install (pykalman/statsmodels
-  are core deps); `Laplace` needs `pip install "hypertools[predict]"` (skaters)
-  and `Chronos` needs `pip install "hypertools[predict-hf]"`. `hyp.impute(data,
+  are core deps); `Laplace` comes from the `[predict]` extra (skaters) and `Chronos`
+  from `[predict-hf]`, each installed on demand. `hyp.impute(data,
   model='PPCA')` fills missing (NaN) values in place; the `Kalman` imputer also
   works with the base install. Both take `return_model=True` for reuse.
 + **Kaggle loader:** `hyp.load('kaggle/uciml/iris')` downloads a public
-  Kaggle dataset anonymously via `kagglehub`, gated behind
-  `pip install "hypertools[kaggle]"`.
+  Kaggle dataset anonymously via `kagglehub`, from the `[kaggle]` extra
+  (installed on demand).
 + **Density shading (optional):** `hyp.plot(..., density=True)` overlays a
   subtle KDE "glow" behind the data (a 2D heatmap or 3D volumetric cloud)
   showing where each dataset's points concentrate; off by default.
@@ -240,11 +241,11 @@ extras that add features on request (mix and match, e.g.
 `pip install "hypertools[interactive,torch]"`):
 
 + `interactive` -- plotly + kaleido, for `hyp.plot(..., backend='plotly')`.
-  **Note:** kaleido 1.x renders static images (PNG/PDF, and the frames of
-  saved plotly animations) through a headless **Chrome/Chromium**, which it
-  does *not* install. If image/GIF/video export from the plotly backend
-  fails with a browser/Chromium error, install Chrome or Chromium (or run
-  `plotly_get_chrome`). Interactive/HTML plotly output needs no browser.
+  kaleido renders static images (PNG/PDF, and the frames of saved plotly
+  animations) through a headless Chrome, which hypertools provisions on
+  first use (see *Optional extras install themselves on demand* above); if
+  that is not possible, the error says what to run. Interactive/HTML plotly
+  output needs no browser.
 + `text` -- transformer/sentence-transformers text embeddings (via
   datawrangler's `hf` extra)
 + `predict` -- the skaters `Laplace` ensemble forecaster for `hyp.predict`

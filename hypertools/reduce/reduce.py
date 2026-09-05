@@ -74,10 +74,10 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, return_model=False,
         six torch-backed autoencoder reducers (GH #162,
         `hypertools.reduce.autoencoders`): Autoencoder, DeepAutoencoder,
         SparseAutoencoder, ConvolutionalAutoencoder, SequenceAutoencoder,
-        and VariationalAutoencoder -- these require the optional `torch`
-        dependency (`pip install "hypertools[torch]"`); resolving one of
-        these names without `torch` installed raises a friendly
-        `ImportError`. Can be passed as a
+        and VariationalAutoencoder -- these need `torch`, which the
+        `[torch]` extra installs on first use; if that is not possible,
+        resolving one of these names raises an `ImportError` naming the
+        manual command. Can be passed as a
         string, a bare (uninstantiated) scikit-learn-style class, an
         already-constructed instance, the canonical dict spec
         `{'model': ..., 'args': [...], 'kwargs': {...}}` (both `'args'`

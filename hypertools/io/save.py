@@ -254,6 +254,8 @@ def _write_payload(obj, tmp_name, ext, protocol, target):
             # to a buffer and dump the bytes into the (extensionless) temp
             # file ourselves
             import io as _io
+            from .._shared.lazy_import import lazy_import
+            lazy_import('openpyxl', purpose='.xlsx files')     # installs [io] on demand
             buffer = _io.BytesIO()
             _as_frame(obj, ext, target).to_excel(
                 buffer, index=_include_index(obj), engine='openpyxl')

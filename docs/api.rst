@@ -62,8 +62,8 @@ Reduce
 
   reduce
 
-Autoencoder reducers (GH #162) -- optional ``torch`` extra
-(``pip install "hypertools[torch]"``); pass by name (e.g.
+Autoencoder reducers (GH #162) -- the optional ``torch`` extra, installed
+on demand (see :doc:`optional_dependencies`); pass by name (e.g.
 ``reduce='Autoencoder'``) or by class to `hypertools.reduce`:
 
 .. autosummary::
@@ -199,8 +199,8 @@ Text vectorization
 
   tools.text2mat
 
-Gensim text models (GH #198) -- optional ``gensim`` extra
-(``pip install "hypertools[gensim]"``); pass by name (e.g.
+Gensim text models (GH #198) -- the optional ``gensim`` extra, installed
+on demand (see :doc:`optional_dependencies`); pass by name (e.g.
 ``vectorizer='Word2Vec'``) to `hypertools.tools.text2mat`:
 
 .. autosummary::

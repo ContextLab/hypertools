@@ -14,8 +14,8 @@ streaming machinery with no extra glue::
 `pylsl` (https://github.com/labstreaminglayer/pylsl) is an optional
 dependency -- it wraps the native `liblsl` library used by essentially
 every LSL-speaking acquisition device/app
-(https://labstreaminglayer.org) -- installed via `pip install
-"hypertools[lsl]"`.
+(https://labstreaminglayer.org) -- the `[lsl]` extra, installed on
+first use.
 """
 
 import warnings
@@ -114,7 +114,7 @@ def lsl_stream(name=None, type=None, timeout=10.0, **resolve_kwargs):
     Raises
     ------
     ImportError
-        If `pylsl` is not installed.
+        If `pylsl` is not installed and could not be installed on demand.
     TypeError
         If `name` or `type` is not a string (or None).
     ValueError
