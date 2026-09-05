@@ -6,11 +6,18 @@ Morphing through the shapes zoo, with titles
 
 One `hyp.plot(..., animate='morph')` call smoothly *morphs* a cloud of black
 dots from one shape to the next, holding on each shape before flowing into the
-following one. HyperTools ships a "shapes zoo" of classic 3-D point clouds
-(``bunny``, ``cube``, ``sphere``, ``vase``, ...), each downloaded once and then
-cached in ``~/hypertools_data`` -- so this example is fully offline and
-deterministic after the first run. On a cold cache with no network it says
-so and morphs five parametric stand-ins instead, so it always renders.
+following one. HyperTools ships a "shapes zoo" of seven classic 3-D point
+clouds (``bunny``, ``cube``, ``dragon``, ``sphere``, ``teapot``, ``vase`` and
+``biplane``), each downloaded once and then cached in ``~/hypertools_data``
+-- so this example is fully offline and deterministic after the first run.
+On a cold cache with no network it says so and morphs five parametric
+stand-ins instead, so it always renders.
+
+Each cloud arrives in its own units, and ``hyp.plot`` draws every dataset it
+is given in one shared frame, so the clouds are first put on a common footing
+with ``hyp.manip(..., model='Normalize', mode='isotropic', min=-1, max=1)``:
+one centroid subtracted and one scalar divided out per cloud, so every shape
+keeps its proportions and its largest extent just touches the [-1, 1] cube.
 
 The **title that tracks the current shape** comes straight from the library:
 passing a list of per-shape names as ``title=`` to ``hyp.plot`` is enough. A
@@ -27,9 +34,11 @@ the style on every frame (transitions keep their blank text), so any frame
 can be drawn in any order and looks the same.
 
 To keep the gallery build quick, each shape is capped at 2000 points (the cap
-the morph's point matching then runs on) and the zoo's five shapes are
+the morph's point matching then runs on) and five of the zoo's shapes are
 morphed over a 30-second, 600-frame loop; the technique is identical for the
-full clouds.
+full clouds. Adding ``'dragon'`` and ``'biplane'`` to ``SHAPES`` morphs all
+seven -- each extra shape adds a hold and a transition to the loop, so give
+it a longer ``duration`` to keep every hold on screen as long.
 """
 
 # Code source: Contextual Dynamics Laboratory
@@ -49,9 +58,9 @@ import hypertools as hyp
 # hundred distinct dots rather than a couple of thousand and reads sparser than
 # its neighbours. That is the shipped dataset, not a fault in this example.
 SHAPES = ['bunny', 'cube', 'sphere', 'teapot', 'vase']
-# normalize() below is NOT redundant with hyp.plot: plot rescales every dataset
-# with ONE shared affine, so clouds left in their own raw units would be drawn
-# at wildly different sizes. The sampling IS done by hand rather than left to
+# The isotropic Normalize in assemble() is NOT redundant with hyp.plot: plot
+# rescales every dataset with ONE shared affine, so clouds left in their own
+# raw units would be drawn at wildly different sizes. The sampling IS done by hand rather than left to
 # morph_samples: the loop-closing repeat of the first cloud has to be the SAME
 # sample, and morph_samples draws a fresh subset per dataset. The cap itself
 # is what keeps the morph tractable: the one-to-one point matching is a
@@ -86,13 +95,6 @@ class Shapes(NamedTuple):
     source: str                 # which path produced them
 
 
-def normalize(points):
-    """Center a point cloud and scale it into the hypertools [-1, 1] cube."""
-    points = np.asarray(points, dtype=float)
-    points = points - points.mean(axis=0)
-    return points / np.abs(points).max()
-
-
 def assemble(clouds, n, source, seed=0):
     """Normalize, shrink the cube, sample n points, and close the loop:
     morphing back to the FIRST shape means a looping player never hard-cuts
@@ -101,7 +103,12 @@ def assemble(clouds, n, source, seed=0):
     rng = np.random.default_rng(seed)
     sampled = []
     for name, points in clouds.items():
-        points = normalize(points) * (CUBE_SCALE if name == 'cube' else 1.0)
+        # one shared centre and scale per cloud (mode='isotropic'): the shape
+        # keeps its proportions and its largest extent touches the cube
+        points = np.asarray(hyp.manip(points, model='Normalize',
+                                      mode='isotropic', min=-1, max=1),
+                            dtype=float)
+        points = points * (CUBE_SCALE if name == 'cube' else 1.0)
         sampled.append(points[rng.choice(len(points), size=min(n, len(points)),
                                          replace=False)])
     titles = [name.capitalize() for name in clouds]

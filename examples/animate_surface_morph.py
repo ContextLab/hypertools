@@ -4,90 +4,67 @@
 Morphing hull surfaces through shapes
 =====================================
 
-Building on the *Morphing through the shapes zoo* example, HyperTools can
-also render a smooth, lit convex-hull SURFACE around a moving point cloud
-(the ``surface=`` `hyp.plot` kwarg -- see :mod:`hypertools.plot.meshutil`
-and :mod:`hypertools.plot.surface`, GH #109) instead of just the raw
-points. Combining `surface=` with `animate='morph'` (PR #272, maintainer
-request 2026-07-06) recomputes the moving cloud's smoothed hull mesh from
-scratch on every frame, shaded with a two-light Blinn-Phong model and
-backface-culled for the current camera angle -- so the "blob" skin flows
-continuously as the underlying points rearrange themselves, all from one
-`hyp.plot` call. Camera rotation speed (degrees/frame) is always constant
-across the whole animation, so a per-segment `rotations` list (below)
-controls how much SCREEN TIME each hold/transition gets, never how fast
-it spins. Since a convex hull cannot reproduce concave features,
-holds on concave shapes like the bunny necessarily render as a smooth,
-rounded blob; that loss of concavity is an expected trade-off of the
-hull-surface approach, not a bug. Hulls hug the data tightly BY
-CONSTRUCTION (each smoothing round pulls stray vertices back onto the
-original hull surface, see :func:`hypertools.plot.meshutil.smooth_hull_3d`)
-rather than via any fixed overshoot allowance, so the axes box never needs
-a hand-computed fudge factor to contain the surface. A final, bounded,
-grow-only rescale then guarantees at least 99% containment of the actual
-points; for ordinary, reasonably-sampled clouds this rescale rarely does
-more than nudge the mesh a few percent, and only grows large for very
-sparse clouds (rule of thumb: fewer than ~10 points), where a coarse,
-few-vertex hull loses proportionally more to smoothing and needs more
-correction to recover that same 99% guarantee.
+Building on the *Morphing through the shapes zoo, with titles* example, this
+one wraps the moving point cloud in a smooth, lit convex-hull SURFACE: the
+``surface=`` kwarg of `hyp.plot` combined with ``animate='morph'``. The hull
+mesh is recomputed from the travelling cloud on every frame, shaded with a
+two-light Blinn-Phong model and backface-culled for the current camera
+angle, so a blue-teal "skin" flows continuously from the bunny to the cube,
+the sphere, the teapot and the vase as the points underneath rearrange
+themselves -- all from one `hyp.plot` call. The points stay visible as a
+faint black texture under the surface.
 
-To keep the gallery build modest, only 5 of the 7 zoo shapes are used
-(dropping the very high point-count dragon and biplane meshes), and each
-shape is downsampled to 400 points before it's ever handed to `hyp.plot`
-(a hull's shape is set by its extreme points, so fewer interior points
-barely change the rendered surface). This matters for more than just the
-per-frame ``ConvexHull`` cost: `hyp.plot` also builds one full hull per
-morphing dataset up front (from whatever point cloud it's given) to size
-the axes box safely for every frame, and a raw shapes-zoo cloud is dense
-enough that its hull can itself have tens of thousands of faces --
-downsampling first keeps both that one-time sizing pass and every
-per-frame rebuild fast. The mesh smoothing is also capped at 2 rounds
-rather than the library default of 3, roughly a 4x per-frame speedup
-(measured on a typical laptop).
+A convex hull cannot reproduce concave features, so the holds on concave
+shapes (the bunny, the teapot's spout and handle) render as smooth, rounded
+blobs; that loss of concavity is the expected trade-off of a hull surface,
+not a bug. The hull hugs the data by construction: each smoothing round
+pulls stray vertices back onto the original hull (see
+:func:`hypertools.plot.meshutil.smooth_hull_3d`), and a final, bounded,
+grow-only rescale guarantees that at least 99% of the points sit inside the
+surface. For ordinary clouds that rescale only nudges the mesh by a few
+percent; it grows large only for very sparse clouds (fewer than ~10 points),
+where a coarse, few-vertex hull loses proportionally more to smoothing.
+
+Camera speed (degrees per frame) is constant across the whole animation, so
+the per-segment ``rotations`` list sets how much SCREEN TIME each hold and
+transition gets, never how fast it spins: every hold gets a slow full turn
+and every transition a brisk quarter-turn, so the camera visibly steps
+forward each time one shape morphs into the next.
+
+Each cloud is first centred and scaled into the [-1, 1] cube with
+``hyp.manip(..., model='Normalize', mode='isotropic')`` -- one centroid and
+one scalar per shape, so proportions are preserved -- because `hyp.plot`
+draws every dataset in one shared frame. Five of the zoo's seven shapes are
+used, and ``morph_samples=400`` caps each at 400 points before the morph's
+point matching: a hull's shape is set by its extreme points, so fewer
+interior points barely change the rendered surface while every per-frame
+hull rebuild stays cheap. The mesh smoothing is capped at 2 rounds rather
+than the default 3, roughly a 4x per-frame speedup (measured: 30 frames in
+4.5 s against 19.3 s).
 """
 
 # Code source: Contextual Dynamics Laboratory
 # License: MIT
 
 # use a pre-rendered gif of the morphing lit surface as this example's gallery
-# thumbnail, matching the other animated examples (animate_spin, chemtrails,
-# plot_story_trajectories, ...). Without this, sphinx-gallery thumbnailed the
-# trailing static-figure snapshot (the alpha-fade line below) as a frozen png.
+# thumbnail, as the other animated examples do. Without it, sphinx-gallery
+# thumbnails the trailing static-figure snapshot as a frozen png.
 # sphinx_gallery_thumbnail_path = '_static/thumbnails/sphx_glr_animate_surface_morph_thumb.gif'
-
-import numpy as np
 
 import hypertools as hyp
 
-# a subset of the shapes zoo -- smaller point-cloud shapes are used so the
-# per-frame convex-hull/smoothing pass stays fast (see module docstring)
+# five of the zoo's seven shapes, each centred and scaled into the [-1, 1]
+# cube with one shared centroid and scalar (mode='isotropic'), so every shape
+# keeps its proportions inside hyp.plot's shared frame
 shapes = ['bunny', 'cube', 'sphere', 'teapot', 'vase']
+clouds = [hyp.manip(hyp.load(shape), model='Normalize', mode='isotropic',
+                    min=-1, max=1) for shape in shapes]
 
 # a hull's shape is set by its extreme points, not its interior density, so
-# downsampling every shape to 400 points barely changes the rendered
-# surface while keeping both the one-time axes-sizing hull and every
-# per-frame rebuilt hull cheap (see module docstring)
+# capping every shape at 400 points (morph_samples= below: hyp.plot samples
+# without replacement from a seeded generator) barely changes the rendered
+# surface while keeping every per-frame rebuilt hull cheap
 n_points = 400
-rng = np.random.default_rng(42)
-
-
-def normalize_shape(points):
-    """Center and scale a point cloud into the hypertools [-1, 1] cube."""
-    points = np.asarray(points, dtype=np.float64)
-    points = points - points.mean(axis=0)
-    return points / np.abs(points).max()
-
-
-def load_shape(name):
-    """Load and normalize one shapes-zoo cloud, downsampled to `n_points`
-    (without replacement) so its hull stays cheap to compute."""
-    points = normalize_shape(hyp.load(name))
-    idx = rng.choice(len(points), size=min(n_points, len(points)),
-                     replace=False)
-    return points[idx]
-
-
-clouds = [load_shape(shape) for shape in shapes]
 
 # frame schedule: hold, morph, hold, morph, ..., hold -- 2 * n_shapes - 1 =
 # 9 segments in all. Holds get a slow, easy-to-watch full rotation (1)
@@ -111,11 +88,6 @@ surface_spec = {
     'keep_points': True,
 }
 
-# morph_samples=n_points: every shape is ALREADY downsampled to exactly
-# n_points above, so under the new full-sample-with-duplication semantics
-# (PR #272 follow-up, 2026-07-06) this is a no-op safety cap -- no shape
-# ever exceeds n_points, so none is downsampled again and no duplication
-# is needed (all 5 clouds already share the same point count).
 fig, ani = hyp.plot(clouds, fmt='.', color='k', markersize=0.6,
                     animate='morph', rotations=rotations,
                     duration=12, frame_rate=30,
@@ -123,7 +95,8 @@ fig, ani = hyp.plot(clouds, fmt='.', color='k', markersize=0.6,
 
 # fade the point layer to a subtle texture underneath the hull surface.
 # NOTE: under animate='morph' the per-dataset lines are hidden and the
-# VISIBLE traveling point cloud is a separate artist, so select the visible
-# line rather than assuming a position in get_lines()
+# VISIBLE traveling point cloud is a separate artist; alpha= on the hyp.plot
+# call reaches only the hidden per-dataset lines (the visible cloud's alpha
+# stays unset), so select the visible line and fade it directly
 visible_lines = [ln for ln in fig.axes[0].get_lines() if ln.get_visible()]
 visible_lines[-1].set_alpha(0.25)
