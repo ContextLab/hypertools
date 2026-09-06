@@ -143,3 +143,8 @@ review report; it "Closes #284, #285" on merge). Started at b3eafe5c.
 - LOW: plot.ipynb cell 40 stderr leaks /Users/jmanning path (format_data.py:495 UserWarning).
 - NIT: HyperAnimation.save docstring internal "QC 2026-07" note; drawn_extent(frames, threshold) threshold undocumented.
 - NIT: wikipedia_embeddings.ipynb cells 13-14 still %pip install wikipedia-api + wikipediaapi instead of hyp.load('wikipedia:...').
+
+## Progress (2026-09-06 ~01:00)
+Commits since f1a1e091: e47968f5 (spy tests, OfflineError export), a59f2e2c (gate widened), ef887cab (plot P1 + IO fixes), 1be634dd (fit returns self), f0e56c9c (docs wave), 223d4682 (lsl docstring), 384fe999 (plot P2 + CHANGELOG). Tree clean.
+ALL review findings fixed. Final verification pipeline launched detached (scratchpad/final_verify.sh -> final_verify.log): re-execute 8 notebooks (analyze, plot, manip, align, text, wikipedia_embeddings, projectile_kalman, conversation_trajectories; 4 parallel) -> /Users/ leak scan -> full pytest (LSLAPICFG loopback cfg in scratchpad) -> ruff + diff --check -> sphinx -W full gallery -> HYPERTOOLS_EXAMPLE_SMOKE gate.
+Next after green: commit re-executed notebooks + note, push branch, watch PR #286 CI, then post issue-closure comments on #284/#285 (they close on merge via the PR body).

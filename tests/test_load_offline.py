@@ -275,4 +275,3 @@ def test_reset_seaborn_names_cache_forgets_a_remembered_failure():
     sources.reset_seaborn_names_cache()
     assert sources._seaborn_names_failed_at is None
     assert sources._seaborn_names_cache is None
-
