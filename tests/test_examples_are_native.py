@@ -441,7 +441,11 @@ def _scan_inputs(root):
     import glob
     found = (glob.glob(os.path.join(root, 'examples', '*.py'))
              + glob.glob(os.path.join(root, 'docs', 'tutorials', '*.ipynb')))
-    return sorted(os.path.relpath(p, root) for p in found)
+    # POSIX separators whatever the host: the allowlist, the roster and the
+    # findings are compared as strings, and Windows CI produced
+    # 'docs\\tutorials\\align.ipynb' against 'docs/tutorials/align'
+    # (2026-09-06, every Windows job red).
+    return sorted(os.path.relpath(p, root).replace(os.sep, '/') for p in found)
 
 
 def _numbered_code_lines(lines):

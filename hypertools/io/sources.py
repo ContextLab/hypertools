@@ -1481,6 +1481,30 @@ def cached_url_path(url):
     return url_cache_dir() / f'{digest}{suffix}'
 
 
+def _replace_retrying(src, dst, attempts=50, delay=0.02):
+    """``os.replace`` that tolerates Windows' transient access-denied.
+
+    On Windows a rename onto a file another thread is reading or renaming
+    raises ``PermissionError`` (WinError 5) for the instant the handle is
+    held; POSIX renames succeed regardless. Twelve concurrent writers of
+    one cache entry hit it on every Windows CI job (2026-09-06). Retry
+    briefly; if every attempt fails but the destination exists, a
+    concurrent writer of the SAME URL (the cache key) won the race with
+    identical bytes, so the file on disk is the file we wanted.
+    """
+    import time
+    for attempt in range(attempts):
+        try:
+            os.replace(src, dst)
+            return
+        except PermissionError:
+            if attempt == attempts - 1:
+                if Path(dst).exists():
+                    return
+                raise
+            time.sleep(delay)
+
+
 def _write_cached(path, raw, name_hint):
     """Write ``raw`` into the cache atomically: a unique ``.part``
     file, then ``os.replace``, so an interrupted download can never leave a
@@ -1501,7 +1525,7 @@ def _write_cached(path, raw, name_hint):
         try:
             with stream:
                 stream.write(payload)
-            os.replace(part, destination)
+            _replace_retrying(part, destination)
         finally:
             part.unlink(missing_ok=True)
 
