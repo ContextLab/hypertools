@@ -159,3 +159,8 @@ Next after green: commit re-executed notebooks + note, push branch, watch PR #28
 ## Next
 - When PR CI is green: post the verification comments (scratchpad/comment_284.md, comment_285.md) on #284/#285 and a summary comment on PR #286; the issues close on merge.
 - Jeremy: merge #286, then the re-cut per RELEASE_CHECKLIST.md (CHANGELOG date, gallery republish from the merge commit, move v1.1.0 tag, replace draft assets, PyPI, RTD, conda-forge).
+
+## END STATE (2026-09-06 ~03:40)
+- Branch fix/1.1-release-review head d20fdde0 (17 commits ahead of master); PR #286 CI run 34016744841: 16 success + release-gate skipped. Windows-only failures on f775b371 (scanner path separators, cache os.replace) fixed in 9340300d and verified green on Windows.
+- Comments posted: #284 (issuecomment-5557791830), #285 (issuecomment-5557791988), PR #286 (issuecomment-5557792124). Issues close on merge via the PR body.
+- NEXT (Jeremy): merge #286 -> re-cut per RELEASE_CHECKLIST.md (CHANGELOG date, gallery republish from the merge commit, move v1.1.0 tag, replace draft release assets, twine upload, RTD, conda-forge, Bluesky).
