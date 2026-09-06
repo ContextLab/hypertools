@@ -164,3 +164,7 @@ Next after green: commit re-executed notebooks + note, push branch, watch PR #28
 - Branch fix/1.1-release-review head d20fdde0 (17 commits ahead of master); PR #286 CI run 34016744841: 16 success + release-gate skipped. Windows-only failures on f775b371 (scanner path separators, cache os.replace) fixed in 9340300d and verified green on Windows.
 - Comments posted: #284 (issuecomment-5557791830), #285 (issuecomment-5557791988), PR #286 (issuecomment-5557792124). Issues close on merge via the PR body.
 - NEXT (Jeremy): merge #286 -> re-cut per RELEASE_CHECKLIST.md (CHANGELOG date, gallery republish from the merge commit, move v1.1.0 tag, replace draft release assets, twine upload, RTD, conda-forge, Bluesky).
+
+## Follow-up from the feature tour (2026-09-06 ~10:00)
+- 9.2: 's--' legend handle showed only the dashes (backend splits marker+line fmt into a line artist + a _nolegend_ marker artist). Fixed in 45fe7799: line artist carries marker with markevery=[]; pixel-level test tests/test_plot_fmt_split_legend.py; plotly and animated paths were already right. Plot+animation suites 2121 passed.
+- 9.3: mixture hue blends correctly (50/50 weights -> exact midpoint); the tour's blobs were too separated (GMM memberships all > 0.99). Tour cell 76 (gitignored notebook) now uses cluster_std=2.5 blobs (20 soft points, 71 visibly blended dots) and was re-executed (65/67 cells output, 0 errors). Shipped docs carry no such demo.
