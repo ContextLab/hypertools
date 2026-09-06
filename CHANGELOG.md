@@ -859,6 +859,25 @@ Because 1.1.0 had not been published, they ship in it.
   markers at the raw sample points; the legend handle showed only the
   line. It now shows the marker and the line, on static and animated
   plots, and the line itself still draws no markers.
+- **`panels=True` picks its grid from the figure's aspect ratio** and
+  prefers a grid with no spare cell: three panels form a row in a
+  default or wide figure (they were a 2x2 with a hole, and in a wide
+  figure each square 3-D axes shrank to the short cell height), four
+  form 2x2, six form 2x3. Explicit `(nrows, ncols)` and column counts
+  are unchanged.
+- **`return_model=True` no longer fits the pipeline a second time.** The
+  bundle's `pipeline` is the one the figure was drawn with (the
+  cluster stage, which runs on the reduced scores, is appended as a
+  fitted step), so a UMAP or Isomap plot with `return_model=True`, and
+  every `panels=` grid built with it, fits once and warns once.
+- **Seeded UMAP no longer warns about `n_jobs`.** A `random_state=`
+  hypertools injects made umap-learn override `n_jobs` and say so;
+  hypertools now passes the `n_jobs=1` umap uses anyway, unless the
+  caller chose one.
+- **Isomap fits stay quiet about scipy's sparse-matrix efficiency.** The
+  dozen `SparseEfficiencyWarning`s scikit-learn's graph completion
+  triggers are silenced during the fit; sklearn's own warning about a
+  disconnected neighbour graph (the user's `n_neighbors`) still shows.
 
 ### Documented limitations
 

@@ -2512,18 +2512,52 @@ def subplots(nrows=1, ncols=1, ndims=3, size=None, **fig_kw):
     return fig, flat
 
 
-def _resolve_panel_grid(panels, n_panels, _name='panels'):
+def _auto_panel_grid(n_panels, size=None):
+    """The ``(nrows, ncols)`` grid ``panels=True`` uses for `n_panels`
+    panels in a figure of `size` (inches; matplotlib's default figure size
+    when None).
+
+    Every panel is a square-ish box (a 3-D axes keeps its box aspect), so
+    the useful measure of a candidate grid is the side of the square that
+    fits its cell: ``min(width / ncols, height / nrows)``. The grid with
+    the largest side wins, except that a grid with NO spare cell is
+    preferred whenever its side is at least three quarters of the best
+    one -- three panels in a wide or default-sized figure form a row
+    rather than a 2x2 with a hole, five panels still take 2x3 because
+    a single row would shrink them to less than that.
+    """
+    if size is None:
+        size = plt.rcParams['figure.figsize']
+    width, height = float(size[0]), float(size[1])
+    candidates = []
+    for ncols in range(1, n_panels + 1):
+        nrows = int(np.ceil(n_panels / ncols))
+        side = min(width / ncols, height / nrows)
+        candidates.append((side, nrows * ncols - n_panels, nrows, ncols))
+    best_side = max(c[0] for c in candidates)
+    exact = [c for c in candidates if c[1] == 0]
+    if exact:
+        side, _holes, nrows, ncols = max(exact, key=lambda c: (c[0], -c[2]))
+        if side >= 0.75 * best_side:
+            return nrows, ncols
+    _side, _holes, nrows, ncols = max(
+        candidates, key=lambda c: (c[0], -c[1], -c[2]))
+    return nrows, ncols
+
+
+def _resolve_panel_grid(panels, n_panels, size=None, _name='panels'):
     """Resolve `panels=` into an ``(nrows, ncols)`` grid holding at least
     `n_panels` cells.
 
-    ``True``/``'auto'`` picks a near-square grid (at most ``ceil(sqrt(n))``
-    columns, so 3 datasets -> 2x2 with one spare hidden, 6 -> 3x2); an
-    ``int`` is the number of COLUMNS; an ``(nrows, ncols)`` pair is used
-    verbatim (and must have room for every panel).
+    ``True``/``'auto'`` picks the grid from the figure's aspect ratio
+    (`size`, inches), preferring one without a spare cell -- see
+    `_auto_panel_grid` (3 panels -> a row in a default or wide figure, a
+    column in a tall one; 4 -> 2x2; 6 -> 2x3); an ``int`` is the number of
+    COLUMNS; an ``(nrows, ncols)`` pair is used verbatim (and must have
+    room for every panel).
     """
     if panels is True or (isinstance(panels, str) and panels == 'auto'):
-        ncols = int(np.ceil(np.sqrt(n_panels)))
-        return int(np.ceil(n_panels / ncols)), ncols
+        return _auto_panel_grid(n_panels, size)
     if isinstance(panels, (tuple, list)) and len(panels) == 2 \
             and all(isinstance(v, (int, np.integer))
                     and not isinstance(v, bool) for v in panels):
@@ -2891,7 +2925,8 @@ def _plot_panels(x, panels, call_kwargs, _name='panels'):
                    else "") + ".")
         n_panels = len(datasets)
 
-    nrows, ncols = _resolve_panel_grid(panels, n_panels, _name=_name)
+    nrows, ncols = _resolve_panel_grid(panels, n_panels,
+                                       size=call_kwargs.get('size'), _name=_name)
     titles = _panel_titles(call_kwargs.get('title'), n_panels)
     ndims = call_kwargs.get('ndims', 3)
     # ndims > 3 is analyzed at that dimensionality and DRAWN in 3-D, as the
@@ -5269,7 +5304,10 @@ def plot(
         ``fig, axes = plt.subplots(nrows, ncols,
         subplot_kw={'projection': '3d'}); for ax, d in zip(axes.ravel(),
         data): hyp.plot(d, ax=ax, show=False); plt.tight_layout()`` grid.
-        ``True`` (or ``'auto'``) sizes a near-square grid; an ``int`` is
+        ``True`` (or ``'auto'``) picks the grid from the figure's aspect
+        ratio (`size=`), preferring a grid with no spare cell: three
+        panels form a row in a default or wide figure and a column in a
+        tall one, four form 2x2, six form 2x3; an ``int`` is
         the number of COLUMNS; an ``(nrows, ncols)`` pair is used verbatim
         and must have room for every panel. Spare cells are hidden, the
         layout is tightened, and the one `Figure` is returned.
@@ -6967,6 +7005,7 @@ def plot(
 
     # analyze the data
     raw = None
+    _bundle_fitted_pipeline = None   # analyze()'s fitted pipeline, when asked for
     if transform is None:
         raw = format_data(x, impute=impute, **text_args)
 
@@ -7102,7 +7141,7 @@ def plot(
                             "clusterer yields labels -- pass those as "
                             "hue= instead, and plot the step before it.")
         else:
-            xform = analyze(
+            _analyzed = analyze(
                 raw,
                 # plot()'s ndims defaults to 3 (unlike analyze's None), so
                 # forwarding it alongside reduce=None would trip analyze's
@@ -7119,7 +7158,17 @@ def plot(
                 internal=True,
                 impute=impute,
                 random_state=random_state,
+                # the FITTED pipeline is what the return_model bundle hands
+                # back as bundle['pipeline'] -- asking for it here means the
+                # bundle no longer refits every stage a second time (a UMAP
+                # or Isomap panel grid used to fit, and warn, twice; 1.1
+                # feature-tour report, section 9.8)
+                return_model=bool(return_model),
             )
+            if return_model:
+                xform, _bundle_fitted_pipeline = _analyzed
+            else:
+                xform = _analyzed
     else:
         xform = transform
         _input_finite = None
@@ -10696,6 +10745,28 @@ def plot(
                 # analyze() call, long before this bundle was built.
                 from ..core.pipeline import _validate_input_hierarchy
                 pipeline.input_hierarchy = _validate_input_hierarchy(
+                    _bundle_hierarchy)
+        elif _bundle_fitted_pipeline is not None:
+            # the pipeline analyze() fitted for THIS figure, handed back
+            # as-is: no second fit of manip/normalize/reduce/align. The
+            # cluster stage ran on the analyzed data separately (plot()
+            # clusters the reduced scores), so it is appended as one more
+            # fitted step, fit on exactly that data.
+            from ..core.pipeline import (Pipeline as _Pipeline,
+                                         _make_stage_step,
+                                         _validate_input_hierarchy)
+            bundle_pipeline = _bundle_fitted_pipeline
+            if _bundle_cluster_stage is not None:
+                _cluster_step = _make_stage_step(
+                    'cluster', _bundle_cluster_stage, ndims, random_state)
+                _cluster_step.fit_transform(
+                    [np.asarray(_xi) for _xi in xform_data])
+                bundle_pipeline = _Pipeline(
+                    list(bundle_pipeline.steps) + [('cluster', _cluster_step)],
+                    input_hierarchy=bundle_pipeline.input_hierarchy)
+            if (_bundle_hierarchy is not None
+                    and bundle_pipeline.input_hierarchy is None):
+                bundle_pipeline.input_hierarchy = _validate_input_hierarchy(
                     _bundle_hierarchy)
         elif raw is not None:
             from ..core.pipeline import build_pipeline

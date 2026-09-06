@@ -79,12 +79,23 @@ def test_subplots_accepts_matplotlib_figure_kwargs():
 def test_panels_true_draws_one_axes_per_dataset():
     data = _datasets(3)
     fig = hyp.plot(data, panels=True, reduce='PCA', show=False)
-    # 3 datasets -> a 2x2 grid with one spare, hidden
-    assert len(fig.axes) == 4
-    assert [ax.get_visible() for ax in fig.axes] == [True, True, True, False]
+    # 3 datasets -> one row of three (1.1 release review: the grid follows
+    # the figure's aspect and avoids a spare cell; it used to be 2x2)
+    assert len(fig.axes) == 3
+    assert all(ax.get_visible() for ax in fig.axes)
     assert all(ax.name == '3d' for ax in fig.axes)
-    # one trajectory drawn per visible panel
-    for ax in fig.axes[:3]:
+    # one trajectory drawn per panel
+    for ax in fig.axes:
+        assert len(ax.lines) == 1
+
+
+def test_panels_true_hides_the_spare_cell_when_no_grid_fits_exactly():
+    data = _datasets(5)
+    fig = hyp.plot(data, panels=True, reduce='PCA', show=False)
+    # 5 datasets -> 2x3 with one spare, hidden
+    assert len(fig.axes) == 6
+    assert [ax.get_visible() for ax in fig.axes] == [True] * 5 + [False]
+    for ax in fig.axes[:5]:
         assert len(ax.lines) == 1
 
 
@@ -172,7 +183,7 @@ def test_panels_return_model_carries_axes_and_grid():
     data = _datasets(3)
     bundle = hyp.plot(data, panels=True, reduce='PCA', return_model=True,
                       show=False)
-    assert bundle['panels'] == (2, 2)
+    assert bundle['panels'] == (1, 3)
     assert len(bundle['axes']) == 3
     assert all(ax.figure is bundle['fig'] for ax in bundle['axes'])
     assert len(bundle['panel_models']) == 3

@@ -477,6 +477,14 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, return_model=False,
             and 'random_state' not in model_params
             and 'random_state' in inspect.signature(model).parameters):
         model_params['random_state'] = random_state
+        # umap-learn forces n_jobs=1 whenever a random_state is set and
+        # warns that it did ("n_jobs value -1 overridden to 1 ..."), which
+        # would blame the user for a seed hypertools injected. Pass the
+        # n_jobs umap is going to use anyway, unless the user chose one.
+        if (getattr(model, '__name__', '') == 'UMAP'
+                and 'n_jobs' not in model_params
+                and 'n_jobs' in inspect.signature(model).parameters):
+            model_params['n_jobs'] = 1
 
     # sklearn TSNE's default perplexity (30) requires n_samples > 30, so
     # small datasets crashed on a parameter the user never set
@@ -594,7 +602,16 @@ def reduce_list(x, model, reuse=None):
         transformed = np.asarray(fitted.transform(stacked))
     else:
         fitted = Reducer(model)
-        transformed = np.asarray(fitted.fit_transform(stacked))
+        with warnings.catch_warnings():
+            # scikit-learn's Isomap completes a disconnected neighbour graph
+            # by writing into a CSR matrix cell by cell, and scipy warns
+            # about ITS sparsity-structure changes a dozen times per fit.
+            # Nothing the user passed causes or can stop that, so it stays
+            # silent; sklearn's own "connected components" UserWarning
+            # (about the user's data and n_neighbors) still reaches them.
+            from scipy.sparse import SparseEfficiencyWarning
+            warnings.filterwarnings('ignore', category=SparseEfficiencyWarning)
+            transformed = np.asarray(fitted.fit_transform(stacked))
 
     x_r = np.vsplit(transformed, split)
     if len(x) > 1:
