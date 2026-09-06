@@ -26,6 +26,37 @@ def _series(n=60, seed=0):
                          'b': 0.05 * t - np.sin(t / 5.0) + 0.01 * rng.standard_normal(n)})
 
 
+@pytest.mark.parametrize('wrapped', [False, True])
+def test_holdout_instances_fit_each_dataset_without_mutating_caller(wrapped):
+    # GH #285 release review: reuse of dataset 1's fitted regressor made
+    # dataset 2's quadratic forecast negative instead of around 3000.
+    from hypertools.predict import AutoRegressor
+    t = np.arange(60.)
+    datasets = [pd.DataFrame({'x': np.sin(t / 3)}),
+                pd.DataFrame({'x': 100 + t ** 2})]
+    model = AutoRegressor()
+    spec = {'model': model} if wrapped else model
+    expected, expected_forecasts = hyp.predict(
+        datasets, model=AutoRegressor, holdout=5, return_forecasts=True)
+    actual, forecasts = hyp.predict(
+        datasets, model=spec, holdout=5, return_forecasts=True)
+    pd.testing.assert_frame_equal(actual, expected)
+    for got, want in zip(forecasts['AutoRegressor'],
+                         expected_forecasts['AutoRegressor']):
+        pd.testing.assert_frame_equal(got, want)
+    assert not model.is_fitted
+
+
+@pytest.mark.parametrize('wrapped', [False, True])
+def test_holdout_refuses_previously_fitted_instances(wrapped):
+    from hypertools.predict import AutoRegressor
+    data = _series()
+    model = AutoRegressor().fit(data)
+    spec = {'model': model} if wrapped else model
+    with pytest.raises(ValueError, match='holdout=.*unfitted'):
+        hyp.predict(data, model=spec, holdout=5)
+
+
 # --- a perfect forecaster (real model, exactly-linear data) ---------------
 
 def _fit_line(data, **kwargs):

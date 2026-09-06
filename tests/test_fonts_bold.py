@@ -66,6 +66,26 @@ def test_findfont_regular_resolution_is_unchanged():
     assert os.path.normpath(regular_path) == os.path.normpath(_REGULAR)
 
 
+def test_bundled_font_wins_over_an_already_registered_copy(tmp_path):
+    # GH #285 release review: reproduce a same-family system font using
+    # another real font file in a fresh interpreter, without mocks.
+    import shutil
+    import subprocess
+    import sys
+    other = tmp_path / 'system-noto.ttf'
+    shutil.copyfile(_REGULAR, other)
+    script = '''
+import sys
+from matplotlib import font_manager as fm
+fm.fontManager.addfont(sys.argv[1])
+from hypertools.plot.fonts import register_bundled_fonts
+register_bundled_fonts()
+assert fm.findfont(fm.FontProperties(family='Noto Sans', weight='normal')) == sys.argv[2]
+'''
+    subprocess.run([sys.executable, '-c', script, str(other), _REGULAR],
+                   check=True, capture_output=True, text=True)
+
+
 def _render_title_rgba(fontweight):
     register_bundled_fonts()
     fig, ax = plt.subplots(figsize=(3, 2), dpi=100)

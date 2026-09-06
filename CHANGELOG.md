@@ -470,6 +470,28 @@ previously ambiguous or silently lossy.
 
 ### Bug fixes
 
+- **Backtest model ownership.** Forecast backtests fit an independent copy
+  of an unfitted model instance for each dataset, instead of reusing the
+  first dataset's learned parameters on subsequent datasets. Forecast and
+  imputation scoring leave caller-owned instances unchanged and reject
+  already fitted instances, which may have seen the held-out truth (GH #285).
+- **Concurrent URL caching.** Threads downloading the same URL use distinct
+  temporary files, preventing `FileNotFoundError` during atomic replacement
+  (GH #285).
+- **Delay column collisions.** `Delay` rejects duplicate column labels and
+  distinct labels with identical string representations, instead of silently
+  overwriting embedded features (GH #285).
+- **Bundled font precedence.** The bundled Noto Sans faces take precedence
+  over same-family system fonts, keeping rendering consistent across machines
+  with an additional Noto Sans installation (GH #285).
+- **Release documentation.** Plotting and scoring features shipped in 1.1
+  are identified as 1.1 in their API documentation, correcting leftover 1.2
+  labels. Installation guidance distinguishes Kalman imputation from
+  Kalman/ARIMA forecasting. The forecast example and its executed tutorial
+  use native URL caching; the browser verifier checks versioned notebook
+  links, rendered install cells, and real Plotly frame transitions without
+  requiring autoplay (GH #284, GH #285).
+
 Each of these was found while building the above, and each affects FLAT
 input too.
 

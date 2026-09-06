@@ -352,7 +352,7 @@ def predict(data, model='Kalman', t=10, return_model=False, holdout=None,
     model : str, dict, class, Forecaster instance, or a COLLECTION of these
         Which forecaster to use (default: 'Kalman').
 
-        SEVERAL MODELS AT ONCE (1.2). A LIST or TUPLE of specs forecasts
+        SEVERAL MODELS AT ONCE (1.1). A LIST or TUPLE of specs forecasts
         each of them and returns a ``{name: forecast}`` dict in the order
         given -- the shape ``hyp.plot(..., predict=['Kalman', 'ARIMA'])``
         consumes. Names come from the specs (a string's registry spelling,
@@ -419,12 +419,16 @@ def predict(data, model='Kalman', t=10, return_model=False, holdout=None,
         model})``; it is not supported with ``holdout=``.
 
     holdout : int, float, True, or None
-        BACKTEST instead of forecasting (1.2). Fit each model on the HEAD
+        BACKTEST instead of forecasting (1.1). Fit each model on the HEAD
         of the data, forecast the held-out TAIL, and return a scores frame
         comparing every model against the rows that actually happened. An
         int holds out that many rows; a float in (0, 1) holds out that
         FRACTION of them (rounded, at least 1); ``True`` holds out exactly
         `t` rows. The head must keep at least 2 rows.
+
+        Pass a name, class, or unfitted instance. Each dataset fits an
+        independent copy; the caller's instance is unchanged. Already fitted
+        instances are refused because they may have seen the held-out rows.
 
         **`t` is not consulted** for an int/float `holdout`: the horizon IS
         the number of held-out rows, or the forecast would not line up

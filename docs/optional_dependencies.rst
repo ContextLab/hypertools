@@ -5,7 +5,7 @@ Optional dependencies
 
 ``pip install hypertools`` installs everything the core functionality needs:
 plotting with matplotlib, dimensionality reduction, alignment, clustering,
-normalization, and ``Kalman``/``ARIMA`` forecasting and imputation. The
+normalization, ``Kalman``/``ARIMA`` forecasting, and missing-data imputation. The
 heavier model families are declared as ``pip`` extras of ``hypertools`` in
 ``pyproject.toml``. You can install them ahead of time, or let hypertools
 install them the first time a call needs one.

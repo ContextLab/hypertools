@@ -257,14 +257,14 @@ then raises `ImportError` with the manual `pip install` command.
 + numpy>=2.0.0
 + umap-learn>=0.5.5, numba>=0.59
 + pydata-wrangler>=0.5.1 (data-wrangling core)
-+ pykalman>=0.11, statsmodels>=0.14 (Kalman/ARIMA forecasting and imputation)
++ pykalman>=0.11, statsmodels>=0.14 (Kalman/ARIMA forecasting; Kalman imputation)
 + requests, dill, ipympl
 + ffmpeg (for saving animations)
 
 All Python dependencies are declared in `pyproject.toml` and installed
 automatically by pip. The base install covers all core functionality
 (plotting, dimensionality reduction, alignment, clustering, normalization,
-and `Kalman`/`ARIMA` forecasting + imputation) and therefore pulls in the
+`Kalman`/`ARIMA` forecasting, and missing-data imputation) and therefore pulls in the
 full scientific stack (NumPy, SciPy, pandas, scikit-learn, matplotlib,
 seaborn, UMAP/Numba, statsmodels, pykalman, ipympl, pydata-wrangler); it is
 not a minimal footprint. Heavier optional model families are separated into

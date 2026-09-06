@@ -13,6 +13,9 @@ Usage
 -----
     .venv/bin/python scripts/verify_docs_playwright.py
 
+Set ``HYPERTOOLS_DOCS_HTML`` and ``HYPERTOOLS_DOCS_SCREENSHOTS`` to check
+a build and save evidence outside the source checkout.
+
 Exits non-zero (and prints the failing assertions) if ANY page fails
 verification. Screenshots (full-page + cropped element captures used for the
 non-blank pixel-variance check) are written to ``docs/images/v1.0-docs/``.
@@ -28,6 +31,7 @@ import subprocess
 import sys
 import time
 import urllib.request
+from importlib.metadata import version
 from pathlib import Path
 
 import numpy as np
@@ -35,8 +39,10 @@ from PIL import Image
 from playwright.sync_api import sync_playwright
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-DOCS_HTML = REPO_ROOT / "docs" / "_build" / "html"
-SCREENSHOT_DIR = REPO_ROOT / "docs" / "images" / "v1.0-docs"
+DOCS_HTML = Path(os.environ.get(
+    'HYPERTOOLS_DOCS_HTML', REPO_ROOT / "docs" / "_build" / "html"))
+SCREENSHOT_DIR = Path(os.environ.get(
+    'HYPERTOOLS_DOCS_SCREENSHOTS', REPO_ROOT / "docs" / "images" / "v1.0-docs"))
 def _current_branch() -> str:
     """The branch the docs were built for -- must match the branch-aware Colab
     install cells (docs/conf.py + scripts/add_colab_install_cell.py). Detected
@@ -62,6 +68,7 @@ def _is_release_ref(branch: str) -> bool:
 
 BRANCH = _current_branch()
 IS_RELEASE = _is_release_ref(BRANCH)
+NOTEBOOK_REF = 'v' + version('hypertools') if IS_RELEASE else BRANCH
 
 # Minimum standard deviation of pixel intensities (0-255 scale) for an
 # element screenshot to be considered "non-blank". A truly blank/white or
@@ -162,10 +169,10 @@ def verify_colab_badge(page) -> str:
         raise VerificationFailure(f"Colab badge link href looks wrong: {href!r}")
     # the generated notebooks live on the docs-notebooks branch (they are
     # gitignored in the main tree), so the badge must point there under this ref
-    if "blob/docs-notebooks/" not in href or f"/{BRANCH}/" not in href:
+    if f"blob/docs-notebooks/{NOTEBOOK_REF}/auto_examples/" not in href:
         raise VerificationFailure(
             "Colab badge must point at blob/docs-notebooks/"
-            f"{BRANCH}/auto_examples/...: {href!r}")
+            f"{NOTEBOOK_REF}/auto_examples/...: {href!r}")
     return href
 
 
@@ -173,7 +180,9 @@ def verify_tutorial_branch_aware_install(page) -> str:
     """Tutorial (nbsphinx) pages: no image badge, but a real branch-aware
     `pip install ... @<branch>` cell must be present as the notebook's
     install-from-source instructions."""
-    content = page.content()
+    # GH #284 release review: highlighted HTML wraps 'pip' and 'install'
+    # in separate spans. Check the rendered code, not the markup spelling.
+    content = '\n'.join(page.locator('.nbinput .highlight').all_text_contents())
     if "pip install" not in content:
         raise VerificationFailure(
             "tutorial page has no 'pip install' cell")
@@ -282,17 +291,30 @@ def verify_plotly_animated(page, shot_path: Path) -> dict:
         "return !!el && el.querySelectorAll('svg, canvas').length > 0; }",
         arg=".plotly-graph-div", timeout=15000,
     )
-    content = page.content()
-    if "Plotly.animate(" not in content or "Plotly.addFrames(" not in content:
-        raise VerificationFailure(
-            "no embedded Plotly animation calls (addFrames/animate) found in page source"
-        )
+    # GH #284 release review: auto_play=False deliberately emits no
+    # Plotly.animate call. Prove that real frames and play controls loaded,
+    # then execute an actual transition rather than checking source text.
+    page.wait_for_function(
+        """() => {
+            const el = document.querySelector('.plotly-graph-div');
+            return el?._transitionData?._frames?.length > 0 &&
+                el.layout.updatemenus.some(menu =>
+                    menu.buttons.some(button => button.method === 'animate'));
+        }""", timeout=15000)
+    frame_count = div.evaluate('el => el._transitionData._frames.length')
+    div.evaluate("""async el => {
+        const frames = el._transitionData._frames;
+        await Plotly.animate(el, [frames[frames.length - 1].name], {
+            transition: {duration: 0}, frame: {duration: 0, redraw: true},
+            mode: 'immediate'
+        });
+    }""")
     png_bytes = div.screenshot()
     std = _save_and_check_nonblank(
         png_bytes, shot_path.with_name(shot_path.stem + "_plot.png"))
     href = verify_colab_badge(page)
     page.screenshot(path=str(shot_path), full_page=True)
-    return {"pixel_std": std, "colab_href": href}
+    return {"pixel_std": std, "colab_href": href, "frame_count": frame_count}
 
 
 def verify_tutorial(page, shot_path: Path) -> dict:

@@ -13,6 +13,8 @@ What it replaces: the hand-rolled masked per-axis RMSE of
 ``docs/tutorials/projectile_kalman.ipynb`` cell 9 and the
 scattered-vs-occluded imputer comparison of its cell 13.
 """
+import copy
+
 import numpy as np
 import pandas as pd
 
@@ -134,8 +136,17 @@ def score_imputations(datasets, impute_fn, names, specs, truth, mask=None,
 
     imputed = {}
     for name, spec in zip(names, specs):
+        # GH #285 release review: score a fresh fit on damaged data, never
+        # learned state that may already contain the hidden truth.
+        from .common import Imputer
+        candidate = spec.get('model') if isinstance(spec, dict) else spec
+        if isinstance(candidate, Imputer) and candidate.is_fitted:
+            raise ValueError(
+                'truth= scoring requires an unfitted model so hidden values '
+                'cannot leak into training; pass a model name, class, or '
+                'unfitted instance instead.')
         results = impute_fn(datasets if not single else datasets[0],
-                            model=spec, **kwargs)
+                            model=copy.deepcopy(spec), **copy.deepcopy(kwargs))
         imputed[name] = results if isinstance(results, list) else [results]
     imputed[BASELINE] = [_mean_fill(d) for d in datasets]
 

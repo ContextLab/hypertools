@@ -338,7 +338,7 @@ def impute(data, model='PPCA', return_model=False, truth=None, mask=None,
         Which imputer to use (default: 'PPCA', matching the pre-1.0
         `format_data` default).
 
-        SEVERAL IMPUTERS AT ONCE (1.2). A LIST or TUPLE of specs fills the
+        SEVERAL IMPUTERS AT ONCE (1.1). A LIST or TUPLE of specs fills the
         data with each of them and returns a ``{name: imputed}`` dict in
         the order given. Names come from the specs (a string's registry
         spelling, a dict spec's inner model, a class/instance's
@@ -369,13 +369,16 @@ def impute(data, model='PPCA', return_model=False, truth=None, mask=None,
         model})``; it is not supported with ``truth=``.
 
     truth : DataFrame/array (or list of these), or None
-        SCORE the imputers instead of returning the filled data (1.2). The
+        SCORE the imputers instead of returning the filled data (1.1). The
         COMPLETE version of `data` -- same shape, cell for cell -- from
         which `data`'s NaNs were removed (e.g. by `hyp.tools.damage`).
         Every model in `model` is fit, and each is scored on the DAMAGED
         CELLS ONLY: the entries that are NaN in `data`. Observed cells are
         never scored -- every imputer passes them through untouched, so
         including them would only dilute the comparison.
+        Pass a name, class, or unfitted instance; scoring fits an independent
+        copy and leaves the caller's instance unchanged. Fitted instances
+        are refused because their learned state may contain the hidden truth.
 
     mask : boolean array (or list of these), or None
         RESTRICT scoring to a subset of the damaged cells, e.g. only the

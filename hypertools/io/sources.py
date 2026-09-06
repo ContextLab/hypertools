@@ -1353,22 +1353,33 @@ def cached_url_path(url):
 
 
 def _write_cached(path, raw, name_hint):
-    """Write ``raw`` into the cache atomically: a per-process ``.part``
+    """Write ``raw`` into the cache atomically: a unique ``.part``
     file, then ``os.replace``, so an interrupted download can never leave a
     truncated file that later runs would trust. The download's filename
     hint is stored beside it so a cache hit parses the payload exactly the
     way the live download did."""
     import json
     path.parent.mkdir(parents=True, exist_ok=True)
-    part = path.with_name(f'{path.name}.{os.getpid()}.part')
-    part.write_bytes(raw)
-    os.replace(part, path)
+
+    def write_atomic(destination, payload):
+        """Replace one cache file using a private temporary file."""
+        # GH #285 release review: PID-only names collide when threads
+        # cache the same URL concurrently, causing missing-file errors.
+        stream = tempfile.NamedTemporaryFile(
+                dir=destination.parent, prefix=destination.name + '.',
+                suffix='.part', delete=False)
+        part = Path(stream.name)
+        try:
+            with stream:
+                stream.write(payload)
+            os.replace(part, destination)
+        finally:
+            part.unlink(missing_ok=True)
+
+    write_atomic(path, raw)
     if name_hint:
         meta = path.with_name(f'{path.name}.meta.json')
-        meta_part = meta.with_name(f'{meta.name}.{os.getpid()}.part')
-        meta_part.write_text(json.dumps({'url_name_hint': name_hint}),
-                             encoding='utf-8')
-        os.replace(meta_part, meta)
+        write_atomic(meta, json.dumps({'url_name_hint': name_hint}).encode('utf-8'))
 
 
 def _read_cached(path):

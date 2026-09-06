@@ -84,6 +84,14 @@ def test_delay_column_names_and_order():
     np.testing.assert_allclose(out['x_lag0'].to_numpy(), np.arange(4, 10, dtype=float))
 
 
+@pytest.mark.parametrize('columns', [[1, '1'], ['x', 'x']])
+def test_delay_refuses_colliding_column_names(columns):
+    # GH #285 release review: no silent feature loss through dict keys.
+    data = pd.DataFrame(np.arange(20.).reshape(10, 2), columns=columns)
+    with pytest.raises(ValueError, match='unique string representations'):
+        Delay(dims=2).fit_transform(data)
+
+
 # --- multi-column input: each column embedded independently ---------------
 
 def test_delay_multicolumn_embeds_each_column_independently():

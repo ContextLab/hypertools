@@ -3823,7 +3823,7 @@ def plot(
         higher-dimensional analyzed data. Default is 3 (plot in 3
         dimensions).
 
-        ``ndims=1`` (1.2, GH #285) is a real TIME-SERIES mode, not a
+        ``ndims=1`` (1.1, GH #285) is a real TIME-SERIES mode, not a
         one-column scatter: every column of every dataset is drawn as its
         own line against the dataset's ROW INDEX (a DataFrame's index --
         including a `DatetimeIndex`, which ticks as real dates -- or
@@ -3834,17 +3834,17 @@ def plot(
         overrides them; `legend=True` shows them). ``reduce=`` still
         applies first, to ONE component -- ``ndims=1, reduce='PCA'`` draws
         the first principal component over the index. An animation reveals
-        each line left to right along x. Before 1.2 this path drew a single
+        each line left to right along x. Before 1.1 this path drew a single
         column against ``0..n-1`` with the values rescaled to ``[-1, 1]``,
         no visible axes, and refused 2+ columns -- so this is a deliberate
         behaviour change: what a 1-D figure draws is now the data's own
         coordinates. ``axis_scale='unit'`` puts the (index, value) traces
         back inside the ``[-1, 1]`` frame square like any other 2-D plot,
-        which rescales BOTH axes and so does not restore the pre-1.2
+        which rescales BOTH axes and so does not restore the pre-1.1
         geometry either.
 
     axis_scale : {'unit', 'data'} or None
-        Which coordinates the figure is drawn in (1.2, GH #285).
+        Which coordinates the figure is drawn in (1.1, GH #285).
 
         ``'unit'`` is what hypertools has always done, and remains the
         default for 2-D and 3-D plots: the (possibly reduced/aligned)
@@ -3875,7 +3875,7 @@ def plot(
         and ``'unit'`` everywhere else.
 
     xlim, ylim : (low, high) or None
-        Explicit axis limits, in the DRAWN coordinates (1.2, GH #285). Only
+        Explicit axis limits, in the DRAWN coordinates (1.1, GH #285). Only
         meaningful under ``axis_scale='data'`` (under ``'unit'`` the axes
         are pinned to the frame box); passing either with
         ``axis_scale='unit'`` raises ``ValueError`` rather than silently
@@ -4022,7 +4022,7 @@ def plot(
         short trace means the input itself has fewer than 2 observations and
         only more data helps. See docs/hierarchy.rst (default: None).
 
-        A **collection of models** (1.2, GH #285) draws one overlay per
+        A **collection of models** (1.1, GH #285) draws one overlay per
         model on every trace: ``predict=['Kalman', 'ARIMA', 'GP']``, or the
         mapping form ``predict={'my kalman': {'model': 'Kalman', 'kwargs':
         {...}}, 'arima': 'ARIMA'}`` when you want to name them yourself.
@@ -4040,7 +4040,7 @@ def plot(
 
     truth : array, DataFrame, or list of these, or None
         The ACTUAL continuation of each dataset, drawn beside the forecast
-        in the same space (1.2, GH #285) -- so a train/held-out/forecast
+        in the same space (1.1, GH #285) -- so a train/held-out/forecast
         figure is one call rather than three hand-built datasets:
         ``hyp.plot(train, predict='Chronos', t=30, truth=held_out)``.
         Requires `predict=`. One array per input dataset (a bare array for
@@ -6724,7 +6724,7 @@ def plot(
     # `ndims=1` series mode (GH #285) draws one LINE PER COLUMN against the
     # row index, so extra columns are extra lines rather than data that
     # cannot be drawn -- the refusal below ("static plots support at most
-    # 1") applies only to the pre-1.2 single-column reading of ndims=1.
+    # 1") applies only to the pre-1.1 single-column reading of ndims=1.
     # With a reduce= spec the reduction to one component has already run in
     # `analyze` above, and ndims=1, reduce='PCA' means exactly what it says:
     # the first principal component over the index.

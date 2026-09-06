@@ -18,6 +18,32 @@ import hypertools as hyp
 from hypertools.impute.common import Imputer
 
 
+@pytest.mark.parametrize('wrapped', [False, True])
+def test_scoring_does_not_fit_the_callers_instance(wrapped):
+    from hypertools.impute import SimpleImputer
+    truth = pd.DataFrame({'x': [1., 2., 3., 4.]})
+    damaged = truth.copy()
+    damaged.iloc[1, 0] = np.nan
+    model = SimpleImputer()
+    spec = {'model': model} if wrapped else model
+    expected = hyp.impute(damaged, model='SimpleImputer', truth=truth)
+    actual = hyp.impute(damaged, model=spec, truth=truth)
+    pd.testing.assert_frame_equal(actual, expected)
+    assert not model.is_fitted
+
+
+@pytest.mark.parametrize('wrapped', [False, True])
+def test_scoring_refuses_an_imputer_that_has_seen_the_truth(wrapped):
+    from hypertools.impute import SimpleImputer
+    truth = pd.DataFrame({'x': [1., 2., 3., 4.]})
+    model = SimpleImputer().fit(truth)
+    damaged = truth.copy()
+    damaged.iloc[1, 0] = np.nan
+    spec = {'model': model} if wrapped else model
+    with pytest.raises(ValueError, match='truth=.*unfitted'):
+        hyp.impute(damaged, model=spec, truth=truth)
+
+
 def _arc(n=40, seed=0):
     """A smooth, projectile-like trajectory (the tutorial's setting)."""
     t = np.linspace(0, 2, n)

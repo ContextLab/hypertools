@@ -114,8 +114,9 @@ def register_bundled_fonts():
     """Make the vendored face(s) visible to matplotlib's font manager.
 
     Idempotent (matplotlib's `addfont` appends unconditionally, so repeated
-    calls would pile up duplicate entries). Additive only -- it registers an
-    extra font, never changes the user's rcParams or removes anything.
+    calls would pile up duplicate entries). Bundled faces take precedence
+    over same-family system fonts; no fonts are removed and rcParams are
+    unchanged.
     """
     global _bundled_registered
     if _bundled_registered:
@@ -124,6 +125,11 @@ def register_bundled_fonts():
     for path in bundled_font_files():
         try:
             font_manager.fontManager.addfont(path)
+            # GH #285 release review: findfont breaks equal-score ties by
+            # registration order. A system Noto Sans (including variable
+            # fonts) must not replace the bundled face on some machines.
+            entries = font_manager.fontManager.ttflist
+            entries.insert(0, entries.pop())
         except Exception:  # noqa: BLE001 - a bad/corrupt bundled file must
             pass           # never break plotting; the stack falls back below
 

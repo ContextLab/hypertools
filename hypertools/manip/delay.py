@@ -68,6 +68,13 @@ def _delay_embed_dataframe(data, tau, dims, drop_edges):
             'instead of dropping them.')
 
     lags = [(dims - 1 - i) * tau for i in range(dims)]
+    # GH #285 release review: 1 and '1' are distinct pandas labels but
+    # produce the same output name; a dict would silently drop a feature.
+    names = [f'{c}_lag{lag}' for c in data.columns for lag in lags]
+    if len(set(names)) != len(names):
+        raise ValueError(
+            'Delay requires column labels with unique string representations; '
+            'rename duplicate or colliding columns before embedding.')
     out_columns = {}
     for c in data.columns:
         values = np.asarray(data[c], dtype=float)
@@ -169,7 +176,9 @@ class Delay(Manipulator):
     ------
     ValueError
         If `tau`/`dims` are not positive integers, or if `drop_edges=True`
-        and the data has too few rows to produce any output row.
+        and the data has too few rows to produce any output row. Also raised
+        when column labels have duplicate string representations (rename
+        these columns before embedding to avoid ambiguous output names).
 
     Examples
     --------

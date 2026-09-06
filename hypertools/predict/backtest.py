@@ -18,6 +18,7 @@ rows, the model x ticker pivot and the best-vs-naive verdict of
 occluded-cells-only per-axis error tables of
 ``docs/tutorials/projectile_kalman.ipynb`` cells 9 and 13.
 """
+import copy
 import warnings
 
 import numpy as np
@@ -378,7 +379,18 @@ def backtest_predict(datasets, predict_fn, t, holdout, names, specs,
 
     forecasts = {}
     for name, spec in zip(names, specs):
-        per_dataset = [predict_fn(train, model=spec, t=k, **kwargs)
+        # GH #285 release review: an instance fitted on dataset 1 must
+        # never enter predict_new on dataset 2. A fitted input may already
+        # have seen the holdout, so it cannot provide a clean backtest.
+        from .common import Forecaster
+        candidate = spec.get('model') if isinstance(spec, dict) else spec
+        if isinstance(candidate, Forecaster) and candidate.is_fitted:
+            raise ValueError(
+                'holdout= requires an unfitted model so held-out rows cannot '
+                'leak into training; pass a model name, class, or unfitted '
+                'instance instead.')
+        per_dataset = [predict_fn(train, model=copy.deepcopy(spec), t=k,
+                                  **copy.deepcopy(kwargs))
                        for (train, _), k in zip(splits, horizons)]
         forecasts[name] = per_dataset
     forecasts[baseline] = [naive_forecast(train, held.index)

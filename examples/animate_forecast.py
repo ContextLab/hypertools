@@ -54,15 +54,12 @@ fetches nothing.
 # sphinx_gallery_thumbnail_path = '_static/thumbnails/sphx_glr_animate_forecast_thumb.gif'
 
 import os
-import tempfile
-import urllib.request
 from typing import NamedTuple
 
 import numpy as np
 
 import hypertools as hyp
 
-CACHE = os.path.join(tempfile.gettempdir(), 'hypertools_gallery_cache')
 ARCHIVE = ('https://raw.githubusercontent.com/ContextLab/'
            'hypertools-paper-notebooks/master/data/temperatures.csv')
 # three regions, six cities each, every region spanning both hemispheres:
@@ -91,20 +88,11 @@ def fetch_temperatures():
     or ``None`` (announced with the error) when it cannot be fetched."""
     if os.environ.get('HYPERTOOLS_OFFLINE'):
         raise RuntimeError('HYPERTOOLS_OFFLINE is set: refusing to fetch')
-    os.makedirs(CACHE, exist_ok=True)
-    dest = os.path.join(CACHE, 'temperatures.csv')
     try:
-        if not os.path.exists(dest):
-            req = urllib.request.Request(
-                ARCHIVE, headers={'User-Agent': 'hypertools-gallery/1.1'})
-            with urllib.request.urlopen(req, timeout=60) as response:
-                payload = response.read()
-            with open(dest + '.part', 'wb') as handle:
-                handle.write(payload)
-            os.replace(dest + '.part', dest)   # never a truncated cache
         # the archive carries '<City>' (absolute) and '<City>_anomaly'
         # columns; its complete rows end in August 2013
-        recent = hyp.load(dest).dropna().tail(N_MONTHS)
+        # GH #285: the native URL loader owns download and atomic caching.
+        recent = hyp.load(ARCHIVE, cache=True).dropna().tail(N_MONTHS)
         return [recent[cities].to_numpy(float)
                 for cities in REGIONS.values()]
     except Exception as error:
