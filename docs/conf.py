@@ -108,10 +108,12 @@ extensions = ['sphinx.ext.autodoc',
     'sphinx.ext.autosummary',
     'sphinx.ext.viewcode',
     # provides the `.. doctest::` directive docs/hierarchy.rst uses for its
-    # worked examples. Those examples are EXECUTED by
-    # tests/test_docs_hierarchy_guide.py (via doctest.testfile), not by this
-    # builder -- the extension is here so the directive renders instead of
-    # raising "Unknown directive type", which -W turns into a build failure.
+    # worked examples. The html build only RENDERS them; they run under
+    # `make doctest` (the `-b doctest` builder) in this directory. The
+    # pytest suite pins the guide's structure, links and quoted messages
+    # (tests/test_docs_hierarchy_guide.py) but does not execute the blocks.
+    # The extension is here so the directive renders instead of raising
+    # "Unknown directive type", which -W turns into a build failure.
     'sphinx.ext.doctest',
     # (see doctest_global_setup below -- running `-b doctest` from the repo
     # root used to litter it with the files those examples write)
@@ -456,8 +458,8 @@ sphinx_gallery_conf = {
     # Execute code to generate plots
     'plot_gallery': True,
     # execute EVERY example (the sphinx-gallery default only executes
-    # files named plot_*, which left animate*/chemtrails/precog/explore/
-    # save_*/analyze pages with code but no rendered output)
+    # files named plot_*, which would leave the animate*/explore/save_*/
+    # analyze pages with code but no rendered output)
     'filename_pattern': r'.*\.py',
     # render matplotlib FuncAnimations (exposed as variables in the
     # examples) as embedded HTML5 video via ffmpeg
@@ -493,7 +495,60 @@ sphinx_gallery_conf = {
 }
 
 
+class _GallerySourceLink:
+    """A per-page `source_edit_link` / `source_view_link` for gallery pages.
+
+    furo's "Edit this page" / "View this page" buttons build their URL from
+    `source_directory` + pagename + suffix, which for a sphinx-gallery page
+    is `docs/auto_examples/<stem>.rst` -- a file that is generated at build
+    time and gitignored, so every gallery page's link 404'd. The theme
+    consults `theme_source_edit_link` (`theme_source_view_link`) FIRST and
+    calls its `.format(filename=pagename + page_source_suffix)`, so this
+    object stands in for that string on gallery pages only (set from
+    `_gallery_page_context` below) and maps the generated page back to the
+    tracked source under examples/: `auto_examples/<stem>` ->
+    `examples/<stem>.py`, and the gallery index -> `examples/README.txt`.
+    """
+
+    def __init__(self, url_template):
+        self.url_template = url_template
+
+    def format(self, filename):
+        page = filename.rsplit('.', 1)[0]           # strip the .rst suffix
+        stem = page[len('auto_examples/'):]
+        source = 'README.txt' if stem == 'index' else stem + '.py'
+        return self.url_template.format(path='examples/' + source)
+
+
+_GALLERY_REPO = html_theme_options['source_repository'].rstrip('/')
+_GALLERY_BRANCH = html_theme_options['source_branch']
+_GALLERY_EDIT_LINK = _GallerySourceLink(
+    f'{_GALLERY_REPO}/edit/{_GALLERY_BRANCH}/{{path}}')
+_GALLERY_VIEW_LINK = _GallerySourceLink(
+    f'{_GALLERY_REPO}/blob/{_GALLERY_BRANCH}/{{path}}?plain=true')
+_EXAMPLES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             '..', 'examples')
+
+
+def _gallery_page_context(app, pagename, templatename, context, doctree):
+    """Point gallery pages' edit/view links at examples/ (see
+    `_GallerySourceLink`), and drop the links on the generated pages that
+    have no tracked source at all (`sg_execution_times`, a stale page whose
+    example was deleted): furo hides both buttons when
+    `page_source_suffix` is empty."""
+    if not pagename.startswith('auto_examples/'):
+        return
+    stem = pagename[len('auto_examples/'):]
+    source = 'README.txt' if stem == 'index' else stem + '.py'
+    if '/' in stem or not os.path.exists(os.path.join(_EXAMPLES_DIR, source)):
+        context['page_source_suffix'] = ''
+        return
+    context['theme_source_edit_link'] = _GALLERY_EDIT_LINK
+    context['theme_source_view_link'] = _GALLERY_VIEW_LINK
+
+
 def setup(app):
+    app.connect('html-page-context', _gallery_page_context)
     # Keep the strict (-W) docs-clean CI gate robust to TRANSIENT third-party
     # doc-site outages: sphinx-gallery fetches each `reference_url` site's
     # searchindex.js to hyperlink API names, and a 503 there would otherwise

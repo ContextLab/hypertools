@@ -135,8 +135,11 @@ and reaches flat `hyp.predict` callers.
   row versus column semantics, the plot/predict divergence, hue forms, mean
   construction, limitations, dual-axis and list inputs, return shapes, the
   unfitted/fitted ownership table, backend parity and feature
-  correspondence. All 138 of its examples are executed by the test suite
-  rather than merely read. `docs/pipeline_order.rst` gains hierarchy
+  correspondence. Its worked examples are `.. doctest::` blocks, run by
+  `make doctest` in `docs/`; the test suite pins the guide's section list,
+  its links from the API reference and the tutorials page, its comparison
+  table, and the error messages it quotes
+  (`tests/test_docs_hierarchy_guide.py`). `docs/pipeline_order.rst` gains hierarchy
   expansion and mean construction as a side branch, in the prose and in the
   regenerated diagram: expansion runs before `format_data`/`analyze`, so
   every leaf gets the identical canonical pipeline, while mean construction
@@ -271,7 +274,11 @@ and reaches flat `hyp.predict` callers.
   'lorenz' | 'blobs' | 'moons' | 'swiss_roll' | 's_curve', random_state=...,
   n_datasets=...)` generates seeded example data (scikit-learn kwargs pass
   through; `n_datasets > 1` returns a list), replacing the random-walk,
-  helix and blob generators every tutorial wrote by hand (GH #285).
+  helix and blob generators every tutorial wrote by hand. Any keyword
+  `hyp.load` does not use itself is collected into `**source_kwargs` and
+  handed to the synthetic or web resolver that matches the name; with any
+  other kind of source, already-loaded data included, it raises `TypeError`
+  that quotes the keyword instead of dropping it (GH #285).
 - **Web sources.** `hyp.load('wikipedia:<Title>')` (plain-text extract;
   `'A|B'` returns a list), `hyp.load('yahoo:<TICKER>', start=, end=,
   interval=)` (daily OHLCV through explicit epoch bounds) and
@@ -290,11 +297,16 @@ and reaches flat `hyp.predict` callers.
 - **Several forecasters in one call, backtests, and imputer scoring.**
   `hyp.predict(x, model=[...])` returns `{name: forecast}`;
   `hyp.predict(x, model=[...], holdout=k)` fits on the head and scores the
-  held-out tail (MAE / RMSE / MAPE, `per_column=`, `return_forecasts=`) against
-  every model plus an always-present naive last-value baseline, with
-  `scores.attrs['best']` and `['beats_baseline']`; `hyp.impute(x, model=[...],
-  truth=full)` scores imputers on the damaged cells only, with a column-mean
-  baseline and an `unscored` column for rows a model left NaN (GH #285).
+  held-out tail against every model plus an always-present naive last-value
+  baseline, with `scores.attrs['best']` and `['beats_baseline']`;
+  `metrics=` picks which of MAE / RMSE / MAPE to report (all three by
+  default; the first one ranks `best`), `per_column=True` gives one row per
+  model and column, and `return_forecasts=True` also returns the forecasts
+  that were scored. `hyp.impute(x, model=[...], truth=full)` scores imputers
+  on the damaged cells only, with the same `metrics=` and `per_column=`, a
+  column-mean baseline and an `unscored` column for rows a model left NaN;
+  `return_imputed=True` also returns the scored imputations, the baseline and
+  the truth (GH #285).
 - **`Smooth(center=False, min_periods=)` and a `Delay` manipulator.** A
   trailing (causal) boxcar identical to `pandas.rolling(...).mean()`, and a
   Takens time-delay embedding (`hyp.manip(x, model='Delay', tau=, dims=)`)
@@ -715,6 +727,96 @@ input too.
   the passed-in pipeline too (in place, on the same object the bundle
   returns), unless it already carries one of its own.
 
+### Fixed during the release review
+
+Found by the pre-publication review of the 1.1.0 draft against 1.0.0.
+Because 1.1.0 had not been published, they ship in it.
+
+- **A repeated metric in `metrics=` raises `ValueError` that says which
+  metric is repeated.** `hyp.predict(..., holdout=k, metrics=['mae', 'MAE'])`
+  and the matching `hyp.impute(..., truth=)` call used to fail with a
+  `TypeError` from inside the scores builder.
+- **`holdout=True` with `t=0` reports `t` as the problem.** `holdout=True`
+  takes its size from `t`, so the error now says that `t` must be at least
+  1 row.
+- **The "left N scored value(s) missing" warning is attributed to the
+  caller's line**, like every other warning `hyp.predict` and `hyp.impute`
+  emit, instead of to a line inside the library.
+- **`return_score=True` works on ragged input that `hyp.align` trims.** The
+  "before" score is computed on the row-trimmed datasets, the same ones the
+  aligner sees.
+- **`HypertoolsOfflineError` is importable from `hypertools` and
+  `hypertools.io`**, so a caller of `hyp.load(..., offline=True)` can catch
+  it without reaching into `hypertools.io.sources`.
+- **`palette=` colour lists behave as in 1.0.0 again.** A list shorter than
+  the dataset count cycles when there is no `hue=`; an empty palette raises
+  `ValueError` instead of `StopIteration`; a per-dataset list whose entries
+  are `{category: color}` dicts merges them by category name; and any other
+  per-dataset form under a categorical `hue=` raises an error carrying the
+  real dataset and category counts.
+- **NaN in a continuous `hue=` no longer poisons the colour range.** The
+  `vmin`/`vmax` of the colour scale and the colorbar are computed over the
+  finite values only.
+- **Legend and colour details.** `legend_kwargs={'fontsize': ...}` is
+  honoured together with `font=`; `bundle['colors']['categories']` contains
+  RGB tuples for the blend kind when `legend_colors=` is passed; and a nested
+  `hue=` whose sub-list does not match its dataset is identified in the
+  error.
+- **`dataset_fade=` and `on_frame=` mutations reach the drawn collections
+  under a continuous `hue=` on matplotlib.** A fade or a per-frame artist
+  change was a silent no-op there.
+- **`loop=True` accepts a per-segment `rotations=` list** of the documented
+  `2(n+1)-1` length.
+- **`companion=` panels and `{index}` titles advance monotonically under
+  `order='serial'`** with several datasets, and the `start` in
+  `FrameContext.window_bounds` reflects the comet-head window on serial
+  reveals.
+- **Animation errors say what went wrong.** A bad `companion=` or
+  `dataset_fade=` value raises an error that quotes the keyword; an
+  `on_frame=` hook that raises during `.save()` propagates its own
+  exception; and a `title=` callable that raises no longer leaves an
+  "Animation was deleted without rendering anything" warning behind it.
+- **`title_wrap=` applies to dynamic titles** (a callable, or a `{index}`
+  format) and preserves explicit newlines. plotly draws a `\n` in a title as
+  a line break and reserves top margin for every title line at the
+  requested size.
+- **Labels and titles validate their input.** A nested tuple `labels=`
+  annotates like a nested list; `labels='str'`, a bad `label_anchor=`, a
+  title list with a non-string entry, a title callable that returns a
+  non-string, `title_color=` alongside `title_kwargs={'color': ...}`, a
+  static `{index}` title with no index to fill it, and a malformed `{index}`
+  format each raise an error saying so.
+- **`hyp.load(..., offline=True)` opens no network connection.** URLs skip
+  the seaborn dataset-name listing; the listing fetch has a timeout and a
+  failure is remembered for the session
+  (`hypertools.io.sources.reset_seaborn_names_cache()` retries it); and a
+  source that cannot be served from disk raises `HypertoolsOfflineError`.
+- **`yahoo:` bars are dated by the exchange-local trading day.** The
+  exchange's `gmtoffset` is applied to the bar timestamps; Sydney and Tokyo
+  tickers were dated one day early.
+- **Synthetic datasets accept more seed types.** Every synthetic dataset
+  accepts `random_state=np.random.RandomState(...)`, and the scikit-learn
+  backed ones (`blobs`, `moons`, `swiss_roll`, `s_curve`) also accept a
+  `Generator`, a `SeedSequence` or a NumPy integer with `n_datasets=1`;
+  reusing one `SeedSequence` across calls gives the same data each time.
+  `n_datasets=1.5` raises instead of being truncated to 1.
+- **`hyp.load(..., streaming=True)` on a source other than a Hugging Face
+  dataset raises `ValueError`** instead of returning the whole dataset as if
+  the keyword had not been passed.
+- **`hyp.text_windows` accepts NumPy integers** for `size=` and `step=`.
+- **`hypertools.tools.text2mat` reads a flat list of strings as one
+  dataset.** Since 1.0 it returned one `(N, d)` matrix followed by one empty
+  `(0, d)` matrix per string. Ragged nested lists work, mixed inputs raise,
+  and a dict `semantic=` spec with a gensim vectorizer warns and skips the
+  step like the string form does.
+- **Warnings raised while formatting input data are attributed to the
+  caller's line**: the PPCA missing-data fill and the mixed text-and-numbers
+  notice now point at the `hyp.plot`/`hyp.analyze` call that triggered them.
+- **`fit()` returns the fitted model** on the manipulator and aligner
+  bases (the imputer base already did), so sklearn-style chains such as
+  `Smooth().fit(x).transform(y)` and `HyperAlign().fit(xs).transform(ys)`
+  work instead of raising `AttributeError` on `None`.
+
 ### Documented limitations
 
 - Ragged groups (unequal feature counts per group) are rejected by both
@@ -789,7 +891,8 @@ items under **Changed** below alter how existing figures LOOK.
 > from the hierarchy work above. Because 1.0.1 is not a version anyone can
 > install, every guide and docstring that dates one of these behaviours dates
 > it to **1.1.0**; this heading is the only place the shipped package names
-> the patch line.
+> the patch line. If you are upgrading from 1.0.0, everything from here down
+> to the `## 1.0.0` heading is new to you as well.
 
 ### New features
 

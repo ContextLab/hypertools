@@ -401,7 +401,7 @@ def synthetic_outlet(name='HypertoolsSyntheticStream', n_channels=6,
     this instead.
 
     Signal definition
-    ------------------
+    -----------------
     Sample `i` of channel `c` (`c` in ``range(n_channels)``) is::
 
         sin(2*pi*(0.5 + 0.1*c) * i/rate) + noise * N(0, 1)

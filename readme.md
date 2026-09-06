@@ -202,8 +202,8 @@ HyperTools 1.0 modernizes the toolbox while keeping the familiar API:
 
 Check the [repo](https://github.com/ContextLab/hypertools-paper-notebooks) of
 Jupyter notebooks from the HyperTools [paper](https://arxiv.org/abs/1701.08290)
-(note: those notebooks predate the 1.0 API described below). For up-to-date,
-runnable examples covering every 1.0 feature, see the
+(note: those notebooks predate the 1.x API described below). For up-to-date,
+runnable examples covering every 1.1 feature, see the
 [example gallery](http://hypertools.readthedocs.io/en/latest/auto_examples/index.html)
 in the docs.
 
@@ -249,16 +249,17 @@ then raises `ImportError` with the manual `pip install` command.
 ## Requirements
 
 + python>=3.10
-+ scikit-learn>=1.4.0
-+ pandas>=2.2.0
++ scikit-learn>=1.4.2
++ pandas>=2.2.2
 + seaborn>=0.13.0
-+ matplotlib>=3.8.0
++ pillow>=8
++ matplotlib>=3.9.0
 + scipy>=1.13.0
 + numpy>=2.0.0
-+ umap-learn>=0.5.5, numba>=0.59
++ umap-learn>=0.5.5, numba>=0.61.0
 + pydata-wrangler>=0.5.1 (data-wrangling core)
 + pykalman>=0.11, statsmodels>=0.14 (Kalman/ARIMA forecasting; Kalman imputation)
-+ requests, dill, ipympl
++ requests>=2.31.0, dill>=0.3.8, ipympl>=0.9.3
 + ffmpeg (for saving animations)
 
 All Python dependencies are declared in `pyproject.toml` and installed

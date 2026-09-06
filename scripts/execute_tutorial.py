@@ -38,6 +38,14 @@ nothing noticed. So cells whose source contains ``pip install`` are tagged
 ``skip-execution`` in memory for the run (nbclient honours that tag), and the
 tag is stripped before writing, so the committed cell is byte-identical.
 The example gate already exempts install cells from having executed.
+
+**The executing user's home directory is rewritten to ``~`` in the outputs.**
+Warnings and tracebacks carry absolute paths (``/Users/<name>/hypertools/
+hypertools/tools/format_data.py:495: UserWarning: ...``), so an executed
+notebook committed as-is publishes whoever ran it. After execution, every
+stream output, error traceback and ``text/plain`` result has
+``os.path.expanduser('~')`` replaced by ``~`` (see `scrub_home`); nothing
+else in an output is touched.
 """
 
 import json
@@ -61,6 +69,31 @@ SKIP_TAG = 'skip-execution'         # what nbclient honours
 TIMEOUT = 1800
 
 
+def scrub_home(nb, home=None):
+    """Rewrite `home` (default: this user's home directory) to ``~`` in every
+    text output of `nb`, in place: stream text, error tracebacks and
+    ``evalue``, and ``text/plain`` display/execute-result data. Returns the
+    number of outputs changed."""
+    home = home or os.path.expanduser('~')
+    changed = 0
+    for cell in nb.cells:
+        for output in cell.get('outputs', []):
+            before = json.dumps(output, sort_keys=True)
+            kind = output.get('output_type')
+            if kind == 'stream':
+                output['text'] = output['text'].replace(home, '~')
+            elif kind == 'error':
+                output['traceback'] = [line.replace(home, '~')
+                                       for line in output['traceback']]
+                output['evalue'] = output['evalue'].replace(home, '~')
+            elif kind in ('display_data', 'execute_result'):
+                text = output.get('data', {}).get('text/plain')
+                if isinstance(text, str):
+                    output['data']['text/plain'] = text.replace(home, '~')
+            changed += json.dumps(output, sort_keys=True) != before
+    return changed
+
+
 def execute(path, out=None):
     """Execute `path`, writing the result to `out` (default: in place)."""
     nb = nbformat.read(path, as_version=4)
@@ -78,6 +111,7 @@ def execute(path, out=None):
                    resources={'metadata': {'path': os.path.dirname(path)
                                            or '.'}}).execute()
     nb.metadata['kernelspec'] = original
+    scrub_home(nb)
     for cell in installs:
         cell.metadata['tags'].remove(SKIP_TAG)
         if not cell.metadata['tags']:

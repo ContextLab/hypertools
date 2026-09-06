@@ -144,3 +144,65 @@ def test_no_shipped_release_is_still_labelled_unreleased():
     text = _changelog()
     assert '## 1.0.0 (2026-07-24)' in text
     assert '## 1.0.0 (unreleased)' not in text
+
+
+# --------------------------------------------------------------------------
+# the release-review fixes (2026-09-06) live INSIDE 1.1.0, and are true
+# --------------------------------------------------------------------------
+
+def test_the_release_review_fixes_are_a_subsection_of_1_1_0():
+    """1.1.0 was reviewed against 1.0.0 before publication; the fixes ship in
+    1.1.0, so they must sit under its heading and not under a new version."""
+    text = _changelog()
+    section = _section(text, _heading_1_1_0(text))
+    assert '### Fixed during the release review' in section
+    assert text.index('### Fixed during the release review') < text.index(
+        '## 1.0.1')
+
+
+def test_the_release_review_subsection_documents_its_user_visible_fixes():
+    review = _section(_changelog(), '### Fixed during the release review')
+    for phrase in ('metrics=', 'holdout=True', 'return_score=True',
+                   'HypertoolsOfflineError', 'palette=', 'title_wrap=',
+                   'offline=True', 'gmtoffset', 'streaming=True',
+                   'text_windows', 'text2mat'):
+        assert phrase in review, f'missing {phrase!r}'
+
+
+def test_added_names_the_scoring_and_source_kwargs():
+    """The Added section describes backtests, imputer scoring and the
+    synthetic/web loaders, so it has to name the keywords that drive them."""
+    added = _section(_changelog(), '### Added')
+    for phrase in ('`metrics=`', '`return_imputed=True`', '`**source_kwargs`'):
+        assert phrase in added, f'missing {phrase!r}'
+
+
+def test_the_documented_duplicate_metric_rejection_actually_happens():
+    """Execute the entry: a repeated metric is a ValueError that says which."""
+    x = np.random.RandomState(0).randn(30, 3)
+    with pytest.raises(ValueError, match='MAE'):
+        hyp.predict(x, model=['Kalman'], holdout=3, metrics=['mae', 'MAE'])
+
+
+def test_the_documented_holdout_t0_error_actually_names_t():
+    x = np.random.RandomState(0).randn(30, 3)
+    with pytest.raises(ValueError, match='t=0'):
+        hyp.predict(x, model=['Kalman'], holdout=True, t=0)
+
+
+def test_the_documented_empty_palette_rejection_actually_happens():
+    x = np.random.RandomState(0).randn(30, 3)
+    with pytest.raises(ValueError, match='palette'):
+        hyp.plot([x, x], palette=[])
+
+
+def test_the_documented_streaming_rejection_actually_happens():
+    with pytest.raises(ValueError, match='streaming=True'):
+        hyp.load('iris', streaming=True)
+
+
+def test_the_documented_offline_error_import_paths_actually_work():
+    from hypertools import HypertoolsOfflineError as top
+    from hypertools.io import HypertoolsOfflineError as via_io
+    assert top is via_io
+    assert issubclass(top, hyp.HypertoolsIOError)

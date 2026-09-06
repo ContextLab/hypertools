@@ -228,9 +228,15 @@ I/O
 Exceptions
 ------------------
 
-HyperTools' I/O, backend, and remote-load/trust errors derive from
-`hypertools.HypertoolsError`. Input-validation errors (invalid parameters or
-data shapes) raise standard `ValueError`/`TypeError` with actionable messages.
+HyperTools' I/O and backend errors derive from `hypertools.HypertoolsError`.
+`HypertoolsOfflineError` (``hyp.load(..., offline=True)`` with no cached copy
+to read) is a `HypertoolsIOError`, importable from ``hypertools`` and
+``hypertools.io``. `HypertoolsTrustError` is raised by `load` when a remote
+payload would have to be unpickled (a pickle, or an object-array .npy/.npz)
+and ``trust=True`` was not passed; it subclasses `ValueError`, not
+`HypertoolsError`, and lives in ``hypertools.io.sources``. Input-validation
+errors (invalid parameters or data shapes) raise standard
+`ValueError`/`TypeError` with actionable messages.
 
 .. autosummary::
   :toctree:
@@ -238,6 +244,8 @@ data shapes) raise standard `ValueError`/`TypeError` with actionable messages.
   HypertoolsError
   HypertoolsBackendError
   HypertoolsIOError
+  HypertoolsOfflineError
+  io.sources.HypertoolsTrustError
 
 Tools
 ------------------
