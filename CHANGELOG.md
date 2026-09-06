@@ -470,6 +470,10 @@ previously ambiguous or silently lossy.
 
 ### Bug fixes
 
+- **NumPy 2-compatible optional dependency floors.** The `gensim` and
+  `density3d` extras require gensim>=4.4.0 and scikit-image>=0.23.2,
+  respectively; dev/docs requirements match. Earlier advertised minimums
+  predate upstream NumPy 2 support.
 - **Backtest model ownership.** Forecast backtests fit an independent copy
   of an unfitted model instance for each dataset, instead of reusing the
   first dataset's learned parameters on subsequent datasets. Forecast and
