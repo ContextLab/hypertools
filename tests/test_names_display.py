@@ -65,113 +65,161 @@ def test_names_and_legend_list_conflict_raises():
 
 
 # --- double-display ----------------------------------------------------
+#
+# Every notebook scenario below runs on a REAL `IPython.InteractiveShell`
+# (in-process, history disabled): `hyp.plot` is executed as cell source via
+# `shell.run_cell`, so `get_ipython()`, the `post_execute` event registry, the
+# rich-display hook (`_ipython_display_` of a cell's last expression) and the
+# execution counter are IPython's own. Display events are observed with
+# IPython's `capture_output` (the machinery behind `%%capture`), which records
+# every published mime-bundle in order; plotly is pointed at its `json`
+# renderer, whose bundle is the figure's JSON, so each captured
+# `application/json` output IS one `pio.show` of an identifiable figure.
 
-class _FakeEvents:
-    def __init__(self):
-        self.callbacks = {}
-
-    def register(self, name, cb):
-        self.callbacks.setdefault(name, []).append(cb)
-
-    def unregister(self, name, cb):
-        self.callbacks[name].remove(cb)
-
-    def fire(self, name):
-        for cb in list(self.callbacks.get(name, [])):
-            cb()
+_CELL_SETUP = (
+    "import numpy as np\n"
+    "import hypertools as hyp\n"
+    "from IPython.display import display\n"
+    "from IPython import get_ipython\n"
+    "from hypertools.plot.plotly_backend import _flush_pending_display\n"
+    "def _datasets(n=3, rows=40, cols=3):\n"
+    "    rng = np.random.default_rng(0)\n"
+    "    return [np.cumsum(rng.normal(size=(rows, cols)), axis=0)"
+    " for _ in range(n)]\n"
+)
 
 
-class _FakeShell:
-    """Enough of an InteractiveShell for the display path: a post_execute
-    event registry and an execution count."""
-    def __init__(self):
-        self.events = _FakeEvents()
-        self.execution_count = 1
-
-
-def _count_shows(monkeypatch):
+@pytest.fixture
+def ipython_shell():
+    """A real in-process IPython shell, torn down so later tests run as a
+    plain script again (`get_ipython()` is None after teardown)."""
+    pytest.importorskip('plotly')
+    import IPython
     import plotly.io as pio
+    from IPython.core.interactiveshell import InteractiveShell
+    from traitlets.config import Config
     from hypertools.plot import plotly_backend
-    calls = {'n': 0}
-    monkeypatch.setattr(pio, 'show', lambda fig, *a, **k: calls.__setitem__('n', calls['n'] + 1))
-    # plotly's own display hook calls pio.show only when a default renderer
-    # is configured; headless CI has none, so pin a mime renderer for the test
-    monkeypatch.setattr(pio.renderers, 'default', 'json')
-    monkeypatch.setattr(plotly_backend, '_PENDING_DISPLAY', [])
-    return calls
+
+    assert IPython.get_ipython() is None, 'a shell is already running'
+    saved_renderer = pio.renderers.default
+    plotly_backend._PENDING_DISPLAY.clear()
+    config = Config()
+    config.HistoryManager.enabled = False
+    shell = InteractiveShell.instance(config=config)
+    try:
+        pio.renderers.default = 'json'
+        result = shell.run_cell(_CELL_SETUP, store_history=True)
+        assert result.success, result.error_in_exec
+        yield shell
+    finally:
+        pio.renderers.default = saved_renderer
+        plotly_backend._PENDING_DISPLAY.clear()
+        InteractiveShell.clear_instance()
+        shell.restore_sys_module_state()
+        assert IPython.get_ipython() is None
 
 
-def test_plotly_plot_displays_once_at_the_end_of_the_cell(monkeypatch):
+def _run(shell, source):
+    """Run one cell; return the mime-bundles it displayed, in order."""
+    from IPython.utils.capture import capture_output
+    with capture_output(display=True) as captured:
+        result = shell.run_cell(source, store_history=True)
+    assert result.success, result.error_in_exec
+    return [dict(out.data) for out in captured.outputs]
+
+
+def _figure_shows(outputs):
+    return [out['application/json'] for out in outputs
+            if 'application/json' in out]
+
+
+def _flush_registered(shell):
+    from hypertools.plot.plotly_backend import _flush_pending_display
+    return _flush_pending_display in shell.events.callbacks['post_execute']
+
+
+def test_plotly_plot_displays_once_at_the_end_of_the_cell(ipython_shell):
     """`fig = hyp.plot(x)` draws in a notebook (as on matplotlib), but only
     when the cell finishes -- after matplotlib-inline's flush -- not mid-cell."""
+    shell = ipython_shell
+    outputs = _run(shell, (
+        "fig = hyp.plot(_datasets(2), backend='plotly', show=True)\n"
+        "registered = _flush_pending_display in"
+        " get_ipython().events.callbacks['post_execute']\n"
+        "display('end of cell body')\n"))
+    # the plot call queued a cell-end hook ...
+    assert shell.user_ns['registered'] is True
+    # ... and nothing was drawn mid-cell: the marker displayed by the LAST
+    # statement precedes the one figure display, which the cell end produced
+    assert [list(out) for out in outputs] == [['text/plain'],
+                                             ['application/json']]
+    assert outputs[0]['text/plain'] == "'end of cell body'"
+    assert not _flush_registered(shell)                  # one-shot
+    assert _figure_shows(_run(shell, "pass")) == []       # nothing queued
+    assert shell.user_ns['fig'] is not None
+
+
+def test_plotly_plot_as_the_last_expression_is_not_drawn_twice(ipython_shell):
+    shell = ipython_shell
+    # the rich-display hook (cell ends with `fig`) draws it; the cell-end
+    # flush must then skip it
+    outputs = _run(shell, (
+        "fig = hyp.plot(_datasets(2), backend='plotly', show=True)\n"
+        "fig\n"))
+    assert len(_figure_shows(outputs)) == 1
+    assert not _flush_registered(shell)
+    # a later cell displays it again
+    later = shell.execution_count
+    outputs = _run(shell, "fig")
+    assert shell.execution_count > later
+    assert len(_figure_shows(outputs)) == 1
+
+
+def test_plotly_two_figures_in_one_cell_display_in_creation_order(ipython_shell):
+    import json
+    shell = ipython_shell
+    outputs = _run(shell, (
+        "a = hyp.plot(_datasets(1), backend='plotly', show=True)\n"
+        "b = hyp.plot(_datasets(2), backend='plotly', show=True)\n"))
+    a, b = shell.user_ns['a'], shell.user_ns['b']
+    assert len(a.data) != len(b.data)          # distinguishable figures
+    shown = _figure_shows(outputs)
+    assert [len(fig['data']) for fig in shown] == [len(a.data), len(b.data)]
+    assert shown == [json.loads(a.to_json()), json.loads(b.to_json())]
+
+
+def test_plotly_show_false_defers_entirely_to_the_display_hook(ipython_shell):
+    shell = ipython_shell
+    outputs = _run(shell, (
+        "fig = hyp.plot(_datasets(2), backend='plotly', show=False)\n"
+        "registered = _flush_pending_display in"
+        " get_ipython().events.callbacks['post_execute']\n"))
+    assert shell.user_ns['registered'] is False
+    assert outputs == []
+    assert len(_figure_shows(_run(shell, "fig"))) == 1
+
+
+def test_plotly_show_called_in_plain_script(capsys):
+    """Plain script (no IPython frontend): fig.show() IS called so the plot
+    still displays. Outside IPython the json renderer's bundle is printed to
+    stdout by `IPython.display.display`, so one printed bundle is one show."""
     pytest.importorskip('plotly')
-    import IPython
-    calls = _count_shows(monkeypatch)
-    shell = _FakeShell()
-    monkeypatch.setattr(IPython, 'get_ipython', lambda: shell)
-    fig = hyp.plot(_datasets(2), backend='plotly', show=True)
-    assert calls['n'] == 0                       # nothing mid-cell
-    assert shell.events.callbacks['post_execute']
-    shell.events.fire('post_execute')            # the cell ends
-    assert calls['n'] == 1
-    assert not shell.events.callbacks['post_execute']   # one-shot
-    assert fig is not None
-
-
-def test_plotly_plot_as_the_last_expression_is_not_drawn_twice(monkeypatch):
-    pytest.importorskip('plotly')
-    import IPython
-    calls = _count_shows(monkeypatch)
-    shell = _FakeShell()
-    monkeypatch.setattr(IPython, 'get_ipython', lambda: shell)
-    fig = hyp.plot(_datasets(2), backend='plotly', show=True)
-    fig._ipython_display_()                      # the rich-display hook (cell ends with `fig`)
-    assert calls['n'] == 1
-    shell.events.fire('post_execute')
-    assert calls['n'] == 1                       # skipped: already displayed
-    shell.execution_count += 1
-    fig._ipython_display_()                      # a later cell displays it again
-    assert calls['n'] == 2
-
-
-def test_plotly_two_figures_in_one_cell_display_in_creation_order(monkeypatch):
-    pytest.importorskip('plotly')
+    import json
     import IPython
     import plotly.io as pio
     from hypertools.plot import plotly_backend
-    order = []
-    monkeypatch.setattr(pio, 'show', lambda fig, *a, **k: order.append(fig))
-    monkeypatch.setattr(pio.renderers, 'default', 'json')
-    monkeypatch.setattr(plotly_backend, '_PENDING_DISPLAY', [])
-    shell = _FakeShell()
-    monkeypatch.setattr(IPython, 'get_ipython', lambda: shell)
-    a = hyp.plot(_datasets(1), backend='plotly', show=True)
-    b = hyp.plot(_datasets(2), backend='plotly', show=True)
-    shell.events.fire('post_execute')
-    assert order == [a, b]
 
-
-def test_plotly_show_false_defers_entirely_to_the_display_hook(monkeypatch):
-    pytest.importorskip('plotly')
-    import IPython
-    calls = _count_shows(monkeypatch)
-    shell = _FakeShell()
-    monkeypatch.setattr(IPython, 'get_ipython', lambda: shell)
-    fig = hyp.plot(_datasets(2), backend='plotly', show=False)
-    assert calls['n'] == 0 and 'post_execute' not in shell.events.callbacks
-    fig._ipython_display_()
-    assert calls['n'] == 1
-
-
-def test_plotly_show_called_in_plain_script(monkeypatch):
-    pytest.importorskip('plotly')
-    import plotly.graph_objects as go
-    import IPython
-    calls = {'n': 0}
-    monkeypatch.setattr(go.Figure, 'show',
-                        lambda self, *a, **k: calls.__setitem__('n', calls['n'] + 1))
-    # plain script (no IPython frontend): fig.show() IS called so the plot
-    # still displays
-    monkeypatch.setattr(IPython, 'get_ipython', lambda: None)
-    hyp.plot(_datasets(2), backend='plotly', show=True)
-    assert calls['n'] == 1
+    assert IPython.get_ipython() is None
+    saved_renderer = pio.renderers.default
+    pio.renderers.default = 'json'
+    try:
+        capsys.readouterr()
+        fig = hyp.plot(_datasets(2), backend='plotly', show=True)
+        out = capsys.readouterr().out
+        assert out.count("'application/json'") == 1
+        assert str({'application/json': json.loads(fig.to_json())}) in out
+        assert plotly_backend._PENDING_DISPLAY == []   # nothing deferred
+        hyp.plot(_datasets(2), backend='plotly', show=False)
+        assert capsys.readouterr().out == ''           # show=False: no show
+    finally:
+        pio.renderers.default = saved_renderer

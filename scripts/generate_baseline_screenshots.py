@@ -6,7 +6,7 @@ Run from the repo root with the project venv:
 These baselines document CURRENT behavior on master/v0.8.2 across the core
 use-case matrix, so the dev-1.0 modernization can be visually diffed against
 them (aesthetic parity was the main unresolved gap in the earlier
-matplotlib-backend attempt — see notes/hypertools_1.0_roadmap.md).
+matplotlib-backend attempt — see notes/hypertools_2.0_roadmap.md).
 
 Outputs: tests/screenshots/baseline_v0.8.2/<function>/<case>.png
 (directory is gitignored; screenshots are reviewed locally / uploaded as CI

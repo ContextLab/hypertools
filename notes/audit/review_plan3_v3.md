@@ -114,7 +114,7 @@ AFTER: **9 passed**, precisely as plan L344 claims.
 Regression gate (plan L348) also verified: `pytest tests/plot/test_on_frame_hook.py
 tests/test_backend_window_parity.py -q` → **73 passed**.
 
-Prior finding 6 (**Med**, multiindex.md cited a non-existent test name): **FIXED** — 
+Prior finding 6 (**Med**, multiindex.md cited a non-existent test name): **FIXED** —
 `docs/superpowers/plans/2026-07-28-hypertools-1.1-multiindex.md:2797` now cites
 `test_hue_regrouping_drops_forecasts_exactly_like_the_static_path`; grep for the old
 `test_forecast_dropped_under_hue_regrouping` returns nothing.

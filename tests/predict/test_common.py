@@ -161,28 +161,34 @@ def test_resolve_t_keeps_a_duplicated_integer_index():
     assert list(future_index) == [5, 6]
 
 
-def test_all_identical_timestamps_message_comes_from_live_infer_step(monkeypatch):
+def test_all_identical_timestamps_message_comes_from_live_infer_step():
     """The fully-degenerate case (every observation at ONE timestamp) is
     `_infer_step`'s: `tests/test_predict_audit_fixes.py` pins its wording.
     `resolve_t`'s duplicate check runs FIRST, so it must hand this case to
     `_infer_step` rather than raise a copied string -- a copy would leave
-    that branch dead code with a test that only pins the copy."""
+    that branch dead code with a test that only pins the copy.
+
+    Observed from the exception itself, not from a spy on `_infer_step`: the
+    raise site is the innermost frame of the error's own traceback, and the
+    message is byte-identical to what `_infer_step` raises on the same index.
+    A copied string in `resolve_t` would put `resolve_t` in that last frame."""
+    import traceback
+
     from hypertools.predict import common as common_module
 
-    calls = []
-    real_infer_step = common_module._infer_step
-
-    def spy(index):
-        calls.append(index)
-        return real_infer_step(index)
-
-    monkeypatch.setattr(common_module, "_infer_step", spy)
     df = _make_df(n=5, index=pd.DatetimeIndex(["2026-01-01"] * 5))
 
-    with pytest.raises(ValueError, match="share one timestamp"):
+    with pytest.raises(ValueError, match="share one timestamp") as via_resolve_t:
         resolve_t(df, 3)
 
-    assert calls, "the message must come from live _infer_step code, not a copy"
+    frames = traceback.extract_tb(via_resolve_t.value.__traceback__)
+    assert [f.name for f in frames[-2:]] == ["resolve_t", "_infer_step"], \
+        "the message must come from live _infer_step code, not a copy"
+    assert frames[-1].filename == common_module.__file__
+
+    with pytest.raises(ValueError) as direct:
+        common_module._infer_step(df.index)
+    assert str(via_resolve_t.value) == str(direct.value)
 
 
 def test_forecaster_predict_truncates_on_past_datetime_without_calling_forecaster():

@@ -38,6 +38,7 @@ from .core.model import apply_model, supported_models
 from .core.pipeline import Pipeline
 from .core.exceptions import (HypertoolsError, HypertoolsBackendError,
                               HypertoolsIOError)
+from .io.sources import HypertoolsOfflineError
 from .manip.manip import manip
 from .predict.predict import predict
 from .impute.impute import impute
@@ -54,5 +55,6 @@ __all__ = [
     'apply_model', 'supported_models', 'Pipeline',
     'set_interactive_backend', 'HyperAnimation', 'FrameContext', 'io',
     'HypertoolsError', 'HypertoolsBackendError', 'HypertoolsIOError',
+    'HypertoolsOfflineError',
     'damage', 'stack', 'text_windows', 'subplots',
 ]

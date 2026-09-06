@@ -160,7 +160,7 @@ happened:
 - [x] the example and its notebook stop being called `*_forecast` where compatibility permits, and
       at minimum no displayed prose (title, gallery caption, docstring, axis labels) says
       "forecast". Renaming the FILES touches the gallery index, the tutorial notebook, both budget
-      tables, `STATED_ARTIFACT`, and the release notebook checker — costed at implementation time. 
+      tables, `STATED_ARTIFACT`, and the release notebook checker — costed at implementation time.
       *(Decided 2026-09-03: the FILES keep their names. `auto_examples/animate_market_forecast.html` and
       `tutorials/market_forecast.html` are published 1.0 documentation URLs, so a rename breaks links for
       no reader-visible gain; the minimum, no displayed prose saying "forecast", is met, and a comment at
