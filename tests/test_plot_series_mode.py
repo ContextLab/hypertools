@@ -268,3 +268,140 @@ def test_a_bare_rgb_tuple_stays_one_colour():
         assert tuple(np.round(np.asarray(line.get_color(), dtype=float), 3)) \
             == (1.0, 0.0, 0.0)
     plt.close(fig)
+
+
+# --- 1.1 release-review fixes ------------------------------------------
+
+def _dated_frame(cols, seed=0, rows=30):
+    rng = np.random.default_rng(seed)
+    index = pd.date_range('2020-01-01', periods=rows, freq='D')
+    names = ['val'] if cols == 1 else list('abc')[:cols]
+    return pd.DataFrame(np.cumsum(rng.normal(size=(rows, cols)), axis=0),
+                        index=index, columns=names), index
+
+
+def test_F4_a_dated_column_hierarchy_draws_dates_for_every_trace():
+    """`_capture_row_indices` saw ONE frame, so only leaf 0 kept the index
+    and series mode refused the mix ("some datasets carry a DatetimeIndex
+    and others do not")."""
+    rng = np.random.default_rng(4)
+    index = pd.date_range('2020-01-01', periods=30, freq='D')
+    columns = pd.MultiIndex.from_product([['g1', 'g2'], ['a', 'b', 'c']])
+    frame = pd.DataFrame(np.cumsum(rng.normal(size=(30, 6)), axis=0),
+                         index=index, columns=columns)
+    fig = hyp.plot(frame, ndims=1, antialias=False, show=False)
+    try:
+        lines = _data_lines(fig)
+        assert len(lines) >= 2
+        expected = mdates.date2num(index.to_pydatetime())
+        for line in lines:
+            assert np.allclose(np.asarray(line.get_xdata(), dtype=float),
+                               expected)
+    finally:
+        plt.close(fig)
+
+
+def test_F6_return_model_forecasts_are_one_array_per_input_dataset():
+    """`predict['forecasts']` used to hold one ``(t, 2)`` ``[x, value]``
+    array per drawn COLUMN; it now matches ``hyp.predict``: one
+    ``(t, n_columns)`` array of values per input dataset."""
+    frame, _ = _dated_frame(3, seed=6)
+    t = 4
+    bundle = hyp.plot(frame, ndims=1, reduce=None, predict='Kalman', t=t,
+                      return_model=True, antialias=False, show=False)
+    try:
+        forecasts = bundle['predict']['forecasts']
+        assert isinstance(forecasts, list) and len(forecasts) == 1
+        assert forecasts[0].shape == (t, 3)
+        assert forecasts[0].shape == hyp.predict(
+            bundle['xform_data'][0], model='Kalman', t=t).shape
+        # the drawn overlays carry exactly those values, column by column
+        overlays = [line for line in bundle['fig'].axes[0].lines
+                    if getattr(line, '_hyp_forecast_role', None) == 'static']
+        assert len(overlays) == 3
+        for j, line in enumerate(overlays):
+            assert np.allclose(np.asarray(line.get_ydata())[1:],
+                               forecasts[0][:, j])
+    finally:
+        plt.close(bundle['fig'])
+    other = frame * 2.0
+    bundle = hyp.plot([frame, other], ndims=1, reduce=None, predict='Kalman',
+                      t=t, return_model=True, show=False)
+    try:
+        forecasts = bundle['predict']['forecasts']
+        assert [f.shape for f in forecasts] == [(t, 3), (t, 3)]
+    finally:
+        plt.close(bundle['fig'])
+
+
+def test_S1_fmt_list_is_one_entry_per_drawn_column():
+    frame, _ = _dated_frame(3, seed=1)
+    fig = hyp.plot(frame, ndims=1, reduce=None, fmt=['-', ':', '--'],
+                   antialias=False, show=False)
+    try:
+        assert [line.get_linestyle() for line in _data_lines(fig)] == \
+            ['-', ':', '--']
+    finally:
+        plt.close(fig)
+
+
+def test_S3_a_reduced_named_frame_does_not_label_y_dataset_1():
+    frame, _ = _dated_frame(3, seed=3)
+    fig = hyp.plot(frame, ndims=1, show=False)         # default reduce -> 1
+    try:
+        assert len(_data_lines(fig)) == 1
+        assert fig.axes[0].get_ylabel() == ''
+    finally:
+        plt.close(fig)
+    single, _ = _dated_frame(1, seed=3)
+    fig = hyp.plot(single, ndims=1, show=False)
+    try:
+        assert fig.axes[0].get_ylabel() == 'val'      # a real column name
+    finally:
+        plt.close(fig)
+
+
+def test_S4_a_3d_axes_for_a_2d_or_series_plot_is_refused():
+    fig, axes = hyp.subplots(1, 1, ndims=3)
+    try:
+        with pytest.raises(ValueError, match='3-D axes'):
+            hyp.plot(np.random.default_rng(0).normal(size=(30, 2)),
+                     reduce=None, ndims=2, ax=axes[0], show=False)
+        with pytest.raises(ValueError, match='3-D axes'):
+            hyp.plot(np.random.default_rng(0).normal(size=(30, 1)),
+                     reduce=None, ndims=1, ax=axes[0], show=False)
+        assert len(axes[0].lines) == 0                # nothing was drawn
+    finally:
+        plt.close(fig)
+    fig, axes = hyp.subplots(1, 1, ndims=2)
+    try:
+        out = hyp.plot(np.random.default_rng(0).normal(size=(30, 2)),
+                       reduce=None, ndims=2, ax=axes[0], show=False)
+        assert out is fig and len(axes[0].lines) >= 1
+    finally:
+        plt.close(fig)
+
+
+@pytest.mark.parametrize('freq, unit, divisor', [
+    ('1h', 'hours', 3600.0), ('1D', 'days', 86400.0),
+    ('30s', 'seconds', 1.0), ('5min', 'minutes', 60.0)])
+def test_S4_a_timedelta_index_is_drawn_in_a_sensible_unit(freq, unit,
+                                                          divisor):
+    """A TimedeltaIndex used to be drawn as raw nanoseconds (x up to 1e14)."""
+    index = pd.timedelta_range('0s', periods=30, freq=freq)
+    frame = pd.DataFrame({'v': np.arange(30.0)}, index=index)
+    fig = hyp.plot(frame, ndims=1, antialias=False, show=False)
+    try:
+        (line,) = _data_lines(fig)
+        expected = np.asarray(index.total_seconds(), dtype=float) / divisor
+        assert np.allclose(np.asarray(line.get_xdata(), dtype=float),
+                           expected)
+        assert fig.axes[0].get_xlabel() == f'time ({unit})'
+    finally:
+        plt.close(fig)
+    frame.index.name = 'elapsed'
+    fig = hyp.plot(frame, ndims=1, show=False)
+    try:
+        assert fig.axes[0].get_xlabel() == f'elapsed ({unit})'
+    finally:
+        plt.close(fig)

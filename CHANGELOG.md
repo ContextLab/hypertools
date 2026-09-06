@@ -816,6 +816,44 @@ Because 1.1.0 had not been published, they ship in it.
   bases (the imputer base already did), so sklearn-style chains such as
   `Smooth().fit(x).transform(y)` and `HyperAlign().fit(xs).transform(ys)`
   work instead of raising `AttributeError` on `None`.
+- **`predict='ARIMA'` on an animated plot no longer crashes.** The early
+  frames reveal two-row histories, and statsmodels raised an `IndexError`
+  on them. Forecasters now carry a `min_history` (ARIMA derives its own
+  from its order), `fit` raises a clear `ValueError` for a shorter history,
+  and the animated schedule waits until enough rows are revealed. The same
+  fix covers `predict=['Kalman', 'ARIMA']` under `animate=`.
+- **A datetime-like `t=` works inside `hyp.plot`** (static and animated),
+  resolved against each dataset's `DatetimeIndex`, as the docstring said.
+- **`predict=` lists and dicts work on row- and column-MultiIndex frames**
+  (one forecast per trace per model; the bundle is keyed by model name)
+  instead of failing an internal consistency check.
+- **`ndims=1` on a dated column-MultiIndex frame** draws dates for every
+  leaf, not only the first.
+- **`forecast_hue=` with a model collection** is one value per dataset,
+  shared across the models; a model-major list is also accepted, and a
+  mismatch names both counts.
+- **Series-mode `return_model`** returns one `(t, n_columns)` forecast array
+  per input dataset in `predict['forecasts']`, the shape `hyp.predict`
+  returns.
+- **`panels=` fixes.** Works with `predict=` plus `truth=` in both
+  `panel_fit` modes; shared mode keeps a DataFrame's dates and column names
+  under `ndims=1` and accepts three-column frames; nested `hue=` and
+  `labels=` narrow per panel in both modes; `ndims>3` draws 3-D panels on
+  both backends; `save_path` accepts `~` and `pathlib.Path` and fails
+  before drawing when the directory is missing; plotly panels return the
+  same figure wrapper as a single-axes plot and display once per cell.
+- **`ndims=1` fixes.** `fmt=` lists are one entry per drawn column; `xlim=`
+  on a date axis accepts date strings and datetimes on both backends
+  (floats are matplotlib day numbers on both); no `'dataset 1'` y label
+  after a reducing `reduce=`; a 3-D `ax=` with `ndims<=2` raises instead
+  of drawing a flat 3-D line; a `TimedeltaIndex` is drawn in a readable
+  unit with a labelled axis.
+- **NaN rows introduced by a trailing `Smooth(center=False)`** are reported
+  as the manip stage's doing, with the `min_periods=1` hint, instead of
+  the all-features-missing message.
+- **Docstrings:** `font=` explains weights (bold resolves to the bundled
+  Bold face); `HyperAnimation.drawn_extent` documents its parameters;
+  `HyperAnimation.save` lists the supported extensions plainly.
 
 ### Documented limitations
 

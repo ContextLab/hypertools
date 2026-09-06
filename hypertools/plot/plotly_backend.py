@@ -2057,29 +2057,39 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
             fig.write_image(save_path)
 
     if show:
-        import plotly.io as pio
-        if 'sphinx_gallery' in str(pio.renderers.default or ''):
-            # docs builds: plotly's sphinx-gallery renderer writes a static
-            # png AND an interactive html from the full figure, and kaleido
-            # serializes EVERY animation frame to render the one png -- a
-            # 900-frame figure took ~an hour and produced tens-of-MB pages.
-            # Write the pair ourselves: png from a frame-stripped snapshot,
-            # html with the embedded frames capped (total duration and
-            # rotations preserved, so pacing stays identical).
-            _show_sphinx_gallery(fig)
-        elif _in_interactive_shell():
-            # Interactive notebook: display at the END of the cell (after
-            # matplotlib-inline's own flush, so plotly figures keep their
-            # place behind matplotlib ones drawn in the same cell) and only
-            # if the cell's rich-display hook has not already shown this
-            # figure as its last expression. See HyperPlotlyFigure.
-            _display_at_cell_end(fig)
-        else:
-            # Plain script (no IPython frontend): nothing else will display
-            # the figure, so show it here.
-            fig.show()
+        show_figure(fig)
 
     return fig
+
+
+def show_figure(fig):
+    """Display `fig` the way ``plot(..., show=True)`` does on this backend.
+
+    Shared by the single-axes path and `panels=` (1.1 review, P6), so both
+    go through the same three cases:
+
+    - a docs build (plotly's sphinx-gallery renderer): plotly's own
+      renderer writes a static png AND an interactive html from the full
+      figure, and kaleido serializes EVERY animation frame to render the
+      one png -- a 900-frame figure took ~an hour and produced tens-of-MB
+      pages. Write the pair ourselves instead: png from a frame-stripped
+      snapshot, html with the embedded frames capped (total duration and
+      rotations preserved, so pacing stays identical).
+    - an interactive notebook: display at the END of the cell (after
+      matplotlib-inline's own flush, so plotly figures keep their place
+      behind matplotlib ones drawn in the same cell) and only if the cell's
+      rich-display hook has not already shown this figure as its last
+      expression. See `HyperPlotlyFigure`.
+    - a plain script (no IPython frontend): nothing else will display the
+      figure, so show it here.
+    """
+    import plotly.io as pio
+    if 'sphinx_gallery' in str(pio.renderers.default or ''):
+        _show_sphinx_gallery(fig)
+    elif _in_interactive_shell():
+        _display_at_cell_end(fig)
+    else:
+        fig.show()
 
 
 _HYPER_FIGURE_CLASS = None

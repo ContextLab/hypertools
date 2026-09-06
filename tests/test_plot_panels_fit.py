@@ -284,3 +284,125 @@ class TestPlotlyPanelBundle:
         pio.renderers.default = 'json'
         fig = hyp.plot(clouds(), panels=True, backend='plotly', show=False)
         assert isinstance(fig, go.Figure)
+
+
+# --- 1.1 release-review fixes (P1-P3) -----------------------------------
+
+def _walks(seed=0):
+    rng = np.random.default_rng(seed)
+    return [np.cumsum(rng.normal(size=(30, 2)), axis=0),
+            np.cumsum(rng.normal(size=(40, 2)), axis=0)]
+
+
+def _by_role(ax, role):
+    return [line for line in ax.lines
+            if getattr(line, '_hyp_forecast_role', None) == role]
+
+
+@pytest.mark.parametrize('panel_fit', ['shared', 'independent'])
+def test_P1_panels_with_predict_and_truth_in_both_fit_modes(panel_fit):
+    """The shared probe kept `truth=` while dropping `predict=` ("truth=
+    ... no forecast was requested"), and the independent mode never
+    narrowed the truth list ("1 trace(s) plotted, truth= supplies 2")."""
+    x, y = _walks()
+    rng = np.random.default_rng(1)
+    truths = [x[-1] + np.cumsum(rng.normal(size=(3, 2)), axis=0),
+              y[-1] + np.cumsum(rng.normal(size=(3, 2)), axis=0)]
+    fig = hyp.plot([x, y], reduce=None, ndims=2, panels=True,
+                   panel_fit=panel_fit, predict='Kalman', t=3, truth=truths,
+                   forecast_hue=['a', 'b'], axis_scale='data',
+                   antialias=False, show=False)
+    try:
+        assert len(fig.axes) == 2
+        for ax, truth in zip(fig.axes, truths):
+            (forecast,) = _by_role(ax, 'static')
+            drawn_truths = _by_role(ax, 'truth')
+            assert len(np.asarray(forecast.get_xdata())) == 4   # seam + 3
+            # each panel draws ITS dataset's held-out continuation (the
+            # truth overlay is a line plus its marker artist)
+            assert len(drawn_truths) >= 1
+            for drawn_truth in drawn_truths:
+                assert np.allclose(
+                    np.asarray(drawn_truth.get_xydata())[1:], truth)
+    finally:
+        plt.close(fig)
+
+
+def _dated(cols, seed):
+    rng = np.random.default_rng(seed)
+    index = pd.date_range('2020-01-01', periods=30, freq='D')
+    names = ['val'] if cols == 1 else list('abc')[:cols]
+    return pd.DataFrame(np.cumsum(rng.normal(size=(30, cols)), axis=0),
+                        index=index, columns=names)
+
+
+@pytest.mark.parametrize('panel_fit', ['shared', 'independent'])
+def test_P2_series_mode_panels_keep_dates_and_the_column_name(panel_fit):
+    from matplotlib.dates import date2num
+    frames = [_dated(1, 2), _dated(1, 3)]
+    fig = hyp.plot(frames, ndims=1, panels=True, panel_fit=panel_fit,
+                   antialias=False, show=False)
+    try:
+        for ax, frame in zip(fig.axes, frames):
+            (line,) = [ln for ln in ax.lines
+                       if getattr(ln, '_hyp_forecast_role', None) is None]
+            assert np.allclose(np.asarray(line.get_xdata(), dtype=float),
+                               date2num(frame.index.to_pydatetime()))
+            assert ax.get_ylabel() == 'val'
+    finally:
+        plt.close(fig)
+
+
+@pytest.mark.parametrize('panel_fit', ['shared', 'independent'])
+def test_P2_a_three_column_frame_in_series_mode_panels(panel_fit):
+    """The panel path assigned a 3-column frame's names to x/y/zlabel, and
+    the series-mode panel then refused zlabel= for 2-D data."""
+    frames = [_dated(3, 4), _dated(3, 5)]
+    fig = hyp.plot(frames, ndims=1, reduce=None, panels=True,
+                   panel_fit=panel_fit, antialias=False, show=False)
+    try:
+        for ax in fig.axes:
+            lines = [ln for ln in ax.lines
+                     if getattr(ln, '_hyp_forecast_role', None) is None]
+            assert len(lines) == 3
+            assert ax.get_zorder() is not None and not hasattr(ax, 'zaxis')
+    finally:
+        plt.close(fig)
+
+
+@pytest.mark.parametrize('panel_fit', ['shared', 'independent'])
+def test_P3_nested_per_dataset_hue_is_narrowed_per_panel(panel_fit):
+    x, y = _walks(seed=6)
+    hue = [np.linspace(0.0, 1.0, 30), np.linspace(5.0, 9.0, 40)]
+    bundle = hyp.plot([x, y], reduce=None, ndims=2, panels=True,
+                      panel_fit=panel_fit, hue=hue, return_model=True,
+                      show=False)
+    try:
+        assert len(bundle['axes']) == 2
+        # each panel's colour scale spans ITS OWN hue values
+        for model, values in zip(bundle['panel_models'], hue):
+            colors = model['colors']
+            assert colors['vmin'] == pytest.approx(values.min())
+            assert colors['vmax'] == pytest.approx(values.max())
+    finally:
+        plt.close(bundle['fig'])
+
+
+@pytest.mark.parametrize('panel_fit', ['shared', 'independent'])
+def test_P3_labels_are_narrowed_per_panel(panel_fit):
+    x, y = _walks(seed=7)
+    fig = hyp.plot([x, y], reduce=None, ndims=2, panels=True,
+                   panel_fit=panel_fit, labels=['A', 'B'], show=False)
+    try:
+        texts = [[t.get_text() for t in ax.texts] for ax in fig.axes]
+        assert texts == [['A'], ['B']]
+    finally:
+        plt.close(fig)
+    nested = [[None] * 29 + ['end x'], [None] * 39 + ['end y']]
+    fig = hyp.plot([x, y], reduce=None, ndims=2, panels=True,
+                   panel_fit=panel_fit, labels=nested, show=False)
+    try:
+        texts = [[t.get_text() for t in ax.texts] for ax in fig.axes]
+        assert texts == [['end x'], ['end y']]
+    finally:
+        plt.close(fig)

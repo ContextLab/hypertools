@@ -329,3 +329,98 @@ def test_panels_under_plotly_builds_a_scene_grid():
     assert layout.scene3 is not None
     assert len(fig.data) >= 3
     assert {a.text for a in layout.annotations} == {'a', 'b', 'c'}
+
+
+# --- 1.1 release-review fixes (P4-P6) -----------------------------------
+
+@pytest.mark.parametrize('panel_fit', ['shared', 'independent'])
+def test_P4_ndims_above_3_draws_3d_panels_on_matplotlib(panel_fit):
+    fig = hyp.plot(_datasets(2), ndims=4, panels=True, panel_fit=panel_fit,
+                   show=False)
+    try:
+        assert [ax.name for ax in fig.axes] == ['3d', '3d']
+        for ax in fig.axes:
+            assert len(ax.lines) >= 1
+    finally:
+        matplotlib.pyplot.close(fig)
+
+
+def test_P4_ndims_above_3_draws_3d_panels_on_plotly():
+    pytest.importorskip('plotly')
+    fig = hyp.plot(_datasets(2), ndims=4, panels=True, backend='plotly',
+                   show=False)
+    assert all(trace.type == 'scatter3d' for trace in fig.data)
+    assert fig.layout.scene is not None and fig.layout.scene2 is not None
+
+
+def test_P5_panel_save_path_expands_tilde(tmp_path):
+    import os
+    home = os.path.expanduser('~')
+    name = f'.hyp_panels_p5_{os.getpid()}.png'
+    target = os.path.join(home, name)
+    fig = hyp.plot(_datasets(2), panels=True, save_path=f'~/{name}',
+                   show=False)
+    try:
+        assert os.path.isfile(target) and os.path.getsize(target) > 0
+    finally:
+        matplotlib.pyplot.close(fig)
+        if os.path.exists(target):
+            os.remove(target)
+
+
+def test_P5_panel_save_path_accepts_path_objects_on_both_backends(tmp_path):
+    fig = hyp.plot(_datasets(2), panels=True, save_path=tmp_path / 'p.png',
+                   show=False)
+    try:
+        assert (tmp_path / 'p.png').stat().st_size > 0
+    finally:
+        matplotlib.pyplot.close(fig)
+    pytest.importorskip('plotly')
+    hyp.plot(_datasets(2), panels=True, backend='plotly',
+             save_path=tmp_path / 'p.html', show=False)
+    assert (tmp_path / 'p.html').stat().st_size > 0
+
+
+def test_P5_a_missing_directory_fails_before_any_panel_is_drawn(tmp_path):
+    before = set(matplotlib.pyplot.get_fignums())
+    with pytest.raises(FileNotFoundError, match='directory does not exist'):
+        hyp.plot(_datasets(2), panels=True,
+                 save_path=tmp_path / 'missing' / 'p.png', show=False)
+    assert set(matplotlib.pyplot.get_fignums()) == before
+    with pytest.raises(FileNotFoundError, match='directory does not exist'):
+        hyp.plot(_datasets(2), panels=True, backend='plotly',
+                 save_path=tmp_path / 'missing' / 'p.html', show=False)
+
+
+def test_P6_plotly_panels_return_the_single_axes_figure_type(capsys):
+    """The plotly panel path returned a bare ``go.Figure`` and called
+    ``fig.show()`` itself, bypassing the one-shot end-of-cell display queue
+    -- a notebook cell ending in the call displayed the grid twice."""
+    pytest.importorskip('plotly')
+    import json
+    import IPython
+    import plotly.io as pio
+    from hypertools.plot import plotly_backend
+
+    assert IPython.get_ipython() is None
+    single = hyp.plot(_datasets(1)[0], backend='plotly', show=False)
+    panels = hyp.plot(_datasets(2), panels=True, backend='plotly',
+                      show=False)
+    assert type(panels) is type(single)
+    assert type(panels).__name__ == 'HyperPlotlyFigure'
+    assert len(panels.data) >= 2
+
+    saved_renderer = pio.renderers.default
+    pio.renderers.default = 'json'
+    try:
+        capsys.readouterr()
+        hyp.plot(_datasets(2), panels=True, backend='plotly', show=False)
+        assert capsys.readouterr().out == ''            # show=False: no show
+        fig = hyp.plot(_datasets(2), panels=True, backend='plotly',
+                       show=True)
+        out = capsys.readouterr().out
+        assert out.count("'application/json'") == 1     # shown exactly once
+        assert str({'application/json': json.loads(fig.to_json())}) in out
+        assert plotly_backend._PENDING_DISPLAY == []
+    finally:
+        pio.renderers.default = saved_renderer

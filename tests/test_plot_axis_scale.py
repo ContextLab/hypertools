@@ -212,3 +212,60 @@ def test_forecast_overlay_stays_in_data_coordinates():
     # ...and the axis limits grew to contain it
     assert fig.axes[0].get_xlim()[1] > fx[-1]
     plt.close(fig)
+
+
+# --- 1.1 release-review: xlim= on a date axis (S2) ----------------------
+
+def _dated_series():
+    index = pd.date_range('2020-01-01', periods=30, freq='D')
+    return pd.DataFrame({'val': np.arange(30.0)}, index=index)
+
+
+def test_S2_date_strings_set_xlim_on_matplotlib():
+    from matplotlib.dates import date2num
+    fig = hyp.plot(_dated_series(), ndims=1,
+                   xlim=('2020-01-05', '2020-01-10'), show=False)
+    try:
+        lo, hi = fig.axes[0].get_xlim()
+        assert lo == pytest.approx(date2num(pd.Timestamp('2020-01-05')))
+        assert hi == pytest.approx(date2num(pd.Timestamp('2020-01-10')))
+    finally:
+        plt.close(fig)
+    # a Timestamp pair and a float (matplotlib day number) pair agree
+    fig = hyp.plot(_dated_series(), ndims=1,
+                   xlim=(pd.Timestamp('2020-01-05'),
+                         pd.Timestamp('2020-01-10')), show=False)
+    try:
+        assert fig.axes[0].get_xlim() == pytest.approx((lo, hi))
+    finally:
+        plt.close(fig)
+    fig = hyp.plot(_dated_series(), ndims=1, xlim=(lo, hi), show=False)
+    try:
+        assert fig.axes[0].get_xlim() == pytest.approx((lo, hi))
+    finally:
+        plt.close(fig)
+
+
+def test_S2_date_strings_and_day_numbers_set_xlim_on_plotly():
+    pytest.importorskip('plotly')
+    from matplotlib.dates import date2num
+    epoch = pd.Timestamp('1970-01-01')
+    ms = [float((pd.Timestamp(d) - epoch) // pd.Timedelta('1ms'))
+          for d in ('2020-01-05', '2020-01-10')]
+    fig = hyp.plot(_dated_series(), ndims=1, backend='plotly',
+                   xlim=('2020-01-05', '2020-01-10'), show=False)
+    assert fig.layout.xaxis.type == 'date'
+    assert list(fig.layout.xaxis.range) == pytest.approx(ms)
+    # a float is a matplotlib day number on BOTH backends (it used to be
+    # read as epoch milliseconds here and drew a range in 1970)
+    days = (date2num(pd.Timestamp('2020-01-05')),
+            date2num(pd.Timestamp('2020-01-10')))
+    fig = hyp.plot(_dated_series(), ndims=1, backend='plotly', xlim=days,
+                   show=False)
+    assert list(fig.layout.xaxis.range) == pytest.approx(ms)
+
+
+def test_S2_a_non_date_xlim_on_a_date_axis_is_refused():
+    with pytest.raises(ValueError, match='date axis'):
+        hyp.plot(_dated_series(), ndims=1, xlim=('soon', 'later'),
+                 show=False)

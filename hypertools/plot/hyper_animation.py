@@ -141,13 +141,28 @@ class HyperAnimation(tuple):
         """The union bounding box of everything this animation DRAWS,
         measured from rendered pixels, in FIGURE fractions (GH #285).
 
-        ``frames=None`` (the default) samples 12 frames evenly across the
-        animation -- the drawn extent of a 3-D plot changes with the camera
-        angle, so one frame is not representative. Pass an int for a
-        different sample size, or an iterable of frame indices to measure
-        exactly those. Returns a ``matplotlib.transforms.Bbox`` with y
-        increasing UPWARD (``bbox.p0`` is the bottom-left corner).
+        Parameters
+        ----------
+        frames : int, iterable of int, or None, optional
+            Which frames to measure. ``None`` (the default) samples 12
+            frames evenly across the animation -- the drawn extent of a
+            3-D plot changes with the camera angle, so one frame is not
+            representative. An int ``n`` samples ``n`` frames evenly; an
+            iterable of frame indices measures exactly those.
+        threshold : int, optional
+            How far (0-255, per channel) a pixel must differ from the
+            figure's own background colour to count as drawn. The default
+            5 treats anything below 250 on a white figure as ink, faint
+            antialiasing included; raise it to ignore light artefacts.
 
+        Returns
+        -------
+        matplotlib.transforms.Bbox
+            In FIGURE fractions, with y increasing UPWARD (``bbox.p0`` is
+            the bottom-left corner, ``bbox.p1`` the top-right).
+
+        Notes
+        -----
         Costs one full canvas render per sampled frame, and leaves the
         figure showing the last frame it measured. See
         :func:`hypertools.plot.animate.drawn_extent` for the full contract.
@@ -200,9 +215,10 @@ class HyperAnimation(tuple):
         ``writer`` (or positional args) delegates straight to
         ``matplotlib.animation.Animation.save`` instead, with every keyword.
 
-        QC 2026-07: ``.save('x.svg')`` / ``.save('x.png')`` used to crash (raw
-        ``Animation.save`` tried to pipe h264 into an svg/png), even though the
-        same extensions work via ``save_path=``.
+        Supported extensions, by writer: ``.gif``, ``.png``/``.apng``
+        (Pillow); ``.svg`` (frame-capped vector animation); ``.mp4``,
+        ``.mov``, ``.avi``, ``.m4v``, ``.mkv`` (ffmpeg). Any other extension
+        raises ``ValueError`` naming this list.
         """
         if args or 'writer' in kwargs:
             return self.animation.save(filename, *args, **kwargs)

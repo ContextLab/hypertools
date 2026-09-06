@@ -102,6 +102,31 @@ def forecast_alpha(observed_alpha, alpha_scale=FORECAST_ALPHA_SCALE):
     return base * float(alpha_scale)
 
 
+def model_min_history(model):
+    """The fewest revealed rows `model` can be fit on (`Forecaster.min_history`).
+
+    `model` is anything `hypertools.predict` accepts (a name, a spec dict,
+    a `Forecaster` subclass or instance); it is resolved with `hyp.predict`'s
+    own resolver, so an unknown spec raises the same ``ValueError`` here that
+    the first fit would have raised. A class or dict spec is NOT constructed
+    (a `Chronos` constructor would download a model): the floor is read from
+    the class's `min_history_for`, given the spec's constructor arguments.
+    """
+    from ..predict.predict import _resolve_forecaster_spec
+    from ..predict.common import Forecaster
+    resolved, kwargs = _resolve_forecaster_spec(model, {})
+    if isinstance(resolved, Forecaster):
+        return int(resolved.min_history)
+    args = []
+    if isinstance(resolved, dict):
+        args = list(resolved.get('args', []) or [])
+        kwargs = {**dict(resolved.get('kwargs', {}) or {}), **kwargs}
+        resolved = resolved['model']
+        if isinstance(resolved, Forecaster):
+            return int(resolved.min_history)
+    return int(resolved.min_history_for(*args, **kwargs))
+
+
 def forecast_from_history(history, model, t, min_history=DEFAULT_MIN_HISTORY):
     """Forecast `t` steps on from `history`, as a displacement path.
 
@@ -117,7 +142,10 @@ def forecast_from_history(history, model, t, min_history=DEFAULT_MIN_HISTORY):
         Forecast horizon, in RAW analyze-space steps. ``t=1`` is the next
         observation.
     min_history : int, default 2
-        Refuse to forecast from fewer rows than this.
+        Refuse to forecast from fewer rows than this. The model's own floor
+        (`model_min_history`: 3 for the default ARIMA order) is applied on
+        top of it, so a history the model could not be fit on returns
+        ``None`` rather than reaching the model's internals.
 
     Returns
     -------
@@ -138,7 +166,7 @@ def forecast_from_history(history, model, t, min_history=DEFAULT_MIN_HISTORY):
         raise ValueError(
             f"history must be 2-D (n_observed, n_dims); got shape "
             f"{history.shape}.")
-    if len(history) < max(2, min_history):
+    if len(history) < max(2, min_history, model_min_history(model)):
         return None
 
     forecast = np.asarray(_predict(history, model=model, t=t), dtype=float)
@@ -360,7 +388,10 @@ class ForecastSchedule:
         self.counts = [[len(r) for r in frame] for frame in self.rows]
         self.model = model
         self.t = int(t)
-        self.min_history = int(min_history)
+        # the caller's floor, raised to the MODEL's own: an ARIMA(1, 1, 1)
+        # cannot be fit on the 2-row history the earliest frames reveal, so
+        # those frames draw no forecast rather than crashing the schedule
+        self.min_history = max(int(min_history), model_min_history(model))
         self.transform = transform
         self.n_frames = len(self.counts)
         self.n_datasets = len(self.histories)

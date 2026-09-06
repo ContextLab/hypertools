@@ -177,7 +177,39 @@ class ARIMA(Forecaster):
     **kwargs
         Passed through to ``statsmodels.tsa.arima.model.ARIMA`` (unknown
         keyword arguments therefore raise ``TypeError`` from statsmodels).
+
+    Notes
+    -----
+    ``min_history`` (see `Forecaster.min_history`) is computed from the
+    order by `min_history_for`: 3 rows for the default ``(1, 1, 1)``. `fit`
+    raises a ``ValueError`` naming the model, its order and that count for a
+    shorter history (statsmodels used to raise a bare ``IndexError``), and
+    an animated ``hyp.plot(..., predict='ARIMA')`` draws no forecast on the
+    frames that have revealed fewer rows than that.
     """
+
+    @classmethod
+    def min_history_for(cls, order=(1, 1, 1), **kwargs):
+        """The fewest rows an ARIMA of this ``order`` can be fit on.
+
+        ``max(d + 2, p + q + 1)``: statsmodels differences the series ``d``
+        times and needs at least TWO rows left afterwards (measured on
+        statsmodels 0.14: every order with ``d >= 1`` raised a bare
+        ``IndexError`` from a ``d + 1``-row history, and ``d = 0`` a
+        ``ValueError`` from one row), and a fit with fewer rows than ARMA
+        coefficients plus one has nothing to estimate them from. The default
+        ``(1, 1, 1)`` therefore needs 3 rows; ``(4, 0, 0)`` needs 5.
+        """
+        p, d, q = (int(v) for v in order)
+        return max(d + 2, p + q + 1)
+
+    @property
+    def min_history(self):
+        """`min_history_for(self.order)` -- see `Forecaster.min_history`."""
+        return self.min_history_for(self.order)
+
+    def _min_history_detail(self):
+        return f'(order={tuple(self.order)!r})'
 
     def __init__(self, order=(1, 1, 1), **kwargs):
         required = ['results']

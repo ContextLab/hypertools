@@ -244,6 +244,44 @@ class Forecaster(BaseEstimator):
         call.
     """
 
+    #: The fewest observations (rows) a single dataset needs before this
+    #: forecaster can be fit on it. `fit` raises a `ValueError` naming the
+    #: model and this count for anything shorter, instead of letting the
+    #: underlying library fail deep inside its own code (statsmodels' ARIMA
+    #: raised a bare ``IndexError`` from a 2-row history). Subclasses whose
+    #: floor depends on their hyperparameters override `min_history_for`
+    #: (and, for instances, this attribute) -- see `ARIMA`. The animated
+    #: `predict=` overlay in `hypertools.plot` reads it through
+    #: `hypertools.plot.forecast.model_min_history`, so early frames draw no
+    #: forecast until enough history has been revealed.
+    min_history = 2
+
+    @classmethod
+    def min_history_for(cls, *args, **kwargs):
+        """The `min_history` an instance built with these constructor
+        arguments would have. The base rule ignores the arguments and returns
+        the class attribute; `ARIMA` computes its floor from ``order``."""
+        return cls.min_history
+
+    def _check_min_history(self, d, which):
+        """Raise a `ValueError` when dataset `d` (a DataFrame) has fewer rows
+        than this forecaster needs; `which` names the dataset in the message."""
+        needed = int(self.min_history)
+        if d.shape[0] < needed:
+            name = type(self).__name__
+            detail = self._min_history_detail()
+            raise ValueError(
+                f'cannot forecast with {name} from {d.shape[0]} row(s): '
+                f'{which} is shorter than the {needed} observation(s) '
+                f'(rows) {name}{detail} needs. Pass a longer history, or a '
+                'model with a smaller minimum history (e.g. Kalman, which '
+                'needs 2 rows).')
+
+    def _min_history_detail(self):
+        """Text appended to the model name in `_check_min_history`'s message
+        (e.g. ARIMA's order); the base class adds nothing."""
+        return ''
+
     def __init__(self, **kwargs):
         self.data = kwargs.pop('data', None)
         self.fitter = kwargs.pop('fitter', None)
@@ -271,8 +309,10 @@ class Forecaster(BaseEstimator):
         ------
         ValueError
             If `data` is `None`, empty, or has fewer than 2 observations
-            (rows); if `self.fitter` does not return a dict; or if any
-            name in `self.required` is missing from a returned dict.
+            (rows) -- or fewer than this forecaster's own `min_history`
+            (the message names the model and the rows it needs); if
+            `self.fitter` does not return a dict; or if any name in
+            `self.required` is missing from a returned dict.
         """
         # real raises (not `assert ..., ValueError(...)`, which raises
         # AssertionError and is stripped under `python -O`) -- QC 2026-07.
@@ -302,6 +342,9 @@ class Forecaster(BaseEstimator):
                     f'only {d.shape[0]} row. Forecasting needs at least 2 '
                     'observations (rows) to estimate how the data change '
                     'over time.')
+            # a model-specific floor above the universal 2 (ARIMA's order
+            # decides how many rows statsmodels can difference and fit)
+            self._check_min_history(d, which)
             if self.fitter is None:
                 models.append({})
                 continue
@@ -462,6 +505,7 @@ class Forecaster(BaseEstimator):
                 from ..core.shared import no_observations_message
                 raise ValueError(
                     no_observations_message('forecast', f'{which} has 0 rows'))
+            self._check_min_history(d, which)
 
         forecasts = []
         for d, params in zip(new_datasets, paired_models):
