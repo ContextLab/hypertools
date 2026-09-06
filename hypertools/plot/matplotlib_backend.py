@@ -955,6 +955,14 @@ def _draw(
             line_kwargs.setdefault('linestyle', line_token)
             if fmt_color is not None:
                 line_kwargs.setdefault('color', fmt_color)
+            # the line artist carries the legend label, so it also carries
+            # the MARKER -- with `markevery=[]` it draws none along the
+            # interpolated vertices (the markers-only artist below draws
+            # them at the raw sample points), but its legend handle shows
+            # marker + line, as 's--' promises. Before the 1.1 release
+            # review the handle showed only the dashes.
+            line_kwargs['marker'] = marker_char
+            line_kwargs['markevery'] = []
             line_artist = ax.plot(*coords, **line_kwargs)[0]
             marker_kwargs = {k: v for k, v in ikwargs.items() if k != 'marker'}
             marker_kwargs['label'] = '_nolegend_'

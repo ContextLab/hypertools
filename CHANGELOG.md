@@ -854,6 +854,11 @@ Because 1.1.0 had not been published, they ship in it.
 - **Docstrings:** `font=` explains weights (bold resolves to the bundled
   Bold face); `HyperAnimation.drawn_extent` documents its parameters;
   `HyperAnimation.save` lists the supported extensions plainly.
+- **A marker-plus-line format string keeps its marker in the legend.** A
+  dataset drawn with `'s--'` (or `'o-'`) is split into a smoothed line and
+  markers at the raw sample points; the legend handle showed only the
+  line. It now shows the marker and the line, on static and animated
+  plots, and the line itself still draws no markers.
 
 ### Documented limitations
 
