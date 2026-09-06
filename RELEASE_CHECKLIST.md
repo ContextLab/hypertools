@@ -1,54 +1,54 @@
 # HyperTools 1.1 release checklist
 
-The docs, notebooks, and README deliberately ship in **dev form** on the
-`dev-1.0` branch and must flip to **release form** at publish. Several of those
-flips cannot be done earlier (PyPI has 1.0.0 but not 1.1.0; the `v1.1.0` tag does
-not exist yet), so they are done here, on `master`, in order — and the
-**`release-gate` CI job** (runs only on `master` / tags) hard-fails until every
-flip is done, so nothing can be forgotten.
+The docs, notebooks, and README ship in **release form** on `master` (the 1.1.0
+draft: `master` == tag `v1.1.0` == `96ac8b7f`, gallery published under
+`docs-notebooks/v1.1.0/` from that commit, a DRAFT GitHub release with wheel +
+sdist attached, nothing on PyPI yet). Fixes found by the 1.1 release review
+land through PR #286 (`fix/1.1-release-review`), so the release is **re-cut**
+from the merge commit: the gallery manifest pins an exact `source_commit`, and
+the `release-gate` CI job (runs only on `master` / tags) hard-fails until the
+manifest, the tag and the artifacts all point at the final commit.
 
 Run everything from a **clean `master` checkout on the `master` branch** (not a
 detached tag checkout — the notebook migrator detects the branch via
 `git rev-parse --abbrev-ref HEAD`, which returns `HEAD` when detached).
 
-## 0. Pre-flight (on `dev-1.0`)
+## 0. Pre-flight (on the fix branch, before merging)
 
-- [ ] **Push `dev-1.0` and open the integration PR (`dev-1.0` → `master`) FIRST.**
-      The 1.1 line was developed with no hosted CI at all (the remote branch
-      last moved 2026-07-23; ~185 commits since), so the PR's matrix CI is
-      the first time these commits meet Linux, Windows and every supported
-      Python. Nothing below happens until it is green.
-- [ ] `dev-1.0` CI fully green (push + PR workflows).
-- [ ] Full suite green locally: `pytest` (3700+ passed, 0 failed — including
-      `tests/test_examples_are_native.py`, the Plan 4 gate, at 0 failed).
+- [ ] PR #286 CI fully green (matrix, `wheel-smoke`, `docs-clean`,
+      `dataset-gate`, `live-source-gate`).
+- [ ] Full suite green locally: `pytest` (4900+ passed, 0 failed — including
+      `tests/test_examples_are_native.py`, the native-usage gate, at 0 failed).
+- [ ] Example smoke gate: `HYPERTOOLS_EXAMPLE_SMOKE=1 pytest tests/test_examples_are_native.py`
+      executes every gallery script headless. No CI job runs it, so it is
+      a manual pre-release step.
 - [ ] Local release validation, all green in the same tree: `ruff check .`,
-      `cd docs && MPLBACKEND=Agg ../.venv/bin/python -m sphinx -b html -W -E -a . _build/html`
-      (0 warnings), `pytest tests/test_packaging_artifacts.py`, and the five
-      launch examples headless (`MPLBACKEND=Agg python examples/animate_*.py`).
-- [ ] Decide the release date and the version (`1.1.0`; `pyproject.toml`
-      already says so, and `CHANGELOG.md` has a `## 1.0.1 (unreleased)` section
-      that its own note explains was never published on its own — leave it).
+      `cd docs && rm -rf auto_examples && MPLBACKEND=Agg ../.venv/bin/python -m sphinx -b html -W -E -a . _build/html`
+      (0 warnings; delete `auto_examples/` first or stale pages of removed
+      examples fail `-W`), `pytest tests/test_packaging_artifacts.py`, and the
+      five launch examples headless (`MPLBACKEND=Agg python examples/animate_*.py`).
 - [ ] Notebook hygiene: every committed tutorial was executed with
       `scripts/execute_tutorial.py` (which skips the Colab install cell so the
-      venv is not overwritten by the stale remote branch — see its docstring)
+      venv is not overwritten by a stale remote branch — see its docstring)
       and `pip show hypertools` still reports an editable install afterwards.
+      Stored outputs carry no `/Users/...` paths (`git grep -n '/Users/' -- docs/tutorials`).
 - [ ] **conda-forge** is no longer a prerequisite: the feedstock
       (`conda-forge/hypertools-feedstock`) exists since 1.0.0 and its bot bumps
       on each PyPI release (step 7).
 
 ## 1. Merge to `master`
 
-- [ ] Merge `dev-1.0` → `master` (the integration PR from step 0). Do NOT
-      delete `dev-1.0` yet (the pre-release notebooks still reference it until
-      step 2 runs).
+- [ ] Merge PR #286 → `master`. Its description carries `Closes #284` and
+      `Closes #285`, so both tracking issues close on merge; confirm they did.
 
 ## 2. Flip everything to release form (on `master`)
 
 - [ ] **Notebooks → PyPI spec + clean note (automated).**
       `python scripts/add_colab_install_cell.py`
-      Retargets every committed tutorial install cell `... @ git+…@dev-1.0` →
+      Retargets any committed tutorial install cell `... @ git+…@<branch>` →
       `hypertools[<extras>]` (extras preserved) and strips the
-      `(<branch> preview)` / "On release this becomes …" note. The gallery
+      `(<branch> preview)` / "On release this becomes …" note. The 1.1.0
+      notebooks are already in this form, so this is a no-op check. The gallery
       (`docs/auto_examples/*.ipynb`) is gitignored and REGENERATED by
       `docs/conf.py` on each build, which emits the identical PyPI line on a
       `master`/tag build (the migrator only retargets any on-disk copy, and the
@@ -56,11 +56,12 @@ detached tag checkout — the notebook migrator detects the branch via
 - [ ] **README images: commit SHA → `v1.1.0` tag (8 URLs).**
       `sed -E -i '' 's#(/ContextLab/hypertools/)[^/]+(/images/)#\1v1.1.0\2#g' readme.md`
       (drop the `''` after `-i` on GNU sed). This retargets WHATEVER ref is
-      pinned (robust to the SHA having drifted), not just `fc2429cb`. Verify the
+      pinned (robust to the SHA having drifted). Verify the
       POSITIVE: `grep -c '/ContextLab/hypertools/v1.1.0/images/' readme.md` → 8
       and `grep -Ec '/ContextLab/hypertools/[0-9a-f]{7,40}/images/' readme.md` → 0.
-- [ ] **CHANGELOG date.** Edit `CHANGELOG.md`: `## 1.1.0 (unreleased)` →
-      `## 1.1.0 (YYYY-MM-DD)` with the real release date.
+- [ ] **CHANGELOG date.** Edit `CHANGELOG.md`: the `## 1.1.0 (YYYY-MM-DD)`
+      heading must carry the date of the FINAL release commit (the draft is
+      dated 2026-09-04; a re-cut on a later day updates it).
 - [ ] (Optional prose) `docs/tutorials/stock_forecasting.ipynb` has a
       free-text "hypertools 1.0 preview" comment the migrator does not touch —
       reword if desired (not gate-enforced).
@@ -79,8 +80,9 @@ detached tag checkout — the notebook migrator detects the branch via
       be published before you push, not after. Build the gallery and publish:
       `cd docs && make html` then, from the repo root,
       `python scripts/publish_gallery_notebooks.py --ref v1.1.0 --notebooks-dir docs/auto_examples --push`
-      (the `docs-notebooks` branch already exists from 1.0.0; this adds the
-      `v1.1.0/` namespace and writes `v1.1.0/manifest.json`). Publishing static
+      (the `docs-notebooks` branch already exists; the script deletes and
+      rewrites the whole `v1.1.0/` namespace and its `manifest.json`, so a
+      re-cut republishes cleanly over the draft's publish). Publishing static
       notebooks before PyPI is harmless: their `%pip install hypertools[...]`
       cells resolve 1.1 the moment PyPI is updated (step 6).
       Both the `master` "latest" docs and the `v1.1.0` "stable" docs resolve to
@@ -127,12 +129,17 @@ same artifacts you verify are the ones you publish.
 
 ## 5. Tag the green commit + wait for tag CI
 
-- [ ] `git tag -a v1.1.0 -m "HyperTools 1.1.0"` at the **exact commit that just
-      went green** on `master`.
-- [ ] `git push origin v1.1.0` (the workflow's `tags: ['v*']` trigger runs CI
-      on the tag).
-- [ ] Wait for the `v1.1.0` tag CI to go GREEN (same jobs; `release-gate` +
-      `docs-clean` gallery scan run on the tag too).
+- [ ] The `v1.1.0` tag already exists on `origin` at the draft commit
+      (`96ac8b7f`). Move it to the **exact commit that just went green** on
+      `master`: `git tag -fa v1.1.0 -m "HyperTools 1.1.0" <sha>` then
+      `git push --force origin refs/tags/v1.1.0`. A moved tag is safe ONLY
+      because nothing has been published from the old one (PyPI still has
+      1.0.0, the GitHub release is a draft); once PyPI has 1.1.0 the tag is
+      frozen.
+- [ ] Confirm: `git ls-remote origin refs/tags/v1.1.0^{}` == the new sha.
+- [ ] Wait for the `v1.1.0` tag CI to go GREEN (the workflow's `tags: ['v*']`
+      trigger runs the same jobs; `release-gate` + `docs-clean` gallery scan
+      run on the tag too).
 
 ## 6. Publish to PyPI (the already-verified artifacts) + smoke
 
@@ -147,8 +154,11 @@ same artifacts you verify are the ones you publish.
       stale artifact): `twine upload dist/hypertools-1.1.0.tar.gz dist/hypertools-1.1.0-py3-none-any.whl`.
       (The static notebooks briefly resolving the previous PyPI release before
       this upload is harmless.)
-- [ ] Create a **GitHub Release** for the `v1.1.0` tag with the 1.1 release
-      notes (from `CHANGELOG.md`).
+- [ ] **GitHub Release**: the DRAFT release for `v1.1.0` already exists with
+      the draft commit's wheel + sdist attached. Replace both assets with the
+      step-3 files (`gh release upload v1.1.0 dist/hypertools-1.1.0.tar.gz dist/hypertools-1.1.0-py3-none-any.whl --clobber`),
+      refresh its notes from `CHANGELOG.md`, confirm it targets the moved tag,
+      then publish it.
 - [ ] `pip install hypertools` in a clean env → installs `1.1.0`; run the
       README quick-start snippet.
 - [ ] **Gallery notebooks: confirm still resolved.** They were already
@@ -187,9 +197,9 @@ feedstock automatically, usually within hours of the PyPI upload.
 ## 8. Cleanup
 
 - [ ] After the release is confirmed good, delete the `dev-1.0` /
-      `dev-1.0-refactor` branches if desired (maintainer's call; 1.0.0's
-      checklist deferred it too) (the released artifacts no longer
-      reference them; the `release-gate` guarantees this).
+      `dev-1.0-refactor` / `fix/1.1-release-review` branches if desired
+      (maintainer's call; the released artifacts do not reference them; the
+      `release-gate` guarantees this).
 
 ## What the `release-gate` enforces (so you can't forget)
 

@@ -146,3 +146,49 @@ def test_hyp_align_return_score_via_public_api():
     aligned, score = hyp.align(datasets, model='HyperAlign', n_iter=10,
                                return_score=True)
     assert score['after'] <= score['before']
+
+
+# -- 1.1 release review: ragged input scores what the aligner consumed ------
+
+def test_return_score_works_on_ragged_input_that_align_trims():
+    # hyp.align([a, b]) trims to the 40 common rows and succeeds, so
+    # return_score=True must succeed too: the "before" score is taken on
+    # the same row-trimmed data the aligner consumed.
+    rng = np.random.default_rng(11)
+    base = rng.standard_normal((50, 4))
+    rot, _ = np.linalg.qr(rng.standard_normal((4, 4)))
+    a = base + 0.05 * rng.standard_normal((50, 4))
+    b = (base @ rot + 0.05 * rng.standard_normal((50, 4)))[:40]
+    with pytest.warns(UserWarning, match='common to all datasets'):
+        aligned, score = hyp.align([a, b], model='HyperAlign', n_iter=10,
+                                   return_score=True)
+    assert [x.shape for x in aligned] == [(40, 4), (40, 4)]
+    assert set(score) == {'before', 'after', 'metric'}
+    assert score['metric'] == 'dispersion'
+    assert score['after'] < score['before']
+    # 'before' is exactly alignment_score of the manually trimmed arrays
+    # (common rows in the FIRST dataset's order: a's first 40 rows)
+    expected = alignment_score([a[:40], b], metric='dispersion')['before']
+    assert score['before'] == pytest.approx(expected)
+    assert score['after'] == pytest.approx(
+        alignment_score([a[:40], b], aligned=aligned, metric='dispersion')['after'])
+
+    # the plain (un-trimmed) originals are still rejected by the scorer
+    # itself, so the trim is align's doing rather than a relaxed check
+    with pytest.raises(ValueError, match='same shape'):
+        alignment_score([a, b], metric='dispersion')
+
+
+def test_return_score_ragged_input_isc_metric():
+    rng = np.random.default_rng(12)
+    base = rng.standard_normal((50, 4))
+    rot, _ = np.linalg.qr(rng.standard_normal((4, 4)))
+    a = base + 0.05 * rng.standard_normal((50, 4))
+    b = (base @ rot + 0.05 * rng.standard_normal((50, 4)))[:40]
+    with pytest.warns(UserWarning, match='common to all datasets'):
+        aligned, score = hyp.align([a, b], model='HyperAlign', n_iter=10,
+                                   return_score=True, score_metric='isc')
+    assert score['metric'] == 'isc'
+    assert score['after'] > score['before']
+    expected = alignment_score([a[:40], b], metric='isc')['before']
+    assert score['before'] == pytest.approx(expected)

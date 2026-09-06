@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 import datawrangler as dw
 
-from .common import Aligner
+from .common import Aligner, trim_and_pad
 from .hyperalign import HyperAlign
 from .procrustes import Procrustes
 from .srm import SharedResponseModel, DeterministicSharedResponseModel, RobustSharedResponseModel
@@ -182,7 +182,8 @@ def _apply_format_data(data):
     return rewrapped if was_list else rewrapped[0]
 
 
-def _compute_score(return_score, score_metric, before_data, after_data):
+def _compute_score(return_score, score_metric, before_data, after_data,
+                   trim=False):
     """Build the `{'before', 'after', 'metric'}` score dict for `align`'s
     `return_score=True` (GH #285), or `None` when `return_score` is False.
 
@@ -191,12 +192,24 @@ def _compute_score(return_score, score_metric, before_data, after_data):
     are normalized to list form before delegating to
     `hypertools.align.score.alignment_score`, which raises a clear
     `ValueError` for ragged (unequal-shape) input.
+
+    `trim=True` (the Aligner paths) first runs `before_data` through the
+    same `trim_and_pad` the aligner itself applies (common rows, padded
+    columns, no second data-loss warning), so the "before" score is taken
+    on exactly the equal-shape data the aligner consumed. Without it,
+    ragged input (say 50 and 40 rows) aligned fine but `return_score=True`
+    raised from `alignment_score` on the untrimmed originals (1.1 release
+    review).
     """
     if not return_score:
         return None
     from .score import alignment_score
     before_list = before_data if isinstance(before_data, list) else [before_data]
     after_list = after_data if isinstance(after_data, list) else [after_data]
+    if trim:
+        before_list = trim_and_pad(
+            [d if isinstance(d, pd.DataFrame) else pd.DataFrame(np.asarray(d))
+             for d in before_list], warn=False)
     return alignment_score(before_list, aligned=after_list, metric=score_metric)
 
 
@@ -320,12 +333,13 @@ def _align(data, model='HyperAlign', return_model=False,
     if isinstance(resolved, Aligner) and resolved.is_fitted:
         raw = _to_arrays(resolved.transform(data))
         result = _match_input_shape(raw, was_list)
-        score = _compute_score(return_score, score_metric, data, raw)
+        score = _compute_score(return_score, score_metric, data, raw,
+                               trim=True)
         return _build_return(result, return_model, resolved, return_score, score)
 
     raw = _to_arrays(resolved.fit_transform(data))
     result = _match_input_shape(raw, was_list)
-    score = _compute_score(return_score, score_metric, data, raw)
+    score = _compute_score(return_score, score_metric, data, raw, trim=True)
     return _build_return(result, return_model, resolved, return_score, score)
 
 
@@ -404,6 +418,10 @@ def align(data, model='HyperAlign', return_model=False,
         data before vs. after alignment (GH #285): see
         `hypertools.align.score.alignment_score` for the two supported
         `score_metric=` values (`'dispersion'`, the default, and `'isc'`).
+        The "before" score is computed on the row-trimmed (and
+        column-padded) input -- the equal-shape data the aligner actually
+        consumed -- so ragged datasets that `align` trims to their common
+        rows score without error; the "after" score is the aligned output.
         Only supported for the plain align stage -- raises `ValueError` if
         combined with `manip=`/`normalize=`/`reduce=`/`cluster=`, since the
         before/after pairing is undefined inside a multi-stage pipeline

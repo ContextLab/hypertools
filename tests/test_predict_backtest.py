@@ -10,6 +10,8 @@ case uses a genuine `Forecaster` -- a least-squares line extrapolator -- on
 an exactly linear series, where being perfect is a property of the data and
 the model, not of a stub.
 """
+import warnings
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -341,3 +343,52 @@ def test_replaces_the_stock_tutorial_comparison():
                                            values='MAPE')
     assert table.shape == (3, 3)
     assert np.isfinite(table.to_numpy()).all()
+
+
+# --- 1.1 release review: metrics / holdout / warning attribution ---------
+
+def test_repeated_metric_is_rejected_by_name():
+    # a duplicated metric used to fall through to build_scores and die
+    # with "float() argument must be ... not 'Series'"
+    df = _series(n=40)
+    with pytest.raises(ValueError, match="metric 'mae' is listed more than once"):
+        hyp.predict(df, model='AutoRegressor', holdout=5, metrics=['mae', 'mae'])
+    # case-insensitively: 'mae' and 'MAE' name the same column
+    with pytest.raises(ValueError, match="metric 'MAE' is listed more than once"):
+        hyp.predict(df, model='AutoRegressor', holdout=5, metrics=['mae', 'MAE'])
+    # the same spellings in the OTHER case are still one scores column each
+    scores = hyp.predict(df, model='AutoRegressor', holdout=5,
+                         metrics=['MAE', 'rmse'])
+    assert list(scores.columns) == ['MAE', 'RMSE', 'n', 'unscored', 'horizon']
+
+
+def test_holdout_true_with_t_zero_blames_t():
+    with pytest.raises(ValueError, match=r'holdout=True takes its size from t.*got t=0'):
+        hyp.predict(_series(n=40), model='Kalman', holdout=True, t=0)
+
+
+def _forecast_nothing(data, n_steps, future_index, **kwargs):
+    return pd.DataFrame(np.nan, index=future_index, columns=data.columns)
+
+
+class NaNForecaster(Forecaster):
+    """A real forecaster that produces no values -- the shape of a model
+    that fails on every held-out row (drives the `unscored` warning)."""
+
+    def __init__(self, **kwargs):
+        super().__init__(forecaster=_forecast_nothing, **kwargs)
+
+
+def test_unscored_warning_points_at_the_caller():
+    import os
+    import hypertools
+    package_dir = os.path.dirname(os.path.abspath(hypertools.__file__))
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter('always')
+        scores = hyp.predict(_series(n=40), model=[NaNForecaster, 'Kalman'],
+                             holdout=5)
+    assert scores.loc['NaNForecaster', 'unscored'] == 10
+    unscored = [w for w in caught if 'not directly comparable' in str(w.message)]
+    assert len(unscored) == 1
+    assert unscored[0].filename == __file__
+    assert not unscored[0].filename.startswith(package_dir + os.sep)

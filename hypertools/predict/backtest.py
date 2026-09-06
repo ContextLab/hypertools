@@ -109,6 +109,15 @@ def resolve_metrics(metrics):
             raise ValueError(
                 f'unknown metric {m!r}; supported: '
                 f'{", ".join(METRIC_FUNCS)}.')
+        # a repeated metric (case-insensitively: 'mae' and 'MAE' are the
+        # same column) would give the scores frame two columns with one
+        # label, and `build_scores` then reads a 2-column frame where it
+        # expects a scalar (TypeError deep in the verdict). Name the
+        # repeat here instead.
+        if m.lower() in resolved:
+            raise ValueError(
+                f'metric {m!r} is listed more than once in '
+                f'metrics={metrics!r}; each metric may appear only once.')
         resolved.append(m.lower())
     return tuple(resolved)
 
@@ -256,6 +265,9 @@ def build_scores(records, metrics, per_column=False, baseline=None,
     wide = grouped[labels].mean()
     wide['n'] = grouped['n'].sum()
     wide['unscored'] = grouped['unscored'].sum()
+    # local import (as in `Forecaster.fit_predict`) keeps the numeric core
+    # of this module free of hypertools imports at module load
+    from ..core.model import external_stacklevel
     for name, unscored in wide['unscored'].items():
         # a model that failed to produce some values is scored on FEWER
         # entries than the others, so its row is not directly comparable;
@@ -266,7 +278,7 @@ def build_scores(records, metrics, per_column=False, baseline=None,
                 f'{int(unscored + wide.loc[name, "n"])} scored {kind}(s) '
                 'missing (NaN); its scores cover only the ones it produced, '
                 'so they are not directly comparable to models that '
-                'produced every value.')
+                'produced every value.', stacklevel=external_stacklevel())
     for key, value in extra.items():
         wide[key] = value
 
@@ -330,6 +342,11 @@ def resolve_holdout(holdout, n, t, caller='predict'):
             f'holdout must be an int (rows), a float in (0, 1) (fraction), '
             f'or True (hold out t rows); got {holdout!r}')
     if k < 1:
+        if isinstance(holdout, (bool, np.bool_)):
+            # the offending value is t, not the literal True
+            raise ValueError(
+                f'holdout=True takes its size from t, so t must be >= 1 '
+                f'row; got t={t!r}.')
         raise ValueError(f'holdout must be >= 1 row; got {holdout!r}')
     if n - k < 2:
         raise ValueError(

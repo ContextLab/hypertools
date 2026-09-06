@@ -10,6 +10,8 @@ Real imputers (PPCA, KNNImputer, Kalman, SimpleImputer) on real (seeded)
 damage; "a perfect fill scores 0" is exercised on a constant column, where
 the column-mean fill is exactly right by construction.
 """
+import warnings
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -320,3 +322,32 @@ def test_unknown_metric_raises():
     truth = _arc()
     with pytest.raises(ValueError, match='unknown metric'):
         hyp.impute(_damage(truth), model='PPCA', truth=truth, metrics='r2')
+
+
+# --- 1.1 release review: metrics / warning attribution -------------------
+
+def test_repeated_metric_is_rejected_by_name():
+    # used to reach build_scores and die with "float() argument must be
+    # ... not 'Series'"
+    truth = _arc()
+    damaged = _damage(truth)
+    with pytest.raises(ValueError, match="metric 'mae' is listed more than once"):
+        hyp.impute(damaged, model='KNNImputer', truth=truth, metrics=['mae', 'mae'])
+    with pytest.raises(ValueError, match="metric 'MAE' is listed more than once"):
+        hyp.impute(damaged, model='KNNImputer', truth=truth, metrics=['mae', 'MAE'])
+
+
+def test_unscored_warning_points_at_the_caller():
+    import os
+    import hypertools
+    package_dir = os.path.dirname(os.path.abspath(hypertools.__file__))
+    truth = _arc()
+    damaged = _damage(truth)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter('always')
+        scores = hyp.impute(damaged, model=['PPCA', 'Kalman'], truth=truth)
+    assert scores.loc['PPCA', 'unscored'] == 15
+    unscored = [w for w in caught if 'not directly comparable' in str(w.message)]
+    assert len(unscored) == 1
+    assert unscored[0].filename == __file__
+    assert not unscored[0].filename.startswith(package_dir + os.sep)
