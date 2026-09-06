@@ -231,6 +231,12 @@ class Aligner(BaseEstimator):
         data : DataFrame, array, or list of these
             The dataset(s) to fit the alignment on.
 
+        Returns
+        -------
+        self
+            The fitted aligner, so calls chain the sklearn way:
+            ``HyperAlign().fit(xs).transform(ys)``.
+
         Raises
         ------
         ValueError
@@ -248,7 +254,7 @@ class Aligner(BaseEstimator):
         self.data = data
         self._fit_shape = self._shape_of(data)
         if self.fitter is None:
-            return
+            return self
         data = trim_and_pad(dw.unstack(self.data))
         params = self.fitter(data, **self.kwargs)
         if not isinstance(params, dict):
@@ -262,6 +268,7 @@ class Aligner(BaseEstimator):
                 f"{', '.join(missing)}")
         for k, v in params.items():
             setattr(self, k, v)
+        return self
 
     def transform(self, new_data=None):
         """Apply the fitted alignment to `new_data`.

@@ -44,6 +44,12 @@ class Manipulator(BaseEstimator):
         """Fit this manipulator's parameters on `data`; stores them as
         attributes (named by `self.required`).
 
+        Returns
+        -------
+        self
+            The fitted manipulator, so calls chain the sklearn way:
+            ``Smooth().fit(x).transform(y)``.
+
         Raises
         ------
         ValueError
@@ -60,7 +66,7 @@ class Manipulator(BaseEstimator):
                 no_observations_message('manipulate', 'data is None'))
         self.data = data
         if self.fitter is None:
-            return
+            return self
         params = self.fitter(data, **self.kwargs)
         if not isinstance(params, dict):
             raise ValueError(
@@ -74,6 +80,7 @@ class Manipulator(BaseEstimator):
                 f"required field(s): {', '.join(missing)}")
         for k, v in params.items():
             setattr(self, k, v)
+        return self
 
     def transform(self, new_data=None):
         """Apply the fitted parameters to `new_data`.
