@@ -477,7 +477,12 @@ def _draw_truth_overlays(ax, raw_truths, antialias=True, owner=None,
         # vertices between them -- so the smoothed curve and the sample
         # markers are two artists, exactly as `_plot_possibly_split` draws a
         # marker+line fmt for the observed data.
-        line_style = dict(style, marker=None)
+        # The curve KEEPS the marker with `markevery=[]` (draws none) so its
+        # legend glyph shows line + marker -- otherwise the 'truth' entry
+        # is a solid line in the trace's own colour, identical to the
+        # observed trace's entry (feature tour 9.11, 2026-09-06; the same
+        # trick `_plot_possibly_split` uses for a marker+line fmt).
+        line_style = dict(style, markevery=[])
         marker_style = dict(style, linestyle='None')
         _label = '_nolegend_' if label is None else label
         _before = len(artists)

@@ -878,6 +878,16 @@ Because 1.1.0 had not been published, they ship in it.
   dozen `SparseEfficiencyWarning`s scikit-learn's graph completion
   triggers are silenced during the fit; sklearn's own warning about a
   disconnected neighbour graph (the user's `n_neighbors`) still shows.
+- **A `truth=` overlay's legend glyph shows its markers.** The truth is
+  drawn as a solid line with a marker on every observation, but its
+  `'truth'` legend entry was a bare solid line in the trace's own colour,
+  identical to the observed trace's entry. The curve now keeps the marker
+  (drawing none of its own) so the legend can tell them apart.
+- **2-D `density=` layers span the whole scene.** Each KDE grid stopped
+  15% past its own dataset's bounding box, so a wide, flat cloud's glow
+  was cut off in a hard band well inside the frame. The grid now covers
+  every dataset's padded bounds plus, under `axis_scale='unit'`, the frame
+  square, on both backends, so the glow fades out on its own.
 
 ### Documented limitations
 

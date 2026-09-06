@@ -50,6 +50,7 @@ from .density import (
     kde_grid_2d,
     kde_grid_3d,
     resolve_grid,
+    scene_bounds_2d,
     resolve_plotly_volume_params,
 )
 from .trails import (RunWindow, anim_window_bounds, broadcast_trail_flag,
@@ -1103,8 +1104,9 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     # never touched by a frame update -- see `data_trace_start` below).
     n_density_traces_2d = 0
     if density is not None and ndims == 2:
-        density_traces_2d = _build_density_traces_2d(go, data, density,
-                                                      density_colors)
+        density_traces_2d = _build_density_traces_2d(
+            go, data, density, density_colors,
+            frame=(-1.0, 1.0) if axis_scale != 'data' else None)
         n_density_traces_2d = len(density_traces_2d)
     else:
         density_traces_2d = []
@@ -2923,14 +2925,17 @@ def _build_surface_traces_2d(go, data, surface, surface_colors):
     return traces
 
 
-def _one_density_contour_trace(go, pts, spec, color_rgb, label=""):
+def _one_density_contour_trace(go, pts, spec, color_rgb, label="",
+                               bounds=None):
     """One ``go.Contour`` heatmap-colored KDE layer (GH #108/#191, 2-D),
-    or ``None`` if `pts` is too small/degenerate to fit a KDE."""
+    or ``None`` if `pts` is too small/degenerate to fit a KDE. `bounds`
+    (``(lo, hi)``, from `scene_bounds_2d`) is the box the grid must span
+    -- the matplotlib twin `_draw_one_density_2d` takes the same."""
     kde = fit_kde(pts, dataset_label=label)
     if kde is None:
         return None
     gridsize = resolve_grid(spec, 2)
-    xs, ys, Z, _ = kde_grid_2d(pts, kde, gridsize=gridsize)
+    xs, ys, Z, _ = kde_grid_2d(pts, kde, gridsize=gridsize, bounds=bounds)
     r, g, b = (int(round(255 * c)) for c in color_rgb)
     alpha = min(1.5 * spec['alpha'], 1.0)
     return go.Contour(
@@ -2941,23 +2946,28 @@ def _one_density_contour_trace(go, pts, spec, color_rgb, label=""):
         line_width=0, showscale=False, hoverinfo='skip')
 
 
-def _build_density_traces_2d(go, data, density, density_colors):
+def _build_density_traces_2d(go, data, density, density_colors,
+                             frame=None):
     """Build each dataset's (or, with ``per_group=False``, one pooled)
-    ``go.Contour`` KDE density layer (GH #108/#191, 2-D)."""
+    ``go.Contour`` KDE density layer (GH #108/#191, 2-D). Every layer's
+    grid spans the whole scene (all datasets, plus the `frame` square
+    ``(lo, hi)`` when there is one), not just its own dataset's bounds --
+    see `scene_bounds_2d`."""
+    points = [np.atleast_2d(np.asarray(arr, dtype=np.float64))[:, :2]
+              for arr in data]
+    bounds = scene_bounds_2d(points, frame=frame)
     if density[0] is not None and not density[0].get('per_group', True):
-        all_pts = np.vstack([
-            np.atleast_2d(np.asarray(arr, dtype=np.float64))[:, :2]
-            for arr in data])
+        all_pts = np.vstack(points)
         trace = _one_density_contour_trace(go, all_pts, density[0],
-                                           POOLED_COLOR, label=' (pooled)')
+                                           POOLED_COLOR, label=' (pooled)',
+                                           bounds=bounds)
         return [trace] if trace is not None else []
     traces = []
-    for i, (arr, spec) in enumerate(zip(data, density)):
+    for i, (pts, spec) in enumerate(zip(points, density)):
         if spec is None:
             continue
-        pts = np.atleast_2d(np.asarray(arr, dtype=np.float64))[:, :2]
         trace = _one_density_contour_trace(go, pts, spec, density_colors[i],
-                                           label=f' {i}')
+                                           label=f' {i}', bounds=bounds)
         if trace is not None:
             traces.append(trace)
     return traces

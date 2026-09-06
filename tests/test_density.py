@@ -652,3 +652,52 @@ class TestVolumeMoreTransparentThanR1:
         _, _, _, opacity, _ = resolve_plotly_volume_params(
             0.2, 3, boost=DENSITY_BOOST_MAX)
         assert opacity < self.R1_MAX_VOLUME_OPACITY
+
+
+class TestDensityGridSpansTheScene:
+    """The KDE grid used to stop 15% past each dataset's OWN bounding box,
+    so under the unit frame a wide, flat cloud's glow was cut off in a hard
+    horizontal band well inside the frame (feature tour 9.14, 2026-09-06).
+    The grid now spans the whole scene: every dataset's padded bounds plus,
+    under ``axis_scale='unit'``, the frame square itself."""
+
+    @staticmethod
+    def _flat_wide_clouds():
+        # three clouds spread along x, all narrow in y: the frame is
+        # [-1, 1] in y but the data only reach about +-0.35
+        rng = np.random.default_rng(3)
+        return [np.column_stack([rng.normal(c, 0.5, 60),
+                                 rng.normal(0.0, 0.25, 60)])
+                for c in (-4.0, 0.0, 4.0)]
+
+    def test_matplotlib_extent_covers_the_unit_frame(self):
+        fig = hyp.plot(self._flat_wide_clouds(), '.', density=True,
+                       show=False)
+        images = fig.axes[0].get_images()
+        assert len(images) == 3
+        for im in images:
+            xmin, xmax, ymin, ymax = im.get_extent()
+            assert xmin <= -1.0 and xmax >= 1.0
+            assert ymin <= -1.0 and ymax >= 1.0
+        mpl.pyplot.close(fig)
+
+    def test_matplotlib_extent_covers_every_dataset_in_data_units(self):
+        clouds = self._flat_wide_clouds()
+        fig = hyp.plot(clouds, '.', density=True, axis_scale='data',
+                       show=False)
+        allpts = np.vstack(clouds)
+        lo, hi = allpts.min(axis=0), allpts.max(axis=0)
+        for im in fig.axes[0].get_images():
+            xmin, xmax, ymin, ymax = im.get_extent()
+            assert xmin <= lo[0] and xmax >= hi[0]
+            assert ymin <= lo[1] and ymax >= hi[1]
+        mpl.pyplot.close(fig)
+
+    def test_plotly_contour_grid_covers_the_unit_frame(self):
+        fig = hyp.plot(self._flat_wide_clouds(), '.', density=True,
+                       backend='plotly', show=False)
+        contours = [t for t in fig.data if t.type == 'contour']
+        assert len(contours) == 3
+        for c in contours:
+            assert min(c.x) <= -1.0 and max(c.x) >= 1.0
+            assert min(c.y) <= -1.0 and max(c.y) >= 1.0
