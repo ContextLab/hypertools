@@ -19,6 +19,7 @@ import numpy as np
 import pandas as pd
 
 from ..predict.backtest import build_scores, resolve_metrics, score_pair
+from .common import Imputer
 
 
 #: the always-present imputation baseline: fill each column with the mean of
@@ -138,7 +139,6 @@ def score_imputations(datasets, impute_fn, names, specs, truth, mask=None,
     for name, spec in zip(names, specs):
         # GH #285 release review: score a fresh fit on damaged data, never
         # learned state that may already contain the hidden truth.
-        from .common import Imputer
         candidate = spec.get('model') if isinstance(spec, dict) else spec
         if isinstance(candidate, Imputer) and candidate.is_fitted:
             raise ValueError(

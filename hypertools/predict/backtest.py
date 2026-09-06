@@ -24,6 +24,8 @@ import warnings
 import numpy as np
 import pandas as pd
 
+from .common import Forecaster
+
 
 #: metric keys accepted by ``metrics=``, in the default order. The FIRST
 #: entry is the RANKING metric (see `build_scores`' ``attrs['best']``).
@@ -382,7 +384,6 @@ def backtest_predict(datasets, predict_fn, t, holdout, names, specs,
         # GH #285 release review: an instance fitted on dataset 1 must
         # never enter predict_new on dataset 2. A fitted input may already
         # have seen the holdout, so it cannot provide a clean backtest.
-        from .common import Forecaster
         candidate = spec.get('model') if isinstance(spec, dict) else spec
         if isinstance(candidate, Forecaster) and candidate.is_fitted:
             raise ValueError(
