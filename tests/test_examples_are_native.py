@@ -188,6 +188,22 @@ def test_notebook_budgets_are_derived_not_written_down():
 #: and is its to-do, not something to be silenced by re-adding a dead entry.
 PRIVATE_API_EXCEPTIONS = {}
 
+#: The `ax=` defect (issue #284, G2): a figure built by hand and handed to
+#: `hyp.plot(..., ax=...)`, or raw matplotlib drawing next to it. The four
+#: alternatives, in order: the kwarg pass itself (`ax=`, the PEP 8 kwarg
+#: spelling; `ax = fig.axes[0]` is a READ of plot's own axes and is not
+#: matched), raw `ax.plot`/`ax.scatter` (2-D or 3-D), pyplot's axes
+#: constructors, and `.add_subplot(`. `hyp.subplots(...)` is the library's
+#: own helper and does not match -- it is the documented way to build a
+#: panel grid -- but the `ax=` that draws into it still does, so EVERY
+#: panel demo is counted and pinned in `DEFECT_ALLOWLIST` below. Known
+#: gap, stated rather than hidden: `import matplotlib.pyplot as mpl;
+#: mpl.subplots(` evades the third alternative.
+AX_MARKER = (r'\bax=(?!=)'
+             r'|\bax\.(?:plot|scatter|plot3D|scatter3D)\('
+             r'|\bplt\.(?:subplots|figure|axes|gca)\('
+             r'|\.add_subplot\(')
+
 #: Every one of these was found in the launch examples or the older
 #: tutorials and removed. Each maps to the native API that replaced it.
 DEFECT_MARKERS = {
@@ -210,6 +226,43 @@ DEFECT_MARKERS = {
     r'import sentence_transformers': ("delete the guard: vectorizer='<hf-model-id>' "
                                       "installs the text extra on demand"),
     r'find_spec\(': 'delete the guard: optional extras install themselves on demand',
+    AX_MARKER: ("hyp.plot() draws its own figure; for a panel grid use "
+                "`fig, axes = hyp.subplots(...)` and pass ax=axes[i], then "
+                "record the deliberate demo (with its match COUNT) in "
+                "DEFECT_ALLOWLIST"),
+}
+
+#: (file stem, marker) -> (expected match count, reason). The per-file
+#: allowlist of DELIBERATE demos for the widened scan (issue #284, G2).
+#:
+#: The stem is the path under the repo root without its extension, so
+#: `examples/animate_forecast` and `docs/tutorials/animate_forecast` cannot
+#: collide. The COUNT is what stops the allowlist from being a blanket
+#: exemption: a NEW `ax=` use in an allowlisted file changes the count and
+#: fails, and a demo that was removed leaves the entry stale and fails the
+#: other way (`test_every_defect_allowlist_entry_still_matches`).
+#:
+#: Every entry was derived by running the scanner over the repo on
+#: 2026-09-06 and reading each hit: all six are the documented multi-panel
+#: form (`hyp.subplots` + `ax=`), or plot.ipynb's deliberate demonstration
+#: of the ax=/animate= refusal. No hit was judged a defect.
+DEFECT_ALLOWLIST = {
+    ('examples/plot_datasets_tour', AX_MARKER): (
+        1, 'one hyp.subplots() grid; every dataset is drawn into its own '
+           'panel by the same hyp.plot(..., ax=ax) call'),
+    ('examples/plot_gensim_text', AX_MARKER): (
+        2, 'two gensim vectorizers side by side on hyp.subplots(1, 2)'),
+    ('docs/tutorials/align', AX_MARKER): (
+        6, 'three before/after alignment pairs, each on hyp.subplots(1, 2)'),
+    ('docs/tutorials/plot', AX_MARKER): (
+        4, 'resample= before/after on hyp.subplots(1, 2) (2 hits), and the '
+           'error-reporting section builds `fig, ax = plt.subplots()` and '
+           'passes ax=ax with animate=True to SHOW the ValueError the '
+           'library raises for that combination (2 hits)'),
+    ('docs/tutorials/projectile_kalman', AX_MARKER): (
+        1, 'one forecast panel per coordinate on hyp.subplots(1, 3, ndims=1)'),
+    ('docs/tutorials/stock_forecasting', AX_MARKER): (
+        1, 'one forecast panel per ticker on hyp.subplots(2, 2, ndims=1)'),
 }
 
 def _read(path):
@@ -368,6 +421,288 @@ def test_no_defect_marker_in_the_launch_examples(path, _max, marker, fix):
     text = _code_text(path)
     assert not re.search(marker, text), (
         f'{path} contains {marker!r} again -- {fix}')
+
+
+# ---------------------------------------------------------------------------
+# The WIDENED scan (issue #284, G1/G3): every example and every tutorial.
+#
+# The launch test above iterates `BUDGETS`, which is the twelve launch files
+# and nothing else -- so `plot_digits.py`, `plot_procrustes.py`,
+# `plot_gensim_text.py`, `streaming_data.ipynb` and the rest were never
+# scanned, and a `load_digits(` planted in `examples/plot_basic.py` left the
+# gate green (the release review's repro). The scanner below takes a ROOT
+# rather than reading `REPO` so `test_the_widened_scanner_detects_a_planted_marker`
+# can prove that on a scratch tree instead of asserting it.
+# ---------------------------------------------------------------------------
+
+def _scan_inputs(root):
+    """Every `examples/*.py` and `docs/tutorials/*.ipynb` under `root`,
+    as paths RELATIVE to `root`, sorted."""
+    import glob
+    found = (glob.glob(os.path.join(root, 'examples', '*.py'))
+             + glob.glob(os.path.join(root, 'docs', 'tutorials', '*.ipynb')))
+    return sorted(os.path.relpath(p, root) for p in found)
+
+
+def _numbered_code_lines(lines):
+    """[(1-based line number, line)] for the CODE lines of `lines`.
+
+    `strip_docstrings` yields the kept lines in order but not their
+    positions; this walks the original alongside it to recover them, so a
+    finding can name the real line rather than an index into the stripped
+    text.
+    """
+    from scripts.measure_native_ratio import strip_docstrings
+    kept = list(strip_docstrings(lines))
+    out, k = [], 0
+    for n, line in enumerate(lines, 1):
+        if k < len(kept) and line == kept[k]:
+            out.append((n, line))
+            k += 1
+    assert k == len(kept), 'strip_docstrings returned a line not in its input'
+    return out
+
+
+def _code_units(full_path):
+    """[(unit label, [(lineno, line), ...])] -- one unit per .py file, one
+    per NON-INSTALL code cell of a notebook. Docstrings, comments and blanks
+    are dropped by `strip_docstrings`; markdown cells never enter.
+
+    The install cell is skipped by CONTENT (`_is_install_cell`, the same
+    `'pip install'` test `scripts/execute_tutorial.py` uses to tag it
+    skip-execution). That is what keeps the `find_spec\\(` marker honest
+    (G3): eight tutorials open with `if importlib.util.find_spec('hypertools')
+    is None: %pip install ...`, which is a Colab bootstrap, not the
+    "optional extra guarded by hand" the marker exists to catch -- the
+    marker's fix ('delete the guard') would be wrong advice there. Scope
+    handles it; the marker is NOT weakened, so a `find_spec(` in any other
+    cell still fails.
+    """
+    with open(full_path, encoding='utf-8') as handle:
+        raw = handle.read()
+    if full_path.endswith('.ipynb'):
+        import json
+        nb = json.loads(raw)
+        units = []
+        for i, cell in enumerate(nb['cells']):
+            if cell.get('cell_type') != 'code':
+                continue
+            source = ''.join(cell['source'])
+            if _is_install_cell(source):
+                continue
+            units.append((f'cell {i}', _numbered_code_lines(source.split('\n'))))
+        return units
+    return [('', _numbered_code_lines(raw.split('\n')))]
+
+
+def scan_for_defects(root, markers=None, allowlist=None):
+    """Scan every example and tutorial under `root` for the defect markers.
+
+    Returns a list of human-readable findings (empty means clean). Each hit
+    of a marker not covered by `allowlist` is one finding, naming the file,
+    the cell (for a notebook), the line and the fix. For an allowlisted
+    `(stem, marker)` the total match COUNT across the file is compared with
+    the recorded count, and a mismatch in EITHER direction is a finding: more
+    means a new use crept in behind the allowlist, fewer means the entry is
+    stale and would permit a pattern nobody uses. An allowlist entry whose
+    file is not under `root` at all is reported too.
+
+    `root` is a parameter, not `REPO`, precisely so a test can run this on
+    a scratch tree with a planted marker and watch it fire.
+    """
+    markers = DEFECT_MARKERS if markers is None else markers
+    allowlist = DEFECT_ALLOWLIST if allowlist is None else allowlist
+    findings = []
+    seen_stems = set()
+    for rel in _scan_inputs(root):
+        stem = os.path.splitext(rel)[0]
+        seen_stems.add(stem)
+        counts = {}
+        for unit, lines in _code_units(os.path.join(root, rel)):
+            where = f'{rel}:{unit}' if unit else rel
+            for lineno, line in lines:
+                for marker, fix in markers.items():
+                    n_hits = len(re.findall(marker, line))
+                    if not n_hits:
+                        continue
+                    counts[marker] = counts.get(marker, 0) + n_hits
+                    if (stem, marker) in allowlist:
+                        continue
+                    findings.append(
+                        f'{where}:{lineno}: {line.strip()!r} matches '
+                        f'{marker!r} -- {fix}')
+        for (allowed_stem, marker), (expected, reason) in allowlist.items():
+            if allowed_stem != stem:
+                continue
+            got = counts.get(marker, 0)
+            if got > expected:
+                findings.append(
+                    f'{rel}: {got} matches of {marker!r}, but DEFECT_ALLOWLIST '
+                    f'records {expected} ({reason}). A NEW use crept in; '
+                    f'remove it, or -- if it is a deliberate demo -- raise '
+                    f'the count and extend the reason.')
+            elif got < expected:
+                findings.append(
+                    f'{rel}: {got} matches of {marker!r}, but DEFECT_ALLOWLIST '
+                    f'records {expected} ({reason}). The entry is stale; '
+                    f'lower the count or drop it rather than leaving it to '
+                    f'permit a pattern that is gone.')
+    for (allowed_stem, marker), (expected, reason) in allowlist.items():
+        if allowed_stem not in seen_stems:
+            findings.append(
+                f'DEFECT_ALLOWLIST names {allowed_stem!r} for {marker!r}, '
+                f'but no such example or tutorial exists under {root}; '
+                f'drop the entry ({reason})')
+    return findings
+
+
+SCANNED_FILES = _scan_inputs(REPO)
+
+
+def test_the_widened_scan_covers_more_than_the_launch_files():
+    """Pins G1's closure at the SCOPE level: the scan must reach every
+    example and every tutorial, not the twelve budgeted files. The four the
+    release review named as never scanned are asserted by name."""
+    gated = {p for p, _ in BUDGETS}
+    assert gated < set(SCANNED_FILES)
+    for must in ('examples/plot_digits.py', 'examples/plot_procrustes.py',
+                 'examples/plot_gensim_text.py',
+                 'docs/tutorials/streaming_data.ipynb',
+                 'docs/tutorials/stock_forecasting.ipynb',
+                 'docs/tutorials/wikipedia_embeddings.ipynb'):
+        assert must in SCANNED_FILES, f'{must}: missing from the scan inputs'
+
+
+@pytest.mark.parametrize('rel', SCANNED_FILES)
+def test_no_defect_marker_in_any_example_or_tutorial(rel):
+    """Every marker, every file, install cells excluded, allowlist counted."""
+    findings = [f for f in scan_for_defects(REPO) if f.startswith(rel + ':')]
+    assert not findings, '\n'.join(findings)
+
+
+def test_every_defect_allowlist_entry_still_matches():
+    """The stale-entry and missing-file findings are not tied to one file's
+    parametrized ID, so they are asserted here, on the whole list. This is
+    the empty-allowlist safeguard's counterpart: an entry that no longer
+    matches anything is a blanket exemption waiting for a new use."""
+    stale = [f for f in scan_for_defects(REPO)
+             if 'stale' in f or 'DEFECT_ALLOWLIST names' in f]
+    assert not stale, '\n'.join(stale)
+    assert DEFECT_ALLOWLIST, (
+        'DEFECT_ALLOWLIST is empty, yet the documented multi-panel form '
+        '(hyp.subplots + ax=) is taught in align.ipynb and plot.ipynb; if '
+        'those demos were removed on purpose, delete this assertion with '
+        'the reason')
+
+
+def _write(path, text):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, 'w', encoding='utf-8') as handle:
+        handle.write(text)
+
+
+def _notebook(*cells):
+    """A minimal .ipynb (as JSON text) from (cell_type, source) pairs."""
+    import json
+    return json.dumps({
+        'cells': [{'cell_type': kind, 'metadata': {}, 'source': src,
+                   **({'outputs': [], 'execution_count': None}
+                      if kind == 'code' else {})}
+                  for kind, src in cells],
+        'metadata': {}, 'nbformat': 4, 'nbformat_minor': 5})
+
+
+def test_the_widened_scanner_detects_a_planted_marker(tmp_path):
+    """The release review's repro, made permanent: G1 is closed only if a
+    `load_digits(` planted in a NON-launch example is reported.
+
+    Built on a scratch tree, not the repo, so the proof is a real firing
+    rather than a claim about scope. Each planted case has a CONTROL beside
+    it: the unmodified copy of `plot_basic.py` scans clean; the install
+    cell carrying `find_spec(` is skipped while the same call in an
+    ordinary cell is reported; the allowlisted file at its recorded count
+    is clean while one extra `ax=` fails it; and a markdown cell naming a
+    marker never enters the scan.
+    """
+    root = str(tmp_path)
+    basic = _read('examples/plot_basic.py')
+    # --- control: the real file, unmodified, is clean under the widened scan
+    _write(os.path.join(root, 'examples', 'plot_basic.py'), basic)
+    assert scan_for_defects(root, allowlist={}) == []
+
+    # --- G1: the review's repro -- load_digits in a non-launch example
+    planted = basic + '\nfrom sklearn.datasets import load_digits\n' \
+                      'digits = load_digits()\n'
+    _write(os.path.join(root, 'examples', 'plot_basic.py'), planted)
+    n_lines = len(planted.split('\n'))
+    findings = scan_for_defects(root, allowlist={})
+    assert len(findings) == 2, findings
+    assert all('examples/plot_basic.py:' in f and 'load_digits' in f
+               and "hyp.load('digits')" in f for f in findings), findings
+    # the finding names the REAL line, not an index into stripped text
+    assert any(f'plot_basic.py:{n_lines - 2}:' in f for f in findings) \
+        and any(f'plot_basic.py:{n_lines - 1}:' in f for f in findings), findings
+    _write(os.path.join(root, 'examples', 'plot_basic.py'), basic)
+
+    # --- G3: the Colab install guard is skipped by scope, not by weakening
+    install = ('import importlib.util\n\n'
+               "if importlib.util.find_spec('hypertools') is None:\n"
+               '    %pip install -q "hypertools[interactive]"\n')
+    # NB: the planted guard must not SAY 'pip install' anywhere -- the
+    # install-cell rule is by content, shared with execute_tutorial.py, and
+    # a string mentioning it would exempt the whole cell (measured: the first
+    # draft of this test did exactly that and the scan came back empty).
+    guarded = ("import importlib.util\n"
+               "if importlib.util.find_spec('chronos') is None:\n"
+               "    raise SystemExit('install the predict-hf extra first')\n")
+    _write(os.path.join(root, 'docs', 'tutorials', 'scratch.ipynb'),
+           _notebook(('markdown', 'prose that says load_digits( and ffmpeg'),
+                     ('code', install),
+                     ('code', 'import hypertools as hyp\n'),
+                     ('code', guarded)))
+    findings = scan_for_defects(root, allowlist={})
+    assert len(findings) == 1, findings
+    assert 'docs/tutorials/scratch.ipynb:cell 3:2:' in findings[0] \
+        and 'find_spec' in findings[0], findings
+    # the guard in the install cell and the markdown prose produced nothing
+    assert not any('cell 0' in f or 'cell 1' in f for f in findings), findings
+
+    # --- G2: the count-pinned allowlist
+    panels = ('import hypertools as hyp\n'
+              'fig, axes = hyp.subplots(1, 2)\n'
+              "hyp.plot(a, ax=axes[0], show=False)\n"
+              "hyp.plot(b, ax=axes[1], show=False)\n")
+    _write(os.path.join(root, 'docs', 'tutorials', 'scratch.ipynb'),
+           _notebook(('code', install), ('code', panels)))
+    allow = {('docs/tutorials/scratch', AX_MARKER): (2, 'two panels')}
+    assert scan_for_defects(root, allowlist=allow) == []
+    # one NEW use behind the allowlist
+    _write(os.path.join(root, 'docs', 'tutorials', 'scratch.ipynb'),
+           _notebook(('code', install),
+                     ('code', panels + 'hyp.plot(c, ax=axes[1], show=False)\n')))
+    findings = scan_for_defects(root, allowlist=allow)
+    assert len(findings) == 1 and '3 matches' in findings[0] \
+        and 'NEW use' in findings[0], findings
+    # a stale entry: the demo is gone but the entry remains
+    _write(os.path.join(root, 'docs', 'tutorials', 'scratch.ipynb'),
+           _notebook(('code', install), ('code', 'import hypertools as hyp\n')))
+    findings = scan_for_defects(root, allowlist=allow)
+    assert len(findings) == 1 and 'stale' in findings[0], findings
+    # an entry for a file that does not exist
+    findings = scan_for_defects(
+        root, allowlist={('examples/no_such_example', AX_MARKER): (1, 'x')})
+    assert len(findings) == 1 and 'no such example' in findings[0], findings
+
+    # --- raw matplotlib drawing and a hand-built figure are both caught
+    _write(os.path.join(root, 'examples', 'plot_raw.py'),
+           'import matplotlib.pyplot as plt\n'
+           'fig = plt.figure()\n'
+           'ax = fig.add_subplot(111, projection="3d")\n'
+           'ax.scatter(x, y, z)\n'
+           'ax.plot(x, y, z)\n')
+    hits = [f for f in scan_for_defects(root, allowlist={})
+            if 'plot_raw.py' in f]
+    assert [f.split(':')[1] for f in hits] == ['2', '3', '4', '5'], hits
 
 
 #: How far from an allowlisted private reach its rationale may sit. 15 lines
@@ -1146,10 +1481,48 @@ EXPECTED_VISIBLE_OUTPUTS = {
     'morph_shapes_zoo': {4, 5},
     # three-section notebook, added 2026-09-04 (measured the same way)
     'animate_forecast': {4, 5},
+    # The eight tutorials rebuilt for 1.1 (issue #284, G4). MEASURED
+    # 2026-09-06 from the notebooks as committed at HEAD (96ac8b7f..e47968f5,
+    # working tree byte-identical): the code-cell index set whose `outputs`
+    # list is non-empty, install cell (index 0 in all eight) excluded --
+    # exactly what `test_the_right_cells_carry_visible_output` computes.
+    # Only the INDEX SET is recorded, as for the launch notebooks: cell
+    # CONTENT is not compared, so a stream carrying a temp-dir path or a
+    # file size (io cell 11, plot cell 27) is gated on emitting, not on
+    # what it says. Cells absent from a set are bare imports or assignments
+    # (hierarchy 1, io 1 and 12, plot 1-2 and 29, align 1, analyze 1,
+    # reduce 1-2).
+    'hierarchy': {2, 3, 4, 5, 6, 7, 8, 9, 10},
+    'io': {2, 3, 4, 5, 6, 7, 8, 9, 10, 11},
+    'pipelines': {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14},
+    'manip': {1, 2, 3, 4, 5, 6, 7, 8},
+    'plot': set(range(3, 29)) | {30},
+    'align': {2, 3, 4, 5, 6, 7, 8, 9, 10, 11},
+    'analyze': {2, 3, 4, 5, 6, 7, 8, 9, 10},
+    'reduce': {3, 4, 5, 6, 7, 8, 9, 10, 11, 12},
 }
 
+#: The 1.1 rebuilds (issue #284): gated on execution and on the measured
+#: output-cell set above, but not on an mp4 artifact -- these render their
+#: figures inline as image/png outputs, which is what the index set pins.
+REBUILT_TUTORIALS = ('hierarchy', 'io', 'pipelines', 'manip',
+                     'plot', 'align', 'analyze', 'reduce')
 
-@pytest.mark.parametrize('stem', LAUNCH_NOTEBOOKS)
+GATED_NOTEBOOKS = LAUNCH_NOTEBOOKS + REBUILT_TUTORIALS
+
+
+def test_every_rebuilt_tutorial_has_a_measured_output_set():
+    """The G4 closure at the roster level: adding a stem to
+    `REBUILT_TUTORIALS` without measuring its set fails here by name, and
+    a set recorded for a notebook that no longer exists is reported too."""
+    for stem in GATED_NOTEBOOKS:
+        assert stem in EXPECTED_VISIBLE_OUTPUTS, f'{stem}: no measured set'
+        assert os.path.exists(os.path.join(REPO, 'docs', 'tutorials',
+                                           f'{stem}.ipynb')), stem
+    assert set(EXPECTED_VISIBLE_OUTPUTS) == set(GATED_NOTEBOOKS)
+
+
+@pytest.mark.parametrize('stem', GATED_NOTEBOOKS)
 def test_every_launch_notebook_ran_every_cell_it_should(stem):
     """`nbsphinx_execute = 'never'` (docs/conf.py:131) renders the COMMITTED
     outputs, so a half-executed notebook is a figure-less docs page.
@@ -1182,7 +1555,7 @@ def test_every_launch_notebook_ran_every_cell_it_should(stem):
         f'scripts/execute_tutorial.py')
 
 
-@pytest.mark.parametrize('stem', LAUNCH_NOTEBOOKS)
+@pytest.mark.parametrize('stem', GATED_NOTEBOOKS)
 def test_the_right_cells_carry_visible_output(stem):
     """Which cells emit, not how many."""
     if stem not in EXPECTED_VISIBLE_OUTPUTS:
@@ -1279,11 +1652,10 @@ def test_example_runs_end_to_end(stem):
         f'--- stderr ---\n{proc.stderr[-2000:]}')
 
 
-def test_no_launch_notebook_committed_an_error_output():
+def test_no_gated_notebook_committed_an_error_output():
     """A notebook can be fully executed and still be broken."""
     import json
-    for stem in ('market_sectors', 'weather_decades', 'painting_embeddings',
-                 'conversation_shape', 'morph_shapes_zoo'):
+    for stem in GATED_NOTEBOOKS:
         nb = json.loads(_read(f'docs/tutorials/{stem}.ipynb'))
         for cell in nb['cells']:
             for out in cell.get('outputs', []):
