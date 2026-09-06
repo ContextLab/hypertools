@@ -198,11 +198,17 @@ def load(
     3. a seaborn dataset name -- any name returned by
        ``seaborn.get_dataset_names()`` (e.g. ``'penguins'``, ``'tips'``,
        ``'titanic'``), loaded via ``seaborn.load_dataset()`` and returned
-       unchanged. This is a network lookup (cached per-process); if it
-       can't reach the seaborn-data repo, this step is skipped. (A
-       registered synthetic dataset name -- step 6 below -- is actually
-       resolved here, ahead of this lookup, so it never pays for the
-       network round trip; no synthetic name collides with a seaborn one)
+       unchanged. The name listing is a network lookup (fetched with a
+       timeout and cached per-process; a failed fetch is remembered for
+       :data:`hypertools.io.sources.SEABORN_LISTING_RETRY_AFTER` seconds
+       -- :func:`hypertools.io.sources.reset_seaborn_names_cache` retries
+       sooner); if it can't reach the seaborn-data repo, this step is
+       skipped. The listing is never consulted for a string that cannot
+       be a seaborn name (a URL, a path, a prefixed source) nor when
+       ``offline=True``. (A registered synthetic dataset name -- step 6
+       below -- is actually resolved here, ahead of this lookup, so it
+       never pays for the network round trip; no synthetic name collides
+       with a seaborn one)
     4. a FiveThirtyEight dataset, explicit prefix
        ``'fivethirtyeight/<slug>'`` (e.g. ``'fivethirtyeight/bechdel'``),
        where ``<slug>`` is the dataset's folder in
@@ -241,7 +247,8 @@ def load(
     7. a web source with an explicit prefix -- ``'wikipedia:<Title>'``
        (kwargs: ``lang``, ``intro``, ``timeout``), ``'yahoo:<TICKER>'``
        (kwargs: ``start``, ``end``, ``interval``, ``timeout``), or
-       ``'sec:<TICKER>'`` (kwargs: ``concept``, ``timeout``) -- see
+       ``'sec:<TICKER>'`` (kwargs: ``concept``, ``taxonomy``, ``unit``,
+       ``dedupe``, ``timeout``) -- see
        :func:`hypertools.io.sources.web_source` for details on each
     8. a path to a local file (.geo/pickle, .npy/.npz, .csv/.tsv/.txt,
        .json, .parquet, .mat, .xlsx/.xls; gzip-compressed variants (.gz)
@@ -441,7 +448,11 @@ def load(
         Hugging Face datasets only: if True, return a streaming
         ``IterableDataset`` instead of materializing the data (see
         https://huggingface.co/docs/datasets/en/stream). The result can be
-        passed directly to :func:`hypertools.plot`.
+        passed directly to :func:`hypertools.plot`. Every other kind of
+        source (built-in, scikit-learn, seaborn, synthetic, web, local
+        file, URL, or already-loaded data) is always loaded in full, so
+        passing ``streaming=True`` with one raises ``ValueError`` naming
+        the source rather than silently returning the whole dataset.
 
     trust : bool
         Remote (non-built-in) sources only. Unpickling a payload fetched
@@ -465,20 +476,27 @@ def load(
         Local files are never subject to this policy.
 
     cache : bool
-        Any URL/Google-Sheets/Drive/Dropbox download (steps 9-13) only:
-        when True, the downloaded bytes are stored on disk (under
+        Any Google-Sheets/Google-Drive/Dropbox/URL download (steps 10-13)
+        only -- Hugging Face datasets (step 9) are NOT cached here: when
+        True, the downloaded bytes are stored on disk (under
         ``hypertools.io.sources.url_cache_dir()``, override with the
         ``HYPERTOOLS_URL_CACHE`` environment variable) and reused on a
         later call instead of re-downloading. Default False -- matching
         ``trust``, hypertools does not write to disk unless asked.
 
     offline : bool
-        Same sources as ``cache``: when True, read ONLY from that on-disk
-        cache and never open a connection, raising
+        When True, never open a connection: the sources ``cache`` covers
+        (steps 10-13) are read ONLY from that on-disk cache, every
+        network-only resolver (the seaborn listing, FiveThirtyEight,
+        Kaggle, Hugging Face, the ``wikipedia:``/``yahoo:``/``sec:`` web
+        sources) is skipped or refused outright, and anything that cannot
+        be served from disk raises
         :class:`~hypertools.io.sources.HypertoolsOfflineError` (a
-        subclass of ``HypertoolsIOError``) naming the cache path when the
-        source was never cached. Load the source once with ``cache=True``
-        while online to populate the cache first.
+        subclass of ``HypertoolsIOError``) -- naming the cache path it
+        looked for when the source is a cacheable URL that was never
+        cached. Built-in, scikit-learn, synthetic and local-file sources
+        still load. Load a URL once with ``cache=True`` while online to
+        populate the cache first.
 
     decode_labels : bool
         Hugging Face datasets only: by default (True), any top-level
@@ -522,6 +540,12 @@ def load(
                 'a "wikipedia:"/"yahoo:"/"sec:" source), not for '
                 'already-loaded data (a DataFrame/ndarray/list of those '
                 'was passed)')
+        if streaming:
+            from .sources import _refuse_streaming
+            _refuse_streaming(
+                type(dataset).__name__,
+                'already-loaded in-memory data (a DataFrame/ndarray/list '
+                'of those)')
         geo_data = dataset
     elif isinstance(dataset, (list, tuple)):
         # anything else list-shaped resolves element-wise (names, paths,
@@ -610,12 +634,19 @@ def _resolve(dataset, *, legacy, split, streaming, trust, cache=False,
     ``source_kwargs`` is non-empty raises ``TypeError`` naming the
     misspelled/misplaced keyword(s) rather than silently ignoring them.
     """
+    from .sources import _refuse_offline, _refuse_streaming
+
     def _reject_kwargs(resolver_label):
         if source_kwargs:
             raise TypeError(
                 f'hypertools.load: unexpected keyword argument(s) '
                 f'{sorted(source_kwargs)} for {resolver_label} {dataset!r} '
                 '-- it takes no extra keyword arguments')
+        if streaming:
+            # streaming=True is a Hugging Face-only option (step 9); it
+            # used to be silently ignored by every other resolver, which
+            # returned the full dataset (1.1 release review, I8)
+            _refuse_streaming(dataset, f'a {resolver_label}')
 
     if dataset in EXAMPLE_DATA.keys():
         _reject_kwargs('built-in example dataset')
@@ -647,20 +678,49 @@ def _resolve(dataset, *, legacy, split, streaming, trust, cache=False,
                 'scikit-learn bundled dataset: not one of '
                 f'{sorted(SKLEARN_DATASETS)}')
             if dataset in SYNTHETIC_DATASETS:
+                if streaming:
+                    _refuse_streaming(dataset,
+                                      'a built-in synthetic dataset')
                 geo_data = synthetic_dataset(dataset, **source_kwargs)
             else:
-                geo_data = seaborn_dataset(dataset)
-                if geo_data is not None:
-                    _reject_kwargs('seaborn dataset')
-                if geo_data is None:
+                # offline=True never opens a connection: the seaborn
+                # listing, fivethirtyeight and Kaggle are all network
+                # resolvers with no hypertools-side cache, so they are
+                # skipped (seaborn) or refused outright (the explicit
+                # prefixes) rather than probed (1.1 release review, I1).
+                # seaborn_dataset() itself answers None without touching
+                # the network for anything that cannot be a seaborn name
+                # (URLs, paths, prefixed sources).
+                if offline:
                     extra_attempts.append(
-                        'seaborn dataset: not found via '
-                        'seaborn.get_dataset_names() (or that lookup '
-                        'failed, e.g. no network access)')
+                        'seaborn dataset: not consulted (offline=True; '
+                        'the seaborn listing is a network call and '
+                        'seaborn datasets are not served from the '
+                        'hypertools URL cache)')
+                    for prefix, label in (
+                            ('fivethirtyeight/', 'a FiveThirtyEight dataset'),
+                            ('kaggle/', 'a Kaggle dataset')):
+                        if dataset.startswith(prefix):
+                            _refuse_offline(dataset, label)
+                else:
+                    geo_data = seaborn_dataset(dataset)
+                    if geo_data is not None:
+                        _reject_kwargs('seaborn dataset')
+                    else:
+                        extra_attempts.append(
+                            'seaborn dataset: not found in the seaborn '
+                            'dataset listing (or that lookup was skipped: '
+                            'not a plain dataset name, or it failed, e.g. '
+                            'no network access)')
+                if geo_data is None:
                     # explicit prefixes -- 'fivethirtyeight/<slug>' and
                     # 'kaggle/<owner>/<dataset>' are unambiguous, so a
                     # matching-but-failing name raises directly instead of
                     # falling through to the attempts digest below
+                    if streaming and dataset.startswith(
+                            ('fivethirtyeight/', 'kaggle/')):
+                        _refuse_streaming(
+                            dataset, 'a FiveThirtyEight/Kaggle dataset')
                     geo_data = fivethirtyeight_dataset(dataset)
                     if geo_data is not None:
                         _reject_kwargs('fivethirtyeight dataset')

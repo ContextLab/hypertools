@@ -380,11 +380,14 @@ def text2mat(data, vectorizer='CountVectorizer',
     #     ValueError before any corpus work instead of sklearn's internal
     #     "Negative values" error after it.
     if (_vname in _GENSIM_VECTORIZER_NAMES
-            and isinstance(semantic, str)
-            and semantic in ('LatentDirichletAllocation', 'NMF')):
+            and _sname in ('LatentDirichletAllocation', 'NMF')):
+        # keyed on the resolved model NAME (`_sname`), so the dict spec
+        # ({'model': 'NMF', 'kwargs': ...}) takes this branch exactly like
+        # the string spec does -- it used to bypass the guard and crash
+        # inside NMF with "Negative values in data" (1.1 release review, X2)
         warnings.warn(
             f"vectorizer={_vname!r} produces continuous embeddings that "
-            f"the {semantic} semantic model cannot consume; skipping the "
+            f"the {_sname} semantic model cannot consume; skipping the "
             f"semantic stage and returning the embeddings directly. Pass "
             f"semantic=None to silence this warning.",
             UserWarning, stacklevel=2)
@@ -442,9 +445,9 @@ def text2mat(data, vectorizer='CountVectorizer',
                 vectorizer = None
                 model_is_fit = True
             else:
-                corpus = np.array(load(corpus))
+                corpus = _as_text_datasets(load(corpus), 'corpus')
         else:
-            corpus = np.array([corpus])
+            corpus = _as_text_datasets(corpus, 'corpus')
 
     vtype = _check_mtype(vectorizer)
     if vtype == 'str':
@@ -500,8 +503,7 @@ def text2mat(data, vectorizer='CountVectorizer',
     else:
         tmodel = None
 
-    if not isinstance(data, list):
-        data = [data]
+    data = _as_text_datasets(data, 'data')
 
     if corpus is None:
         _fit_models(vmodel, tmodel, data, model_is_fit)
@@ -511,34 +513,90 @@ def text2mat(data, vectorizer='CountVectorizer',
     return _transform(vmodel, tmodel, data)
 
 
+def _as_text_datasets(x, argname):
+    """Normalize a `data=`/`corpus=` argument to a list of datasets, each
+    a list of document strings.
+
+    A single string is one dataset of one document; a FLAT list (or 1-D
+    array) of strings is ONE dataset -- the docstring's "list of text
+    samples" -- exactly as `hyp.plot(list_of_strings)` treats it. Before
+    1.1, `_transform` split a flat list by each string's CHARACTER length,
+    returning `[(N, d), (0, d), (0, d), ...]` (1.1 release review, X1). A
+    list of lists (or of 1-D/(n, 1) arrays -- `format_data` hands over
+    (n, 1) object arrays) is one dataset per inner list, ragged lengths
+    allowed. Mixing strings and lists at the top level is ambiguous and
+    raises ``ValueError``.
+    """
+    if isinstance(x, str):
+        return [[x]]
+    if isinstance(x, np.ndarray):
+        x = [x] if x.ndim <= 1 else list(x)
+    if not isinstance(x, (list, tuple)):
+        raise TypeError(
+            f'{argname}= must be a string, a list of text samples, or a '
+            f'list of lists of text samples; got {type(x).__name__}.')
+    items = list(x)
+    if not items:
+        raise ValueError(f'{argname}= is empty: nothing to vectorize.')
+    if all(isinstance(item, str) for item in items):
+        return [items]
+    datasets = []
+    for i, item in enumerate(items):
+        if isinstance(item, str):
+            raise ValueError(
+                f'{argname}= mixes strings and lists at the top level '
+                f'(element {i} is a str, others are lists): pass either a '
+                'flat list of text samples (one dataset) or a list of lists '
+                '(one dataset per inner list), not a mixture.')
+        if isinstance(item, np.ndarray):
+            item = item.ravel().tolist()
+        if not isinstance(item, (list, tuple)) \
+                or not all(isinstance(doc, str) for doc in item):
+            raise ValueError(
+                f'{argname}= element {i} must be a list of text samples '
+                f'(strings); got {type(item).__name__}.')
+        datasets.append(list(item))
+    return datasets
+
+
+def _flatten(x):
+    """(list of datasets, each a list of str) -> flat list of documents
+    and the split points that undo it."""
+    docs = [doc for dataset in x for doc in dataset]
+    split = np.cumsum([len(dataset) for dataset in x])[:-1]
+    return docs, split
+
+
 def _transform(vmodel, tmodel, x):
-    split = np.cumsum([len(xi) for xi in x])[:-1]
+    docs, split = _flatten(x)
     if vmodel is not None:
-        x = np.vsplit(vmodel.transform(np.vstack(x).ravel()).toarray(), split)
+        x = vmodel.transform(docs).toarray()
     if tmodel is not None:
         if isinstance(tmodel, Pipeline):
-            x = np.vsplit(tmodel.transform(np.vstack(x).ravel()), split)
+            x = tmodel.transform(docs)
         else:
-            x = np.vsplit(tmodel.transform(np.vstack(x)), split)
-    return [xi for xi in x]
+            x = tmodel.transform(x if vmodel is not None
+                                 else np.asarray(docs))
+    return list(np.vsplit(np.asarray(x), split))
 
 
 def _fit_models(vmodel, tmodel, x, model_is_fit):
     if model_is_fit:
         return
+    docs, _ = _flatten(x)
     if vmodel is not None:
         try:
             check_is_fitted(vmodel, ['vocabulary_'])
         except NotFittedError:
-            vmodel.fit(np.vstack(x).ravel())
+            vmodel.fit(docs)
     if tmodel is not None:
         try:
             check_is_fitted(tmodel, ['components_'])
         except NotFittedError:
             if isinstance(tmodel, Pipeline):
-                tmodel.fit(np.vstack(x).ravel())
+                tmodel.fit(docs)
             else:
-                tmodel.fit(vmodel.transform(np.vstack(x).ravel()))
+                tmodel.fit(vmodel.transform(docs))
 
 
 def _check_mtype(x):

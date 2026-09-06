@@ -253,3 +253,24 @@ def test_plotly_segment_titles_carry_the_style_every_frame():
     assert titled, 'no frame carried a title'
     for frame in titled:
         assert frame.layout.title.font.color == '#E4572E'
+
+
+# --- 1.1 release review: T8 title_color vs title_kwargs['color'] ---------
+
+def test_title_color_conflicting_with_title_kwargs_color_raises():
+    """`title_color='blue'` silently lost to `title_kwargs={'color':
+    'red'}`; two answers to one question is an error."""
+    with pytest.raises(ValueError, match="title_color='blue' and "
+                                         r"title_kwargs\['color'\]='red'"):
+        hyp.plot(_datasets(1), title='t', title_color='blue',
+                 title_kwargs={'color': 'red'}, reduce='PCA', show=False)
+
+
+def test_title_color_alone_and_title_kwargs_color_alone_both_work():
+    import matplotlib.colors as mcolors
+    a = hyp.plot(_datasets(1), title='t', title_color='blue', reduce='PCA',
+                 show=False)
+    b = hyp.plot(_datasets(1), title='t', title_kwargs={'color': 'red'},
+                 reduce='PCA', show=False)
+    assert mcolors.to_hex(a.axes[0].title.get_color()) == '#0000ff'
+    assert mcolors.to_hex(b.axes[0].title.get_color()) == '#ff0000'

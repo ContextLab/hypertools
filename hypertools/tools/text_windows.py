@@ -8,6 +8,7 @@ a min-windows guard, equal-length character chunks, and 3-sentence windows
 -- and `text_windows` is the single implementation of all three.
 """
 
+import numbers
 import re
 
 __all__ = ['text_windows']
@@ -36,7 +37,10 @@ def _tokenize(text, unit):
 def _check_positive_int(value, name, allow_none=False):
     if value is None and allow_none:
         return None
-    if isinstance(value, bool) or not isinstance(value, (int,)):
+    # any integer type -- Python int or numpy integer (np.int64 from an
+    # array or a computed window size; 1.1 release review, I7) -- but not
+    # bool, which is an int subclass that never means a size
+    if isinstance(value, bool) or not isinstance(value, numbers.Integral):
         raise TypeError(f"{name}= must be an integer; got {value!r}.")
     if value < 1:
         raise ValueError(f"{name}= must be at least 1; got {value!r}.")

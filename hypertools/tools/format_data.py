@@ -6,6 +6,20 @@ import pandas as pd
 from .._shared.helpers import get_type
 
 
+def _warn(*args, **kwargs):
+    """warnings.warn() attributed to the caller outside hypertools.
+
+    Every warning this module emits is about the USER's data (missing
+    values, mixed text and numbers, ...), so the reported location is the
+    user's call site, not this file -- the same external_stacklevel()
+    convention as the rest of the library. Imported lazily: core.model
+    imports the tools package.
+    """
+    from ..core.model import external_stacklevel
+    kwargs.setdefault('stacklevel', external_stacklevel())
+    warnings.warn(*args, **kwargs)
+
+
 def _contains_text(el):
     """True if `el` is (or recursively contains) a str/bytes."""
     if isinstance(el, (str, bytes)):
@@ -69,7 +83,7 @@ def _prepare_df(df, warn=True):
     if dt_idx:
         if warn:
             _names = [str(df.columns[j]) for j in dt_idx]
-            warnings.warn(
+            _warn(
                 f"DataFrame column(s) {_names} contain datetime values; "
                 'converting to float seconds since the Unix epoch '
                 '(1970-01-01 00:00:00 UTC) so they can be analyzed '
@@ -252,7 +266,7 @@ def format_data(x, vectorizer='CountVectorizer',
         if isinstance(_el, np.ma.MaskedArray) and _el.dtype.kind in 'biufc':
             _n_masked = int(np.ma.count_masked(_el))
             if _n_masked:
-                warnings.warn(
+                _warn(
                     f'dataset {_i} is a numpy masked array with {_n_masked} '
                     'masked (invalid) entries; treating them as missing '
                     'data (converted to NaN and, by default, filled via '
@@ -311,7 +325,7 @@ def format_data(x, vectorizer='CountVectorizer',
             if cols == canonical:
                 continue
             if set(cols) == set(canonical):
-                warnings.warn(
+                _warn(
                     f'dataset {i} has the same columns as dataset '
                     f'{named_df_idx[0]} but in a different order; reordering '
                     f'{cols} to match {canonical} so features align by name '
@@ -492,7 +506,7 @@ def format_data(x, vectorizer='CountVectorizer',
                 if impute is not None:
                     num_data = fill_missing(num_data, model=impute)
                 else:
-                    warnings.warn('Missing data: filling missing values '
+                    _warn('Missing data: filling missing values '
                                   'with PPCA (observed values are '
                                   'preserved exactly; only the NaN '
                                   'entries are reconstructed). Pass '
@@ -517,7 +531,7 @@ def format_data(x, vectorizer='CountVectorizer',
             from .align import align as aligner
 
             # align the data
-            warnings.warn('Numerical and text data with same number of '
+            _warn('Numerical and text data with same number of '
                           'samples detected.  Aligning data to a common space.')
             processed_x = aligner(processed_x, align=text_align, format_data=False)
         elif len(set(i.shape[1] for i in processed_x)) > 1:
@@ -535,7 +549,7 @@ def format_data(x, vectorizer='CountVectorizer',
                 f"dataset {i}: {'text' if j in ('list_str', 'str', 'arr_str') else 'numeric'}, "
                 f'{arr.shape[0]} sample(s)'
                 for i, (arr, j) in enumerate(zip(processed_x, dtypes))]
-            warnings.warn(
+            _warn(
                 'mixed text and numeric datasets were passed with '
                 f"DIFFERENT sample counts ({'; '.join(_counts)}), so they "
                 'cannot be auto-aligned to a common space (alignment '

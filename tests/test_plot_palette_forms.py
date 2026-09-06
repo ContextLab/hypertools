@@ -249,3 +249,82 @@ def test_default_palette_calls_are_pixel_identical(tmp_path):
     spelled = render('spelled', title='Ref one', legend=True, palette='hls',
                      hue=[['a'] * 40, ['b'] * 40, ['c'] * 40])
     assert spelled == plain
+
+
+# --- 1.1 release review: C1 short colour list cycles, C2 empty list,
+# --- C3 per-dataset list meeting a categorical grouping ------------------
+
+def test_short_colour_list_cycles_over_datasets_without_a_hue():
+    """`palette=['red', 'blue']` over three datasets drew red/blue/red in
+    1.0.0 (seaborn's ambient cycle); 1.1 raised "supplies 2 color(s) but
+    3 are required" before drawing anything."""
+    bundle = hyp.plot(_datasets(3), palette=['red', 'blue'], reduce='PCA',
+                      return_model=True, show=False)
+    assert _line_hexes(bundle['fig']) == ['#ff0000', '#0000ff', '#ff0000']
+    assert ([mcolors.to_hex(c) for c in bundle['colors']['colors']]
+            == ['#ff0000', '#0000ff', '#ff0000'])
+
+
+def test_short_colour_list_cycles_under_plotly():
+    pytest.importorskip('plotly')
+    fig = hyp.plot(_datasets(3), palette=['red', 'blue'], reduce='PCA',
+                   backend='plotly', show=False)
+    got = [_plotly_hex(t.line.color) for t in fig.data
+           if 'rgba' in str(t.line.color)]
+    assert got[:3] == ['#ff0000', '#0000ff', '#ff0000']
+
+
+@pytest.mark.parametrize('empty', [[], (), np.array([])])
+def test_empty_palette_with_categorical_hue_is_a_valueerror(empty):
+    """Escaped as a bare StopIteration out of seaborn's colour cycle."""
+    with pytest.raises(ValueError, match='empty list'):
+        hyp.plot(_datasets(2), hue=['a'] * 20 + ['b'] * 20, palette=empty,
+                 reduce='PCA', show=False)
+
+
+def test_per_dataset_palettes_with_categorical_hue_report_real_counts():
+    """The message counted the CATEGORIES as datasets ("lists 3 per-dataset
+    palettes but 2 dataset(s) were passed" for a three-dataset call)."""
+    with pytest.raises(ValueError) as err:
+        hyp.plot(_datasets(3), hue=['a'] * 20 + ['b'] * 40,
+                 palette=['viridis', 'plasma', 'magma'], reduce='PCA',
+                 show=False)
+    msg = str(err.value)
+    assert '3 per-dataset palettes' in msg and '2 categories' in msg
+    assert 'dataset(s) were passed' not in msg
+
+
+def test_per_dataset_palettes_with_n_clusters_report_real_counts():
+    with pytest.raises(ValueError) as err:
+        hyp.plot(_datasets(3), n_clusters=3,
+                 palette=['viridis', 'plasma', 'magma'], reduce='PCA',
+                 show=False)
+    msg = str(err.value)
+    assert '3 per-dataset palettes' in msg and '3 categories' in msg
+
+
+def test_per_dataset_dicts_name_each_datasets_categories():
+    """The documented per-entry ``{category: color}`` form: each dataset's
+    dict names its own categories, merged and resolved by name."""
+    data = _datasets(2)
+    hue = [['s1'] * 20, ['s2'] * 20]
+    palette = [{'s1': 'red'}, {'s2': 'blue'}]
+    bundle = hyp.plot(data, hue=hue, palette=palette, reduce='PCA',
+                      legend=True, return_model=True, show=False)
+    assert _line_hexes(bundle['fig']) == ['#ff0000', '#0000ff']
+    cats = bundle['colors']['categories']
+    assert mcolors.to_hex(cats['s1']) == '#ff0000'
+    assert mcolors.to_hex(cats['s2']) == '#0000ff'
+    pytest.importorskip('plotly')
+    fig = hyp.plot(data, hue=hue, palette=palette, reduce='PCA',
+                   backend='plotly', show=False)
+    got = [_plotly_hex(t.line.color) for t in fig.data
+           if 'rgba' in str(t.line.color)]
+    assert got[:2] == ['#ff0000', '#0000ff']
+
+
+def test_per_dataset_dicts_disagreeing_on_a_category_raise():
+    with pytest.raises(ValueError, match="'s1' in more than one"):
+        hyp.plot(_datasets(2), hue=[['s1'] * 20, ['s1'] * 20],
+                 palette=[{'s1': 'red'}, {'s1': 'blue'}], reduce='PCA',
+                 show=False)

@@ -191,3 +191,69 @@ class TestValidation:
         with pytest.raises(TypeError, match=r'must be a dict'):
             hyp.plot(turns(), animate='serial', duration=1,
                      dataset_fade=0.5, show=False)
+
+
+# --- 1.1 release review: A1 the fade reaches the rendered collections
+# --- under a continuous hue; A5 non-numeric floor/decay --------------------
+
+def _rendered(anim, frame):
+    anim.draw_frame(frame)
+    anim.figure.canvas.draw()
+    return np.asarray(anim.figure.canvas.buffer_rgba()).copy()
+
+
+@pytest.mark.parametrize('ndims', [2, 3])
+def test_dataset_fade_changes_rendered_pixels_under_a_continuous_hue(ndims):
+    """With a continuous `hue=` matplotlib draws LineCollections and hides
+    the Line2D heads; the fade used to set alpha on the hidden heads, so a
+    late frame rendered byte-identically with and without it."""
+    rng = np.random.default_rng(1)
+    data = [np.cumsum(rng.normal(size=(30, ndims)), axis=0) + 4.0 * i
+            for i in range(3)]
+    hue = np.linspace(0.0, 1.0, 90)
+    kw = dict(animate='serial', hue=hue, duration=3, frame_rate=10,
+              reduce=None, ndims=ndims, show=False)
+    plain = hyp.plot(data, **kw)
+    faded = hyp.plot(data, dataset_fade={'floor': 0.0, 'decay': 0.1}, **kw)
+    try:
+        late = plain.n_frames - 2
+        a = _rendered(plain, late)
+        b = _rendered(faded, late)
+        assert a.shape == b.shape
+        assert (a != b).any(axis=-1).sum() > 100
+        # and the artists the hook sees ARE the drawn collections
+        from matplotlib.collections import LineCollection
+        seen = []
+        faded.on_frame(lambda ctx: seen.append(ctx.artists))
+        faded.draw_frame(late)
+        assert all(isinstance(art, LineCollection) for art in seen[-1][:3])
+    finally:
+        plt.close(plain.figure)
+        plt.close(faded.figure)
+
+
+def test_dataset_fade_alpha_on_ctx_artists_is_what_gets_drawn():
+    rng = np.random.default_rng(2)
+    data = [np.cumsum(rng.normal(size=(30, 3)), axis=0) + 4.0 * i
+            for i in range(3)]
+    anim = hyp.plot(data, animate='serial', hue=np.linspace(0, 1, 90),
+                    dataset_fade={'floor': 0.2, 'decay': 0.5},
+                    duration=3, frame_rate=10, reduce=None, show=False)
+    try:
+        anim.draw_frame(anim.n_frames - 1)
+        colls = [c for c in anim.figure.axes[0].collections
+                 if getattr(c, '_hyp_trace_role', None) == 'head']
+        alphas = [c.get_alpha() for c in colls]
+        assert alphas[2] == 1.0
+        assert alphas[1] == pytest.approx(0.2 + 0.8 * 0.5)
+        assert alphas[0] == pytest.approx(0.2 + 0.8 * 0.25)
+    finally:
+        plt.close(anim.figure)
+
+
+def test_non_numeric_floor_decay_names_the_kwarg():
+    rng = np.random.default_rng(3)
+    data = [rng.normal(size=(12, 3)) for _ in range(2)]
+    with pytest.raises(TypeError, match="dataset_fade='s floor and decay"):
+        hyp.plot(data, animate='serial', dataset_fade=('a', 'b'),
+                 show=False)

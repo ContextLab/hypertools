@@ -991,16 +991,23 @@ def dataset_colors(palette, n_datasets):
     `palette_lead_color`; otherwise this is exactly
     ``get_palette_colors(palette, n_datasets)``, i.e. today's colors.
 
-    Note for callers that currently hand `palette` to seaborn directly:
-    seaborn CYCLES a color list that is shorter than `n_datasets`, while
-    `get_palette_colors` raises. Where that difference matters, call
-    `dataset_palettes` and fall back to the existing seaborn call when it
-    returns None.
+    A plain color LIST shorter than `n_datasets` is CYCLED
+    (``['red', 'blue']`` over three datasets colors them red, blue, red),
+    exactly as seaborn's ambient cycle -- the palette every dataset trace
+    is actually drawn from -- cycles it. hypertools 1.0.0 drew such a call
+    that way on both backends; raising here (as `get_palette_colors` does,
+    since a CATEGORY/matrix mapping needs a distinct color per group) would
+    turn a working call into an error before anything was drawn.
     """
     specs = dataset_palettes(palette, n_datasets)
-    if specs is None:
-        return get_palette_colors(palette, n_datasets)
-    return np.asarray([palette_lead_color(s) for s in specs], dtype=float)
+    if specs is not None:
+        return np.asarray([palette_lead_color(s) for s in specs], dtype=float)
+    if (isinstance(palette, (list, tuple, np.ndarray))
+            and 0 < len(palette) < n_datasets
+            and all(_is_color(c) for c in palette)):
+        base = get_palette_colors(palette, len(palette))
+        return base[np.arange(n_datasets) % len(base)]
+    return get_palette_colors(palette, n_datasets)
 
 
 # Legacy continuous-color helpers live in _shared.helpers (import *-ed widely);

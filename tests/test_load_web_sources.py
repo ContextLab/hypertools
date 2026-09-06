@@ -233,3 +233,66 @@ def test_sec_unknown_ticker_and_concept_raise_immediately():
         with skip_on_transient_network('loading an unknown SEC concept'):
             sec_source('sec:AAPL', concept='NotARealConceptXyz')
     assert 'NotARealConceptXyz' in str(excinfo.value)
+
+
+# ------------------------------------------ yahoo: exchange-local dates (I2)
+
+def _yahoo_payload(stamps, gmtoffset):
+    """A Yahoo v8 chart payload of the real shape, built by hand."""
+    n = len(stamps)
+    return {'chart': {'result': [{
+        'meta': {'gmtoffset': gmtoffset, 'exchangeTimezoneName': 'x'},
+        'timestamp': stamps,
+        'indicators': {
+            'quote': [{'open': [1.0] * n, 'high': [2.0] * n,
+                       'low': [0.5] * n, 'close': [1.5] * n,
+                       'volume': [100] * n}],
+            'adjclose': [{'adjclose': [1.5] * n}]}}],
+        'error': None}}
+
+
+def _utc_stamps(days, hhmm):
+    return [int(pd.Timestamp(f'2025-01-{d:02d} {hhmm}', tz='UTC').timestamp())
+            for d in days]
+
+
+def test_yahoo_bars_east_of_utc_are_dated_the_exchange_local_day():
+    from hypertools.io.sources import _parse_yahoo_chart
+    # Sydney (gmtoffset +10 h): Yahoo stamps each bar at the local session
+    # open, 23:00 UTC the PREVIOUS calendar day. Before 1.1 the raw UTC
+    # stamp was normalized to midnight, so 2025-01-06..10 came back as
+    # 2025-01-05..09.
+    payload = _yahoo_payload(_utc_stamps([5, 6, 7, 8, 9], '23:00'), 36000)
+    df = _parse_yahoo_chart(payload, ticker='BHP.AX')
+    assert list(df.index.strftime('%Y-%m-%d')) == [
+        '2025-01-06', '2025-01-07', '2025-01-08', '2025-01-09', '2025-01-10']
+    assert df.index.name == 'date'
+    assert list(df.columns) == ['open', 'high', 'low', 'close',
+                                'adj_close', 'volume']
+
+
+def test_yahoo_bars_west_of_utc_keep_their_day():
+    from hypertools.io.sources import _parse_yahoo_chart
+    # New York (gmtoffset -5 h): 14:30 UTC is 09:30 local, the same day
+    payload = _yahoo_payload(_utc_stamps([6, 7, 8, 9, 10], '14:30'), -18000)
+    df = _parse_yahoo_chart(payload, ticker='AAPL')
+    assert list(df.index.strftime('%Y-%m-%d')) == [
+        '2025-01-06', '2025-01-07', '2025-01-08', '2025-01-09', '2025-01-10']
+
+
+def test_yahoo_payload_without_gmtoffset_is_treated_as_utc():
+    from hypertools.io.sources import _parse_yahoo_chart
+    payload = _yahoo_payload(_utc_stamps([6, 7], '14:30'), 0)
+    del payload['chart']['result'][0]['meta']['gmtoffset']
+    df = _parse_yahoo_chart(payload, ticker='X')
+    assert list(df.index.strftime('%Y-%m-%d')) == ['2025-01-06', '2025-01-07']
+
+
+def test_yahoo_live_australian_ticker_dates_match_the_trading_days():
+    # one small live request (measured 2026-09-06: BHP.AX 2025-01-06..10
+    # are five ASX trading days; before 1.1 they came back as 01-05..09)
+    with skip_on_transient_network('loading yahoo:BHP.AX for one week'):
+        df = yahoo_source('yahoo:BHP.AX', start='2025-01-05',
+                          end='2025-01-11')
+    assert list(df.index.strftime('%Y-%m-%d')) == [
+        '2025-01-06', '2025-01-07', '2025-01-08', '2025-01-09', '2025-01-10']

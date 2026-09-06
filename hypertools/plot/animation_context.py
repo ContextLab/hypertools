@@ -85,7 +85,12 @@ class FrameContext:
         Matplotlib never hands you a fresh artist: ``FuncAnimation``'s
         updater mutates the same ``Line2D``/collection objects every
         frame, so ``ctx.artists[0]`` on frame 1 and on frame 2 are the
-        SAME object in different states.
+        SAME object in different states. Under a CONTINUOUS or matrix
+        ``hue=`` the rendered artists are per-dataset ``LineCollection``/
+        ``Line3DCollection`` objects (the single-colour ``Line2D`` heads
+        are hidden and only drive the bookkeeping), and those collections
+        are what ``artists`` holds -- so ``set_alpha``/``set_color`` on
+        them changes what is drawn.
 
         THE PORTABLE RULE, on both backends: ASSIGN the complete desired
         value on EVERY invocation, including the default. What breaks is

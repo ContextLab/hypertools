@@ -134,3 +134,23 @@ def test_broadcast_hue_under_plotly():
                    reduce='PCA', backend='plotly', show=False)
     names = [t.name for t in fig.data if t.showlegend]
     assert names == ['alice', 'bob']
+
+
+# --- 1.1 release review: C7 a mismatched nested sub-list is named --------
+
+def test_mismatched_nested_hue_names_the_offending_sublist():
+    """Reported "hue has 3 entries but the data has 60 observations" --
+    the count of sub-lists against the observation total."""
+    with pytest.raises(ValueError) as err:
+        hyp.plot(_datasets(3), hue=[['a'] * 20, ['b'] * 19, ['a'] * 20],
+                 reduce='PCA', show=False)
+    msg = str(err.value)
+    assert 'hue[1] has 19 entries but dataset 1 has 20 rows' in msg
+    assert 'hue has 3 entries' not in msg
+
+
+def test_flat_hue_length_error_is_unchanged():
+    with pytest.raises(ValueError, match='hue has 5 entries but the data '
+                                         'has 60 observations'):
+        hyp.plot(_datasets(3), hue=['a', 'b', 'c', 'd', 'e'], reduce='PCA',
+                 show=False)

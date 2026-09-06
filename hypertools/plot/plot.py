@@ -27,7 +27,8 @@ from ..cluster.cluster import cluster as clusterer, mixture_models, \
 from .colors import (mat2colors, colors2groups, get_palette_colors,
                      continuous_colormap, NAN_COLOR, is_missing_label,
                      resolve_category_colors, dataset_palettes,
-                     palette_lead_color, dataset_colors)
+                     palette_lead_color, dataset_colors,
+                     _looks_like_dataset_palettes)
 from ..reduce.reduce import reduce as reducer
 from ..tools.format_data import format_data
 from .matplotlib_backend import _draw, _apply_title
@@ -179,12 +180,33 @@ def _seaborn_palette_arg(palette, n_colors):
     from matplotlib.colors import Colormap
 
     from .colors import DEFAULT_PALETTE, IMAGE_PALETTE_PREFIX
+    if (isinstance(palette, (list, tuple, np.ndarray))
+            and len(palette) == 0):
+        # seaborn cycles a colour list with `itertools.cycle`, so an EMPTY
+        # list escaped as a bare StopIteration from inside
+        # `sns.color_palette`; say what the no-hue path already says.
+        raise ValueError("palette= was given as an empty list; supply at "
+                         "least one color")
     if isinstance(palette, collections.abc.Mapping):
         return [tuple(c) for c in get_palette_colors(DEFAULT_PALETTE,
                                                      n_colors)]
     _specs = dataset_palettes(palette, n_colors)
     if _specs is not None:
-        return [tuple(palette_lead_color(spec)) for spec in _specs]
+        # a {category: color} dict ENTRY has no lead colour (it names
+        # categories, like a whole-plot dict); the ambient cycle gets the
+        # default palette's colour at that position, and the categorical
+        # paths resolve the dicts by name (`_categorical_color_label_maps`
+        # merges a per-dataset list of dicts into one mapping).
+        _default = None
+        out = []
+        for i, spec in enumerate(_specs):
+            if isinstance(spec, collections.abc.Mapping):
+                if _default is None:
+                    _default = get_palette_colors(DEFAULT_PALETTE, n_colors)
+                out.append(tuple(_default[i]))
+            else:
+                out.append(tuple(palette_lead_color(spec)))
+        return out
     if isinstance(palette, Colormap) or (
             isinstance(palette, str)
             and palette.startswith(IMAGE_PALETTE_PREFIX)):
@@ -535,6 +557,48 @@ def _categorical_color_label_maps(hue, palette, explicit_colors,
                   else [str(c) for c in drawn])
         _by_name = resolve_category_colors(palette, _names)
         cat_color = {c: _by_name[_names[i]] for i, c in enumerate(drawn)}
+    elif _looks_like_dataset_palettes(palette):
+        # a PER-DATASET palette list (GH #285) meeting a CATEGORICAL
+        # grouping. The groups drawn here are categories, not datasets, so
+        # handing the list to `_seaborn_palette_arg(palette, len(drawn))`
+        # made `dataset_palettes` count the CATEGORIES as datasets and
+        # report "lists 3 per-dataset palettes but 2 dataset(s) were
+        # passed" for a three-dataset call. Two readings are meaningful:
+        # every entry a {category: color} dict -- each dataset naming its
+        # own categories' colours -- merges into one mapping resolved by
+        # name; anything else has no category to colour and is rejected
+        # with the real counts.
+        _names = (list(group_labels)
+                  if isinstance(group_labels, (list, tuple))
+                  and len(group_labels) == len(drawn)
+                  else [str(c) for c in drawn])
+        entries = list(palette)
+        if all(isinstance(e, collections.abc.Mapping) for e in entries):
+            merged = {}
+            for entry in entries:
+                for name, colour in entry.items():
+                    if name in merged and merged[name] != colour:
+                        raise ValueError(
+                            f"palette= names category {name!r} in more "
+                            f"than one per-dataset dict with different "
+                            f"colors ({merged[name]!r} and {colour!r}); "
+                            "a category has one color, so name it once "
+                            "or give every dict the same color for it.")
+                    merged[name] = colour
+            _by_name = resolve_category_colors(merged, _names)
+            cat_color = {c: _by_name[_names[i]] for i, c in enumerate(drawn)}
+        else:
+            n_cat = len(drawn)
+            raise ValueError(
+                f"palette= lists {len(entries)} per-dataset palettes, but "
+                f"this plot colors by CATEGORY ({n_cat} categor"
+                f"{'y' if n_cat == 1 else 'ies'} from hue=/cluster=/"
+                "n_clusters=), so there is no dataset for each palette to "
+                "color. Pass ONE palette for the categories -- a palette "
+                f"name, a list of at least {n_cat} colors, a Colormap, or "
+                "a {category: color} dict -- or a list of {category: "
+                "color} dicts (one per dataset, each naming its own "
+                "categories).")
     else:
         pal = sns.color_palette(
             _seaborn_palette_arg(palette, len(drawn)), len(drawn))
@@ -861,7 +925,14 @@ def _validate_title(title, style=None, order=None, n_datasets=None):
             "list/tuple there. For a per-dataset legend entry use names=; "
             "for a per-observation annotation use labels=."
         )
-    titles = [str(t) for t in title]
+    _bad = [(i, t) for i, t in enumerate(title) if not isinstance(t, str)]
+    if _bad:
+        i, t = _bad[0]
+        raise TypeError(
+            f"title= list entries must all be strings (one per dataset); "
+            f"entry {i} is {type(t).__name__}: {t!r}. Use '' for a dataset "
+            "that should show no title.")
+    titles = list(title)
     if n_datasets is not None and len(titles) != n_datasets:
         raise ValueError(
             f"title has {len(titles)} entries but there are {n_datasets} "
@@ -1466,16 +1537,23 @@ def _is_single_color(value):
     return False
 
 
-def _validate_title_color(title_color, segment_titles):
+def _validate_title_color(title_color, segment_titles, title_kwargs=None):
     """Split `title_color=` into (scalar color, per-segment sequence).
 
     A single color (string or RGB(A) tuple) styles whatever title is drawn.
     A SEQUENCE of colors -- or a callable ``ctx -> color`` -- tints each
     segment of a serial/morph `title=` LIST, so it is only meaningful
-    alongside one.
+    alongside one. Naming a colour BOTH here and as
+    ``title_kwargs={'color': ...}`` is a conflict (one of them silently
+    lost), so it raises.
     """
     if title_color is None:
         return None, None
+    if title_kwargs and 'color' in title_kwargs:
+        raise ValueError(
+            f"title_color={title_color!r} and title_kwargs['color']="
+            f"{title_kwargs['color']!r} were both given; they set the same "
+            "title colour, so pass only one of them.")
     if callable(title_color) or (
             not _is_single_color(title_color)
             and isinstance(title_color, (list, tuple, np.ndarray))):
@@ -1516,7 +1594,13 @@ def _wrap_title_text(title, width, newline='\n'):
     import textwrap
     if isinstance(title, (list, tuple)):
         return [_wrap_title_text(t, width, newline) for t in title]
-    return newline.join(textwrap.wrap(str(title), width) or [''])
+    # each EXISTING line is wrapped on its own and the author's line breaks
+    # are kept: `textwrap.wrap` alone (its default `replace_whitespace`)
+    # turned 'first line\nsecond line' into one 'first line second line'.
+    lines = []
+    for line in str(title).split('\n'):
+        lines.extend(textwrap.wrap(line, width) or [''])
+    return newline.join(lines)
 
 
 def _validate_title_wrap(title_wrap):
@@ -1796,11 +1880,10 @@ def _validate_dynamic_title(title, animate, row_indices):
         return None, title
     if not _title_is_pattern(title):
         return title, None
-    if not animate:
-        # a static plot has one row-index value that means anything: the
-        # last one. Resolved right here, so nothing per-frame is installed.
-        return None, _make_title_pattern_resolver(title, row_indices)
     if row_indices is None:
+        # animated or not: a pattern with nothing to read is an error the
+        # docstring promises BEFORE the pipeline runs, not a title drawn
+        # as its own literal braces.
         raise ValueError(
             f"title={title!r} is a per-frame format pattern (it contains "
             f"'{_TITLE_INDEX_FIELD}'), but the data passed to plot() has no "
@@ -1818,10 +1901,16 @@ def _title_head_row(ctx, n_rows):
     ONE rule, deliberately, because a per-style rule would make the same
     pattern mean different things on the same data:
 
-    * **serial** reveals (``order='serial'``, ``animate='morph'``): the
-      last revealed row of the dataset being revealed right now, rescaled
-      onto the input's own row count (`plot` interpolates line data onto
-      the frame grid, so a drawn row is not an input row).
+    * **serial** reveals (``order='serial'``): the rows revealed SO FAR
+      across every dataset -- those already complete plus the revealed
+      part of the one being drawn now -- as a fraction of all rows,
+      rescaled onto the input's own row count (`plot` interpolates line
+      data onto the frame grid, so a drawn row is not an input row). It
+      is cumulative on purpose: rescaling only the CURRENT dataset's
+      reveal made the head jump back to row 0 every time the next dataset
+      started, so a companion panel (and a ``{index}`` title) ran
+      0 -> 20 -> 10 -> 0 -> 39 over a three-dataset reveal instead of
+      advancing in lockstep.
     * **every other animated style** (``True``/``'parallel'``/
       ``'window'``/``'spin'``): ``round(ctx.progress * (n_rows - 1))`` --
       all datasets advance together, so the head fraction IS the
@@ -1840,11 +1929,12 @@ def _title_head_row(ctx, n_rows):
     frac = 1.0 if ctx.progress is None else float(ctx.progress)
     if ctx.order == 'serial' and ctx.current_index is not None \
             and ctx.revealed_counts is not None:
-        i = ctx.current_index
-        if i < len(ctx.revealed_counts) and i < len(ctx.datasets):
-            drawn = len(ctx.datasets[i])
-            if drawn > 1:
-                frac = (ctx.revealed_counts[i] - 1) / (drawn - 1)
+        lengths = [len(d) for d in ctx.datasets]
+        counts = list(ctx.revealed_counts)[:len(lengths)]
+        total = sum(lengths)
+        revealed = sum(min(int(c), n) for c, n in zip(counts, lengths))
+        if total > 1:
+            frac = (revealed - 1) / (total - 1)
     return int(min(n_rows - 1, max(0, round(frac * (n_rows - 1)))))
 
 
@@ -1865,8 +1955,32 @@ def _make_title_pattern_resolver(pattern, row_indices):
         if index is None:
             return pattern
         value = index[_title_head_row(ctx, len(index))]
-        return pattern.format(index=value)
+        try:
+            return pattern.format(index=value)
+        except (KeyError, IndexError, ValueError, TypeError,
+                AttributeError) as exc:
+            # str.format's own errors are bare ('other', 'Invalid format
+            # specifier'), and they surface AFTER the pipeline has run;
+            # say which kwarg, which pattern, and which value.
+            raise ValueError(
+                f"title={pattern!r} could not be formatted with "
+                f"index={value!r} ({type(exc).__name__}: {exc}). The only "
+                "field a pattern title can reference is {index}, with an "
+                "optional format spec the index value supports (e.g. "
+                "'{index:%B %Y}' for a DatetimeIndex).") from exc
     return _resolve
+
+
+def _resolve_dynamic_title_text(fn, ctx):
+    """Call a dynamic `title=` (callable or pattern resolver) for `ctx`
+    and insist on a string (1.1 release review T8): a callable returning
+    None or 42 was drawn as the literal 'None'/'42'."""
+    value = fn(ctx)
+    if not isinstance(value, str):
+        raise TypeError(
+            f"title= callable must return a str for every frame; got "
+            f"{type(value).__name__}: {value!r}.")
+    return value
 
 
 def _validate_loop(loop, style):
@@ -1919,7 +2033,14 @@ def _validate_dataset_fade(dataset_fade, style, order):
             "dataset_fade= must be a dict {'floor': ..., 'decay': ...} or a "
             f"(floor, decay) pair; got {type(dataset_fade).__name__}: "
             f"{dataset_fade!r}.")
-    floor, decay = float(floor), float(decay)
+    try:
+        floor, decay = float(floor), float(decay)
+    except (TypeError, ValueError) as exc:
+        raise TypeError(
+            "dataset_fade='s floor and decay must be numbers (floor: the "
+            "alpha an old dataset fades to, 0-1; decay: the per-dataset "
+            f"falloff, 0-1); got floor={floor!r}, decay={decay!r} "
+            f"({exc}).") from exc
     if not 0.0 <= floor <= 1.0:
         raise ValueError(
             f"dataset_fade='s floor must be between 0 and 1 (it is an "
@@ -2018,8 +2139,15 @@ def _validate_companion(companion, animate, backend_name):
     """
     if companion is None:
         return None
-    specs = ([companion] if isinstance(companion, dict)
-             else list(companion))
+    if isinstance(companion, dict):
+        specs = [companion]
+    elif isinstance(companion, (list, tuple)):
+        specs = list(companion)
+    else:
+        raise TypeError(
+            "companion= takes a dict describing one extra panel (or a list "
+            f"of such dicts); got {type(companion).__name__}: "
+            f"{companion!r}. See the companion= docstring for the keys.")
     if not animate:
         raise ValueError(
             "companion= panels are revealed in lockstep with an animation; "
@@ -2059,7 +2187,13 @@ def _validate_companion(companion, animate, backend_name):
                 f"companion= entry {i} has no data=; pass the series to "
                 "draw, as (n_rows,), (n_rows, 1) or (n_rows, 2) -- two "
                 "columns are read as (x, y).")
-        data = np.asarray(spec['data'], dtype=float)
+        try:
+            data = np.asarray(spec['data'], dtype=float)
+        except (TypeError, ValueError) as exc:
+            raise TypeError(
+                f"companion= entry {i}: data must be numeric, as "
+                "(n_rows,), (n_rows, 1) or (n_rows, 2); could not read "
+                f"{spec['data']!r} as numbers ({exc}).") from exc
         if data.ndim == 1:
             data = data[:, None]
         if data.ndim != 2 or data.shape[1] not in (1, 2):
@@ -2077,6 +2211,12 @@ def _validate_companion(companion, animate, backend_name):
                 f"'right'; got {position!r}.")
         smooth = spec.get('smooth')
         if smooth is not None:
+            if (isinstance(smooth, bool)
+                    or not isinstance(smooth, (int, np.integer))):
+                raise TypeError(
+                    f"companion= entry {i}: smooth= is a rolling-mean "
+                    "window in rows and must be an int of at least 2; got "
+                    f"{type(smooth).__name__}: {smooth!r}.")
             smooth = int(smooth)
             if smooth < 2:
                 raise ValueError(
@@ -2084,12 +2224,25 @@ def _validate_companion(companion, animate, backend_name):
                     f"window in rows and must be at least 2; got {smooth}.")
         hue = spec.get('hue')
         if hue is not None:
-            hue = np.asarray(hue, dtype=float).ravel()
+            try:
+                hue = np.asarray(hue, dtype=float).ravel()
+            except (TypeError, ValueError) as exc:
+                raise TypeError(
+                    f"companion= entry {i}: hue= must be one number per "
+                    f"row; could not read {spec['hue']!r} as numbers "
+                    f"({exc}).") from exc
             if hue.shape[0] != data.shape[0]:
                 raise ValueError(
                     f"companion= entry {i}: hue= has {hue.shape[0]} values "
                     f"but data has {data.shape[0]} rows.")
-        size = float(spec.get('size', 0.35))
+        try:
+            size = float(spec.get('size', 0.35))
+            pad = float(spec.get('pad', 0.10))
+        except (TypeError, ValueError) as exc:
+            raise TypeError(
+                f"companion= entry {i}: size= and pad= are figure "
+                f"fractions (numbers); got size={spec.get('size', 0.35)!r}, "
+                f"pad={spec.get('pad', 0.10)!r} ({exc}).") from exc
         if not 0.05 <= size <= 0.8:
             raise ValueError(
                 f"companion= entry {i}: size= is the panel's share of the "
@@ -2098,8 +2251,7 @@ def _validate_companion(companion, animate, backend_name):
             'reveal', True)), smooth=smooth, marker=bool(spec.get(
                 'marker', True)), position=position, size=size,
             xlabel=spec.get('xlabel'), ylabel=spec.get('ylabel'),
-            color=spec.get('color'), hue=hue,
-            pad=float(spec.get('pad', 0.10))))
+            color=spec.get('color'), hue=hue, pad=pad))
     return out
 
 
@@ -2346,6 +2498,20 @@ def _resolve_label_anchor(label_anchor, length):
                 f"label_anchor={label_anchor} is out of range for a "
                 f"dataset with {length} observations.")
         return index
+    raise ValueError(
+        f"label_anchor= must be 'first', 'center', 'last', or an integer "
+        f"row index; got {label_anchor!r}.")
+
+
+def _validate_label_anchor_value(label_anchor):
+    """`label_anchor=` must be a recognised anchor name or an int; checked
+    up front, independent of `labels=` (1.1 release review T8)."""
+    if label_anchor is None or label_anchor in ('first', 'center',
+                                                'middle', 'last'):
+        return
+    if isinstance(label_anchor, (int, np.integer)) \
+            and not isinstance(label_anchor, bool):
+        return
     raise ValueError(
         f"label_anchor= must be 'first', 'center', 'last', or an integer "
         f"row index; got {label_anchor!r}.")
@@ -3307,7 +3473,17 @@ def plot(
         of colors -- is per-dataset. A ONE-entry list is broadcast to every
         dataset. A per-dataset list must have 1 or ``len(x)`` entries, and
         cannot be combined with a continuous `hue=` (there is no single
-        ramp to map values through -- ``ValueError``).
+        ramp to map values through -- ``ValueError``). With a CATEGORICAL
+        `hue=` (or `cluster=`/`n_clusters=`) the drawn groups are
+        categories rather than datasets, so only a list of ``{category:
+        color}`` dicts is meaningful there -- each dataset's dict names
+        its own categories' colours, and they are merged into one mapping
+        resolved by name (naming one category with two different colours
+        raises); any other per-dataset list with a categorical grouping
+        raises ``ValueError`` stating both counts. A plain colour list
+        shorter than the number of datasets is CYCLED when there is no
+        hue (``['red', 'blue']`` over three datasets draws red, blue,
+        red), as it always was.
 
     hue : list, numpy array, pandas Series/Index/Categorical, or 2D matrix
         Values used to color the plot, one per observation, matched to the
@@ -3578,7 +3754,10 @@ def plot(
 
         **Where the reveal head is.** One rule, so the same pattern means
         the same thing on the same data: for a serial reveal it is the
-        last revealed row of the dataset being revealed right now; for
+        rows revealed so far across ALL datasets (finished ones plus the
+        revealed part of the current one) as a fraction of every row,
+        mapped onto the input's rows -- cumulative, so it never runs
+        backwards when the next dataset starts; for
         every other animated style (``True``/``'parallel'``/``'window'``/
         ``'spin'``/``'morph'``) it is
         ``round(ctx.progress * (n_rows - 1))``, since those advance every
@@ -3603,9 +3782,10 @@ def plot(
         ``variant``, ``stretch``, and the already-real names ``color``,
         ``alpha``, ``y``, ``pad``, ``loc``, ``rotation``, ``linespacing``,
         ``backgroundcolor``. An unknown key raises ``ValueError`` naming
-        the supported set. A ``size`` given here also sizes the top-margin
-        probe that reserves room for an animated 3-D title, so a larger
-        title still fits on the canvas.
+        the supported set. A ``size`` given here also sizes the room
+        reserved above an animated 3-D title (matplotlib's top-margin
+        probe; plotly's ``layout.margin.t``), so a larger title still fits
+        on the canvas.
 
         On `backend='plotly'` the size/family/weight/style/colour/y keys
         map onto ``layout.title``; anything plotly's title cannot express
@@ -3630,8 +3810,13 @@ def plot(
         Applied after per-segment resolution, so a scalar title and every
         entry of a per-segment list wrap identically; the line break is the
         backend's own (a newline for matplotlib, ``'<br>'`` for plotly).
-        Note that an animated 3-D title still reserves top margin for ONE
-        line, so a very tall wrap can overflow there. Default None.
+        A dynamic (callable / ``{index``) title is wrapped afresh every
+        frame. An animated 3-D title reserves top margin per line on both
+        backends: for a per-segment list, the tallest entry; for a
+        dynamic title, plotly measures every frame (all frames are built
+        up front) while matplotlib measures FRAME 0's text, so a callable
+        whose title grows lines on later frames can clip there -- give
+        frame 0 the same number of lines. Default None.
 
     font : None, str, or matplotlib.font_manager.FontProperties
         Controls the font used for every text surface hypertools draws,
@@ -5793,7 +5978,19 @@ def plot(
     _title_kwargs = _normalize_title_kwargs(title_kwargs)
     _title_wrap = _validate_title_wrap(title_wrap)
     _title_color, _title_segment_colors = _validate_title_color(
-        title_color, _segment_titles)
+        title_color, _segment_titles, _title_kwargs)
+    # `label_anchor=` is checked here whether or not `labels=` is set (an
+    # unrecognised anchor used to pass silently when there was nothing to
+    # anchor), and a BARE STRING `labels=` is rejected outright rather than
+    # counted character by character ("labels has 4 entries" for 'only').
+    _validate_label_anchor_value(label_anchor)
+    if isinstance(labels, str):
+        raise TypeError(
+            f"labels= must be a list of per-observation labels (or one per "
+            f"dataset, positioned by label_anchor=), not the single string "
+            f"{labels!r}. Wrap it in a list: labels=[{labels!r}] labels the "
+            "first observation; for one label per dataset pass a list with "
+            "one entry per dataset.")
     if _title_color is not None:
         _title_kwargs = dict(_title_kwargs or {})
         _title_kwargs.setdefault('color', _title_color)
@@ -7812,6 +8009,27 @@ def plot(
                     if hue_array is not None and hue_array.ndim >= 1
                     else len(hue))
         if _hue_len != n_obs:
+            # a NESTED per-dataset hue whose sub-lists do not all match
+            # their datasets: name the offending sub-list(s) rather than
+            # reporting the count of sub-lists as "3 entries" against the
+            # observation total.
+            if (isinstance(hue, (list, tuple)) and len(xform) > 1
+                    and len(hue) == len(xform)
+                    and all(np.ndim(h) >= 1 for h in hue)):
+                bad = [(i, len(h), len(xi))
+                       for i, (h, xi) in enumerate(zip(hue, xform))
+                       if len(h) != len(xi)]
+                if bad:
+                    detail = '; '.join(
+                        f"hue[{i}] has {got} entr{'y' if got == 1 else 'ies'}"
+                        f" but dataset {i} has {want} row"
+                        f"{'' if want == 1 else 's'}"
+                        for i, got, want in bad)
+                    raise ValueError(
+                        f"hue= is nested per dataset ({len(hue)} sub-lists "
+                        f"for {len(xform)} datasets) but the lengths do "
+                        f"not match: {detail}. Each sub-list must have "
+                        "exactly one value per row of its dataset.")
             raise ValueError(
                 f"hue has {_hue_len} entr{'y' if _hue_len == 1 else 'ies'} but "
                 f"the data has {n_obs} observations; hue must have exactly one "
@@ -8156,21 +8374,20 @@ def plot(
     # dataset's full row count, and `figure`/`axes` are None because the
     # figure is built FROM the title and so does not exist yet.
     if _dynamic_title is not None and not animate:
-        title = str(_dynamic_title(FrameContext(
+        title = _resolve_dynamic_title_text(_dynamic_title, FrameContext(
             frame=None, n_frames=None, figure=None, axes=None,
             datasets=tuple(xform), style=False, order=order,
             revealed_counts=tuple(len(d) for d in xform),
             window_bounds=tuple((0, len(d)) for d in xform),
-            progress=1.0)))
+            progress=1.0))
         _dynamic_title = None
 
     # title_wrap= (GH #285): hard-wrap every title at N characters, AFTER
     # per-segment resolution so a scalar title and each entry of a
     # per-segment list wrap identically. The line break is the drawing
     # backend's own: '\n' for matplotlib, '<br>' for plotly.
+    _wrap_break = '<br>' if resolve_backend(backend) == 'plotly' else '\n'
     if _title_wrap is not None:
-        _wrap_break = ('<br>' if resolve_backend(backend) == 'plotly'
-                       else '\n')
         title = _wrap_title_text(title, _title_wrap, _wrap_break)
         _segment_titles = _wrap_title_text(_segment_titles, _title_wrap,
                                            _wrap_break)
@@ -8224,9 +8441,16 @@ def plot(
     # not on `n_datasets`. The length check below, in contrast, genuinely
     # cannot happen any earlier: `n_morph_datasets` is the count of FINAL
     # (post cluster/hue-reshape) datasets tagged for morph, which is only
-    # known now that `xform`/`morph_tags` exist.
+    # known now that `xform`/`morph_tags` exist. `loop=True` appends a
+    # closing repeat of the first cloud (the backends schedule
+    # `2(n + 1) - 1` segments, as the `loop=` docstring promises), so the
+    # list is validated against that same count -- this check and the
+    # backends' `morph_schedule` used to disagree by one cloud, and no
+    # list length satisfied both.
     if morph_tags is not None:
-        rotations = resolve_morph_rotations(rotations, sum(morph_tags))
+        rotations = resolve_morph_rotations(
+            rotations, sum(morph_tags) + (1 if _morph_loop else 0),
+            loop=_morph_loop)
 
     # 2-D animations (round17 #9, GH #123): fixed (non-rotating) viewport --
     # `rotations=`/`zoom=` are 3-D camera controls with no 2-D equivalent,
@@ -9137,7 +9361,10 @@ def plot(
     _dynamic_title_text = {}
     if _dynamic_title is not None:
         def _update_dynamic_title(ctx, _fn=_dynamic_title):
-            text = str(_fn(ctx))
+            # `title_wrap=` applies to the resolved text of EVERY frame,
+            # exactly as it does to a static or per-segment title.
+            text = _wrap_title_text(_resolve_dynamic_title_text(_fn, ctx),
+                                    _title_wrap, _wrap_break)
             _dynamic_title_text['text'] = text
             if ctx.axes is not None:
                 _apply_title(ctx.axes, text, font=_artist_font,
@@ -9722,7 +9949,8 @@ def plot(
                         precog=precog, bullettime=bullettime,
                         antialias=antialias,
                         total_frames=max(1, int(round(frame_rate
-                                                      * duration))))
+                                                      * duration))),
+                        frame_hooks=_frame_hooks)
                 elif is_line(fmt):
                     _apply_multicolor_lines(ax, xform, line_colors,
                                             kwargs_list)
@@ -9815,12 +10043,33 @@ def plot(
                 # animation runs, instead of inside the first frame.
                 _probe_title = None
                 if _dynamic_title is not None:
-                    _probe_title = str(_dynamic_title(FrameContext(
-                        frame=0, n_frames=int(line_ani._save_count),
-                        figure=fig, axes=ax, datasets=tuple(xform),
-                        style=animate, order=order,
-                        current_index=0 if order == 'serial' else None,
-                        revealed_counts=tuple(1 for _ in xform))))
+                    try:
+                        _probe_title = _wrap_title_text(
+                            _resolve_dynamic_title_text(
+                                _dynamic_title, FrameContext(
+                                    frame=0,
+                                    n_frames=int(line_ani._save_count),
+                                    figure=fig, axes=ax,
+                                    datasets=tuple(xform),
+                                    style=animate, order=order,
+                                    current_index=(0 if order == 'serial'
+                                                   else None),
+                                    revealed_counts=tuple(
+                                        1 for _ in xform))),
+                            _title_wrap, _wrap_break)
+                    except Exception:
+                        # the user's title raised before the animation
+                        # was ever handed back: detach it (no
+                        # HyperAnimation exists to silence it) so gc does
+                        # not later warn "Animation was deleted without
+                        # rendering anything" about THEIR exception, and
+                        # close the abandoned figure as the save path does.
+                        from .hyper_animation import mark_draw_started
+                        mark_draw_started(line_ani)
+                        if (not show and not _user_supplied_ax
+                                and isinstance(fig, plt.Figure)):
+                            plt.close(fig)
+                        raise
                 _reserve_animated_3d_title_margin(
                     fig, ax,
                     fontsize=(_title_kwargs or {}).get('fontsize'),
@@ -10175,10 +10424,19 @@ def _build_colorbar_info(colorbar, hue, multicolor_hue, cluster, n_clusters,
 
     if multicolor_hue is not None and multicolor_hue.ndim == 1 and hue is None:
         vals = np.asarray(multicolor_hue, dtype=np.float64)
+        # NaN/inf hue values are drawn in `NAN_COLOR` and EXCLUDED from the
+        # colour mapping (see the hue= docstring), so they must not reach
+        # the range either: `np.min` over a NaN is NaN, and a colorbar (or
+        # bundle['colors']) spanning nan..nan is a colorbar over nothing.
+        finite = vals[np.isfinite(vals)]
+        if finite.size == 0:
+            raise ValueError(
+                "hue= has no finite values (every entry is NaN/inf), so "
+                "there is no value range to put on a colorbar.")
         return {
             'kind': 'continuous',
-            'vmin': float(np.min(vals)),
-            'vmax': float(np.max(vals)),
+            'vmin': float(np.min(finite)),
+            'vmax': float(np.max(finite)),
             'palette': palette,
             'label': label,
             'ticks': ticks,
@@ -10317,10 +10575,15 @@ def _build_colors_info(hue, multicolor_hue, cluster, n_clusters, xform,
 
     if info is None:
         if multicolor_hue is not None:
+            # `categories` is documented as {label: rgb}: the legend
+            # entries carry the user's own colour specs ('k', '#ff00ff'),
+            # so normalise them the way every other path does.
+            from matplotlib.colors import to_rgb
             return {'kind': 'blend', 'palette': palette, 'cmap': None,
                     'norm': None, 'vmin': None, 'vmax': None,
                     'colors': None, 'labels': None,
-                    'categories': dict(legend_entries or [])}
+                    'categories': {str(label): tuple(to_rgb(color))
+                                   for label, color in (legend_entries or [])}}
         # no grouping at all: one dataset, one colour
         colors = np.asarray(dataset_colors(palette, max(len(xform), 1)))
         return {'kind': 'discrete', 'palette': palette,
@@ -11033,7 +11296,8 @@ def _make_title_updater(titles, axes, font=None, title_kwargs=None,
 
 def _apply_multicolor_animation(ax, xform, line_colors, kwargs_list,
                                 line_ani, style, chemtrails, precog,
-                                bullettime, total_frames, antialias=True):
+                                bullettime, total_frames, antialias=True,
+                                frame_hooks=None):
     """Per-frame multicolored (continuous/matrix hue) line rendering for
     ANIMATED matplotlib plots (release-1.0 audit, F04-001/F05-002).
 
@@ -11055,6 +11319,13 @@ def _apply_multicolor_animation(ax, xform, line_colors, kwargs_list,
     draws the full trajectory every frame (the static swap is already
     correct there), and 'morph' draws its own single traveling artist (the
     static swap would have REMOVED it -- callers skip morph entirely).
+
+    `frame_hooks` is the `FrameHooks` registry the backend's updater just
+    called ``record(artists=...)`` on. Its recorded artists are the HIDDEN
+    single-colour lines, so the collections drawn here are swapped in for
+    them after every frame: `dataset_fade=` and any `on_frame=` mutation
+    then reach what is actually rendered. Without the swap, setting alpha
+    on ``ctx.artists`` changed invisible artists and rendered nothing.
     """
     from matplotlib.collections import LineCollection
     from mpl_toolkits.mplot3d.art3d import Line3DCollection
@@ -11235,7 +11506,18 @@ def _apply_multicolor_animation(ax, xform, line_colors, kwargs_list,
                 else:
                     ts, te = 0, trail_len  # chemtrails/bullettime: from 0
                 _set_segments(trail_colls[i], *_aa_slice(i, ts, te))
+        if frame_hooks is not None and frame_hooks.state:
+            recorded = frame_hooks.state.get('artists')
+            if recorded is not None:
+                frame_hooks.state['artists'] = [
+                    _visible.get(id(artist), artist) for artist in recorded]
         return result
+
+    # hidden head/trail line -> the collection drawn in its place
+    _visible = {id(head_lines[i]): head_colls[i] for i in range(n)
+                if i < len(head_lines)}
+    _visible.update({id(line): trail_colls[i]
+                     for i, line in trail_lines.items()})
 
     line_ani._func = _multicolor_frame
 
@@ -11250,7 +11532,7 @@ def _expand_labels(labels, old_lengths, new_lengths):
     lands on the nearest remaining point. Accepts flat label lists or lists
     nested per dataset; returns a flat list matching sum(new_lengths).
     """
-    if any(isinstance(el, list) for el in labels):
+    if any(isinstance(el, (list, tuple)) for el in labels):
         flat = list(itertools.chain(*labels))
     else:
         flat = list(labels)

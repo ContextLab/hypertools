@@ -381,3 +381,26 @@ def test_word2vec_explicit_semantic_none_no_skip_warning():
                 "explicit semantic=None must not emit the skip warning"
             out = text2mat([DOCS], vectorizer='Word2Vec', semantic=None, corpus=None)
     assert out[0].shape[0] == len(DOCS)
+
+
+# ------------------- dict-spec topic model + gensim vectorizer (1.1, X2)
+
+
+@requires_gensim
+def test_dict_spec_topic_model_is_skipped_for_a_gensim_vectorizer():
+    # the string form warned and skipped the semantic stage; the dict form
+    # bypassed the guard (it tested isinstance(semantic, str)) and crashed
+    # inside NMF with "Negative values in data passed to NMF"
+    with pytest.warns(UserWarning, match="Word2Vec.*NMF.*skipping"):
+        out = text2mat([DOCS], vectorizer='Word2Vec',
+                       semantic={'model': 'NMF',
+                                 'kwargs': {'n_components': 2}},
+                       corpus=None)
+    assert len(out) == 1
+    assert out[0].shape == (len(DOCS), 100)   # the embeddings, unreduced
+    with pytest.warns(UserWarning, match="Word2Vec.*LatentDirichlet"):
+        out = text2mat([DOCS], vectorizer='Word2Vec',
+                       semantic={'model': 'LatentDirichletAllocation',
+                                 'params': {'n_components': 2}},
+                       corpus=None)
+    assert out[0].shape == (len(DOCS), 100)

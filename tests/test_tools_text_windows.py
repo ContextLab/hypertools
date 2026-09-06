@@ -176,3 +176,17 @@ def test_windows_plot_as_one_trajectory_per_document():
                    reduce='PCA', ndims=3, show=False)
     assert len(fig.axes[0].lines) == 2
     assert all(np.asarray(len(d)) > 1 for d in docs)
+
+
+def test_numpy_integers_are_accepted_for_size_step_and_min_windows():
+    # 1.1 release review I7: every other 1.1 API accepts np.integer, but
+    # text_windows('a b c d', size=np.int64(2)) raised TypeError
+    expected = text_windows('a b c d e', size=2, step=1, min_windows=1)
+    assert text_windows('a b c d e', size=np.int64(2), step=np.int32(1),
+                        min_windows=np.uint8(1)) == expected
+    assert text_windows('a b c d e', size=np.int64(2)) == ['a b', 'b c',
+                                                            'c d', 'd e']
+    with pytest.raises(TypeError):
+        text_windows('a b c d', size=True)          # bool is not a size
+    with pytest.raises(TypeError):
+        text_windows('a b c d', size=np.float64(2))

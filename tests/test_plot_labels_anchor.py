@@ -147,3 +147,42 @@ def test_plotly_anchor_matches_the_hand_built_list():
     got = [(a.text, a.x, a.y, a.z) for a in short.layout.scene.annotations]
     want = [(a.text, a.x, a.y, a.z) for a in long.layout.scene.annotations]
     assert got == want
+
+
+# --- 1.1 release review: T4 nested TUPLE labels; T8 anchor/bare-str ------
+
+def test_nested_tuple_labels_annotate_like_nested_lists():
+    """The validator accepted tuple sub-sequences but the flatteners only
+    recognised lists, so each tuple was drawn as its literal repr."""
+    rows = 21
+    as_tuples = (('A',) + (None,) * (rows - 1), ('B',) + (None,) * (rows - 1),
+                 ('C',) + (None,) * (rows - 1))
+    as_lists = [list(t) for t in as_tuples]
+    fig_t = hyp.plot(_datasets(3), labels=as_tuples, reduce='PCA',
+                     show=False)
+    fig_l = hyp.plot(_datasets(3), labels=as_lists, reduce='PCA',
+                     show=False)
+    assert _annotations(fig_t) == _annotations(fig_l)
+    assert [t for t, _ in _annotations(fig_t)] == ['A', 'B', 'C']
+
+
+def test_nested_tuple_labels_under_plotly():
+    pytest.importorskip('plotly')
+    rows = 21
+    as_tuples = (('A',) + (None,) * (rows - 1), ('B',) + (None,) * (rows - 1),
+                 ('C',) + (None,) * (rows - 1))
+    fig = hyp.plot(_datasets(3), labels=as_tuples, reduce='PCA',
+                   backend='plotly', show=False)
+    assert [a.text for a in fig.layout.scene.annotations] == ['A', 'B', 'C']
+
+
+def test_bogus_label_anchor_is_rejected_even_without_labels():
+    with pytest.raises(ValueError, match="label_anchor= must be 'first'"):
+        hyp.plot(_datasets(3), label_anchor='bogus', reduce='PCA',
+                 show=False)
+
+
+def test_a_bare_string_labels_is_rejected_not_counted_by_character():
+    with pytest.raises(TypeError, match='not the single string') as err:
+        hyp.plot(_datasets(3), labels='only', reduce='PCA', show=False)
+    assert 'labels has 4 entries' not in str(err.value)

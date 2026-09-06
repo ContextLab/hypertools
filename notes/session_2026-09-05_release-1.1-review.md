@@ -120,3 +120,26 @@ review report; it "Closes #284, #285" on merge). Started at b3eafe5c.
 - LOW: bundle['colors']['categories'] not RGB for blend kind with legend_colors (plot.py:10318).
 - LOW: nested hue with one mismatched sub-list -> misleading "hue has 3 entries but 36 observations" (plot.py:7794).
 - LOW doc: hue docstring (~3340) says integer ids legend-labeled in sorted order; line fmt draws first-appearance order, fmt='o' sorts.
+
+## Progress (2026-09-06 ~01:30)
+- f1a1e091: predict/align fixes (fixer A) + RELEASE_CHECKLIST rewrite + this note.
+- e47968f5: spy tests rewritten (fixer B); HypertoolsOfflineError exported (hyp + hyp.io + API pin test); script ref; whitespace.
+- In flight: P1 (plot animation/title/colour fixes; owns hypertools/plot/* + their tests), IO fixer (offline/yahoo/synthetic seeds/text2mat/text_windows + streaming= item), gate fixer (tests/test_examples_are_native.py), docs reviewer (sphinx -W build).
+- Queued: P2 wave after P1 = panels/series/predict findings + ARIMA min-history (owns plot.py etc. + plot/forecast.py + predict/arima.py + predict/common.py); docs wave after docs reviewer = CHANGELOG lines from all fixers, docs/api.rst (HypertoolsOfflineError), conf.py stale comment, notebook prose ('hyper' deprecated in analyze/plot.ipynb; isotropic in manip.ipynb; align.ipynb image; text.ipynb hue half), hyp.plot font=/drawn_extent docstring nits; strip /Users/ paths from stored outputs (scripts/execute_tutorial.py post-process) then re-execute plot/projectile_kalman/conversation_trajectories (+ any notebook whose behaviour changed) LAST.
+- Final: full pytest, ruff, sphinx -W, git diff --check, commit, push, PR #286 CI; then issue-closure comments.
+### From the parent plot reviewer (own findings, for wave P2)
+- MED: predict= list/dict on a column/row-MultiIndex frame -> internal "hierarchy trace/bundle_forecasts mismatch: 6 traces but 1 bundle_forecasts" (plot.py:7046-7050 / 7354 / 8636); predict='Kalman' works; docstring 4026-4040 + CHANGELOG say collections work with hierarchies.
+- MED: column-MultiIndex frame with DatetimeIndex in ndims=1 -> "some datasets carry a DatetimeIndex and others do not" (plot.py:5398 _capture_row_indices runs before group_columns, only leaf 0 keeps the index; 6835).
+- LOW: _plot_panels_plotly (plot.py:2757) calls fig.show() directly and returns a bare go.Figure, bypassing the HyperPlotlyFigure one-shot display queue -> 2 outputs in a notebook cell; show= docstring promises once at cell end.
+### From the docs reviewer: sphinx -W full gallery = 0 warnings; 39/41 links 200 (RTD latest optional_dependencies 404 until RTD rebuilds; one extractor artifact)
+- MED: CHANGELOG.md:281 names HypertoolsOfflineError (now exported in e47968f5) -- add to docs/api.rst Exceptions (:235-240; also omits HypertoolsTrustError).
+- MED: readme.md Requirements floors contradict pyproject: scikit-learn>=1.4.0 (1.4.2), pandas>=2.2.0 (2.2.2), matplotlib>=3.8.0 (3.9.0), numba>=0.59 (0.61.0); pillow>=8 unlisted.
+- MED: CHANGELOG.md:255 "All 138 of its examples are executed by the test suite" is unsupported (hierarchy.rst literal blocks are not exec'd; tests only check text). Reword.
+- LOW: CHANGELOG date 2026-09-04 (re-cut date); "## 1.0.1 (unreleased)" heading (:781) inside a released changelog.
+- LOW: furo "View this page" 404s on gallery pages (auto_examples gitignored; conf.py:273 source_directory). Fix: disable the edit link for auto_examples or point it at examples/.
+- LOW: docs/tutorials.rst:203 + market_sectors.ipynb prose say hyp.align(..., align='HyperAlign') (undocumented alias); code uses model=. Make prose match.
+- LOW: readme "Try it!" says "predate the 1.0 API" / "every 1.0 feature" -> 1.x.
+- LOW: CHANGELOG never mentions hyp.predict(metrics=), hyp.impute(return_imputed=), hyp.load(**source_kwargs).
+- LOW: plot.ipynb cell 40 stderr leaks /Users/jmanning path (format_data.py:495 UserWarning).
+- NIT: HyperAnimation.save docstring internal "QC 2026-07" note; drawn_extent(frames, threshold) threshold undocumented.
+- NIT: wikipedia_embeddings.ipynb cells 13-14 still %pip install wikipedia-api + wikipediaapi instead of hyp.load('wikipedia:...').

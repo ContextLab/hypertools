@@ -315,6 +315,14 @@ def legend_call_kwargs(is_3d=False, zlabel=None, font=None,
     # above -- which is the whole point of the kwarg.
     if legend_kwargs:
         call.update(legend_kwargs)
+        # matplotlib ignores `fontsize=` whenever `prop=` is given, so with
+        # a `font=` the user's size silently lost; fold it into the
+        # FontProperties instead so legend_kwargs still wins.
+        if font is not None and 'fontsize' in call and 'prop' in call \
+                and call['prop'] is font:
+            prop = font.copy()
+            prop.set_size(call.pop('fontsize'))
+            call['prop'] = prop
     return call
 
 
@@ -1219,7 +1227,7 @@ def _draw(
         if explore:
             X = np.vstack(x)
             if labels is not None:
-                if any(isinstance(el, list) for el in labels):
+                if any(isinstance(el, (list, tuple)) for el in labels):
                     labels = list(itertools.chain(*labels))
                 fig.canvas.mpl_connect(
                     "motion_notify_event", lambda event: onMouseMotion(event, X, labels)
@@ -1232,7 +1240,10 @@ def _draw(
         elif labels is not None:
             X = np.vstack(x)
             lengths = [np.atleast_2d(np.asarray(d)).shape[0] for d in x]
-            if any(isinstance(el, list) for el in labels):
+            # a nested per-dataset labels= may be a tuple of tuples as well
+            # as a list of lists (the validator accepts both); flatten
+            # either, or the tuple is drawn as its literal repr.
+            if any(isinstance(el, (list, tuple)) for el in labels):
                 labels = list(itertools.chain(*labels))
             annotate_plot(X, labels, lengths=lengths)
             fig.canvas.mpl_connect("button_press_event", hide_labels)
@@ -1731,6 +1742,7 @@ def _draw(
 
         windows = []
         window_spcs = []
+        _head_windows = []                                  # GH #285
         for i, (line, data, trail) in enumerate(itertools.zip_longest(
                 lines, data_lines, trail_lines)):
             n_pts = data.shape[0]
@@ -1778,6 +1790,7 @@ def _draw(
             head = _aa_window(i, *head_bounds, artist=line)
             trail_seg = (data[:0] if trail_bounds is None
                          else _aa_window(i, *trail_bounds, artist=trail))
+            _head_windows.append(tuple(int(b) for b in head_bounds))
             line.set_data(head[:, 0:2].T)
             line.set_3d_properties(head[:, 2])
             if trail is not None:
@@ -1811,9 +1824,11 @@ def _draw(
                 datasets=list(data_lines), style='serial', order='serial',
                 current_index=_idx, current_fraction=_frac,
                 revealed_counts=_counts,
-                # a serial reveal is cumulative: every dataset's window
-                # starts at row 0 (GH #285).
-                window_bounds=tuple((0, c) for c in _counts))
+                # the head window each artist was JUST drawn over: start
+                # is 0 for a plain cumulative reveal and moves past the
+                # dataset's beginning once a trail flag gives the reveal
+                # a comet-head (GH #285; `FrameContext.window_bounds`).
+                window_bounds=tuple(_head_windows))
         return lines
 
     def update_morph(num, morph_state, cube_scale, azimuths, zoom=1, elev=10):
@@ -2568,6 +2583,7 @@ def _draw(
         revealed = total_points * num / max(1, total_frames - 1)
         _counts = serial_reveal_counts(lengths, num, total_frames)
 
+        _head_windows = []                                  # GH #285
         for i, (line, data, trail) in enumerate(itertools.zip_longest(
                 lines, data_lines, trail_lines)):
             n_pts = data.shape[0]
@@ -2600,6 +2616,7 @@ def _draw(
             head = _aa_window(i, *head_bounds, artist=line)
             trail_seg = (data[:0] if trail_bounds is None
                          else _aa_window(i, *trail_bounds, artist=trail))
+            _head_windows.append(tuple(int(b) for b in head_bounds))
             line.set_data(head[:, 0], head[:, 1])
             if trail is not None:
                 trail.set_data(trail_seg[:, 0], trail_seg[:, 1])
@@ -2613,7 +2630,7 @@ def _draw(
                 datasets=list(data_lines), style='serial', order='serial',
                 current_index=_idx, current_fraction=_frac,
                 revealed_counts=_counts,
-                window_bounds=tuple((0, c) for c in _counts))
+                window_bounds=tuple(_head_windows))
         return lines
 
     def update_morph_2d(num, morph_state):

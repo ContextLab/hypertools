@@ -434,9 +434,16 @@ def morph_alpha(alphas, seg_idx, step, n_steps):
     return vals[k] + t * (vals[k + 1] - vals[k])
 
 
-def resolve_morph_rotations(rotations, n_datasets):
+def resolve_morph_rotations(rotations, n_datasets, loop=False):
     """Validate `rotations` for ``animate='morph'`` with `n_datasets`
     morphing datasets.
+
+    `n_datasets` counts the CLOSING repeat of the first cloud that
+    ``loop=True`` appends (`plot`'s `loop=` docstring: `n` clouds give
+    ``2(n + 1) - 1`` segments), so a looped 3-cloud morph is validated
+    against 4 datasets / 7 segments. Pass ``loop=True`` so the error
+    message can say so, rather than reporting a dataset count one larger
+    than the caller passed with no explanation.
 
     A scalar is returned unchanged (a single float): the TOTAL number of
     camera rotations spread uniformly over the whole animation, exactly
@@ -457,11 +464,17 @@ def resolve_morph_rotations(rotations, n_datasets):
     if isinstance(rotations, (list, tuple)):
         n_segments = 2 * n_datasets - 1
         if len(rotations) != n_segments:
+            looped = (
+                f" (loop=True closes the sequence with a repeat of the "
+                f"first cloud, so {n_datasets - 1} clouds count as "
+                f"{n_datasets}: 2 * ({n_datasets - 1} + 1) - 1 = "
+                f"{n_segments} segments, the last two being the closing "
+                "morph back to cloud 1 and its hold)" if loop else "")
             raise ValueError(
                 f"rotations list has {len(rotations)} entries but "
                 f"animate='morph' with {n_datasets} morphing datasets "
                 f"needs exactly {n_segments} (2 * n_datasets - 1: "
-                "[hold_1, morph_1->2, hold_2, ..., hold_N])"
+                f"[hold_1, morph_1->2, hold_2, ..., hold_N]){looped}"
             )
         return [float(r) for r in rotations]
     return float(rotations)

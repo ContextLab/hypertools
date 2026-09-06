@@ -320,7 +320,7 @@ def _build_point_annotations(data, labels, ndims, font_family, label_alpha=0.5):
         return []
 
     flat_labels = (list(itertools.chain(*labels))
-                   if any(isinstance(el, list) for el in labels)
+                   if any(isinstance(el, (list, tuple)) for el in labels)
                    else list(labels))
 
     X = np.vstack(data)
@@ -556,6 +556,49 @@ def _plotly_title_overrides(title_kwargs):
     return title_props, font_props
 
 
+def _plotly_title_text(text):
+    """A title string as plotly draws it: newlines become ``<br>``.
+
+    `plot()` promises a title renders identically on both backends, and
+    matplotlib breaks a line on ``'\n'``; plotly's title is HTML-ish and
+    draws a raw newline as nothing at all (one long line). Applied on
+    every plotly title path -- static, per-segment and per-frame dynamic.
+    """
+    if text is None:
+        return None
+    return str(text).replace('\n', '<br>')
+
+
+def _plotly_title_lines(*texts):
+    """The most lines any of these plotly title strings needs (``<br>`` or
+    ``'\n'`` separated); 1 for nothing at all."""
+    n = 1
+    for text in texts:
+        if text is None:
+            continue
+        for entry in ([text] if isinstance(text, str) else list(text)):
+            if isinstance(entry, str):
+                n = max(n, _plotly_title_text(entry).count('<br>') + 1)
+    return n
+
+
+def _title_margin_top(n_lines, size_px, height_px):
+    """`layout.margin.t` that keeps an `n_lines`-line title of `size_px`
+    off the plotting area (GH #285, 1.1 release review T6).
+
+    The title is anchored by its TOP at ``y=0.97`` of the container and
+    grows downward, so the margin has to hold the 3% offset plus one line
+    height (1.25 x the font size, plotly's line spacing) per line. The
+    historical single-line/default-size case keeps its exact 40px so an
+    un-styled figure is byte-identical to before; anything taller or
+    larger is measured.
+    """
+    default_px = round(12 * PT_TO_PX)
+    if n_lines <= 1 and size_px <= default_px:
+        return 40
+    return int(np.ceil(0.03 * height_px + n_lines * 1.25 * size_px + 6))
+
+
 def _frame_title_dict(text, index, style, segment_colors):
     """One animation frame's `layout.title` (GH #285).
 
@@ -564,6 +607,7 @@ def _frame_title_dict(text, index, style, segment_colors):
     resolved style is re-applied on EVERY frame, because a frame's layout
     patch replaces the title outright.
     """
+    text = _plotly_title_text(text)
     if not style and not segment_colors:
         return dict(text=text)
     title = dict(style or {})
@@ -1843,11 +1887,12 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         _title_props, _title_font_props = _plotly_title_overrides(
             title_kwargs)
         _title_font.update(_title_font_props)
-        layout['title'] = dict(text=title, x=0.5, xanchor='center',
-                               xref='paper',
+        layout['title'] = dict(text=_plotly_title_text(title), x=0.5,
+                               xanchor='center', xref='paper',
                                y=0.97, yanchor='top',
                                font=_title_font)
         layout['title'].update(_title_props)
+        _title_size_px = _title_font.get('size', round(12 * PT_TO_PX))
     size = size if size is not None else DEFAULT_FIGSIZE
     layout['width'] = int(size[0] * 100)
     layout['height'] = int(size[1] * 100)
@@ -1933,6 +1978,20 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         _segment_title_style = dict(x=0.5, xanchor='center', xref='paper',
                                     y=0.97, yanchor='top', font=_seg_font)
         _segment_title_style.update(_seg_props)
+        _title_size_px = _seg_font.get('size', round(12 * PT_TO_PX))
+
+    # a multi-line (explicit '\n', or `title_wrap=`) or enlarged title
+    # needs more than the 40px single-line margin, or it overlaps the
+    # plotting area (1.1 release review T6): reserve per line and per
+    # font size, exactly as the matplotlib backend's probe does. A
+    # dynamic (callable / pattern) title is measured over EVERY frame at
+    # the end of `_add_animation`, once its text exists.
+    if title is not None or segment_titles is not None:
+        _n_title_lines = _plotly_title_lines(title, segment_titles)
+        _needed = _title_margin_top(_n_title_lines, _title_size_px,
+                                    layout['height'])
+        if _needed > 40:
+            fig.update_layout(margin=dict(t=_needed))
 
     if animate:
         _add_animation(fig, data, ndims, animate, frame_rate, duration,
@@ -4312,6 +4371,31 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
             frames.append(go.Frame(**frame_kwargs))
 
     fig.frames = frames
+
+    # a dynamic (callable / `{index...}`) title only has text now that
+    # every frame is built: reserve top margin for the TALLEST title any
+    # frame draws (1.1 release review T7) -- every frame is a plain dict,
+    # so this is one pass over strings, and it can never clip a later
+    # frame the way a frame-0-only measurement could.
+    _frame_titles = []
+    for _frame in frames:
+        _t = getattr(getattr(_frame.layout, 'title', None), 'text', None)
+        if _t:
+            _frame_titles.append(_t)
+    if _frame_titles:
+        _size_px = round(12 * PT_TO_PX)
+        if segment_title_style and segment_title_style.get('font'):
+            _size_px = segment_title_style['font'].get('size', _size_px)
+        elif fig.layout.title and fig.layout.title.font \
+                and fig.layout.title.font.size:
+            _size_px = fig.layout.title.font.size
+        _needed = _title_margin_top(_plotly_title_lines(*_frame_titles),
+                                    _size_px, fig.layout.height or 504)
+        _current = (fig.layout.margin.t
+                    if fig.layout.margin and fig.layout.margin.t is not None
+                    else 10)
+        if _needed > _current:
+            fig.update_layout(margin=dict(t=_needed))
     # Play-button pacing is the TRUE inter-frame interval, `1000 / frame_rate`
     # -- byte-identical to the `interval=` matplotlib hands `FuncAnimation`,
     # and the same rule the GIF/APNG export path above already documents ("NOT

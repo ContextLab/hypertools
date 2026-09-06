@@ -206,3 +206,72 @@ class TestContextStaysImmutable:
                        for b in ctx.window_bounds)
         finally:
             plt.close(anim.figure)
+
+
+# --- 1.1 release review: A4 window_bounds.start under a serial trail;
+# --- A6 a raising on_frame during save keeps its own exception -----------
+
+class TestSerialWindowBounds:
+
+    @pytest.mark.parametrize('ndims', [3, 2])
+    def test_start_moves_with_the_comet_head_and_matches_the_artist(
+            self, ndims):
+        """`window_bounds` said (0, c) on every serial frame even when a
+        trail flag had moved the head; the docstring promises start > 0
+        once the window has moved past a dataset's beginning."""
+        rng = np.random.default_rng(4)
+        data = [np.cumsum(rng.normal(size=(30, ndims)), axis=0) + 3.0 * i
+                for i in range(3)]
+        anim = hyp.plot(data, animate='serial', chemtrails=True,
+                        focused=0.4, antialias=False, reduce=None,
+                        ndims=ndims, duration=2, frame_rate=10, show=False)
+        starts = []
+
+        def check(ctx):
+            # inside the hook: matplotlib's artists are shared and mutated
+            # in place, so they only hold THIS frame's data right now
+            for i, (start, end) in enumerate(ctx.window_bounds):
+                assert end == ctx.revealed_counts[i]
+                head = ctx.artists[i]
+                xs = (head.get_data_3d()[0] if ndims == 3
+                      else head.get_xdata())
+                expected = ctx.datasets[i][start:end]
+                assert len(xs) == len(expected)
+                if len(expected):
+                    assert np.allclose(xs, expected[:, 0])
+                starts.append(start)
+
+        try:
+            anim.on_frame(check)
+            for i in range(anim.n_frames):
+                anim.draw_frame(i)
+            assert any(s > 0 for s in starts)
+        finally:
+            plt.close(anim.figure)
+
+
+class TestSaveWithARaisingHook:
+
+    def test_the_hooks_own_exception_propagates(self, tmp_path):
+        """The Pillow writer's finish() indexed an empty frame list, so a
+        hook that raised on frame 0 surfaced as IndexError with the real
+        error only in the chained context."""
+        def hook(ctx):
+            raise RuntimeError('hook boom')
+
+        anim = hyp.plot(trajectories(), animate=True, duration=1,
+                        frame_rate=5, show=False, on_frame=hook)
+        try:
+            with pytest.raises(RuntimeError, match='hook boom'):
+                anim.save(tmp_path / 'x.gif')
+        finally:
+            plt.close(anim.figure)
+
+    def test_save_path_with_a_raising_hook_too(self, tmp_path):
+        def hook(ctx):
+            raise RuntimeError('hook boom')
+
+        with pytest.raises(RuntimeError, match='hook boom'):
+            hyp.plot(trajectories(), animate=True, duration=1,
+                     frame_rate=5, show=False, on_frame=hook,
+                     save_path=str(tmp_path / 'y.gif'))
