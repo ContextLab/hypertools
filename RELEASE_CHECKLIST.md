@@ -17,7 +17,7 @@ detached tag checkout — the notebook migrator detects the branch via
 
 - [ ] PR #286 CI fully green (matrix, `wheel-smoke`, `docs-clean`,
       `dataset-gate`, `live-source-gate`).
-- [ ] Full suite green locally: `pytest` (4900+ passed, 0 failed — including
+- [ ] Full suite green locally: `pytest` (5100+ passed, 0 failed — including
       `tests/test_examples_are_native.py`, the native-usage gate, at 0 failed).
 - [ ] Example smoke gate: `HYPERTOOLS_EXAMPLE_SMOKE=1 pytest tests/test_examples_are_native.py`
       executes every gallery script headless. No CI job runs it, so it is
@@ -62,9 +62,6 @@ detached tag checkout — the notebook migrator detects the branch via
 - [ ] **CHANGELOG date.** Edit `CHANGELOG.md`: the `## 1.1.0 (YYYY-MM-DD)`
       heading must carry the date of the FINAL release commit (the draft is
       dated 2026-09-04; a re-cut on a later day updates it).
-- [ ] (Optional prose) `docs/tutorials/stock_forecasting.ipynb` has a
-      free-text "hypertools 1.0 preview" comment the migrator does not touch —
-      reword if desired (not gate-enforced).
 - [ ] **Verify the file-content gates locally BEFORE committing.** Exclude the
       gallery-resolve gate — it checks the *remote* `docs-notebooks` branch,
       published in the next step, so it cannot pass yet:
@@ -174,6 +171,11 @@ same artifacts you verify are the ones you publish.
       (no `git+`) — `docs/conf.py` emits this automatically on a tag build.
 - [ ] PyPI project page renders the README with all 8 images resolving (they
       now point at the `v1.1.0` tag).
+- [ ] **Feature tour on Colab.** Run `notes/colab/hypertools_1.1_feature_tour.ipynb`
+      (local, gitignored) top to bottom on Colab: its first cell installs
+      `hypertools[interactive,predict]==1.1.0` from PyPI (falling back to the
+      tag), and section 12.4 exercises the on-demand `[predict-hf]` install,
+      so this is the end-user smoke of the published wheel.
 
 ## 7. conda-forge bump (the feedstock exists since 1.0.0)
 
@@ -194,7 +196,14 @@ feedstock automatically, usually within hours of the PyPI upload.
       `conda install -c conda-forge hypertools` installs `1.1.0` and
       `import hypertools` works.
 
-## 8. Cleanup
+## 8. Announce
+
+- [ ] Bluesky launch thread from `notes/bluesky-launch/` (gitignored): re-verify
+      the atproto limits with curl before posting (they have moved between
+      drafts), count graphemes with the `regex` module's `\X`, and expect the
+      tutorial "Full code" links to 404 until Read the Docs has built the tag.
+
+## 9. Cleanup
 
 - [ ] After the release is confirmed good, delete the `dev-1.0` /
       `dev-1.0-refactor` / `fix/1.1-release-review` branches if desired

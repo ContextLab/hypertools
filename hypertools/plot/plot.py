@@ -71,6 +71,12 @@ def _is_plotly_figure(obj):
     return isinstance(obj, BaseFigure)
 
 
+def _is_plotly_cell(obj):
+    """True for one cell of a ``hyp.subplots(..., backend='plotly')`` grid."""
+    from .plotly_backend import PlotlyCell
+    return isinstance(obj, PlotlyCell)
+
+
 _PLOTLY_MAPPED_KWARGS = frozenset(
     {'color', 'alpha', 'linewidth', 'markersize', 'marker', 'linestyle',
      'label'})
@@ -2463,7 +2469,8 @@ def _normalize_legend_colors(legend_colors):
     return items, None
 
 
-def subplots(nrows=1, ncols=1, ndims=3, size=None, **fig_kw):
+def subplots(nrows=1, ncols=1, ndims=3, size=None, backend='auto',
+             **fig_kw):
     """Create a figure and a FLAT array of hypertools-ready axes (GH #285).
 
     A thin wrapper over `matplotlib.pyplot.subplots` that sets the 3-D
@@ -2481,10 +2488,22 @@ def subplots(nrows=1, ncols=1, ndims=3, size=None, **fig_kw):
     pass ``panels=`` to `hyp.plot` instead; this helper is for grids you
     want to fill yourself (mixing hypertools panels with your own).
 
+    The same loop works on the plotly backend: ``backend='plotly'`` (or
+    ``'auto'`` while `hyp.set_interactive_backend('plotly')` is active)
+    returns a `plotly.subplots.make_subplots` figure and a flat array of
+    grid CELLS that `hyp.plot(..., ax=cell)` draws into -- each call moves
+    its whole panel (traces, axes and frame, `title=`, `labels=`, and its
+    own legend/colorbar beside the cell) into that cell, and returns the
+    grid figure. Room for one legend is reserved beside every cell.
+
     Parameters
     ----------
     nrows, ncols : int
         Grid shape (default 1x1).
+    backend : {'auto', 'matplotlib', 'plotly'}
+        Which backend's grid to build (default ``'auto'``: the active
+        one, matplotlib unless `hyp.set_interactive_backend` says
+        otherwise).
     ndims : int
         3 (default) gives every panel a 3-D projection; 1 or 2 gives
         ordinary 2-D axes. Matches `hyp.plot`'s `ndims=`.
@@ -2492,20 +2511,38 @@ def subplots(nrows=1, ncols=1, ndims=3, size=None, **fig_kw):
         Figure size in inches (`figsize`); `None` keeps matplotlib's.
     **fig_kw
         Forwarded to `matplotlib.pyplot.subplots` (`sharex=`, `dpi=`,
-        `gridspec_kw=`, an explicit `subplot_kw=`, ...).
+        `gridspec_kw=`, an explicit `subplot_kw=`, ...) or, under plotly,
+        to `plotly.subplots.make_subplots` (`vertical_spacing=`,
+        `subplot_titles=`, `shared_xaxes=`, ...).
 
     Returns
     -------
-    fig : matplotlib.figure.Figure
+    fig : matplotlib.figure.Figure or plotly.graph_objects.Figure
     axes : numpy.ndarray
-        A FLAT (1-D) array of ``nrows * ncols`` axes, row-major -- no
-        ``.ravel()`` needed, and a 1x1 grid still returns a length-1 array
-        rather than a bare Axes, so the same loop works for any grid.
+        A FLAT (1-D) array of ``nrows * ncols`` axes (matplotlib) or grid
+        cells (plotly), row-major -- no ``.ravel()`` needed, and a 1x1 grid
+        still returns a length-1 array rather than a bare Axes, so the
+        same loop works for any grid.
     """
     if ndims not in (1, 2, 3):
         raise ValueError(
             f"ndims must be 1, 2 or 3 (the plot dimensionality each panel "
             f"is drawn in); got {ndims!r}.")
+    if resolve_backend(backend) == 'plotly':
+        from .plotly_backend import (PlotlyCell, _hyper_figure_class,
+                                     make_panel_grid, panel_gutter_px)
+        # room beside every cell for the legend/colorbar a cell's own
+        # `hyp.plot(..., ax=cell, legend=True)` call may add (`panels=`
+        # sizes this from the panels it has already drawn; a grid filled
+        # later cannot, so it reserves one legend's width up front)
+        grid = make_panel_grid(nrows, ncols, ndims, size=size,
+                               gutter_px=panel_gutter_px(True, False),
+                               **fig_kw)
+        fig = _hyper_figure_class()(grid)
+        cells = np.empty(nrows * ncols, dtype=object)
+        cells[:] = [PlotlyCell(fig, i // ncols + 1, i % ncols + 1, i, ndims)
+                    for i in range(nrows * ncols)]
+        return fig, cells
     subplot_kw = dict(fig_kw.pop('subplot_kw', None) or {})
     if ndims >= 3:
         subplot_kw.setdefault('projection', '3d')
@@ -3154,40 +3191,37 @@ def _plot_panels_plotly(panel_data, panel_kwargs, titles, nrows, ncols,
     panel for 3-D, one ``(xaxis, yaxis)`` pair for 2-D), which is plotly's
     equivalent of the matplotlib bundle's ``Axes`` list.
     """
-    from plotly.subplots import make_subplots
-    cell = {'type': 'scene'} if ndims >= 3 else {'type': 'xy'}
-    fig = make_subplots(rows=nrows, cols=ncols,
-                        specs=[[dict(cell) for _ in range(ncols)]
-                               for _ in range(nrows)],
-                        subplot_titles=[t if t is not None else ''
-                                        for t in titles])
+    from .plotly_backend import (make_panel_grid, panel_gutter_px,
+                                 transplant_panel)
     return_model = bool(call_kwargs.get('return_model', False))
+    # draw every panel FIRST (each an ordinary single-axes plotly call), so
+    # the grid can reserve room beside each cell for the legend/colorbar
+    # the panels actually carry
     panel_models = []
-    panel_axes = []
-    for i, (data, kw) in enumerate(zip(panel_data, panel_kwargs)):
-        row, col = i // ncols + 1, i % ncols + 1
+    panel_figs = []
+    for data, kw in zip(panel_data, panel_kwargs):
         kw = dict(kw)
         kw.update(show=False, save_path=None, return_model=return_model,
                   title=None, size=None, backend='plotly')
         result = plot(data, **kw)
-        panel = result['fig'] if return_model else result
+        panel_figs.append(result['fig'] if return_model else result)
         if return_model:
             panel_models.append(result)
-        for trace in panel.data:
-            fig.add_trace(trace, row=row, col=col)
-        if ndims >= 3:
-            key = 'scene' if i == 0 else f'scene{i + 1}'
-            if panel.layout.scene is not None:
-                fig.layout[key].update(panel.layout.scene.to_plotly_json())
-            panel_axes.append(key)
-        else:
-            xkey = 'xaxis' if i == 0 else f'xaxis{i + 1}'
-            ykey = 'yaxis' if i == 0 else f'yaxis{i + 1}'
-            panel_axes.append((xkey, ykey))
+    legend_present = call_kwargs.get('legend') is not None
+    colorbar_present = any(
+        getattr(getattr(trace, 'marker', None), 'showscale', None)
+        for panel in panel_figs for trace in panel.data)
+    fig = make_panel_grid(nrows, ncols, ndims, titles,
+                          size=call_kwargs.get('size'),
+                          gutter_px=panel_gutter_px(legend_present,
+                                                    colorbar_present))
+    panel_axes = []
+    for i, panel in enumerate(panel_figs):
+        keys = transplant_panel(fig, panel, i // ncols + 1, i % ncols + 1,
+                                i, ndims)
+        panel_axes.append(keys['scene'] if ndims >= 3
+                          else (keys['xaxis'], keys['yaxis']))
     fig.update_layout(showlegend=bool(call_kwargs.get('legend')))
-    if call_kwargs.get('size') is not None:
-        width, height = call_kwargs['size']
-        fig.update_layout(width=width * 100, height=height * 100)
     # the SAME figure class the single-axes plotly path returns, displayed
     # through the same one-shot end-of-cell queue: a bare `go.Figure` shown
     # with `fig.show()` here was displayed a second time by the notebook's
@@ -5281,13 +5315,18 @@ def plot(
         (never loaded or embedded) when the vectorizer is a pretrained
         Hugging Face embedding model and there is no semantic stage.
 
-    ax : matplotlib.Axes or plotly.graph_objects.Figure
+    ax : matplotlib.Axes, plotly.graph_objects.Figure, or plotly grid cell
         The surface to draw into: a matplotlib Axes for the matplotlib
-        backend, or, with the plotly backend, the plotly Figure an earlier
-        `hyp.plot` returned -- this call's traces are appended to it and it
-        is returned (its layout is left alone). A matplotlib Axes under
-        plotly raises `ValueError`; a plotly Figure under matplotlib raises
-        `TypeError`.
+        backend, or, with the plotly backend, either the plotly Figure an
+        earlier `hyp.plot` returned -- this call's traces are appended to
+        it and it is returned (its layout is left alone) -- or one cell of
+        a ``hyp.subplots(nrows, ncols, backend='plotly')`` grid, into
+        which the whole drawn panel moves (traces, axes/frame, `title=`,
+        `labels=` annotations, and its own legend and colorbar beside the
+        cell), the same composition loop as the matplotlib
+        ``fig, axes = hyp.subplots(...); hyp.plot(d, ax=axes[i])`` form.
+        A matplotlib Axes under plotly raises `ValueError`; a plotly Figure
+        or cell under matplotlib raises `TypeError`.
 
         STATIC PLOTS ONLY. An animated plot (any truthy ``animate=``) owns
         its own figure: it creates one, draws there, and returns it, so an
@@ -5984,27 +6023,30 @@ def plot(
     if ax is not None:
         import matplotlib.axes as _mpl_axes
         _is_mpl_axes = isinstance(ax, _mpl_axes.Axes)
-        _is_plotly_fig = _is_plotly_figure(ax)
+        _is_plotly_fig = _is_plotly_figure(ax) or _is_plotly_cell(ax)
         if not _is_mpl_axes and not _is_plotly_fig:
             raise TypeError(
                 "ax= must be a matplotlib Axes (2-D) or Axes3D (3-D) "
-                "instance, or a plotly Figure to draw into with the plotly "
-                f"backend; got {type(ax).__name__!r}.")
+                "instance, a plotly Figure to draw into with the plotly "
+                "backend, or one cell of a hyp.subplots(..., "
+                f"backend='plotly') grid; got {type(ax).__name__!r}.")
         if resolve_backend(backend) == "plotly":
             if _is_mpl_axes:
                 raise ValueError(
                     "ax= is a matplotlib Axes, and the plotly backend cannot "
                     "draw into it. Pass a plotly Figure instead (the one an "
-                    "earlier hyp.plot returned) to draw into it, drop ax= to "
-                    "get a new Figure, or draw this call with matplotlib: "
-                    "hyp.plot(..., backend='matplotlib') or "
+                    "earlier hyp.plot returned) or a cell from "
+                    "hyp.subplots(..., backend='plotly') to draw into it, "
+                    "drop ax= to get a new Figure, or draw this call with "
+                    "matplotlib: hyp.plot(..., backend='matplotlib') or "
                     "`with hyp.set_interactive_backend('matplotlib'):`.")
             _plotly_into = ax
             ax = None
         elif _is_plotly_fig:
             raise TypeError(
-                "ax= is a plotly Figure, but this call draws with matplotlib; "
-                "pass backend='plotly' (or a matplotlib Axes).")
+                "ax= is a plotly Figure (or hyp.subplots plotly cell), but "
+                "this call draws with matplotlib; pass backend='plotly' "
+                "(or a matplotlib Axes).")
 
     # a bare scalar is plotted as a single 1-D point -- warn rather than
     # doing so silently (D11-014).
@@ -10550,7 +10592,8 @@ def plot(
             # an EARLIER legend fit; fitting the legend last, against
             # whatever the current layout actually is, sidesteps that.
             if colorbar_info is not None and ax is not None:
-                _add_colorbar(fig, ax, colorbar_info, font=_artist_font)
+                _add_colorbar(fig, ax, colorbar_info, font=_artist_font,
+                              attached=_user_supplied_ax)
 
             # legend fitting (GH #100/#95 follow-up): a right-side (outside)
             # legend can overflow the figure's right edge. `tight_layout`
@@ -11106,11 +11149,13 @@ def _apply_font_to_colorbar(cbar, font):
     cbar.ax.yaxis.label.set_fontproperties(font)
 
 
-def _add_colorbar(fig, ax, colorbar_info, font=None):
+def _add_colorbar(fig, ax, colorbar_info, font=None, attached=False):
     """Attach a matplotlib colorbar built from `_build_colorbar_info`'s
     output to `fig`/`ax` (GH #100): a continuous `ScalarMappable` for
     continuous hue, or a `BoundaryNorm`-segmented one (one block per
-    group, tick labels = group names) for discrete groups."""
+    group, tick labels = group names) for discrete groups. `attached`
+    marks a caller-supplied `ax=` (a panel), whose colorbar must take its
+    room from that axes rather than widen the figure."""
     from matplotlib.cm import ScalarMappable
     from matplotlib.colors import BoundaryNorm, ListedColormap, Normalize
 
@@ -11139,13 +11184,22 @@ def _add_colorbar(fig, ax, colorbar_info, font=None):
                  is not None else [str(lbl) for lbl in default_tick_labels])
     label = colorbar_info['label']
 
-    if colorbar_info['location'] == 'right':
+    if colorbar_info['location'] == 'right' and not attached:
         cbar = _add_right_colorbar(fig, ax, mappable, ticklabels=ticklabels,
                                    label=label, font=font, **tick_kwargs)
     else:
+        # `attached` (a caller-supplied `ax=`, including every `panels=`
+        # cell): the colorbar takes its room from THAT axes, the way
+        # matplotlib's own `fig.colorbar(ax=...)` does, instead of
+        # `_add_right_colorbar`'s figure-widening absolute placement --
+        # which, repeated per panel, stacked every colorbar over the last
+        # panel and left `tight_layout` warning about axes it could not
+        # place (1.1 release review, feature tour 9.8 follow-up).
+        extra = ({'shrink': 0.6, 'pad': 0.04}
+                 if colorbar_info['location'] == 'right' else {})
         cbar = fig.colorbar(mappable, ax=ax,
                             location=colorbar_info['location'],
-                            **tick_kwargs)
+                            **extra, **tick_kwargs)
         if ticklabels is not None:
             cbar.set_ticklabels(ticklabels)
         if label:

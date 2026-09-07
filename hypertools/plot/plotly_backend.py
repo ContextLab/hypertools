@@ -2034,15 +2034,35 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                        ownership=ownership)
 
     if into is not None:
-        # `ax=<plotly Figure>`: draw INTO the caller's figure. The traces
-        # (data, legend and colorbar entries) are appended; the caller's
-        # layout is theirs to keep.
         if animate:
             raise ValueError(
-                "ax= (a plotly Figure) cannot be combined with animate=: an "
-                "animated plot builds its own figure and frames.")
-        into.add_traces(list(fig.data))
-        fig = into
+                "ax= (a plotly Figure or hyp.subplots cell) cannot be "
+                "combined with animate=: an animated plot builds its own "
+                "figure and frames.")
+        if isinstance(into, PlotlyCell):
+            # `ax=<hyp.subplots(backend='plotly') cell>`: the whole drawn
+            # panel -- traces, axis layout, frame, annotations, its own
+            # legend and colorbar -- moves into that cell of the grid, the
+            # plotly form of drawing into one matplotlib Axes of a grid.
+            keys = transplant_panel(into.figure, fig, into.row, into.col,
+                                    into.index, ndims)
+            cell_title = cell_title_annotation(into.figure, keys, ndims,
+                                               fig.layout.title)
+            if cell_title is not None:
+                into.figure.add_annotation(cell_title)
+                # the grid was built before any cell had a title, with a
+                # 10 px top margin; a title sits just above its cell's
+                # domain, i.e. IN that margin (`make_panel_grid` reserves
+                # 40 px when the titles are known up front)
+                if (into.figure.layout.margin.t or 0) < 40:
+                    into.figure.layout.margin.t = 40
+            fig = into.figure
+        else:
+            # `ax=<plotly Figure>`: draw INTO the caller's figure. The
+            # traces (data, legend and colorbar entries) are appended; the
+            # caller's layout is theirs to keep.
+            into.add_traces(list(fig.data))
+            fig = into
 
     if save_path is not None:
         ext = save_path.lower().rsplit('.', 1)[-1]
@@ -2062,6 +2082,252 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         show_figure(fig)
 
     return fig
+
+
+#: Horizontal room (px) reserved beside a subplot cell for its own legend
+#: and for its own colorbar -- the single-axes path widens its right
+#: margin by the same amount for each (see `plotly_draw`'s `margin_r`).
+PANEL_LEGEND_PX = 110
+PANEL_COLORBAR_PX = 110
+PANEL_GUTTER_PAD_PX = 8
+#: Width of the drawn 3-D cube relative to its scene's height at
+#: hypertools' default view (measured 2026-09-06: ~260 px wide for a 200 px
+#: tall cube in a 1200x300 scene), with a little margin -- what
+#: `transplant_panel` uses to keep a cube inside a narrow subplot cell.
+SCENE_CUBE_WIDTH_PER_HEIGHT = 1.4
+
+
+def panel_gutter_px(legend_present, colorbar_present):
+    """Pixels to reserve to the RIGHT of every subplot cell (`panels=` and
+    `hyp.subplots(backend='plotly')` cells alike) so a per-panel legend
+    and/or colorbar sits beside its own panel instead of over the next
+    one."""
+    px = 0
+    if legend_present:
+        px += PANEL_LEGEND_PX
+    if colorbar_present:
+        px += PANEL_COLORBAR_PX
+    return px + (PANEL_GUTTER_PAD_PX if px else 0)
+
+
+def cell_layout_keys(index):
+    """Plotly's layout keys for subplot cell number `index` (0-based,
+    row-major, as `plotly.subplots.make_subplots` numbers them): the 2-D
+    axis layout keys and axis ids, the 3-D scene key, and the legend key
+    that panel's traces are attached to (plotly >= 5.15 supports several
+    legends: ``layout.legend``, ``layout.legend2``, ...)."""
+    suffix = '' if index == 0 else str(index + 1)
+    return dict(xaxis=f'xaxis{suffix}', yaxis=f'yaxis{suffix}',
+                xref=f'x{suffix}', yref=f'y{suffix}',
+                scene=f'scene{suffix}', legend=f'legend{suffix}')
+
+
+class PlotlyCell:
+    """One cell of a ``hyp.subplots(..., backend='plotly')`` grid -- the
+    plotly counterpart of the matplotlib ``Axes`` that helper returns, and
+    what ``hyp.plot(..., ax=cell)`` draws into (via `transplant_panel`).
+
+    Attributes
+    ----------
+    figure : plotly.graph_objects.Figure
+        The `make_subplots` grid figure the cell belongs to (the figure
+        `hyp.subplots` returned; every cell of one grid shares it).
+    row, col : int
+        1-based grid position, as `make_subplots` numbers cells.
+    index : int
+        0-based row-major cell number (``layout.xaxis``/``scene``/``legend``
+        for 0, ``xaxis2``/``scene2``/``legend2`` for 1, ...).
+    ndims : int
+        The dimensionality the cell was built for (3 -> a ``'scene'``
+        cell, 1 or 2 -> an ``'xy'`` cell).
+    """
+
+    __slots__ = ('figure', 'row', 'col', 'index', 'ndims')
+
+    def __init__(self, figure, row, col, index, ndims):
+        self.figure = figure
+        self.row = int(row)
+        self.col = int(col)
+        self.index = int(index)
+        self.ndims = int(ndims)
+
+    def __repr__(self):
+        return (f"PlotlyCell(row={self.row}, col={self.col}, "
+                f"index={self.index}, ndims={self.ndims})")
+
+
+def make_panel_grid(nrows, ncols, ndims, titles=None, size=None,
+                    gutter_px=0, **make_subplots_kw):
+    """The empty plotly grid `panels=` and `hyp.subplots(backend='plotly')`
+    fill: a `plotly.subplots.make_subplots` figure with ``'scene'`` cells
+    for 3-D and ``'xy'`` cells otherwise, sized like the matplotlib grid
+    (`size` inches x 100 px, default `DEFAULT_FIGSIZE`), with `gutter_px`
+    reserved to the right of EVERY cell (and in the right margin) for a
+    per-panel legend/colorbar (see `panel_gutter_px`). When `size` is not
+    given the figure is widened by the gutters, so the default grid stays
+    as roomy as it is without them. Extra keywords go to `make_subplots`
+    (``vertical_spacing=``, ``shared_xaxes=``, ...); a caller's
+    ``horizontal_spacing=`` replaces the gutter-derived one.
+    """
+    from plotly.subplots import make_subplots
+    cell = {'type': 'scene'} if ndims >= 3 else {'type': 'xy'}
+    if size is not None:
+        width, height = int(size[0] * 100), int(size[1] * 100)
+    else:
+        width = int(DEFAULT_FIGSIZE[0] * 100) + gutter_px * ncols
+        height = int(DEFAULT_FIGSIZE[1] * 100)
+    titles = list(titles) if titles is not None else []
+    margin = dict(l=10, r=10 + gutter_px,
+                  t=40 if any(t for t in titles) else 10, b=10)
+    plot_w = max(width - margin['l'] - margin['r'], 1)
+    spacing = 0.2 / ncols + gutter_px / plot_w
+    if ncols > 1:
+        # make_subplots refuses a spacing wider than the cells allow
+        spacing = min(spacing, 0.98 / (ncols - 1))
+    make_kw = dict(horizontal_spacing=spacing)
+    if titles:
+        make_kw['subplot_titles'] = [t if t is not None else ''
+                                     for t in titles]
+    make_kw.update(make_subplots_kw)
+    fig = make_subplots(rows=nrows, cols=ncols,
+                        specs=[[dict(cell) for _ in range(ncols)]
+                               for _ in range(nrows)], **make_kw)
+    fig.update_layout(width=width, height=height, margin=margin,
+                      paper_bgcolor='white', plot_bgcolor='white')
+    return fig
+
+
+def cell_title_annotation(target, keys, ndims, title_layout):
+    """A `make_subplots`-style title annotation for one cell, from a
+    single-axes figure's ``layout.title`` (text and font) -- what a
+    ``title=`` on a `hyp.plot(..., ax=cell)` call becomes."""
+    if title_layout is None or not title_layout.text:
+        return None
+    if ndims >= 3:
+        domain = target.layout[keys['scene']].domain
+        x0, x1 = domain.x
+        y1 = domain.y[1]
+    else:
+        x0, x1 = target.layout[keys['xaxis']].domain
+        y1 = target.layout[keys['yaxis']].domain[1]
+    spec = dict(text=title_layout.text, x=0.5 * (x0 + x1), y=y1,
+                xref='paper', yref='paper', xanchor='center',
+                yanchor='bottom', showarrow=False)
+    if title_layout.font is not None:
+        spec['font'] = title_layout.font.to_plotly_json()
+    return spec
+
+
+def transplant_panel(target, panel, row, col, index, ndims):
+    """Move one drawn single-axes plotly figure into cell ``(row, col)`` of
+    a `make_subplots` figure, at parity with what a matplotlib `ax=` panel
+    keeps: its traces, its axis layout (the 2-D unit-frame ranges, hidden
+    ticks and axis titles, or the visible ``axis_scale='data'`` axes; the
+    3-D scene), its frame square and point annotations (re-referenced to
+    the cell's own axes), and ITS OWN legend and colorbar, placed just
+    right of the cell rather than merged into one figure-wide legend or
+    stacked on one figure-wide colorbar (1.1 release review: three panels
+    with ``legend=True`` listed '1, 1, 1' in a single legend, and two
+    ``colorbar=True`` panels drew both colorbars on top of each other).
+
+    `index` is the cell's 0-based row-major number. `target` must already
+    carry its final ``width``/``height`` and margins (the legend/colorbar
+    offsets are pixel distances converted to paper fractions), and its
+    ``horizontal_spacing`` should reserve `panel_gutter_px` beside each
+    cell. Returns the layout keys the cell uses: ``'scene'`` (3-D) or
+    ``'xaxis'``/``'yaxis'`` (2-D), plus ``'legend'``.
+
+    The shared implementation behind `plot(..., panels=)` on this backend
+    and the `hyp.subplots(backend='plotly')` cells that `ax=` accepts.
+    """
+    keys = cell_layout_keys(index)
+    plot_w = (target.layout.width or int(DEFAULT_FIGSIZE[0] * 100)) \
+        - (target.layout.margin.l or 0) - (target.layout.margin.r or 0)
+    plot_w = max(plot_w, 1)
+
+    if ndims >= 3:
+        scene = (panel.layout.scene.to_plotly_json()
+                 if panel.layout.scene is not None else {})
+        scene.pop('domain', None)
+        target.layout[keys['scene']].update(scene)
+        domain = target.layout[keys['scene']].domain
+        x0, x1 = domain.x
+        y0, y1 = domain.y
+        # plotly sizes a 3-D scene by its domain's HEIGHT (the cube is
+        # ~2/3 of it tall and ~1.3x that wide at hypertools' view), so in a
+        # cell narrower than that -- three panels in a default-sized
+        # figure -- the cube spilled out of the cell's sides. Back the
+        # camera off (apparent size ~ 1/distance) by exactly what the
+        # cell's aspect needs, so the cube fits like the matplotlib
+        # panel's equal-aspect cube does.
+        plot_h = (target.layout.height or int(DEFAULT_FIGSIZE[1] * 100)) \
+            - (target.layout.margin.t or 0) - (target.layout.margin.b or 0)
+        cell_w = max(plot_w * (x1 - x0), 1.0)
+        cell_h = max(plot_h * (y1 - y0), 1.0)
+        back_off = max(1.0, SCENE_CUBE_WIDTH_PER_HEIGHT * cell_h / cell_w)
+        camera = target.layout[keys['scene']].camera
+        if back_off > 1.0 and camera is not None and camera.eye is not None:
+            eye = camera.eye
+            target.layout[keys['scene']].camera.eye = dict(
+                x=(eye.x or 0.0) * back_off, y=(eye.y or 0.0) * back_off,
+                z=(eye.z or 0.0) * back_off)
+    else:
+        for src, dst in (('xaxis', keys['xaxis']), ('yaxis', keys['yaxis'])):
+            axis = panel.layout[src].to_plotly_json()
+            axis.pop('domain', None)
+            axis.pop('anchor', None)
+            target.layout[dst].update(axis)
+        # the frame square (unit scale) and `labels=` annotations refer to
+        # the panel's own 'x'/'y'; re-point them at this cell's axes
+        for shape in panel.layout.shapes:
+            spec = shape.to_plotly_json()
+            spec['xref'] = keys['xref']
+            spec['yref'] = keys['yref']
+            target.add_shape(spec)
+        for ann in panel.layout.annotations:
+            spec = ann.to_plotly_json()
+            if spec.get('xref', 'x') == 'x':
+                spec['xref'] = keys['xref']
+            if spec.get('yref', 'y') == 'y':
+                spec['yref'] = keys['yref']
+            target.add_annotation(spec)
+        x0, x1 = target.layout[keys['xaxis']].domain
+        y0, y1 = target.layout[keys['yaxis']].domain
+
+    y_mid = 0.5 * (y0 + y1)
+    legend_entries = any(bool(trace.showlegend) for trace in panel.data)
+    # the panel's colorbar goes right of its legend when there is one,
+    # else right of the cell, spanning the cell's height like the
+    # single-axes colorbar spans the plot's (`len=0.75` of the paper there)
+    cb_offset = PANEL_GUTTER_PAD_PX + (PANEL_LEGEND_PX if legend_entries
+                                       else 0)
+    for trace in panel.data:
+        # every trace of this panel lists in THIS panel's legend
+        trace.update(legend=keys['legend'])
+        marker = getattr(trace, 'marker', None)
+        if marker is not None and getattr(marker, 'showscale', None) \
+                and marker.colorbar is not None:
+            # (before `add_trace`, which COPIES the trace into `target`)
+            cb = marker.colorbar
+            if cb.orientation in (None, 'v'):
+                cb.update(x=x1 + cb_offset / plot_w, xanchor='left',
+                          y=y_mid, yanchor='middle', len=0.75 * (y1 - y0))
+            else:
+                on_top = cb.y is not None and cb.y > 0.5
+                cb.update(x=0.5 * (x0 + x1), xanchor='center',
+                          len=0.75 * (x1 - x0), y=(y1 if on_top else y0),
+                          yanchor=('bottom' if on_top else 'top'))
+        target.add_trace(trace, row=row, col=col)
+
+    # the panel's legend, beside its own cell (same styling as the
+    # single-axes legend, whose x=1.02/y=0.5 meant "just right of the one
+    # plot, vertically centred on it")
+    legend = (panel.layout.legend.to_plotly_json()
+              if panel.layout.legend is not None else {})
+    legend.update(x=x1 + PANEL_GUTTER_PAD_PX / plot_w, y=y_mid,
+                  xanchor='left', yanchor='middle')
+    target.layout[keys['legend']] = legend
+    return keys
 
 
 def show_figure(fig):
@@ -2158,7 +2424,10 @@ def _display_at_cell_end(fig):
     callbacks = getattr(shell.events, 'callbacks', {})
     if _flush_pending_display not in callbacks.get('post_execute', []):
         shell.events.register('post_execute', _flush_pending_display)
-    _PENDING_DISPLAY.append(fig)
+    # once per FIGURE: several `ax=` calls into one grid queue the same
+    # figure, which must display once, as the matplotlib grid does
+    if not any(queued is fig for queued in _PENDING_DISPLAY):
+        _PENDING_DISPLAY.append(fig)
 
 
 def _flush_pending_display():

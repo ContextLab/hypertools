@@ -888,6 +888,34 @@ Because 1.1.0 had not been published, they ship in it.
   was cut off in a hard band well inside the frame. The grid now covers
   every dataset's padded bounds plus, under `axis_scale='unit'`, the frame
   square, on both backends, so the glow fades out on its own.
+- **`panels=` on the plotly backend keeps each panel whole.** The plotly
+  grid (`plotly.subplots.make_subplots`) received only each panel's
+  traces, so 2-D panels lost their unit frame, hidden ticks and
+  DataFrame-column axis labels; `legend=True` merged every panel into one
+  legend ('1, 1, 1' for three panels, the digit groups listed twice for a
+  reducer comparison); and two `colorbar=True` panels drew both colorbars
+  on the same spot. Each panel now moves into its cell with its axis
+  layout, frame square and `labels=` annotations re-referenced to that
+  cell, its own legend beside the cell (plotly's multiple legends), and
+  its own colorbar; 3-D cells back the camera off so the cube stays
+  inside a narrow cell; room for the legends/colorbars is reserved
+  beside every cell (the default-sized figure is widened by it, an
+  explicit `size=` is honoured verbatim).
+- **`hyp.subplots(..., backend='plotly')` and `ax=<cell>`.** The
+  compose-it-yourself grid (`fig, axes = hyp.subplots(); hyp.plot(d,
+  ax=axes[i])`) had no plotly form: `ax=` took a plotly Figure to append
+  traces to, but could not target a `make_subplots` cell. `hyp.subplots`
+  gained `backend=` and, on plotly, returns the grid figure plus a flat
+  array of cells that `hyp.plot(..., ax=cell)` draws into -- the whole
+  panel, `title=` included -- returning the grid; several cell calls in
+  one notebook cell display the grid once.
+- **`panels=` colorbars on matplotlib take their room from their own
+  panel.** A `colorbar=True` panel grid ran the single-axes
+  figure-widening placement once per panel, stacking every colorbar over
+  the last panel and leaving `tight_layout` warning about axes it could
+  not place; a colorbar drawn into a caller-supplied `ax=` (every panel,
+  every `hyp.subplots` cell) now uses matplotlib's own `ax=`-attached
+  placement, so each panel keeps its colorbar and the figure its size.
 
 ### Documented limitations
 
