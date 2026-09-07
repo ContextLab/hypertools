@@ -691,3 +691,15 @@ def test_plotly_grid_png_draws_something_in_every_cell(tmp_path):
     left = ink[:, : img.shape[1] // 2].sum()
     right = ink[:, img.shape[1] // 2:].sum()
     assert left > 200 and right > 200
+
+
+def test_plotly_panels_reserve_the_multiline_title_margin():
+    pytest.importorskip('plotly')
+    single = hyp.plot(_datasets(1, rows=20)[0], title='a\nb\nc',
+                      title_kwargs={'fontsize': 20}, backend='plotly',
+                      show=False)
+    grid = hyp.plot(_datasets(2, rows=20), panels=True,
+                    title=['a\nb\nc', 'x'], title_kwargs={'fontsize': 20},
+                    backend='plotly', show=False)
+    assert single.layout.margin.t > 40
+    assert grid.layout.margin.t == single.layout.margin.t

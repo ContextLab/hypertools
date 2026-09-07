@@ -900,8 +900,10 @@ Because 1.1.0 had not been published, they ship in it.
   layout, frame square and `labels=` annotations re-referenced to that
   cell, its own legend beside the cell (plotly's multiple legends), its
   own colorbar (on whichever side `colorbar=` asked for), its `title=` as
-  formatted and styled by the ordinary title path (`title_wrap=`,
-  `title_kwargs=`), and its `font=`; 3-D cells back the camera off so the cube stays
+  formatted, styled and positioned by the ordinary title path
+  (`title_wrap=`, `title_kwargs=`, with the multi-line top margin that
+  path computes), and its `font=` materialized on the cell's own text;
+  3-D cells back the camera off so the cube stays
   inside a narrow cell; room for the legends/colorbars is reserved
   beside every cell (the default-sized figure is widened by it, an
   explicit `size=` is honoured verbatim).
@@ -913,6 +915,12 @@ Because 1.1.0 had not been published, they ship in it.
   array of cells that `hyp.plot(..., ax=cell)` draws into -- the whole
   panel, `title=` included -- returning the grid; several cell calls in
   one notebook cell display the grid once.
+- **A fitted forecaster reuses its parameters on a short context.** The
+  minimum-history check added for fitting (`Forecaster.min_history`) was
+  also applied when an already-fitted model was passed back as `model=`,
+  so a fitted `ARIMA(order=(4, 0, 0))` refused two new rows it can
+  condition on with its learned parameters. Only the refit path is held
+  to the fit floor now.
 - **`panels=` colorbars on matplotlib take their room from their own
   panel.** A `colorbar=True` panel grid ran the single-axes
   figure-widening placement once per panel, stacking every colorbar over

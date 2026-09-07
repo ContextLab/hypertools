@@ -505,7 +505,13 @@ class Forecaster(BaseEstimator):
                 from ..core.shared import no_observations_message
                 raise ValueError(
                     no_observations_message('forecast', f'{which} has 0 rows'))
-            self._check_min_history(d, which)
+            # the minimum history is what a FIT needs; a model with an
+            # applier reuses its learned parameters and conditions on
+            # whatever context the new data offers (statsmodels applies a
+            # fitted AR(4) to two rows), so only the re-derive path below,
+            # which refits on `d`, is held to it (release review, round 2)
+            if self.applier is None:
+                self._check_min_history(d, which)
 
         forecasts = []
         for d, params in zip(new_datasets, paired_models):

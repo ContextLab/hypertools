@@ -374,3 +374,20 @@ def test_arima_min_history_accepts_statsmodels_sparse_lag_orders():
                            t=2)
     assert forecast.shape == (2, 1)
     assert np.isfinite(forecast.to_numpy()).all()
+
+
+def test_a_fitted_forecaster_reuses_its_parameters_on_a_short_context():
+    """The minimum history is what a FIT needs. A fitted ARIMA(4, 0, 0)
+    applied to two new rows conditions on those rows with its learned
+    parameters (statsmodels does exactly that), so reuse must not be held
+    to the five-row fit floor (release review, round 2)."""
+    import numpy as np
+    import pandas as pd
+    rng = np.random.default_rng(1)
+    series = pd.DataFrame(np.cumsum(rng.normal(size=(40, 1)), axis=0))
+    _, fitted = hyp.predict(series, model={'model': 'ARIMA',
+                                           'kwargs': {'order': (4, 0, 0)}},
+                            t=2, return_model=True)
+    again = hyp.predict(series.iloc[:2], model=fitted, t=2)
+    assert again.shape == (2, 1)
+    assert np.isfinite(again.to_numpy()).all()

@@ -2307,36 +2307,95 @@ def transplant_panel(target, panel, row, col, index, ndims):
               if panel.layout.legend is not None else {})
     legend.update(x=x1 + PANEL_GUTTER_PAD_PX / plot_w, y=y_mid,
                   xanchor='left', yanchor='middle')
-    # the panel's inherited text font (`font=`, GH #205) travels with its
-    # legend, and the first panel's becomes the grid's default so the
-    # cell titles inherit it too (round 2: a Courier/red/28 panel font
-    # arrived as plotly's default)
+    # the panel's inherited text font (`font=`, GH #205) is MATERIALIZED
+    # on this cell's text -- legend, title, axis titles/ticks, colorbar --
+    # property by property under any explicit override, so two cells with
+    # different fonts stay independent (round 2: a `legend_kwargs=` font
+    # size dropped the family, and the grid-wide default made cell two
+    # inherit cell one's family)
     panel_font = (panel.layout.font.to_plotly_json()
                   if panel.layout.font is not None else {})
-    if panel_font and 'font' not in legend:
-        legend['font'] = dict(panel_font)
-    if panel_font and not target.layout.font.to_plotly_json():
-        target.layout.font = dict(panel_font)
+    if panel_font:
+        legend['font'] = _with_base_font(legend.get('font'), panel_font)
+        _materialize_cell_fonts(target, keys, ndims, panel_font)
+        if not target.layout.font.to_plotly_json():
+            target.layout.font = dict(panel_font)
     target.layout[keys['legend']] = legend
 
     # the panel's `title=`, already formatted by the single-axes path
     # (newlines, `title_wrap=`, `title_kwargs=`), as this cell's title --
-    # a `make_subplots`-style annotation just above the cell
+    # a `make_subplots`-style annotation above the cell, positioned by
+    # the same `x`/`y`/anchors the title carries, mapped from the single
+    # figure's paper into the cell's domain. One per cell: drawing into
+    # the cell again REPLACES it (as a matplotlib axes title is replaced),
+    # while `labels=` annotations keep accumulating.
+    title_name = f'hyp-cell-title-{index}'
+    target.layout.annotations = tuple(
+        a for a in target.layout.annotations if a.name != title_name)
     title = panel.layout.title
     if title is not None and title.text:
-        spec = dict(text=title.text, x=0.5 * (x0 + x1), y=y1,
-                    xref='paper', yref='paper', xanchor='center',
-                    yanchor='bottom', showarrow=False)
-        if title.font is not None and title.font.to_plotly_json():
-            spec['font'] = title.font.to_plotly_json()
-        elif panel_font:
-            spec['font'] = dict(panel_font)
+        tx = 0.5 if title.x is None else float(title.x)
+        default_y = title.y is None or abs(float(title.y) - 0.97) < 1e-9
+        spec = dict(text=title.text, name=title_name,
+                    x=x0 + tx * (x1 - x0), xref='paper', yref='paper',
+                    xanchor=title.xanchor or 'center', showarrow=False)
+        if default_y:
+            spec.update(y=y1, yanchor='bottom')
+        else:
+            spec.update(y=y0 + float(title.y) * (y1 - y0),
+                        yanchor=title.yanchor or 'top')
+        title_font = (title.font.to_plotly_json()
+                      if title.font is not None else {})
+        merged_font = _with_base_font(title_font, panel_font)
+        if merged_font:
+            spec['font'] = merged_font
         target.add_annotation(spec)
-        # a title sits in the top margin; a grid built without knowing its
-        # titles reserved only 10 px there
-        if (target.layout.margin.t or 0) < 40:
-            target.layout.margin.t = 40
+        # the title sits in the top margin: reserve what the single-axes
+        # path computed for it (per line and per font size), never less
+        # than the 40 px a one-line title needs
+        needed = max(40, int(panel.layout.margin.t or 0))
+        if (target.layout.margin.t or 0) < needed:
+            target.layout.margin.t = needed
     return keys
+
+
+def _with_base_font(explicit, base):
+    """A plotly font dict: `base` (a panel's inherited `layout.font`)
+    under `explicit`'s own properties."""
+    merged = dict(base or {})
+    merged.update(explicit or {})
+    return merged
+
+
+def _materialize_cell_fonts(target, keys, ndims, panel_font):
+    """Write `panel_font` under every text element of one cell that has
+    no explicit family/size/color of its own: axis titles and tick labels
+    (2-D axes or the 3-D scene's) and the cell's colorbar titles/ticks."""
+    if ndims >= 3:
+        scene = target.layout[keys['scene']]
+        axes_ = [scene.xaxis, scene.yaxis, scene.zaxis]
+    else:
+        axes_ = [target.layout[keys['xaxis']], target.layout[keys['yaxis']]]
+    for axis in axes_:
+        axis.tickfont = _with_base_font(axis.tickfont.to_plotly_json(),
+                                        panel_font)
+        if axis.title is not None:
+            axis.title.font = _with_base_font(
+                axis.title.font.to_plotly_json(), panel_font)
+    for trace in target.data:
+        marker = getattr(trace, 'marker', None)
+        if marker is None or not getattr(marker, 'showscale', None):
+            continue
+        if (ndims >= 3 and getattr(trace, 'scene', None) != keys['scene']) \
+                or (ndims < 3 and (getattr(trace, 'xaxis', None) or 'x')
+                    != keys['xref']):
+            continue
+        cb = marker.colorbar
+        cb.tickfont = _with_base_font(cb.tickfont.to_plotly_json(),
+                                      panel_font)
+        if cb.title is not None:
+            cb.title.font = _with_base_font(cb.title.font.to_plotly_json(),
+                                            panel_font)
 
 
 def show_figure(fig):

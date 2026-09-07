@@ -157,3 +157,42 @@ def test_drawing_into_a_cell_twice_keeps_the_earlier_labels():
     assert len(fig.data) >= 2
     texts = [a.text for a in fig.layout.scene.annotations]
     assert texts == ['first', 'second']
+
+
+def test_drawing_into_a_cell_twice_replaces_its_title():
+    fig, cells = hyp.subplots(1, 2, backend='plotly')
+    hyp.plot(_walk(0), ax=cells[0], title='FIRST', backend='plotly',
+             show=False)
+    hyp.plot(_walk(1), ax=cells[0], title='SECOND', backend='plotly',
+             show=False)
+    hyp.plot(_walk(1), ax=cells[1], title='OTHER', backend='plotly',
+             show=False)
+    titles = [a.text for a in fig.layout.annotations
+              if a.name and a.name.startswith('hyp-cell-title-')]
+    assert titles == ['SECOND', 'OTHER']
+
+
+def test_a_title_y_override_maps_into_the_cell():
+    fig, cells = hyp.subplots(1, 2, backend='plotly')
+    hyp.plot(_walk(0), ax=cells[0], title='low', title_kwargs={'y': 0.75},
+             backend='plotly', show=False)
+    hyp.plot(_walk(1), ax=cells[1], title='top', backend='plotly',
+             show=False)
+    by_text = {a.text: a for a in fig.layout.annotations}
+    y0, y1 = fig.layout.scene.domain.y
+    assert by_text['low'].y == pytest.approx(y0 + 0.75 * (y1 - y0))
+    assert by_text['top'].y == pytest.approx(fig.layout.scene2.domain.y[1])
+
+
+def test_each_cell_keeps_its_own_font():
+    fig, cells = hyp.subplots(1, 2, backend='plotly')
+    hyp.plot(_walk(0), ax=cells[0], legend=True, names=['mono'],
+             font='DejaVu Sans Mono', backend='plotly', show=False)
+    hyp.plot(_walk(1), ax=cells[1], legend=True, names=['serif'],
+             font='DejaVu Serif', legend_kwargs={'font': {'size': 22}},
+             backend='plotly', show=False)
+    assert 'DejaVu Sans Mono' in fig.layout.legend.font.family
+    assert 'DejaVu Serif' in fig.layout.legend2.font.family
+    assert fig.layout.legend2.font.size == 22
+    assert 'DejaVu Serif' in fig.layout.scene2.xaxis.tickfont.family
+    assert 'DejaVu Sans Mono' in fig.layout.scene.xaxis.tickfont.family
