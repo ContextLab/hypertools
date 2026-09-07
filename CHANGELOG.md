@@ -883,11 +883,13 @@ Because 1.1.0 had not been published, they ship in it.
   `'truth'` legend entry was a bare solid line in the trace's own colour,
   identical to the observed trace's entry. The curve now keeps the marker
   (drawing none of its own) so the legend can tell them apart.
-- **2-D `density=` layers span the whole scene.** Each KDE grid stopped
-  15% past its own dataset's bounding box, so a wide, flat cloud's glow
-  was cut off in a hard band well inside the frame. The grid now covers
-  every dataset's padded bounds plus, under `axis_scale='unit'`, the frame
-  square, on both backends, so the glow fades out on its own.
+- **2-D `density=` layers fade out inside their own grid.** Each KDE grid
+  stopped 15% past its own dataset's bounding box, where the density is
+  still clearly visible, so a wide, flat cloud's glow was cut off in a
+  hard band well inside the frame. The grid now also reaches four kernel
+  widths past the data on both backends, where the density has faded to
+  nothing, while staying local to its own cloud (so a small cloud beside
+  a huge one keeps its resolution).
 - **`panels=` on the plotly backend keeps each panel whole.** The plotly
   grid (`plotly.subplots.make_subplots`) received only each panel's
   traces, so 2-D panels lost their unit frame, hidden ticks and
@@ -896,8 +898,10 @@ Because 1.1.0 had not been published, they ship in it.
   reducer comparison); and two `colorbar=True` panels drew both colorbars
   on the same spot. Each panel now moves into its cell with its axis
   layout, frame square and `labels=` annotations re-referenced to that
-  cell, its own legend beside the cell (plotly's multiple legends), and
-  its own colorbar; 3-D cells back the camera off so the cube stays
+  cell, its own legend beside the cell (plotly's multiple legends), its
+  own colorbar (on whichever side `colorbar=` asked for), its `title=` as
+  formatted and styled by the ordinary title path (`title_wrap=`,
+  `title_kwargs=`), and its `font=`; 3-D cells back the camera off so the cube stays
   inside a narrow cell; room for the legends/colorbars is reserved
   beside every cell (the default-sized figure is widened by it, an
   explicit `size=` is honoured verbatim).

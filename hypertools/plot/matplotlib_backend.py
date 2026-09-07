@@ -52,7 +52,6 @@ from .density import (
     kde_grid_2d,
     kde_grid_3d,
     resolve_grid,
-    scene_bounds_2d,
     skimage_measure,
     resolve_iso_fracs_alphas,
 )
@@ -349,8 +348,7 @@ def _resolve_surface_color(spec, fallback_rgb):
     return mcolors.to_rgb(spec["color"]) if spec["color"] is not None else fallback_rgb
 
 
-def _draw_one_density_2d(ax, pts, spec, color, label="", clip_unit=True,
-                         bounds=None):
+def _draw_one_density_2d(ax, pts, spec, color, label="", clip_unit=True):
     """Draw a single subtle alpha-ramped ``imshow`` KDE layer for one
     dataset (or the pooled cloud), below the data (``zorder=-1``).
 
@@ -358,17 +356,12 @@ def _draw_one_density_2d(ax, pts, spec, color, label="", clip_unit=True,
     which only exists under ``axis_scale='unit'``. Under ``'data'`` the
     drawn coordinates are the data's own and there is no square, so
     clipping to ``[-1, 1]`` would erase the whole layer -- the KDE is left
-    unclipped there instead.
-
-    `bounds` (``(lo, hi)``, from `scene_bounds_2d`): the box the KDE grid
-    must span, so the glow fades out on its own instead of stopping in a
-    hard band at this dataset's padded bounding box."""
+    unclipped there instead."""
     kde = fit_kde(pts, dataset_label=label)
     if kde is None:
         return
     gridsize = resolve_grid(spec, 2)
-    _, _, Z, extent = kde_grid_2d(pts, kde, gridsize=gridsize,
-                                  bounds=bounds)
+    _, _, Z, extent = kde_grid_2d(pts, kde, gridsize=gridsize)
     cmap = alpha_colormap(color, spec["alpha"])
     im = ax.imshow(Z, origin="lower", extent=extent, aspect="auto",
                    cmap=cmap, interpolation="bilinear", zorder=-1)
@@ -389,23 +382,20 @@ def _draw_one_density_2d(ax, pts, spec, color, label="", clip_unit=True,
 def _draw_density_2d(ax, points_list, density, density_colors,
                      clip_unit=True):
     """Draw each dataset's (or, with ``per_group=False``, one pooled) 2-D
-    KDE density layer (GH #108/#191). Every layer's grid spans the whole
-    scene (all datasets, plus the unit frame square when there is one), not
-    just its own dataset's bounds -- see `scene_bounds_2d`."""
-    bounds = scene_bounds_2d(points_list,
-                             frame=(-1.0, 1.0) if clip_unit else None)
+    KDE density layer (GH #108/#191); each grid reaches `KDE_GRID_BANDWIDTHS`
+    kernel widths past its own cloud, so the glow fades out inside it
+    (see `kde_grid_2d`)."""
     if density[0] is not None and not density[0].get("per_group", True):
         all_pts = np.vstack([np.asarray(p)[:, :2] for p in points_list])
         _draw_one_density_2d(ax, all_pts, density[0], POOLED_COLOR,
-                             label=" (pooled)", clip_unit=clip_unit,
-                             bounds=bounds)
+                             label=" (pooled)", clip_unit=clip_unit)
         return
     for i, (pts, spec) in enumerate(zip(points_list, density)):
         if spec is None:
             continue
         _draw_one_density_2d(ax, np.asarray(pts)[:, :2], spec,
                              density_colors[i], label=f" {i}",
-                             clip_unit=clip_unit, bounds=bounds)
+                             clip_unit=clip_unit)
 
 
 def _draw_one_density_3d(ax, pts, spec, color, label="", boost=1.0):

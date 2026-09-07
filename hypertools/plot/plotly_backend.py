@@ -50,7 +50,6 @@ from .density import (
     kde_grid_2d,
     kde_grid_3d,
     resolve_grid,
-    scene_bounds_2d,
     resolve_plotly_volume_params,
 )
 from .trails import (RunWindow, anim_window_bounds, broadcast_trail_flag,
@@ -1104,9 +1103,8 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     # never touched by a frame update -- see `data_trace_start` below).
     n_density_traces_2d = 0
     if density is not None and ndims == 2:
-        density_traces_2d = _build_density_traces_2d(
-            go, data, density, density_colors,
-            frame=(-1.0, 1.0) if axis_scale != 'data' else None)
+        density_traces_2d = _build_density_traces_2d(go, data, density,
+                                                      density_colors)
         n_density_traces_2d = len(density_traces_2d)
     else:
         density_traces_2d = []
@@ -2044,18 +2042,8 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
             # panel -- traces, axis layout, frame, annotations, its own
             # legend and colorbar -- moves into that cell of the grid, the
             # plotly form of drawing into one matplotlib Axes of a grid.
-            keys = transplant_panel(into.figure, fig, into.row, into.col,
-                                    into.index, ndims)
-            cell_title = cell_title_annotation(into.figure, keys, ndims,
-                                               fig.layout.title)
-            if cell_title is not None:
-                into.figure.add_annotation(cell_title)
-                # the grid was built before any cell had a title, with a
-                # 10 px top margin; a title sits just above its cell's
-                # domain, i.e. IN that margin (`make_panel_grid` reserves
-                # 40 px when the titles are known up front)
-                if (into.figure.layout.margin.t or 0) < 40:
-                    into.figure.layout.margin.t = 40
+            transplant_panel(into.figure, fig, into.row, into.col,
+                             into.index, ndims)
             fig = into.figure
         else:
             # `ax=<plotly Figure>`: draw INTO the caller's figure. The
@@ -2157,7 +2145,7 @@ class PlotlyCell:
 
 
 def make_panel_grid(nrows, ncols, ndims, titles=None, size=None,
-                    gutter_px=0, **make_subplots_kw):
+                    gutter_px=0, top_margin_px=None, **make_subplots_kw):
     """The empty plotly grid `panels=` and `hyp.subplots(backend='plotly')`
     fill: a `plotly.subplots.make_subplots` figure with ``'scene'`` cells
     for 3-D and ``'xy'`` cells otherwise, sized like the matplotlib grid
@@ -2177,8 +2165,9 @@ def make_panel_grid(nrows, ncols, ndims, titles=None, size=None,
         width = int(DEFAULT_FIGSIZE[0] * 100) + gutter_px * ncols
         height = int(DEFAULT_FIGSIZE[1] * 100)
     titles = list(titles) if titles is not None else []
-    margin = dict(l=10, r=10 + gutter_px,
-                  t=40 if any(t for t in titles) else 10, b=10)
+    if top_margin_px is None:
+        top_margin_px = 40 if any(t for t in titles) else 10
+    margin = dict(l=10, r=10 + gutter_px, t=top_margin_px, b=10)
     plot_w = max(width - margin['l'] - margin['r'], 1)
     spacing = 0.2 / ncols + gutter_px / plot_w
     if ncols > 1:
@@ -2195,27 +2184,6 @@ def make_panel_grid(nrows, ncols, ndims, titles=None, size=None,
     fig.update_layout(width=width, height=height, margin=margin,
                       paper_bgcolor='white', plot_bgcolor='white')
     return fig
-
-
-def cell_title_annotation(target, keys, ndims, title_layout):
-    """A `make_subplots`-style title annotation for one cell, from a
-    single-axes figure's ``layout.title`` (text and font) -- what a
-    ``title=`` on a `hyp.plot(..., ax=cell)` call becomes."""
-    if title_layout is None or not title_layout.text:
-        return None
-    if ndims >= 3:
-        domain = target.layout[keys['scene']].domain
-        x0, x1 = domain.x
-        y1 = domain.y[1]
-    else:
-        x0, x1 = target.layout[keys['xaxis']].domain
-        y1 = target.layout[keys['yaxis']].domain[1]
-    spec = dict(text=title_layout.text, x=0.5 * (x0 + x1), y=y1,
-                xref='paper', yref='paper', xanchor='center',
-                yanchor='bottom', showarrow=False)
-    if title_layout.font is not None:
-        spec['font'] = title_layout.font.to_plotly_json()
-    return spec
 
 
 def transplant_panel(target, panel, row, col, index, ndims):
@@ -2249,6 +2217,14 @@ def transplant_panel(target, panel, row, col, index, ndims):
         scene = (panel.layout.scene.to_plotly_json()
                  if panel.layout.scene is not None else {})
         scene.pop('domain', None)
+        # a cell drawn into twice keeps the earlier call's `labels=`
+        # (updating the scene would replace its annotation list, leaving
+        # the first dataset's points visible but unlabelled; round 2)
+        earlier = [a.to_plotly_json()
+                   for a in target.layout[keys['scene']].annotations]
+        if earlier:
+            scene['annotations'] = earlier + list(scene.get('annotations',
+                                                            []))
         target.layout[keys['scene']].update(scene)
         domain = target.layout[keys['scene']].domain
         x0, x1 = domain.x
@@ -2309,7 +2285,12 @@ def transplant_panel(target, panel, row, col, index, ndims):
                 and marker.colorbar is not None:
             # (before `add_trace`, which COPIES the trace into `target`)
             cb = marker.colorbar
-            if cb.orientation in (None, 'v'):
+            if cb.orientation in (None, 'v') and cb.xanchor == 'right':
+                # `location='left'`: keep it on the cell's LEFT
+                cb.update(x=x0 - PANEL_GUTTER_PAD_PX / plot_w,
+                          xanchor='right', y=y_mid, yanchor='middle',
+                          len=0.75 * (y1 - y0))
+            elif cb.orientation in (None, 'v'):
                 cb.update(x=x1 + cb_offset / plot_w, xanchor='left',
                           y=y_mid, yanchor='middle', len=0.75 * (y1 - y0))
             else:
@@ -2326,7 +2307,35 @@ def transplant_panel(target, panel, row, col, index, ndims):
               if panel.layout.legend is not None else {})
     legend.update(x=x1 + PANEL_GUTTER_PAD_PX / plot_w, y=y_mid,
                   xanchor='left', yanchor='middle')
+    # the panel's inherited text font (`font=`, GH #205) travels with its
+    # legend, and the first panel's becomes the grid's default so the
+    # cell titles inherit it too (round 2: a Courier/red/28 panel font
+    # arrived as plotly's default)
+    panel_font = (panel.layout.font.to_plotly_json()
+                  if panel.layout.font is not None else {})
+    if panel_font and 'font' not in legend:
+        legend['font'] = dict(panel_font)
+    if panel_font and not target.layout.font.to_plotly_json():
+        target.layout.font = dict(panel_font)
     target.layout[keys['legend']] = legend
+
+    # the panel's `title=`, already formatted by the single-axes path
+    # (newlines, `title_wrap=`, `title_kwargs=`), as this cell's title --
+    # a `make_subplots`-style annotation just above the cell
+    title = panel.layout.title
+    if title is not None and title.text:
+        spec = dict(text=title.text, x=0.5 * (x0 + x1), y=y1,
+                    xref='paper', yref='paper', xanchor='center',
+                    yanchor='bottom', showarrow=False)
+        if title.font is not None and title.font.to_plotly_json():
+            spec['font'] = title.font.to_plotly_json()
+        elif panel_font:
+            spec['font'] = dict(panel_font)
+        target.add_annotation(spec)
+        # a title sits in the top margin; a grid built without knowing its
+        # titles reserved only 10 px there
+        if (target.layout.margin.t or 0) < 40:
+            target.layout.margin.t = 40
     return keys
 
 
@@ -3194,17 +3203,14 @@ def _build_surface_traces_2d(go, data, surface, surface_colors):
     return traces
 
 
-def _one_density_contour_trace(go, pts, spec, color_rgb, label="",
-                               bounds=None):
+def _one_density_contour_trace(go, pts, spec, color_rgb, label=""):
     """One ``go.Contour`` heatmap-colored KDE layer (GH #108/#191, 2-D),
-    or ``None`` if `pts` is too small/degenerate to fit a KDE. `bounds`
-    (``(lo, hi)``, from `scene_bounds_2d`) is the box the grid must span
-    -- the matplotlib twin `_draw_one_density_2d` takes the same."""
+    or ``None`` if `pts` is too small/degenerate to fit a KDE."""
     kde = fit_kde(pts, dataset_label=label)
     if kde is None:
         return None
     gridsize = resolve_grid(spec, 2)
-    xs, ys, Z, _ = kde_grid_2d(pts, kde, gridsize=gridsize, bounds=bounds)
+    xs, ys, Z, _ = kde_grid_2d(pts, kde, gridsize=gridsize)
     r, g, b = (int(round(255 * c)) for c in color_rgb)
     alpha = min(1.5 * spec['alpha'], 1.0)
     return go.Contour(
@@ -3215,28 +3221,24 @@ def _one_density_contour_trace(go, pts, spec, color_rgb, label="",
         line_width=0, showscale=False, hoverinfo='skip')
 
 
-def _build_density_traces_2d(go, data, density, density_colors,
-                             frame=None):
+def _build_density_traces_2d(go, data, density, density_colors):
     """Build each dataset's (or, with ``per_group=False``, one pooled)
-    ``go.Contour`` KDE density layer (GH #108/#191, 2-D). Every layer's
-    grid spans the whole scene (all datasets, plus the `frame` square
-    ``(lo, hi)`` when there is one), not just its own dataset's bounds --
-    see `scene_bounds_2d`."""
+    ``go.Contour`` KDE density layer (GH #108/#191, 2-D); each grid reaches
+    `KDE_GRID_BANDWIDTHS` kernel widths past its own cloud (see
+    `kde_grid_2d`)."""
     points = [np.atleast_2d(np.asarray(arr, dtype=np.float64))[:, :2]
               for arr in data]
-    bounds = scene_bounds_2d(points, frame=frame)
     if density[0] is not None and not density[0].get('per_group', True):
         all_pts = np.vstack(points)
         trace = _one_density_contour_trace(go, all_pts, density[0],
-                                           POOLED_COLOR, label=' (pooled)',
-                                           bounds=bounds)
+                                           POOLED_COLOR, label=' (pooled)')
         return [trace] if trace is not None else []
     traces = []
     for i, (pts, spec) in enumerate(zip(points, density)):
         if spec is None:
             continue
         trace = _one_density_contour_trace(go, pts, spec, density_colors[i],
-                                           label=f' {i}', bounds=bounds)
+                                           label=f' {i}')
         if trace is not None:
             traces.append(trace)
     return traces

@@ -611,3 +611,83 @@ def test_matplotlib_ax_grid_colorbars_do_not_widen_the_figure():
         assert sum(ax.get_label() == '<colorbar>' for ax in fig.axes) == 2
     finally:
         matplotlib.pyplot.close(fig)
+
+
+# --- release review round 2 ------------------------------------------------
+
+def test_matplotlib_panels_ignore_an_active_plotly_preference():
+    """`panels=True, backend='matplotlib'` under
+    `hyp.set_interactive_backend('plotly')` built its grid with `subplots`'
+    new `backend='auto'` default -- plotly cells the matplotlib panel calls
+    then rejected."""
+    pytest.importorskip('plotly')
+    with hyp.set_interactive_backend('plotly'):
+        fig = hyp.plot(_datasets(2, rows=20), panels=True,
+                       backend='matplotlib', show=False)
+    try:
+        assert isinstance(fig, matplotlib.figure.Figure)
+        assert [ax.name for ax in fig.axes] == ['3d', '3d']
+    finally:
+        matplotlib.pyplot.close(fig)
+
+
+def test_plotly_panels_keep_a_left_colorbar_on_the_left():
+    pytest.importorskip('plotly')
+    data = _datasets(2, rows=20)
+    hue = [np.arange(20.0), np.arange(20.0)]
+    fig = hyp.plot(data, panels=True, hue=hue,
+                   colorbar={'location': 'left'}, backend='plotly',
+                   show=False)
+    colorbars = [t.marker.colorbar for t in fig.data
+                 if t.marker is not None and t.marker.showscale]
+    assert len(colorbars) == 2
+    assert colorbars[0].xanchor == 'right'
+    assert colorbars[0].x <= fig.layout.scene.domain.x[0]
+    assert colorbars[1].xanchor == 'right'
+    assert colorbars[1].x <= fig.layout.scene2.domain.x[0]
+
+
+def test_plotly_panel_titles_go_through_the_title_path():
+    """A newline in a plotly title becomes ``<br>`` and `title_kwargs=`
+    styles it on the single-axes path; panel titles used to bypass both."""
+    pytest.importorskip('plotly')
+    fig = hyp.plot(_datasets(2, rows=20), panels=True,
+                   title=['first\nline', 'second'],
+                   title_kwargs={'fontsize': 20, 'color': 'red'},
+                   backend='plotly', show=False)
+    titles = {a.text: a for a in fig.layout.annotations}
+    assert set(titles) == {'first<br>line', 'second'}
+    single = hyp.plot(_datasets(1, rows=20)[0], title='x',
+                      title_kwargs={'fontsize': 20, 'color': 'red'},
+                      backend='plotly', show=False)
+    assert titles['second'].font.size == single.layout.title.font.size
+    assert titles['second'].font.color == single.layout.title.font.color
+    assert fig.layout.margin.t >= 40
+
+
+def test_plotly_panels_carry_the_font_into_the_grid():
+    pytest.importorskip('plotly')
+    fig = hyp.plot(_datasets(2, rows=20), panels=True, legend=True,
+                   names=['p', 'q'], font='DejaVu Serif', backend='plotly',
+                   show=False)
+    single = hyp.plot(_datasets(1, rows=20)[0], legend=True, names=['p'],
+                      font='DejaVu Serif', backend='plotly', show=False)
+    assert fig.layout.font.family == single.layout.font.family
+    assert fig.layout.legend.font.family == single.layout.font.family
+    assert fig.layout.legend2.font.family == single.layout.font.family
+
+
+def test_plotly_grid_png_draws_something_in_every_cell(tmp_path):
+    """A rendered 1x2 plotly grid has ink in BOTH halves (not just a
+    nonempty file)."""
+    pytest.importorskip('plotly')
+    from PIL import Image
+    fig = hyp.plot(_datasets(2, rows=20), panels=(1, 2), backend='plotly',
+                   show=False)
+    target = tmp_path / 'grid.png'
+    fig.write_image(str(target))
+    img = np.asarray(Image.open(target).convert('L'))
+    ink = img < 128
+    left = ink[:, : img.shape[1] // 2].sum()
+    right = ink[:, img.shape[1] // 2:].sum()
+    assert left > 200 and right > 200

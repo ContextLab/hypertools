@@ -164,6 +164,15 @@ def applier(fitted_params, new_data, t):
     return pd.DataFrame(columns, index=future_index, columns=new_data.columns)
 
 
+def _lag_order(component):
+    """An ARIMA ``order`` component as a lag count: an int as is, a
+    statsmodels sparse lag sequence (``[1, 3]``) as its highest lag (``0``
+    for an empty one)."""
+    if isinstance(component, (list, tuple, np.ndarray)):
+        return int(max((int(v) for v in component), default=0))
+    return int(component)
+
+
 class ARIMA(Forecaster):
     """Per-column ARIMA forecaster (statsmodels).
 
@@ -199,9 +208,15 @@ class ARIMA(Forecaster):
         ``ValueError`` from one row), and a fit with fewer rows than ARMA
         coefficients plus one has nothing to estimate them from. The default
         ``(1, 1, 1)`` therefore needs 3 rows; ``(4, 0, 0)`` needs 5.
+
+        ``p`` and ``q`` may also be statsmodels' SPARSE lag form -- a
+        sequence of the lags to include, ``([1, 3], 0, 0)`` -- in which
+        case the highest lag is the order that counts (the fit needs that
+        many earlier rows), so the check accepts every order the fitter
+        does (1.1 release review, round 2).
         """
-        p, d, q = (int(v) for v in order)
-        return max(d + 2, p + q + 1)
+        p, d, q = order
+        return max(_lag_order(d) + 2, _lag_order(p) + _lag_order(q) + 1)
 
     @property
     def min_history(self):

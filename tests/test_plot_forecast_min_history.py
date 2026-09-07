@@ -355,3 +355,22 @@ def test_nan_in_the_input_keeps_the_all_features_missing_message():
     x[5] = np.nan
     with pytest.raises(ValueError, match='ALL features missing'):
         hyp.plot(x, reduce=None, ndims=2, show=False)
+
+
+def test_arima_min_history_accepts_statsmodels_sparse_lag_orders():
+    """`order=([1, 3], 0, 0)` is statsmodels' sparse AR form (include lags
+    1 and 3); the fitter accepts it, so the minimum-history check must
+    too, counting the highest lag (release review, round 2)."""
+    import numpy as np
+    import pandas as pd
+    from hypertools.predict.arima import ARIMA
+    assert ARIMA.min_history_for(order=([1, 3], 0, 0)) == 4
+    assert ARIMA.min_history_for(order=(2, 1, [1, 2])) == 5
+    assert ARIMA.min_history_for(order=([], 0, 0)) == 2
+    rng = np.random.default_rng(0)
+    series = pd.DataFrame(np.cumsum(rng.normal(size=(60, 1)), axis=0))
+    forecast = hyp.predict(series, model={'model': 'ARIMA',
+                                          'kwargs': {'order': ([1, 3], 0, 0)}},
+                           t=2)
+    assert forecast.shape == (2, 1)
+    assert np.isfinite(forecast.to_numpy()).all()

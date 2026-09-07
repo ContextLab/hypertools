@@ -146,3 +146,14 @@ def test_ax_cell_queues_the_grid_for_display_once():
         except ValueError:
             pass
         InteractiveShell.clear_instance()
+
+
+def test_drawing_into_a_cell_twice_keeps_the_earlier_labels():
+    fig, cells = hyp.subplots(1, 1, backend='plotly')
+    hyp.plot(_walk(0), ax=cells[0], labels=['first'], label_anchor='first',
+             backend='plotly', show=False)
+    hyp.plot(_walk(1), ax=cells[0], labels=['second'], label_anchor='first',
+             backend='plotly', show=False)
+    assert len(fig.data) >= 2
+    texts = [a.text for a in fig.layout.scene.annotations]
+    assert texts == ['first', 'second']

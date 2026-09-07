@@ -3123,7 +3123,7 @@ def _plot_panels(x, panels, call_kwargs, _name='panels'):
                                    nrows, ncols, panel_ndims, plotly_kwargs)
 
     fig, axes = subplots(nrows, ncols, ndims=panel_ndims,
-                         size=call_kwargs.get('size'))
+                         size=call_kwargs.get('size'), backend='matplotlib')
     panel_axes = []
     panel_models = []
     for i in range(n_panels):
@@ -3199,10 +3199,14 @@ def _plot_panels_plotly(panel_data, panel_kwargs, titles, nrows, ncols,
     # the panels actually carry
     panel_models = []
     panel_figs = []
-    for data, kw in zip(panel_data, panel_kwargs):
+    for data, kw, title in zip(panel_data, panel_kwargs, titles):
         kw = dict(kw)
+        # each panel's title goes through the ordinary single-axes title
+        # path (newlines, `title_wrap=`, `title_kwargs=`, validation) and
+        # `transplant_panel` turns the result into the cell's title -- the
+        # matplotlib grid formats its titles the same way (round 2)
         kw.update(show=False, save_path=None, return_model=return_model,
-                  title=None, size=None, backend='plotly')
+                  title=title, size=None, backend='plotly')
         result = plot(data, **kw)
         panel_figs.append(result['fig'] if return_model else result)
         if return_model:
@@ -3211,10 +3215,11 @@ def _plot_panels_plotly(panel_data, panel_kwargs, titles, nrows, ncols,
     colorbar_present = any(
         getattr(getattr(trace, 'marker', None), 'showscale', None)
         for panel in panel_figs for trace in panel.data)
-    fig = make_panel_grid(nrows, ncols, ndims, titles,
+    fig = make_panel_grid(nrows, ncols, ndims,
                           size=call_kwargs.get('size'),
                           gutter_px=panel_gutter_px(legend_present,
-                                                    colorbar_present))
+                                                    colorbar_present),
+                          top_margin_px=40 if any(titles) else None)
     panel_axes = []
     for i, panel in enumerate(panel_figs):
         keys = transplant_panel(fig, panel, i // ncols + 1, i % ncols + 1,
