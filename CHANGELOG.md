@@ -915,6 +915,12 @@ Because 1.1.0 had not been published, they ship in it.
   array of cells that `hyp.plot(..., ax=cell)` draws into -- the whole
   panel, `title=` included -- returning the grid; several cell calls in
   one notebook cell display the grid once.
+- **The slow-forecast-schedule notice no longer fires from timer noise.**
+  Its projection drew a slope through the first two timed fits, one row
+  apart at 2 and 3 rows -- tens of milliseconds each -- and on a slow CI
+  runner projected 10 s for a 30-row schedule that finished in well under
+  one. It now fits every timed length by least squares and waits for a fit
+  of at least 10 rows before projecting.
 - **A fitted forecaster reuses its parameters on a short context.** The
   minimum-history check added for fitting (`Forecaster.min_history`) was
   also applied when an already-fitted model was passed back as `model=`,

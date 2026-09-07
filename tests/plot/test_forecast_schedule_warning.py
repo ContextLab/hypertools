@@ -282,3 +282,35 @@ def test_the_warning_reports_the_TOTAL_not_just_what_is_left():
     # and it must no longer claim a single timed fit
     assert 'one timed fit' not in msg, msg
     assert 'two history lengths' in msg, msg
+
+
+def test_project_schedule_cost_fits_every_timed_length_by_least_squares():
+    """With more than two timed lengths one noisy pair no longer sets the
+    slope: a 0.002 s/row + 0.3 s line with one +50 ms outlier at 200 rows
+    still projects within a few percent of the true 7.0 s for ten fits at
+    200 rows (a two-point estimator through the outlier would not)."""
+    timings = {100: 0.5, 150: 0.6, 200: 0.75, 250: 0.8, 300: 0.9}
+    projected, per_row, setup, lengths = project_schedule_cost(
+        timings, [200] * 10)
+    assert lengths == (100, 300)
+    assert per_row == pytest.approx(0.002, rel=0.15)
+    assert projected == pytest.approx(7.0, rel=0.1)
+
+
+def test_the_projection_waits_for_a_fit_long_enough_to_time():
+    """On a slow CI runner, a slope through fits at 2 and 3 rows (tens of
+    milliseconds each, mostly timer noise) projected 10 s for a 30-row
+    schedule that finished in well under one second. The projection now
+    waits for a timed fit of at least `PROJECTION_MIN_ROWS` rows."""
+    from hypertools.plot.forecast import PROJECTION_MIN_ROWS
+    schedule = ForecastSchedule.for_parallel(
+        [_walk(30)], [30], model='Kalman', t=3, n_frames=20,
+        slow_warning_seconds=1e9)
+    assert schedule.projection is not None
+    assert schedule.projection['lengths'][1] >= PROJECTION_MIN_ROWS
+    # a schedule shorter than that still projects, at its longest history
+    tiny = ForecastSchedule.for_parallel(
+        [_walk(6)], [6], model='Kalman', t=1, n_frames=6,
+        slow_warning_seconds=1e9)
+    assert tiny.projection is not None
+    assert tiny.projection['lengths'][1] <= 6

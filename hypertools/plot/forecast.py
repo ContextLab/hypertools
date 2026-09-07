@@ -53,6 +53,15 @@ except ImportError:  # pragma: no cover
 #: rough figure rather than a countdown.
 DEFAULT_SLOW_WARNING_SECONDS = 10.0
 
+#: Do not project until a fit at least this many rows long has been timed.
+#: A slope drawn through two fits one row apart at 2 and 3 rows is mostly
+#: timer noise (each takes tens of milliseconds): on a slow CI runner it
+#: projected 10 s for a schedule that finished in well under one, and the
+#: "small schedule stays silent" test failed (release review, 2026-09-07).
+#: A schedule whose longest history is shorter than this projects at its
+#: longest instead.
+PROJECTION_MIN_ROWS = 10
+
 #: Fewest observations we will fit a forecaster to.
 DEFAULT_MIN_HISTORY = 2
 
@@ -346,7 +355,14 @@ def project_schedule_cost(timings, remaining_rows):
             f"projecting a schedule needs timed fits at two DIFFERENT "
             f"history lengths; got {sorted(timings)}")
     short, long = min(timings), max(timings)
-    per_row = (timings[long] - timings[short]) / (long - short)
+    if len(timings) == 2:
+        per_row = (timings[long] - timings[short]) / (long - short)
+    else:
+        # every timed length, by least squares: one noisy pair no longer
+        # sets the slope on its own
+        rows = np.asarray(sorted(timings), dtype=float)
+        secs = np.asarray([timings[int(r)] for r in rows], dtype=float)
+        per_row = float(np.polyfit(rows, secs, 1)[0])
     per_row = max(per_row, 0.0)          # noise can invert two samples
     setup = max(timings[long] - per_row * long, 0.0)
     projected = sum(setup + per_row * rows for rows in remaining_rows)
@@ -443,7 +459,12 @@ class ForecastSchedule:
             # silently collapsed back into the constant-per-fit projection
             # it exists to replace -- with nothing failing, because a
             # factor-of-ten tolerance covers the difference on small data.
-            if not warned and len(timings) >= 2:
+            # ...and for a timed fit long enough to measure (see
+            # `PROJECTION_MIN_ROWS`), or the schedule's longest when that
+            # is shorter
+            longest = max(len(rows) for _, rows in todo)
+            if (not warned and len(timings) >= 2
+                    and max(timings) >= min(PROJECTION_MIN_ROWS, longest)):
                 pooled = {rows: float(np.median(times))
                           for rows, times in timings.items()}
                 remaining = [len(rows) for _, rows in todo[n_done + 1:]]
