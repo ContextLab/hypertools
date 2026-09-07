@@ -1004,6 +1004,47 @@ Because 1.1.0 had not been published, they ship in it.
 - **Plotly legend keys are readable for tiny markers.** A `'.'` marker's
   legend key reproduced the 2 px dot; legends now use plotly's constant
   key size, as a matplotlib legend does.
+- **A collection of models under `hue=`/`cluster=` regrouping continues
+  the right run.** One dataset split into two runs under two models gives
+  two forecasts for two runs, so the ownership resolution -- which only
+  ran when the counts differed -- was skipped and forecast i continued
+  run i: Kalman took the earlier run's colour, ARIMA the final run's. It
+  runs for every collection under regrouping now. The animated modes also
+  looked the reveal schedule up by FORECAST index rather than source
+  dataset, so two models x regrouping x `forecast_trail=` raised
+  `IndexError` on both backends (Codex round 3).
+- **A forecaster fitted on several datasets animates.** The animated
+  schedule forecasts each dataset's revealed history on its own, which a
+  `hyp.predict([a, b], return_model=True)` forecaster refused as a
+  dataset-count mismatch; `Forecaster.for_dataset(i)` now binds the view
+  the schedule needs (Codex round 3).
+- **Plotly honours a colour letter and markers in `forecast_fmt=`.**
+  `forecast_fmt='ro:'` drew red dotted forecasts with round markers on
+  matplotlib and inherited-colour dotted lines without markers on plotly,
+  static and animated, legend keys included (Codex round 3).
+- **Plotly animations keep a recoloured forecast's alpha too.** The
+  animated branch computed the halved alpha before the recolouring rule
+  applied, so `forecast_palette=` forecasts animated at 0.35 while the
+  static figure drew them at 0.7 (Codex round 3).
+- **A second call into the same plotly grid cell continues the palette**,
+  as a second call into the same matplotlib axes does (Codex round 3).
+- **Plotly forecast legend keys compare colour, not opacity.** With
+  `alpha=[1, .4]` and an all-red forecast palette every key turned gray
+  because the RGBA strings differed only in alpha (Codex round 3).
+- **`legend_colors=` keeps its contract beside forecasts.** Explicit
+  `(label, color)` pairs define the legend outright, so no forecast or
+  `truth` entry is added to them (and on plotly the data traces stay out
+  of it too); a plain colour list is applied to the FINAL legend, after
+  the forecast/truth entries, instead of being refused against the data
+  entries alone (Codex round 3).
+- **Matplotlib panel legends clear their colorbars.** A panel with
+  `legend=True` and `colorbar=True` drew the attached colorbar under the
+  outside-right legend (~10 px overlap); the colorbar is padded past the
+  legend's measured overhang (Codex round 3).
+- **Plotly grid cells keep an explicit legend position and multi-line
+  title room.** `legend_kwargs` x/y are translated into the cell instead
+  of being replaced by the gutter placement, and a gutter rebuild keeps
+  the top margin a multi-line title had reserved (Codex round 3).
 - **A `hyp.subplots(backend='plotly')` grid grows its legend room only
   when a cell asks for it.** The grid reserved a 118 px gutter beside
   every cell up front (it cannot know which cells will draw a legend), so

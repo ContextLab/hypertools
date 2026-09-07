@@ -493,6 +493,27 @@ line colour and echoed in ``meta['hyp_forecast_alpha']``).
 a floor proportional to it -- so a retained forecast is never more opaque than
 the live forecast it decays from, however faint the dataset.
 
+A forecast given its **own colour** -- by ``forecast_palette=``,
+``forecast_hue=``, ``forecast_cluster=``, or a colour letter in
+``forecast_fmt=`` -- keeps its trace's alpha instead of halving it: the colour
+is then what tells it apart, and fading it as well hid it among translucent
+traces.
+
+A **collection of models** (``predict=['Kalman', 'ARIMA', ...]``) draws one
+overlay per model on every trace. Each keeps its dataset's colour (which series
+it continues) and takes a linestyle per model -- solid, dashed, dotted,
+dash-dot, in model order -- so the two questions are answered by two
+encodings; ``forecast_palette=`` colours by model instead, and
+``forecast_fmt=`` (one entry per model) replaces the cycle.
+
+Every ``predict=`` form lists its forecast **once in the legend**, static or
+animated, under the model's name (the same name ``hyp.predict(x, model=[...])``
+gives it), after the data entries and before ``truth``. The key wears the
+forecasts' linestyle and their colour when they share one; when one model's
+forecasts of several datasets wear several colours the key is a neutral gray,
+and it is never drawn below 0.8 alpha, so it stays legible however faint the
+forecasts are.
+
 Animated forecasts under ``hue=``/``cluster=``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -563,7 +584,8 @@ Everything they do not name stays inherited.
    * - *(nothing)*
      - the identity of the observed trace it continues
    * - ``forecast_palette=``
-     - the same, in a palette of its own
+     - one colour per forecast from a palette of its own (one per *model*
+       for a collection), drawn at the trace's own alpha
    * - ``forecast_hue=``
      - a grouping you supply, one value per forecast (see below)
    * - ``forecast_cluster=``
@@ -575,7 +597,8 @@ regroups the data: ``plot()`` forecasts every final trace, so a hierarchy
 wants one value per leaf group **plus** one per derived mean.
 
 ``forecast_fmt=`` sets the line/marker style, in the same format-string
-grammar as ``fmt``, and changes nothing else:
+grammar as ``fmt``, and changes nothing else -- unless the string carries a
+colour letter (``'r:'``), which recolours the forecast too, on both backends:
 
 .. code-block:: python
 

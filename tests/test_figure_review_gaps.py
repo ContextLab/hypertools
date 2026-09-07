@@ -118,11 +118,15 @@ def test_three_d_axis_labels_are_inside_the_tight_bbox(tmp_path):
                    zlabel='PC 3', show=False)
     fig.canvas.draw()
     renderer = fig.canvas.get_renderer()
-    tight = fig.get_tightbbox(renderer)
+    tight = fig.get_tightbbox(renderer)          # inches
+    dpi = fig.dpi
     for axis in fig.axes[0]._axis_map.values():
-        box = axis.label.get_window_extent(renderer)
-        assert tight.x0 <= box.x0 and box.x1 <= tight.x1 * fig.dpi + 1e-6 \
-            or tight.contains(box.x0 / fig.dpi, box.y0 / fig.dpi)
+        box = axis.label.get_window_extent(renderer)   # pixels
+        # every label box lies inside the tight bbox on all four sides
+        assert tight.x0 * dpi - 1e-6 <= box.x0
+        assert box.x1 <= tight.x1 * dpi + 1e-6
+        assert tight.y0 * dpi - 1e-6 <= box.y0
+        assert box.y1 <= tight.y1 * dpi + 1e-6
     # and a bbox-tight save keeps the z-label's pixels (right of the cube)
     from PIL import Image
     loose = tmp_path / 'loose.png'

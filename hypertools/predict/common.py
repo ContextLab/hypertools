@@ -15,6 +15,7 @@ callables plus their own defaults.
 ``applier(fitted_params, new_data, t)`` callable; ``applier=None`` falls back
 to conditioning on the new data directly (see `Forecaster.predict_new`).
 """
+import copy
 import warnings
 
 import numpy as np
@@ -428,6 +429,28 @@ class Forecaster(BaseEstimator):
         """
         self.fit(data)
         return self.predict(t)
+
+    def for_dataset(self, index):
+        """A view of this fitted forecaster bound to ONE of its fitted
+        datasets: `predict_new` on a single new series then reuses that
+        dataset's learned parameters instead of refusing a count mismatch.
+        `plot()`'s animated forecast schedule forecasts each dataset's
+        revealed history on its own, so a forecaster fitted on several
+        datasets (``hyp.predict([a, b], return_model=True)``) is applied
+        dataset by dataset through this (Codex round 3)."""
+        if not self.is_fitted:
+            raise NotFittedError('must fit forecaster before calling for_dataset')
+        fitted = self.data if isinstance(self.data, list) else [self.data]
+        if len(self.models_) == 1:
+            return self
+        if not 0 <= int(index) < len(self.models_):
+            raise IndexError(
+                f'for_dataset({index}): the forecaster was fitted on '
+                f'{len(self.models_)} dataset(s).')
+        view = copy.copy(self)
+        view.models_ = [self.models_[int(index)]]
+        view.data = fitted[int(index)]
+        return view
 
     @property
     def is_fitted(self):

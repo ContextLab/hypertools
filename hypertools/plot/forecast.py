@@ -215,7 +215,8 @@ def model_min_history(model):
     return int(resolved.min_history_for(*args, **kwargs))
 
 
-def forecast_from_history(history, model, t, min_history=DEFAULT_MIN_HISTORY):
+def forecast_from_history(history, model, t, min_history=DEFAULT_MIN_HISTORY,
+                          dataset=None):
     """Forecast `t` steps on from `history`, as a displacement path.
 
     Parameters
@@ -234,6 +235,12 @@ def forecast_from_history(history, model, t, min_history=DEFAULT_MIN_HISTORY):
         (`model_min_history`: 3 for the default ARIMA order) is applied on
         top of it, so a history the model could not be fit on returns
         ``None`` rather than reaching the model's internals.
+    dataset : int or None
+        Which dataset `history` belongs to. Only read when `model` is a
+        forecaster already FITTED on several datasets
+        (``hyp.predict([a, b], return_model=True)``): the history is then
+        forecast with that dataset's own fitted parameters
+        (`Forecaster.for_dataset`).
 
     Returns
     -------
@@ -254,6 +261,13 @@ def forecast_from_history(history, model, t, min_history=DEFAULT_MIN_HISTORY):
         raise ValueError(
             f"history must be 2-D (n_observed, n_dims); got shape "
             f"{history.shape}.")
+    if (dataset is not None and hasattr(model, 'for_dataset')
+            and len(getattr(model, 'models_', ())) > 1):
+        # a forecaster fitted on several datasets: forecast THIS dataset's
+        # history with its own fitted parameters (the schedule forecasts
+        # one history at a time, which `predict_new` otherwise refuses as
+        # a dataset-count mismatch; Codex round 3)
+        model = model.for_dataset(dataset)
     if len(history) < max(2, min_history, model_min_history(model)):
         return None
 
@@ -515,7 +529,8 @@ class ForecastSchedule:
             start = time.perf_counter()
             path = forecast_from_history(self.histories[i][list(r)],
                                          self.model, self.t,
-                                         min_history=self.min_history)
+                                         min_history=self.min_history,
+                                         dataset=i)
             elapsed = time.perf_counter() - start
             spent += elapsed
             if path is not None:

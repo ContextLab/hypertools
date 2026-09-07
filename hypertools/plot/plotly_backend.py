@@ -645,6 +645,17 @@ def _plotly_legend_entry_traces(entries, ndims):
     return traces
 
 
+def _rgb_triplet(color):
+    """The ``(r, g, b)`` of a plotly colour string, opacity dropped (an
+    ``rgba(...)``/``rgb(...)`` string as `_to_plotly_color` builds; any
+    other spelling is returned as itself)."""
+    text = str(color).strip()
+    if text.startswith(('rgba(', 'rgb(')):
+        parts = text[text.index('(') + 1:-1].split(',')
+        return tuple(round(float(p)) for p in parts[:3])
+    return text
+
+
 def _rgba_with_alpha(color, alpha):
     """`color` (any plotly colour string, typically the ``rgba(r,g,b,a)``
     `_to_plotly_color` builds) with its alpha replaced by `alpha`."""
@@ -660,10 +671,12 @@ def _forecast_legend_traces(specs, ndims):
     """One data-free legend trace per distinct forecast label -- the plotly
     twin of `hypertools.plot.plot._forecast_legend_handles`.
 
-    `specs` is ``[(label, line, alpha), ...]``, one per forecast trace that
-    carries a legend label (its model's name), in trace order; `line` is
-    the trace's ``line=`` dict (colour with the forecast alpha baked in,
-    width, dash). Each entry wears the first such forecast's line style,
+    `specs` is ``[(label, line, alpha[, mode, marker]), ...]``, one per
+    forecast trace that carries a legend label (its model's name), in
+    trace order; `line` is the trace's ``line=`` dict (colour with the
+    forecast alpha baked in, width, dash), and `mode`/`marker` the
+    trace's drawing mode and marker dict when `forecast_fmt=` added
+    markers (`_forecast_marker`). Each entry wears the first such forecast's line style,
     and its colour when every forecast under that label shares one (a
     single dataset, or a `forecast_palette=` that colours by model);
     otherwise `forecast.FORECAST_LEGEND_COLOR` at the forecast's alpha --
@@ -686,13 +699,21 @@ def _forecast_legend_traces(specs, ndims):
         line = dict(first_line)
         line['width'] = max(float(specs[k][1].get('width') or 0)
                             for k in members) or first_line.get('width')
-        if len({specs[k][1].get('color') for k in members}) != 1:
+        # the same colour at different opacities is ONE colour (Codex
+        # round 3: alpha=[1, .4] made every all-red key gray)
+        if len({_rgb_triplet(specs[k][1].get('color'))
+                for k in members}) != 1:
             line['color'] = _to_plotly_color(FORECAST_LEGEND_COLOR, alpha)
         else:
             line['color'] = _rgba_with_alpha(first_line.get('color'), alpha)
-        common = dict(mode='lines', name=str(label), showlegend=True,
+        # the key draws the forecasts' markers too (a `forecast_fmt='o:'`)
+        mode = specs[members[0]][3] if len(specs[members[0]]) > 3 else 'lines'
+        marker = specs[members[0]][4] if len(specs[members[0]]) > 4 else None
+        common = dict(mode=mode, name=str(label), showlegend=True,
                       hoverinfo='skip', line=line,
                       meta=dict(hyp_legend_entry=str(label)))
+        if marker is not None:
+            common['marker'] = dict(marker, color=line['color'])
         if ndims >= 3:
             traces.append(go.Scatter3d(x=[None], y=[None], z=[None],
                                        **common))
@@ -763,8 +784,9 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         recorded as ``layout.meta['hyp_datasets_drawn']`` (before the
         figure is saved or shown, so a displayed figure carries it) for a
         later ``ax=<this figure>`` call to continue the palette from.
-        Ignored when drawing into a `PlotlyCell` (each cell restarts the
-        palette, like a matplotlib axes of its own).
+        Drawing into a `PlotlyCell` records it per cell instead
+        (``layout.meta['hyp_cell_datasets_drawn'][str(index)]``): each cell
+        keeps its own count, like a matplotlib axes of its own.
     forecast_datasets : list of int or None
         GH #285. Which SOURCE DATASET each forecast belongs to, for
         ``meta['hyp_dataset']``. `None` means "forecast i is dataset i"; the
@@ -1318,9 +1340,12 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         common = dict(
             mode=mode,
             name=name,
+            # explicit `legend_entries` (legend_colors=[(label, color)])
+            # define the legend outright, so the data traces stay out of
+            # it (matplotlib parity; Codex round 3)
             showlegend=(legend is not None and name is not None
                        and not str(name).startswith('_')
-                       and not hide_points),
+                       and not hide_points and not legend_entries),
             visible=not hide_points,
             line=dict(color=color, width=width, dash=dash),
             marker=dict(color=color, size=msize, symbol=symbol),
@@ -1437,11 +1462,19 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
             fc_name = (forecast_labels[i]
                        if forecast_labels is not None
                        and i < len(forecast_labels) else None)
+            fc_mode, fc_marker = _forecast_marker(
+                tkwargs, (forecast_overrides[i]
+                          if forecast_overrides is not None
+                          and i < len(forecast_overrides) else None),
+                fc_line['color'], ndims)
             if fc_name is not None:
-                forecast_legend_specs.append((fc_name, fc_line, fc_alpha))
-            fc_common = dict(mode='lines', showlegend=False,
+                forecast_legend_specs.append(
+                    (fc_name, fc_line, fc_alpha, fc_mode, fc_marker))
+            fc_common = dict(mode=fc_mode, showlegend=False,
                              hoverinfo='skip',
                              line=fc_line,
+                             **({} if fc_marker is None
+                                else dict(marker=fc_marker)),
                              meta=dict(
                                  hyp_forecast_role='static',
                                  hyp_dataset=(forecast_datasets[i]
@@ -1502,7 +1535,15 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
             # the LIVE forecast's alpha for this dataset -- the fan decays
             # from THIS, not from a fixed value, so a trail can never be more
             # opaque than the live forecast it fades from (matplotlib parity)
-            live_alpha = forecast_alpha(tkwargs.get('alpha'))
+            from .forecast import forecast_alpha_scale_for
+            live_alpha = forecast_alpha(
+                tkwargs.get('alpha'),
+                # a recoloured forecast keeps its trace's alpha here too
+                # (Codex round 3: the animated branch still halved it)
+                forecast_alpha_scale_for(
+                    forecast_overrides[i]
+                    if forecast_overrides is not None
+                    and i < len(forecast_overrides) else None))
             # trails FIRST, so the live forecast draws on top of its own fan
             # rather than under it (matplotlib parity)
             for age in list(range(1, n_retained + 1)) + [0]:
@@ -1518,9 +1559,15 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                     # continuous hue the run's own `line.color` is the
                     # per-dataset palette colour, which nothing is drawn in.
                     anchor_color=_hue_anchor_color(point_colors, _src))
+                fc_mode, fc_marker = _forecast_marker(
+                    tkwargs, (forecast_overrides[i]
+                              if forecast_overrides is not None
+                              and i < len(forecast_overrides) else None),
+                    fc_line['color'], ndims)
                 fc_common = dict(
-                    mode='lines', showlegend=False, hoverinfo='skip',
+                    mode=fc_mode, showlegend=False, hoverinfo='skip',
                     line=fc_line,
+                    **({} if fc_marker is None else dict(marker=fc_marker)),
                     meta=dict(
                         hyp_forecast_role='live' if age == 0 else 'trail',
                         hyp_dataset=i, hyp_forecast_age=age,
@@ -1535,7 +1582,8 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                         and forecast_labels[i] is not None:
                     # the LIVE forecast's legend entry (static parity)
                     forecast_legend_specs.append(
-                        (forecast_labels[i], fc_line, alpha))
+                        (forecast_labels[i], fc_line, alpha, fc_mode,
+                         fc_marker))
                 # Decision R3: the colour a live/retained forecast wears is
                 # the HEAD RUN's, which changes from frame to frame. Plotly
                 # frames carry geometry, so the colour must be resolvable
@@ -1605,8 +1653,9 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
             marker_size[::max(int(tr_step), 1)] = _marker_size_px(
                 TRUTH_STYLE['markersize'], TRUTH_STYLE['marker'], ndims)
             tr_common = dict(
-                mode='lines+markers', showlegend=bool(i == 0 and legend
-                                                      is not None),
+                mode='lines+markers',
+                showlegend=bool(i == 0 and legend is not None
+                                and not legend_entries),
                 name='truth', hoverinfo='skip', line=tr_line,
                 marker=dict(size=marker_size, color=tr_line.get('color')),
                 # listed AFTER the forecast entries (which are appended as
@@ -2043,7 +2092,7 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     # with a legend to list in -- like the matplotlib proxies, which exist
     # only on an axes that has one -- so a legend-less figure's traces are
     # exactly its drawn ones.
-    if forecast_legend_specs and legend is not None:
+    if forecast_legend_specs and legend is not None and not legend_entries:
         fig.add_traces(_forecast_legend_traces(forecast_legend_specs, ndims))
 
     if labels is not None:
@@ -2111,6 +2160,7 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                        forecast_trace_specs=forecast_trace_specs,
                        forecast_frame_colors=forecast_frame_colors,
                        forecast_reveal=forecast_reveal,
+                       forecast_datasets=forecast_datasets,
                        forecast_trail=forecast_trail,
                        forecast_antialias=antialias,
                        surface=surface, surface_colors=surface_colors,
@@ -2156,9 +2206,15 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
             into.add_traces(list(fig.data))
             fig = into
 
-    if datasets_drawn is not None and not isinstance(into, PlotlyCell):
+    if datasets_drawn is not None:
         _meta = fig.layout.meta if isinstance(fig.layout.meta, dict) else {}
-        fig.layout.meta = {**_meta, 'hyp_datasets_drawn': int(datasets_drawn)}
+        if isinstance(into, PlotlyCell):
+            _cells = dict(_meta.get('hyp_cell_datasets_drawn') or {})
+            _cells[str(into.index)] = int(datasets_drawn)
+            fig.layout.meta = {**_meta, 'hyp_cell_datasets_drawn': _cells}
+        else:
+            fig.layout.meta = {**_meta,
+                               'hyp_datasets_drawn': int(datasets_drawn)}
 
     if save_path is not None:
         ext = save_path.lower().rsplit('.', 1)[-1]
@@ -2399,6 +2455,19 @@ def ensure_panel_gutter(target, gutter_px):
     return True
 
 
+def _explicit_legend_position(legend):
+    """``{'lx', 'ly'}`` when a single-figure legend dict carries a
+    position other than hypertools' own default (``x=1.02, y=0.5``, the
+    outside-right anchor `plotly_draw` sets), i.e. a caller's
+    `legend_kwargs` placed it; else None."""
+    x, y = legend.get('x'), legend.get('y')
+    if x is None or y is None:
+        return None
+    if abs(float(x) - 1.02) < 1e-9 and abs(float(y) - 0.5) < 1e-9:
+        return None
+    return {'lx': float(x), 'ly': float(y)}
+
+
 def _cell_domain(target, keys, ndims):
     if ndims >= 3:
         domain = target.layout[keys['scene']].domain
@@ -2425,7 +2494,12 @@ def _place_cell_furniture(target, index, ndims):
     except Exception:  # noqa: BLE001 - a cell never drawn has no legendN
         legend = None
     placed = legend is not None and legend.x is not None
-    if placed:
+    meta = target.layout.meta if isinstance(target.layout.meta, dict) else {}
+    explicit = (meta.get('hyp_cell_legends') or {}).get(str(index))
+    if placed and explicit:
+        legend.update(x=x0 + float(explicit['lx']) * (x1 - x0),
+                      y=y0 + float(explicit['ly']) * (y1 - y0))
+    elif placed:
         legend.update(x=x1 + PANEL_GUTTER_PAD_PX / plot_w, y=y_mid)
     cb_offset = PANEL_GUTTER_PAD_PX + (PANEL_LEGEND_PX if placed else 0)
     for trace in target.data:
@@ -2448,7 +2522,6 @@ def _place_cell_furniture(target, index, ndims):
             on_top = cb.yanchor == 'bottom'
             cb.update(x=0.5 * (x0 + x1), len=0.75 * (x1 - x0),
                       y=(y1 if on_top else y0))
-    meta = target.layout.meta if isinstance(target.layout.meta, dict) else {}
     title_spec = (meta.get('hyp_cell_titles') or {}).get(str(index))
     if title_spec:
         for ann in target.layout.annotations:
@@ -2586,8 +2659,21 @@ def transplant_panel(target, panel, row, col, index, ndims):
     # plot, vertically centred on it")
     legend = (panel.layout.legend.to_plotly_json()
               if panel.layout.legend is not None else {})
-    legend.update(x=x1 + PANEL_GUTTER_PAD_PX / plot_w, y=y_mid,
-                  xanchor='left', yanchor='middle')
+    _explicit = _explicit_legend_position(legend)
+    if _explicit is not None:
+        # a caller's `legend_kwargs` x/y (paper fractions of the single
+        # figure) mean the same place INSIDE the cell (Codex round 3:
+        # transplanting overwrote them with the gutter placement)
+        legend.update(x=x0 + _explicit['lx'] * (x1 - x0),
+                      y=y0 + _explicit['ly'] * (y1 - y0))
+    else:
+        legend.update(x=x1 + PANEL_GUTTER_PAD_PX / plot_w, y=y_mid,
+                      xanchor='left', yanchor='middle')
+    _meta = (dict(target.layout.meta)
+             if isinstance(target.layout.meta, dict) else {})
+    _legends = dict(_meta.get('hyp_cell_legends') or {})
+    _legends[str(index)] = _explicit
+    target.layout.meta = {**_meta, 'hyp_cell_legends': _legends}
     # the panel's inherited text font (`font=`, GH #205) is MATERIALIZED
     # on this cell's text -- legend, title, axis titles/ticks, colorbar --
     # property by property under any explicit override, so two cells with
@@ -2645,6 +2731,16 @@ def transplant_panel(target, panel, row, col, index, ndims):
         needed = max(40, int(panel.layout.margin.t or 0))
         if (target.layout.margin.t or 0) < needed:
             target.layout.margin.t = needed
+        spec = _grid_spec(target)
+        if spec is not None and int(spec.get('title_px') or 0) \
+                < needed - PANEL_MARGIN_PX:
+            # ...and a later gutter rebuild (`ensure_panel_gutter`) keeps
+            # that room, per row (Codex round 3: it restored the one-line
+            # margin the grid was built with)
+            spec['title_px'] = needed - PANEL_MARGIN_PX
+            _meta = (dict(target.layout.meta)
+                     if isinstance(target.layout.meta, dict) else {})
+            target.layout.meta = {**_meta, 'hyp_grid': spec}
     return keys
 
 
@@ -3880,8 +3976,48 @@ def _forecast_style_from(tkwargs, fmt_str, alpha=None, override=None,
     color = override.get(
         'color',
         anchor_color if anchor_color is not None else tkwargs.get('color'))
+    if 'color' not in override:
+        # a colour letter in `forecast_fmt=` ('r:') recolours the forecast,
+        # as it does on matplotlib (Codex round 3: plotly dropped it)
+        fmt_color = _fmt_color_letter(override.get('fmt'))
+        if fmt_color is not None:
+            color = fmt_color
     line = dict(color=_to_plotly_color(color, alpha), width=width, dash=dash)
     return line, alpha
+
+
+def _fmt_color_letter(fmt):
+    """The colour a matplotlib format string names (``'r:'`` -> ``'r'``),
+    or None when it names none (or is not a string)."""
+    if not isinstance(fmt, str) or not fmt:
+        return None
+    try:
+        from matplotlib.axes._base import _process_plot_format
+        return _process_plot_format(fmt)[2]
+    except Exception:  # noqa: BLE001 - an unparseable fmt names no colour
+        return None
+
+
+def _forecast_marker(tkwargs, override, line_color, ndims):
+    """``(mode, marker)`` for a forecast trace: ``('lines', None)`` unless
+    `forecast_fmt=` asked for a marker (``'o:'``), in which case the trace
+    draws ``'lines+markers'`` with that marker at the observed trace's
+    marker size, in the forecast's own colour -- what the matplotlib
+    overlay draws for the same string (Codex round 3: plotly dropped the
+    marker). A forecast never inherits the OBSERVED trace's marker: it is
+    a line, and only its own format string can add markers to it."""
+    fmt = (override or {}).get('fmt')
+    if not isinstance(fmt, str) or not fmt:
+        return 'lines', None
+    _mode, symbol, _dash, marker_char = _resolve_fmt(
+        fmt, {k: v for k, v in tkwargs.items()
+              if k not in ('linestyle', 'ls', 'marker')})
+    if marker_char is None or symbol is None:
+        return 'lines', None
+    size = _marker_size_px(
+        tkwargs.get('markersize') or DEFAULT_MARKERSIZE_PT, marker_char,
+        ndims=ndims)
+    return 'lines+markers', dict(symbol=symbol, size=size, color=line_color)
 
 
 def _marker_size_px(markersize_pt, marker_char, ndims=2):
@@ -4124,7 +4260,7 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                    trail_dataset_indices=None,
                    forecast_schedule=None, forecast_trace_start=None,
                    forecast_trace_specs=None, forecast_trail=0,
-                   forecast_antialias=True,
+                   forecast_antialias=True, forecast_datasets=None,
                    surface=None, surface_colors=None,
                    surface_trace_start=None,
                    surface_dataset_indices=None, data_trace_start=0,
@@ -4356,6 +4492,13 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
         out = []
         _colors = forecast_frame_colors or []
         for _spec, (dataset, age) in enumerate(forecast_trace_specs):
+            # `dataset` is the FORECAST's index (model-major for a
+            # collection); the reveal schedule and the anchor rows are per
+            # SOURCE dataset (Codex round 3: an IndexError for two models
+            # x hue regrouping)
+            _src = (forecast_datasets[dataset]
+                    if forecast_datasets is not None
+                    and dataset < len(forecast_datasets) else dataset)
             if age == 0:
                 fit_frame = k
                 pts = forecast_schedule.polyline(dataset, k)
@@ -4372,7 +4515,7 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
             _line = None
             if (forecast_reveal is not None and fit_frame is not None
                     and _spec < len(_colors) and _colors[_spec]):
-                _run = forecast_reveal.head_run(dataset, fit_frame)
+                _run = forecast_reveal.head_run(_src, fit_frame)
                 _colour = _colors[_spec].get(_run)
                 if _colour is not None:
                     _line = dict(color=_colour)
@@ -4395,7 +4538,7 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                 out.append(go.Scatter(x=draw[:, 0], y=draw[:, 1], **_extra))
             else:
                 out.append(go.Scatter(
-                    x=_aa_x(step, anchor_rows.get(dataset, 0),
+                    x=_aa_x(step, anchor_rows.get(_src, 0),
                             draw.shape[0]),
                     y=draw[:, 0], **_extra))
         return out

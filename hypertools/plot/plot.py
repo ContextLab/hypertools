@@ -9493,8 +9493,15 @@ def plot(
             # identity map the single-model hierarchy uses would run off
             # the end of the trace list
             _forecast_owner = list(_model_forecast_owner)
-    elif (raw_forecasts is not None
-            and len(raw_forecasts) != len(xform)):
+    elif raw_forecasts is not None and (
+            len(raw_forecasts) != len(xform)
+            # ...or a COLLECTION under hue=/cluster= regrouping: one
+            # dataset split into two runs under two models gives two
+            # forecasts for two runs, so the counts coincide by accident
+            # while forecast i does NOT continue run i (Codex round 3:
+            # Kalman took the earlier run's colour, ARIMA the final run's)
+            or (_model_forecast_owner is not None and _seg_ds is not None
+                and len(_seg_ds) == len(xform))):
         # A forecast belongs to a DATASET and is anchored at that dataset's
         # last observation, so after regrouping it belongs to whichever run
         # holds that observation -- which is also the trace it visually
@@ -10092,17 +10099,25 @@ def plot(
             mpl_kwargs = dict(mpl_kwargs)
             _n_palette = len(xform)
             if (_plotly_into is not None
-                    and getattr(_plotly_into, 'layout', None) is not None
-                    and not _is_plotly_cell(_plotly_into)
                     and not (isinstance(palette, collections.abc.Mapping)
                              or _looks_like_dataset_palettes(palette))):
-                # composing into an existing figure (`ax=<figure>`):
-                # continue the palette past the datasets an earlier call
-                # drew there, as the matplotlib `ax=` path does
-                _meta = _plotly_into.layout.meta
-                _plotly_palette_offset = int(
-                    (_meta or {}).get('hyp_datasets_drawn', 0)
-                    if isinstance(_meta, dict) else 0)
+                # composing into an existing figure (`ax=<figure>`) or
+                # grid cell (`ax=<cell>`): continue the palette past the
+                # datasets an earlier call drew THERE, as the matplotlib
+                # `ax=` path does (a cell keeps its own count, like a
+                # matplotlib axes of its own; Codex round 3)
+                if _is_plotly_cell(_plotly_into):
+                    _meta = _plotly_into.figure.layout.meta
+                    _meta = _meta if isinstance(_meta, dict) else {}
+                    _plotly_palette_offset = int((_meta.get(
+                        'hyp_cell_datasets_drawn') or {}).get(
+                            str(_plotly_into.index), 0))
+                else:
+                    _meta = getattr(_plotly_into, 'layout', None)
+                    _meta = _meta.meta if _meta is not None else None
+                    _plotly_palette_offset = int(
+                        (_meta or {}).get('hyp_datasets_drawn', 0)
+                        if isinstance(_meta, dict) else 0)
                 _n_palette += _plotly_palette_offset
             mpl_kwargs["color"] = list(sns_local.color_palette(
                 _seaborn_palette_arg(palette, _n_palette),
@@ -10309,7 +10324,13 @@ def plot(
                 title_kwargs=_title_kwargs,
                 legend_kwargs=_legend_kwargs,
                 legend_entries=_final_legend_entries,
+                # a plain colour list recolours the FINAL legend, so it is
+                # applied after the forecast/truth entries below when
+                # there are any (Codex round 3: validated too early, it
+                # refused three colours for a legend that would list three)
                 legend_colors=(None if _final_legend_entries is not None
+                               or raw_forecasts is not None
+                               or raw_truths is not None
                                else _legend_recolor),
                 axis_scale=_axis_scale,
                 xlim=_data_xlim,
@@ -10411,13 +10432,26 @@ def plot(
             # placement/styling call `_draw` used. The time-progressing
             # modes add their live forecasts' entries below, once those
             # artists exist.
-            if legend is not None and (_forecast_artists or _truth_artists):
+            # ...unless `legend_colors=[(label, color), ...]` defined the
+            # entries outright: an explicit legend is exactly what was
+            # asked for (Codex round 3)
+            if (legend is not None and _final_legend_entries is None
+                    and (_forecast_artists or _truth_artists)):
                 from .matplotlib_backend import legend_call_kwargs
                 _add_overlay_legend_entries(
                     ax, _forecast_artists, _truth_artists,
                     **legend_call_kwargs(
                         is_3d=hasattr(ax, 'get_proj'), zlabel=zlabel,
                         font=_artist_font, legend_kwargs=_legend_kwargs))
+            if (_legend_recolor is not None and legend is not None
+                    and _final_legend_entries is None
+                    and (raw_forecasts is not None or raw_truths is not None)
+                    and animate in (False, None, 'spin')
+                    and ax.get_legend() is not None):
+                # the deferred plain-colour-list recolouring (see the
+                # `legend_colors=` argument to `_draw` above)
+                from .matplotlib_backend import _recolor_legend_handles
+                _recolor_legend_handles(ax.get_legend(), _legend_recolor)
 
             # ...and the time-progressing modes get one LIVE artist per
             # dataset instead, refilled every frame from the precomputed
@@ -10532,7 +10566,8 @@ def plot(
                         _forecast_labels[_i] if _forecast_labels is not None
                         and _i < len(_forecast_labels) else None)
                     _live_forecast_artists.append(_art)
-                if legend is not None and _live_forecast_artists:
+                if (legend is not None and _final_legend_entries is None
+                        and _live_forecast_artists):
                     # the live forecasts' legend entries (static parity:
                     # one per model name, from the artists' own styles)
                     from .matplotlib_backend import legend_call_kwargs
@@ -10541,6 +10576,14 @@ def plot(
                         **legend_call_kwargs(
                             is_3d=hasattr(ax, 'get_proj'), zlabel=zlabel,
                             font=_artist_font, legend_kwargs=_legend_kwargs))
+                if (_legend_recolor is not None and legend is not None
+                        and _final_legend_entries is None
+                        and ax.get_legend() is not None
+                        and _forecast_artists is None):
+                    # the deferred plain-colour-list recolouring for the
+                    # animated modes (the static path does it below)
+                    from .matplotlib_backend import _recolor_legend_handles
+                    _recolor_legend_handles(ax.get_legend(), _legend_recolor)
 
                 # whether the user pinned this dataset's forecast colour
                 # (`forecast_hue=`/`forecast_cluster=`/`forecast_palette=`);
@@ -10579,7 +10622,8 @@ def plot(
                                       _ndims=_display_ndims,
                                       _reveal_sched=_reveal,
                                       _lines=_src_lines,
-                                      _pinned=_override_colour):
+                                      _pinned=_override_colour,
+                                      _sources=_model_forecast_owner):
                     def _run_colour(dataset, frame):
                         """Decision R3: the colour of the run DRAWING the
                         head at `frame` -- the CURRENT frame for the live
@@ -10589,7 +10633,14 @@ def plot(
                         animation differ from a played one)."""
                         if _reveal_sched is None or _pinned[dataset]:
                             return None
-                        run = _reveal_sched.head_run(dataset, frame)
+                        # `dataset` is the FORECAST's index (model-major
+                        # for a collection); the reveal schedule is per
+                        # SOURCE dataset (Codex round 3: an IndexError
+                        # for two models x hue regrouping)
+                        _src = (_sources[dataset]
+                                if _sources is not None
+                                and dataset < len(_sources) else dataset)
+                        run = _reveal_sched.head_run(_src, frame)
                         if run is None or run >= len(_lines):
                             return None
                         return _lines[run].get_color()
@@ -11434,6 +11485,23 @@ def _add_colorbar(fig, ax, colorbar_info, font=None, attached=False):
         # place (1.1 release review, feature tour 9.8 follow-up).
         extra = ({'shrink': 0.6, 'pad': 0.04}
                  if colorbar_info['location'] == 'right' else {})
+        if (colorbar_info['location'] == 'right' and attached
+                and ax.get_legend() is not None):
+            # the panel's legend hangs outside its right edge; pad the
+            # colorbar past it, by the legend's measured overhang in
+            # axes widths (Codex round 3: every panel's legend overlapped
+            # its colorbar by ~10 px)
+            try:
+                fig.canvas.draw()
+                renderer = fig.canvas.get_renderer()
+                legend_box = ax.get_legend().get_window_extent(renderer)
+                axes_box = ax.get_window_extent(renderer)
+                overhang = (legend_box.x1 - axes_box.x1) / max(
+                    axes_box.width, 1.0)
+                if overhang > 0:
+                    extra['pad'] = 0.04 + overhang + 0.02
+            except Exception:  # noqa: BLE001 - a canvas that cannot draw yet
+                pass
         cbar = fig.colorbar(mappable, ax=ax,
                             location=colorbar_info['location'],
                             **extra, **tick_kwargs)
