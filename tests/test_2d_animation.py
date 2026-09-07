@@ -23,6 +23,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 import hypertools as hyp
+from hypertools._shared.helpers import UNIT_FRAME_LIMIT
 from hypertools.plot import morph as _morph
 
 
@@ -213,8 +214,8 @@ def test_plotly_frame_count_matches_duration_and_frame_rate(style):
                    frame_rate=frame_rate, backend='plotly', show=False)
     assert len(fig.frames) == duration * frame_rate
     # 2-D layout: xaxis/yaxis carry the fixed [-1.1, 1.1] range; no camera
-    assert fig.layout.xaxis.range == (-1.1, 1.1)
-    assert fig.layout.yaxis.range == (-1.1, 1.1)
+    assert fig.layout.xaxis.range == (-UNIT_FRAME_LIMIT, UNIT_FRAME_LIMIT)
+    assert fig.layout.yaxis.range == (-UNIT_FRAME_LIMIT, UNIT_FRAME_LIMIT)
 
 
 def test_plotly_morph_frame_count_matches_duration_and_frame_rate():

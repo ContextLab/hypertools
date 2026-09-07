@@ -10,6 +10,7 @@ import numpy as np
 import pytest
 
 import hypertools as hyp
+from hypertools._shared.helpers import UNIT_FRAME_LIMIT
 
 pytest.importorskip('plotly')
 
@@ -92,8 +93,8 @@ def test_ax_cell_2d_keeps_the_frame_labels_and_colorbar():
              xlabel='a', ylabel='b', backend='plotly', show=False)
     hyp.plot(_walk(1), ax=cells[1], ndims=2, hue=np.arange(40.0),
              colorbar=True, backend='plotly', show=False)
-    assert list(fig.layout.xaxis.range) == [-1.1, 1.1]
-    assert list(fig.layout.yaxis2.range) == [-1.1, 1.1]
+    assert list(fig.layout.xaxis.range) == [-UNIT_FRAME_LIMIT, UNIT_FRAME_LIMIT]
+    assert list(fig.layout.yaxis2.range) == [-UNIT_FRAME_LIMIT, UNIT_FRAME_LIMIT]
     assert fig.layout.xaxis.title.text == 'a'
     assert fig.layout.yaxis.title.text == 'b'
     # one frame square per cell, on that cell's axes

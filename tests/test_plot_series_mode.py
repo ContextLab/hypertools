@@ -16,6 +16,7 @@ import matplotlib.dates as mdates                         # noqa: E402
 import matplotlib.pyplot as plt                           # noqa: E402
 
 import hypertools as hyp                                  # noqa: E402
+from hypertools._shared.helpers import UNIT_FRAME_LIMIT
 
 
 def _data_lines(fig):
@@ -117,7 +118,7 @@ def test_series_mode_defaults_to_the_data_scale_and_can_be_overridden():
                     antialias=False, show=False)
     y = np.asarray(_data_lines(unit)[0].get_ydata())
     assert y.min() >= -1.0 - 1e-9 and y.max() <= 1.0 + 1e-9
-    assert unit.axes[0].get_ylim() == (-1.1, 1.1)
+    assert unit.axes[0].get_ylim() == (-UNIT_FRAME_LIMIT, UNIT_FRAME_LIMIT)
     plt.close(unit)
 
 

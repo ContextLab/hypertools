@@ -300,9 +300,12 @@ def test_density_2d_clipped_to_frame_box(tmp_path):
     assert images, 'density imshow layer missing'
     # matplotlib special-cases a Rectangle clip patch into `clipbox`
     # (a TransformedBbox), not `clippath`: assert the KDE layer's clipbox
-    # matches the [-1, 1] frame square in data coordinates -- narrower
-    # than the default axes bbox (limits are [-1.1, 1.1]).
-    frame_disp = ax.transData.transform([(-1.0, -1.0), (1.0, 1.0)])
+    # matches the frame square (half-width UNIT_FRAME_SCALE) in data
+    # coordinates -- narrower than the axes bbox (limits are 10 % wider).
+    from hypertools._shared.helpers import UNIT_FRAME_SCALE
+    frame_disp = ax.transData.transform(
+        [(-UNIT_FRAME_SCALE, -UNIT_FRAME_SCALE),
+         (UNIT_FRAME_SCALE, UNIT_FRAME_SCALE)])
     for im in images:
         assert im.clipbox is not None
         np.testing.assert_allclose(

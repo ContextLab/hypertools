@@ -303,6 +303,14 @@ def _forecast_style_from(src_line, alpha_scale=FORECAST_ALPHA_SCALE,
         ``color``/``linestyle``/``linewidth``/``alpha`` kwargs for `ax.plot`
         (plus ``marker`` when `forecast_fmt=` asked for one).
     """
+    # an explicit forecast COLOUR (`forecast_hue=`/`forecast_cluster=`/
+    # `forecast_palette=`, or a colour letter in `forecast_fmt=`) is what
+    # tells the forecast from its trace, so it is drawn at the trace's own
+    # alpha rather than faded on top of being recoloured (1.1 release
+    # review, feature-tour 9.10: Set1 forecasts at 0.35 over 0.7 leaves
+    # were invisible). `forecast_alpha_scale_for` is the one rule.
+    from .forecast import forecast_alpha_scale_for
+    alpha_scale = forecast_alpha_scale_for(override, alpha_scale)
     if src_line is None:
         return _apply_forecast_override(
             dict(color=anchor_color, linestyle='-',
@@ -346,12 +354,16 @@ def _draw_forecast_overlays(ax, raw_forecasts, antialias=True,
     to dataset i"; the multi-model form passes a real map, since it draws
     one forecast per (model, dataset) pair.
 
-    `labels` (GH #285): one legend label per forecast, or None. Only the
-    MULTI-MODEL form (`predict=['Kalman', 'ARIMA', ...]`) passes them --
-    with several overlays on one trace, "which model is this?" cannot be
-    read off the figure otherwise. Every other call keeps the historical
-    `'_nolegend_'`, and `plot()` rebuilds the legend after this returns only
-    when a label was actually set.
+    `labels` (GH #285): one legend label per forecast, or None -- the
+    model's name, for every `predict=` form (1.1: a collection labels each
+    model; the single-model form labels its one model too). The label is
+    NOT put on the artist (every artist stays ``'_nolegend_'``): a model's
+    forecasts over several datasets are drawn in several colours, and a
+    legend built from the first of them would show dataset 0's colour as if
+    it were the model's. Each artist is tagged ``_hyp_forecast_label``
+    instead, and `_forecast_legend_handles` builds one proxy glyph per
+    distinct label from those tags -- which `plot()` adds to the legend
+    after this returns.
 
     Returns
     -------
@@ -385,13 +397,7 @@ def _draw_forecast_overlays(ax, raw_forecasts, antialias=True,
             _src_line, override=overrides[i] if overrides is not None else None)
         d = fc.shape[1] if fc.ndim > 1 else 1
         _before = len(artists)
-        # one legend entry per MODEL (not per model x dataset): the second
-        # and later datasets of the same model repeat a label the legend
-        # already carries, and matplotlib would list it again.
         _label = '_nolegend_'
-        if labels is not None and labels[i] is not None:
-            _label = (labels[i] if labels[i] not in labels[:i]
-                      else '_nolegend_')
         if d >= 3:
             artists.extend(ax.plot(
                 fc[:, 0], fc[:, 1], fc[:, 2], label=_label, **style))
@@ -436,7 +442,81 @@ def _draw_forecast_overlays(ax, raw_forecasts, antialias=True,
         _a._hyp_forecast_role = 'static'
         _a._hyp_forecast_dataset = (dataset_index[_ds]
                                     if dataset_index is not None else _ds)
+        _a._hyp_forecast_label = (labels[_ds] if labels is not None
+                                  and _ds < len(labels) else None)
     return artists
+
+
+def _add_overlay_legend_entries(ax, forecast_artists=None, truth_artists=None,
+                                **legend_call):
+    """Rebuild `ax`'s legend with the overlay entries `_draw` could not
+    know about -- it built the legend from the data lines before any
+    overlay existed. One proxy per forecast label
+    (`_forecast_legend_handles`) goes in after the data entries, and a
+    labelled `truth=` artist after those; entries already present are
+    kept, in place, so calling this once for the forecasts and once for
+    the truth overlay lists ``data..., forecasts..., truth`` either way.
+    No legend on the axes means the call asked for none: nothing is added.
+    """
+    legend = ax.get_legend()
+    if legend is None:
+        return
+    handles = list(legend.legend_handles)
+    labels = [t.get_text() for t in legend.get_texts()]
+    new_handles = _forecast_legend_handles(forecast_artists or [])
+    new_handles = [h for h in new_handles if h.get_label() not in labels]
+    # forecasts list BEFORE a truth entry that is already there
+    at = labels.index('truth') if 'truth' in labels else len(labels)
+    handles[at:at] = new_handles
+    labels[at:at] = [h.get_label() for h in new_handles]
+    for artist in truth_artists or []:
+        label = artist.get_label()
+        if label and not label.startswith('_') and label not in labels:
+            handles.append(artist)
+            labels.append(label)
+            new_handles.append(artist)
+    if new_handles:
+        ax.legend(handles, labels, **legend_call)
+
+
+def _forecast_legend_handles(artists):
+    """One proxy `Line2D` legend handle per distinct forecast label, from
+    the ``_hyp_forecast_label`` tags `_draw_forecast_overlays` (and the
+    animated live-forecast setup) put on the forecast artists.
+
+    Each handle wears its forecasts' linestyle, linewidth, marker and alpha
+    -- so the key looks like the faded, dashed lines it names -- and their
+    colour when every forecast under that label shares one (a single
+    dataset, or a `forecast_palette=` that colours by model). When the
+    label spans several colours (one model continuing several datasets,
+    each in its own colour) the glyph is `forecast.FORECAST_LEGEND_COLOR`,
+    a neutral gray: the entry then stands for the model, not for any one
+    dataset. `plotly_backend._forecast_legend_traces` is its twin, so both
+    backends list the same entries with the same glyphs.
+    """
+    from matplotlib.colors import to_rgba
+    from matplotlib.lines import Line2D
+    from .forecast import (FORECAST_LEGEND_COLOR, FORECAST_LEGEND_MIN_ALPHA,
+                           group_forecast_labels)
+    tags = [getattr(_a, '_hyp_forecast_label', None) for _a in artists]
+    handles = []
+    for label, members in group_forecast_labels(tags):
+        lines = [artists[_k] for _k in members]
+        first = lines[0]
+        colors = {to_rgba(_l.get_color()) for _l in lines}
+        color = first.get_color() if len(colors) == 1 \
+            else FORECAST_LEGEND_COLOR
+        # legible whatever the forecasts' own alpha: the floor keeps a key
+        # for translucent forecasts from vanishing (see the constant)
+        alphas = [_l.get_alpha() for _l in lines if _l.get_alpha() is not None]
+        alpha = max([FORECAST_LEGEND_MIN_ALPHA] + alphas) \
+            if alphas else None
+        handles.append(Line2D(
+            [], [], color=color, linestyle=first.get_linestyle(),
+            linewidth=max(_l.get_linewidth() for _l in lines), alpha=alpha,
+            marker=first.get_marker(), markersize=first.get_markersize(),
+            markevery=None, label=str(label)))
+    return handles
 
 
 #: How a `truth=` overlay is drawn, next to the forecast it is compared
@@ -2494,7 +2574,9 @@ def subplots(nrows=1, ncols=1, ndims=3, size=None, backend='auto',
     grid CELLS that `hyp.plot(..., ax=cell)` draws into -- each call moves
     its whole panel (traces, axes and frame, `title=`, `labels=`, and its
     own legend/colorbar beside the cell) into that cell, and returns the
-    grid figure. Room for one legend is reserved beside every cell.
+    grid figure. The grid is laid out as tightly as `panels=` draws it;
+    the first cell that receives a legend or colorbar makes the grid grow
+    room for one beside every cell (the cells already drawn move with it).
 
     Parameters
     ----------
@@ -2529,15 +2611,30 @@ def subplots(nrows=1, ncols=1, ndims=3, size=None, backend='auto',
             f"ndims must be 1, 2 or 3 (the plot dimensionality each panel "
             f"is drawn in); got {ndims!r}.")
     if resolve_backend(backend) == 'plotly':
-        from .plotly_backend import (PlotlyCell, _hyper_figure_class,
-                                     make_panel_grid, panel_gutter_px)
+        from .plotly_backend import (PANEL_TITLE_PX, PlotlyCell,
+                                     _hyper_figure_class, make_panel_grid)
         # room beside every cell for the legend/colorbar a cell's own
         # `hyp.plot(..., ax=cell, legend=True)` call may add (`panels=`
         # sizes this from the panels it has already drawn; a grid filled
         # later cannot, so it reserves one legend's width up front)
+        # ...and above every row for the one-line title such a call may
+        # set, so a titled cell does not have to shift the grid down. No
+        # gutter yet: the grid grows one beside every cell the first time
+        # a cell actually receives a legend or colorbar
+        # (`plotly_backend.ensure_panel_gutter`), so a grid whose cells
+        # never ask for one stays as tight as `panels=` draws it.
         grid = make_panel_grid(nrows, ncols, ndims, size=size,
-                               gutter_px=panel_gutter_px(True, False),
+                               gutter_px=0, title_px=PANEL_TITLE_PX,
                                **fig_kw)
+        grid.layout.meta = {**(dict(grid.layout.meta)
+                               if isinstance(grid.layout.meta, dict) else {}),
+                            'hyp_grid': dict(
+                                nrows=int(nrows), ncols=int(ncols),
+                                ndims=int(ndims),
+                                size=(None if size is None
+                                      else [float(v) for v in size]),
+                                gutter_px=0, title_px=PANEL_TITLE_PX,
+                                make_subplots_kw=dict(fig_kw))}
         fig = _hyper_figure_class()(grid)
         cells = np.empty(nrows * ncols, dtype=object)
         cells[:] = [PlotlyCell(fig, i // ncols + 1, i % ncols + 1, i, ndims)
@@ -3136,6 +3233,22 @@ def _plot_panels(x, panels, call_kwargs, _name='panels'):
         panel_axes.append(axes[i])
     for spare in axes[n_panels:]:
         spare.set_visible(False)
+    if call_kwargs.get('size') is None:
+        # room beside every column for the legends/colorbars the panels
+        # drew -- what the plotly grid reserves as its gutter (110 px per
+        # legend or colorbar) -- so `tight_layout` does not shrink the
+        # panels to fit them (1.1 release review, feature-tour 9.8: three
+        # 10-entry legends left three 1.3 in cubes). An explicit `size=`
+        # is honoured verbatim.
+        _cols = ncols if n_panels > 1 else 1
+        _extra = 0.0
+        if any(a.get_legend() is not None for a in panel_axes):
+            _extra += 1.1 * _cols
+        if len(fig.axes) > len(axes):  # colorbar axes beside the panels
+            _extra += 1.1 * _cols
+        if _extra:
+            _w, _h = fig.get_size_inches()
+            fig.set_size_inches(_w + _extra, _h)
     fig.tight_layout()
 
     if save_path is not None:
@@ -3215,11 +3328,18 @@ def _plot_panels_plotly(panel_data, panel_kwargs, titles, nrows, ncols,
     colorbar_present = any(
         getattr(getattr(trace, 'marker', None), 'showscale', None)
         for panel in panel_figs for trace in panel.data)
+    # room above every row for its panels' titles: what the single-axes
+    # path reserved for the tallest one (per line and per font size), so
+    # a two-line title keeps both lines (the base margin is the untitled
+    # single figure's 10 px)
+    title_px = max([0] + [max(0, int(panel.layout.margin.t or 0) - 10)
+                          for panel, title in zip(panel_figs, titles)
+                          if title])
     fig = make_panel_grid(nrows, ncols, ndims,
                           size=call_kwargs.get('size'),
                           gutter_px=panel_gutter_px(legend_present,
                                                     colorbar_present),
-                          top_margin_px=40 if any(titles) else None)
+                          title_px=title_px)
     panel_axes = []
     for i, panel in enumerate(panel_figs):
         keys = transplant_panel(fig, panel, i // ncols + 1, i % ncols + 1,
@@ -4495,12 +4615,22 @@ def plot(
         post normalize/reduce/align space) using the specified
         `hypertools.predict` model, e.g. 'Kalman', 'ARIMA', 'GaussianProcess'
         (see `hypertools.predict.predict` for accepted forms), and overlays
-        one forecast trace per dataset (no separate legend entry). A forecast
+        one forecast trace per dataset, listed ONCE in the legend (when
+        there is one) under the model's name -- the same name
+        ``hyp.predict(x, model=[spec])`` would give it -- with a glyph in
+        the forecasts' own style: their colour when every forecast shares
+        one, else a neutral gray, since the entry then names the model
+        rather than any one dataset. (Before the 1.1.0 release review only
+        a collection of models was listed.) A forecast
         is the SAME series projected forward, so it INHERITS the style of the
         observed trace it continues -- same color, same linestyle, same
         linewidth -- and differs only in transparency: ``forecast_alpha =
         observed_alpha * 0.5`` (an unset `alpha` is matplotlib's opaque 1.0,
-        so the default is 0.5). Per-dataset styling carries through dataset
+        so the default is 0.5). A forecast given its OWN colour
+        (`forecast_hue=`, `forecast_cluster=`, `forecast_palette=`, or a
+        colour letter in `forecast_fmt=`) keeps its trace's alpha instead:
+        the colour is then what tells it apart, and fading it as well hid
+        it among translucent traces. Per-dataset styling carries through dataset
         by dataset, e.g. ``alpha=[1.0, 0.4]`` gives forecasts at
         ``[0.5, 0.2]``, and a dotted dataset gets a dotted forecast. Both
         backends apply the identical rule. (Before 1.1.0 every forecast was
@@ -4550,13 +4680,22 @@ def plot(
         {...}}, 'arima': 'ARIMA'}`` when you want to name them yourself.
         The specs are handed to ``hyp.predict(x, model=[...])``, whose
         ``{name: forecast}`` contract this reuses verbatim, so the two
-        agree by construction. Each model's overlays take a colour from
-        `forecast_palette` (a seaborn palette name or an explicit colour
-        list; default ``'husl'``) -- one colour per MODEL, shared across
-        datasets -- and are labelled in the legend by the model's name (the
-        auto-name from the spec, or the mapping key). `forecast_fmt=` may
-        be a list, one entry per model. Works with `truth=`, static and
-        animated, on both backends. The ``return_model=True`` bundle's
+        agree by construction. Two things need telling apart -- which
+        series a forecast continues and which model made it -- so each
+        overlay keeps its dataset's COLOUR (as the single-model form does)
+        and takes a linestyle per MODEL, cycling solid, dashed, dotted,
+        dash-dot in model order (the first model is solid, so
+        ``predict=['Kalman']`` draws what ``predict='Kalman'`` draws). The
+        legend lists each model by name (the auto-name from the spec, or
+        the mapping key) with a glyph in its linestyle -- neutral gray when
+        the model's forecasts span several colours. `forecast_fmt=` may be
+        a list, one entry per model, replacing the cycle; `forecast_palette`
+        (a seaborn palette name or an explicit colour list) colours by
+        MODEL instead, one colour per model shared across datasets.
+        (Until the 1.1.0 release review a per-model ``'husl'`` palette was
+        the default, and its first colour was the first dataset's own.)
+        Works with `truth=`, static and animated, on both backends. The
+        ``return_model=True`` bundle's
         ``predict['forecasts']`` becomes a ``{name: [forecast per dataset]}``
         dict for this form, mirroring `hyp.predict` -- for a hierarchical
         `x` too, where each list holds one forecast per FINAL trace.
@@ -4971,7 +5110,9 @@ def plot(
         With `forecast_hue=` or `forecast_cluster=`, one colour per group.
         With NEITHER, there is no forecast grouping to colour by, so it is
         spent one colour per forecast (see `forecast_hue=` on what counts as
-        one for a hierarchical `x=`).
+        one for a hierarchical `x=`) -- except for a COLLECTION of models
+        (``predict=[...]``), where it is spent one colour per MODEL, shared
+        by that model's forecast of every dataset (see `predict=`).
 
     forecast_fmt : str, sequence of str, or None
         Line/marker style for the forecast overlays, in the same format-string
@@ -5332,6 +5473,13 @@ def plot(
         ``fig, axes = hyp.subplots(...); hyp.plot(d, ax=axes[i])`` form.
         A matplotlib Axes under plotly raises `ValueError`; a plotly Figure
         or cell under matplotlib raises `TypeError`.
+
+        The datasets are drawn in the `palette` exactly as on a figure of
+        their own (a caller's Axes used to keep the colour cycle of the
+        figure it came from), and a second call into the SAME Axes or
+        plotly Figure continues the palette past the datasets the earlier
+        call drew, on both backends -- so composing two calls does not
+        draw both in the first colour. Pass `color=` to choose instead.
 
         STATIC PLOTS ONLY. An animated plot (any truthy ``animate=``) owns
         its own figure: it creates one, draws there, and returns it, so an
@@ -9787,13 +9935,24 @@ def plot(
         _n_ds = len(raw_forecasts) // len(_predict_names)
         _forecast_labels = [_name for _name in _predict_names
                             for _ in range(_n_ds)]
-        if _fc_hue is None and forecast_cluster is None:
-            # "one colour per model" is exactly what forecast_hue= already
-            # means -- datasets sharing a hue value share a colour -- so the
-            # model name IS the hue, and forecast_palette= keeps its usual
-            # job of choosing the colours.
+        if _fc_fmt is None:
+            # several models on one series: each forecast keeps its
+            # dataset's colour (which series it continues) and takes a
+            # dash per MODEL (which model made it) -- two encodings for
+            # two questions. An explicit forecast_fmt= replaces the dash.
+            from .forecast import forecast_model_fmts
+            _fc_fmt = forecast_model_fmts(len(_predict_names), _n_ds)
+        if _fc_hue is None and forecast_cluster is None \
+                and _fc_palette is not None:
+            # forecast_palette= on a collection colours by MODEL: "one
+            # colour per model" is exactly what forecast_hue= already
+            # means -- datasets sharing a hue value share a colour -- so
+            # the model name IS the hue. (Without a palette the forecasts
+            # inherit their datasets' colours; a per-model palette used to
+            # be the default, and its first colour was the first dataset's
+            # own, so two datasets x two models were four lines in two
+            # indistinguishable pairs.)
             _fc_hue = _forecast_labels
-            _fc_palette = _fc_palette if _fc_palette is not None else 'husl'
         elif (_fc_hue is not None and not isinstance(_fc_hue, (str, bytes))
                 and isinstance(_fc_hue, (list, tuple, np.ndarray,
                                          pd.Series, pd.Index))):
@@ -9820,6 +9979,18 @@ def plot(
             # a collection); a list already sized to the overlays is left
             # exactly as passed
             _fc_fmt = [_f for _f in _fc_fmt for _ in range(_n_ds)]
+    elif raw_forecasts is not None and predict is not None:
+        # the single-model form lists its forecast in the legend under the
+        # model's name too -- the SAME name the collection form and
+        # `hyp.predict(x, model=[...])` use for that spec -- so a figure
+        # with `predict=` always says what its faded continuation is
+        # (before this only a collection was listed).
+        from ..predict.backtest import spec_name as _spec_name
+        from ..predict.predict import _FORECASTER_ALIASES, FORECASTERS
+        from ..core.shared import supported_names as _supported_names
+        _forecast_labels = [_spec_name(predict, _supported_names(FORECASTERS),
+                                       _FORECASTER_ALIASES)
+                            ] * len(raw_forecasts)
 
     _forecast_overrides = None
     if raw_forecasts is not None and (
@@ -9915,11 +10086,27 @@ def plot(
                 f"kwargs for plotly are: {sorted(_PLOTLY_MAPPED_KWARGS)}."
             , stacklevel=external_stacklevel())
 
+        _plotly_palette_offset = 0
         if "color" not in mpl_kwargs:
             import seaborn as sns_local
             mpl_kwargs = dict(mpl_kwargs)
-            mpl_kwargs["color"] = sns_local.color_palette(
-                _seaborn_palette_arg(palette, len(xform)), len(xform))
+            _n_palette = len(xform)
+            if (_plotly_into is not None
+                    and getattr(_plotly_into, 'layout', None) is not None
+                    and not _is_plotly_cell(_plotly_into)
+                    and not (isinstance(palette, collections.abc.Mapping)
+                             or _looks_like_dataset_palettes(palette))):
+                # composing into an existing figure (`ax=<figure>`):
+                # continue the palette past the datasets an earlier call
+                # drew there, as the matplotlib `ax=` path does
+                _meta = _plotly_into.layout.meta
+                _plotly_palette_offset = int(
+                    (_meta or {}).get('hyp_datasets_drawn', 0)
+                    if isinstance(_meta, dict) else 0)
+                _n_palette += _plotly_palette_offset
+            mpl_kwargs["color"] = list(sns_local.color_palette(
+                _seaborn_palette_arg(palette, _n_palette),
+                _n_palette))[_plotly_palette_offset:]
             kwargs_list = parse_kwargs(xform, mpl_kwargs)
             _apply_extra_kwargs(kwargs_list, kwargs)
         fig = plotly_draw(
@@ -9997,6 +10184,10 @@ def plot(
             truths=raw_truths,
             forecast_labels=_forecast_labels,
             forecast_datasets=_model_forecast_owner,
+            # what a later `ax=<this figure>` call continues the palette
+            # from (see the colour block above) -- recorded on EVERY
+            # figure, since the first call is the one composed into
+            datasets_drawn=_plotly_palette_offset + len(xform),
         )
         ax = None
         data = xform
@@ -10013,6 +10204,28 @@ def plot(
                 palette=_seaborn_palette_arg(palette, len(xform)),
                 n_colors=len(xform))
             sns.set_style(style="whitegrid")
+            _palette_offset = 0
+            if ax is not None and hasattr(ax, 'set_prop_cycle'):
+                # a caller's axes (`ax=`, every `panels=` cell) captured
+                # ITS figure's colour cycle when it was created, so the
+                # rc-scoped palette above never reached it and datasets
+                # drew in matplotlib's default C0/C1 cycle while the
+                # returned `colors` and the plotly grid said hls (1.1
+                # release review, feature-tour 4/9.8). Set the axes' own
+                # cycle to the palette -- CONTINUING it past the datasets
+                # an earlier hypertools call drew there, so composing two
+                # calls on one axes does not draw both in the first colour
+                # (the plotly `ax=<figure>` path keeps the same count).
+                _cycle_palette = _seaborn_palette_arg(palette, len(xform))
+                _n_cycle = len(xform)
+                if not (isinstance(palette, collections.abc.Mapping)
+                        or _looks_like_dataset_palettes(palette)):
+                    _palette_offset = int(getattr(
+                        ax, '_hyp_palette_offset', 0) or 0)
+                    _n_cycle += _palette_offset
+                    _cycle_palette = _seaborn_palette_arg(palette, _n_cycle)
+                _cycle = list(sns.color_palette(_cycle_palette, _n_cycle))
+                ax.set_prop_cycle(color=_cycle[_palette_offset:] or _cycle)
             # Font, applied AFTER sns.set_style (which sets its own font
             # rcParams). A LIST gives matplotlib >= 3.6 PER-GLYPH fallback, so
             # text mixing scripts renders fully instead of showing "tofu" for
@@ -10103,6 +10316,10 @@ def plot(
                 ylim=_data_ylim,
                 x_date=_series_is_date,
             )
+            if _user_supplied_ax and ax is not None:
+                # what a later call into this same axes continues the
+                # palette from (see the prop-cycle block above)
+                ax._hyp_palette_offset = _palette_offset + len(xform)
 
             # A caller-supplied ax= was created outside this rc context, so
             # its tick labels carry the 'sans-serif' ALIAS, which matplotlib
@@ -10134,6 +10351,7 @@ def plot(
             # (camera-only). Time-progressing modes get the per-frame artist
             # built below instead -- drawing both would put a frozen
             # full-history forecast on screen from frame 0.
+            _forecast_artists = None
             if raw_forecasts is not None and animate in (False, None, 'spin'):
                 _forecast_artists = _draw_forecast_overlays(
                     ax, raw_forecasts, antialias=antialias,
@@ -10187,17 +10405,19 @@ def plot(
                     for _artist in _truth_artists:
                         _artist.set_clip_on(False)
 
-            # a forecast/truth overlay with a real legend label (the
-            # multi-model form, or truth=) arrives AFTER `_draw` built the
-            # legend from the data lines, so the legend is rebuilt to
-            # include it. Every other call is untouched: without a label
-            # there is nothing new to list.
-            if ((_forecast_labels is not None or raw_truths is not None)
-                    and legend is not None and ax.get_legend() is not None):
+            # a forecast (listed under its model's name) or truth= overlay
+            # arrives AFTER `_draw` built the legend from the data lines,
+            # so the legend is rebuilt to include it -- with the SAME
+            # placement/styling call `_draw` used. The time-progressing
+            # modes add their live forecasts' entries below, once those
+            # artists exist.
+            if legend is not None and (_forecast_artists or _truth_artists):
                 from .matplotlib_backend import legend_call_kwargs
-                ax.legend(**legend_call_kwargs(
-                    is_3d=hasattr(ax, 'get_proj'), zlabel=zlabel,
-                    font=_artist_font, legend_kwargs=_legend_kwargs))
+                _add_overlay_legend_entries(
+                    ax, _forecast_artists, _truth_artists,
+                    **legend_call_kwargs(
+                        is_3d=hasattr(ax, 'get_proj'), zlabel=zlabel,
+                        font=_artist_font, legend_kwargs=_legend_kwargs))
 
             # ...and the time-progressing modes get one LIVE artist per
             # dataset instead, refilled every frame from the precomputed
@@ -10308,7 +10528,19 @@ def plot(
                     _art._hyp_forecast_dataset = (
                         _model_forecast_owner[_i]
                         if _model_forecast_owner is not None else _i)
+                    _art._hyp_forecast_label = (
+                        _forecast_labels[_i] if _forecast_labels is not None
+                        and _i < len(_forecast_labels) else None)
                     _live_forecast_artists.append(_art)
+                if legend is not None and _live_forecast_artists:
+                    # the live forecasts' legend entries (static parity:
+                    # one per model name, from the artists' own styles)
+                    from .matplotlib_backend import legend_call_kwargs
+                    _add_overlay_legend_entries(
+                        ax, _live_forecast_artists, None,
+                        **legend_call_kwargs(
+                            is_3d=hasattr(ax, 'get_proj'), zlabel=zlabel,
+                            font=_artist_font, legend_kwargs=_legend_kwargs))
 
                 # whether the user pinned this dataset's forecast colour
                 # (`forecast_hue=`/`forecast_cluster=`/`forecast_palette=`);

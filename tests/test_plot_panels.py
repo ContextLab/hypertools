@@ -16,6 +16,7 @@ import numpy as np
 import pytest
 
 import hypertools as hyp
+from hypertools._shared.helpers import UNIT_FRAME_LIMIT
 from hypertools.plot.plot import subplots as hyp_subplots
 
 
@@ -450,8 +451,8 @@ def test_plotly_2d_panels_keep_the_unit_frame_and_column_labels():
     pytest.importorskip('plotly')
     fig = hyp.plot([_df2(0), _df2(1)], panels=True, ndims=2, reduce=None,
                    backend='plotly', show=False)
-    assert list(fig.layout.xaxis.range) == [-1.1, 1.1]
-    assert list(fig.layout.yaxis2.range) == [-1.1, 1.1]
+    assert list(fig.layout.xaxis.range) == [-UNIT_FRAME_LIMIT, UNIT_FRAME_LIMIT]
+    assert list(fig.layout.yaxis2.range) == [-UNIT_FRAME_LIMIT, UNIT_FRAME_LIMIT]
     assert fig.layout.xaxis2.title.text == 'a'
     assert fig.layout.yaxis2.title.text == 'b'
     assert fig.layout.xaxis2.showticklabels is False
@@ -466,7 +467,7 @@ def test_plotly_2d_panels_axis_scale_data_keep_visible_axes():
                    axis_scale='data', backend='plotly', show=False)
     assert fig.layout.xaxis2.showticklabels is True
     # the data's own range, not the unit frame
-    assert list(fig.layout.xaxis2.range) != [-1.1, 1.1]
+    assert list(fig.layout.xaxis2.range) != [-UNIT_FRAME_LIMIT, UNIT_FRAME_LIMIT]
     assert fig.layout.xaxis2.range[1] - fig.layout.xaxis2.range[0] > 2.2
     assert len(fig.layout.shapes) == 0
 
@@ -542,10 +543,14 @@ def test_plotly_panels_reserve_a_gutter_only_when_needed():
     assert (sized.layout.width, sized.layout.height) == (900, 300)
 
 
-def test_plotly_3d_panels_back_the_camera_off_in_narrow_cells():
+def test_plotly_3d_panels_keep_the_single_axes_camera_in_square_cells():
     """plotly sizes a scene by its domain's height, so a cube in a tall
-    narrow cell spilled out of the cell's sides; the cell's camera is
-    backed off by the aspect the cell needs."""
+    narrow cell spilled out of the cell's sides. The grid's 3-D cells are
+    SQUARE (1.1 release review, like the matplotlib grid's), so no cell of
+    `panels=` needs the camera backed off: three panels in a default-sized
+    figure, and two in a wide one, keep the single-axes distance. (A
+    genuinely narrow cell -- a caller's own `column_widths=` -- is backed
+    off; see tests/test_plot_panels_geometry.py.)"""
     pytest.importorskip('plotly')
     single = hyp.plot(_datasets(1, rows=20)[0], backend='plotly',
                       show=False)
@@ -556,9 +561,12 @@ def test_plotly_3d_panels_back_the_camera_off_in_narrow_cells():
     for key in ('scene', 'scene2', 'scene3'):
         e = fig.layout[key].camera.eye
         r = (e.x ** 2 + e.y ** 2 + e.z ** 2) ** 0.5
-        assert r > r_single
-    # a wide figure whose cells are wider than they are tall keeps the
-    # single-axes distance
+        assert r == pytest.approx(r_single)
+        d = fig.layout[key].domain
+        plot_w = fig.layout.width - fig.layout.margin.l - fig.layout.margin.r
+        plot_h = fig.layout.height - fig.layout.margin.t - fig.layout.margin.b
+        assert (d.x[1] - d.x[0]) * plot_w == pytest.approx(
+            (d.y[1] - d.y[0]) * plot_h, abs=2.0)
     wide = hyp.plot(_datasets(2, rows=20), panels=(1, 2), size=[16, 4],
                     backend='plotly', show=False)
     e = wide.layout.scene.camera.eye
@@ -702,4 +710,11 @@ def test_plotly_panels_reserve_the_multiline_title_margin():
                     title=['a\nb\nc', 'x'], title_kwargs={'fontsize': 20},
                     backend='plotly', show=False)
     assert single.layout.margin.t > 40
-    assert grid.layout.margin.t == single.layout.margin.t
+    # the grid's first row reserves at least what the single figure did
+    # (more when square cells leave vertical slack that centres the grid);
+    # a one-line title next to it does not shrink the reservation
+    assert grid.layout.margin.t >= single.layout.margin.t
+    plain = hyp.plot(_datasets(2, rows=20), panels=True, title=['a', 'b'],
+                     backend='plotly', show=False)
+    assert grid.layout.margin.t - plain.layout.margin.t >= \
+        (single.layout.margin.t - 40) / 2

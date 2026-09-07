@@ -934,6 +934,84 @@ Because 1.1.0 had not been published, they ship in it.
   not place; a colorbar drawn into a caller-supplied `ax=` (every panel,
   every `hyp.subplots` cell) now uses matplotlib's own `ax=`-attached
   placement, so each panel keeps its colorbar and the figure its size.
+- **Every `predict=` forecast is listed in the legend.** Only a collection
+  of models was; `predict='Kalman'` drew its faded continuation with no
+  key, and `truth=` then listed `observed` and `truth` beside an unnamed
+  dotted line. The single-model form now lists its forecast once, under
+  the model's name (the name `hyp.predict(x, model=[spec])` gives it),
+  static and animated, on both backends, in the order data, forecasts,
+  truth. The entry's glyph wears the forecasts' own style, in their colour
+  when they share one and in a neutral gray when one model's forecasts of
+  several datasets are drawn in several colours (the first dataset's
+  colour used to pose as the model's).
+- **A collection of models keeps each dataset's colour and takes a
+  linestyle per model.** `predict=['Kalman', 'ARIMA']` coloured every
+  forecast by model from a `'husl'` palette whose first colour was the
+  first dataset's own, so two datasets under two models were four lines
+  in two indistinguishable pairs, and which series a forecast continued
+  could not be read at all. Forecasts now inherit their dataset's colour
+  (as the single-model form always did) and cycle solid, dashed, dotted,
+  dash-dot by model; `forecast_palette=` opts back into one colour per
+  model, and `forecast_fmt=` still replaces the cycle.
+- **`panels=` on plotly is laid out like the matplotlib grid.** The plotly
+  grid used `make_subplots`' default spacing (10-15 % of the figure
+  between cells) and full-height cells, and backed the camera off ~1.5x
+  further than a narrow cell needed (the constant was the cube's width
+  relative to its OWN height rather than the scene's), so three 3-D
+  panels sat far apart with small cubes and titles floating well above
+  them. 3-D cells are now square and centred (an `Axes3D`'s equal box
+  aspect), the gaps are `tight_layout`'s 20 px (40 px between 2-D cells,
+  for tick labels), each row reserves what its titles need, and the cube
+  fills its cell within a few pixels of the matplotlib panel's.
+- **`truth=` on plotly marks every observation, not every vertex.** The
+  antialiased truth curve carried a marker on each of its ~900 drawn
+  vertices, so it rendered as a thick line; markers now sit on the raw
+  rows only, at the size the matplotlib overlay draws them.
+- **A caller's axes draw in the palette, and a second call continues
+  it.** `hyp.plot(x, ax=ax)` and every matplotlib `panels=` cell drew
+  the datasets in the colour cycle their figure was created with
+  (matplotlib's default blue/orange) while `return_model`'s `colors` and
+  the plotly grid reported the hls palette; the axes now take the
+  palette. Drawing a second time into the same axes or plotly figure
+  restarted the palette, so two composed walks were both red; the second
+  call now continues it from where the first stopped, on both backends.
+- **A recoloured forecast keeps its trace's alpha.** `forecast_palette=`,
+  `forecast_hue=` and `forecast_cluster=` recoloured the forecasts and
+  still halved their alpha, so Set1 forecasts at 0.35 over a hierarchy's
+  0.7 leaves could not be found; the colour is what tells them apart, so
+  they are drawn at the trace's own alpha. The forecast legend glyph is
+  never drawn below 0.8 alpha either (it copied its forecasts' 0.35 and
+  vanished).
+- **The 2-D frame square clears the data.** Static 2-D plots rescale the
+  data into the unit box and drew the frame square AT its edge, so the
+  extreme observations sat on the frame line and looked clipped; the
+  square now has a 12.5 % margin (the axes stay 10 % beyond it) on both
+  backends.
+- **A 3-D figure's axis labels are inside its tight bbox.** `Axes3D`
+  measures its axes for layout only, dropping the labels, so a
+  `bbox_inches='tight'` save -- every notebook's inline render -- cut the
+  `zlabel=` off at the right edge; a figure artist now carries the three
+  labels' extents into the bbox.
+- **Default-size `panels=` figures make room for their legends and
+  colorbars.** Three 10-entry legends beside three default-size panels
+  shrank the cubes to 1.3 in; the matplotlib figure now widens by the
+  same 1.1 in per column the plotly grid reserves, and an explicit
+  `size=` is honoured verbatim.
+- **`legend_kwargs={'loc': ...}` places the legend there.** A `loc=`
+  without a `bbox_to_anchor=` kept hypertools' outside-right anchor, so
+  `'upper left'` hung the legend off the right edge; the anchor is
+  dropped when a location is named.
+- **Plotly legend keys are readable for tiny markers.** A `'.'` marker's
+  legend key reproduced the 2 px dot; legends now use plotly's constant
+  key size, as a matplotlib legend does.
+- **A `hyp.subplots(backend='plotly')` grid grows its legend room only
+  when a cell asks for it.** The grid reserved a 118 px gutter beside
+  every cell up front (it cannot know which cells will draw a legend), so
+  a legend-less pair of cells sat left-heavy with cubes three quarters
+  the size of the matplotlib pair's. It is now built as tight as
+  `panels=` draws it, and the first cell that receives a legend or
+  colorbar rebuilds the grid with gutters, moving the cells already
+  drawn (their legends, colorbars and titles included).
 
 ### Documented limitations
 

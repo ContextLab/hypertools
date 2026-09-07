@@ -54,7 +54,8 @@ from .density import (
 )
 from .trails import (RunWindow, anim_window_bounds, broadcast_trail_flag,
                      dataset_window_bounds, head_window_frames)
-from .._shared.helpers import antialias_line, has_line_component
+from .._shared.helpers import (UNIT_FRAME_LIMIT, UNIT_FRAME_SCALE,
+                               antialias_line, has_line_component)
 from . import morph as _morph
 
 
@@ -644,6 +645,62 @@ def _plotly_legend_entry_traces(entries, ndims):
     return traces
 
 
+def _rgba_with_alpha(color, alpha):
+    """`color` (any plotly colour string, typically the ``rgba(r,g,b,a)``
+    `_to_plotly_color` builds) with its alpha replaced by `alpha`."""
+    text = str(color).strip()
+    if text.startswith(('rgba(', 'rgb(')):
+        parts = text[text.index('(') + 1:-1].split(',')
+        r, g, b = (p.strip() for p in parts[:3])
+        return f'rgba({r},{g},{b},{float(alpha)})'
+    return _to_plotly_color(color, alpha)
+
+
+def _forecast_legend_traces(specs, ndims):
+    """One data-free legend trace per distinct forecast label -- the plotly
+    twin of `hypertools.plot.plot._forecast_legend_handles`.
+
+    `specs` is ``[(label, line, alpha), ...]``, one per forecast trace that
+    carries a legend label (its model's name), in trace order; `line` is
+    the trace's ``line=`` dict (colour with the forecast alpha baked in,
+    width, dash). Each entry wears the first such forecast's line style,
+    and its colour when every forecast under that label shares one (a
+    single dataset, or a `forecast_palette=` that colours by model);
+    otherwise `forecast.FORECAST_LEGEND_COLOR` at the forecast's alpha --
+    the entry then stands for the model's dash, not for any one dataset.
+    The traces carry ``meta['hyp_legend_entry'] = <label>`` and NO
+    ``hyp_forecast_role`` -- they are legend keys, not forecasts, and a
+    reader pairing forecast traces with the matplotlib artists by role
+    must not count them.
+    """
+    import plotly.graph_objects as go
+    from .forecast import (FORECAST_LEGEND_COLOR, FORECAST_LEGEND_MIN_ALPHA,
+                           group_forecast_labels)
+    traces = []
+    for label, members in group_forecast_labels([s[0] for s in specs]):
+        first_line = specs[members[0]][1]
+        # legible whatever the forecasts' own alpha (matplotlib parity:
+        # `plot._forecast_legend_handles` floors it the same way)
+        alpha = max([FORECAST_LEGEND_MIN_ALPHA]
+                    + [float(specs[k][2]) for k in members])
+        line = dict(first_line)
+        line['width'] = max(float(specs[k][1].get('width') or 0)
+                            for k in members) or first_line.get('width')
+        if len({specs[k][1].get('color') for k in members}) != 1:
+            line['color'] = _to_plotly_color(FORECAST_LEGEND_COLOR, alpha)
+        else:
+            line['color'] = _rgba_with_alpha(first_line.get('color'), alpha)
+        common = dict(mode='lines', name=str(label), showlegend=True,
+                      hoverinfo='skip', line=line,
+                      meta=dict(hyp_legend_entry=str(label)))
+        if ndims >= 3:
+            traces.append(go.Scatter3d(x=[None], y=[None], z=[None],
+                                       **common))
+        else:
+            traces.append(go.Scatter(x=[None], y=[None], **common))
+    return traces
+
+
 def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 title=None, animate=False, size=None, show=True,
                 save_path=None, frame_rate=30, duration=30, rotations=1,
@@ -666,7 +723,7 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 legend_kwargs=None, legend_entries=None,
                 axis_scale='unit', xlim=None, ylim=None, x_date=False,
                 truths=None, forecast_labels=None,
-                forecast_datasets=None):
+                forecast_datasets=None, datasets_drawn=None):
     """Render grouped datasets with plotly, mirroring _draw's contract and
     the matplotlib renderer's appearance.
 
@@ -682,7 +739,7 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         which case these are the pipeline's own (unscaled) coordinates.
     axis_scale : {'unit', 'data'}
         GH #285. 'unit' (default, and everything before it) draws the frame
-        square and pins both 2-D axes to (-1.1, 1.1). 'data' draws no
+        square (half-width `UNIT_FRAME_SCALE`) and pins both 2-D axes to +-`UNIT_FRAME_LIMIT`. 'data' draws no
         square, leaves the axes visible with real ticks, and takes its
         ranges from `xlim`/`ylim` (or plotly's autorange when both are
         None) -- the matplotlib backend's `frame_2d` under plotly's
@@ -701,6 +758,13 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         fully-opaque, marked trace per dataset, tagged
         ``meta['hyp_forecast_role'] = 'truth'`` -- the plotly half of
         `plot._draw_truth_overlays`.
+    datasets_drawn : int or None
+        How many datasets the figure holds once this call's are added --
+        recorded as ``layout.meta['hyp_datasets_drawn']`` (before the
+        figure is saved or shown, so a displayed figure carries it) for a
+        later ``ax=<this figure>`` call to continue the palette from.
+        Ignored when drawing into a `PlotlyCell` (each cell restarts the
+        palette, like a matplotlib axes of its own).
     forecast_datasets : list of int or None
         GH #285. Which SOURCE DATASET each forecast belongs to, for
         ``meta['hyp_dataset']``. `None` means "forecast i is dataset i"; the
@@ -1331,6 +1395,11 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     #: forecast trace, so a frame can repaint it in the head run's
     #: colour (Decision R3). Empty dict = the colour is pinned.
     forecast_frame_colors = []
+    #: ``(label, line, alpha)`` per forecast trace that carries a legend
+    #: label -- `_forecast_legend_traces` turns these into one data-free
+    #: legend trace per distinct label, appended after every drawn trace
+    #: (so the frame-index bookkeeping above is untouched)
+    forecast_legend_specs = []
     if forecasts is not None and forecast_schedule is None:
         # Loop over the FORECASTS (one per input dataset), not over `data`
         # (one per drawn RUN). `hue=`/`cluster=` regrouping makes those two
@@ -1359,15 +1428,18 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 # `point_colors` for the same reason it is the right index
                 # into `kwargs_list`/`data`.
                 anchor_color=_hue_anchor_color(point_colors, src))
-            # multi-model predict= (GH #285): one legend entry per MODEL.
-            # Every other call keeps the historical showlegend=False -- a
-            # forecast that inherits its trace's identity needs no key.
+            # the forecast's legend entry (its model's name, GH #285) is a
+            # separate data-free trace built by `_forecast_legend_traces`
+            # from every forecast sharing the label -- so one model over
+            # several datasets (several colours) gets ONE neutral entry,
+            # not the first dataset's colour posing as the model's. The
+            # forecast trace itself never lists.
             fc_name = (forecast_labels[i]
                        if forecast_labels is not None
                        and i < len(forecast_labels) else None)
-            fc_show = bool(fc_name is not None
-                           and fc_name not in forecast_labels[:i])
-            fc_common = dict(mode='lines', showlegend=fc_show,
+            if fc_name is not None:
+                forecast_legend_specs.append((fc_name, fc_line, fc_alpha))
+            fc_common = dict(mode='lines', showlegend=False,
                              hoverinfo='skip',
                              line=fc_line,
                              meta=dict(
@@ -1458,6 +1530,12 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 else:
                     traces.append(go.Scatter(x=[], y=[], **fc_common))
                 forecast_trace_specs.append((i, age))
+                if age == 0 and forecast_labels is not None \
+                        and i < len(forecast_labels) \
+                        and forecast_labels[i] is not None:
+                    # the LIVE forecast's legend entry (static parity)
+                    forecast_legend_specs.append(
+                        (forecast_labels[i], fc_line, alpha))
                 # Decision R3: the colour a live/retained forecast wears is
                 # the HEAD RUN's, which changes from frame to frame. Plotly
                 # frames carry geometry, so the colour must be resolvable
@@ -1516,12 +1594,25 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
             tr_line = dict(tr_line)
             tr_line['dash'] = 'solid'
             tr_draw, tr_step = (antialias_line(tr) if antialias else (tr, 1))
+            # a marker on every OBSERVATION, not on every vertex of the
+            # antialiased curve (matplotlib parity: its truth overlay
+            # marks the raw rows and draws the smooth line marker-free).
+            # Dense vertex `k * step` is where raw row k sits on the curve
+            # (the same convention `_aa_x` builds the 1-D x from), so the
+            # marker size is a per-vertex array that is 0 everywhere else
+            # -- one trace, so a truth stays one trace per dataset.
+            marker_size = np.zeros(tr_draw.shape[0])
+            marker_size[::max(int(tr_step), 1)] = _marker_size_px(
+                TRUTH_STYLE['markersize'], TRUTH_STYLE['marker'], ndims)
             tr_common = dict(
                 mode='lines+markers', showlegend=bool(i == 0 and legend
                                                       is not None),
                 name='truth', hoverinfo='skip', line=tr_line,
-                marker=dict(size=TRUTH_STYLE['markersize'],
-                            color=tr_line.get('color')),
+                marker=dict(size=marker_size, color=tr_line.get('color')),
+                # listed AFTER the forecast entries (which are appended as
+                # the last traces), the order the matplotlib legend uses:
+                # data, forecasts, truth
+                legendrank=1001,
                 meta=dict(hyp_forecast_role='truth', hyp_dataset=i,
                           hyp_forecast_age=0, hyp_forecast_alpha=1.0))
             if ndims >= 3:
@@ -1860,7 +1951,11 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         showlegend=legend is not None or bool(legend_entries),
         margin=dict(l=10, r=margin_r,
                     t=40 if (title or segment_titles) else 10, b=10),
-        legend=dict(bgcolor='rgba(255,255,255,0.8)',
+        # `itemsizing='constant'`: a legend key is drawn at plotly's fixed
+        # key size rather than at the trace's own marker size, so a '.'
+        # (2 px) marker still gets a readable dot in the key, as it does in
+        # a matplotlib legend (1.1 release review, feature-tour 9.8/9.16)
+        legend=dict(bgcolor='rgba(255,255,255,0.8)', itemsizing='constant',
                     x=1.02, y=0.5, xanchor='left', yanchor='middle'),
         # layout.font is plotly's inherited default for every text surface
         # (legend, colorbar title/ticks, plot title, annotations) that doesn't
@@ -1917,9 +2012,11 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     elif ndims == 2 and axis_scale != 'data':
         # matplotlib stretches the 2D frame to fill the axes region (no
         # equal-aspect constraint), so the plotly frame does the same
-        layout['xaxis'] = _labeled_axis_layout({'range': [-1.1, 1.1]}, xlabel)
-        layout['yaxis'] = _labeled_axis_layout({'range': [-1.1, 1.1]}, ylabel)
-        layout['shapes'] = [_square_shape()]
+        layout['xaxis'] = _labeled_axis_layout(
+            {'range': [-UNIT_FRAME_LIMIT, UNIT_FRAME_LIMIT]}, xlabel)
+        layout['yaxis'] = _labeled_axis_layout(
+            {'range': [-UNIT_FRAME_LIMIT, UNIT_FRAME_LIMIT]}, ylabel)
+        layout['shapes'] = [_square_shape(scale=UNIT_FRAME_SCALE)]
     elif axis_scale == 'data':
         # GH #285: real units. No frame square, no unit range, and the axes
         # keep plotly's own ticks/labels -- the plotly half of
@@ -1941,6 +2038,13 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     # data-free traces, plotly's equivalent of matplotlib proxy handles.
     if legend_entries:
         fig.add_traces(_plotly_legend_entry_traces(legend_entries, ndims))
+    # predict= legend entries: one per model name, after the explicit
+    # entries (the matplotlib legend lists them in the same order). Only
+    # with a legend to list in -- like the matplotlib proxies, which exist
+    # only on an axes that has one -- so a legend-less figure's traces are
+    # exactly its drawn ones.
+    if forecast_legend_specs and legend is not None:
+        fig.add_traces(_forecast_legend_traces(forecast_legend_specs, ndims))
 
     if labels is not None:
         point_annotations = _build_point_annotations(
@@ -2052,6 +2156,10 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
             into.add_traces(list(fig.data))
             fig = into
 
+    if datasets_drawn is not None and not isinstance(into, PlotlyCell):
+        _meta = fig.layout.meta if isinstance(fig.layout.meta, dict) else {}
+        fig.layout.meta = {**_meta, 'hyp_datasets_drawn': int(datasets_drawn)}
+
     if save_path is not None:
         ext = save_path.lower().rsplit('.', 1)[-1]
         if ext == 'html':
@@ -2078,11 +2186,32 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
 PANEL_LEGEND_PX = 110
 PANEL_COLORBAR_PX = 110
 PANEL_GUTTER_PAD_PX = 8
-#: Width of the drawn 3-D cube relative to its scene's height at
-#: hypertools' default view (measured 2026-09-06: ~260 px wide for a 200 px
-#: tall cube in a 1200x300 scene), with a little margin -- what
-#: `transplant_panel` uses to keep a cube inside a narrow subplot cell.
-SCENE_CUBE_WIDTH_PER_HEIGHT = 1.4
+#: The base margin round a panel grid (the untitled single-axes figure's).
+PANEL_MARGIN_PX = 10
+#: Gap between neighbouring 3-D cells: what matplotlib's `tight_layout`
+#: leaves between two `Axes3D` panels (measured 2026-09-07: 20-26 px
+#: between 193-297 px cells at 100 dpi).
+PANEL_GAP_PX = 20
+#: Gap between neighbouring 2-D/1-D cells, wider for the tick labels an
+#: `axis_scale='data'` panel draws (matplotlib: ~43 px between two 2-D
+#: panels of a 2x2 grid).
+PANEL_AXIS_GAP_PX = 40
+#: Room above a titled row for a one-line title: the single-axes plotly
+#: figure reserves 40 px of top margin for one (`_title_margin_top`), 10
+#: of which is the base margin.
+PANEL_TITLE_PX = 30
+#: Width of the drawn 3-D cube relative to its SCENE'S HEIGHT at
+#: hypertools' default view. Plotly sizes a 3-D scene by its domain's
+#: height alone and clips it at the domain's sides (measured 2026-09-07:
+#: the same 267 px wide x 209 px tall cube in 600x300 and 1200x300
+#: scenes; 179x140 in 800x200; a 300x600 scene's cube is 415 px tall and
+#: cut off at the 300 px width), so a cube is ~0.89 scene-heights wide and
+#: ~0.70 tall. With a little margin, this is what `transplant_panel` uses
+#: to keep a cube inside a cell narrower than it is tall. (Until the 1.1
+#: release review it was 1.4 -- the cube's width relative to its OWN
+#: height rather than the scene's -- which backed the camera off ~1.5x
+#: further than a narrow cell needed, and every square cell by 1.4x.)
+SCENE_CUBE_WIDTH_PER_HEIGHT = 0.92
 
 
 def panel_gutter_px(legend_present, colorbar_present):
@@ -2145,7 +2274,7 @@ class PlotlyCell:
 
 
 def make_panel_grid(nrows, ncols, ndims, titles=None, size=None,
-                    gutter_px=0, top_margin_px=None, **make_subplots_kw):
+                    gutter_px=0, title_px=None, **make_subplots_kw):
     """The empty plotly grid `panels=` and `hyp.subplots(backend='plotly')`
     fill: a `plotly.subplots.make_subplots` figure with ``'scene'`` cells
     for 3-D and ``'xy'`` cells otherwise, sized like the matplotlib grid
@@ -2153,9 +2282,23 @@ def make_panel_grid(nrows, ncols, ndims, titles=None, size=None,
     reserved to the right of EVERY cell (and in the right margin) for a
     per-panel legend/colorbar (see `panel_gutter_px`). When `size` is not
     given the figure is widened by the gutters, so the default grid stays
-    as roomy as it is without them. Extra keywords go to `make_subplots`
-    (``vertical_spacing=``, ``shared_xaxes=``, ...); a caller's
-    ``horizontal_spacing=`` replaces the gutter-derived one.
+    as roomy as it is without them.
+
+    The cells are laid out the way matplotlib's `tight_layout` lays out
+    the matplotlib grid (1.1 release review: the plotly grid used
+    `make_subplots`' default spacing -- 10-15 % of the figure between
+    cells -- and full-height cells, so three 3-D panels sat in tall
+    narrow cells with their titles far above small cubes): `PANEL_GAP_PX`
+    (`PANEL_AXIS_GAP_PX` for 2-D/1-D cells) between neighbours,
+    `title_px` above every row (default `PANEL_TITLE_PX` when `titles`
+    has one, else 0; `panels=` passes what its panels' own titles need),
+    and -- for 3-D grids -- SQUARE cells, as an `Axes3D`'s equal box
+    aspect makes them, sized by whichever of the width or the height
+    binds and centred in the figure. 2-D cells fill the figure.
+
+    Extra keywords go to `make_subplots` (``shared_xaxes=``, ...); a
+    caller's ``horizontal_spacing=``/``vertical_spacing=`` replaces the
+    pixel-derived one.
     """
     from plotly.subplots import make_subplots
     cell = {'type': 'scene'} if ndims >= 3 else {'type': 'xy'}
@@ -2165,15 +2308,35 @@ def make_panel_grid(nrows, ncols, ndims, titles=None, size=None,
         width = int(DEFAULT_FIGSIZE[0] * 100) + gutter_px * ncols
         height = int(DEFAULT_FIGSIZE[1] * 100)
     titles = list(titles) if titles is not None else []
-    if top_margin_px is None:
-        top_margin_px = 40 if any(t for t in titles) else 10
-    margin = dict(l=10, r=10 + gutter_px, t=top_margin_px, b=10)
-    plot_w = max(width - margin['l'] - margin['r'], 1)
-    spacing = 0.2 / ncols + gutter_px / plot_w
+    if title_px is None:
+        title_px = PANEL_TITLE_PX if any(t for t in titles) else 0
+    title_px = int(title_px)
+    gap = PANEL_GAP_PX if ndims >= 3 else PANEL_AXIS_GAP_PX
+    base = PANEL_MARGIN_PX
+    cell_w = (width - 2 * base - gutter_px * ncols
+              - gap * (ncols - 1)) / ncols
+    cell_h = (height - 2 * base - title_px * nrows
+              - gap * (nrows - 1)) / nrows
+    cell_w, cell_h = max(cell_w, 1.0), max(cell_h, 1.0)
+    if ndims >= 3:
+        cell_w = cell_h = min(cell_w, cell_h)
+    # the gutter after the LAST column and the title room above the FIRST
+    # row live in the margins; the grid is centred in what is left
+    plot_w = ncols * cell_w + (ncols - 1) * (gap + gutter_px)
+    plot_h = nrows * cell_h + (nrows - 1) * (gap + title_px)
+    side = max((width - plot_w - gutter_px) / 2, 0.0)
+    vert = max((height - plot_h - title_px) / 2, 0.0)
+    margin = dict(l=int(round(side)), t=int(round(vert)) + title_px)
+    margin['r'] = max(int(width - plot_w - margin['l']), 0)
+    margin['b'] = max(int(height - plot_h - margin['t']), 0)
+    make_kw = {}
     if ncols > 1:
         # make_subplots refuses a spacing wider than the cells allow
-        spacing = min(spacing, 0.98 / (ncols - 1))
-    make_kw = dict(horizontal_spacing=spacing)
+        make_kw['horizontal_spacing'] = min((gap + gutter_px) / plot_w,
+                                            0.98 / (ncols - 1))
+    if nrows > 1:
+        make_kw['vertical_spacing'] = min((gap + title_px) / plot_h,
+                                          0.98 / (nrows - 1))
     if titles:
         make_kw['subplot_titles'] = [t if t is not None else ''
                                      for t in titles]
@@ -2184,6 +2347,115 @@ def make_panel_grid(nrows, ncols, ndims, titles=None, size=None,
     fig.update_layout(width=width, height=height, margin=margin,
                       paper_bgcolor='white', plot_bgcolor='white')
     return fig
+
+
+def _grid_spec(target):
+    """The `make_panel_grid` arguments a `hyp.subplots(backend='plotly')`
+    grid was built with (kept in ``layout.meta['hyp_grid']``), or None
+    for a grid that was not built that way (a `panels=` grid, which
+    sizes its gutters up front from the panels it has already drawn)."""
+    meta = target.layout.meta
+    if isinstance(meta, dict) and isinstance(meta.get('hyp_grid'), dict):
+        return dict(meta['hyp_grid'])
+    return None
+
+
+def ensure_panel_gutter(target, gutter_px):
+    """Give a `hyp.subplots(backend='plotly')` grid at least `gutter_px`
+    of room beside every cell -- rebuilding its layout (width, margins,
+    every cell's domain) from the arguments it was built with, and
+    re-placing the legends, colorbars and titles of the cells already
+    drawn -- the first time a cell actually receives a legend or a
+    colorbar. The grid is built WITHOUT gutters (1.1 release review,
+    feature-tour 9.8: a legend-less two-cell grid reserved a 118 px gutter
+    beside each cell, so its cubes were three quarters the size of the
+    matplotlib pair's and sat left-heavy), so a grid whose cells never
+    ask for one stays as tight as `panels=` draws it.
+    """
+    spec = _grid_spec(target)
+    if spec is None or int(spec.get('gutter_px', 0)) >= int(gutter_px):
+        return False
+    spec['gutter_px'] = int(gutter_px)
+    grid = make_panel_grid(spec['nrows'], spec['ncols'], spec['ndims'],
+                           size=spec.get('size'), gutter_px=spec['gutter_px'],
+                           title_px=spec.get('title_px'),
+                           **dict(spec.get('make_subplots_kw') or {}))
+    target.layout.update(width=grid.layout.width, height=grid.layout.height,
+                         margin=grid.layout.margin.to_plotly_json())
+    for i in range(spec['nrows'] * spec['ncols']):
+        keys = cell_layout_keys(i)
+        if spec['ndims'] >= 3:
+            target.layout[keys['scene']].domain = \
+                grid.layout[keys['scene']].domain.to_plotly_json()
+        else:
+            for axis in ('xaxis', 'yaxis'):
+                target.layout[keys[axis]].domain = \
+                    grid.layout[keys[axis]].domain
+    meta = dict(target.layout.meta) if isinstance(target.layout.meta,
+                                                  dict) else {}
+    target.layout.meta = {**meta, 'hyp_grid': spec}
+    for i in range(spec['nrows'] * spec['ncols']):
+        _place_cell_furniture(target, i, spec['ndims'])
+    return True
+
+
+def _cell_domain(target, keys, ndims):
+    if ndims >= 3:
+        domain = target.layout[keys['scene']].domain
+        return domain.x[0], domain.x[1], domain.y[0], domain.y[1]
+    x0, x1 = target.layout[keys['xaxis']].domain
+    y0, y1 = target.layout[keys['yaxis']].domain
+    return x0, x1, y0, y1
+
+
+def _place_cell_furniture(target, index, ndims):
+    """Place cell `index`'s legend, colorbars and title from its CURRENT
+    domain (the placement rules `transplant_panel` applies), so a cell
+    can be re-placed after `ensure_panel_gutter` moved it."""
+    keys = cell_layout_keys(index)
+    x0, x1, y0, y1 = _cell_domain(target, keys, ndims)
+    if x0 is None or x1 is None:
+        return
+    plot_w = max((target.layout.width or int(DEFAULT_FIGSIZE[0] * 100))
+                 - (target.layout.margin.l or 0)
+                 - (target.layout.margin.r or 0), 1)
+    y_mid = 0.5 * (y0 + y1)
+    try:
+        legend = target.layout[keys['legend']]
+    except Exception:  # noqa: BLE001 - a cell never drawn has no legendN
+        legend = None
+    placed = legend is not None and legend.x is not None
+    if placed:
+        legend.update(x=x1 + PANEL_GUTTER_PAD_PX / plot_w, y=y_mid)
+    cb_offset = PANEL_GUTTER_PAD_PX + (PANEL_LEGEND_PX if placed else 0)
+    for trace in target.data:
+        if getattr(trace, 'legend', None) != keys['legend'] \
+                and not (index == 0 and getattr(trace, 'legend', None)
+                         in (None, 'legend')):
+            continue
+        marker = getattr(trace, 'marker', None)
+        if marker is None or not getattr(marker, 'showscale', None) \
+                or marker.colorbar is None or marker.colorbar.x is None:
+            continue
+        cb = marker.colorbar
+        if cb.orientation in (None, 'v') and cb.xanchor == 'right':
+            cb.update(x=x0 - PANEL_GUTTER_PAD_PX / plot_w, y=y_mid,
+                      len=0.75 * (y1 - y0))
+        elif cb.orientation in (None, 'v'):
+            cb.update(x=x1 + cb_offset / plot_w, y=y_mid,
+                      len=0.75 * (y1 - y0))
+        else:
+            on_top = cb.yanchor == 'bottom'
+            cb.update(x=0.5 * (x0 + x1), len=0.75 * (x1 - x0),
+                      y=(y1 if on_top else y0))
+    meta = target.layout.meta if isinstance(target.layout.meta, dict) else {}
+    title_spec = (meta.get('hyp_cell_titles') or {}).get(str(index))
+    if title_spec:
+        for ann in target.layout.annotations:
+            if ann.name == f'hyp-cell-title-{index}':
+                ann.x = x0 + float(title_spec['tx']) * (x1 - x0)
+                ty = title_spec.get('ty')
+                ann.y = y1 if ty is None else y0 + float(ty) * (y1 - y0)
 
 
 def transplant_panel(target, panel, row, col, index, ndims):
@@ -2209,6 +2481,13 @@ def transplant_panel(target, panel, row, col, index, ndims):
     and the `hyp.subplots(backend='plotly')` cells that `ax=` accepts.
     """
     keys = cell_layout_keys(index)
+    # a `hyp.subplots` grid is built without gutters; the first legend or
+    # colorbar a cell brings makes it grow them (`ensure_panel_gutter`),
+    # BEFORE this cell's domain is read below
+    ensure_panel_gutter(target, panel_gutter_px(
+        any(bool(trace.showlegend) for trace in panel.data),
+        any(getattr(getattr(trace, 'marker', None), 'showscale', None)
+            for trace in panel.data)))
     plot_w = (target.layout.width or int(DEFAULT_FIGSIZE[0] * 100)) \
         - (target.layout.margin.l or 0) - (target.layout.margin.r or 0)
     plot_w = max(plot_w, 1)
@@ -2229,13 +2508,15 @@ def transplant_panel(target, panel, row, col, index, ndims):
         domain = target.layout[keys['scene']].domain
         x0, x1 = domain.x
         y0, y1 = domain.y
-        # plotly sizes a 3-D scene by its domain's HEIGHT (the cube is
-        # ~2/3 of it tall and ~1.3x that wide at hypertools' view), so in a
-        # cell narrower than that -- three panels in a default-sized
-        # figure -- the cube spilled out of the cell's sides. Back the
-        # camera off (apparent size ~ 1/distance) by exactly what the
-        # cell's aspect needs, so the cube fits like the matplotlib
-        # panel's equal-aspect cube does.
+        # plotly sizes a 3-D scene by its domain's HEIGHT alone (the cube
+        # is ~0.70 of it tall and ~0.89 of it wide at hypertools' view,
+        # see `SCENE_CUBE_WIDTH_PER_HEIGHT`) and clips at the sides, so in
+        # a cell narrower than it is tall -- a caller's own row_heights=
+        # or a tall `size=` -- the cube spilled out of the cell's sides.
+        # Back the camera off (apparent size ~ 1/distance, measured) by
+        # exactly what the cell's aspect needs. The grid's own cells are
+        # square (`make_panel_grid`), where no back-off is needed and the
+        # cube fills the cell's width like the matplotlib panel's does.
         plot_h = (target.layout.height or int(DEFAULT_FIGSIZE[1] * 100)) \
             - (target.layout.margin.t or 0) - (target.layout.margin.b or 0)
         cell_w = max(plot_w * (x1 - x0), 1.0)
@@ -2344,6 +2625,14 @@ def transplant_panel(target, panel, row, col, index, ndims):
         else:
             spec.update(y=y0 + float(title.y) * (y1 - y0),
                         yanchor=title.yanchor or 'top')
+        # where in its cell the title sits, so `_place_cell_furniture`
+        # can put it back after the cell moves (`ensure_panel_gutter`)
+        _meta = (dict(target.layout.meta)
+                 if isinstance(target.layout.meta, dict) else {})
+        _titles = dict(_meta.get('hyp_cell_titles') or {})
+        _titles[str(index)] = {'tx': tx,
+                               'ty': None if default_y else float(title.y)}
+        target.layout.meta = {**_meta, 'hyp_cell_titles': _titles}
         title_font = (title.font.to_plotly_json()
                       if title.font is not None else {})
         merged_font = _with_base_font(title_font, panel_font)
@@ -3581,7 +3870,12 @@ def _forecast_style_from(tkwargs, fmt_str, alpha=None, override=None,
     _mode, _symbol, dash, _marker_char = _resolve_fmt(
         override.get('fmt', fmt_str), _fmt_kwargs)
     if alpha is None:
-        alpha = forecast_alpha(tkwargs.get('alpha'))
+        # a recoloured forecast keeps its trace's alpha (matplotlib
+        # parity: `plot._forecast_style_from` applies the same
+        # `forecast.forecast_alpha_scale_for` rule)
+        from .forecast import forecast_alpha_scale_for
+        alpha = forecast_alpha(tkwargs.get('alpha'),
+                               forecast_alpha_scale_for(override))
     width = float(tkwargs.get('linewidth') or DEFAULT_LINEWIDTH_PT) * PT_TO_PX
     color = override.get(
         'color',

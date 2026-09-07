@@ -434,6 +434,18 @@ def has_line_component(format_str):
 ANTIALIAS_TARGET_VERTICES = 900
 
 
+#: Half-width of the frame square a static 2-D plot draws round its data,
+#: which `plot()` rescales into ``[-1, 1]``. The square used to sit AT
+#: +-1, so the extreme observations lay on the frame line and looked
+#: clipped (1.1 release review, feature-tour 9.12-9.14, 12.1-12.2: markers
+#: straddling the frame); the 12.5 % margin gives them the room the 3-D
+#: cube's perspective gives its corners. Both backends draw the same
+#: square and pin the axes to `UNIT_FRAME_LIMIT`, 10 % beyond it (the
+#: same limit-to-frame ratio as before).
+UNIT_FRAME_SCALE = 1.125
+UNIT_FRAME_LIMIT = 1.1 * UNIT_FRAME_SCALE
+
+
 def antialias_line(arr, target=ANTIALIAS_TARGET_VERTICES):
     """Upsample a trajectory so it DRAWS as a smooth curve ("antialiasing").
 

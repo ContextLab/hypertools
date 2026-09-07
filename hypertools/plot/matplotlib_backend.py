@@ -11,6 +11,7 @@ import functools
 import itertools
 import warnings
 
+import matplotlib.artist
 import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import proj3d
@@ -28,6 +29,7 @@ except ImportError:  # pragma: no cover
 from .animate import HyperFuncAnimation
 import matplotlib.patches as patches
 from .._shared.helpers import *
+from .._shared.helpers import UNIT_FRAME_LIMIT, UNIT_FRAME_SCALE
 from ..core.model import external_stacklevel
 from .meshutil import (backface_cull, blinn_phong_colors,
                        vertex_colors_from_points, face_colors_from_vertex_colors)
@@ -267,6 +269,44 @@ def update_companion_panel(panel, i):
     return panel
 
 
+class _AxisLabelExtent(matplotlib.artist.Artist):
+    """A draw-nothing figure artist whose window extent is the union of an
+    `Axes3D`'s axis-label extents, so `Figure.get_tightbbox` (and with it
+    ``savefig(bbox_inches='tight')``) includes the labels that
+    `Axes3D.get_tightbbox` leaves out. See the 3-D label branch of `_draw`.
+    """
+
+    def __init__(self, ax):
+        super().__init__()
+        self.axes_ref = ax
+        self.set_in_layout(True)
+        self.set_clip_on(False)
+
+    def draw(self, renderer):
+        """Draw nothing: the artist exists only for its extent."""
+        return None
+
+    def get_window_extent(self, renderer=None):
+        """The union of the axes' visible, non-empty axis-label extents
+        (display pixels), or a null box when there is none."""
+        from matplotlib.transforms import Bbox
+        ax = self.axes_ref
+        if renderer is None:
+            try:
+                renderer = ax.figure.canvas.get_renderer()
+            except AttributeError:
+                return Bbox.null()
+        boxes = []
+        for axis in getattr(ax, '_axis_map', {}).values():
+            label = axis.label
+            if not (label.get_visible() and label.get_text()):
+                continue
+            box = label.get_window_extent(renderer)
+            if box.width > 0 and box.height > 0:
+                boxes.append(box)
+        return Bbox.union(boxes) if boxes else Bbox.null()
+
+
 def _legend_proxy_handles(entries, fmt=None):
     """`Line2D` proxy handles for explicit legend entries (GH #285).
 
@@ -314,6 +354,13 @@ def legend_call_kwargs(is_3d=False, zlabel=None, font=None,
     # loc=/bbox_to_anchor=/frameon=/fontsize= wins over the defaults
     # above -- which is the whole point of the kwarg.
     if legend_kwargs:
+        if 'loc' in legend_kwargs and 'bbox_to_anchor' not in legend_kwargs:
+            # a caller's `loc=` names a place ON the axes ('upper left');
+            # keeping hypertools' outside-right anchor would hang the
+            # legend off the right edge with its upper-left corner at the
+            # anchor (1.1 release review, feature-tour 9.6)
+            call.pop('bbox_to_anchor', None)
+            call.pop('borderaxespad', None)
         call.update(legend_kwargs)
         # matplotlib ignores `fontsize=` whenever `prop=` is given, so with
         # a `font=` the user's size silently lost; fold it into the
@@ -375,8 +422,9 @@ def _draw_one_density_2d(ax, pts, spec, color, label="", clip_unit=True):
     # D05-gallery-data-text-009). The 2-D paths always rescale data into
     # the [-1, 1] box and draw the frame via plot_square(scale=1), so the
     # frame rectangle is fixed in data coordinates.
-    im.set_clip_path(patches.Rectangle((-1.0, -1.0), 2.0, 2.0,
-                                       transform=ax.transData))
+    im.set_clip_path(patches.Rectangle(
+        (-UNIT_FRAME_SCALE, -UNIT_FRAME_SCALE), 2 * UNIT_FRAME_SCALE,
+        2 * UNIT_FRAME_SCALE, transform=ax.transData))
 
 
 def _draw_density_2d(ax, points_list, density, density_colors,
@@ -807,7 +855,7 @@ def _draw(
     groups globally by category), and those keep `anim_window_bounds` directly.
 
     `axis_scale` (GH #285): ``'unit'`` (the historical behaviour) draws the
-    hypertools frame square and pins the 2-D axes to ``(-1.1, 1.1)`` --
+    hypertools frame square (half-width `UNIT_FRAME_SCALE`) and pins the 2-D axes to ``+-UNIT_FRAME_LIMIT`` --
     `plot()` has already mean-centred and rescaled the data into ``[-1, 1]``
     for it. ``'data'`` draws NO frame square, leaves matplotlib's own ticks
     and spines visible, and takes its limits from `xlim`/`ylim` (which
@@ -1464,9 +1512,9 @@ def _draw(
 
         ax.add_patch(
             patches.Rectangle(
-                scale * [-1, -1],
-                scale * 2,
-                scale * 2,
+                (-scale, -scale),
+                2 * scale,
+                2 * scale,
                 **square_kwargs
             )
         )
@@ -1475,7 +1523,7 @@ def _draw(
         """Draw the 2-D frame and set the 2-D axis limits for `axis_scale`.
 
         ``'unit'`` (the default, and everything drawn before GH #285) draws
-        hypertools' frame square and pins both axes to ``(-1.1, 1.1)``,
+        hypertools' frame square (half-width `UNIT_FRAME_SCALE`) and pins both axes to ``+-UNIT_FRAME_LIMIT``,
         because `plot()` has already rescaled the data into ``[-1, 1]``.
         ``'data'`` draws no square and applies `xlim`/`ylim` when `plot()`
         computed (or the caller passed) them, leaving matplotlib's autoscale
@@ -1483,9 +1531,9 @@ def _draw(
         `animate_plot2D`, so the two cannot drift apart.
         """
         if axis_scale != 'data':
-            plot_square(ax, **frame_kwargs)
-            ax.set_xlim(-1.1, 1.1)
-            ax.set_ylim(-1.1, 1.1)
+            plot_square(ax, scale=UNIT_FRAME_SCALE, **frame_kwargs)
+            ax.set_xlim(-UNIT_FRAME_LIMIT, UNIT_FRAME_LIMIT)
+            ax.set_ylim(-UNIT_FRAME_LIMIT, UNIT_FRAME_LIMIT)
             return
         if xlim is not None:
             ax.set_xlim(*xlim)
@@ -3125,6 +3173,15 @@ def _draw(
             ax.set_ylabel(ylabel)
         if zlabel is not None:
             ax.set_zlabel(zlabel)
+        # `Axes3D.get_tightbbox` measures its axes "for layout only", which
+        # drops the axis LABELS (matplotlib's `_get_tightbbox_for_layout_
+        # only`), so a `bbox_inches='tight'` save -- every notebook's inline
+        # render -- cut the z-label off at the right edge (1.1 release
+        # review, feature-tour 9.15). A draw-nothing figure artist whose
+        # extent is the labels' puts them back into the figure's tight bbox.
+        if not any(isinstance(a, _AxisLabelExtent) and a.axes_ref is ax
+                   for a in ax.figure.artists):
+            ax.figure.add_artist(_AxisLabelExtent(ax))
     else:
         # 2-D (or 1-D): hide ticks/spines/gridlines individually, leaving
         # `axison` at its default True so the axis label Text artist(s)

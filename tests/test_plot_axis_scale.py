@@ -1,7 +1,7 @@
 """`axis_scale=` -- raw data coordinates instead of the unit frame box.
 
 GH #285: every 2-D plot used to be mean-centred, rescaled into ``[-1, 1]``
-and pinned to ``xlim/ylim=(-1.1, 1.1)``, so ``hyp.plot(..., reduce=None,
+and pinned to ``xlim/ylim=(-UNIT_FRAME_LIMIT, UNIT_FRAME_LIMIT)`` (1.1 x the frame's half-width), so ``hyp.plot(..., reduce=None,
 ndims=2)`` could not draw a time series in its own units. ``axis_scale=
 'data'`` keeps the pipeline's own coordinates on both backends, static and
 animated.
@@ -18,6 +18,7 @@ import pytest                                             # noqa: E402
 import matplotlib.pyplot as plt                           # noqa: E402
 
 import hypertools as hyp                                  # noqa: E402
+from hypertools._shared.helpers import UNIT_FRAME_LIMIT
 
 
 @pytest.fixture
@@ -51,8 +52,8 @@ def test_unit_scale_is_still_the_default_and_still_rescales(series):
     x = np.asarray(line.get_xdata())
     assert not np.array_equal(x, t)
     assert x.min() >= -1.0 - 1e-9 and x.max() <= 1.0 + 1e-9
-    assert fig.axes[0].get_xlim() == (-1.1, 1.1)
-    assert fig.axes[0].get_ylim() == (-1.1, 1.1)
+    assert fig.axes[0].get_xlim() == (-UNIT_FRAME_LIMIT, UNIT_FRAME_LIMIT)
+    assert fig.axes[0].get_ylim() == (-UNIT_FRAME_LIMIT, UNIT_FRAME_LIMIT)
     plt.close(fig)
 
 
@@ -192,7 +193,7 @@ def test_plotly_unit_scale_is_unchanged(series):
     t, y = series
     fig = hyp.plot(np.column_stack([t, y]), reduce=None, ndims=2,
                    backend='plotly', antialias=False, show=False)
-    assert tuple(fig.layout.xaxis.range) == (-1.1, 1.1)
+    assert tuple(fig.layout.xaxis.range) == (-UNIT_FRAME_LIMIT, UNIT_FRAME_LIMIT)
     assert len(fig.layout.shapes) == 1
 
 

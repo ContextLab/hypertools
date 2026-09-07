@@ -15,6 +15,7 @@ import pytest                                             # noqa: E402
 import matplotlib.pyplot as plt                           # noqa: E402
 
 import hypertools as hyp                                  # noqa: E402
+from hypertools.plot.forecast import FORECAST_MODEL_LINESTYLES  # noqa: E402
 
 MODELS = ['Kalman', 'ARIMA', 'GaussianProcess']
 T = 5
@@ -36,7 +37,10 @@ def test_one_overlay_per_model_with_model_names_in_the_legend(signal):
                    legend=True, antialias=False, show=False)
     overlays = _by_role(fig, 'static')
     assert len(overlays) == len(MODELS)
-    assert [line.get_label() for line in overlays] == MODELS
+    # the overlay carries its model's name as a tag (its legend entry is a
+    # proxy glyph, so the artist itself stays '_nolegend_')
+    assert [line._hyp_forecast_label for line in overlays] == MODELS
+    assert all(line.get_label() == '_nolegend_' for line in overlays)
     labels = [text.get_text()
               for text in fig.axes[0].get_legend().get_texts()]
     for name in MODELS:
@@ -44,11 +48,16 @@ def test_one_overlay_per_model_with_model_names_in_the_legend(signal):
     plt.close(fig)
 
 
-def test_each_model_gets_its_own_colour(signal):
+def test_each_model_gets_its_own_linestyle_in_the_dataset_colour(signal):
     fig = hyp.plot(signal, reduce=None, ndims=2, predict=MODELS, t=T,
                    show=False)
-    colours = {line.get_color() for line in _by_role(fig, 'static')}
-    assert len(colours) == len(MODELS)
+    overlays = _by_role(fig, 'static')
+    data_line = [line for line in fig.axes[0].lines
+                 if getattr(line, '_hyp_forecast_role', None) is None][0]
+    assert [line.get_linestyle() for line in overlays] == \
+        list(FORECAST_MODEL_LINESTYLES[:len(MODELS)])
+    assert {line.get_color() for line in overlays} == \
+        {data_line.get_color()}
     plt.close(fig)
 
 
@@ -70,8 +79,11 @@ def test_the_mapping_form_names_the_overlays(signal):
     fig = hyp.plot(signal, reduce=None, ndims=2,
                    predict={'fast': 'Kalman', 'slow': 'ARIMA'}, t=T,
                    legend=True, show=False)
-    assert [line.get_label() for line in _by_role(fig, 'static')] == \
+    assert [line._hyp_forecast_label for line in _by_role(fig, 'static')] == \
         ['fast', 'slow']
+    labels = [text.get_text()
+              for text in fig.axes[0].get_legend().get_texts()]
+    assert labels[-2:] == ['fast', 'slow']
     plt.close(fig)
 
 
@@ -92,13 +104,17 @@ def test_every_dataset_gets_every_model(signal):
     # ...and each knows which SERIES it continues
     assert sorted(line._hyp_forecast_dataset for line in overlays) == \
         [0, 0, 0, 1, 1, 1]
-    # one colour per MODEL, shared across datasets (model-major order)
     # the flat overlay list is MODEL-MAJOR: model m's two datasets sit at
-    # positions 2m and 2m+1
+    # positions 2m and 2m+1. Each keeps ITS DATASET'S colour and takes the
+    # model's linestyle, so both questions can be read off the figure.
+    data_lines = [line for line in fig.axes[0].lines
+                  if getattr(line, '_hyp_forecast_role', None) is None]
     by_model = [overlays[m * 2:(m + 1) * 2] for m in range(len(MODELS))]
-    for pair in by_model:
-        assert pair[0].get_color() == pair[1].get_color()
-    assert len({pair[0].get_color() for pair in by_model}) == len(MODELS)
+    for m, pair in enumerate(by_model):
+        assert pair[0].get_color() == data_lines[0].get_color()
+        assert pair[1].get_color() == data_lines[1].get_color()
+        assert {line.get_linestyle() for line in pair} == \
+            {FORECAST_MODEL_LINESTYLES[m]}
     plt.close(fig)
 
 
@@ -170,7 +186,13 @@ def test_plotly_draws_one_named_trace_per_model(signal):
     overlays = [trace for trace in fig.data
                 if (trace.meta or {}).get('hyp_forecast_role') == 'static']
     assert [trace.name for trace in overlays] == MODELS
-    assert all(trace.showlegend for trace in overlays)
+    # the drawn overlays never list themselves; one data-free entry per
+    # model does (the plotly twin of matplotlib's proxy handles)
+    assert not any(trace.showlegend for trace in overlays)
+    entries = [trace for trace in fig.data
+               if (trace.meta or {}).get('hyp_legend_entry')]
+    assert [trace.name for trace in entries] == MODELS
+    assert all(trace.showlegend for trace in entries)
     assert {(trace.meta or {}).get('hyp_dataset') for trace in overlays} == {0}
 
 

@@ -81,6 +81,85 @@ DEFAULT_MIN_HISTORY = 2
 #: the same policy in their own terms, so the two cannot drift.
 FORECAST_ALPHA_SCALE = 0.5
 
+#: Linestyle per MODEL for a `predict=[...]` collection, cycled in model
+#: order (matplotlib fmt vocabulary; the plotly backend maps each through
+#: the same `_resolve_fmt` the observed traces use). A forecast keeps its
+#: dataset's COLOUR -- that is what says which series it continues -- so
+#: with several models on one series the dash is what says which model
+#: made it. The first model is solid, exactly like the single-model form,
+#: so ``predict=['Kalman']`` draws what ``predict='Kalman'`` draws.
+FORECAST_MODEL_LINESTYLES = ('-', '--', ':', '-.')
+
+#: Colour of a forecast's LEGEND glyph when the forecasts sharing that
+#: entry are drawn in more than one colour (one model over several
+#: datasets): the entry then stands for the model's dash, not for any one
+#: dataset's colour, so it is drawn in a neutral dark gray (at the
+#: forecast's own alpha, so it reads as faded like the forecasts do).
+FORECAST_LEGEND_COLOR = '#555555'
+
+#: The least opaque a forecast's legend glyph is drawn. The glyph copies
+#: its forecasts' alpha so it reads as faded like they do, but a legend
+#: key has to stay legible: on a plot whose observed traces are already
+#: translucent (a hierarchy's leaves at 0.7, halved to 0.35 for their
+#: forecasts) a glyph at the forecasts' alpha was a near-invisible
+#: hairline (1.1 release review, feature-tour 9.10).
+FORECAST_LEGEND_MIN_ALPHA = 0.8
+
+
+def override_has_color(override):
+    """Whether a `resolve_forecast_overrides` dict recolours the forecast:
+    a ``'color'`` entry (`forecast_hue=`/`forecast_cluster=`/
+    `forecast_palette=`) or a colour letter in its ``'fmt'``."""
+    if not override:
+        return False
+    if override.get('color') is not None:
+        return True
+    fmt = override.get('fmt')
+    if not fmt:
+        return False
+    try:
+        from matplotlib.axes._base import _process_plot_format
+        return _process_plot_format(fmt)[2] is not None
+    except Exception:  # pragma: no cover - matplotlib moved its parser
+        return False
+
+
+def forecast_alpha_scale_for(override, alpha_scale=FORECAST_ALPHA_SCALE):
+    """The alpha scale a forecast is drawn with: `alpha_scale` (the
+    documented halving) when it inherits its trace's colour, and 1.0 --
+    the trace's own alpha -- when an override recolours it: the colour is
+    then what tells the forecast from its trace, and fading a recoloured
+    forecast on top of that hid it among translucent traces (1.1 release
+    review, feature-tour 9.10). Both backends call this."""
+    return 1.0 if override_has_color(override) else alpha_scale
+
+
+def forecast_model_fmts(n_models, n_datasets):
+    """One `fmt` per forecast, MODEL-MAJOR (the order `plot()` keeps a
+    collection's forecasts in): model k's `n_datasets` forecasts all take
+    `FORECAST_MODEL_LINESTYLES[k]`, cycling past the fourth model."""
+    cycle = FORECAST_MODEL_LINESTYLES
+    return [cycle[k % len(cycle)]
+            for k in range(int(n_models)) for _ in range(int(n_datasets))]
+
+
+def group_forecast_labels(labels):
+    """``[(label, [indices]), ...]`` -- the distinct legend labels in first-
+    appearance order, each with the forecasts (positions in `labels`) that
+    share it. ``None`` labels are skipped. Both backends build one legend
+    entry per group from this, so the two legends list the same entries in
+    the same order."""
+    groups = {}
+    order = []
+    for i, label in enumerate(labels or ()):
+        if label is None:
+            continue
+        if label not in groups:
+            groups[label] = []
+            order.append(label)
+        groups[label].append(i)
+    return [(label, groups[label]) for label in order]
+
 #: `trail_alpha`'s floor, as a FRACTION of the LIVE forecast's alpha.
 #:
 #: Relative, not absolute: an absolute floor on a faint dataset would make
