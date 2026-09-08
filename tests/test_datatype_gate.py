@@ -106,11 +106,6 @@ ALLOWLIST = {
          "normalised to an array through the shared predicate"),
         ("isinstance(labels, np.ndarray)",
          "cluster labels (a fitted model's output) unwrapped to a list"),
-        ("isinstance(legend, (bool, np.bool_, list, tuple, np.ndarray, "
-         "pd.Series, pd.Index))",
-         "legend= as a flag vs a sequence of legend entries"),
-        ("isinstance(legend, (list, tuple, np.ndarray, pd.Series, pd.Index))",
-         "legend= as a sequence of legend entries"),
         ("isinstance(animate, np.ndarray)",
          "animate= per-dataset morph tags given as an array (an option)"),
         ("isinstance(_lim, (list, tuple, np.ndarray))",

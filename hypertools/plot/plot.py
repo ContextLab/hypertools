@@ -7125,9 +7125,12 @@ def plot(
     # legend= must be a bool, a label string, or a list of labels: any
     # other scalar (e.g. legend=7) was silently treated as truthy
     # (release-1.0 audit, X2-error-quality-016).
-    if legend is not None and not isinstance(
-            legend, (bool, np.bool_, list, tuple, np.ndarray, pd.Series,
-                     pd.Index)):
+    # (the container question is asked through the datawrangler-based
+    # predicates, so a polars Series of labels is accepted like a pandas
+    # one -- Codex round 12, R12-5)
+    if legend is not None and not (
+            isinstance(legend, (bool, np.bool_, list, tuple))
+            or is_array_dataset(legend) or is_series_like(legend)):
         raise TypeError(
             f"legend= must be True/False, a label string, or a list of "
             f"labels (one per drawn trace/group); got "
@@ -7168,8 +7171,8 @@ def plot(
     # kwarg the hierarchy overrides warns), and `names=` ALONE raised
     # "pass dataset names via names= OR a legend= list, not both" on a
     # call that never mentioned legend=.
-    _legend_user_list = isinstance(
-        legend, (list, tuple, np.ndarray, pd.Series, pd.Index))
+    # (every accepted container was normalised to a list just above)
+    _legend_user_list = isinstance(legend, (list, tuple))
 
     # animate= dict form (GH #154 resolution): unpacked into the flat
     # animation kwargs HERE, at the very top of the function, before

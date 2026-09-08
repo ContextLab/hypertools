@@ -71,43 +71,14 @@ def _validate_manip_input(data):
     if isinstance(data, list):
         if len(data) == 0:
             raise ValueError(no_observations)
-        return _align_columns_for_stacking(
-            [_validate_one(d, no_observations) for d in data])
+        # every dataset keeps its own column labels and index: the
+        # independent manipulators (Smooth, Delay, Resample) never combine
+        # features across datasets, and the shared-statistics ones
+        # (ZScore, Normalize) match columns by position themselves when
+        # the labels differ (Codex rounds 11 and 12: relabelling here
+        # renamed a named frame's features for EVERY model)
+        return [_validate_one(d, no_observations) for d in data]
     return _validate_one(data, no_observations)
-
-
-def _align_columns_for_stacking(datasets):
-    """Make a LIST of datasets stackable by datawrangler's funnel.
-
-    The funnel stacks the datasets into one frame and requires identical
-    column labels. A list that mixes an unnamed array with a named frame
-    (``[weights, df]``) therefore failed inside datawrangler with 'All
-    DataFrames must have the same columns' -- while `plot`, `reduce` and
-    `align` accept exactly that mix by position (`format_data`). Same rule
-    here: when at least one dataset carries no column names and every
-    dataset has the same width, all of them get positional column labels,
-    each frame keeping its own index. Lists of named frames are handed
-    over untouched, whatever their labels: the independent manipulators
-    (Smooth, Delay, Resample) never combine features across datasets.
-    """
-    framed = [is_frame_dataset(d) for d in datasets]
-    if all(framed) or not any(framed):
-        return datasets                    # named frames stay as they are
-    widths = {np.shape(d)[1] if np.ndim(d) > 1 else 1 for d in datasets}
-    if len(widths) != 1:
-        return datasets                    # the funnel reports the widths
-    out = []
-    for d in datasets:
-        if is_frame_dataset(d):
-            # positional column labels; the frame's INDEX (dates, irregular
-            # sample times) stays with it (Codex round 11: rebuilding the
-            # frame from its values dropped the index and changed Resample)
-            d = d.copy()
-            d.columns = range(d.shape[1])
-            out.append(d)
-        else:
-            out.append(as_dataframe(np.asarray(d)))
-    return out
 
 
 def _validate_one(data, no_observations):
@@ -118,13 +89,21 @@ def _validate_one(data, no_observations):
     are asked through datawrangler (the `_shared.helpers` predicates), never
     by naming pandas/numpy types here (datatype audit, 2026-09-08)."""
     if is_series_like(data):
-        # pandas and polars Series both expose `.to_frame()`; anything else
-        # series-like (an object with `.to_numpy()`) is wrangled through
-        # datawrangler as a single column
-        return (data.to_frame() if hasattr(data, 'to_frame')
+        # pandas and polars Series both expose `.to_frame()` (a polars
+        # frame is then wrangled to pandas like any other frame -- Codex
+        # round 12, R12-1); anything else series-like (an object with
+        # `.to_numpy()`) is wrangled through datawrangler as a single column
+        return (as_pandas_dataframe(data.to_frame())
+                if hasattr(data, 'to_frame')
                 else as_dataframe(np.asarray(data).reshape(-1, 1)))
     if is_frame_dataset(data):
         data = as_pandas_dataframe(data)
+    elif is_array_dataset(data) and np.ndim(data) == 1:
+        # a 1-D array is n observations of ONE feature, as `normalize`,
+        # `reduce` and the Manipulator classes already read it (the funnel
+        # would wrangle it into a single ROW: `hyp.manip(np.arange(12.))`
+        # z-scored a 1 x 12 table -- Codex round 12, after R12-1)
+        data = as_dataframe(np.asarray(data).reshape(-1, 1))
     if (is_array_dataset(data) or is_frame_dataset(data)) \
             and data.shape[0] == 0:
         raise ValueError(no_observations)
@@ -291,8 +270,9 @@ def manip(data, model="ZScore", return_model=False, normalize=None, reduce=None,
     while `normalize` returns numpy arrays; `manip` propagates NaNs while
     `normalize` PPCA-imputes them at format time; `manip` z-scores with
     the sample std (``ddof=1``) while `normalize` uses the population std
-    (``ddof=0``); and a 1-D array is treated as a single ROW by `manip`'s
-    data funnel but as a single COLUMN by `normalize`.
+    (``ddof=0``). A 1-D array is n observations of ONE feature (a single
+    column) for both, as it is for a Series (Codex round 12: `manip`'s
+    data funnel used to read it as a single row).
 
     Examples
     --------

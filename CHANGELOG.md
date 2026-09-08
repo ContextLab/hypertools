@@ -899,6 +899,26 @@ Because 1.1.0 had not been published, they ship in it.
   and `manip` lists mixing an unnamed array with named frames keep every
   frame's index (dated or irregular) while lists of named frames pass
   through untouched.
+- **Series and mixed lists through the manipulators (Codex round 12).** A
+  pandas or polars Series keeps its index and name through the Manipulator
+  classes and `hyp.Pipeline` (a `Pipeline([Smooth, Resample])` on an
+  irregularly sampled Series resampled at positions 0..n-1 instead of the
+  Series' own; `ZScore`/`Normalize`/`Resample` used directly never took a
+  Series at all), and a polars Series beside an array in a `hyp.manip`
+  list works. A mixed list keeps every frame's own feature names for every
+  model: the shared-statistics manipulators (`ZScore`, `Normalize`) match
+  columns by position themselves when labels differ (an unnamed array
+  beside a named frame, or two frames named differently) and reject
+  different widths with a clear message; the independent ones never
+  relabel anything. A 1-D array is one column (n observations of one
+  feature) for `hyp.manip`, as it already was for `hyp.normalize`,
+  `hyp.reduce` and the Manipulator classes -- the funnel used to read it as
+  a single row. `MatrixColormap` follows matplotlib's full extreme-colour
+  rules (under/over/bad keep the alpha they were set with, `-inf`/`+inf`
+  are under/over rather than bad, and an `alpha=` override reaches the
+  extremes but not a transparent bad colour). `legend=` accepts a polars
+  Series (any series-like) of labels, on both backends.
+  `tests/test_review_round12.py` (35).
 - **`HypertoolsTrustError` is importable from `hypertools`**, beside
   `HypertoolsOfflineError`, and the API reference documents it and
   `io.synthetic_outlet` under those public names (the source-view backlinks

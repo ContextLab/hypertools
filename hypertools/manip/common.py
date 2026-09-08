@@ -5,6 +5,7 @@ runs the fitter and stores the returned dict as attributes; `transform` runs
 the transformer with those params. Child classes (Normalize, ZScore, Smooth,
 Resample, Delay) supply the three pieces plus their defaults.
 """
+import pandas as pd
 from sklearn.base import BaseEstimator
 from sklearn.exceptions import NotFittedError
 
@@ -178,3 +179,33 @@ class Manipulator(BaseEstimator):
         followed by `transform(data)`)."""
         self.fit(data)
         return self.transform(data)
+
+
+def stack_for_shared_fit(datasets, name):
+    """Concatenate the frames of a LIST row-wise for a manipulator that
+    fits ONE shared set of statistics across every dataset (`ZScore`,
+    `Normalize`).
+
+    Frames with identical column labels are concatenated as they are.
+    When the labels differ -- an unnamed array (positional labels) beside
+    a named frame, or two frames named differently -- the columns are
+    matched by POSITION, as `plot`, `reduce` and `align` match datasets
+    (`format_data`); the fitted statistics are applied positionally
+    anyway. Datasets of different widths cannot share statistics and
+    raise. Nothing here touches the datasets themselves, so every frame
+    keeps its own labels and index through the transform (Codex round
+    12, R12-3: relabelling the inputs in the dispatcher renamed a named
+    frame's features for the independent manipulators too).
+    """
+    frames = list(datasets)
+    widths = {f.shape[1] for f in frames}
+    if len(widths) != 1:
+        raise ValueError(
+            f'{name} fits one shared set of statistics across the datasets '
+            'in a list, so every dataset needs the same number of columns; '
+            f'got widths {sorted(widths)}')
+    columns = frames[0].columns
+    if all(f.columns.equals(columns) for f in frames):
+        return pd.concat(frames, axis=0, ignore_index=True)
+    return pd.concat([f.set_axis(range(f.shape[1]), axis=1) for f in frames],
+                     axis=0, ignore_index=True)

@@ -475,26 +475,36 @@ class MatrixColormap(LinearSegmentedColormap):
             return super().__call__(X, alpha=alpha, bytes=bytes)
         grid = np.linspace(0.0, 1.0, len(self.anchors))
         flat = x.astype(float).ravel()
-        finite = np.isfinite(flat)
-        inside = np.clip(np.where(finite, flat, 0.0), 0.0, 1.0)
+        # the parent's range rules, applied per ELEMENT: below 0 (including
+        # -inf) takes the 'under' color, above 1 (including +inf) the 'over'
+        # color, NaN the 'bad' color -- each with the alpha the extreme was
+        # set with; an `alpha=` override then applies to everything, except
+        # that a fully transparent 'bad' color stays transparent (Codex
+        # round 11: clipping ignored set_under/set_over, and one NaN sent
+        # the whole array through the quantized table; round 12, R12-2: the
+        # extremes lost their alpha, infinities were 'bad', and the override
+        # skipped 'bad')
+        bad = np.isnan(flat)
+        under, over = flat < 0.0, flat > 1.0
+        inside = np.clip(np.where(bad, 0.0, flat), 0.0, 1.0)
         rgb = np.column_stack([np.interp(inside, grid, self.anchors[:, k])
                                for k in range(3)])
-        if alpha is None:
-            a = np.ones((len(flat), 1))
-        else:
-            a = np.broadcast_to(np.clip(np.asarray(alpha, dtype=float), 0, 1),
-                                x.shape).reshape(-1, 1)
-        out = np.hstack([rgb, a])
-        # the parent's range rules, applied per ELEMENT (Codex round 11:
-        # clipping ignored set_under/set_over, and one NaN sent the whole
-        # array through the quantized table)
-        under, over, bad = finite & (flat < 0.0), finite & (flat > 1.0), ~finite
+        out = np.hstack([rgb, np.ones((len(flat), 1))])
         if under.any():
-            out[under, :3] = np.asarray(self.get_under())[:3]
+            out[under] = np.asarray(self.get_under(), dtype=float)
         if over.any():
-            out[over, :3] = np.asarray(self.get_over())[:3]
+            out[over] = np.asarray(self.get_over(), dtype=float)
         if bad.any():
-            out[bad] = np.asarray(self.get_bad())
+            out[bad] = np.asarray(self.get_bad(), dtype=float)
+        if alpha is not None:
+            a = np.clip(np.asarray(alpha, dtype=float), 0, 1)
+            if a.shape not in ((), x.shape):
+                raise ValueError(
+                    f'alpha is array-like but its shape {a.shape} does not '
+                    f'match that of X {x.shape}')
+            out[:, 3] = np.broadcast_to(a, x.shape).ravel()
+            if np.all(np.asarray(self.get_bad(), dtype=float) == 0):
+                out[bad] = 0.0
         out = out.reshape(x.shape + (4,))
         if bytes:
             out = (out * 255).astype(np.uint8)

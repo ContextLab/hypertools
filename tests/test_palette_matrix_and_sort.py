@@ -16,8 +16,9 @@ from PIL import Image
 
 import hypertools as hyp
 from hypertools.plot.colors import (
-    PALETTE_SORT_KEYS, get_palette_colors, image_palette, is_palette_matrix,
-    luminance, matrix_palette, palette_lead_color, sort_colors)
+    MatrixColormap, PALETTE_SORT_KEYS, get_palette_colors, image_palette,
+    is_palette_matrix, luminance, matrix_palette, palette_lead_color,
+    sort_colors)
 from hypertools.plot.plotly_backend import _rgb_triplet
 
 
@@ -305,6 +306,27 @@ def test_palette_reduce_and_stage_kwargs_reach_the_matrix(backend):
         tr = [t for t in f.data if (t.meta or {}).get('hyp_trace_index') is not None][0]
         return np.array([_rgb_triplet(c) for c in tr.line.color]) / 255.0
     assert not np.allclose(pick(a), pick(b), atol=1e-3)
+    # each stage kwarg reaches hyp.reduce: the drawn colors equal those of a
+    # palette built BY HAND from the same staged reduction, and differ from
+    # the unstaged palette (Codex round 12: the test's name promised the
+    # stage kwargs but only exercised palette_reduce/palette_sort)
+    tol = 1e-6 if backend == 'matplotlib' else 3e-3
+    for stage, value in (('manip', 'Smooth'), ('normalize', 'across'),
+                         ('align', 'hyper')):
+        staged = hyp.plot(x, hue=hue, palette=weights, show=False,
+                          backend=backend, **{f'palette_{stage}': value})
+        reduced = hyp.reduce([weights, weights] if stage == 'align' else weights,
+                             reduce='PCA', ndims=3, random_state=0, **{stage: value})
+        reduced = np.asarray(reduced[0] if stage == 'align' else reduced)
+        lo, hi = reduced.min(axis=0), reduced.max(axis=0)
+        anchors = sort_colors((reduced - lo) / np.where(hi > lo, hi - lo, 1.0), 'columns')
+        by_hand = hyp.plot(x, hue=hue, palette=MatrixColormap('by-hand', anchors),
+                           show=False, backend=backend)
+        assert np.allclose(pick(staged), pick(by_hand), atol=tol), stage
+        if stage != 'align':
+            # (aligning ONE matrix -- against itself -- changes nothing; the
+            # by-hand equality above is the check that the kwarg arrived)
+            assert not np.allclose(pick(staged), pick(a), atol=1e-3), stage
 
 
 @pytest.mark.parametrize('backend', ['matplotlib', 'plotly'])

@@ -286,15 +286,19 @@ def as_internal_frames(data):
     form: a frame of any backend datawrangler recognises (polars, a
     LazyFrame, modin, ...) is converted once here -- pandas frames are
     returned as-is -- so raw scikit-learn steps and the manipulators, which
-    are written against pandas, never see another backend. Arrays, text and
-    everything else pass through untouched, elementwise for a list/tuple
-    (datatype audit, 2026-09-08). Shared with the manipulators' transformers,
-    which a fitted Manipulator's `.transform` hands raw input directly."""
-    from .._shared.helpers import is_frame_dataset
+    are written against pandas, never see another backend; a Series (pandas
+    or polars) becomes the one-column frame that keeps its index and name.
+    Arrays, text and everything else pass through untouched, elementwise
+    for a list/tuple (datatype audit, 2026-09-08; Codex round 12, R12-4: a
+    raw Series reached datawrangler's stacking decorator). Shared with the
+    manipulators' transformers, which a fitted Manipulator's `.transform`
+    hands raw input directly."""
+    from .._shared.helpers import is_frame_dataset, is_series_like
     from .shared import as_dataframe
 
     def _one(item):
-        return as_dataframe(item) if is_frame_dataset(item) else item
+        return (as_dataframe(item)
+                if is_frame_dataset(item) or is_series_like(item) else item)
 
     if isinstance(data, (list, tuple)):
         converted = [_one(item) for item in data]

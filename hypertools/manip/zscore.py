@@ -2,7 +2,7 @@
 import datawrangler as dw
 import pandas as pd
 
-from .common import Manipulator
+from .common import Manipulator, stack_for_shared_fit
 from ..core.pipeline import as_internal_frames
 
 
@@ -34,13 +34,15 @@ def fitter(data, axis=0):
     # the funnel runs with backend='pandas' so a polars/LazyFrame input
     # (which the funnel would otherwise keep in its own backend) reaches
     # the pandas-based fit below (datatype audit, 2026-09-08)
-    return _fitter(data, axis=axis, backend='pandas')
+    # (a Series is made a one-column frame FIRST: the funnel would wrangle
+    # it into an empty table -- Codex round 12, R12-4)
+    return _fitter(as_internal_frames(data), axis=axis, backend='pandas')
 
 
 @dw.decorate.funnel
 def _fitter(data, axis=0):
     if isinstance(data, list):
-        data = pd.concat(data, axis=0, ignore_index=True)
+        data = stack_for_shared_fit(data, 'ZScore')
 
     if axis == 1:
         return dw.core.update_dict(fitter(data.T, axis=0), {'transpose': True})
@@ -114,6 +116,12 @@ def transformer(data, **kwargs):
     # passed: frames of any backend become pandas here, once (datatype
     # audit, 2026-09-08)
     data = as_internal_frames(data)
+    if isinstance(data, list):
+        # each dataset is transformed on its own (the fitted statistics
+        # are positional), so every frame keeps its own column labels and
+        # index; stacking the list first demanded identical labels
+        # (Codex round 12, R12-3)
+        return [transformer(d, **kwargs) for d in data]
     transpose = kwargs.pop('transpose', False)
     # real raises (not `assert ..., ValueError(...)`, which raised
     # AssertionError and was stripped under `python -O`) -- 2026-07 release

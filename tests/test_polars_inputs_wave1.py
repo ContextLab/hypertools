@@ -125,22 +125,40 @@ def test_manip_polars_matches_pandas(pdf, plf, lazy, kind, model, kwargs):
 @pytest.mark.parametrize('model,kwargs', MANIPS, ids=[m for m, _ in MANIPS])
 def test_manip_list_mixing_polars_pandas_numpy(pdf, pdf2, plf, model,
                                                kwargs):
-    # a numpy array gets positional column labels, so (as with an all-pandas
-    # list) the shared-statistics manipulators need frames with the same
-    # column names; Smooth/Resample/Delay work per dataset and take any mix
+    # a numpy array gets positional column labels; the shared-statistics
+    # manipulators match columns by position when the labels differ, and
+    # Smooth/Resample/Delay work per dataset, so EVERY model takes the mix
+    # (Codex round 12: this test used to swap in an all-named list for
+    # ZScore/Normalize)
+    mixed = [plf, pdf2, pl.from_pandas(pdf2).lazy(), pdf2.to_numpy()]
+    ref_in = [pdf, pdf2, pdf2, pdf2.to_numpy()]
+    out = hyp.manip(mixed, model=model, **kwargs)
+    _same(out, hyp.manip(ref_in, model=model, **kwargs))
+    if model != 'Delay':
+        assert [list(o.columns) for o in out] == [COLUMNS] * 3 + [[0, 1, 2, 3]]
     if model in ('ZScore', 'Normalize'):
-        mixed = [plf, pdf2, pl.from_pandas(pdf2).lazy()]
-        ref_in = [pdf, pdf2, pdf2]
-    else:
-        mixed = [plf, pdf2, pdf2.to_numpy()]
-        ref_in = [pdf, pdf2, pdf2.to_numpy()]
-    _same(hyp.manip(mixed, model=model, **kwargs),
-          hyp.manip(ref_in, model=model, **kwargs))
+        # the statistics are shared across all four datasets
+        stacked = np.vstack([pdf.to_numpy()] + [pdf2.to_numpy()] * 3)
+        if model == 'ZScore':
+            expected = (pdf.to_numpy() - stacked.mean(axis=0)) / stacked.std(axis=0, ddof=1)
+        else:
+            lo, hi = stacked.min(axis=0), stacked.max(axis=0)
+            expected = (pdf.to_numpy() - lo) / (hi - lo)
+        assert np.allclose(out[0].to_numpy(), expected)
 
 
 def test_manip_polars_series_is_one_column(pdf, plf):
-    _same(hyp.manip(plf['a'], model='ZScore'),
-          hyp.manip(pdf['a'], model='ZScore'))
+    out = hyp.manip(plf['a'], model='ZScore')
+    _same(out, hyp.manip(pdf['a'], model='ZScore'))
+    assert list(out.columns) == ['a'] and out.shape == (N_ROWS, 1)
+    # beside an array or a pandas Series in a list, too (Codex round 12,
+    # R12-1: the polars frame from `.to_frame()` reached pandas-only code)
+    mixed = hyp.manip([plf['a'], pdf['b'].to_numpy(), pdf['c']], model='Smooth',
+                      kernel_width=5)
+    ref = hyp.manip([pdf['a'], pdf['b'].to_numpy(), pdf['c']], model='Smooth',
+                    kernel_width=5)
+    _same(mixed, ref)
+    assert [list(m.columns) for m in mixed] == [['a'], [0], ['c']]
 
 
 def test_manip_polars_chain_and_stage_kwargs(pdf, plf):
@@ -177,6 +195,12 @@ def test_manipulator_classes_directly_on_polars(pdf, pdf2, plf, plf2, lazy,
           cls(**kwargs).fit_transform([pdf, pdf2]))
     _same(cls(**kwargs).fit(plf).transform(plf2),
           cls(**kwargs).fit(pdf).transform(pdf2))
+    # a Series (either backend) is one column that keeps its name (Codex
+    # round 12, R12-4: `as_dataframe` dropped a pandas Series' index/name)
+    out = cls(**kwargs).fit_transform(plf['a'])
+    ref = cls(**kwargs).fit_transform(pdf['a'])
+    _same(out, ref)
+    assert list(ref.columns) == (['a'] if cls is not Delay else ['a_lag1', 'a_lag0'])
 
 
 @pytest.mark.parametrize('cls,kwargs', [
@@ -302,19 +326,22 @@ def test_save_load_round_trip_polars(tmp_path, pdf, plf, lazy, ext):
     assert target.exists() and os.path.getsize(target) > 0
     loaded = hyp.load(str(target))
     ref = hyp.load(str(ref_target))
+    lazy_target = tmp_path / f'lazy.{ext}'
+    hyp.save(lazy, str(lazy_target))
     if ext == 'pkl':
-        # a pickle round-trips the object itself
+        # a pickle round-trips the object itself -- the LazyFrame included
+        # (Codex round 12: an early return used to skip this branch)
         assert isinstance(loaded, pl.DataFrame)
         pd.testing.assert_frame_equal(loaded.to_pandas(), pdf)
+        lazy_loaded = hyp.load(str(lazy_target))
+        assert isinstance(lazy_loaded, pl.LazyFrame)
+        pd.testing.assert_frame_equal(lazy_loaded.collect().to_pandas(), pdf)
         return
     _same(loaded, ref)
     if ext in ('csv', 'tsv', 'json', 'parquet'):
         assert list(loaded.columns) == COLUMNS
     # a LazyFrame is written like the frame it collects to
-    lazy_target = tmp_path / f'lazy.{ext}'
-    hyp.save(lazy, str(lazy_target))
-    if ext != 'pkl':
-        _same(hyp.load(str(lazy_target)), ref)
+    _same(hyp.load(str(lazy_target)), ref)
 
 
 def test_save_polars_csv_writes_no_index_column(tmp_path, plf):
@@ -395,3 +422,9 @@ def test_manip_keeps_named_frames_and_indices_in_mixed_lists():
     dated = pd.DataFrame({'v': np.arange(30.0)}, index=pd.date_range('2024-01-01', periods=30))
     mixed = hyp.manip([dated, np.arange(30.0).reshape(-1, 1)], model='Smooth')
     assert list(mixed[0].index) == list(dated.index)
+    # ...and its feature NAMES (Codex round 12, R12-3: the mixed-list rule
+    # relabelled the named frame positionally for every model)
+    assert list(mixed[0].columns) == ['v'] and list(mixed[1].columns) == [0]
+    delayed = hyp.manip([dated, np.arange(30.0).reshape(-1, 1)], model='Delay')
+    assert list(delayed[0].columns) == ['v_lag1', 'v_lag0']
+    assert list(delayed[1].columns) == ['0_lag1', '0_lag0']

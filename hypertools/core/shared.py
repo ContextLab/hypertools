@@ -12,7 +12,8 @@ import warnings
 import numpy as np
 import pandas as pd
 
-from .._shared.helpers import is_frame_dataset, as_pandas_dataframe
+from .._shared.helpers import (is_frame_dataset, is_series_like,
+                               as_pandas_dataframe)
 
 #: sentinel distinguishing "no explicit default passed" in RobustDict.get
 _MISSING = object()
@@ -22,15 +23,26 @@ def as_dataframe(data):
     """Coerce `data` to a pandas DataFrame (returned as-is if it already
     is one; a DataFrame of another backend datawrangler recognises --
     polars DataFrame/LazyFrame, modin, ... -- is converted via
-    ``dw.wrangle(..., backend='pandas')``; anything else goes through
-    ``pd.DataFrame(np.asarray(data))``, so a 1-D input is one column).
+    ``dw.wrangle(..., backend='pandas')``; a Series (pandas, polars, or
+    anything series-like) becomes ONE column that keeps the Series' index
+    and name, exactly as ``pd.DataFrame(series)`` does; anything else goes
+    through ``pd.DataFrame(np.asarray(data))``, so a 1-D array is one
+    column).
 
-    Shared by `hypertools.predict.common` and `hypertools.impute.common`
-    (2026-07 audit, X7-code-org-rest-019: previously duplicated verbatim
-    in both modules).
+    Shared by `hypertools.predict.common`, `hypertools.impute.common` and
+    the manipulators' direct-class paths (2026-07 audit,
+    X7-code-org-rest-019: previously duplicated verbatim in both modules;
+    Codex round 12, R12-4: the manipulators used to call
+    ``pd.DataFrame(data)``, and routing a pandas Series through
+    ``np.asarray`` here dropped its irregular/dated index, so a
+    ``Pipeline([Smooth, Resample])`` resampled at the wrong positions).
     """
     if is_frame_dataset(data):
         return as_pandas_dataframe(data)
+    if is_series_like(data):
+        if hasattr(data, 'to_frame'):       # pandas and polars Series
+            return as_pandas_dataframe(data.to_frame())
+        return pd.DataFrame(np.asarray(data).reshape(-1, 1))
     return pd.DataFrame(np.asarray(data))
 
 
