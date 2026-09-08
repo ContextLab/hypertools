@@ -3230,6 +3230,32 @@ def _panel_slice_labels(value, index, lengths):
     return value
 
 
+def _panel_rows_in_3d(xi, source):
+    """One panel's analyzed rows `xi` as the 3-column rows a 3-D grid
+    cell draws: 3-wide rows as they are; 2-wide rows on the cell's floor
+    (``z=0``); a 1-column series as ``(x, value, 0)`` where x is what
+    `ndims=1` series mode draws the series against -- the `source` frame's
+    own numeric row index when it has one (`_series_x_axis`), otherwise
+    the row position. A date index is drawn by position (a 3-D scene has
+    no date axis)."""
+    xi = np.asarray(xi)
+    if xi.ndim == 1:
+        xi = xi.reshape(-1, 1)
+    if xi.ndim != 2 or xi.shape[1] >= 3:
+        return xi
+    n_rows = xi.shape[0]
+    if xi.shape[1] == 2:
+        return np.column_stack([xi, np.zeros(n_rows)])
+    index = getattr(source, 'index', None)
+    if isinstance(source, np.ndarray) or isinstance(index, pd.MultiIndex):
+        index = None
+    x_values, _, is_date, _ = _series_x_axis(index, n_rows)
+    if is_date:
+        x_values = np.arange(float(n_rows))
+    return np.column_stack([x_values, xi[:, 0].astype(float),
+                            np.zeros(n_rows)])
+
+
 def _panel_frame(source, xi):
     """The analyzed rows `xi` of one shared-fit panel, re-labelled with the
     source dataset's row index (and, when the width survived the pipeline,
@@ -3335,16 +3361,64 @@ def _panel_cell_ndims(requested, datasets):
     return requested if max(widths) >= 3 else 2
 
 
+class _PanelClusterLabels:
+    """The clustering a `panels=` probe fitted, replayed into the cell
+    that draws its rows (round 8). `labels` are the probe's per-observation
+    labels for exactly the rows the cell draws (a mixture model's
+    proportions included), `model` the resolved model name/class the probe
+    clustered with, and `spec` the caller's own `cluster=` value, which the
+    panel's bundle reports under ``models['cluster']``. Passed as the
+    panel call's ``cluster=``, `plot()` uses the labels as they are and
+    fits nothing -- before this, every panel re-clustered its analyzed
+    rows without the caller's `random_state` and drew clusters the seeded
+    single-axes call never drew."""
+
+    __slots__ = ('labels', 'model', 'spec')
+
+    def __init__(self, labels, model, spec):
+        self.labels = labels
+        self.model = model
+        self.spec = spec
+
+    def __repr__(self):
+        return (f"_PanelClusterLabels(model={self.model!r}, "
+                f"n={len(self.labels)})")
+
+
+def _panel_cluster_labels(probe_labels, model, spec, rows=None):
+    """`probe_labels` (a probe's ``models['cluster_labels']``) as the
+    `_PanelClusterLabels` one panel replays, sliced to `rows` (a
+    ``(start, stop)`` pair, for a shared fit's per-dataset slice) or taken
+    whole; None when the probe did not cluster."""
+    if probe_labels is None:
+        return None
+    if spec is None:
+        # `n_clusters=` alone: the single-axes call clusters with (and
+        # reports) KMeans
+        spec = 'KMeans'
+    labels = probe_labels
+    if rows is not None:
+        start, stop = rows
+        labels = labels[start:stop]
+    if isinstance(labels, np.ndarray) and labels.ndim == 1:
+        labels = labels.tolist()
+    return _PanelClusterLabels(labels, model, spec)
+
+
 def _panel_probe(data, kw, ndims, caught_warnings):
     """Fit one panel grid's pipeline exactly as the equivalent single-axes
     call fits it -- by MAKING that call (``return_model=True``, figure
-    thrown away) -- and hand back ``(xform, pipeline)``: the analyzed rows
+    thrown away) -- and hand back ``(xform, pipeline, clustering)``: the analyzed rows
     (one array per input dataset; for ``ndims`` > 3 the 3-D display
     projection the single-axes call drew, since a reduce=None panel cannot
-    draw wider rows, P4) and the fitted pipeline. Every `panels=` mode goes
-    through here, and every panel is then DRAWN from these rows through
-    ``transform=``, so the cells' projection can be read off the data the
-    pipeline actually produced (round 7) and no panel ever fits twice.
+    draw wider rows, P4), the fitted pipeline, and the clustering the
+    call fitted -- ``(labels, model)``, the per-observation labels the
+    probe's figure was grouped by and the resolved model, or ``None``
+    without `cluster=`/`n_clusters=` -- which every panel replays instead
+    of clustering again (round 8). Every `panels=` mode goes through here,
+    and every panel is then DRAWN from these rows through ``transform=``,
+    so the cells' projection can be read off the data the pipeline
+    actually produced (round 7) and no panel ever fits twice.
     Going through `plot()` itself -- rather than re-deriving
     format_data/analyze here -- is what makes "a panel is analyzed exactly
     as the single-axes call analyzes it" true by construction. The
@@ -3378,7 +3452,29 @@ def _panel_probe(data, kw, ndims, caught_warnings):
         trace = [np.asarray(xi) for xi in probe['trace_data']]
         if len(trace) == len(xform):
             xform = trace
-    return xform, probe.get('pipeline')
+    clustering = None
+    models = probe.get('models') or {}
+    if models.get('cluster_labels') is not None:
+        clustering = (models['cluster_labels'], _panel_cluster_model(kw))
+    return xform, probe.get('pipeline'), clustering
+
+
+def _panel_cluster_model(kw):
+    """The model name/class a panel call's `cluster=`/`n_clusters=`
+    resolves to, exactly as `plot()`'s cluster branch resolves it (a
+    string name, a dict spec's ``'model'``, a class, or an instance's
+    class; `n_clusters=` alone means KMeans) -- what the replayed
+    clustering reports as its model."""
+    spec = kw.get('cluster')
+    if spec is None:
+        return 'KMeans'
+    if isinstance(spec, bytes):
+        spec = spec.decode('utf-8')
+    if isinstance(spec, dict):
+        spec = spec.get('model', spec)
+    if isinstance(spec, (str, type)):
+        return spec
+    return type(spec)
 
 
 def _reemit_panel_warnings(probe_caught, draw_caught):
@@ -3535,8 +3631,13 @@ def _plot_panels(x, panels, call_kwargs, _name='panels'):
             panel_kwargs.append(kw)
         probes = [_panel_probe(x, kw, ndims, probe_warnings)
                   for kw in panel_kwargs]
-        panel_xforms = [xf for xf, _ in probes]
-        panel_pipelines = [pipe for _, pipe in probes]
+        panel_xforms = [xf for xf, _, _ in probes]
+        panel_pipelines = [pipe for _, pipe, _ in probes]
+        # each reducer panel draws EVERY dataset: its probe's labels whole
+        panel_clusters = [
+            None if clus is None else _panel_cluster_labels(
+                clus[0], clus[1], kw.get('cluster'))
+            for (_, _, clus), kw in zip(probes, panel_kwargs)]
     elif panel_fit == 'independent':
         # one FULL pipeline per panel: each panel's fit is byte-for-byte
         # the ``hyp.plot(datasets[i], ...)`` the caller would have written,
@@ -3555,23 +3656,39 @@ def _plot_panels(x, panels, call_kwargs, _name='panels'):
         probes = [_panel_probe(panel_sources[i], panel_kwargs[i], ndims,
                                probe_warnings)
                   for i in range(n_panels)]
-        panel_xforms = [xf for xf, _ in probes]
-        panel_pipelines = [pipe for _, pipe in probes]
+        panel_xforms = [xf for xf, _, _ in probes]
+        panel_pipelines = [pipe for _, pipe, _ in probes]
+        # each probe clustered its own panel's rows: replayed whole
+        panel_clusters = [
+            None if clus is None else _panel_cluster_labels(
+                clus[0], clus[1], kw.get('cluster'))
+            for (_, _, clus), kw in zip(probes, panel_kwargs)]
     else:
         # ONE shared fit across every dataset: run the very call the user
         # would have made without panels=, take its analyzed (pre-display-
         # rescale) data, and give each panel its own dataset's rows
-        xform, shared_pipeline = _panel_probe(x, shared, ndims,
-                                              probe_warnings)
+        xform, shared_pipeline, shared_clustering = _panel_probe(
+            x, shared, ndims, probe_warnings)
         lengths = [int(xi.shape[0]) for xi in xform]
         panel_sources = [[datasets[i]] for i in range(n_panels)]
         panel_xforms = [[xform[i]] for i in range(n_panels)]
         panel_pipelines = [shared_pipeline] * n_panels
         panel_kwargs = []
+        # the ONE clustering fit across every dataset, each panel
+        # replaying its own dataset's slice of the labels (the same rows
+        # `_panel_narrow_kwargs` slices a flat hue= by)
+        panel_clusters = []
+        offsets = np.cumsum([0] + lengths)
         for i in range(n_panels):
             kw = dict(shared)
             _panel_narrow_kwargs(kw, i, n_panels, lengths)
             panel_kwargs.append(kw)
+            panel_clusters.append(
+                None if shared_clustering is None
+                else _panel_cluster_labels(
+                    shared_clustering[0], shared_clustering[1],
+                    shared.get('cluster'),
+                    rows=(int(offsets[i]), int(offsets[i + 1]))))
 
     # the analyzed data's own width decides the cells (a text or DataFrame
     # input's drawn width, and a manip=/pipeline= stage's, are only known
@@ -3587,14 +3704,19 @@ def _plot_panels(x, panels, call_kwargs, _name='panels'):
             # (independent fits of unequal inputs): draw it flat in the
             # 3-D cell on BOTH backends, the way a matplotlib 3-D axes
             # draws 2-column rows -- plotly's 'scene' cell refuses a 2-D
-            # trace outright
-            xf = [np.column_stack([xi, np.zeros(xi.shape[0])])
-                  if xi.ndim == 2 and xi.shape[1] == 2 else xi
-                  for xi in xf]
+            # trace outright. A ONE-column series in such a grid is drawn
+            # as the series it is -- the row index on x, its values on y
+            # -- flat on the cell's floor (round 8: it reached the 3-D
+            # cell as one column and crashed both backends)
+            xf = [_panel_rows_in_3d(xi, src)
+                  for xi, src in zip(xf, panel_sources[i])]
         # the analysis already ran (above); each panel DRAWS its rows
         kw.update(transform=list(xf), reduce=None, normalize=None,
                   align=None, manip=None, pipeline=None, impute=None,
                   resample=None, random_state=None)
+        if panel_clusters[i] is not None:
+            # ...and its probe's clustering, replayed (no second fit)
+            kw.update(cluster=panel_clusters[i], n_clusters=None)
         # each panel's rows, labelled with its source frame's index and
         # column names so series mode keeps dates on x and the column on y
         # exactly as the raw frame would (P2)
@@ -5944,11 +6066,19 @@ def plot(
         tall one, four form 2x2, six form 2x3; an ``int`` is
         the number of COLUMNS; an ``(nrows, ncols)`` pair is used verbatim
         and must have room for every panel. Spare cells are hidden, the
-        layout is tightened, and the one `Figure` is returned. Each cell
-        has the projection the single-axes call would draw that data in:
-        3-D by default, 2-D axes for ``ndims=2`` or ``ndims=1`` and for
-        2-column or 1-column data (which the single-axes call draws on
-        2-D axes whatever ``ndims=`` says).
+        layout is tightened, and the one `Figure` is returned. Every cell
+        has ONE projection, decided from the ANALYZED data (the rows the
+        pipeline hands each panel to draw, not the raw column count: two
+        raw columns through a feature-expanding ``manip='Delay'`` come out
+        three wide and get 3-D cells): 3-D by default; 2-D axes for
+        ``ndims=2`` or ``ndims=1``, and when every panel's analyzed rows
+        are 1 or 2 columns wide (the single-axes call draws such data on
+        2-D axes whatever ``ndims=`` says). Panels of UNEQUAL analyzed
+        width (independent fits of a 2-column and a 3-column dataset,
+        say) share the wider grid: 2-column rows are drawn flat on the
+        3-D cell's floor, and a 1-column series as row index vs value on
+        that floor (its own numeric index on x when the frame has one,
+        positions otherwise).
         ``subplots=`` is an accepted alias (passing both raises).
 
         The analysis pipeline (`manip`/`normalize`/`reduce`/`align`) is fit
@@ -6032,9 +6162,13 @@ def plot(
         gives each panel its slice of the result, so the panels share one
         set of components and are directly comparable.
 
-        ``'independent'`` fits the pipeline per panel: each panel call is
-        exactly the ``hyp.plot(x[i], ax=axes[i], ...)`` you would have
-        written by hand, down to the coordinates. Use it when the datasets
+        ``'independent'`` fits the pipeline per panel: each panel is
+        analyzed exactly as the ``hyp.plot(x[i], ax=axes[i], ...)`` you
+        would have written by hand, down to the coordinates and the
+        seeded clustering (`cluster=`/`n_clusters=` with `random_state=`
+        groups a panel exactly as that call does; the grid's cells are
+        the exception described under `panels=`, one projection shared
+        by every panel). Use it when the datasets
         differ enough in scale or shape that one shared fit is dominated by
         the largest of them -- ``examples/plot_shapes_zoo.py``'s seven
         shapes reduced separately is the case that motivated it.
@@ -6396,7 +6530,11 @@ def plot(
         the frame's innermost column labels are matched to the ones the
         pipeline was fit on, so reordering them is harmless and naming
         different measurements raises. ``models`` holds the
-        reduce/align/cluster/impute specs, and ``predict`` is ``None`` unless
+        reduce/align/cluster/impute specs plus ``'cluster_labels'``: the
+        per-observation labels the figure was clustered by (every input
+        dataset's rows, in order; a mixture model's component proportions;
+        ``None`` without `cluster=`/`n_clusters=`). ``predict`` is ``None``
+        unless
         `predict` was set, in which case it is
         ``{'model': ..., 'params': {'t': t}, 'forecasts': [...]}`` (one
         forecast array per input dataset -- or, for a HIERARCHICAL input, one
@@ -8384,6 +8522,12 @@ def plot(
     # return_model bundle's pipeline encodes the parameters the figure
     # was actually drawn with (F13-004)
     _bundle_cluster_stage = None
+    # the per-observation cluster labels the FIGURE was coloured/grouped
+    # by (over every input dataset's rows, in order; None without
+    # clustering), handed back as ``models['cluster_labels']`` -- and what
+    # a `panels=` grid replays into each panel, so a panel never
+    # re-clusters (round 8)
+    _figure_cluster_labels = None
 
     # alpha= (1.1): a first-class per-dataset style, promoted out of the
     # GH #206 `**kwargs` passthrough (where a list raised matplotlib's bare
@@ -8753,7 +8897,21 @@ def plot(
         _cluster_instance = None
         _spec_kwargs = {}
         _spec_top_n = None
-        if isinstance(cluster, str):
+        _replayed_labels = None
+        if isinstance(cluster, _PanelClusterLabels):
+            # a `panels=` cell drawing rows its probe ALREADY clustered
+            # (round 8): reuse that fit's memberships verbatim -- the
+            # probe is the caller's own seeded single-axes call, and
+            # re-clustering the analyzed rows here, once per panel and
+            # without the caller's random_state, drew different clusters
+            # from the ones the individual call draws.
+            _replayed_labels = cluster.labels
+            model = cluster.model
+            cluster = cluster.spec
+            params = {}
+            n_clusters = None
+            _n_clusters_explicit = False
+        elif isinstance(cluster, str):
             model = cluster
             params = default_params(model) or {}
         elif isinstance(cluster, dict):
@@ -8826,7 +8984,9 @@ def plot(
         # regrouping by its labels silently drew n_features "points"
         # where the data's rows should be, or crashed downstream
         # (F13-001).
-        if _mixture_name(model) == "FeatureAgglomeration":
+        if _replayed_labels is not None:
+            pass
+        elif _mixture_name(model) == "FeatureAgglomeration":
             raise ValueError(
                 "cluster='FeatureAgglomeration' is not supported by "
                 "hyp.plot: FeatureAgglomeration clusters features "
@@ -8847,7 +9007,8 @@ def plot(
                           or mixture_models.get(model))
         elif isinstance(model, type):
             _model_cls = model
-        if (_n_clusters_explicit and _model_cls is not None
+        if (_replayed_labels is None and _n_clusters_explicit
+                and _model_cls is not None
                 and _mixture_name(model) not in mixture_models
                 and "n_clusters"
                 not in inspect.signature(_model_cls).parameters):
@@ -8877,24 +9038,31 @@ def plot(
         # bundle's cluster stage from the IDENTICAL resolved spec so the
         # bundled pipeline encodes the same parameters the figure was
         # drawn with (F13-004).
-        if _cluster_instance is not None:
-            _resolve_spec = _cluster_instance
+        if _replayed_labels is not None:
+            # no fit at all: the labels are the probe's (the bundled
+            # pipeline is the probe's too -- `_plot_panels` installs it)
+            cluster_labels = _replayed_labels
         else:
-            _resolve_spec = {"model": model, "kwargs": params}
-            if _spec_top_n is not None:
-                _resolve_spec["n_clusters"] = _spec_top_n
-        _cluster_stage = _resolve_cluster_spec(
-            _resolve_spec, n_clusters if n_clusters is not None else 3,
-            random_state=random_state,
-            n_clusters_explicit=_n_clusters_explicit)
-        # a second, unfitted resolution of the same spec for the bundle
-        # (n_clusters_explicit=False: any conflict was already warned
-        # about just above -- values resolve identically either way)
-        _bundle_cluster_stage = _resolve_cluster_spec(
-            _resolve_spec, n_clusters if n_clusters is not None else 3,
-            random_state=random_state)
+            if _cluster_instance is not None:
+                _resolve_spec = _cluster_instance
+            else:
+                _resolve_spec = {"model": model, "kwargs": params}
+                if _spec_top_n is not None:
+                    _resolve_spec["n_clusters"] = _spec_top_n
+            _cluster_stage = _resolve_cluster_spec(
+                _resolve_spec, n_clusters if n_clusters is not None else 3,
+                random_state=random_state,
+                n_clusters_explicit=_n_clusters_explicit)
+            # a second, unfitted resolution of the same spec for the
+            # bundle (n_clusters_explicit=False: any conflict was already
+            # warned about just above -- values resolve identically
+            # either way)
+            _bundle_cluster_stage = _resolve_cluster_spec(
+                _resolve_spec, n_clusters if n_clusters is not None else 3,
+                random_state=random_state)
 
-        cluster_labels = clusterer(xform, cluster=_cluster_stage)
+            cluster_labels = clusterer(xform, cluster=_cluster_stage)
+        _figure_cluster_labels = cluster_labels
 
         if _mixture_name(model) in mixture_models:
             # soft assignments: color each observation by the proportion-
@@ -10569,35 +10737,45 @@ def plot(
                 f"kwargs for plotly are: {sorted(_PLOTLY_MAPPED_KWARGS)}."
             , stacklevel=external_stacklevel())
 
+        # composing into an existing figure (`ax=<figure>`) or grid cell
+        # (`ax=<cell>`): the palette slots the calls drawn THERE already
+        # took (a cell keeps its own count, like a matplotlib axes of its
+        # own; Codex round 3). Read for EVERY call -- the count is written
+        # back below for every call -- not only for one that colours from
+        # the cycle: a pinned ``color=`` or categorical ``hue=`` call used
+        # to skip the read and write the count back as its own zero, so
+        # the next ordinary call restarted the palette (round 8; the
+        # matplotlib `ax=` path keeps the axes' count across such calls)
         _plotly_palette_offset = 0
+        if _plotly_into is not None:
+            if _is_plotly_cell(_plotly_into):
+                _meta = _plotly_into.figure.layout.meta
+                _meta = _meta if isinstance(_meta, dict) else {}
+                _plotly_palette_offset = int((_meta.get(
+                    'hyp_cell_datasets_drawn') or {}).get(
+                        str(_plotly_into.index), 0))
+            else:
+                _meta = getattr(_plotly_into, 'layout', None)
+                _meta = _meta.meta if _meta is not None else None
+                _plotly_palette_offset = int(
+                    (_meta or {}).get('hyp_datasets_drawn', 0)
+                    if isinstance(_meta, dict) else 0)
         if "color" not in mpl_kwargs:
             import seaborn as sns_local
             mpl_kwargs = dict(mpl_kwargs)
             _n_palette = len(xform)
+            # continue the palette past the datasets an earlier call drew
+            # here, as the matplotlib `ax=` path does (a per-dataset
+            # palette mapping/list is not a cycle to continue)
+            _cycle_offset = 0
             if (_plotly_into is not None
                     and not (isinstance(palette, collections.abc.Mapping)
                              or _looks_like_dataset_palettes(palette))):
-                # composing into an existing figure (`ax=<figure>`) or
-                # grid cell (`ax=<cell>`): continue the palette past the
-                # datasets an earlier call drew THERE, as the matplotlib
-                # `ax=` path does (a cell keeps its own count, like a
-                # matplotlib axes of its own; Codex round 3)
-                if _is_plotly_cell(_plotly_into):
-                    _meta = _plotly_into.figure.layout.meta
-                    _meta = _meta if isinstance(_meta, dict) else {}
-                    _plotly_palette_offset = int((_meta.get(
-                        'hyp_cell_datasets_drawn') or {}).get(
-                            str(_plotly_into.index), 0))
-                else:
-                    _meta = getattr(_plotly_into, 'layout', None)
-                    _meta = _meta.meta if _meta is not None else None
-                    _plotly_palette_offset = int(
-                        (_meta or {}).get('hyp_datasets_drawn', 0)
-                        if isinstance(_meta, dict) else 0)
-                _n_palette += _plotly_palette_offset
+                _cycle_offset = _plotly_palette_offset
+                _n_palette += _cycle_offset
             _palette_colors = list(sns_local.color_palette(
                 _seaborn_palette_arg(palette, _n_palette),
-                _n_palette))[_plotly_palette_offset:]
+                _n_palette))[_cycle_offset:]
             # a colour letter in fmt= ('r-', ['g--', 'b:']) colours its
             # dataset, exactly as on matplotlib, where the letter beats the
             # axes' colour cycle (an explicit color=/hue= is the other
@@ -11684,6 +11862,7 @@ def plot(
                 "reduce": reduce_dict,
                 "align": align_dict,
                 "cluster": cluster,
+                "cluster_labels": _figure_cluster_labels,
                 "impute": impute,
             },
             "predict": None if predict is None else {

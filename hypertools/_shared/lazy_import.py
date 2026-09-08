@@ -34,6 +34,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import weakref
 from importlib import metadata
 
 #: import name -> the hypertools extra that provides it (the ONLY mapping
@@ -66,28 +67,48 @@ APT_TIMEOUT_SECONDS = 600
 
 _kaleido_ready = False
 
-#: every `set_autoinstall` setting that is in force, oldest first: a direct
-#: call stays until superseded, a `with` block removes ITS entry on exit, and
-#: the newest entry still in force decides. Process-global (shared by every
-#: thread), guarded by `_AUTO_INSTALL_LOCK`; empty means the environment
-#: decides (`auto_install_enabled`). Bounded: a new setting REPLACES a
-#: superseded one that no block holds open (a direct call's, or a
-#: `_Baseline` left by an exited block), remembering only its value, so a
-#: million direct calls keep one record and no handle outlives its use
-#: (Codex round 7).
+#: the `set_autoinstall` handles that are alive, oldest first, as `_Scope`
+#: records (a weak reference each), plus the BASELINE: the value the newest
+#: direct call left in force (None: the environment decides). The newest
+#: live record decides; a handle that dies without having entered a block
+#: was a direct call, so its weakref callback folds its value into the
+#: baseline and drops its record at once (nothing is retained: Codex round
+#: 7); a handle that is alive but not yet entered is never touched (a
+#: construct-then-enter race across threads: Codex round 8); a block removes
+#: only its own record on exit. Process-global, guarded by
+#: `_AUTO_INSTALL_LOCK`.
 _AUTO_INSTALL_SCOPES = []
-_AUTO_INSTALL_LOCK = threading.Lock()
+_AUTO_INSTALL_LOCK = threading.RLock()
+_AUTO_INSTALL_BASELINE = [None, -1]     # [enabled or None, seq of that call]
+_AUTO_INSTALL_SEQ = [0]
 
 
-class _Baseline:
-    """The value a superseded direct call left in force, kept in a block's
-    place when that block exits (so ``set_autoinstall(False)`` followed by
-    ``with set_autoinstall(True): ...`` is False again afterwards)."""
-    __slots__ = ('enabled',)
-    _entered = False
+class _Scope:
+    """One live `set_autoinstall` handle: its value, its construction order,
+    whether it is inside its `with` block, and a weak reference to it."""
+    __slots__ = ('enabled', 'seq', 'entered', 'finished', 'ref')
 
-    def __init__(self, enabled):
+    def __init__(self, enabled, seq):
         self.enabled = enabled
+        self.seq = seq
+        self.entered = False
+        self.finished = False      # its block has exited: it was never direct
+        self.ref = None
+
+
+def _scope_handle_died(scope):
+    """Weakref callback: the handle of `scope` is gone. Inside a block that
+    cannot happen (the block holds it), so this was a direct call: the
+    newest direct call's value is the baseline."""
+    with _AUTO_INSTALL_LOCK:
+        if scope.finished or scope.entered:
+            return                  # a block's handle, not a direct call
+        if scope.seq > _AUTO_INSTALL_BASELINE[1]:
+            _AUTO_INSTALL_BASELINE[:] = [scope.enabled, scope.seq]
+        for i in range(len(_AUTO_INSTALL_SCOPES) - 1, -1, -1):
+            if _AUTO_INSTALL_SCOPES[i] is scope:
+                del _AUTO_INSTALL_SCOPES[i]
+                break
 
 
 def auto_install_enabled():
@@ -95,8 +116,15 @@ def auto_install_enabled():
     newest `set_autoinstall` still in force set or, if none is, the environment
     variable ``HYPERTOOLS_AUTO_INSTALL`` (on unless it is 0/false/no/off)."""
     with _AUTO_INSTALL_LOCK:
-        if _AUTO_INSTALL_SCOPES:
-            return _AUTO_INSTALL_SCOPES[-1].enabled
+        # the newest CALL decides: a live handle's record, or the baseline a
+        # newer direct call folded in (an older handle kept in a variable
+        # does not outrank a later direct call)
+        top = _AUTO_INSTALL_SCOPES[-1] if _AUTO_INSTALL_SCOPES else None
+        base_enabled, base_seq = _AUTO_INSTALL_BASELINE
+        if top is not None and top.seq > base_seq:
+            return top.enabled
+        if base_enabled is not None:
+            return base_enabled
     return os.environ.get('HYPERTOOLS_AUTO_INSTALL', '1').strip().lower() \
         not in ('0', 'false', 'no', 'off')
 
@@ -201,41 +229,37 @@ class set_autoinstall:
         If `enabled` is not ``True`` or ``False``.
     """
 
-    _entered = False
-
     def __init__(self, enabled=True):
         if not isinstance(enabled, bool):
             raise TypeError(
                 f'set_autoinstall expects True or False, got {enabled!r}')
         self.enabled = enabled
-        self._replaced = None
         with _AUTO_INSTALL_LOCK:
-            top = _AUTO_INSTALL_SCOPES[-1] if _AUTO_INSTALL_SCOPES else None
-            if top is not None and not top._entered:
-                # the newest setting is one no block holds open: this call
-                # supersedes it, so keep only its VALUE (restored if this
-                # object is later used as a block and exits)
-                _AUTO_INSTALL_SCOPES.pop()
-                self._replaced = _Baseline(top.enabled)
-            _AUTO_INSTALL_SCOPES.append(self)
+            _AUTO_INSTALL_SEQ[0] += 1
+            self._scope = _Scope(enabled, _AUTO_INSTALL_SEQ[0])
+            self._scope.ref = weakref.ref(
+                self, lambda _ref, scope=self._scope: _scope_handle_died(scope))
+            _AUTO_INSTALL_SCOPES.append(self._scope)
 
     def __enter__(self):
-        self._entered = True
+        with _AUTO_INSTALL_LOCK:
+            if self._scope.finished:          # re-entered after an exit
+                self._scope.finished = False
+                _AUTO_INSTALL_SCOPES.append(self._scope)
+            self._scope.entered = True
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
         # remove THIS setting wherever it sits: a block that is not the
         # newest (another thread's block opened after it) must not restore
-        # a value from before that other block; what this call superseded
-        # takes its place
+        # a value from before that other block
         with _AUTO_INSTALL_LOCK:
+            self._scope.entered = False
+            self._scope.finished = True
             for i in range(len(_AUTO_INSTALL_SCOPES) - 1, -1, -1):
-                if _AUTO_INSTALL_SCOPES[i] is self:
+                if _AUTO_INSTALL_SCOPES[i] is self._scope:
                     del _AUTO_INSTALL_SCOPES[i]
-                    if self._replaced is not None:
-                        _AUTO_INSTALL_SCOPES.insert(i, self._replaced)
                     break
-        self._entered = False
 
     def __repr__(self):
         return f'set_autoinstall({self.enabled})'

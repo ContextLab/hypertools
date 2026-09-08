@@ -820,11 +820,27 @@ Because 1.1.0 had not been published, they ship in it.
   2-D cells on both backends, instead of raising `Trace type 'scatter' is
   not compatible with subplot type 'scene'` (plotly) or drawing flat
   trajectories inside cubes (matplotlib). `tests/test_plot_review_round6.py`.
-- **`set_autoinstall` keeps one record per superseded direct call.** Every
+- **`set_autoinstall` no longer retains superseded direct calls.** Every
   direct call appended a handle that only a block's exit removed, so a long
-  session of direct calls retained every handle; a new setting now replaces
-  a superseded one that no block holds open, keeping only its value, with
-  the block semantics unchanged. (Codex round 7.)
+  session of direct calls kept every handle alive; a record now holds a weak
+  reference and a new setting collapses a discarded one into its value,
+  never a handle that is alive and may still enter its block (a
+  construct-then-enter race across threads found in Codex round 8), with
+  the block semantics unchanged. (Codex rounds 7 and 8.)
+- **`panels=` no longer re-clusters each panel.** Every cell replays the
+  clustering its probe fitted, so seeded memberships equal the individual
+  call's on both backends in every fit mode and no extra clusterer fits run
+  (the probe's `random_state` was dropped and each panel re-fit with a
+  different seed); `return_model=True` bundles report
+  `models['cluster_labels']`. Plotly composition keeps the palette offset
+  across a `color=` or categorical `hue=` call. Independent panels mixing
+  one- and three-column datasets draw the series as row index against value
+  on the 3-D cell's floor instead of crashing.
+  `tests/test_plot_review_round8.py` (52). (Codex round 8.)
+- The transient-network test guard reads a dropped TLS connection
+  (`SSLError` with an EOF cause) as the host's fault and a certificate
+  failure as a real error; one hosted ubuntu job had failed the Dropbox
+  loader test on such a drop while eleven others loaded the file.
 - **`HypertoolsTrustError` is importable from `hypertools`**, beside
   `HypertoolsOfflineError`, and the API reference documents it and
   `io.synthetic_outlet` under those public names (the source-view backlinks

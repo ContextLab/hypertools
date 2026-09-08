@@ -207,6 +207,7 @@ def test_the_optional_import_scan_sees_a_plain_import():
 def _restore_autoinstall(monkeypatch):
     """Leave the module-level setting as this test found it."""
     monkeypatch.setattr(L, '_AUTO_INSTALL_SCOPES', list(L._AUTO_INSTALL_SCOPES))
+    monkeypatch.setattr(L, '_AUTO_INSTALL_BASELINE', [None, L._AUTO_INSTALL_BASELINE[1]])
     monkeypatch.delenv('HYPERTOOLS_AUTO_INSTALL', raising=False)
 
 
@@ -385,11 +386,53 @@ def test_superseded_direct_calls_are_not_retained(_restore_autoinstall):
         hyp.set_autoinstall(bool(i % 2))
     gc.collect()
     assert ref() is None                                   # not retained
-    assert len(L._AUTO_INSTALL_SCOPES) == 1                # bounded
+    assert len(L._AUTO_INSTALL_SCOPES) == 0                # nothing kept
     assert L.auto_install_enabled() is True                # the last call
     # the value a block supersedes comes back when the block exits
     hyp.set_autoinstall(False)
     with hyp.set_autoinstall(True):
         assert L.auto_install_enabled() is True
     assert L.auto_install_enabled() is False
-    assert len(L._AUTO_INSTALL_SCOPES) == 1
+    assert len(L._AUTO_INSTALL_SCOPES) == 0
+
+
+def test_a_constructed_but_not_yet_entered_context_survives_another_thread(_restore_autoinstall):
+    """Codex round 8: thread A constructs `set_autoinstall(True)` and only
+    then enters it; between the two, thread B constructs and enters
+    `set_autoinstall(False)`. The bounded stack collapsed A's record as a
+    superseded direct call, so B's exit restored the wrong value and A's
+    block was never in force. A live handle is never collapsed."""
+    import threading
+    import hypertools as hyp
+    hyp.set_autoinstall(False)
+    created, b_entered, a_exited = (threading.Event() for _ in range(3))
+    seen = {}
+
+    def a():
+        handle = hyp.set_autoinstall(True)         # constructed ...
+        created.set()
+        seen['a_wait'] = b_entered.wait(10)
+        with handle:                               # ... entered later
+            seen['a_inside_after_b_enter'] = L.auto_install_enabled()
+        a_exited.set()
+
+    def b():
+        seen['b_wait'] = created.wait(10)
+        with hyp.set_autoinstall(False):
+            b_entered.set()
+            seen['b_wait_exit'] = a_exited.wait(10)
+            seen['b_inside_after_a_exit'] = L.auto_install_enabled()
+
+    ta, tb = threading.Thread(target=a), threading.Thread(target=b)
+    ta.start()
+    tb.start()
+    ta.join(15)
+    tb.join(15)
+    assert not ta.is_alive() and not tb.is_alive()
+    # the newest CALL decides (B was constructed after A, so B's False is in
+    # force while both blocks are open); A's exit leaves B's block in force;
+    # B's exit restores the initial direct call
+    assert seen == {'a_wait': True, 'b_wait': True, 'b_wait_exit': True,
+                    'a_inside_after_b_enter': False,
+                    'b_inside_after_a_exit': False}
+    assert L.auto_install_enabled() is False

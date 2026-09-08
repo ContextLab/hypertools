@@ -1036,3 +1036,122 @@ Add a real weakref/collection regression.
   `ax._hyp_palette_offset` (matplotlib, now recorded on hypertools' own axes
   too) use it, so a plain figure, a cell and plotly agree with the single call.
 - Tests: `tests/test_plot_review_round7.py` (32).
+
+## Codex round 8
+
+Red-team review in progress. Results are appended incrementally.
+
+### Verified fixes and initial checks
+
+- Reviewed HEAD `1cad1e63` (runtime fix `14e0965e`). Read the audit and UPDATE claims, release-review CHANGELOG and `git log --oneline master..HEAD`; inspected `git diff 3f4b087d..HEAD --stat`. Pre-existing staged changes: `notes/session_2026-09-05_release-1.1-review.md`, `tests/_netskip.py`, `tests/test_load_sources.py`; left untouched. Scratch/evidence: `/tmp/hypertools-round8/`. No output-file path was supplied with this request, so this authorized notes append is the persistent report.
+- **R7-1 fixed for the reported Delay reproduction:** `MPLBACKEND=Agg MPLCONFIGDIR=/tmp/hypertools-round8/mpl HYPERTOOLS_AUTO_INSTALL=0 .venv/bin/python /tmp/hypertools-round7/delay_minimal.py` prints OK and two `(18, 3)` arrays for both backends and both fit modes (`delay.log`). The requested round-7 and round-6 test modules pass, including actual 3-D artists/traces, independent numerical equivalence, reducer comparisons, 1-/2-column defaults, pipeline expansion and fit counters.
+- **R7-2 fixed for the reported fmt reproduction:** same environment, `... /tmp/hypertools-round7/fmt_minimal.py` prints red then navy on both backends (`fmt.log`). Round-7 tests also pass for empty subplot cells, mixed lettered/unlettered calls, explicit colour/hue and ordinary cycle advancement.
+- Requested combined pytest command, with `PIP_NO_INDEX=1 PIP_CONFIG_FILE=/dev/null`, completed: **65 passed, 2 failed, 15 warnings in 27.61 s** (`pytest.log`). Failures are the intentional real pip-install test blocked by that environment and the installed-Chrome render test; details/limitations will be recorded after inspecting tracebacks. This is not a green whole-suite claim.
+- Source check confirms the export ON branch now asserts `RAISED ImportError` (`tests/test_animation_export.py:603`) and the overlapping-thread test asserts all Event hand-offs and completed joins (`tests/test_lazy_import.py:364–369`); the latter passed in the combined run. Local `tests/AGENTS.md` now correctly names the CI doctest builder.
+
+- **R7-3 fixed for superseded direct handles:** reused `/tmp/hypertools-round7/policy_extra.py` under `.venv/bin/python` (`policy-extra.log`): 100,000 calls, first handle alive **False**, last alive True, retained **1208 bytes**. Python-over-environment inheritance prints the correct value in both directions. The existing overlapping-context regression and weakref test pass; a NEW entry-boundary race is recorded below.
+- **Animated Plotly export on/off verified:** `MPLBACKEND=Agg MPLCONFIGDIR=/tmp/hypertools-round8/mpl PIP_NO_INDEX=1 PIP_CONFIG_FILE=/dev/null .venv/bin/python -m pytest -q -p no:cacheprovider tests/test_animation_export.py -k honours_set_autoinstall`: **2 passed, 31 deselected, 16.24 s** (`export.log`). Real missing-kaleido interpreters; OFF refuses without pip; ON reaches blocked pip; both return public ImportError and leave kaleido absent.
+
+### R8-1 — MAJOR: policy compaction races with context entry and restores installation ON over a direct OFF baseline
+
+- Location: `hypertools/_shared/lazy_import.py:214–223`. A context object's constructor registers it before `__enter__` marks it active. Another thread constructing a context in that interval treats the first object as a superseded direct call, drops its identity and keeps only its enabled value. The first block's exit then cannot remove its setting or restore its prior baseline. The second block restores that expired setting instead.
+- Verified: `MPLBACKEND=Agg MPLCONFIGDIR=/tmp/hypertools-round8/mpl .venv/bin/python /tmp/hypertools-round8/policy_threads.py` (`policy-threads.log`). Start with public `hyp.set_autoinstall(False)`; A constructs a True context, B enters a False context before A enters, A enters/exits, then B exits. Thread Events assert every hand-off and joins assert termination. Output: `INITIAL False {'a_inside_after_b_enter': False, 'b_inside_after_a_exit': False} FINAL True EXPECTED FINAL False`. No private state is changed, no mocking, no pip. A small context factory delays returning the actual public handle to expose the valid scheduling boundary between construction and entry. Fresh nested objects in one thread restore False normally.
+- Suggested fix: synchronize registration/activation and retain enough lifetime information for a constructed handle subsequently entered as a block, without strongly retaining all superseded direct handles. Merely locking `_entered = True` does not recover an already-discarded record. Add a deterministic construction/entry interleaving test starting from a direct OFF baseline.
+
+### R8-2 — MINOR: mixed one-column/three-column independent panels still crash
+
+- Location: `hypertools/plot/plot.py:3579–3593`. One global cell projection is selected and only TWO-column arrays are padded for a 3-D cell; a one-column series is passed through unchanged.
+- Verified: `MPLBACKEND=Agg MPLCONFIGDIR=/tmp/hypertools-round8/mpl HYPERTOOLS_AUTO_INSTALL=0 .venv/bin/python /tmp/hypertools-round8/edges.py` (`edges.log`), case `mixed13`: two `(24, 1)` / `(24, 3)` arrays, `panels=2, panel_fit='independent', reduce=None, show=False`. Matplotlib raises `TypeError: Axes3D.plot() missing 1 required positional argument: 'ys'`; Plotly raises `ValueError: Trace type 'scatter' is not compatible with subplot type 'scene'`. The one-/two-column independent grid succeeds on both. Shared fitting correctly rejects unequal input widths and is not the finding.
+- Suggested fix: use each panel's analyzed dimensionality for its cell, or deliberately convert a one-column series to index/value/zero coordinates in a shared 3-D grid. Preserve the series' index semantics. Extend the mixed-width regression beyond `[2, 3]` to `[1, 3]`; document a uniform-projection limitation if retained. Attribution against the pre-fix source is pending; this is a remaining edge-case gap, not yet claimed newly introduced.
+
+### R8-3 — MINOR: an intervening explicit-colour/categorical-hue Plotly call resets previously consumed palette slots
+
+- Location: `hypertools/plot/plot.py:10572–10574,10701`. `_plotly_palette_offset` starts at zero and reads the existing figure/cell count only inside `if "color" not in mpl_kwargs`. Explicit `color=` and categorical `hue=` skip that read, then write `0 + 0` as the total consumed count.
+- Verified: `MPLBACKEND=Agg MPLCONFIGDIR=/tmp/hypertools-round8/mpl HYPERTOOLS_AUTO_INSTALL=0 .venv/bin/python /tmp/hypertools-round8/composition.py` (`composition.log`). With palette `['navy','gold','green']`, draw an ordinary array, append another with `color='black'` (or categorical hue with two runs), then append an ordinary array. The last colour is **navy `(0,0,128)` on Plotly**, **gold `(255,215,0)` on matplotlib**, for both a plain figure and `hyp.subplots(1,1)` cell. An intervening `fmt='r-'` or continuous hue correctly keeps gold. The first ordinary call consumed one slot; the pinned call should preserve it.
+- Suggested fix: read the existing consumed count independently of colour injection, then add only the new slots taken. Extend `tests/test_plot_review_round7.py:342` beyond a pinned FIRST call (offset zero) to ordinary → pinned → ordinary, for explicit colour and categorical hue, both figure and cell. The current test cannot detect resetting a nonzero offset.
+
+### Attribution and documentation checks
+
+- Archived ONLY `hypertools/` from `c700c85f` under `/tmp/hypertools-round8/before`, then ran the same probes from `/tmp` with `PYTHONPATH=/tmp/hypertools-round8/before` and the repo's `.venv/bin/python`. `policy-threads-before.log` ends `FINAL False EXPECTED FINAL False`: **R8-1 is introduced by 14e0965e**. `edges-before.log` already has both mixed `[1,3]` errors: **R8-2 pre-exists the last fix**, an uncovered remaining gap (do not attribute it to 14e0965e).
+- Existing `docs/_build/html` was checked, not rebuilt. `.venv/bin/python /tmp/hypertools-round8/docs_links.py` (`docs-links.log`) finds BOTH old source-view backlinks still broken, but both NEW public-name stub anchors present. `stat` dates `_modules/hypertools/io/lsl.html` September 6 versus the new stub September 8: this is a mixed/stale build, not proof the committed stub rename fails in a clean build. Source uses the correct public module and directive; `HypertoolsTrustError` is re-exported. Require clean-output backlink validation; do not claim existing backlinks resolve. No full gallery or notebook was rerun.
+- **NIT — CHANGELOG.md:828** says in bold that `set_autoinstall` “keeps one record per superseded direct call”, the behavior the fix removes; following prose correctly says records are replaced. Verified by reading the release-review section and the real 100k-call weakref probe above. Suggested wording: “does not retain superseded direct calls.”
+- **NIT — hypertools/plot/plot.py:5949–5953** still describes each cell as the single-axes projection and says 1-/2-column data always draws 2-D regardless of ndims. It should explicitly refer to ANALYZED width and document the present uniform-grid behavior for mixed widths; the verified Delay expansion and mixed `[2,3]` regression test contradict a raw-width reading. `panel_fit` prose at 6035 promises equivalence to an individual call, which the `[1,3]` crash violates.
+- Export documentation in `docs/optional_dependencies.rst` accurately describes tested ON/OFF worker inheritance and ImportError. Its context lifetime promise is violated by R8-1, rather than being an undocumented unsupported-thread scenario.
+
+### Additional successful probes / limits
+
+- `valid_forecasts.py` (same Agg/autoinstall-off environment) exercises 18 combinations: both backends × shared/independent/reducer grids (`panels=2`) × no grouping/categorical hue/KMeans regrouping, with `predict='Kalman', t=3, truth=` in the documented plotted space. All construct successfully and real role-tagged artists/traces include every expected forecast and truth overlay (`valid-forecasts.log`). Matplotlib splits each truth into a line and markers, hence twice the Plotly truth-trace count. This checks ownership counts/construction, not every forecast number or pixel.
+- `edges.py` also confirms plain reducer-list grids with integer `panels=2`, wide PCA plus hue/cluster, and mixed `[1,2]` independent panels construct on both backends. The initial `truth5` and later four-column-truth exploratory errors are NOT findings: ordinary calls reject them too; `truth` must be in the three-dimensional PLOTTED space here, as the error says. The corrected valid probe above is authoritative.
+- Existing Chrome render fails with `HypertoolsIOError` reporting that installed Chrome closes immediately. The real-install test fails because this audit deliberately sets `PIP_NO_INDEX=1`; neither proves a library regression. No successful new Plotly image export or browser pixel inspection is claimed. Successful export-policy tests exercise missing dependencies, not successful Chrome rendering.
+- Corrections to report line references: the reversed CHANGELOG bold sentence is at **CHANGELOG.md:823**, not 828; the pinned-first-call test relevant to R8-3 is **tests/test_plot_review_round7.py:351–360**, not 342.
+
+### R8-4 — MAJOR: independent/reducer panels recluster the probe data after dropping the caller's random_state
+
+- Location: `hypertools/plot/plot.py:3554–3557,3595–3597` (also the reducer-probe path at 3536). The probe runs `cluster=`, but each draw retains `cluster=` and replaces `random_state` with None. Its plotted clustering is a new unseeded fit instead of the clustering specified by the caller and fitted in the probe/bundled pipeline. Previously an independent/reducer panel used the original seeded call directly.
+- Verified: `MPLBACKEND=Agg MPLCONFIGDIR=/tmp/hypertools-round8/mpl HYPERTOOLS_AUTO_INSTALL=0 LOKY_MAX_CPU_COUNT=2 .venv/bin/python /tmp/hypertools-round8/cluster_artists.py` (`cluster-artists.log`). Two `(24,5)` arrays from RNG seeds 1 and 2; `reduce='PCA', ndims=3, cluster='KMeans', n_clusters=3, random_state=88, antialias=False, fmt='o'`. An individual call draws clusters of **[4,9,11] points**. The first `panels=2, panel_fit='independent'` cell draws **[8,8,8] on matplotlib**, **[5,6,13] on Plotly** in the recorded run. These are actual artist/trace point counts, not just relabelled clusters; unseeded counts may vary per run. The analyzed PCA coordinates are identical (`cluster-groups.log`), so the extra clustering changes membership.
+- Attribution: same script from `/tmp` with `PYTHONPATH=/tmp/hypertools-round8/before` (archived `c700c85f`) prints **[4,9,11] for both the individual call and panel** on BOTH backends (`cluster-artists-before.log`). Introduced by `14e0965e`.
+- Independent real `CountKMeans(KMeans)` probe (`clusters.py`, overrides fit only to increment a counter and then calls sklearn's real fit) reports **6 fits** for two independent panels or two reducer panels, versus **4 before**; ordinary calls remain 2 and shared panels remain 4 (`clusters.log`, `clusters-before.log`). The earlier repeated cluster fits already existed; the additional fits in independent/reducer grids are new. The new `test_no_panel_is_fitted_twice` counts only PCA and cannot catch this.
+- Suggested fix: preserve the fitted clustering and row-to-category ownership from each probe for drawing, or omit clustering from the probe and execute it exactly once during the final draw with the caller's resolved seed/spec, placing THAT fitted state in the bundle. Add real per-panel cluster membership/seed comparisons to individual calls, both backends and reducer grids, plus cluster fit-count coverage. Avoid merely relaxing the seed contract.
+
+### Test review and completion
+
+- `tests/test_plot_review_round7.py` uses real figures, real artist/trace colours and real PCA; its assertions are generally behavioral, not tautological. The important gaps are concrete: `[2,3]` is the only mixed-width test (misses R8-2), the pinned-colour/hue test starts at offset zero and hue is continuous only (misses R8-3), and the no-second-fit test at 241–250 covers only PCA and only matplotlib (misses R8-4). The wide-pipeline test checks numerical equality only for shared mode; broaden independent numerical coverage when modifying this area.
+- Latest `tests/test_lazy_import.py` assertions correctly verify weakref collection and successful event hand-offs. The stack-length assertion in the retention test is tied to implementation, but the weakref assertion independently tests the user-visible lifetime defect; it is not a tautological test. The concurrency test signals only AFTER entry, excluding the construction/entry boundary in R8-1. Add that boundary case rather than discarding the existing overlap test.
+- A third independent concurrency probe, `.venv/bin/python /tmp/hypertools-round8/three_threads.py` with Agg and writable MPLCONFIGDIR, passes: three fresh contexts enter sequentially, then exit B/A/C, with all Event waits and joins asserted; each post-exit check remains False and restores the direct False baseline (`three-threads.log`). Ordinary nested fresh contexts also pass (`policy-threads.log`). The remaining failure is specifically the construction/entry race.
+- Final HEAD remains `1cad1e63caeaf408e12590e41ab108b9e801beec`. `git status --short` shows only this notes append plus the three staged files present at review start. No tracked source/test/docs file edited, staged, committed or deleted; no new repository file left by this review; no other process or outlet stopped. All new scripts/logs are under `/tmp/hypertools-round8/`. Original findings 1–6 and round-6 findings 1–3 were not rerun as standalone audits, per this round's instructions.
+
+### Next steps / verdict
+
+1. Fix R8-1 and R8-4 before merge/release; cover the exact entry interleaving and seeded per-panel cluster membership with real regressions. Fix R8-3's retained offset and R8-2's one-column mixed-grid handling on both backends.
+2. Correct the two documentation nits; extend the identified test gaps. Re-run the affected suites and final hosted checks after those changes. Treat the local blocked pip/Chrome checks as validation limits, not passing gates.
+3. Check BOTH public-name viewcode backlinks in a clean docs output. Reuse the existing full docs/doctest/notebook pipeline evidence as directed; this review did not rebuild the gallery or rerun notebooks. Follow the existing release checklist after fixes and final approvals; no merge/publication performed.
+
+**Round 8 review complete: two major findings, two minor findings, and documentation/test-coverage nits.**
+
+VERDICT: FINDINGS
+
+## Updates by the Claude session after Codex round 8 (2026-09-08) — NOT part of the Codex text above
+
+### UPDATE — R8-1 (construct-then-enter race dropped a live context): FIXED
+- `hypertools/_shared/lazy_import.py`: the scope state is now the LIVE handles
+  (weak references, construction order) plus a BASELINE (the newest direct
+  call's value, with its sequence number). A handle that dies without ever
+  entering a block was a direct call: its weakref callback folds its value
+  into the baseline and removes its record at once; a handle that is alive
+  but not yet entered is never touched; a block removes only its own record
+  on exit and its record is marked finished so its later death is ignored.
+  `auto_install_enabled()` takes whichever is newer by call order: the top
+  live record or the baseline. Verified with the reviewer's
+  `/tmp/hypertools-round8/policy_threads.py` (FINAL False as expected; inside
+  A's later-entered block the value is B's False because the newest CALL
+  decides, per the documented contract), round 7's `policy_extra.py`
+  (retained 1080 bytes after 100k direct calls) and round 6's
+  `thread_export.py` (after both contexts: True).
+- Tests (`tests/test_lazy_import.py`, 18): the exact construct/enter
+  interleaving across threads with every hand-off asserted, plus the earlier
+  overlapping-block, direct-under-block and retention tests (stack empty
+  after discarded direct calls).
+- CHANGELOG nit: the reversed bold sentence now reads "no longer retains
+  superseded direct calls".
+
+### UPDATE — R8-4 (panels recluster without the seed): FIXED
+- `hypertools/plot/plot.py`: the panel probe returns its fitted cluster labels
+  (`_PanelClusterLabels`); every panel replays them (whole for independent /
+  reducer grids, sliced per dataset for shared) with NO clusterer fit in the
+  draw; `return_model=True` bundles carry `models['cluster_labels']`. Fit
+  counts: ordinary 2, shared 2, independent 4, reducers 4 (was 6/6). Seeded
+  memberships equal the individual call's on both backends in every mode.
+
+### UPDATE — R8-3 (pinned call resets the plotly palette offset): FIXED
+- The offset read is hoisted out of the colour-injection branch, so a
+  `color=` / categorical-hue call keeps the prior count (figure and cell).
+
+### UPDATE — R8-2 (mixed one-/three-column independent panels crash): FIXED
+- `_panel_rows_in_3d` maps a 1-column series to (row index, value, 0) in a
+  3-D grid (date index by position), both backends and fit modes.
+
+### UPDATE — docstring nit: FIXED
+- `panels=` prose describes ANALYZED width and the unequal-width rule;
+  `panel_fit='independent'` prose covers seeded clustering.
+- Tests: `tests/test_plot_review_round8.py` (52; 34 fail against the
+  pre-fix plot.py).
