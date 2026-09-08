@@ -215,6 +215,12 @@ def test_normalize_and_manip_reach_the_reducer():
     assert plain.shape == smoothed.shape and not np.allclose(plain, smoothed)
     normalized = get_palette_colors(matrix_palette(data, normalize='across'), 40)
     assert normalized.shape == plain.shape
+    # z-scoring the columns before PCA re-weights them, so the palette
+    # differs from the raw-matrix one and equals a by-hand normalize+PCA
+    assert not np.allclose(normalized, plain, atol=1e-3)
+    by_hand = hyp.reduce(hyp.normalize(data), reduce='PCA', ndims=3, random_state=0)
+    lo, hi = by_hand.min(axis=0), by_hand.max(axis=0)
+    assert np.allclose(normalized, sort_colors((by_hand - lo) / (hi - lo), 'columns'), atol=1e-6)
 
 
 # --- through hyp.plot ----------------------------------------------------------
@@ -301,14 +307,29 @@ def test_palette_reduce_and_stage_kwargs_reach_the_matrix(backend):
     assert not np.allclose(pick(a), pick(b), atol=1e-3)
 
 
-def test_forecast_palette_accepts_a_matrix_and_panels_forward_it():
-    x = _walk(seed=4)
-    fig = hyp.plot(x, predict='Kalman', t=3, forecast_palette=matrix(t=8),
-                   legend=True, show=False)
-    assert fig.axes[0].get_legend() is not None
-    fig = hyp.plot([x, x + 2], panels=True, palette=[matrix(seed=1), matrix(seed=2)],
-                   show=False)
-    assert len(fig.axes) >= 2
+@pytest.mark.parametrize('backend', ['matplotlib', 'plotly'])
+def test_forecast_palette_matrix_colors_match_between_single_and_panel_calls(backend):
+    """A matrix `forecast_palette=` colours the forecasts the same way in a
+    single-axes call and inside `panels=`, on both backends (Codex round
+    11 asked for colour assertions, not an existence check)."""
+    x, y = _walk(seed=4), _walk(seed=5) + 2
+    fp = matrix(t=8)
+    kw = dict(predict='Kalman', t=3, forecast_palette=fp, show=False, backend=backend)
+
+    def forecast_colors(fig):
+        if backend == 'matplotlib':
+            return [to_hex(ln.get_color()) for ax in fig.axes for ln in ax.lines
+                    if getattr(ln, '_hyp_forecast_role', None) == 'static']
+        return [_rgb_triplet(tr.line.color) for tr in fig.data
+                if (tr.meta or {}).get('hyp_forecast_role') == 'static']
+    single = forecast_colors(hyp.plot([x, y], **kw))
+    panels = forecast_colors(hyp.plot([x, y], panels=True, **kw))
+    assert len(single) == 2 and panels == single
+    expected = get_palette_colors(matrix_palette(fp), 2)
+    if backend == 'matplotlib':
+        assert [to_hex(c) for c in expected] == single
+    else:
+        assert [tuple(int(round(v * 255)) for v in c) for c in expected] == single
 
 
 # --- the matrix colormap honours matplotlib's Colormap contract (Codex round 10)
@@ -344,3 +365,68 @@ def test_matrix_colormap_supports_the_inherited_colormap_operations():
     with pytest.raises(ValueError, match='at least two'):
         from hypertools.plot.colors import MatrixColormap
         MatrixColormap('x', np.ones((1, 3)))
+
+
+# --- Codex round 11 ------------------------------------------------------------
+
+def test_matrix_colormap_applies_under_over_and_bad_per_element():
+    """The exact float sampler clipped out-of-range values to the ends
+    (ignoring set_under/set_over) and one NaN sent the whole array through
+    the quantized table, changing the other entries' colors."""
+    cmap = matrix_palette(np.random.default_rng(0).normal(size=(8, 5)))
+    cmap.set_under('red')
+    cmap.set_over('blue')
+    out = cmap(np.array([-0.1, 0.25, 1.1]))
+    assert to_hex(out[0][:3]) == '#ff0000' and to_hex(out[2][:3]) == '#0000ff'
+    clean = cmap(np.array([0.25, 0.75]))
+    with_nan = cmap(np.array([0.25, np.nan, 0.75]))
+    assert np.allclose(with_nan[[0, 2]], clean)              # unchanged neighbours
+    assert np.allclose(with_nan[1], cmap.get_bad())
+    assert np.allclose(cmap(0.25), clean[0])                 # scalar == vector entry
+
+
+def test_interpolated_image_palettes_stay_distinct_above_256_categories(tmp_path):
+    """`sns.blend_palette` sampled a 256-entry table, so 257 categories got
+    256 colors (two categories shared one). Exact interpolation now."""
+    img = np.zeros((10, 10, 3), dtype=np.uint8)
+    img[:, :5] = (200, 30, 30)
+    img[:, 5:] = (30, 30, 200)
+    path = tmp_path / 'two.png'
+    Image.fromarray(img).save(path)
+    from hypertools.plot.colors import interpolate_colors
+    for n in (2, 17, 255, 257, 400):
+        cols = get_palette_colors(f'image:{path}', n)
+        assert len(cols) == n
+        assert len({tuple(np.round(c, 9)) for c in cols}) == n
+    # the continuous short-list path uses the same exact interpolation
+    assert len({tuple(np.round(c, 9)) for c in interpolate_colors([(1, 0, 0), (0, 0, 1)], 300)}) == 300
+    x = _walk(n=300, seed=7)
+    fig = hyp.plot(x, '.', hue=[str(i) for i in range(300)], palette=f'image:{path}',
+                   show=False)
+    # the artists carry the float colours the library assigned (a hex
+    # rendering would quantize a two-anchor gradient to ~170 values)
+    drawn = {tuple(np.round(matplotlib.colors.to_rgb(ln.get_color()), 9))
+             for ln in fig.axes[0].lines}
+    assert len(drawn) == 300
+
+
+@pytest.mark.parametrize('backend', ['matplotlib', 'plotly'])
+def test_polars_forecast_hue_is_partitioned_under_panels(backend):
+    """A polars `forecast_hue` Series failed under panels= on both backends
+    while the equivalent pandas Series and the ordinary call succeeded."""
+    import polars as pl
+    x, y = _walk(seed=4), _walk(seed=5) + 2
+    hue = ['a', 'b']
+    kw = dict(predict='Kalman', t=3, forecast_palette=['red', 'blue'], show=False, backend=backend)
+    fig_pl = hyp.plot([x, y], panels=True, forecast_hue=pl.Series('h', hue), **kw)
+    fig_pd = hyp.plot([x, y], panels=True, forecast_hue=pd.Series(hue), **kw)
+
+    def forecast_colors(fig):
+        if backend == 'matplotlib':
+            return [to_hex(ln.get_color()) for ax in fig.axes for ln in ax.lines
+                    if getattr(ln, '_hyp_forecast_role', None) == 'static']
+        return [_rgb_triplet(tr.line.color) for tr in fig.data
+                if (tr.meta or {}).get('hyp_forecast_role') == 'static']
+    got = forecast_colors(fig_pl)
+    assert got == forecast_colors(fig_pd) and len(got) == 2
+    assert got[0] != got[1]

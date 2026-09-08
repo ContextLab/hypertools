@@ -100,9 +100,10 @@ ALLOWLIST = {
          "decision itself is the datawrangler-based predicate"),
         ("isinstance(legend_colors, (list, tuple, np.ndarray))",
          "a legend color option: one color vs one per legend entry"),
-        ("isinstance(hue, (list, tuple, np.ndarray, pd.Series, pd.Index))",
-         "hue= as a per-observation LABEL vector vs a single value/column "
-         "name; labels are options, not the dataset"),
+        ("isinstance(hue, (list, tuple, np.ndarray))",
+         "forecast_hue= as a per-forecast LABEL vector vs a single value, "
+         "AFTER any series-like (pandas/polars Series, Index) has been "
+         "normalised to an array through the shared predicate"),
         ("isinstance(labels, np.ndarray)",
          "cluster labels (a fitted model's output) unwrapped to a list"),
         ("isinstance(legend, (bool, np.bool_, list, tuple, np.ndarray, "

@@ -85,26 +85,29 @@ def _align_columns_for_stacking(datasets):
     DataFrames must have the same columns' -- while `plot`, `reduce` and
     `align` accept exactly that mix by position (`format_data`). Same rule
     here: when at least one dataset carries no column names and every
-    dataset has the same width, all of them get positional columns; named
-    frames whose labels differ raise a hypertools error that says so
-    (aligning THOSE by position would silently pair unrelated columns).
+    dataset has the same width, all of them get positional column labels,
+    each frame keeping its own index. Lists of named frames are handed
+    over untouched, whatever their labels: the independent manipulators
+    (Smooth, Delay, Resample) never combine features across datasets.
     """
     framed = [is_frame_dataset(d) for d in datasets]
-    if all(framed):
-        labels = {tuple(map(str, d.columns)) for d in datasets}
-        widths = {d.shape[1] for d in datasets}
-        if len(labels) > 1 and len(widths) == 1:
-            raise ValueError(
-                'manip() got DataFrames with different column labels '
-                f'({sorted(labels)}); give every dataset the same columns '
-                '(or pass arrays, which are aligned by position).')
-        return datasets
-    if not any(framed):
-        return datasets
+    if all(framed) or not any(framed):
+        return datasets                    # named frames stay as they are
     widths = {np.shape(d)[1] if np.ndim(d) > 1 else 1 for d in datasets}
     if len(widths) != 1:
         return datasets                    # the funnel reports the widths
-    return [as_dataframe(np.asarray(d)) for d in datasets]
+    out = []
+    for d in datasets:
+        if is_frame_dataset(d):
+            # positional column labels; the frame's INDEX (dates, irregular
+            # sample times) stays with it (Codex round 11: rebuilding the
+            # frame from its values dropped the index and changed Resample)
+            d = d.copy()
+            d.columns = range(d.shape[1])
+            out.append(d)
+        else:
+            out.append(as_dataframe(np.asarray(d)))
+    return out
 
 
 def _validate_one(data, no_observations):

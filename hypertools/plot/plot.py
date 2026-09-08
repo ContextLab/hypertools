@@ -3004,8 +3004,13 @@ def _panel_forecast_labels(hue, n_datasets, n_models):
     per-DATASET list is broadcast over every model's forecast of that
     dataset, a model-major list is taken as is. None for any other shape
     (`plot()` reports it) and for a bare string (`plot()` rejects it)."""
-    if hue is None or isinstance(hue, (str, bytes)) or not isinstance(
-            hue, (list, tuple, np.ndarray, pd.Series, pd.Index)):
+    if hue is None or isinstance(hue, (str, bytes)):
+        return None
+    if is_series_like(hue):
+        # a pandas / polars Series or Index (any series-like datawrangler
+        # recognises) is a label vector like a list (Codex round 11)
+        hue = np.asarray(hue).ravel()
+    if not isinstance(hue, (list, tuple, np.ndarray)):
         return None
     labels = list(hue)
     if len(labels) == n_datasets:
@@ -4653,8 +4658,10 @@ def plot(
         categorical palettes are used as-is.
         A palette string of the form ``'image:<path>'`` extracts colors from
         a LOCAL image file instead (``palette='image:starry_night.jpg'``):
-        six anchor colors, ordered most visually salient first, so a
-        painting's vivid subject leads and its muted background follows.
+        six anchor colors, sorted by value (dark to bright) so the palette
+        reads as a gradient (``palette_sort=`` or ``?sort=`` in the spec
+        picks another order; the most visually salient color is what a
+        per-dataset image entry stands for).
         For a continuous ``hue`` those anchors are blended into a gradient
         exactly as any short color list is. See
         ``hypertools.plot.colors.image_palette`` for the extraction itself

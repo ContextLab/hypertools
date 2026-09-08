@@ -1286,3 +1286,102 @@ Red-team review started 2026-09-08. Findings and verification evidence are appen
 - Codex round 10 hit the usage limit right after this finding (retry 3:46 PM);
   round 11 (scratchpad codex/prompt13.txt, relaunch13.sh at 15:48) continues
   from here.
+
+## Codex round 11
+
+### Initial verification
+
+- Reviewed HEAD `767e327d` on `fix/1.1-release-review`. Read the original audit, UPDATE sections and intervening rounds, release-review CHANGELOG, datatype survey, and `git log --oneline master..HEAD`. Diff since `650808f0`: 45 files. No `-o` path was supplied; this authorized notes append is the persistent report, with scripts/logs in `/tmp/hypertools-round11/`. No gallery or notebooks rerun.
+- Round9 reviewer scripts `extra.py`, `membership_colors.py`, `composed_markers.py` rerun using `MPLBACKEND=Agg MPLCONFIGDIR=/tmp/hypertools-round11/mpl HYPERTOOLS_AUTO_INSTALL=0 PIP_NO_INDEX=1 PIP_CONFIG_FILE=/dev/null PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/Users/jmanning/hypertools .venv/bin/python` and `runpy.run_path`. Log: `round9.log`. Live TLS drop SKIPPED and certificate RAISED SSLError; shared cluster panels draw blue/red for global labels 1/0 on both backends; ordinary -> marker hue -> ordinary ends gold for both figures and cells. Mixed narrow forecast/truth calls construct and report (3,1) forecasts. Numerical comparisons are also covered by the running round9 suite.
+
+### R11-1 — MINOR: MatrixColormap still ignores under/over colors on finite float input
+
+- Location: `hypertools/plot/colors.py:477–500`, especially clipping at line 486. The round10 fix restores integer, reversed, resampled and alpha-array calls (independently exercised), but the custom finite-float sampler clips all values to endpoints instead of applying the inherited under/over colors. Adding a NaN to an otherwise identical vector switches to the parent and changes the colors of its OTHER entries. The UPDATE explicitly claims bad/under/over semantics now work.
+- Verified: `MPLBACKEND=Agg HYPERTOOLS_AUTO_INSTALL=0 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/Users/jmanning/hypertools .venv/bin/python /tmp/hypertools-round11/colormap.py` (`colormap.log`). Real `matrix_palette(default_rng(0).normal(size=(8,5)))`, then `set_under('red'); set_over('blue')`: `c([-.1,1.1])` returns RGB `[0,1,.3338838]` and `[1,.88005071,.26672818]`, whereas `c([-.1,1.1,np.nan])` correctly returns red, blue, transparent bad. Scalar -.1/1.1 likewise ignore the configured extremes.
+- Suggested fix: apply under/over masks in the exact sampler or dispatch out-of-range inputs to the parent. Add finite scalar/vector and NaN-containing-vector equivalence tests after setting distinct extremes. The new Colormap regression only tests masked/NaN bad colors, despite the broader UPDATE claim.
+
+### R11-2 — MAJOR: datatype refactor rejects valid pandas manip lists and strips their labels/dates
+
+- Location: `hypertools/manip/manip.py:74–75,92–106` (`_validate_manip_input` / `_align_columns_for_stacking`). Column alignment is applied to EVERY manipulator, including independent per-dataset Delay/Resample/Smooth. Two named frames with different feature labels are now rejected even though these models do not combine their features. Mixing a named frame with an array unconditionally converts BOTH to arrays and fresh frames, silently deleting the named frame's index and feature names.
+- Verified against the actual before state `650808f0`, archived under `/tmp/hypertools-round11/before` (only package source). Commands: `MPLBACKEND=Agg MPLCONFIGDIR=/tmp/hypertools-round11/mpl HYPERTOOLS_AUTO_INSTALL=0 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=<checkout-or-before> /Users/jmanning/hypertools/.venv/bin/python /tmp/hypertools-round11/compat.py`, run from `/tmp` for before. Logs: `compat-current.log`, `compat-before.log`. Inputs are 12x2 pandas frames indexed by dates from 2020-01-01, with columns a/b versus x/y. BEFORE, `hyp.manip([a,b], model='Delay', dims=2)` and `model='Resample', n_samples=6` succeed and retain each frame's feature labels; NOW both raise `ValueError: manip() got DataFrames with different column labels`. For `[a,a.to_numpy()]`, BEFORE Delay retains the first frame's DatetimeIndex and a_lag*/b_lag* columns; NOW it returns a RangeIndex and 0_lag*/1_lag* columns. The new numpy-mixing ZScore behavior is an improvement over its old rejection, but must not impose shared-feature restrictions on independent transforms.
+- Suggested fix: restrict shared column normalization to models that require stacked shared statistics; preserve each input's metadata for independent transforms. Add regressions against established expected index/column values, including distinct named frames and mixed dated-frame/array lists. Today's polars-versus-pandas tests compare two calls through the SAME changed validator, so both regress identically and pass. The initial Smooth probe used invalid kernel_width=3 with default order=3; its kernel error is a harness issue, not this finding; Delay/Resample already establish it.
+
+### R11-3 — MINOR: polars forecast_hue Series is not partitioned for panels
+
+- Location: `hypertools/plot/plot.py:3007–3009` (`_panel_forecast_labels`); the pandas/numpy-only check is explicitly allowed at `tests/test_datatype_gate.py:111–113` as an option rather than a dataset. It is nevertheless a user label vector, and the ordinary plot already accepts its polars equivalent.
+- Verified: `MPLBACKEND=Agg MPLCONFIGDIR=/tmp/hypertools-round11/mpl HYPERTOOLS_AUTO_INSTALL=0 PIP_NO_INDEX=1 PIP_CONFIG_FILE=/dev/null PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/Users/jmanning/hypertools .venv/bin/python /tmp/hypertools-round11/palettes.py` (`palettes.log`). Two 24x3 datasets, `predict='Kalman', t=3, forecast_hue=pl.Series(['a','b']), forecast_palette=<10x5 matrix>, panels=True, show=False`: BOTH backends raise `ValueError: forecast_hue= ... got 2 value(s) for 1 forecast(s)`. The same Series succeeds without panels; substituting `pd.Series(['a','b'])` succeeds with and without panels on both backends.
+- Suggested fix: normalize label vectors with the shared Series/frame coercion helpers before panel partitioning; narrow this gate exemption so recognized Series cannot bypass partitioning. Add both-backend ordinary/panel color-equivalence checks with polars forecast_hue and model-major forms.
+
+### Verification and test review checkpoint
+
+- Focused command: `MPLBACKEND=Agg MPLCONFIGDIR=/tmp/hypertools-round11/mpl PIP_NO_INDEX=1 PIP_CONFIG_FILE=/dev/null PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/test_plot_review_round9.py tests/test_palette_matrix_and_sort.py tests/test_polars_inputs.py tests/test_polars_inputs_wave1.py tests/test_datatype_gate.py tests/test_plot_review_round7.py tests/test_plot_review_round6.py tests/test_lazy_import.py`: **266 passed, 2 failed, 16 warnings in 44.37 s**, `pytest.log`. Failures are the real tomli install test with pip intentionally blocked and installed Chrome unable to start; neither is a new library defect. All palette, datatype, polars and round9 regressions pass, including real numerical narrow-panel forecasts, fitted-model reuse, truth coordinates, absent-category artist colors, and marker-hue composition.
+- Additional animated-export ON/OFF tests: same environment, `... -m pytest -q -p no:cacheprovider tests/test_animation_export.py -k honours_set_autoinstall`: **2 passed, 31 deselected**, `export.log`. Real missing-kaleido children; OFF refuses installation and ON reaches blocked pip, both return ImportError. This is policy validation, not successful Chrome rendering.
+- `palettes.py` verifies numpy/list/pandas/polars/LazyFrame matrix palettes, RGB arrays in [0,1], mixed matrix/image/name per-dataset palettes, ordinary/panel plots, single-matrix forecast palettes, and image specs with all five sort keys on BOTH backends. Matrix and image sampling returned finite (n,3) arrays for n=1,2,3,9,256,1001. Matrix repeated samples are byte-identical; image extraction showed tiny floating differences, being quantified before interpreting determinism. Per-dataset lists as `forecast_palette` were rejected by the ordinary path on both backends; that option promises a single palette, so this is not a finding.
+- Test review: `test_palette_matrix_and_sort.py::test_forecast_palette_accepts_a_matrix_and_panels_forward_it` only checks a matplotlib legend exists and a different matrix-panel call has two axes; it does not compare forecast or panel colors and omits plotly. `test_normalize_and_manip_reach_the_reducer` asserts only shape for normalize; `test_palette_reduce_and_stage_kwargs_reach_the_matrix` changes reduce/sort but never exercises palette_manip/normalize/align. The matrix-by-hand test shares `sort_colors` with the implementation (separate key tests mitigate that), and per-dataset lead tests do independently inspect actual artists/traces. Keep these tests and add independent numeric/color expectations for the missing combinations.
+- The polars suites perform useful actual numerical/artist/trace equivalence checks, but pandas-reference calls run through the same new code and cannot prove unchanged pandas behavior (R11-2). Direct Manipulator classes cover DataFrame/LazyFrame, not Series or unnamed/named mixing; the mixed ZScore test substitutes an all-named list. The static gate catches its stated AST patterns, but its option exemption permits the actual forecast_hue partition failure (R11-3). Correct gate source reference for that exemption: **tests/test_datatype_gate.py:103–105**, superseding the approximate lines in R11-3 above.
+
+- **R11-2 numeric impact confirmed:** `numeric_compat.py`, run under the same current/before environments (`numeric-current.log`, `numeric-before.log`), resamples a pandas column `[0,1,4,9,16]` at irregular numeric indices `[0,1,2,8,10]` beside its numpy array with `hyp.manip([frame,array], model='Resample', n_samples=7)`. BEFORE, the first result equals the individual-frame result, with indices spanning 0..10 and values `[0,3.11004785,5.50098779,6.50538278,7.50645506,9.67283951,16]`. NOW the first result spans 0..4 and values `[0,.51851852,1.72222222,4,7.11728395,11.08641975,16]`. This is silent numerical corruption of index-based interpolation, not just cosmetic metadata loss. A corrected `compat.py` with valid Smooth kernel_width=5 confirms Smooth also formerly accepted distinct column names and retained dates; current rejects the named pair and strips dates from the mixed pair (`compat-*-valid.log`).
+- Fresh three-thread out-of-order exits, the construct-before-enter interleaving, and nested fresh context objects all restore the OFF baseline correctly. Command: same Agg/pip-blocked environment, `runpy.run_path` over `/tmp/hypertools-round8/{three_threads,policy_threads}.py`, plus nested contexts (`threads.log`). Every Event hand-off and thread termination is asserted; no private policy state mutated.
+- Additional datatype comparisons in `datatypes.py` cover frame, LazyFrame, Series and mixed-list forms through reduce/align/cluster/normalize/manip/predict/impute/analyze/describe/stack/damage/apply_model/Pipeline and all five Manipulator classes. All successful outputs match current pandas equivalents. Both types reject one-feature describe and unnamed/named stack correspondence (documented). Some BOTH-type unsupported cases remain: direct ZScore/Normalize on Series, Resample on Series/array lists, and a shared-statistics Pipeline with named frames mixed with an unnamed array; these are not established new regressions. `text_windows` rejects BOTH pandas and polars Series, consistent with its explicit str/list/tuple contract, so no new datatype finding for it. Frame/LazyFrame/Series impute backtest truth/mask paths construct and their returned score tables compare equal. Existing save/load tests passed for CSV/TSV/JSON/parquet/NPY/NPZ/MAT/pickle and frames/LazyFrames; no notebook or external-data tests run.
+
+### R11-4 — MINOR: interpolated image palettes silently repeat colors above 256 categories
+
+- Location: `hypertools/plot/colors.py:892–893`; the uniqueness promise is in `_image_palette_list` at 859–863 and `CHANGELOG.md:164–167`. `sns.blend_palette(colors, n_colors)` samples a 256-entry lookup table, so asking for more colors only repeats entries. This is an uncovered existing defect, also reproduced against `650808f0`, not introduced by the new sort implementation.
+- Verified: `MPLBACKEND=Agg MPLCONFIGDIR=/tmp/hypertools-round11/mpl HYPERTOOLS_AUTO_INSTALL=0 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/Users/jmanning/hypertools .venv/bin/python /tmp/hypertools-round11/image_counts.py` (`image-counts.log`). A real saved 10x10 red/blue PNG yields requested/unique counts 2/2, 17/17, 255/255, **257/256**, **1001/256**. Same before-source invocation from `/tmp` produces the same count defect (`image-counts-before.log`). Public plot confirmation: same command prefix with `image_plot_counts.py`, one 257x3 dataset and 257 categorical hue labels, `fmt='o', antialias=False, show=False, palette='image:<two-tone.png>'`: BOTH backends draw **257 categories in only 256 unique colors** (`image-plot-counts.log`). This contradicts the explicit claim that interpolation ensures categories do not share a color.
+- Suggested fix: interpolate the RGB anchors directly at the requested positions, or construct a lookup table with adequate resolution, as the matrix sampler already does. Add counts above 256 with fewer image anchors than categories and inspect actual colors on both backends; consider renderer quantization when stating absolute uniqueness guarantees.
+
+### Documentation nit and final verification
+
+- **NIT:** `hypertools/plot/plot.py:4654–4658` still describes a plot image palette as most-salient-first; its newer paragraph at 4734–4738 and `docs/api.rst:145–149` correctly say plot palettes default to value order, reserving salience for extraction/per-dataset leads. `hypertools/plot/colors.py:861,871` has the same stale internal prose. Verified by source read and the image-sort tests/public probes above. Suggested fix: update the older paragraphs to distinguish extraction order from default plot order. CHANGELOG's general datatype and unlimited unique-color claims also need qualification/correction with R11-2/R11-3/R11-4.
+- **Line correction for R11-1:** exact finite-input clip is `hypertools/plot/colors.py:478`, in the custom sampler at 469–489; the earlier approximate line 486 referred to output assembly.
+- `combinations.py` (same Agg/autoinstall-off/pip-blocked command prefix as `palettes.py`, `combinations.log`) compares actual single/panel forecast colors and styles for matrix forecast palettes, one/two models, shared/independent fits, BOTH backends: all match. Top-level polars Series plots match pandas for ordinary, hue+labels, truth, and panels. Independent `hyp.reduce` + numpy scaling/lexsort gives the actual same dataset colors as `palette_manip`, `palette_normalize`, and `palette_align` on both backends. The 18 round8 panel/predict/truth probes (shared/independent/integer reducer-list grids × ungrouped/hue/cluster × both backends) all retain expected role counts. No additional numeric or ownership defect in these cases.
+- Image determinism quantified: current repeated extraction differs by at most **2.22e-16** in the tested counts, with stable ordering; no material determinism finding. Matrix repeated outputs were byte-identical. Matrix palettes with 1/2 columns and 2/3 observations construct; requested sampling counts through 1001 stay finite. The old-source noisy-image extraction occasionally changes tied-anchor ordering; do not attribute that to the new sort.
+- Backtest harness correction: `datatypes.py` initially iterated the score DataFrame's columns and therefore did not actually compare its numeric entries. A separate real run (`backtest.log`) now uses `pd.testing.assert_frame_equal` on the ENTIRE returned score table for frame, LazyFrame, Series, AND mixed lists; all pass exactly, including scored-cell counts (1 for single data, 2 for mixed). This supersedes the initial score-comparison claim.
+- Combined focused pytest totals: **268 passed, 2 environment-limited failures** across the main command and export-policy selection. No full-suite, gallery, notebook, successful Chrome rendering, or hosted CI rerun is claimed. Existing Claude UPDATE full-pipeline results remain that session's evidence; this review verifies the focused fixes independently and does not treat its green results as proof of uncovered combinations.
+
+### Next steps / verdict
+
+1. Fix R11-2 before merge/release: preserve independent transform metadata and irregular-index interpolation; cover distinct named frames and mixed arrays with explicit expected dates/labels/numbers.
+2. Fix R11-1/R11-3/R11-4, strengthen the identified tests (including both backends and public color assertions), and reconcile the stale palette prose and static gate exemption.
+3. Run affected tests and the established final CI/docs pipeline on the resulting exact head; obtain successful Chrome/export and real-install validation in the unrestricted environment. No merge, release or publication performed.
+
+Final reviewed HEAD: `767e327d6d1b308a4757700805f3acbcb185cae5`. Only the authorized notes file was modified; all scratch scripts/source archives/logs are under `/tmp`. No tracked implementation/test/doc file was edited, staged, committed or deleted; no other kernel or LSL outlet was stopped. Findings: **one major, three minor, one documentation nit**.
+
+VERDICT: FINDINGS
+
+## Updates by the Claude session after Codex round 11 (2026-09-08) — NOT part of the Codex text above
+
+### UPDATE — R11-2 (manip mixed-list alignment regressed named frames and indices): FIXED
+- `hypertools/manip/manip.py::_align_columns_for_stacking`: lists of named
+  frames are handed over untouched (no ValueError; the independent
+  manipulators never combine features); for the unnamed-array + frame mix
+  only the COLUMN labels are made positional and every frame keeps its own
+  index (a rebuilt frame had dropped dated / irregular indices, changing
+  Resample). Tests: distinct named frames through Smooth keep their labels
+  and equal the single-frame call; an irregular-index frame beside an array
+  resamples exactly as alone; a dated index survives.
+
+### UPDATE — R11-1 (MatrixColormap under/over/NaN): FIXED
+- The exact sampler applies `set_under` / `set_over` / bad per ELEMENT and
+  no longer routes a whole array through the quantized table because of one
+  NaN; scalar and vector entries agree. Test added.
+
+### UPDATE — R11-4 (image interpolation capped at 256): FIXED
+- `colors.interpolate_colors` (exact per-channel interpolation) replaces
+  `sns.blend_palette` in `_image_palette_list` and the continuous
+  short-list path; 257 and 400 categories get distinct colours (float
+  precision; a hex rendering quantizes). Test added, plus a 300-category
+  figure.
+
+### UPDATE — R11-3 (polars forecast_hue under panels): FIXED
+- `_panel_forecast_labels` normalises any series-like through the shared
+  predicate before partitioning; the gate exemption is narrowed to the
+  post-normalisation list/array check. Test on both backends: polars and
+  pandas Series give identical forecast colours under panels.
+
+### UPDATE — prose nit and test weaknesses: FIXED
+- plot() docstring and `_image_palette_list` docstring now describe the
+  value-order default; `test_forecast_palette_matrix_colors_match_between_single_and_panel_calls`
+  compares actual forecast colours on both backends against the resampled
+  matrix palette; the normalize test compares against a by-hand
+  normalize + PCA.

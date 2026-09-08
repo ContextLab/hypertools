@@ -890,6 +890,15 @@ Because 1.1.0 had not been published, they ship in it.
   now vetoes a TLS certificate failure carried inside a requests
   `SSLError` (which inherits from `ConnectionError`).
   `tests/test_plot_review_round9.py` (57). (Codex round 9.)
+- **Palette and coercion follow-ups (Codex rounds 10 and 11).** The
+  matrix colormap honours every inherited Colormap operation (integer
+  sampling, `resampled()`, `reversed()`, `set_under`/`set_over`, bad and
+  NaN entries per element); image palettes interpolate exactly at any
+  count, so more than 256 categories still get distinct colours; a polars
+  `forecast_hue` Series is partitioned under `panels=` like a pandas one;
+  and `manip` lists mixing an unnamed array with named frames keep every
+  frame's index (dated or irregular) while lists of named frames pass
+  through untouched.
 - **`HypertoolsTrustError` is importable from `hypertools`**, beside
   `HypertoolsOfflineError`, and the API reference documents it and
   `io.synthetic_outlet` under those public names (the source-view backlinks

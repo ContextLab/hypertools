@@ -469,21 +469,33 @@ class MatrixColormap(LinearSegmentedColormap):
 
     def __call__(self, X, alpha=None, bytes=False):
         x = np.asarray(X)
-        if np.ma.isMaskedArray(X) or not np.issubdtype(x.dtype, np.floating) \
-                or not np.isfinite(x).all():
-            # integers index the lookup table; masked / NaN values take the
+        if np.ma.isMaskedArray(X) or not np.issubdtype(x.dtype, np.floating):
+            # integers index the lookup table; masked entries take the
             # 'bad' color: the parent's rules, unchanged
             return super().__call__(X, alpha=alpha, bytes=bytes)
         grid = np.linspace(0.0, 1.0, len(self.anchors))
-        flat = np.clip(x.astype(float).ravel(), 0.0, 1.0)
-        rgb = np.column_stack([np.interp(flat, grid, self.anchors[:, k])
+        flat = x.astype(float).ravel()
+        finite = np.isfinite(flat)
+        inside = np.clip(np.where(finite, flat, 0.0), 0.0, 1.0)
+        rgb = np.column_stack([np.interp(inside, grid, self.anchors[:, k])
                                for k in range(3)])
         if alpha is None:
             a = np.ones((len(flat), 1))
         else:
             a = np.broadcast_to(np.clip(np.asarray(alpha, dtype=float), 0, 1),
                                 x.shape).reshape(-1, 1)
-        out = np.hstack([rgb, a]).reshape(x.shape + (4,))
+        out = np.hstack([rgb, a])
+        # the parent's range rules, applied per ELEMENT (Codex round 11:
+        # clipping ignored set_under/set_over, and one NaN sent the whole
+        # array through the quantized table)
+        under, over, bad = finite & (flat < 0.0), finite & (flat > 1.0), ~finite
+        if under.any():
+            out[under, :3] = np.asarray(self.get_under())[:3]
+        if over.any():
+            out[over, :3] = np.asarray(self.get_over())[:3]
+        if bad.any():
+            out[bad] = np.asarray(self.get_bad())
+        out = out.reshape(x.shape + (4,))
         if bytes:
             out = (out * 255).astype(np.uint8)
         return tuple(out) if x.ndim == 0 else out
@@ -839,6 +851,23 @@ def _continuous_palette(palette, n_colors, sns):
     return _get_palette(palette, n_colors, sns, continuous=True)
 
 
+def interpolate_colors(anchors, n_colors):
+    """``n_colors`` colors spaced evenly along the ``anchors`` sequence, by
+    exact linear interpolation per channel. seaborn's ``blend_palette``
+    samples a 256-entry table, so above 256 colors it REPEATS entries; this
+    keeps every color distinct at any count (Codex round 11)."""
+    a = np.asarray([tuple(c)[:3] for c in anchors], dtype=float)
+    n_colors = int(n_colors)
+    if len(a) == 0 or n_colors <= 0:
+        return []
+    if len(a) == 1:
+        return [tuple(a[0])] * n_colors
+    grid = np.linspace(0.0, 1.0, len(a))
+    xs = np.linspace(0.0, 1.0, n_colors)
+    rows = np.column_stack([np.interp(xs, grid, a[:, k]) for k in range(3)])
+    return [tuple(float(v) for v in row) for row in rows]
+
+
 def _image_palette_list(source, n_colors, sns, continuous):
     """Colors for a `palette='image:<path>'` string, as a list `_get_palette`
     can then handle exactly like any other color list.
@@ -856,9 +885,10 @@ def _image_palette_list(source, n_colors, sns, continuous):
     two-tone image, nine groups). Unlike a user-supplied short list -- which
     raises, because the user can simply pass more colors -- a caller cannot
     add colors to an image, so the anchors are interpolated up to `n_colors`
-    with the same ``blend_palette`` semantics the continuous path already
-    uses (F02-006/F24-017). Interpolating keeps every category a DIFFERENT
-    color and leaves the most salient anchor first; cycling the anchors
+    exactly as the continuous path does (`interpolate_colors`;
+    F02-006/F24-017). Interpolating keeps every category a DIFFERENT color
+    at any count, in the anchors' order (by value unless the spec asks
+    otherwise); cycling the anchors
     would silently give two categories the same color, which is the
     ambiguity the short-list error exists to prevent. A single-color image
     is the one case interpolation cannot serve, and it raises.
@@ -889,8 +919,7 @@ def _image_palette_list(source, n_colors, sns, continuous):
             f"{n_colors} are required (one per category/component); that "
             "image has a single dominant color, so pass a more colorful "
             "image, an explicit list of colors, or a palette name")
-    return [tuple(np.asarray(c)[:3])
-            for c in sns.blend_palette(colors, n_colors)]
+    return interpolate_colors(colors, n_colors)
 
 
 def _get_palette(palette, n_colors, sns, continuous=False):
@@ -967,8 +996,7 @@ def _get_palette(palette, n_colors, sns, continuous=False):
             # gradient (seaborn blend_palette semantics)
             if len(colors) == 1:
                 return [colors[0]] * n_colors
-            return [tuple(np.asarray(c)[:3])
-                    for c in sns.blend_palette(colors, n_colors)]
+            return interpolate_colors(colors, n_colors)
         raise ValueError(
             f"palette= supplies {len(colors)} color(s) but {n_colors} are "
             "required (one per category/component); pass at least "

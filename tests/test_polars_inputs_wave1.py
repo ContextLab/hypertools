@@ -359,7 +359,6 @@ def test_manip_aligns_an_unnamed_array_with_named_frames_by_position():
     import numpy as np
     import pandas as pd
     import polars as pl
-    import pytest
     import hypertools as hyp
     arr = np.random.RandomState(0).rand(20, 3)
     pdf = pd.DataFrame(np.random.RandomState(1).rand(20, 3), columns=list('abc'))
@@ -368,6 +367,31 @@ def test_manip_aligns_an_unnamed_array_with_named_frames_by_position():
     assert len(out) == 3
     for got, want in zip(out, ref):
         assert np.allclose(np.asarray(got), np.asarray(want))
-    # named frames whose labels differ are refused with a hypertools message
-    with pytest.raises(ValueError, match='different column labels'):
-        hyp.manip([pdf, pdf.rename(columns={'c': 'z'})], model='ZScore')
+    # named frames are handed over untouched (see the mixed-list test below)
+
+
+def test_manip_keeps_named_frames_and_indices_in_mixed_lists():
+    """Codex round 11: the first mixed-list rule rejected two named frames
+    with different labels (the independent manipulators never combine
+    features) and rebuilt frames from their values, dropping a dated or
+    irregular index so Resample interpolated at the wrong positions."""
+    import numpy as np
+    import pandas as pd
+    import hypertools as hyp
+    a = pd.DataFrame(np.random.RandomState(0).rand(30, 2), columns=['a', 'b'])
+    b = pd.DataFrame(np.random.RandomState(1).rand(30, 2), columns=['x', 'y'])
+    out = hyp.manip([a, b], model='Smooth')
+    assert [list(o.columns) for o in out] == [['a', 'b'], ['x', 'y']]
+    single = hyp.manip(a, model='Smooth')
+    assert np.allclose(out[0].to_numpy(), single.to_numpy())
+    # an irregular index survives beside an array, and the numbers match the
+    # single-frame call exactly
+    frame = pd.DataFrame({'v': [0.0, 1.0, 4.0, 9.0, 16.0]}, index=[0, 1, 2, 8, 10])
+    arr = np.arange(5.0).reshape(-1, 1)
+    mixed = hyp.manip([frame, arr], model='Resample', n_samples=7)
+    alone = hyp.manip(frame, model='Resample', n_samples=7)
+    assert np.allclose(mixed[0].to_numpy(), alone.to_numpy())
+    assert list(mixed[0].index) == list(alone.index)
+    dated = pd.DataFrame({'v': np.arange(30.0)}, index=pd.date_range('2024-01-01', periods=30))
+    mixed = hyp.manip([dated, np.arange(30.0).reshape(-1, 1)], model='Smooth')
+    assert list(mixed[0].index) == list(dated.index)
