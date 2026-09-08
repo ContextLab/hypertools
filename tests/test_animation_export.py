@@ -472,3 +472,139 @@ def test_hyper_animation_save_refuses_unknown_keywords(tmp_path):
         anim.save(tmp_path / 'x.gif', bitrate=1800)
     assert not (tmp_path / 'x.gif').exists()
     plt.close('all')
+
+
+# ------------------------------------------- the install policy crosses the
+# process boundary (release audit 2026-09-07, High: `hyp.set_autoinstall(False)`
+# lived in the parent only; the export worker, a fresh interpreter, still ran
+# pip). The worker provisions kaleido/Chrome itself, so the parent hands it the
+# effective setting (lazy_import.subprocess_env).
+
+def _interpreter_without(tmp_path, absent):
+    """A REAL throwaway interpreter with every package of this one EXCEPT
+    those whose site-packages entry starts with `absent` -- a venv whose
+    site-packages links to each entry of ours (the release audit's
+    reproduction). Nothing is installed; nothing is faked: `import kaleido`
+    genuinely fails there. Returns the interpreter path, or skips when the
+    platform cannot link the entries."""
+    import sysconfig
+    venv = tmp_path / 'noenv'
+    subprocess.run([sys.executable, '-m', 'venv', '--without-pip', str(venv)],
+                   check=True, capture_output=True, timeout=300)
+    py = venv / ('Scripts/python.exe' if os.name == 'nt' else 'bin/python')
+    site = subprocess.run(
+        [str(py), '-c', "import sysconfig; print(sysconfig.get_paths()['purelib'])"],
+        capture_output=True, text=True, check=True, timeout=120).stdout.strip()
+    os.makedirs(site, exist_ok=True)
+    sources = {sysconfig.get_paths()['purelib'], sysconfig.get_paths()['platlib']}
+    for src_dir in sorted(sources):
+        for name in sorted(os.listdir(src_dir)):
+            if name.lower().startswith(absent.lower()):
+                continue
+            src, dst = os.path.join(src_dir, name), os.path.join(site, name)
+            if os.path.lexists(dst):
+                continue
+            try:
+                os.symlink(src, dst, target_is_directory=os.path.isdir(src))
+            except OSError as e:                    # Windows without symlink rights
+                if os.path.isdir(src) and os.name == 'nt':
+                    import _winapi
+                    _winapi.CreateJunction(src, dst)
+                elif not os.path.isdir(src):
+                    shutil.copy2(src, dst)
+                else:
+                    pytest.skip(f'cannot link site-packages entries here: {e}')
+    check = subprocess.run(
+        [str(py), '-c',
+         'import importlib.util, sys; '
+         'import plotly, hypertools; '
+         f'print(importlib.util.find_spec({absent!r}) is None, '
+         'hypertools.__file__)'],
+        capture_output=True, text=True, timeout=300)
+    assert check.returncode == 0, check.stderr[-1500:]
+    absent_there, hypertools_there = check.stdout.split()
+    assert absent_there == 'True', f'{absent} is still importable in the throwaway interpreter'
+    # the throwaway interpreter runs THIS checkout's hypertools, not another copy
+    assert os.path.realpath(os.path.dirname(hypertools_there)) == \
+        os.path.realpath(os.path.dirname(hyp.__file__))
+    return py
+
+
+_POLICY_DRIVER = '''
+import importlib.util, os, sys
+import numpy as np
+import hypertools as hyp
+from hypertools._shared.lazy_import import auto_install_enabled
+mode, out = sys.argv[1], sys.argv[2]
+assert importlib.util.find_spec('kaleido') is None
+if mode == 'off':                        # Python False, variable unset
+    os.environ.pop('HYPERTOOLS_AUTO_INSTALL', None)
+    hyp.set_autoinstall(False)
+else:                                    # Python True over the variable's 0
+    os.environ['HYPERTOOLS_AUTO_INSTALL'] = '0'
+    hyp.set_autoinstall(True)
+print('parent', auto_install_enabled(), flush=True)
+try:
+    hyp.plot(np.random.default_rng(0).normal(size=(8, 3)), backend='plotly',
+             animate=True, duration=0.3, frame_rate=10, show=False, save_path=out)
+except Exception as e:
+    print('RAISED', type(e).__name__, flush=True)
+    print(str(e), flush=True)
+else:
+    print('EXPORTED', flush=True)
+'''
+
+
+def _run_policy_driver(py, tmp_path, mode):
+    driver = tmp_path / 'driver.py'
+    driver.write_text(_POLICY_DRIVER, encoding='utf-8')
+    out_gif = tmp_path / f'{mode}.gif'
+    # pip cannot reach an index or a config file: if it runs, it fails, and
+    # nothing is ever installed into the throwaway interpreter
+    env = dict(os.environ, PIP_NO_INDEX='1', PIP_CONFIG_FILE=os.devnull,
+               PIP_DISABLE_PIP_VERSION_CHECK='1', MPLBACKEND='Agg')
+    res = subprocess.run([str(py), str(driver), mode, str(out_gif)], cwd=tmp_path,
+                         env=env, capture_output=True, text=True, timeout=900)
+    assert res.returncode == 0, res.stderr[-2000:]
+    assert not out_gif.exists()
+    return res.stdout + res.stderr
+
+
+def test_plotly_animation_export_honours_set_autoinstall_off_in_the_worker(tmp_path):
+    """`hyp.set_autoinstall(False)` in the parent, kaleido genuinely absent:
+    the export fails with the policy error naming the manual command, and
+    the worker never runs pip (no install notice, no pip failure text), so
+    kaleido stays absent."""
+    py = _interpreter_without(tmp_path, 'kaleido')
+    text = _run_policy_driver(py, tmp_path, 'off')
+    assert 'parent False' in text
+    assert 'RAISED' in text and 'EXPORTED' not in text
+    assert 'kaleido is not installed' in text
+    assert 'pip install "hypertools[interactive]"' in text
+    assert 'automatic installation is off' in text
+    assert 'set_autoinstall(True)' in text
+    for pip_ran in ('hypertools: installing', 'automatically failed',
+                    'CalledProcessError', "'pip', 'install'", 'Could not find a version'):
+        assert pip_ran not in text, pip_ran
+    still = subprocess.run(
+        [str(py), '-c', "import importlib.util; print(importlib.util.find_spec('kaleido') is None)"],
+        capture_output=True, text=True, check=True, timeout=120)
+    assert still.stdout.strip() == 'True'
+
+
+def test_plotly_animation_export_honours_set_autoinstall_on_over_the_environment(tmp_path):
+    """The other direction: `hyp.set_autoinstall(True)` in the parent beats
+    HYPERTOOLS_AUTO_INSTALL=0 in its environment, so the worker DOES reach
+    pip (which, cut off from any index here, fails -- the error is the
+    install-failure one, not the policy one) and nothing is installed."""
+    py = _interpreter_without(tmp_path, 'kaleido')
+    text = _run_policy_driver(py, tmp_path, 'on')
+    assert 'parent True' in text
+    assert 'RAISED' in text and 'EXPORTED' not in text
+    assert 'automatically failed' in text
+    assert 'pip install "hypertools[interactive]"' in text
+    assert 'automatic installation is off' not in text
+    still = subprocess.run(
+        [str(py), '-c', "import importlib.util; print(importlib.util.find_spec('kaleido') is None)"],
+        capture_output=True, text=True, check=True, timeout=120)
+    assert still.stdout.strip() == 'True'

@@ -25,6 +25,21 @@ def _stack_equal_shape(datasets, fname):
     arrays = [np.asarray(d) for d in datasets]
     if len(arrays) == 0:
         raise ValueError(f'{fname} requires at least one dataset; got an empty list.')
+    for i, a in enumerate(arrays):
+        if a.ndim != 2:
+            raise ValueError(
+                f'{fname} requires 2-D datasets of shape (n_observations, '
+                f'n_features); dataset {i} has shape {a.shape}. Reshape a '
+                '1-D series to a single column (x[:, None]) first.')
+        if not np.issubdtype(a.dtype, np.number):
+            raise ValueError(
+                f'{fname} requires numeric datasets; dataset {i} has dtype '
+                f'{a.dtype}.')
+        if not np.all(np.isfinite(a)):
+            raise ValueError(
+                f'{fname} requires finite values; dataset {i} has '
+                f'{int((~np.isfinite(a)).sum())} NaN/inf entries. Impute or '
+                'drop them (e.g. hyp.impute) before scoring.')
     shapes = {a.shape for a in arrays}
     if len(shapes) > 1:
         raise ValueError(
@@ -50,6 +65,14 @@ def dispersion(trajectories):
     centroid = stack.mean(axis=0, keepdims=True)
     spread = np.linalg.norm(stack - centroid, axis=2).mean()
     scale = np.linalg.norm(stack - stack.mean(axis=(0, 1)), axis=2).mean()
+    if scale == 0:
+        # every observation of every dataset sits at one point: the cloud
+        # has no scale to divide by (the example helper returned NaN with a
+        # RuntimeWarning here; release review 2026-09-07)
+        raise ValueError(
+            "alignment_score(metric='dispersion') is undefined when every "
+            'dataset is constant (all observations at one point): the cloud '
+            'has no scale to normalize by.')
     return spread / scale
 
 
@@ -133,9 +156,12 @@ def alignment_score(datasets, aligned=None, metric='dispersion'):
     Raises
     ------
     ValueError
-        If `datasets` (or `aligned`) is empty, if the datasets in either
-        list do not all share the same shape (ragged input), or if
-        `metric` is not one of the supported names.
+        If `datasets` (or `aligned`) is empty, if any dataset is not a 2-D
+        numeric array of finite values, if the datasets in either list do
+        not all share the same shape (ragged input), if `metric` is not one
+        of the supported names, or if the input is degenerate for the
+        metric (every dataset constant for `'dispersion'`; no non-constant
+        feature to correlate for `'isc'`).
     """
     if metric not in _METRICS:
         raise ValueError(

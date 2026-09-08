@@ -252,7 +252,8 @@ and reaches flat `hyp.predict` callers.
   Per-panel axis labels come from DataFrame columns as in the single-axes
   call. On plotly the panels are `make_subplots` scenes and
   `return_model=True` returns the same bundle as matplotlib, which adds
-  `axes`, `panels` and `panel_models` (GH #285).
+  `axes`, `panels`, `panel_models` and, for a shared fit, the one fitted
+  `pipeline` (GH #285).
 - **Title styling on every frame.** `title_kwargs=dict(size=, weight=,
   family=, color=, y=)` is applied by hypertools' own title updater,
   including per-segment `title=` lists; `title_color=` takes one colour per
@@ -751,6 +752,48 @@ Because 1.1.0 had not been published, they ship in it.
   install cell, from the 1.0.0 run that executed it; the executor now clears
   a skipped install cell's outputs, and a gate forbids any published install
   cell from carrying output.
+- **`hyp.load(<built-in>, offline=True)` never downloads.** The hosted
+  example datasets (`'spiral'`, `'weights'`, the `*_model` pipelines, ...)
+  bypassed `offline`: a cache miss downloaded, and a cached file failing its
+  SHA-256 pin was deleted and re-downloaded. Offline now serves only a
+  hash-valid copy from `~/hypertools_data` and raises `HypertoolsOfflineError`
+  naming the file for a missing or corrupt one, leaving the file in place.
+  Also fixed the `hypertools.load` docstring example that failed under
+  Sphinx's doctest builder (`NameError: hypertools`), and the docs-clean CI
+  job now runs that builder (`HYPERTOOLS_DOCS_PLOT_GALLERY=0` turns the
+  gallery off as a real boolean). (Release audit 2026-09-07, findings 1
+  and 5.)
+- **`hyp.set_autoinstall(False)` reaches the subprocess that renders a
+  plotly animation's frames for GIF/PNG/video export.** The parent passes
+  its effective setting as `HYPERTOOLS_AUTO_INSTALL` to the worker
+  (`lazy_import.subprocess_env`), so with installation off a missing kaleido
+  raises the `ImportError` naming the manual command and no pip runs in the
+  worker; it previously started a fresh interpreter that installed anyway.
+  Tested in a real interpreter without kaleido. (Release audit 2026-09-07,
+  finding 2.)
+- **`alignment_score` rejects degenerate input with a clear error.** A
+  1-D series, a non-numeric array, or NaN/inf values raise `ValueError`
+  naming the dataset (they hit numpy's own shape errors or returned a NaN
+  score), and `metric='dispersion'` on all-constant datasets raises like
+  `'isc'` already did instead of returning NaN with a RuntimeWarning.
+- `docs/doc_requirements.txt` carries the same core floors as
+  `pyproject.toml` (scikit-learn 1.4.2, pandas 2.2.2, matplotlib 3.9.0).
+- **`panels=` partitions every per-dataset and per-forecast argument.** A
+  per-dataset `palette=` list, `legend=` list, `alpha=` list,
+  `forecast_fmt=`, `forecast_palette=`, a model-major `forecast_hue=` and a
+  forecaster fitted on every dataset (`hyp.predict(x, return_model=True)`)
+  now reach each panel as its own entry, in both `panel_fit` modes and on
+  both backends, matching the single-axes figure; previously they raised
+  inside the panel or drew every forecast in the first colour. Shared-fit
+  grids also hand back their one fitted pipeline as `bundle['pipeline']`
+  and in every `panel_models[i]['pipeline']`, so held-out data can be
+  projected without refitting (it was `None`). `tests/test_plot_panels_audit.py`
+  (33). (Release audit 2026-09-07, findings 3 and 4.)
+- **A list of `{category: color}` dicts works with a regrouping `hue=`.**
+  Each dataset naming its own categories (the documented per-dataset dict
+  form) was rejected as "2 per-dataset palettes but 4 dataset(s)" once
+  `hue=` split the datasets into more runs than dicts; the dicts name
+  categories and now resolve by name on both backends.
 
 - **A repeated metric in `metrics=` raises `ValueError` that says which
   metric is repeated.** `hyp.predict(..., holdout=k, metrics=['mae', 'MAE'])`

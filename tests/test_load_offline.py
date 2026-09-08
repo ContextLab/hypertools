@@ -16,9 +16,19 @@ stall until the client's own timeout. No mocks, no monkeypatched
 functions: the data server is a real ``http.server``, the cache is real
 files on disk, and every assertion is on a returned value, an exception
 type, an elapsed time or a connection count.
+
+The 1.1 release audit (2026-09-07, finding 1) found a second hole: the
+hosted BUILT-IN datasets (``'spiral'``, ``'weights'``, the ``*_model``
+pipelines) bypassed ``offline`` entirely -- a cache miss downloaded, and
+a corrupt cached file was deleted and re-downloaded. The tests at the
+bottom point the example-data cache at an empty directory and add a
+second, independent observable inside the subprocess: a passive
+``sys.addaudithook`` that records every ``socket.connect`` (as the audit
+did), so "no connection" is asserted both at the proxy and at the socket.
 """
 
 import functools
+import importlib
 import json
 import os
 import socket
@@ -39,6 +49,13 @@ import hypertools as hyp                                       # noqa: E402
 from hypertools.io.sources import (HypertoolsOfflineError,      # noqa: E402
                                    SEABORN_LISTING_TIMEOUT,
                                    cached_url_path, url_cache_dir)
+from tests._netskip import skip_on_transient_network           # noqa: E402
+
+# the load MODULE (hypertools.io.load is the function); its DATA_DIR is the
+# example-dataset cache the built-in tests redirect
+load_mod = importlib.import_module('hypertools.io.load')
+#: env var the subprocess runner reads to redirect that cache
+DATA_DIR_ENV = 'HYPERTOOLS_TEST_DATA_DIR'
 
 CSV_TEXT = 'a,b\n1,2\n3,4\n'
 EXPECTED = pd.DataFrame({'a': [1, 3], 'b': [2, 4]})
@@ -140,23 +157,39 @@ def csv_server(tmp_path):
 
 
 _RUNNER = textwrap.dedent('''
-    import json, sys, time, traceback
+    import importlib, json, os, pathlib, sys, time, traceback
+    # passive audit hook, installed before hypertools is imported: every
+    # socket.connect the interpreter makes lands in `connects`
+    connects = []
+    def _audit(event, args):
+        if event == 'socket.connect':
+            connects.append(repr(args[1]))
+    sys.addaudithook(_audit)
     import hypertools as hyp
+    _data_dir = os.environ.get(%r)
+    if _data_dir:
+        _load_mod = importlib.import_module('hypertools.io.load')
+        _load_mod.DATA_DIR = pathlib.Path(_data_dir)
     out = []
     for case in json.loads(sys.argv[1]):
         t = time.monotonic()
+        seen = len(connects)
         try:
             data = hyp.load(case['source'], **case.get('kwargs', {}))
             rec = {'ok': True, 'shape': list(getattr(data, 'shape', [])),
+                   'kind': type(data).__name__,
+                   'shapes': [list(getattr(d, 'shape', [])) for d in data]
+                   if isinstance(data, list) else None,
                    'records': data.to_dict('list')
                    if hasattr(data, 'to_dict') else None}
         except Exception as e:
             rec = {'ok': False, 'type': type(e).__name__, 'msg': str(e)}
         rec['elapsed'] = time.monotonic() - t
+        rec['connects'] = connects[seen:]
         rec['source'] = case['source']
         out.append(rec)
     print('RESULT ' + json.dumps(out))
-''')
+''' % DATA_DIR_ENV)
 
 
 def _run(cases, env, cwd):
@@ -275,3 +308,89 @@ def test_reset_seaborn_names_cache_forgets_a_remembered_failure():
     sources.reset_seaborn_names_cache()
     assert sources._seaborn_names_failed_at is None
     assert sources._seaborn_names_cache is None
+
+
+# ------------------------------------------ offline=True and built-in data
+# (1.1 release audit, finding 1: the hosted built-ins bypassed `offline`)
+
+@pytest.fixture
+def example_cache(tmp_path, monkeypatch):
+    """A fresh, EMPTY example-dataset cache. The load module's DATA_DIR is
+    pointed at it in this process (so an online load populates it here,
+    never the user's ~/hypertools_data) and the subprocess runner points
+    its own at the same path via DATA_DIR_ENV."""
+    path = tmp_path / 'hypertools_data'
+    monkeypatch.setattr(load_mod, 'DATA_DIR', path)
+    return path
+
+
+def _offline_builtin_env(blackhole, example_cache):
+    env = blackhole.env('nothing.invalid')
+    env[DATA_DIR_ENV] = str(example_cache)
+    return env
+
+
+def test_offline_refuses_an_uncached_builtin_without_any_connection(
+        blackhole, cache_dir, example_cache, tmp_path):
+    # a data file, the multi-array dataset and a *_model pipeline all go
+    # through the same hosted-dataset path; none is cached here
+    names = ['spiral', 'weights', 'wiki_model']
+    recs = _run([{'source': n, 'kwargs': {'offline': True}} for n in names],
+                _offline_builtin_env(blackhole, example_cache), tmp_path)
+    for name, rec in zip(names, recs):
+        assert not rec['ok'], (name, rec)
+        assert rec['type'] == HypertoolsOfflineError.__name__, (name, rec)
+        assert 'offline=True' in rec['msg'], (name, rec)
+        assert name in rec['msg'] and 'not cached' in rec['msg'], (name, rec)
+        # the refusal names the file it looked for
+        assert str(example_cache / name) in rec['msg'], (name, rec)
+        assert rec['connects'] == [], (name, rec)
+        assert rec['elapsed'] < CALL_BUDGET, (name, rec['elapsed'])
+    # nothing was written: not the file, not even the cache directory
+    assert not example_cache.exists()
+    assert blackhole.connections == []
+
+
+def test_offline_refuses_a_corrupt_cached_builtin_and_keeps_the_file(
+        blackhole, cache_dir, example_cache, tmp_path):
+    example_cache.mkdir()
+    cached = example_cache / 'spiral'
+    payload = b'not the pinned spiral.npz' * 64
+    cached.write_bytes(payload)
+    before = cached.stat().st_mtime_ns
+    assert not load_mod._integrity_ok(cached, 'spiral')
+
+    [rec] = _run([{'source': 'spiral', 'kwargs': {'offline': True}}],
+                 _offline_builtin_env(blackhole, example_cache), tmp_path)
+    assert not rec['ok'], rec
+    assert rec['type'] == HypertoolsOfflineError.__name__, rec
+    assert 'offline=True' in rec['msg'] and 'integrity' in rec['msg'], rec
+    assert str(cached) in rec['msg'], rec
+    assert rec['connects'] == [], rec
+    assert rec['elapsed'] < CALL_BUDGET, rec['elapsed']
+    # online, a failing hash is deleted and re-downloaded; offline the
+    # user's file must survive untouched, and no partial download appears
+    assert cached.read_bytes() == payload
+    assert cached.stat().st_mtime_ns == before
+    assert os.listdir(example_cache) == ['spiral']
+    assert blackhole.connections == []
+
+
+def test_offline_serves_a_verified_cached_builtin_without_any_connection(
+        blackhole, cache_dir, example_cache, tmp_path):
+    # populate the (redirected) cache with a real online download first
+    with skip_on_transient_network('downloading the spiral example dataset'):
+        online = hyp.load('spiral')
+    cached = example_cache / 'spiral'
+    assert cached.is_file() and load_mod._integrity_ok(cached, 'spiral')
+    before = cached.stat().st_mtime_ns
+
+    [rec] = _run([{'source': 'spiral', 'kwargs': {'offline': True}}],
+                 _offline_builtin_env(blackhole, example_cache), tmp_path)
+    assert rec['ok'], rec
+    assert rec['kind'] == 'list', rec
+    assert rec['shapes'] == [list(a.shape) for a in online], rec
+    assert rec['connects'] == [], rec
+    assert rec['elapsed'] < CALL_BUDGET, rec['elapsed']
+    assert cached.stat().st_mtime_ns == before     # served, not re-fetched
+    assert blackhole.connections == []

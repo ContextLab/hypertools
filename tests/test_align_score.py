@@ -192,3 +192,34 @@ def test_return_score_ragged_input_isc_metric():
     assert score['after'] > score['before']
     expected = alignment_score([a[:40], b], metric='isc')['before']
     assert score['before'] == pytest.approx(expected)
+
+
+# --- degenerate and malformed input (release review 2026-09-07) -------------
+
+@pytest.mark.parametrize('metric', ['dispersion', 'isc'])
+def test_all_constant_datasets_raise_instead_of_nan(metric):
+    """Two constant datasets have no cloud scale ('dispersion' divided 0 by 0
+    and returned NaN with a RuntimeWarning) and no feature to correlate."""
+    const = [np.ones((10, 3)), np.ones((10, 3))]
+    with pytest.raises(ValueError, match='constant'):
+        alignment_score(const, metric=metric)
+
+
+@pytest.mark.parametrize('metric', ['dispersion', 'isc'])
+def test_nan_input_raises_instead_of_nan_score(metric):
+    rng = np.random.default_rng(0)
+    x, y = rng.normal(size=(10, 3)), rng.normal(size=(10, 3))
+    y[2, 1] = np.nan
+    with pytest.raises(ValueError, match=r'finite values; dataset 1 has 1 NaN'):
+        alignment_score([x, y], metric=metric)
+    with pytest.raises(ValueError, match='finite values'):
+        alignment_score([x, x], aligned=[x, y], metric=metric)
+
+
+@pytest.mark.parametrize('metric', ['dispersion', 'isc'])
+def test_one_dimensional_input_raises_a_clear_error(metric):
+    """1-D series raised numpy's own AxisError / unpack ValueError."""
+    with pytest.raises(ValueError, match=r'2-D datasets .* dataset 0 has shape \(10,\)'):
+        alignment_score([np.arange(10.0), np.arange(10.0)], metric=metric)
+    with pytest.raises(ValueError, match='numeric'):
+        alignment_score([np.array([['a', 'b']] * 3)] * 2, metric=metric)

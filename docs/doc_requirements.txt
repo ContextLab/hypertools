@@ -7,11 +7,13 @@ nbsphinx>=0.8.0
 jupyter_client>=6.0.0
 wikipedia
 ipython
-# Main package dependencies
-scikit-learn>=1.4.0
-pandas>=2.2.0
+# Main package dependencies (same floors as pyproject.toml, which is the
+# declaration: the docs image installs the package first, so these only
+# need to agree with it)
+scikit-learn>=1.4.2
+pandas>=2.2.2
 seaborn>=0.13.0
-matplotlib>=3.8.0
+matplotlib>=3.9.0
 scipy>=1.13.0
 numpy>=2.0.0
 umap-learn>=0.5.5

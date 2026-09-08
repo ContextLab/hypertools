@@ -343,6 +343,7 @@ def load(
         uniform entry point over a mix of names and in-memory data:
 
         >>> import numpy as np
+        >>> import hypertools
         >>> arr = np.zeros((10, 3))
         >>> hypertools.load(arr) is arr
         True
@@ -494,9 +495,16 @@ def load(
         :class:`~hypertools.io.sources.HypertoolsOfflineError` (a
         subclass of ``HypertoolsIOError``) -- naming the cache path it
         looked for when the source is a cacheable URL that was never
-        cached. Built-in, scikit-learn, synthetic and local-file sources
-        still load. Load a URL once with ``cache=True`` while online to
-        populate the cache first.
+        cached. scikit-learn, synthetic and local-file sources still
+        load. A hosted built-in example dataset (step 1, the ``*_model``
+        pipelines included) is served from its copy in the example-data
+        cache (``~/hypertools_data``) when that copy is present and passes
+        its SHA-256 integrity check; one that was never fetched, or whose
+        cached file fails the check, raises ``HypertoolsOfflineError``
+        naming the file -- nothing is downloaded and the file is left in
+        place (online, a failed check triggers a re-download). Load a
+        URL once with ``cache=True``, and a built-in once with any call,
+        while online to populate the caches first.
 
     decode_labels : bool
         Hugging Face datasets only: by default (True), any top-level
@@ -650,7 +658,8 @@ def _resolve(dataset, *, legacy, split, streaming, trust, cache=False,
 
     if dataset in EXAMPLE_DATA.keys():
         _reject_kwargs('built-in example dataset')
-        geo_data = _load_example_data(dataset)   # *_model -> Pipeline
+        # *_model -> Pipeline; offline=True is honoured inside
+        geo_data = _load_example_data(dataset, offline=offline)
     else:
         # resolution chain, right after built-in names: scikit-learn's
         # small bundled datasets, then seaborn's named datasets (see
@@ -811,9 +820,35 @@ def _load_legacy(dataset_path):
     return DataGeometry(**data_dict)
 
 
-def _load_example_data(dataset):
+def _refuse_offline_builtin(dataset, dataset_path, state):
+    """Raise the offline refusal for a hosted built-in dataset whose
+    cached copy cannot be served (absent, or failing its integrity pin)."""
+    from .sources import HypertoolsOfflineError
+    raise HypertoolsOfflineError(
+        f"offline=True, but the built-in dataset '{dataset}' {state} "
+        f"({dataset_path}), and offline=True never downloads. The file "
+        "was left untouched. Drop offline=True to fetch it from the "
+        f"network once (a copy that passes its check is then served from "
+        f"{DATA_DIR} on every later offline load).")
+
+
+def _load_example_data(dataset, offline=False):
+    """Return the raw contents of the hosted built-in ``dataset``, served
+    from its copy in ``DATA_DIR`` when that copy passes its pinned SHA-256
+    check and downloaded (once) otherwise.
+
+    ``offline=True`` never opens a connection: a cached copy that passes
+    the integrity check is served exactly as it is online, and a MISSING
+    or CORRUPT copy raises :class:`~hypertools.io.sources.HypertoolsOfflineError`
+    without downloading, without creating ``DATA_DIR`` and without deleting
+    the user's file (1.1 release audit, finding 1: before this, ``offline``
+    stopped at :func:`_resolve` and this path downloaded on a miss and
+    deleted-and-redownloaded a corrupt file regardless).
+    """
     dataset_path = DATA_DIR.joinpath(dataset)
     if not dataset_path.is_file():
+        if offline:
+            _refuse_offline_builtin(dataset, dataset_path, 'is not cached')
         if not DATA_DIR.is_dir():
             if DATA_DIR.exists():
                 raise HypertoolsIOError(
@@ -834,7 +869,13 @@ def _load_example_data(dataset):
         # matches the pin (corruption, or a poisoned/edited cache) is
         # re-downloaded ONCE from the authoritative host, then re-checked
         # below -- it is never deserialized on the strength of a stale,
-        # unverified cache (2026-07 release review, blocker #1).
+        # unverified cache (2026-07 release review, blocker #1). Offline,
+        # the re-download is impossible, so the refusal comes first and
+        # the file stays on disk for the user to inspect or replace.
+        if offline:
+            _refuse_offline_builtin(
+                dataset, dataset_path,
+                'is cached but fails its SHA-256 integrity check')
         dataset_path.unlink(missing_ok=True)
         _download_example_data(dataset_path)
 

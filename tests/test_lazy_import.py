@@ -128,8 +128,11 @@ _LAZY_IMPORT_EXEMPT = {
     # imports plotly only on the `resolve_backend(backend) == 'plotly'` branch,
     # and resolve_backend() installs the [interactive] extra on demand first
     'hypertools/reduce/describe.py': {'plotly'},
-    # a subprocess the plotly backend spawns only after ensure_kaleido_chrome()
-    # (which lazy-imports kaleido) succeeded in the parent, so plotly is there
+    # the animation-export subprocess: the parent serialised the figure with
+    # plotly already imported (lazy_import('plotly') in resolve_backend), and
+    # the worker itself calls ensure_kaleido_chrome() -- which lazy-imports
+    # kaleido -- under the parent's propagated set_autoinstall() setting
+    # (lazy_import.subprocess_env; release audit 2026-09-07)
     'hypertools/plot/_kaleido_export_worker.py': {'plotly'},
 }
 
@@ -240,17 +243,68 @@ def test_set_autoinstall_rejects_non_booleans(_restore_autoinstall):
     assert L.auto_install_enabled() is True                # nothing changed
 
 
-def test_set_autoinstall_off_fails_with_the_manual_command_without_pip(_restore_autoinstall, monkeypatch):
+def test_set_autoinstall_off_fails_with_the_manual_command_without_pip(_restore_autoinstall, capsys):
     """With installation off, a missing module raises at once with the manual
-    command and the way back on; pip is never run (a `subprocess.run` that
-    reached pip would install a real package, so the test watches for the
-    call by replacing the module's runner with one that fails the test)."""
+    command and the way back on, BEFORE the install branch. Three real
+    observables say pip never ran: the `hypertools: installing ...` notice
+    that precedes every pip run is absent from stdout, the error is the
+    policy one (not the `installing it automatically failed` one a pip
+    failure produces), and the module is still absent afterwards."""
+    import importlib.util
     import hypertools as hyp
-
-    def _no_pip(*a, **k):
-        raise AssertionError('pip must not run with autoinstall off')
-    monkeypatch.setattr(L, '_pip_install', _no_pip)
+    name = 'hypertools_no_such_module_xyz'
+    assert importlib.util.find_spec(name) is None
     with hyp.set_autoinstall(False), \
             pytest.raises(ImportError, match=r'hypertools\[kaggle\].*set_autoinstall\(True\)') as info:
-        L.lazy_import('hypertools_no_such_module_xyz', purpose='a test', extra='kaggle')
+        L.lazy_import(name, purpose='a test', extra='kaggle', requirements=[name])
     assert 'automatic installation is off' in str(info.value)
+    assert 'automatically failed' not in str(info.value)
+    captured = capsys.readouterr()
+    assert 'hypertools: installing' not in captured.out
+    assert captured.out == '' and captured.err == ''
+    importlib.invalidate_caches()
+    assert importlib.util.find_spec(name) is None
+
+
+# --- the setting crosses a process boundary ----------------------------------
+
+def test_subprocess_env_carries_the_effective_setting_to_a_child_interpreter(_restore_autoinstall, monkeypatch):
+    """`set_autoinstall` lives in this interpreter; a child started with
+    `subprocess` begins from HYPERTOOLS_AUTO_INSTALL. `subprocess_env` sets
+    that variable from the EFFECTIVE value, so the child starts where the
+    parent stands in both directions of disagreement (release audit
+    2026-09-07: the animation-export worker ran pip with installation off in
+    the parent). Each case is checked in a REAL child interpreter."""
+    import hypertools as hyp
+    probe = [sys.executable, '-c',
+             'from hypertools._shared.lazy_import import auto_install_enabled; '
+             'print(auto_install_enabled())']
+
+    def child_sees(env):
+        out = subprocess.run(probe, env=env, capture_output=True, text=True,
+                             timeout=300)
+        assert out.returncode == 0, out.stderr[-800:]
+        return out.stdout.strip()
+
+    # Python True over the environment's 0: the child installs
+    monkeypatch.setenv('HYPERTOOLS_AUTO_INSTALL', '0')
+    with hyp.set_autoinstall(True):
+        env = L.subprocess_env()
+        assert env['HYPERTOOLS_AUTO_INSTALL'] == '1'
+        assert child_sees(env) == 'True'
+    # Python False with the variable unset: the child does not ...
+    monkeypatch.delenv('HYPERTOOLS_AUTO_INSTALL')
+    with hyp.set_autoinstall(False):
+        env = L.subprocess_env()
+        assert env['HYPERTOOLS_AUTO_INSTALL'] == '0'
+        assert child_sees(env) == 'False'
+        # ... whereas an inherited environment loses the setting (the audit)
+        assert child_sees(dict(os.environ)) == 'True'
+    # nothing set from Python: the environment's own value passes through
+    monkeypatch.setenv('HYPERTOOLS_AUTO_INSTALL', 'off')
+    assert L.subprocess_env()['HYPERTOOLS_AUTO_INSTALL'] == '0'
+    # an explicit base environment is copied, not modified
+    base = {'PATH': os.environ.get('PATH', '')}
+    derived = L.subprocess_env(base)
+    assert derived['HYPERTOOLS_AUTO_INSTALL'] == '0' and derived['PATH'] == base['PATH']
+    assert 'HYPERTOOLS_AUTO_INSTALL' not in base

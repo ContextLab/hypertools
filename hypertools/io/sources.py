@@ -193,8 +193,9 @@ class HypertoolsTrustError(ValueError):
 
 
 class HypertoolsOfflineError(HypertoolsIOError):
-    """Raised when ``offline=True`` was passed and the URL has no cached
-    copy to read (GH #285).
+    """Raised when ``offline=True`` was passed and the source -- a URL, or a
+    hosted built-in dataset -- has no hash-valid cached copy to read
+    (GH #285).
 
     Subclasses :class:`~hypertools.core.exceptions.HypertoolsIOError`, so
     existing handlers still catch it; ``load_source`` keys on this

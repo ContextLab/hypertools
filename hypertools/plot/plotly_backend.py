@@ -26,7 +26,8 @@ import sys
 import threading
 import warnings
 
-from .._shared.lazy_import import lazy_import, ensure_kaleido_chrome
+from .._shared.lazy_import import (lazy_import, ensure_kaleido_chrome,
+                                   subprocess_env)
 import numpy as np
 
 from .meshutil import (blinn_phong_vertex_colors, points_enclosed,
@@ -3221,13 +3222,19 @@ def _render_frames_via_subprocess(fig, ext, width, height, n_frames):
             for attempt in range(_KALEIDO_EXPORT_ATTEMPTS):
                 err_path = os.path.join(workdir, f'stderr-{attempt}.log')
                 # stderr -> file (not a PIPE) so a chatty Chrome can't deadlock
-                # on a full pipe buffer while we watch for progress
+                # on a full pipe buffer while we watch for progress.
+                # env: the worker provisions kaleido/Chrome itself (it may
+                # pip-install and download), so it must start from THIS
+                # process's effective set_autoinstall() setting, which lives
+                # in Python and is not inherited by a fresh interpreter
+                # (release audit 2026-09-07).
                 with open(err_path, 'wb') as errf:
                     proc = subprocess.Popen(
                         [sys.executable, '-m',
                          'hypertools.plot._kaleido_export_worker',
                          fig_json, frames_dir, ext, str(width), str(height)],
                         stdout=subprocess.DEVNULL, stderr=errf,
+                        env=subprocess_env(),
                         start_new_session=(os.name != 'nt'))
                     reason = _wait_with_progress(
                         proc, _completed,

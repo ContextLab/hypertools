@@ -328,3 +328,32 @@ def test_per_dataset_dicts_disagreeing_on_a_category_raise():
         hyp.plot(_datasets(2), hue=[['s1'] * 20, ['s1'] * 20],
                  palette=[{'s1': 'red'}, {'s1': 'blue'}], reduce='PCA',
                  show=False)
+
+
+# --- a list of {category: color} dicts under a regrouping hue --------------
+
+@pytest.mark.parametrize('backend', ['matplotlib', 'plotly'])
+def test_list_of_category_dicts_with_distinct_categories_per_dataset(backend):
+    """The documented per-dataset form: each dataset's dict names ITS OWN
+    categories. With hue= regrouping two datasets into four runs, the
+    ambient-cycle helper counted the two dicts against the four runs and
+    raised "lists 2 per-dataset palettes but 4 dataset(s)" (release audit
+    2026-09-07, found while fixing panels); the dicts name categories, not
+    datasets, so they resolve by name."""
+    import numpy as np
+    import hypertools as hyp
+    from matplotlib.colors import to_hex
+    x = np.random.default_rng(0).normal(size=(20, 3))
+    hue = [['a'] * 10 + ['b'] * 10, ['c'] * 10 + ['d'] * 10]
+    pal = [{'a': 'red', 'b': 'blue'}, {'c': 'green', 'd': 'orange'}]
+    fig = hyp.plot([x, x + 2], hue=hue, palette=pal, show=False, backend=backend)
+    want = {'#ff0000', '#0000ff', '#008000', '#ffa500'}
+    if backend == 'matplotlib':
+        got = {to_hex(ln.get_color()) for ln in fig.axes[0].lines
+               if len(ln.get_xdata()) > 1}
+    else:
+        from hypertools.plot.plotly_backend import _rgb_triplet
+        got = {'#%02x%02x%02x' % _rgb_triplet(tr.line.color) for tr in fig.data
+               if tr.line is not None and tr.line.color
+               and (tr.meta or {}).get('hyp_trace_index') is not None}
+    assert got == want

@@ -17,7 +17,10 @@ branch install is never replaced by a PyPI release.
 also a context manager) turns installation off; the import then fails with
 the manual command. The environment variable ``HYPERTOOLS_AUTO_INSTALL=0``
 sets the starting value for processes where no Python runs first (an image
-built ahead of time). Every install prints a one-line notice.
+built ahead of time). Every install prints a one-line notice. The setting
+is per interpreter, so a child process that runs hypertools code (the
+plotly animation-export worker) is started with ``subprocess_env()``,
+which carries the effective value over as that variable.
 
 ``ensure_kaleido_chrome()`` provisions what plotly's static image export
 needs at run time: a Chrome build for kaleido and, on Linux images that
@@ -75,6 +78,36 @@ def auto_install_enabled():
         return _AUTO_INSTALL
     return os.environ.get('HYPERTOOLS_AUTO_INSTALL', '1').strip().lower() \
         not in ('0', 'false', 'no', 'off')
+
+
+def subprocess_env(env=None):
+    """The environment for a child Python process that runs hypertools code,
+    carrying this process's EFFECTIVE auto-install setting.
+
+    A `set_autoinstall` call lives in this interpreter only; a child started
+    with `subprocess` begins from the environment variable. So the variable is
+    set here from `auto_install_enabled` -- ``'1'`` or ``'0'`` -- and the child
+    starts where the parent stands, whichever way the two disagreed
+    (``set_autoinstall(True)`` over ``HYPERTOOLS_AUTO_INSTALL=0`` gives the
+    child ``'1'``; ``set_autoinstall(False)`` with the variable unset gives it
+    ``'0'``). Every subprocess launch of hypertools code must pass this as
+    ``env=`` (release audit 2026-09-07: the plotly animation-export worker
+    ran pip with installation switched off in the parent).
+
+    Parameters
+    ----------
+    env : mapping, optional
+        The environment to start from; defaults to ``os.environ``. Not
+        modified: a copy is returned.
+
+    Returns
+    -------
+    dict
+        A copy of `env` with ``HYPERTOOLS_AUTO_INSTALL`` set.
+    """
+    env = dict(os.environ if env is None else env)
+    env['HYPERTOOLS_AUTO_INSTALL'] = '1' if auto_install_enabled() else '0'
+    return env
 
 
 class set_autoinstall:

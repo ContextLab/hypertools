@@ -455,8 +455,12 @@ sphinx_gallery_conf = {
                                                'hypertools GALLERY_ORDER'),
     # Abort on first failure
     'abort_on_example_error': False,
-    # Execute code to generate plots
-    'plot_gallery': True,
+    # Execute code to generate plots. HYPERTOOLS_DOCS_PLOT_GALLERY=0 turns
+    # the gallery off as a real boolean (the doctest builder in CI and the
+    # local release pipeline use it; `-D plot_gallery=0` on the command line
+    # is a string and makes sphinx-gallery warn about the type).
+    'plot_gallery': os.environ.get('HYPERTOOLS_DOCS_PLOT_GALLERY', '1')
+                    not in ('0', 'false', 'no', 'off'),
     # execute EVERY example (the sphinx-gallery default only executes
     # files named plot_*, which would leave the animate*/explore/save_*/
     # analyze pages with code but no rendered output)

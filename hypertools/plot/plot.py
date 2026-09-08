@@ -193,7 +193,14 @@ def _seaborn_palette_arg(palette, n_colors):
         # `sns.color_palette`; say what the no-hue path already says.
         raise ValueError("palette= was given as an empty list; supply at "
                          "least one color")
-    if isinstance(palette, collections.abc.Mapping):
+    if isinstance(palette, collections.abc.Mapping) or (
+            isinstance(palette, (list, tuple))
+            and all(isinstance(e, collections.abc.Mapping) for e in palette)):
+        # one dict, or a list of {category: color} dicts (one per dataset,
+        # each naming its own categories): both name CATEGORIES, and the
+        # ambient cycle runs over the drawn groups (hue runs, not datasets,
+        # after regrouping), so counting the dicts against `n_colors` is
+        # meaningless -- the categorical paths resolve them by name
         return [tuple(c) for c in get_palette_colors(DEFAULT_PALETTE,
                                                      n_colors)]
     _specs = dataset_palettes(palette, n_colors)
@@ -2757,15 +2764,26 @@ def _resolve_panel_grid(panels, n_panels, size=None, _name='panels'):
 
 #: `plot()` keywords that carry ONE entry per DATASET when passed as a
 #: list, and are therefore narrowed to the panel's own dataset by
-#: `_plot_panels`. Anything not listed here is forwarded unchanged.
+#: `_panel_narrow_kwargs`. Anything not listed here (and not handled by
+#: one of the dedicated slicers below) is forwarded unchanged.
+#: `tests/test_plot_panels_audit.py` checks this roster against the
+#: `plot()` docstring's "per dataset" arguments, so a new one cannot be
+#: forgotten silently.
 _PANEL_PER_DATASET_KWARGS = (
-    'fmt', 'color', 'colors', 'alpha', 'markers', 'markersize', 'linewidth',
-    'linestyles', 'names', 'chemtrails', 'precog', 'bullettime', 'surface',
-    'density',
-    # `truth=` is one held-out continuation per dataset and `forecast_hue=`
-    # one value per dataset (1.1 review, P1)
-    'truth', 'forecast_hue',
+    'fmt', 'marker', 'markers', 'linestyle', 'linestyles', 'color',
+    'colors', 'alpha', 'markersize', 'linewidth', 'names', 'chemtrails',
+    'precog', 'bullettime', 'surface', 'density',
+    # `truth=` is one held-out continuation per dataset (1.1 review, P1)
+    'truth',
 )
+
+#: ...the ones whose list form is one entry per FORECAST -- one per
+#: dataset for a single `predict=` model, and for a COLLECTION either one
+#: per MODEL (forwarded unchanged: every panel draws every model) or one per
+#: forecast in model-major order (release audit 2026-09-07, finding 4).
+#: `forecast_palette=` is per forecast only when nothing groups them.
+_PANEL_PER_FORECAST_KWARGS = ('forecast_hue', 'forecast_fmt',
+                              'forecast_palette')
 
 #: kwargs the SHARED-fit probe must not see: it runs the analysis pipeline
 #: with `predict=None`, and each of these either requires `predict=`
@@ -2783,13 +2801,210 @@ _PANEL_PROBE_DROPPED_KWARGS = (
 #: own slicer below rather than sharing this one.
 _PANEL_PER_OBSERVATION_KWARGS = ('hue',)
 
+#: per-dataset arguments with a slicer of their own (a shape or a meaning
+#: the plain per-dataset rule does not cover); listed so the roster test
+#: can account for every documented per-dataset argument.
+_PANEL_SPECIAL_KWARGS = ('hue', 'labels', 'palette', 'legend', 'predict',
+                         'title')
 
-def _panel_slice_per_dataset(value, index, n_datasets):
+#: colour kwargs whose 3/4-number tuple is ONE colour, not one entry per
+#: dataset (`_is_single_color`). Every other per-dataset list -- notably
+#: ``alpha=[0.3, 0.6, 0.9]`` for three datasets -- is sliced as a list.
+_PANEL_COLOR_KWARGS = ('color', 'colors')
+
+
+def _panel_slice_per_dataset(value, index, n_datasets, single_color=False):
     """Narrow a per-dataset list down to panel `index`'s single dataset."""
     if isinstance(value, (list, tuple)) and len(value) == n_datasets \
-            and not _is_single_color(value):
+            and not (single_color and _is_single_color(value)):
         return [value[index]]
     return value
+
+
+def _panel_slice_palette(palette, index, n_datasets):
+    """Narrow a PER-DATASET `palette=` list (``['viridis', 'magma']``, a
+    list of colour lists, a list of ``{category: color}`` dicts -- see
+    `palette=`) to panel `index`'s own entry, as a one-entry per-dataset
+    list (which `plot()` broadcasts to the panel's single dataset). A list
+    that is one palette of explicit colours is a single palette and is
+    forwarded whole, exactly as the single-axes call reads it."""
+    if (_looks_like_dataset_palettes(palette)
+            and len(palette) == n_datasets):
+        return [palette[index]]
+    return palette
+
+
+def _panel_slice_legend(legend, index, n_datasets, kw):
+    """Narrow a `legend=` LIST to panel `index` when its entries name the
+    DATASETS -- i.e. nothing regroups the drawn traces (`hue=`, `cluster=`
+    or `n_clusters=`), so "one entry per drawn dataset/group" is one per
+    dataset. Under a grouping the entries name the groups, which every
+    panel resolves for itself, and the list is forwarded unchanged."""
+    if not isinstance(legend, (list, tuple)) or len(legend) != n_datasets:
+        return legend
+    if (kw.get('hue') is not None or kw.get('cluster')
+            or kw.get('n_clusters') is not None):
+        return legend
+    return [legend[index]]
+
+
+def _panel_forecast_models(predict):
+    """How many forecasts each dataset gets from `predict=`: one for a
+    single spec, one per model for a collection -- split with the SAME
+    splitter `plot()` and `hyp.predict` use, so the counts agree."""
+    if predict is None:
+        return 0
+    from ..predict.backtest import model_collection as _model_collection
+    from ..predict.predict import _FORECASTER_ALIASES, FORECASTERS
+    from ..core.shared import supported_names as _supported_names
+    _collection = _model_collection(
+        predict, _supported_names(FORECASTERS), _FORECASTER_ALIASES,
+        caller='hyp.plot')
+    return 1 if _collection is None else len(_collection[0])
+
+
+def _panel_forecast_labels(hue, n_datasets, n_models):
+    """`forecast_hue=` as one label per forecast in MODEL-MAJOR order, the
+    order `plot()` keeps a collection's forecasts in (forecast ``k *
+    n_datasets + d`` is model ``k``'s forecast of dataset ``d``): a
+    per-DATASET list is broadcast over every model's forecast of that
+    dataset, a model-major list is taken as is. None for any other shape
+    (`plot()` reports it) and for a bare string (`plot()` rejects it)."""
+    if hue is None or isinstance(hue, (str, bytes)) or not isinstance(
+            hue, (list, tuple, np.ndarray, pd.Series, pd.Index)):
+        return None
+    labels = list(hue)
+    if len(labels) == n_datasets:
+        return [labels[d] for _ in range(n_models) for d in range(n_datasets)]
+    if len(labels) == n_datasets * n_models:
+        return labels
+    return None
+
+
+def _panel_pick_model_major(seq, index, n_datasets, n_models):
+    """Panel `index`'s own entries of a model-major per-forecast list."""
+    return [seq[k * n_datasets + index] for k in range(n_models)]
+
+
+def _panel_slice_forecast_kwargs(kw, index, n_datasets):
+    """Narrow the per-FORECAST kwargs (`_PANEL_PER_FORECAST_KWARGS`) to
+    panel `index`, reproducing the single-axes figure's assignment:
+
+    - `forecast_hue=`: one value per dataset, or one per forecast
+      model-major -> the panel's own value(s), model-major.
+    - `forecast_fmt=`: one per forecast (per dataset for a single model,
+      model-major for a collection) -> the panel's own; one per MODEL is
+      forwarded unchanged (every panel draws every model).
+    - `forecast_palette=`: with a list-valued `forecast_hue=` the grid's
+      label -> colour map is resolved ONCE (with the palette the single-
+      axes call would use) and each panel receives its own labels' colours
+      in its own first-appearance order, so a label keeps one colour
+      across panels; with nothing to group by and a single model it is
+      spent one colour per forecast, so the panel receives its forecast's
+      colour. A collection's per-MODEL palette is forwarded unchanged.
+    """
+    predict = kw.get('predict')
+    if predict is None:
+        return
+    n_models = _panel_forecast_models(predict)
+    n_forecasts = n_datasets * n_models
+    fc_hue, fc_fmt = kw.get('forecast_hue'), kw.get('forecast_fmt')
+    fc_palette, fc_cluster = kw.get('forecast_palette'), kw.get('forecast_cluster')
+
+    labels = _panel_forecast_labels(fc_hue, n_datasets, n_models)
+    if labels is not None:
+        kw['forecast_hue'] = _panel_pick_model_major(
+            labels, index, n_datasets, n_models)
+        # the palette is resolved against the WHOLE grid's labels, in
+        # the single-axes call's own order (`_forecast_label_colors`),
+        # and the panel gets the colours of its own labels in the order
+        # it will first see them -- an unlabeled forecast takes no slot
+        # (`is_missing_label`), exactly as `resolve_forecast_overrides`
+        # reads it
+        from .colors import is_missing_label
+        from .forecast import _forecast_label_colors
+        _labels = [None if is_missing_label(v) else v for v in labels]
+        _colours = _forecast_label_colors(
+            _labels, 'hls' if fc_palette is None else fc_palette)
+        _own = _panel_pick_model_major(_labels, index, n_datasets, n_models)
+        _own_colours = _panel_pick_model_major(
+            _colours, index, n_datasets, n_models)
+        _ordered = []
+        for _label, _colour in zip(_own, _own_colours):
+            if _label is not None and _colour not in _ordered:
+                _ordered.append(_colour)
+        if _ordered:
+            kw['forecast_palette'] = _ordered
+    elif (fc_palette is not None and fc_hue is None and fc_cluster is None
+            and n_models == 1):
+        from .forecast import _forecast_label_colors
+        kw['forecast_palette'] = [_forecast_label_colors(
+            list(range(n_datasets)), fc_palette)[index]]
+
+    if (isinstance(fc_fmt, (list, tuple)) and len(fc_fmt) == n_forecasts
+            and n_forecasts != n_models):
+        kw['forecast_fmt'] = _panel_pick_model_major(
+            list(fc_fmt), index, n_datasets, n_models)
+
+
+def _panel_bind_forecaster(predict, index, n_datasets):
+    """`predict=` for panel `index`: a forecaster already FITTED on several
+    datasets (``hyp.predict([a, b], return_model=True)``) is bound to this
+    panel's dataset with `Forecaster.for_dataset`, so `predict_new` reuses
+    that dataset's learned parameters instead of refusing a dataset-count
+    mismatch -- the binding the ordinary path gets from pairing new
+    datasets with fitted models by position, and the animated schedule
+    from `hypertools.plot.forecast.forecast_displacements`. Applied inside
+    a collection (list/tuple or ``{name: spec}`` mapping) too. A forecaster
+    fitted on ONE dataset is reused for every panel, as it is for every
+    dataset of a single-axes call."""
+    if isinstance(predict, (list, tuple)):
+        bound = [_panel_bind_forecaster(p, index, n_datasets)
+                 for p in predict]
+        return bound if isinstance(predict, list) else tuple(bound)
+    if isinstance(predict, dict) and predict and not (
+            predict.keys() & {'model', 'args', 'kwargs', 'params'}):
+        return {k: _panel_bind_forecaster(v, index, n_datasets)
+                for k, v in predict.items()}
+    n_fitted = len(getattr(predict, 'models_', ()))
+    if hasattr(predict, 'for_dataset') and n_fitted > 1:
+        if n_fitted != n_datasets:
+            raise ValueError(
+                f"predict= is a forecaster fitted on {n_fitted} dataset(s), "
+                f"but panels= draws {n_datasets}; a forecaster fitted on "
+                "several datasets is applied dataset by dataset (panel i "
+                "reuses fitted model i), so fit it on the same datasets, "
+                "or pass one fitted on a single dataset to reuse it for "
+                "every panel.")
+        return predict.for_dataset(index)
+    return predict
+
+
+def _panel_narrow_kwargs(kw, index, n_datasets, lengths):
+    """Narrow every per-dataset / per-observation / per-forecast argument in
+    `kw` (one panel's `plot()` kwargs, modified in place) to panel `index`:
+    the ONE rule both `panel_fit=` modes apply, so the docstring's "one per
+    dataset" forms describe the whole grid either way (P3)."""
+    for key in _PANEL_PER_DATASET_KWARGS:
+        if key in kw:
+            kw[key] = _panel_slice_per_dataset(
+                kw[key], index, n_datasets,
+                single_color=key in _PANEL_COLOR_KWARGS)
+    for key in _PANEL_PER_OBSERVATION_KWARGS:
+        if kw.get(key) is not None:
+            kw[key] = _panel_slice_per_observation(kw[key], index, lengths)
+    if kw.get('labels') is not None:
+        kw['labels'] = _panel_slice_labels(kw['labels'], index, lengths)
+    if kw.get('palette') is not None:
+        kw['palette'] = _panel_slice_palette(kw['palette'], index,
+                                             n_datasets)
+    if kw.get('legend') is not None:
+        kw['legend'] = _panel_slice_legend(kw['legend'], index, n_datasets,
+                                           kw)
+    if kw.get('predict') is not None:
+        _panel_slice_forecast_kwargs(kw, index, n_datasets)
+        kw['predict'] = _panel_bind_forecaster(kw['predict'], index,
+                                               n_datasets)
 
 
 def _panel_slice_per_observation(value, index, lengths):
@@ -3141,6 +3356,9 @@ def _plot_panels(x, panels, call_kwargs, _name='panels'):
             "of those panels already runs its own full pipeline over every "
             "dataset.")
 
+    #: the shared fit's pipeline (panel_fit='shared' only); each panel's
+    #: own bundle carries its own fit in the other modes
+    shared_pipeline = None
     if per_panel_reduce:
         panel_data = [x] * n_panels
         panel_kwargs = []
@@ -3159,18 +3377,11 @@ def _plot_panels(x, panels, call_kwargs, _name='panels'):
         panel_kwargs = []
         for i in range(n_panels):
             kw = dict(shared)
-            for key in _PANEL_PER_DATASET_KWARGS:
-                if key in kw:
-                    kw[key] = _panel_slice_per_dataset(kw[key], i, n_panels)
-            # per-observation kwargs narrow here too (P3): the docstring's
-            # "one sub-sequence per dataset / one value per dataset" forms
-            # describe the whole grid in either panel_fit mode
-            for key in _PANEL_PER_OBSERVATION_KWARGS:
-                if kw.get(key) is not None:
-                    kw[key] = _panel_slice_per_observation(
-                        kw[key], i, lengths)
-            if kw.get('labels') is not None:
-                kw['labels'] = _panel_slice_labels(kw['labels'], i, lengths)
+            # per-dataset, per-observation and per-forecast kwargs narrow
+            # here too (P3): the docstring's "one per dataset / one per
+            # forecast" forms describe the whole grid in either panel_fit
+            # mode
+            _panel_narrow_kwargs(kw, i, n_panels, lengths)
             panel_kwargs.append(kw)
     else:
         # ONE shared fit across every dataset: run the very call the user
@@ -3196,6 +3407,11 @@ def _plot_panels(x, panels, call_kwargs, _name='panels'):
         probe_fig = probe.get('fig')
         if isinstance(probe_fig, plt.Figure):
             plt.close(probe_fig)
+        # the ONE fitted pipeline every panel is drawn from: handed back
+        # in the bundle (top level and in every panel's own bundle), since
+        # the panels themselves are drawn through `transform=`, whose
+        # bundles carry `pipeline=None` (release audit 2026-09-07, 3)
+        shared_pipeline = probe.get('pipeline')
         if ndims is not None and ndims > 3:
             # the ONE shared display projection to 3-D the single-axes call
             # drew (`trace_data`); its analyzed `xform_data` is still
@@ -3216,15 +3432,7 @@ def _plot_panels(x, panels, call_kwargs, _name='panels'):
             kw.update(transform=[np.asarray(xform[i])], reduce=None,
                       normalize=None, align=None, manip=None, pipeline=None,
                       impute=None, resample=None, random_state=None)
-            for key in _PANEL_PER_DATASET_KWARGS:
-                if key in kw:
-                    kw[key] = _panel_slice_per_dataset(kw[key], i, n_panels)
-            for key in _PANEL_PER_OBSERVATION_KWARGS:
-                if kw.get(key) is not None:
-                    kw[key] = _panel_slice_per_observation(
-                        kw[key], i, lengths)
-            if kw.get('labels') is not None:
-                kw['labels'] = _panel_slice_labels(kw['labels'], i, lengths)
+            _panel_narrow_kwargs(kw, i, n_panels, lengths)
             # DataFrame-column axis labels (GH #285): a shared-fit panel is
             # drawn through `transform=`, which is exactly the case
             # `plot()` refuses to infer labels for -- so derive them here,
@@ -3249,7 +3457,8 @@ def _plot_panels(x, panels, call_kwargs, _name='panels'):
         plotly_kwargs = dict(call_kwargs)
         plotly_kwargs['save_path'] = save_path
         return _plot_panels_plotly(panel_data, panel_kwargs, titles,
-                                   nrows, ncols, panel_ndims, plotly_kwargs)
+                                   nrows, ncols, panel_ndims, plotly_kwargs,
+                                   shared_pipeline=shared_pipeline)
 
     fig, axes = subplots(nrows, ncols, ndims=panel_ndims,
                          size=call_kwargs.get('size'), backend='matplotlib')
@@ -3261,6 +3470,8 @@ def _plot_panels(x, panels, call_kwargs, _name='panels'):
                   return_model=return_model, size=None)
         result = plot(panel_data[i], **kw)
         if return_model:
+            if shared_pipeline is not None:
+                result['pipeline'] = shared_pipeline
             panel_models.append(result)
         panel_axes.append(axes[i])
     for spare in axes[n_panels:]:
@@ -3312,13 +3523,14 @@ def _plot_panels(x, panels, call_kwargs, _name='panels'):
             'xform_data': [m['xform_data'][0] if len(m['xform_data']) == 1
                            else m['xform_data'] for m in panel_models],
             'colors': panel_models[0].get('colors') if panel_models else None,
+            'pipeline': shared_pipeline,
         }
         return bundle
     return fig
 
 
 def _plot_panels_plotly(panel_data, panel_kwargs, titles, nrows, ncols,
-                        ndims, call_kwargs):
+                        ndims, call_kwargs, shared_pipeline=None):
     """`panels=` under the plotly backend: the same grid, built with
     `plotly.subplots.make_subplots` (3-D panels get ``type='scene'``
     cells). Each panel is drawn by an ordinary `plot()` call and its traces
@@ -3334,7 +3546,9 @@ def _plot_panels_plotly(panel_data, panel_kwargs, titles, nrows, ncols,
     reported as a plotly internals error. ``axes`` here holds the layout
     objects the panels were transplanted into (one ``layout.scene*`` per
     panel for 3-D, one ``(xaxis, yaxis)`` pair for 2-D), which is plotly's
-    equivalent of the matplotlib bundle's ``Axes`` list.
+    equivalent of the matplotlib bundle's ``Axes`` list. `shared_pipeline`
+    is the shared fit's pipeline (``panel_fit='shared'``), recorded in the
+    bundle exactly as the matplotlib grid records it.
     """
     from .plotly_backend import (make_panel_grid, panel_gutter_px,
                                  transplant_panel)
@@ -3355,6 +3569,8 @@ def _plot_panels_plotly(panel_data, panel_kwargs, titles, nrows, ncols,
         result = plot(data, **kw)
         panel_figs.append(result['fig'] if return_model else result)
         if return_model:
+            if shared_pipeline is not None:
+                result['pipeline'] = shared_pipeline
             panel_models.append(result)
     legend_present = call_kwargs.get('legend') is not None
     colorbar_present = any(
@@ -3413,6 +3629,7 @@ def _plot_panels_plotly(panel_data, panel_kwargs, titles, nrows, ncols,
             'xform_data': [m['xform_data'][0] if len(m['xform_data']) == 1
                            else m['xform_data'] for m in panel_models],
             'colors': panel_models[0].get('colors') if panel_models else None,
+            'pipeline': shared_pipeline,
         }
     return fig
 
@@ -5565,9 +5782,27 @@ def plot(
 
         `title=` takes one string per panel (or one string for all of
         them). Per-dataset arguments given as lists (`hue=`, `labels=`,
-        `names=`, `color=`, `fmt=`, `alpha=`, `markers=`, `linestyles=`,
-        `surface=`, `density=`, ...) are narrowed to each panel's own
-        dataset; `legend=`/`colorbar=` are drawn per panel.
+        `names=`, `color=`, `fmt=`, `alpha=`, `marker(s)=`,
+        `linestyle(s)=`, `surface=`, `density=`, `truth=`, a per-dataset
+        `palette=` list such as ``['viridis', 'magma']``, ...) are
+        narrowed to each panel's own dataset, in either `panel_fit=` mode;
+        `legend=`/`colorbar=` are drawn per panel, and a `legend=` LIST
+        naming the datasets (no `hue=`/`cluster=` grouping) gives each
+        panel its own entry. Forecast arguments partition the same way:
+        `forecast_fmt=` and `forecast_hue=` given per forecast (per
+        dataset for one `predict=` model, model-major for a collection --
+        see `predict=`) reach each panel as its own forecasts' entries (a
+        collection's one-per-MODEL `forecast_fmt=` is forwarded whole,
+        since every panel draws every model), `forecast_palette=` is
+        resolved against the whole grid so a dataset or a `forecast_hue=`
+        label keeps the colour the single-axes figure gives it, and a
+        forecaster already FITTED on every dataset
+        (``hyp.predict(x, return_model=True)``) is bound to each panel's
+        dataset (`Forecaster.for_dataset`) so its learned parameters are
+        reused rather than refit -- a forecaster fitted on a different
+        number of datasets than there are panels raises ``ValueError``.
+        `forecast_cluster=` groups each panel's own forecast endpoints
+        (with a single model, one per panel -- it then warns and inherits).
 
         STATIC ONLY: combining `panels=` with any truthy `animate=` raises
         ``ValueError`` (an animation owns its whole figure -- see `ax=`), as
@@ -5576,10 +5811,19 @@ def plot(
         `plotly.subplots.make_subplots` (3-D panels as ``type='scene'``
         cells), and `return_model=True` returns the SAME bundle keys there
         as on matplotlib (``fig``, ``axes``, ``panels``, ``panel_models``,
-        ``xform_data``, ``colors``) -- ``axes`` holding the layout objects
-        the panels were transplanted into (one ``layout.scene*`` per 3-D
-        panel, an ``(xaxis, yaxis)`` pair per 2-D one). Default None (one
-        axes, as before).
+        ``xform_data``, ``colors``, ``pipeline``) -- ``axes`` holding the
+        layout objects the panels were transplanted into (one
+        ``layout.scene*`` per 3-D panel, an ``(xaxis, yaxis)`` pair per
+        2-D one). ``pipeline`` is the ONE fitted `hypertools.Pipeline` the
+        shared fit produced (``panel_fit='shared'``; ``None`` under
+        ``'independent'`` and a list-valued `reduce=`), and every
+        ``panel_models[i]['pipeline']`` is that same object -- so
+        ``bundle['panel_models'][i]['pipeline'].transform(new_data)``
+        projects held-out data into the panels' common space without
+        refitting, exactly as the single-axes bundle's pipeline does;
+        under ``panel_fit='independent'`` (and per-reducer grids) each
+        panel bundle's ``pipeline`` is that panel's own fit instead.
+        Default None (one axes, as before).
 
         See also `hypertools.plot.plot.subplots`, a thin
         ``(fig, flat_axes)`` helper for grids you want to fill yourself.
