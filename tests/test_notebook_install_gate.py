@@ -166,3 +166,59 @@ def test_release_gate_no_preview_note_in_published_notebooks():
         'RELEASE GATE: published notebooks still carry a preview install note; '
         'run `python scripts/add_colab_install_cell.py` on master: '
         f'{offenders}')
+
+
+# --- an install cell never ships output --------------------------------------
+
+def _install_cells(path):
+    with open(path, encoding='utf-8') as f:
+        nb = json.load(f)
+    return [c for c in nb.get('cells', []) if c.get('cell_type') == 'code'
+            and any(_INSTALL_LINE_RE.match(ln.lstrip())
+                    for ln in ''.join(c.get('source', [])).splitlines())]
+
+
+def test_no_published_install_cell_carries_output():
+    """scripts/execute_tutorial.py skips the Colab install cell, and a skipped
+    cell keeps whatever the file had: projectile_kalman and streaming_data
+    shipped a pip upgrade notice naming a local interpreter path from the
+    1.0.0 run that executed it (found 2026-09-07). The cell did not run in
+    the published execution, so it has nothing to show."""
+    offenders = []
+    for path in _tracked_published_notebooks():
+        for cell in _install_cells(path):
+            if cell.get('outputs') or cell.get('execution_count') is not None:
+                offenders.append(os.path.relpath(path, _REPO))
+    assert not offenders, offenders
+
+
+def test_execute_tutorial_drops_the_outputs_of_the_cell_it_skips(tmp_path):
+    """`skip_install_cells` (the in-memory step `execute()` runs before
+    nbclient) tags the install cell and clears its stored output;
+    `restore_install_cells` removes only the tag it added."""
+    import importlib.util
+    import nbformat
+    spec = importlib.util.spec_from_file_location(
+        'execute_tutorial', os.path.join(_REPO, 'scripts', 'execute_tutorial.py'))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    nb = nbformat.v4.new_notebook()
+    install = nbformat.v4.new_code_cell(
+        '%pip install -q "hypertools[interactive]"', execution_count=1,
+        outputs=[nbformat.v4.new_output('stream', name='stdout',
+                                        text='[notice] A new release of pip')])
+    install.metadata['tags'] = ['keep-me']
+    work = nbformat.v4.new_code_cell('import hypertools', execution_count=2,
+                                     outputs=[nbformat.v4.new_output(
+                                         'stream', name='stdout', text='hi')])
+    nb.cells = [install, work]
+    skipped = mod.skip_install_cells(nb)
+    assert skipped == [install]
+    assert install.metadata['tags'] == ['keep-me', mod.SKIP_TAG]
+    assert install.outputs == [] and install.execution_count is None
+    assert work.outputs and work.execution_count == 2       # untouched
+    mod.restore_install_cells(skipped)
+    assert install.metadata['tags'] == ['keep-me']
+    path = tmp_path / 'nb.ipynb'
+    nbformat.write(nb, path)
+    assert _install_cells(path)[0]['outputs'] == []

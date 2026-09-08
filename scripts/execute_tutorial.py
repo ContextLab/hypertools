@@ -94,15 +94,39 @@ def scrub_home(nb, home=None):
     return changed
 
 
+def skip_install_cells(nb):
+    """Tag every ``pip install`` code cell of `nb` skip-execution (in memory)
+    and drop the outputs it carried; return those cells for
+    `restore_install_cells`.
+
+    nbclient leaves a skipped cell exactly as the file had it, outputs
+    included: two 1.0.0 tutorials shipped a pip upgrade notice naming a
+    local interpreter path, from a run that DID execute the install cell.
+    A cell that did not run here has no output.
+    """
+    installs = [c for c in nb.cells
+                if c.cell_type == 'code' and 'pip install' in c.source]
+    for cell in installs:
+        cell.metadata.setdefault('tags', []).append(SKIP_TAG)
+        cell.outputs = []
+        cell.execution_count = None
+    return installs
+
+
+def restore_install_cells(installs):
+    """Remove the in-memory skip tag `skip_install_cells` added."""
+    for cell in installs:
+        cell.metadata['tags'].remove(SKIP_TAG)
+        if not cell.metadata['tags']:
+            del cell.metadata['tags']
+
+
 def execute(path, out=None):
     """Execute `path`, writing the result to `out` (default: in place)."""
     nb = nbformat.read(path, as_version=4)
     original = json.loads(json.dumps(nb.metadata.get('kernelspec',
                                                      NEUTRAL_KERNELSPEC)))
-    installs = [c for c in nb.cells
-                if c.cell_type == 'code' and 'pip install' in c.source]
-    for cell in installs:
-        cell.metadata.setdefault('tags', []).append(SKIP_TAG)
+    installs = skip_install_cells(nb)
     # the notebook's OWN directory is the cwd it runs in, so its relative
     # data paths resolve -- `or '.'` because a bare filename has no dirname
     # (`'reduce.ipynb'.rsplit('/', 1)[0]` is the filename itself, which would
@@ -112,10 +136,7 @@ def execute(path, out=None):
                                            or '.'}}).execute()
     nb.metadata['kernelspec'] = original
     scrub_home(nb)
-    for cell in installs:
-        cell.metadata['tags'].remove(SKIP_TAG)
-        if not cell.metadata['tags']:
-            del cell.metadata['tags']
+    restore_install_cells(installs)
     nbformat.write(nb, out or path)
     executed = sum(1 for c in nb.cells
                    if c.cell_type == 'code' and c.get('outputs'))

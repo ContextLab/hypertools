@@ -350,9 +350,13 @@ and reaches flat `hyp.predict` callers.
   `pyproject.toml` stays the single declaration of every extra
   (`hypertools._shared.lazy_import`). Static image export with the plotly
   backend provisions kaleido's Chrome the same way, plus the four system
-  libraries a fresh Colab/Kaggle image lacks. `HYPERTOOLS_AUTO_INSTALL=0`
-  disables installation: a missing extra then raises `ImportError` naming
-  the manual `pip install "hypertools[<extra>]"` command, as before.
+  libraries a fresh Colab/Kaggle image lacks. `hyp.set_autoinstall(False)`
+  turns installation off, for the session or for one block as a context
+  manager (the same two forms as `set_interactive_backend`): a missing
+  extra then raises `ImportError` naming the manual `pip install
+  "hypertools[<extra>]"` command, as before. The environment variable
+  `HYPERTOOLS_AUTO_INSTALL=0` sets the starting value for images built
+  ahead of time.
 
 ### Changed / validation
 
@@ -731,6 +735,22 @@ input too.
 
 Found by the pre-publication review of the 1.1.0 draft against 1.0.0.
 Because 1.1.0 had not been published, they ship in it.
+
+- **No leftover "install the extra first" instructions.** An audit of every
+  optional-dependency site (2026-09-07) confirmed each one goes through the
+  on-demand installer, and a new test keeps it so: any library module that
+  imports a package an extra provides must call `lazy_import` for it in the
+  same file (three stated exemptions). The stale prose went: the `plot()`
+  reducer docstring's `pip install "hypertools[torch]"`, the autoencoder and
+  gensim gallery examples' "pre-install it with ...", the LSL tutorial's
+  inline command, and the `reduce()` torch error now says the on-demand
+  install was tried. The API reference gained a *Set autoinstall* entry
+  (`set_autoinstall`, the mechanism, and a pointer to the guide). Two
+  tutorials (`projectile_kalman`, `streaming_data`) shipped a pip upgrade
+  notice with a local interpreter path as the stored output of their Colab
+  install cell, from the 1.0.0 run that executed it; the executor now clears
+  a skipped install cell's outputs, and a gate forbids any published install
+  cell from carrying output.
 
 - **A repeated metric in `metrics=` raises `ValueError` that says which
   metric is repeated.** `hyp.predict(..., holdout=k, metrics=['mae', 'MAE'])`

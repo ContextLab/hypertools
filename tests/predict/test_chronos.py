@@ -56,9 +56,10 @@ def test_friendly_import_error_when_chronos_missing(monkeypatch):
     something a unit test should do). `sys.modules[name] = None` is how the
     import system marks a module as unimportable."""
     from hypertools.predict import chronos as mod
-    monkeypatch.setenv('HYPERTOOLS_AUTO_INSTALL', '0')
+    import hypertools as hyp
     monkeypatch.setitem(__import__('sys').modules, 'chronos', None)
 
     df = _make_df(n=30)
-    with pytest.raises(ImportError, match=r'hypertools\[predict-hf\]'):
+    with hyp.set_autoinstall(False), \
+            pytest.raises(ImportError, match=r'hypertools\[predict-hf\]'):
         mod.Chronos().fit(df)

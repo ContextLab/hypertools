@@ -76,9 +76,10 @@ def test_friendly_import_error_when_skaters_missing(monkeypatch):
     something a unit test should do). `sys.modules[name] = None` is how the
     import system marks a module as unimportable."""
     from hypertools.predict import laplace as mod
-    monkeypatch.setenv('HYPERTOOLS_AUTO_INSTALL', '0')
+    import hypertools as hyp
     monkeypatch.setitem(__import__('sys').modules, 'skaters.api', None)
 
     df = _make_df(n=30)
-    with pytest.raises(ImportError, match=r'hypertools\[predict\]'):
+    with hyp.set_autoinstall(False), \
+            pytest.raises(ImportError, match=r'hypertools\[predict\]'):
         mod.Laplace().fit_predict(df, t=5)

@@ -12,9 +12,12 @@ chronos-forecasting, ``sentence_transformers`` arrives with
 Policy: a missing optional module is installed into the running interpreter
 (``python -m pip install <the extra's requirements>``) and then imported.
 Nothing about hypertools itself is reinstalled, so a development or
-branch install is never replaced by a PyPI release. Set
-``HYPERTOOLS_AUTO_INSTALL=0`` to disable installation; the import then fails
-with the manual command. Every install prints a one-line notice.
+branch install is never replaced by a PyPI release.
+``hypertools.set_autoinstall(False)`` (the `set_autoinstall` class below,
+also a context manager) turns installation off; the import then fails with
+the manual command. The environment variable ``HYPERTOOLS_AUTO_INSTALL=0``
+sets the starting value for processes where no Python runs first (an image
+built ahead of time). Every install prints a one-line notice.
 
 ``ensure_kaleido_chrome()`` provisions what plotly's static image export
 needs at run time: a Chrome build for kaleido and, on Linux images that
@@ -59,11 +62,101 @@ APT_TIMEOUT_SECONDS = 600
 
 _kaleido_ready = False
 
+#: what the last `set_autoinstall` call set; None while nothing was set from
+#: Python, in which case the environment decides (`auto_install_enabled`)
+_AUTO_INSTALL = None
+
 
 def auto_install_enabled():
-    """True unless ``HYPERTOOLS_AUTO_INSTALL`` is set to 0/false/no/off."""
+    """True when hypertools may install a missing optional extra: what the
+    last `set_autoinstall` call set or, if none was made, the environment
+    variable ``HYPERTOOLS_AUTO_INSTALL`` (on unless it is 0/false/no/off)."""
+    if _AUTO_INSTALL is not None:
+        return _AUTO_INSTALL
     return os.environ.get('HYPERTOOLS_AUTO_INSTALL', '1').strip().lower() \
         not in ('0', 'false', 'no', 'off')
+
+
+class set_autoinstall:
+    """
+    Turn the on-demand installation of optional extras on or off.
+
+    hypertools' optional features (the plotly backend, text embeddings,
+    the ``Laplace`` and ``Chronos`` forecasters, the torch autoencoders,
+    gensim models, Kaggle and Hugging Face loading, LSL streaming, 3-D
+    density iso-surfaces, ``.xlsx`` files) are ``pip`` extras that install
+    themselves on demand: the first call that needs a missing one installs
+    that extra's requirements into the running interpreter, prints a
+    one-line ``hypertools:`` notice, and carries on. Static image export
+    with the plotly backend provisions kaleido's Chrome the same way.
+
+    Like `hypertools.set_interactive_backend`, this can be used in two
+    ways:
+
+    1. directly, to change the setting for the rest of the session::
+
+           import hypertools as hyp
+
+           hyp.set_autoinstall(False)
+           hyp.plot(data, backend='plotly')   # ImportError if plotly is
+                                              # missing, naming the manual
+                                              # pip install command
+           hyp.set_autoinstall(True)          # back on
+
+    2. as a context manager with the `with` statement, to change it for
+       one block::
+
+           with hyp.set_autoinstall(False):
+               hyp.predict(data, model='Chronos', t=5)   # no install here
+
+           hyp.predict(data, model='Chronos', t=5)       # installs on demand
+
+    With installation off, a call that needs a missing extra raises
+    ``ImportError`` naming the manual ``pip install "hypertools[<extra>]"``
+    command, and nothing is installed. Turn it off in locked-down
+    environments and anywhere pip should not run inside a Python process.
+    For a process where no Python runs before hypertools is imported (a CI
+    image built ahead of time), the environment variable
+    ``HYPERTOOLS_AUTO_INSTALL=0`` sets the starting value; a
+    `set_autoinstall` call overrides it.
+
+    Parameters
+    ----------
+    enabled : bool, default True
+        ``True`` to install missing extras on demand, ``False`` to raise
+        ``ImportError`` instead. Applies temporarily when used as a context
+        manager with `with`, or for the life of the interpreter when called
+        as a function.
+
+    Attributes
+    ----------
+    enabled : bool
+        The value that was set.
+
+    Raises
+    ------
+    TypeError
+        If `enabled` is not ``True`` or ``False``.
+    """
+
+    def __init__(self, enabled=True):
+        global _AUTO_INSTALL
+        if not isinstance(enabled, bool):
+            raise TypeError(
+                f'set_autoinstall expects True or False, got {enabled!r}')
+        self.enabled = enabled
+        self._previous = _AUTO_INSTALL
+        _AUTO_INSTALL = enabled
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        global _AUTO_INSTALL
+        _AUTO_INSTALL = self._previous
+
+    def __repr__(self):
+        return f'set_autoinstall({self.enabled})'
 
 
 def extra_requirements(extra):
@@ -145,7 +238,8 @@ def lazy_import(module, purpose=None, extra=None, requirements=None):
         if not auto_install_enabled():
             raise ImportError(
                 f'{module} is not installed{need}. Install it with `{manual}` '
-                '(automatic installation is disabled by HYPERTOOLS_AUTO_INSTALL=0).'
+                '(automatic installation is off; hypertools.set_autoinstall(True) '
+                'turns it on).'
             ) from first
         _notice(f'installing {", ".join(requirements)}{need} ...')
         try:

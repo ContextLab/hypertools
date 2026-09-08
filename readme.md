@@ -243,8 +243,9 @@ carries on. hypertools itself is never reinstalled, so a development or
 branch install stays as it is. Static image export with the plotly backend
 also provisions what kaleido needs on first use (a Chrome build and, on
 Debian/Ubuntu images such as Colab and Kaggle, the system libraries it
-lacks). Set `HYPERTOOLS_AUTO_INSTALL=0` to turn this off; a missing extra
-then raises `ImportError` with the manual `pip install` command.
+lacks). `hyp.set_autoinstall(False)` turns this off (for the session, or
+for one block as a context manager); a missing extra then raises
+`ImportError` with the manual `pip install` command.
 
 ## Requirements
 

@@ -246,12 +246,26 @@ def test_lsl_stream_receives_pushed_samples_by_name(outlet_stream):
 
 
 @requires_pylsl
-def test_lsl_stream_resolves_by_type(outlet_stream):
-    # resolve using type= (the outlet was created with stream_type='EEG'
-    # in _start_outlet) rather than name=
-    stream = hyp.io.lsl_stream(type='EEG', timeout=5.0)
-    sample = next(stream)
-    assert len(sample) == N_CHANNELS
+def test_lsl_stream_resolves_by_type():
+    """type= resolves a stream by its StreamInfo type, so this test's outlet
+    carries a type nothing else on the network advertises. Resolving
+    type='EEG' assumed this outlet was the only EEG stream in reach: on
+    2026-09-07 two other processes on the machine (a notebook kernel with
+    the LSL tutorial's synthetic outlet, and an audit script executing the
+    same notebook) advertised idle 'EEG' outlets, `lsl_stream` used the
+    first match, and the test failed on a source that never pushed. A lab
+    network has real EEG streams for the same reason."""
+    stream_type = f'HypertoolsTestType-{time.time_ns()}'
+    thread, stop = _start_outlet(
+        f'HypertoolsTestStream-bytype-{time.time_ns()}', stream_type=stream_type)
+    try:
+        with hyp.io.lsl_stream(type=stream_type, timeout=5.0) as stream:
+            sample = next(stream)
+        assert len(sample) == N_CHANNELS
+    finally:
+        stop.set()
+        thread.join(timeout=5.0)
+        assert not thread.is_alive()
 
 
 @requires_pylsl

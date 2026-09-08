@@ -25,8 +25,8 @@ and ``Chronos`` forecasters, autoencoder reducers, gensim vectorizers, Kaggle
 loading, LSL streaming, 3-D density iso-surfaces, ``.xlsx`` loading) are
 ``pip`` extras of ``hypertools``, and they install themselves on demand: the
 first call that needs one installs that extra's requirements and carries on,
-printing a one-line notice. Set ``HYPERTOOLS_AUTO_INSTALL=0`` to disable
-this; a missing extra then raises ``ImportError`` with the manual
+printing a one-line notice. ``hypertools.set_autoinstall(False)`` turns
+this off; a missing extra then raises ``ImportError`` with the manual
 ``pip install "hypertools[<extra>]"`` command. See
 :doc:`optional_dependencies` for the full list.
 

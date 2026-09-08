@@ -4470,7 +4470,8 @@ def plot(
         membership proportions, GH #174); and the torch-backed autoencoders
         Autoencoder, DeepAutoencoder, SparseAutoencoder,
         ConvolutionalAutoencoder, SequenceAutoencoder and
-        VariationalAutoencoder (GH #162, `pip install "hypertools[torch]"`).
+        VariationalAutoencoder (GH #162; the `[torch]` extra, installed on
+        demand).
         Can be passed as a string, or for finer control of the model
         parameters as a dictionary, e.g.
         reduce={'model': 'PCA', 'kwargs': {'whiten': True}}. See scikit-learn

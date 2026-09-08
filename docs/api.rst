@@ -150,6 +150,26 @@ Set interactive backend
 
   set_interactive_backend
 
+Set autoinstall
+------------------------
+
+.. autosummary::
+  :toctree:
+
+  set_autoinstall
+
+The optional features (the plotly backend, text embeddings, ``Laplace`` and
+``Chronos`` forecasting, the torch autoencoders, gensim models, Kaggle and
+Hugging Face loading, LSL streaming, 3-D density iso-surfaces, ``.xlsx``
+files) are ``pip`` extras that install themselves on demand: the first call
+that needs one installs that extra's requirements, prints a one-line
+``hypertools:`` notice and carries on. ``set_autoinstall(False)`` turns
+this off (for the session, or for one block as a context manager); a
+missing extra then raises ``ImportError`` naming the manual ``pip install
+"hypertools[<extra>]"`` command. See :doc:`optional_dependencies` for the
+extras, the Chrome step behind static plotly export, and how to
+pre-install everything.
+
 Analyze
 ------------------
 

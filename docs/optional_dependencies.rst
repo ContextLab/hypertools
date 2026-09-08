@@ -92,12 +92,25 @@ e.g. ``pip install "hypertools[interactive]"``.
 Turning it off
 ~~~~~~~~~~~~~~
 
-Set the environment variable ``HYPERTOOLS_AUTO_INSTALL=0`` (``false``,
-``no`` and ``off`` also work); it is read at each call. A missing extra
-then raises ``ImportError`` with the manual ``pip install
-"hypertools[<extra>]"`` command, and nothing is installed.
-This is the setting to use in locked-down environments, in CI images built
-ahead of time, and anywhere pip should not run inside a Python process.
+Call ``hypertools.set_autoinstall(False)``. A missing extra then raises
+``ImportError`` with the manual ``pip install "hypertools[<extra>]"``
+command, and nothing is installed. It works like
+``set_interactive_backend``: called directly it applies to the rest of the
+session (``set_autoinstall(True)`` turns installation back on), and used
+with ``with`` it applies to one block::
+
+    import hypertools as hyp
+
+    hyp.set_autoinstall(False)            # for the rest of the session
+
+    with hyp.set_autoinstall(False):      # for one block
+        hyp.predict(data, model='Chronos', t=5)   # ImportError if missing
+
+This is the setting for locked-down environments and anywhere pip should
+not run inside a Python process. Where no Python runs before hypertools is
+imported (a CI image built ahead of time), the environment variable
+``HYPERTOOLS_AUTO_INSTALL=0`` (``false``, ``no`` and ``off`` also work)
+sets the starting value; a ``set_autoinstall`` call overrides it.
 
 Chrome for static plotly export
 -------------------------------
@@ -116,7 +129,7 @@ provisions what is missing:
 - a Chrome build for kaleido (about 150 MB), via ``plotly.io.get_chrome()``.
 
 Both steps print a one-line ``hypertools:`` notice, and both are
-skipped when ``HYPERTOOLS_AUTO_INSTALL=0``. When no working Chrome could be
+skipped after ``set_autoinstall(False)``. When no working Chrome could be
 provided, the export raises ``HypertoolsIOError`` with the commands to run
 yourself: ``import plotly.io as pio; pio.get_chrome()`` and, on
 Debian/Ubuntu, ``apt-get install -y libatk1.0-0 libatk-bridge2.0-0

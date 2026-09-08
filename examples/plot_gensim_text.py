@@ -9,8 +9,7 @@ specs resolve in three tiers: scikit-learn's built-ins, then
 `'Doc2Vec'`, `'FastText'` (vectorizer tier) and `'LdaModel'`,
 `'LsiModel'`, `'HdpModel'` (semantic tier) -- then HuggingFace
 sentence-transformers. gensim is an optional extra that hypertools installs
-on demand the first time a gensim model is requested (pre-install it with
-``pip install "hypertools[gensim]"``). The two panels embed the same small
+on demand the first time a gensim model is requested. The two panels embed the same small
 three-topic corpus in two ways -- gensim's Word2Vec (averaged word vectors,
 no semantic-stage model) on the left, and CountVectorizer counts fed to
 gensim's LDA on the right -- and color each document by its topic. For

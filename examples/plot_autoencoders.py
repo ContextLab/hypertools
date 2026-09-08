@@ -9,7 +9,7 @@ Autoencoder reducers
 `VariationalAutoencoder`. They are used exactly like any other `reduce=`
 model -- by name, with parameters passed via the dict spec -- and use
 the optional ``torch`` extra, which hypertools installs on demand the first
-time one is fit (pre-install it with ``pip install "hypertools[torch]"``).
+time one is fit.
 This example fits a shallow `Autoencoder` and a `VariationalAutoencoder` on
 the same data and compares them against PCA: three 2-D embeddings of a
 noisy spiral manifold embedded in 10-D, with each point colored by its

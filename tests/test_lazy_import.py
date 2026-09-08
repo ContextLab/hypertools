@@ -115,3 +115,142 @@ def test_ensure_kaleido_chrome_leaves_plotly_able_to_render():
     L.ensure_kaleido_chrome()
     assert len(pio.to_image(go.Figure(), format='png')) > 1000
     assert L._kaleido_ready
+
+
+# --- every optional import in the library goes through lazy_import ----------
+
+#: modules that import an optional package WITHOUT calling lazy_import for it
+#: in the same file, each with the reason that is correct
+_LAZY_IMPORT_EXEMPT = {
+    # a type check that must never install anything: `import plotly` inside
+    # try/except returns False for "not a plotly figure" when plotly is absent
+    'hypertools/plot/plot.py': {'plotly'},
+    # imports plotly only on the `resolve_backend(backend) == 'plotly'` branch,
+    # and resolve_backend() installs the [interactive] extra on demand first
+    'hypertools/reduce/describe.py': {'plotly'},
+    # a subprocess the plotly backend spawns only after ensure_kaleido_chrome()
+    # (which lazy-imports kaleido) succeeded in the parent, so plotly is there
+    'hypertools/plot/_kaleido_export_worker.py': {'plotly'},
+}
+
+
+def _optional_imports(source):
+    """Top-level names of EXTRA_FOR_MODULE that `source` imports."""
+    import ast
+    found = set()
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Import):
+            names = [a.name for a in node.names]
+        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+            names = [node.module]
+        else:
+            continue
+        for name in names:
+            top = name.split('.')[0]
+            if top in L.EXTRA_FOR_MODULE:
+                found.add(top)
+    return found
+
+
+def test_every_optional_import_in_the_library_goes_through_lazy_import():
+    """The on-demand installer only helps where the code asks for it: a plain
+    `import plotly` in a module that never calls `lazy_import('plotly')` (or
+    `ensure_kaleido_chrome()`, which lazy-imports kaleido) would raise
+    ImportError before the extra could be installed. Scan every library
+    module for imports of the packages EXTRA_FOR_MODULE maps and require the
+    same file to install them, unless it is exempt above for a stated
+    reason. (Release review 2026-09-07: the audit of leftover install
+    instructions asked whether every site really installs on demand.)"""
+    pkg = os.path.join(REPO, 'hypertools')
+    missing = []
+    seen_exempt = set()
+    for root, _dirs, files in os.walk(pkg):
+        for fn in files:
+            if not fn.endswith('.py'):
+                continue
+            path = os.path.join(root, fn)
+            rel = os.path.relpath(path, REPO).replace(os.sep, '/')
+            if rel == 'hypertools/_shared/lazy_import.py':
+                continue
+            with open(path, encoding='utf-8') as f:
+                source = f.read()
+            for top in sorted(_optional_imports(source)):
+                if top in _LAZY_IMPORT_EXEMPT.get(rel, ()):
+                    seen_exempt.add((rel, top))
+                    continue
+                installs = (re.search(r"lazy_import\(\s*['\"]" + top + r"\b", source)
+                            or (top == 'kaleido'
+                                and 'ensure_kaleido_chrome(' in source))
+                if not installs:
+                    missing.append((rel, top))
+    assert not missing, missing
+    # every exemption still describes a real import (no stale entries)
+    declared = {(rel, top) for rel, tops in _LAZY_IMPORT_EXEMPT.items()
+                for top in tops}
+    assert seen_exempt == declared, declared - seen_exempt
+
+
+def test_the_optional_import_scan_sees_a_plain_import():
+    assert _optional_imports('import plotly.graph_objects as go') == {'plotly'}
+    assert _optional_imports('from skimage import measure') == {'skimage'}
+    # sklearn.datasets is not the `datasets` package
+    assert _optional_imports('from sklearn import datasets') == set()
+    assert _optional_imports('from .common import Forecaster') == set()
+
+
+# --- hyp.set_autoinstall: the public switch -----------------------------------
+
+@pytest.fixture
+def _restore_autoinstall(monkeypatch):
+    """Leave the module-level setting as this test found it."""
+    monkeypatch.setattr(L, '_AUTO_INSTALL', L._AUTO_INSTALL)
+    monkeypatch.delenv('HYPERTOOLS_AUTO_INSTALL', raising=False)
+
+
+def test_set_autoinstall_is_public_and_mirrors_set_interactive_backend(_restore_autoinstall):
+    import hypertools as hyp
+    assert hyp.set_autoinstall is L.set_autoinstall
+    assert 'set_autoinstall' in hyp.__all__
+    assert L.auto_install_enabled() is True                # the default
+    handle = hyp.set_autoinstall(False)                    # called directly
+    assert handle.enabled is False and repr(handle) == 'set_autoinstall(False)'
+    assert L.auto_install_enabled() is False
+    with hyp.set_autoinstall(True) as inner:               # context manager
+        assert inner.enabled is True
+        assert L.auto_install_enabled() is True
+    assert L.auto_install_enabled() is False               # restored
+    hyp.set_autoinstall()                                  # default: on
+    assert L.auto_install_enabled() is True
+
+
+def test_set_autoinstall_overrides_the_environment_variable(_restore_autoinstall, monkeypatch):
+    import hypertools as hyp
+    monkeypatch.setenv('HYPERTOOLS_AUTO_INSTALL', '0')
+    assert L.auto_install_enabled() is False               # env sets the start
+    with hyp.set_autoinstall(True):
+        assert L.auto_install_enabled() is True            # the call wins
+    assert L.auto_install_enabled() is False
+
+
+def test_set_autoinstall_rejects_non_booleans(_restore_autoinstall):
+    import hypertools as hyp
+    for bad in (1, 'off', None):
+        with pytest.raises(TypeError, match='True or False'):
+            hyp.set_autoinstall(bad)
+    assert L.auto_install_enabled() is True                # nothing changed
+
+
+def test_set_autoinstall_off_fails_with_the_manual_command_without_pip(_restore_autoinstall, monkeypatch):
+    """With installation off, a missing module raises at once with the manual
+    command and the way back on; pip is never run (a `subprocess.run` that
+    reached pip would install a real package, so the test watches for the
+    call by replacing the module's runner with one that fails the test)."""
+    import hypertools as hyp
+
+    def _no_pip(*a, **k):
+        raise AssertionError('pip must not run with autoinstall off')
+    monkeypatch.setattr(L, '_pip_install', _no_pip)
+    with hyp.set_autoinstall(False), \
+            pytest.raises(ImportError, match=r'hypertools\[kaggle\].*set_autoinstall\(True\)') as info:
+        L.lazy_import('hypertools_no_such_module_xyz', purpose='a test', extra='kaggle')
+    assert 'automatic installation is off' in str(info.value)

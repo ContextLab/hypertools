@@ -29,7 +29,7 @@ conda-forge: the `hypertools-feedstock` bot opens a version-bump PR automaticall
 
 - The first call that needs an optional dependency installs the hypertools extra that provides it and carries on, printing a one-line `hypertools: installing ...` notice: plotly and kaleido (`[interactive]`), Hugging Face text embeddings and datasets (`[text]`), skaters (`[predict]`, `Laplace`), chronos-forecasting (`[predict-hf]`, `Chronos`), torch (`[torch]`, autoencoder reducers), gensim (`[gensim]`), kagglehub (`[kaggle]`), pylsl (`[lsl]`), scikit-image (`[density3d]`) and openpyxl (`[io]`). The requirement strings come from the installed package metadata, so `pyproject.toml` remains the one declaration of every extra, and hypertools itself is never reinstalled.
 - Static image export with the plotly backend provisions what kaleido needs on first use: a Chrome build and, on Debian/Ubuntu images such as Colab and Kaggle, the four system libraries a fresh image lacks.
-- `HYPERTOOLS_AUTO_INSTALL=0` turns this off; a missing extra then raises `ImportError` naming the manual `pip install "hypertools[<extra>]"` command, as before. Guide: *Optional dependencies* in the docs.
+- `hyp.set_autoinstall(False)` turns this off (session-wide, or for one `with` block; `HYPERTOOLS_AUTO_INSTALL=0` sets the starting value for prebuilt images); a missing extra then raises `ImportError` naming the manual `pip install "hypertools[<extra>]"` command, as before. Guide: *Optional dependencies* in the docs.
 
 ### Folded in from the examples (GH #285)
 

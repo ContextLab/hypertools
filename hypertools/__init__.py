@@ -3,8 +3,9 @@
 
 The classic API lives at the top level: `plot`, `analyze`, `reduce`,
 `align`, `normalize`, `describe`, `cluster`, `manip`, `predict`, `impute`,
-`load`, `save`, `apply_model`, `supported_models`, `Pipeline`, and
-`set_interactive_backend`, plus the `io` submodule, `HyperAnimation`
+`load`, `save`, `apply_model`, `supported_models`, `Pipeline`,
+`set_interactive_backend` and `set_autoinstall` (on-demand installation of
+optional extras), plus the `io` submodule, `HyperAnimation`
 (the return type of animated plots), and `FrameContext` (the per-frame
 state `plot(..., on_frame=...)` hands to its callback). Exceptions raised
 by hypertools (`HypertoolsError`, `HypertoolsBackendError`,
@@ -22,6 +23,7 @@ on the ``plot`` function) and raises ImportError. Use
 from .config import __version__  # noqa: F401 (re-export; deliberately excluded from __all__, see below)
 from .plot.plot import plot, subplots
 from .plot.backend import set_interactive_backend
+from ._shared.lazy_import import set_autoinstall
 from .plot.hyper_animation import HyperAnimation
 from .plot.animation_context import FrameContext
 from .io.load import load
@@ -53,7 +55,8 @@ __all__ = [
     'plot', 'analyze', 'reduce', 'align', 'normalize', 'describe',
     'cluster', 'manip', 'predict', 'impute', 'load', 'save',
     'apply_model', 'supported_models', 'Pipeline',
-    'set_interactive_backend', 'HyperAnimation', 'FrameContext', 'io',
+    'set_interactive_backend', 'set_autoinstall', 'HyperAnimation',
+    'FrameContext', 'io',
     'HypertoolsError', 'HypertoolsBackendError', 'HypertoolsIOError',
     'HypertoolsOfflineError',
     'damage', 'stack', 'text_windows', 'subplots',
