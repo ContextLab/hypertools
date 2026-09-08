@@ -3,13 +3,13 @@ import datawrangler as dw
 import pandas as pd
 
 from .common import Manipulator
+from ..core.pipeline import as_internal_frames
 
 
 MODES = ('minmax', 'isotropic')
 
 
 # noinspection PyShadowingBuiltins
-@dw.decorate.funnel
 def fitter(data, axis=0, min=0, max=1, mode='minmax'):
     """Fit normalization parameters for the `Normalize` manipulator.
 
@@ -53,6 +53,16 @@ def fitter(data, axis=0, min=0, max=1, mode='minmax'):
         If `min >= max`, `axis` is not 0 or 1, `mode` is not one of
         `MODES`, or ``mode='isotropic'`` is combined with ``axis=1``.
     """
+    # the funnel runs with backend='pandas' so a polars/LazyFrame input
+    # (which the funnel would otherwise keep in its own backend) reaches
+    # the pandas-based fit below (datatype audit, 2026-09-08)
+    return _fitter(data, axis=axis, min=min, max=max, mode=mode,
+                   backend='pandas')
+
+
+# noinspection PyShadowingBuiltins
+@dw.decorate.funnel
+def _fitter(data, axis=0, min=0, max=1, mode='minmax'):
     # a real ValueError (as documented in Raises), not "assert cond,
     # ValueError(...)" -- the assert idiom raised AssertionError and was
     # silently stripped under `python -O` (audit F14-009)
@@ -169,6 +179,10 @@ def transformer(data, **kwargs):
         If `axis` is missing from `kwargs`, or (after resolving
         `transpose`) is not 0.
     """
+    # a fitted manipulator's `.transform` hands over whatever the caller
+    # passed: frames of any backend become pandas here, once (datatype
+    # audit, 2026-09-08)
+    data = as_internal_frames(data)
     transpose = kwargs.pop('transpose', False)
     # real raises (not `assert ..., ValueError(...)`, which raised
     # AssertionError and was stripped under `python -O`) -- 2026-07 release

@@ -9,6 +9,7 @@ import pandas as pd
 import requests
 
 from ..datageometry import DataGeometry
+from .._shared.helpers import is_frame_dataset, is_array_dataset
 from ..core.exceptions import HypertoolsIOError
 from ..tools.analyze import analyze
 
@@ -614,17 +615,25 @@ def load(
         else geo_data
 
 
-_LOADED_TYPES = (pd.DataFrame, np.ndarray)
+def _is_loaded_one(dataset):
+    """True for ONE already-loaded dataset: an array, or a DataFrame of
+    any backend datawrangler recognises (pandas, polars, a LazyFrame, ...).
+    Strings and path-likes are never datasets here -- they name something
+    to load -- and are excluded BEFORE the datawrangler predicate is asked
+    (``dw.zoo.is_dataframe`` would otherwise try to read a path)."""
+    if isinstance(dataset, (str, bytes, os.PathLike)):
+        return False
+    return is_array_dataset(dataset) or is_frame_dataset(dataset)
 
 
 def _is_loaded(dataset):
     """True when `dataset` is already-loaded data that :func:`load` passes
-    through: a DataFrame, a numpy array, or a non-empty list/tuple made
-    only of those (one hypertools multi-dataset)."""
-    if isinstance(dataset, _LOADED_TYPES):
+    through: a DataFrame (any backend), a numpy array, or a non-empty
+    list/tuple made only of those (one hypertools multi-dataset)."""
+    if _is_loaded_one(dataset):
         return True
     return isinstance(dataset, (list, tuple)) and len(dataset) > 0 and \
-        all(isinstance(d, _LOADED_TYPES) for d in dataset)
+        all(_is_loaded_one(d) for d in dataset)
 
 
 def _resolve(dataset, *, legacy, split, streaming, trust, cache=False,
@@ -814,7 +823,7 @@ def _load_legacy(dataset_path):
 
     if isinstance(data_dict['data'], dict):
         data_dict['data'] = pd.DataFrame(data_dict['data'])
-    elif isinstance(data_dict['data'], np.ndarray):
+    elif is_array_dataset(data_dict['data']):
         data_dict['data'] = list(data_dict['data'])
     data_dict['xform_data'] = list(data_dict['xform_data'])
     return DataGeometry(**data_dict)

@@ -20,6 +20,7 @@ No mocks: real polars, real pandas, real hypertools calls (show=False).
 """
 import warnings
 
+import matplotlib.colors as mcolors
 import numpy as np
 import pandas as pd
 import pytest
@@ -242,12 +243,6 @@ def test_normalize_polars_matches_pandas(pdf, plf, lazy, kind):
     _same(hyp.normalize(x), hyp.normalize(ref))
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason='wave 1: hypertools/manip/manip.py:114 funnels `data` without '
-           "backend='pandas', so a polars input reaches the manipulators as a "
-           'polars frame and hypertools/manip/zscore.py:46 (pandas '
-           'Series.mean(axis=0) / pd.concat) fails on it')
 @pytest.mark.parametrize('kind', KINDS)
 def test_manip_polars_matches_pandas(pdf, plf, lazy, kind):
     x, ref = _inputs(pdf, plf, lazy, kind)
@@ -355,13 +350,9 @@ def test_plot_plotly_polars_matches_pandas(pdf, plf, lazy, kind):
     _same([c for _, c in got], [c for _, c in want])
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason='wave 1: hypertools/plot/plot.py:1885 `_capture_column_names` '
-           '(and :1851 `_capture_row_indices`) only capture axis labels '
-           'from a pandas DataFrame, so a polars frame plots the same '
-           'coordinates but drops its column names from the axes')
 def test_plot_polars_column_names_become_axis_labels_like_pandas():
+    # wave 1 lifted: `_capture_column_names` / `_dataframe_axis_labels`
+    # read column names through the datawrangler predicates
     values = np.random.RandomState(0).rand(N_ROWS, 2)
     p2 = pd.DataFrame(values, columns=['height', 'weight'])
     ref = hyp.plot(p2, show=False)
@@ -370,6 +361,347 @@ def test_plot_polars_column_names_become_axis_labels_like_pandas():
     assert ref.axes[0].get_xlabel() == 'height'
     assert (out.axes[0].get_xlabel(), out.axes[0].get_ylabel()) == \
         (ref.axes[0].get_xlabel(), ref.axes[0].get_ylabel())
+    # and the 3-D case names all three axes
+    p3 = pd.DataFrame(np.random.RandomState(1).rand(N_ROWS, 3),
+                      columns=['x1', 'x2', 'x3'])
+    ref3 = hyp.plot(p3, show=False)
+    out3 = hyp.plot(pl.from_pandas(p3), show=False)
+    assert ref3.axes[0].get_zlabel() == 'x3'
+    assert (out3.axes[0].get_xlabel(), out3.axes[0].get_ylabel(),
+            out3.axes[0].get_zlabel()) == ('x1', 'x2', 'x3')
+
+
+def test_plot_plotly_polars_column_names_become_axis_labels_like_pandas():
+    values = np.random.RandomState(0).rand(N_ROWS, 2)
+    p2 = pd.DataFrame(values, columns=['height', 'weight'])
+    hyp.set_interactive_backend('plotly')
+    try:
+        ref = hyp.plot(p2, show=False)
+        out = hyp.plot(pl.from_pandas(p2), show=False)
+    finally:
+        hyp.set_interactive_backend('matplotlib')
+    assert ref.layout.xaxis.title.text == 'height'
+    assert (out.layout.xaxis.title.text, out.layout.yaxis.title.text) == \
+        (ref.layout.xaxis.title.text, ref.layout.yaxis.title.text)
+    _same([c for _, c in _plotly_traces(out)],
+          [c for _, c in _plotly_traces(ref)])
+
+
+# --- plot-level polars arguments (hue / labels / truth / palette / panels) ---
+
+@pytest.fixture
+def frame3():
+    """A 30 x 3 named frame as (polars, pandas)."""
+    rng = np.random.RandomState(3)
+    pdf3 = pd.DataFrame(rng.rand(30, 3), columns=['a', 'b', 'c'])
+    return pl.from_pandas(pdf3), pdf3
+
+
+def _both_backends(call):
+    """``(matplotlib_result, plotly_result)`` of `call(backend)``, with the
+    backend restored afterwards."""
+    mpl = call('matplotlib')
+    hyp.set_interactive_backend('plotly')
+    try:
+        ply = call('plotly')
+    finally:
+        hyp.set_interactive_backend('matplotlib')
+    return mpl, ply
+
+
+def _mpl_colors(fig):
+    """Every drawn colour of a matplotlib figure, in drawing order."""
+    colors = []
+    for ax in fig.axes:
+        for line in ax.lines:
+            colors.append(np.asarray(mcolors.to_rgba(line.get_color())))
+        for coll in ax.collections:
+            fc = np.asarray(coll.get_facecolor(), dtype=float)
+            if fc.size:
+                colors.append(fc)
+    return colors
+
+
+def _plotly_colors(fig):
+    return [(t.type, getattr(t.marker, 'color', None),
+             getattr(t.line, 'color', None)) for t in fig.data]
+
+
+def _plotly_annotation_texts(fig):
+    """Every annotation text of a plotly figure (3-D labels live on the
+    scene, 2-D ones on the layout)."""
+    texts = [a.text for a in fig.layout.annotations]
+    if fig.layout.scene is not None:
+        texts += [a.text for a in fig.layout.scene.annotations]
+    return texts
+
+
+def _assert_same_figure(out, ref, backend):
+    """The polars-argument figure is drawn exactly like the pandas one."""
+    if backend == 'matplotlib':
+        _same(_mpl_drawn(out), _mpl_drawn(ref))
+        _same(_mpl_colors(out), _mpl_colors(ref))
+        assert ([t.get_text() for t in out.axes[0].texts]
+                == [t.get_text() for t in ref.axes[0].texts])
+        assert len(out.axes) == len(ref.axes)
+    else:
+        got, want = _plotly_traces(out), _plotly_traces(ref)
+        assert [t for t, _ in got] == [t for t, _ in want]
+        _same([c for _, c in got], [c for _, c in want])
+        assert _plotly_colors(out) == _plotly_colors(ref)
+        assert [t.name for t in out.data] == [t.name for t in ref.data]
+        assert _plotly_annotation_texts(out) == _plotly_annotation_texts(ref)
+
+
+@pytest.mark.parametrize('form', ['series', 'frame'])
+def test_plot_hue_from_polars_categorical(frame3, form):
+    plf3, pdf3 = frame3
+    labels = ['x', 'y', 'z'] * 10
+    p_hue = pd.Series(labels, name='grp')
+    hue = pl.Series('grp', labels)
+    if form == 'frame':
+        p_hue, hue = p_hue.to_frame(), hue.to_frame()
+
+    def call(backend):
+        out = hyp.plot(plf3, hue=hue, fmt='o-', legend=True, show=False)
+        ref = hyp.plot(pdf3, hue=p_hue, fmt='o-', legend=True, show=False)
+        _assert_same_figure(out, ref, backend)
+        return out
+    mpl, ply = _both_backends(call)
+    # three categories, three colours: the polars hue was grouped, not
+    # dropped
+    assert len({tuple(c) for c in map(tuple, np.round(
+        [mcolors.to_rgba(line.get_color()) for line in mpl.axes[0].lines],
+        6))}) == 3
+    assert len(ply.data) >= 3
+    legend = mpl.axes[0].get_legend()
+    assert legend is not None
+    assert [t.get_text() for t in legend.get_texts()] == ['x', 'y', 'z']
+
+
+@pytest.mark.parametrize('form', ['series', 'frame'])
+def test_plot_hue_from_polars_numeric(frame3, form):
+    plf3, pdf3 = frame3
+    values = np.linspace(0., 1., 30)
+    p_hue = pd.Series(values, name='val')
+    hue = pl.Series('val', values)
+    if form == 'frame':
+        p_hue, hue = p_hue.to_frame(), hue.to_frame()
+
+    def call(backend):
+        out = hyp.plot(plf3, hue=hue, fmt='.', show=False)
+        ref = hyp.plot(pdf3, hue=p_hue, fmt='.', show=False)
+        _assert_same_figure(out, ref, backend)
+        return out
+    mpl, _ = _both_backends(call)
+    # a continuous hue: more than three distinct colours over 30 points
+    colors = np.round(np.vstack([c for c in _mpl_colors(mpl)
+                                 if c.ndim == 2]), 6)
+    assert len({tuple(c) for c in colors}) > 3
+
+
+def test_plot_hue_matrix_from_polars_frame_keeps_column_names(frame3):
+    """A multi-column polars frame is a matrix hue whose column names label
+    the legend, exactly like the pandas frame (GH #285)."""
+    plf3, pdf3 = frame3
+    rng = np.random.RandomState(5)
+    weights = rng.rand(30, 2)
+    weights /= weights.sum(axis=1, keepdims=True)
+    p_hue = pd.DataFrame(weights, columns=['alpha', 'beta'])
+    hue = pl.from_pandas(p_hue)
+    out = hyp.plot(plf3, hue=hue, fmt='.', legend=True, show=False)
+    ref = hyp.plot(pdf3, hue=p_hue, fmt='.', legend=True, show=False)
+    _assert_same_figure(out, ref, 'matplotlib')
+    legend = out.axes[0].get_legend()
+    assert legend is not None
+    labels = [t.get_text() for t in legend.get_texts()]
+    assert labels == ['alpha', 'beta']
+    assert labels == [t.get_text()
+                      for t in ref.axes[0].get_legend().get_texts()]
+
+
+def test_plot_labels_from_polars_column(frame3):
+    plf3, pdf3 = frame3
+    names = [f'obs{i}' for i in range(30)]
+    p_lab = pdf3.assign(name=names)
+    pl_lab = pl.from_pandas(p_lab)
+
+    def call(backend):
+        out = hyp.plot(plf3, labels=pl_lab['name'], show=False)
+        ref = hyp.plot(pdf3, labels=p_lab['name'], show=False)
+        _assert_same_figure(out, ref, backend)
+        return out
+    mpl, ply = _both_backends(call)
+    assert [t.get_text() for t in mpl.axes[0].texts] == names
+    assert _plotly_annotation_texts(ply) == names
+
+
+def test_plot_truth_from_polars_frame(frame3):
+    plf3, pdf3 = frame3
+    rng = np.random.RandomState(7)
+    p_truth = pd.DataFrame(rng.rand(5, 3), columns=['a', 'b', 'c'])
+    truth = pl.from_pandas(p_truth)
+
+    def call(backend):
+        out = hyp.plot(plf3, predict='AutoRegressor', t=5, truth=truth,
+                       show=False)
+        ref = hyp.plot(pdf3, predict='AutoRegressor', t=5, truth=p_truth,
+                       show=False)
+        _assert_same_figure(out, ref, backend)
+        return out
+    mpl, _ = _both_backends(call)
+    # data line + forecast + truth were all drawn
+    assert len(mpl.axes[0].lines) >= 3
+    # and a truth of the wrong length is refused for polars as for pandas
+    with pytest.raises(ValueError, match='exactly t=5 rows'):
+        hyp.plot(plf3, predict='AutoRegressor', t=5,
+                 truth=pl.from_pandas(p_truth.iloc[:3]), show=False)
+
+
+def test_plot_mixed_polars_and_pandas_datasets(frame3):
+    plf3, pdf3 = frame3
+    rng = np.random.RandomState(11)
+    other = pd.DataFrame(rng.rand(20, 3), columns=['a', 'b', 'c'])
+    arr = rng.rand(10, 3)
+
+    def call(backend):
+        out = hyp.plot([plf3, other, arr], show=False)
+        ref = hyp.plot([pdf3, other, arr], show=False)
+        _assert_same_figure(out, ref, backend)
+        return out
+    mpl, ply = _both_backends(call)
+    assert len(mpl.axes[0].lines) == 3
+    assert len(ply.data) >= 3
+    # per-dataset hue lists mixing a polars Series with a python list
+    hue_pl = [pl.Series('g', ['p'] * 30), ['q'] * 20, ['r'] * 10]
+    hue_pd = [pd.Series(['p'] * 30), ['q'] * 20, ['r'] * 10]
+    out = hyp.plot([plf3, other, arr], hue=hue_pl, show=False)
+    ref = hyp.plot([pdf3, other, arr], hue=hue_pd, show=False)
+    _assert_same_figure(out, ref, 'matplotlib')
+
+
+def test_plot_polars_frame_as_matrix_palette(frame3):
+    from hypertools.plot.colors import is_palette_matrix, matrix_palette
+    plf3, pdf3 = frame3
+    rng = np.random.RandomState(13)
+    p_pal = pd.DataFrame(rng.rand(30, 2), columns=['u', 'v'])
+    pal = pl.from_pandas(p_pal)
+    assert is_palette_matrix(pal) and is_palette_matrix(p_pal)
+    assert is_palette_matrix(pal.lazy())
+    # a polars frame of strings is not a palette matrix (pandas rule)
+    assert not is_palette_matrix(pl.DataFrame({'s': ['a', 'b']}))
+    cm_pl, cm_pd = matrix_palette(pal), matrix_palette(p_pal)
+    samples = np.linspace(0., 1., 7)
+    np.testing.assert_allclose(cm_pl(samples), cm_pd(samples))
+    assert cm_pl(samples).shape == (7, 4)
+
+    def call(backend):
+        out = hyp.plot(plf3, hue=np.linspace(0, 1, 30), palette=pal,
+                       fmt='.', show=False)
+        ref = hyp.plot(pdf3, hue=np.linspace(0, 1, 30), palette=p_pal,
+                       fmt='.', show=False)
+        _assert_same_figure(out, ref, backend)
+        return out
+    _both_backends(call)
+
+
+def test_plot_panels_with_polars_input(frame3):
+    plf3, pdf3 = frame3
+    rng = np.random.RandomState(17)
+    other = pd.DataFrame(rng.rand(24, 3), columns=['a', 'b', 'c'])
+
+    def call(backend):
+        out = hyp.plot([plf3, pl.from_pandas(other)], panels=True,
+                       show=False)
+        ref = hyp.plot([pdf3, other], panels=True, show=False)
+        _assert_same_figure(out, ref, backend)
+        return out
+    mpl, ply = _both_backends(call)
+    assert len(mpl.axes) >= 2
+    # panel axis labels come from the polars column names too
+    assert [ax.get_xlabel() for ax in mpl.axes[:2]] == ['a', 'a']
+    # series mode (ndims=1, one line per column with reduce=None) panels:
+    # the polars frame's columns name the lines exactly as the pandas
+    # frame's do (`_capture_column_names` through `_panel_frame`)
+    out = hyp.plot([plf3, pl.from_pandas(other)], panels=True, ndims=1,
+                   reduce=None, legend=True, show=False)
+    ref = hyp.plot([pdf3, other], panels=True, ndims=1, reduce=None,
+                   legend=True, show=False)
+    _assert_same_figure(out, ref, 'matplotlib')
+    legends = [[t.get_text() for t in ax.get_legend().get_texts()]
+               for ax in out.axes if ax.get_legend()]
+    assert legends == [['a', 'b', 'c'], ['a', 'b', 'c']]
+    assert legends == [[t.get_text() for t in ax.get_legend().get_texts()]
+                       for ax in ref.axes if ax.get_legend()]
+
+
+def test_plot_series_mode_names_polars_columns_like_pandas(frame3):
+    """`_capture_column_names` (wave 1): in ndims=1 series mode a polars
+    frame's columns name the drawn lines, and a single named column names
+    the y axis, exactly as for the pandas frame."""
+    plf3, pdf3 = frame3
+
+    def call(backend):
+        out = hyp.plot(plf3, ndims=1, reduce=None, legend=True, show=False)
+        ref = hyp.plot(pdf3, ndims=1, reduce=None, legend=True, show=False)
+        _assert_same_figure(out, ref, backend)
+        return out, ref
+    (mpl_out, mpl_ref), (ply_out, ply_ref) = _both_backends(call)
+    names = [t.get_text() for t in mpl_out.axes[0].get_legend().get_texts()]
+    assert names == ['a', 'b', 'c']
+    assert names == [t.get_text()
+                     for t in mpl_ref.axes[0].get_legend().get_texts()]
+    assert [t.name for t in ply_out.data][:3] == ['a', 'b', 'c']
+    one_pl = hyp.plot(plf3.select('b'), ndims=1, show=False)
+    one_pd = hyp.plot(pdf3[['b']], ndims=1, show=False)
+    assert one_pl.axes[0].get_ylabel() == 'b' == one_pd.axes[0].get_ylabel()
+    # a polars Series is named after itself, like a pandas Series
+    s_pl = hyp.plot(plf3['c'], ndims=1, show=False)
+    s_pd = hyp.plot(pdf3['c'], ndims=1, show=False)
+    assert s_pl.axes[0].get_ylabel() == 'c' == s_pd.axes[0].get_ylabel()
+    _same(_mpl_drawn(s_pl), _mpl_drawn(s_pd))
+
+
+def test_plot_polars_date_column_matches_pandas_date_column():
+    """polars has no row index: a frame with a datetime column plots exactly
+    as the pandas frame with the same datetime COLUMN (and a RangeIndex),
+    on both backends -- not as the pandas frame whose DatetimeIndex puts
+    dates on the x axis of `ndims=1` series mode (that is a pandas index
+    feature; ``pl_df.to_pandas().set_index('date')`` opts into it)."""
+    dates = pd.date_range('2020-01-01', periods=12, freq='D', name='date')
+    rng = np.random.RandomState(19)
+    indexed = pd.DataFrame({'v': rng.rand(12), 'w': rng.rand(12)},
+                           index=dates)
+    with_column = indexed.reset_index()
+    assert list(with_column.columns) == ['date', 'v', 'w']
+    polars = pl.from_pandas(with_column)
+    assert polars.schema['date'].is_temporal()
+
+    def call(backend):
+        out = hyp.plot(polars, ndims=1, reduce=None, show=False)
+        ref = hyp.plot(with_column, ndims=1, reduce=None, show=False)
+        _assert_same_figure(out, ref, backend)
+        return out, ref
+    (mpl_out, mpl_ref), _ = _both_backends(call)
+    # the datetime index version draws real dates on x (pandas only)
+    import matplotlib.dates as mdates
+    idx_fig = hyp.plot(indexed, ndims=1, reduce=None, show=False)
+    assert idx_fig.axes[0].lines[0].get_xdata()[0] == \
+        mdates.date2num(dates[0])
+    # ...and the polars frame, like the pandas column frame, draws row
+    # positions on x (0..11), with the date column as one more series
+    assert mpl_out.axes[0].lines[0].get_xdata()[0] == 0.0
+    assert mpl_out.axes[0].get_xlim() == mpl_ref.axes[0].get_xlim()
+    assert mpl_out.axes[0].get_xlim()[1] < 20
+    assert len(mpl_out.axes[0].lines) == len(mpl_ref.axes[0].lines) == 3
+    # a polars frame's default row index is the pandas default, so a
+    # {index} title pattern is refused for both with the same message
+    with pytest.raises(ValueError, match='index') as pl_err:
+        hyp.plot(polars, ndims=1, title='{index}', animate=True, show=False)
+    with pytest.raises(ValueError, match='index') as pd_err:
+        hyp.plot(with_column, ndims=1, title='{index}', animate=True,
+                 show=False)
+    assert str(pl_err.value) == str(pd_err.value)
 
 
 def test_polars_inputs_raise_no_warnings_beyond_pandas(pdf, plf):

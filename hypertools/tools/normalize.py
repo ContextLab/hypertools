@@ -12,6 +12,8 @@ from sklearn.base import BaseEstimator
 from sklearn.exceptions import NotFittedError
 
 from .format_data import format_data as formatter
+from .._shared.helpers import is_frame_dataset
+from ..core.shared import as_dataframe
 
 
 def _as_list_2d(x):
@@ -31,9 +33,18 @@ def _as_list_2d(x):
         The 2-D arrays, and whether the original input was a single array
         (so callers can return single-in -> single-out).
     """
+    def _as_float_2d(a):
+        # a frame of any backend datawrangler recognises (polars, a
+        # LazyFrame, ...) goes through the shared pandas coercion first;
+        # everything else is whatever `np.asarray` makes of it (datatype
+        # audit, 2026-09-08)
+        if is_frame_dataset(a):
+            a = as_dataframe(a)
+        return np.atleast_2d(np.asarray(a, dtype=np.float64))
+
     if isinstance(x, (list, tuple)):
-        return [np.atleast_2d(np.asarray(a, dtype=np.float64)) for a in x], False
-    return [np.atleast_2d(np.asarray(x, dtype=np.float64))], True
+        return [_as_float_2d(a) for a in x], False
+    return [_as_float_2d(x)], True
 
 
 def _check_column_counts(arrs):

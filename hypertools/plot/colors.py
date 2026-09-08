@@ -11,8 +11,12 @@ against current numpy/seaborn.
 import collections.abc
 import warnings
 
+import datawrangler as dw
 import numpy as np
 import pandas as pd
+
+from .._shared.helpers import (is_array_dataset, is_frame_dataset,
+                               is_series_like, as_pandas_dataframe)
 
 # neutral color for observations whose hue value is non-finite (NaN/inf):
 # a light gray that reads as "no information" next to any palette, so a
@@ -102,8 +106,14 @@ def mat2colors(m, palette='hls', n_bins=100):
     """
     import seaborn as sns
 
-    if isinstance(m, pd.DataFrame):
-        m = m.values
+    if is_frame_dataset(m):
+        # any dataframe backend datawrangler recognises (pandas, polars, ...)
+        m = as_pandas_dataframe(m).to_numpy()
+    elif is_series_like(m) and not dw.zoo.array_like(m):
+        # a labelled vector that is not numpy-like itself (a polars Series;
+        # a pandas Series is `array_like` and read below as it is): its
+        # values
+        m = np.asarray(m)
     elif isinstance(m, collections.abc.Iterator):
         # generators and other one-shot iterators: materialize so the
         # classification below (which iterates more than once) sees the
@@ -113,7 +123,7 @@ def mat2colors(m, palette='hls', n_bins=100):
         raise ValueError(
             "mat2colors requires a sequence of labels/values (or a 2D "
             f"matrix with one row per sample); got a scalar: {m!r}")
-    if isinstance(m, np.ndarray) and m.ndim == 0:
+    if is_array_dataset(m) and m.ndim == 0:
         raise ValueError(
             "mat2colors requires a sequence of labels/values (or a 2D "
             f"matrix with one row per sample); got a 0-dimensional array: "
@@ -239,7 +249,7 @@ def colors2groups(colors, res=6):
 
 
 def _is_numeric(m):
-    if isinstance(m, np.ndarray):
+    if is_array_dataset(m):
         return np.issubdtype(m.dtype, np.number)
     try:
         flat = _flatten_if_nested(m)
@@ -250,7 +260,7 @@ def _is_numeric(m):
 
 
 def _flatten_if_nested(vals):
-    if any(isinstance(el, (list, np.ndarray)) for el in vals):
+    if any(isinstance(el, list) or is_array_dataset(el) for el in vals):
         return [item for el in vals for item in np.atleast_1d(el)]
     return list(vals)
 
@@ -400,18 +410,21 @@ def sort_colors(colors, key='value'):
 def is_palette_matrix(obj):
     """True for a t x k DATA matrix passed as a palette (`matrix_palette`).
 
-    A pandas DataFrame, or a 2-D numeric array (or nested list) that cannot
-    be a list of colors: a color list has 3 or 4 columns with every value in
-    [0, 1], and keeps meaning exactly that. Anything else 2-D and numeric --
-    another column count, or values outside [0, 1] -- is data to reduce.
+    A DataFrame (any backend datawrangler recognises: pandas, polars, ...),
+    or a 2-D numeric array (or nested list) that cannot be a list of colors:
+    a color list has 3 or 4 columns with every value in [0, 1], and keeps
+    meaning exactly that. Anything else 2-D and numeric -- another column
+    count, or values outside [0, 1] -- is data to reduce.
     """
-    if isinstance(obj, pd.DataFrame):
+    if is_frame_dataset(obj):
+        obj = as_pandas_dataframe(obj)
         return obj.shape[0] > 0 and obj.shape[1] > 0 and all(
             pd.api.types.is_numeric_dtype(dt) for dt in obj.dtypes)
-    if isinstance(obj, np.ndarray):
+    if is_array_dataset(obj):
         arr = obj
     elif isinstance(obj, (list, tuple)) and obj and all(
-            isinstance(row, (list, tuple, np.ndarray)) for row in obj):
+            isinstance(row, (list, tuple)) or is_array_dataset(row)
+            for row in obj):
         try:
             arr = np.asarray(obj, dtype=float)
         except (TypeError, ValueError):
@@ -502,8 +515,8 @@ def matrix_palette(data, reduce='PCA', sort='columns', normalize=None,
     """
     from ..reduce.reduce import reduce as _reduce
 
-    arr = data.to_numpy(dtype=float) if isinstance(data, pd.DataFrame) \
-        else np.asarray(data, dtype=float)
+    arr = (as_pandas_dataframe(data).to_numpy(dtype=float)
+           if is_frame_dataset(data) else np.asarray(data, dtype=float))
     if arr.ndim != 2 or arr.shape[0] < 2 or arr.shape[1] < 1:
         raise ValueError(
             "a matrix palette needs a 2-D array with at least two rows "
@@ -610,8 +623,8 @@ def _image_pixels(image, resize):
 
     from PIL import Image
 
-    if isinstance(image, np.ndarray):
-        arr = image
+    if is_array_dataset(image):
+        arr = np.asarray(image)
         if arr.dtype.kind == 'f':
             arr = np.clip(arr, 0.0, 1.0) * 255.0
         im = Image.fromarray(arr.astype(np.uint8)).convert('RGB')
@@ -1206,6 +1219,8 @@ def palette_lead_color(spec):
                 spec[len(IMAGE_PALETTE_PREFIX):])
             options['sort'] = None            # the salient color leads
             return tuple(float(v) for v in image_palette(source, **options)[0])
+        if not _names_a_palette(spec) and _is_color(spec):
+            return tuple(float(v) for v in to_rgb(spec))
     if is_palette_matrix(spec):
         spec = matrix_palette(spec)
     if isinstance(spec, MatrixColormap):
@@ -1215,8 +1230,6 @@ def palette_lead_color(spec):
         # max - min, first on ties) is the color the matrix is about
         chroma = spec.anchors.max(axis=1) - spec.anchors.min(axis=1)
         return tuple(float(v) for v in spec.anchors[int(np.argmax(chroma))])
-        if not _names_a_palette(spec) and _is_color(spec):
-            return tuple(float(v) for v in to_rgb(spec))
     return tuple(float(v) for v in get_palette_colors(spec, 1)[0])
 
 

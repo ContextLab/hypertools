@@ -23,7 +23,9 @@ import os
 import warnings
 
 import numpy as np
-import pandas as pd
+
+from .._shared.helpers import (is_array_dataset, is_frame_dataset,
+                               is_series_like, as_pandas_dataframe)
 import matplotlib.font_manager as font_manager
 from matplotlib.font_manager import FontProperties
 from matplotlib.ft2font import FT2Font
@@ -189,7 +191,10 @@ def _iter_texts(obj):
         return
     if isinstance(obj, str):
         yield obj
-    elif isinstance(obj, (np.ndarray, pd.Series, pd.Index, pd.Categorical)):
+    elif is_frame_dataset(obj):
+        for item in as_pandas_dataframe(obj).to_numpy().tolist():
+            yield from _iter_texts(item)
+    elif is_array_dataset(obj) or is_series_like(obj):
         for item in np.asarray(obj).tolist():
             yield from _iter_texts(item)
     elif isinstance(obj, dict):

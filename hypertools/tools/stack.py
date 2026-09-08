@@ -21,6 +21,9 @@ from collections.abc import Mapping, Sequence
 import numpy as np
 import pandas as pd
 
+from .._shared.helpers import (is_frame_dataset, is_series_like,
+                               as_pandas_dataframe)
+
 __all__ = ['stack']
 
 #: Named aggregators for `stack`'s ``aggregate=``. Each is called as
@@ -36,15 +39,20 @@ def _default_columns(width):
 def _as_leaf_frame(obj, key):
     """One dataset -> a flat-columned DataFrame."""
     where = f"frames{''.join(f'[{k!r}]' for k in key)}"
-    if isinstance(obj, pd.DataFrame):
+    if is_frame_dataset(obj):
+        # any backend datawrangler recognises, as hypertools' pandas type
+        obj = as_pandas_dataframe(obj)
         if obj.columns.nlevels > 1:
             raise ValueError(
                 f"{where} already has a column MultiIndex. stack builds the "
                 "hierarchy; its inputs must be flat frames or arrays.")
         return obj
-    if isinstance(obj, pd.Series):
-        name = obj.name if obj.name is not None else 'feature 1'
-        return obj.to_frame(name=name)
+    if is_series_like(obj):
+        name = getattr(obj, 'name', None)
+        name = name if name is not None else 'feature 1'
+        return as_pandas_dataframe(obj.to_frame(name=name)) \
+            if hasattr(obj, 'to_frame') \
+            else pd.DataFrame({name: np.asarray(obj)})
     values = np.asarray(obj)
     if values.ndim == 1:
         values = values.reshape(-1, 1)
@@ -288,7 +296,7 @@ def stack(frames, names=None, level_names=None, aggregate=None):
             f"{reference}.")
 
     index = leaves[0].index
-    if not all(isinstance(obj, pd.DataFrame) for _, obj in collected) or \
+    if not all(is_frame_dataset(obj) for _, obj in collected) or \
             not all(leaf.index.equals(index) for leaf in leaves):
         index = pd.RangeIndex(len(leaves[0]))
     leaves = [pd.DataFrame(leaf.to_numpy(), index=index,

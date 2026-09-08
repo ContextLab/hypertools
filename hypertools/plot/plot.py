@@ -20,6 +20,8 @@ import pandas as pd
 # what makes every `np.` reference in this file resolvable to a reader
 # and to a linter, instead of 186 F405 "may be undefined" findings.
 from .._shared.helpers import *
+from .._shared.helpers import (is_array_dataset, is_frame_dataset,
+                               is_series_like, as_pandas_dataframe)
 from .._shared.params import default_params
 from ..core.model import external_stacklevel
 from ..tools.analyze import analyze
@@ -1898,6 +1900,29 @@ def _title_is_pattern(title):
     return isinstance(title, str) and _TITLE_INDEX_FIELD in title
 
 
+def _dataset_values(item):
+    """The values of ONE user dataset as a numpy array: a DataFrame dataset
+    (`is_frame_dataset`: pandas, polars, whatever datawrangler recognises)
+    through its pandas form, a series-like (`is_series_like`) through its
+    ``to_numpy``, anything else through `np.asarray`."""
+    if is_frame_dataset(item):
+        return as_pandas_dataframe(item).to_numpy()
+    if is_series_like(item) and hasattr(item, 'to_numpy'):
+        return item.to_numpy()
+    return np.asarray(item)
+
+
+def _series_values_list(item):
+    """The values of ONE series-like (`is_series_like`) as a python list:
+    pandas objects through ``tolist`` (Series, Index, Categorical), polars
+    through ``to_list``, anything else by iteration."""
+    if hasattr(item, 'tolist'):
+        return item.tolist()
+    if hasattr(item, 'to_list'):
+        return item.to_list()
+    return list(item)
+
+
 def _capture_row_indices(x):
     """The row index of each input dataset, or None where there isn't one.
 
@@ -1909,16 +1934,23 @@ def _capture_row_indices(x):
     all, so the common case allocates nothing and stores nothing.
     """
     def _index_of(item):
-        if isinstance(item, (pd.DataFrame, pd.Series)):
-            idx = item.index
-            # a plain 0..n-1 RangeIndex carries no information a row number
-            # does not already carry; treat it as "no index" so the error
-            # message for a pattern title names the real problem.
-            if isinstance(idx, pd.RangeIndex) and idx.start == 0 \
-                    and idx.step == 1:
-                return None
-            return idx
-        return None
+        if is_frame_dataset(item):
+            # every dataframe backend datawrangler recognises, read through
+            # its pandas form; a backend with no row index (polars) comes
+            # back with the default RangeIndex, i.e. "no index" below
+            item = as_pandas_dataframe(item)
+        elif not is_series_like(item):
+            return None
+        idx = getattr(item, 'index', None)
+        if not isinstance(idx, pd.Index):
+            return None
+        # a plain 0..n-1 RangeIndex carries no information a row number
+        # does not already carry; treat it as "no index" so the error
+        # message for a pattern title names the real problem.
+        if isinstance(idx, pd.RangeIndex) and idx.start == 0 \
+                and idx.step == 1:
+            return None
+        return idx
 
     items = x if isinstance(x, (list, tuple)) else [x]
     indices = []
@@ -1941,11 +1973,14 @@ def _capture_column_names(x):
     list of strings or ``None``.
     """
     def _columns_of(item):
-        if isinstance(item, pd.Series):
-            return None if item.name is None else [str(item.name)]
-        if not isinstance(item, pd.DataFrame):
+        if is_series_like(item):
+            # a labelled vector's one column is its name (pandas: None when
+            # unnamed; polars: '' when unnamed)
+            name = getattr(item, 'name', None)
+            return None if name is None or name == '' else [str(name)]
+        if not is_frame_dataset(item):
             return None
-        cols = item.columns
+        cols = as_pandas_dataframe(item).columns
         # a bare 0..k-1 RangeIndex names nothing a column number does not
         # already say (the same rule `_capture_row_indices` applies to a
         # default row index)
@@ -2120,9 +2155,7 @@ def _resolve_truth(truth, datasets, t, series_step=None):
     series = series_step is not None
 
     def _as_2d(item):
-        arr = np.asarray(
-            item.values if isinstance(item, (pd.DataFrame, pd.Series))
-            else item, dtype=float)
+        arr = np.asarray(_dataset_values(item), dtype=float)
         return arr.reshape(-1, 1) if arr.ndim == 1 else arr
 
     if isinstance(truth, (list, tuple)):
@@ -3124,7 +3157,8 @@ def _panel_slice_per_observation(value, index, lengths):
     forwarded unchanged so `plot()`'s own validation reports it.
     """
     n_datasets = len(lengths)
-    if not isinstance(value, (list, tuple, np.ndarray, pd.Series, pd.Index)):
+    if not (isinstance(value, (list, tuple)) or is_array_dataset(value)
+            or is_series_like(value)):
         return value
     seq = list(value)
     if len(seq) == n_datasets and all(
@@ -3274,11 +3308,12 @@ def _panel_slice_labels(value, index, lengths):
     per-dataset hue is broadcast would label every observation.
     """
     n_datasets = len(lengths)
-    if not isinstance(value, (list, tuple, np.ndarray)):
+    if not (isinstance(value, (list, tuple)) or is_array_dataset(value)):
         return value
     seq = list(value)
     if len(seq) == n_datasets and any(
-            isinstance(el, (list, tuple, np.ndarray)) for el in seq):
+            isinstance(el, (list, tuple)) or is_array_dataset(el)
+            for el in seq):
         # nested per-dataset form: the panel's single dataset takes its own
         # per-observation sequence, flat (a one-entry list would be read as
         # one label for n observations; P3)
@@ -3372,8 +3407,12 @@ def _panel_lift_for(xi, source):
     n_rows = xi.shape[0]
     if xi.shape[1] == 2:
         return _PanelLift(2)
-    index = getattr(source, 'index', None)
-    if isinstance(source, np.ndarray) or isinstance(index, pd.MultiIndex):
+    index = None
+    if is_frame_dataset(source):
+        index = as_pandas_dataframe(source).index
+    elif is_series_like(source):
+        index = getattr(source, 'index', None)
+    if not isinstance(index, pd.Index) or isinstance(index, pd.MultiIndex):
         index = None
     x_values, step, is_date, _ = _series_x_axis(index, n_rows)
     if is_date:
@@ -3389,10 +3428,12 @@ def _panel_frame(source, xi):
     the column (P2). The values are `xi`'s -- the panel is drawn through
     ``transform=`` and never re-analyzes them."""
     arr = np.asarray(xi)
-    if isinstance(source, pd.Series):
+    if is_series_like(source) and hasattr(source, 'to_frame'):
         source = source.to_frame()
-    if (not isinstance(source, pd.DataFrame) or arr.ndim != 2
-            or source.shape[0] != arr.shape[0]
+    if not is_frame_dataset(source) or arr.ndim != 2:
+        return arr
+    source = as_pandas_dataframe(source)
+    if (source.shape[0] != arr.shape[0]
             or isinstance(source.index, pd.MultiIndex)):
         return arr
     columns = None
@@ -3435,11 +3476,11 @@ def _dataframe_axis_labels(x):
     same 13 single-axes calls kept them.
     """
     lbl_df = None
-    if isinstance(x, pd.DataFrame):
-        lbl_df = x
+    if is_frame_dataset(x):
+        lbl_df = as_pandas_dataframe(x)
     elif (isinstance(x, (list, tuple)) and len(x) == 1
-          and isinstance(x[0], pd.DataFrame)):
-        lbl_df = x[0]
+          and is_frame_dataset(x[0])):
+        lbl_df = as_pandas_dataframe(x[0])
     if (lbl_df is None or lbl_df.shape[1] > 3
             or lbl_df.index.nlevels != 1
             or isinstance(lbl_df.columns, (pd.RangeIndex, pd.MultiIndex))
@@ -6978,7 +7019,8 @@ def plot(
         _xf_items = transform if isinstance(transform, (list, tuple)) \
             else [transform]
         for _xf in _xf_items:
-            if not (hasattr(_xf, 'shape') or hasattr(_xf, '__array__')):
+            if not (is_array_dataset(_xf) or is_frame_dataset(_xf)
+                    or is_series_like(_xf) or hasattr(_xf, '__array__')):
                 raise TypeError(
                     f"transform= must be already-transformed data (a numpy "
                     f"array/DataFrame, or a list of them), or None; got "
@@ -7102,9 +7144,9 @@ def plot(
     # ONE-label list -- the same thing the `isinstance(legend, str)` wrap
     # above does with `legend='a'`, which then reports the length mismatch
     # instead of silently broadcasting that one label over every trace.
-    if isinstance(legend, (tuple, np.ndarray, pd.Series, pd.Index)):
-        legend = ([legend.item()]
-                  if isinstance(legend, np.ndarray) and legend.ndim == 0
+    if (isinstance(legend, tuple) or is_array_dataset(legend)
+            or is_series_like(legend)):
+        legend = ([legend.item()] if np.ndim(legend) == 0
                   else list(legend))
 
     # Did the CALLER pass legend= as an explicit list of labels? Recorded
@@ -7878,7 +7920,8 @@ def plot(
     # unless we warn here.
     if isinstance(x, list):
         for _i, _el in enumerate(x):
-            if isinstance(_el, pd.DataFrame) and _el.index.nlevels >= 2:
+            if (is_frame_dataset(_el)
+                    and as_pandas_dataframe(_el).index.nlevels >= 2):
                 warnings.warn(
                     "MultiIndex grouping is only applied when a single "
                     "DataFrame is passed; the MultiIndex on dataset "
@@ -7902,7 +7945,12 @@ def plot(
     # innermost-level (feature) labels of a COLUMN hierarchy's leaves, kept
     # for the return_model bundle's pipeline; None on every other input.
     _mi_feature_labels = None
-    if isinstance(x, pd.DataFrame) and x.index.nlevels >= 2:
+    if is_frame_dataset(x):
+        # every dataframe backend datawrangler recognises, as hypertools'
+        # own pandas frame (the same object when it already is one): the
+        # row/column-hierarchy checks below read pandas indexes
+        x = as_pandas_dataframe(x)
+    if is_frame_dataset(x) and x.index.nlevels >= 2:
         if cluster is not None or n_clusters is not None:
             raise ValueError(
                 "cluster=/n_clusters= is not compatible with a row-"
@@ -7926,7 +7974,7 @@ def plot(
             , stacklevel=external_stacklevel())
             hue = None
         x, _multiindex_meta = expand_multiindex(x)
-    elif isinstance(x, pd.DataFrame) and x.columns.nlevels >= 2:
+    elif is_frame_dataset(x) and x.columns.nlevels >= 2:
         # COLUMN hierarchy (1.1): the innermost column level is the FEATURE
         # axis and every level above it groups, so (Market, Sector, Ticker)
         # becomes one leaf per sector plus a market mean. Unlike the row
@@ -9461,10 +9509,20 @@ def plot(
         # a matrix hue's own column names are the natural legend labels
         # for its palette swatches (GH #285); captured before hue is
         # turned into a bare array below.
-        _hue_column_names = (list(hue.columns)
-                             if isinstance(hue, pd.DataFrame) else None)
-        if isinstance(hue, (pd.Series, pd.Index, pd.Categorical)):
-            hue = hue.tolist()
+        _hue_column_names = None
+        if is_frame_dataset(hue):
+            hue = as_pandas_dataframe(hue)
+            if (hue.shape[1] == 1
+                    and not pd.api.types.is_numeric_dtype(hue.dtypes.iloc[0])):
+                # a one-column frame of LABELS is that column (previously
+                # it fell through to the matrix path as a (n, 1) object
+                # array and crashed with a bare IndexError); a one-column
+                # NUMERIC frame keeps its matrix-hue reading below
+                hue = _series_values_list(hue.iloc[:, 0])
+            else:
+                _hue_column_names = list(hue.columns)
+        elif is_series_like(hue):
+            hue = _series_values_list(hue)
 
         # NESTED per-dataset hue: when the data is a list of datasets, hue may
         # be given with the SAME nesting -- one hue sub-sequence per dataset,
@@ -10913,8 +10971,9 @@ def plot(
             # indistinguishable pairs.)
             _fc_hue = _forecast_labels
         elif (_fc_hue is not None and not isinstance(_fc_hue, (str, bytes))
-                and isinstance(_fc_hue, (list, tuple, np.ndarray,
-                                         pd.Series, pd.Index))):
+                and (isinstance(_fc_hue, (list, tuple))
+                     or is_array_dataset(_fc_hue)
+                     or is_series_like(_fc_hue))):
             # forecast_hue= is documented as ONE VALUE PER DATASET; with a
             # collection every dataset is forecast once per model, so that
             # value is broadcast over its n_models forecasts (F5). A list

@@ -281,6 +281,27 @@ def _validate_input_hierarchy(spec):
             'feature_labels': labels}
 
 
+def as_internal_frames(data):
+    """`data` with every DataFrame dataset in hypertools' internal pandas
+    form: a frame of any backend datawrangler recognises (polars, a
+    LazyFrame, modin, ...) is converted once here -- pandas frames are
+    returned as-is -- so raw scikit-learn steps and the manipulators, which
+    are written against pandas, never see another backend. Arrays, text and
+    everything else pass through untouched, elementwise for a list/tuple
+    (datatype audit, 2026-09-08). Shared with the manipulators' transformers,
+    which a fitted Manipulator's `.transform` hands raw input directly."""
+    from .._shared.helpers import is_frame_dataset
+    from .shared import as_dataframe
+
+    def _one(item):
+        return as_dataframe(item) if is_frame_dataset(item) else item
+
+    if isinstance(data, (list, tuple)):
+        converted = [_one(item) for item in data]
+        return converted if isinstance(data, list) else tuple(converted)
+    return _one(data)
+
+
 def _dataset_widths(data):
     """Feature counts of `data`, as a list -- one entry per dataset.
 
@@ -288,14 +309,15 @@ def _dataset_widths(data):
     ragged/object list, a 1-D array), so the caller skips the check rather
     than guessing.
     """
-    import numpy as np
-    import pandas as pd
+    from .._shared.helpers import is_frame_dataset, is_array_dataset
+    from .shared import as_dataframe
 
     def _width(item):
         """One dataset's feature count, or `None` if it is not knowable."""
-        if isinstance(item, pd.DataFrame):
-            return item.shape[1]
-        if isinstance(item, np.ndarray) and item.ndim == 2:
+        if is_frame_dataset(item):
+            # a frame of any backend datawrangler recognises (pandas as-is)
+            return as_dataframe(item).shape[1]
+        if is_array_dataset(item) and item.ndim == 2:
             return item.shape[1]
         return None
 
@@ -625,12 +647,13 @@ class Pipeline(BaseEstimator):
         `pipeline.transform(df)` does. If you want name matching, hand back
         the frame.
         """
+        data = as_internal_frames(data)
         hierarchy = self.input_hierarchy
         if hierarchy is None:
             return data
 
-        import pandas as pd
-        if isinstance(data, pd.DataFrame) and data.columns.nlevels >= 2:
+        from .hierarchy import is_hierarchical
+        if is_hierarchical(data, axes='columns'):
             from .hierarchy import group_columns
             correspondence = hierarchy['feature_correspondence']
             leaves, _meta = group_columns(

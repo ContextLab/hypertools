@@ -17,6 +17,9 @@ for a genuine pandas trap:
 import numpy as np
 import pandas as pd
 
+from .._shared.helpers import (is_frame_dataset, is_series_like,
+                               as_pandas_dataframe)
+
 __all__ = ['damage']
 
 
@@ -28,8 +31,10 @@ def _as_float_values(x, name='x'):
     order) is what makes a write through it land. Copying here is also what
     leaves the caller's data untouched.
     """
-    raw = x.to_numpy() if isinstance(x, (pd.DataFrame, pd.Series)) \
-        else np.asarray(x)
+    # `np.asarray` covers every kind hypertools sees here (a pandas
+    # frame/Series, an array, a list); `_damage_one` has already converted
+    # a frame of another backend to pandas (datatype audit, 2026-09-08)
+    raw = np.asarray(x)
     if raw.dtype.kind not in 'fiub':
         raise TypeError(
             f"{name} must hold numeric values (damage marks cells missing "
@@ -141,6 +146,13 @@ def _scatter(values, blanked_rows, frac, rng):
 
 def _damage_one(x, frac, rows, row_frac, rng, name='x'):
     """Damage one dataset; returns ``(damaged_copy, mask)``."""
+    # a frame (or Series) of any backend datawrangler recognises -- polars,
+    # a LazyFrame, ... -- is damaged as hypertools' internal pandas type,
+    # and comes back as one (datatype audit, 2026-09-08)
+    if is_frame_dataset(x):
+        x = as_pandas_dataframe(x)
+    elif is_series_like(x) and not hasattr(x, 'index'):
+        x = pd.Series(np.asarray(x), name=getattr(x, 'name', None))
     values = _as_float_values(x, name=name)
     # A 1-D dataset is n observations of a single feature. `reshape` on a
     # fresh C-contiguous copy is a view, so writes through `two_d` land in
@@ -159,10 +171,10 @@ def _damage_one(x, frac, rows, row_frac, rng, name='x'):
     two_d[mask] = np.nan
     mask = mask.reshape(values.shape)
 
-    if isinstance(x, pd.DataFrame):
+    if is_frame_dataset(x):
         return (pd.DataFrame(values, index=x.index, columns=x.columns),
                 pd.DataFrame(mask, index=x.index, columns=x.columns))
-    if isinstance(x, pd.Series):
+    if is_series_like(x):
         return (pd.Series(values, index=x.index, name=x.name),
                 pd.Series(mask, index=x.index, name=x.name))
     return values, mask

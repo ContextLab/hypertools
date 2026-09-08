@@ -18,6 +18,7 @@ import copy
 import numpy as np
 import pandas as pd
 
+from .._shared.helpers import as_pandas_dataframe, is_frame_dataset
 from ..predict.backtest import build_scores, resolve_metrics, score_pair
 from .common import Imputer
 
@@ -30,8 +31,8 @@ BASELINE = 'mean'
 
 def _as_frame(x, like, what):
     """Coerce `truth`/`mask`-shaped input to a DataFrame matching `like`."""
-    if isinstance(x, pd.DataFrame):
-        frame = x
+    if is_frame_dataset(x):
+        frame = as_pandas_dataframe(x)     # any backend datawrangler knows
     else:
         values = np.asarray(x)
         if values.ndim == 1:

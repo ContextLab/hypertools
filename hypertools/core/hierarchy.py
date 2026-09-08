@@ -36,7 +36,11 @@ See docs/hierarchy.rst for the user-facing comparison table.
 
 from collections import Counter
 
+import datawrangler as dw
+
 import pandas as pd
+
+from .._shared.helpers import is_frame_dataset
 
 #: Stand-in for ANY missing hierarchy label during comparison and indexing.
 #: Module-private and never user-visible: it exists only so that missing
@@ -82,9 +86,22 @@ def _canonical_key(key):
     return tuple(_canonical_label(value) for value in key)
 
 
+def _has_pandas_axes(obj):
+    """True when `obj` is a DataFrame dataset (as datawrangler sees it)
+    that carries pandas-style ``.index``/``.columns`` axes -- the only kind
+    that can hold a MultiIndex. Strings and containers never qualify."""
+    return is_frame_dataset(obj) and dw.zoo.dataframe_like(obj)
+
+
 def is_hierarchical(obj, axes='both'):
-    """True when `obj` is a DataFrame carrying a MultiIndex on `axes`."""
-    if not isinstance(obj, pd.DataFrame):
+    """True when `obj` is a DataFrame carrying a MultiIndex on `axes`.
+
+    A MultiIndex is a pandas notion: a frame of another backend (polars,
+    ...) has no hierarchy, so only a frame with the pandas DataFrame API
+    (``dw.zoo.dataframe_like``) can answer True. Nothing here names a
+    pandas type (datatype audit, 2026-09-08).
+    """
+    if not _has_pandas_axes(obj):
         return False
     if axes == 'rows':
         return obj.index.nlevels >= 2
@@ -101,7 +118,7 @@ def reject_dual_axis(df):
     ignored; 1.1 declines to guess. This is an intentional compatibility
     change (see CHANGELOG 1.1.0, "Changed / validation").
     """
-    if (isinstance(df, pd.DataFrame)
+    if (_has_pandas_axes(df)
             and df.index.nlevels >= 2 and df.columns.nlevels >= 2):
         raise ValueError(
             "x has both a row and a column MultiIndex. hypertools 1.1 does "
@@ -137,7 +154,7 @@ def reject_hierarchical_in_list(x, caller, axes='columns'):
     if axes not in ('columns', 'both'):
         raise ValueError(f"axes= must be 'columns' or 'both'; got {axes!r}")
     for i, element in enumerate(x):
-        if not isinstance(element, pd.DataFrame):
+        if not _has_pandas_axes(element):
             continue
         row_hier = element.index.nlevels >= 2
         col_hier = element.columns.nlevels >= 2

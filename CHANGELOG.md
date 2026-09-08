@@ -349,7 +349,17 @@ and reaches flat `hyp.predict` callers.
   are accepted wherever pandas is -- `plot`, `reduce`, `align`, `cluster`,
   `normalize`, `manip`, `predict`, `impute`, `analyze`, `describe` -- with
   identical results (polars nulls become missing data), and whatever
-  datawrangler adds later comes for free. `tests/test_polars_inputs.py`.
+  datawrangler adds later comes for free. The same holds throughout:
+  `plot`'s `hue=`, `labels=`, `truth=`, matrix `palette=`, `panels=` and
+  its axis/legend labels; `manip` (and the Manipulator classes and
+  `Pipeline` steps directly), `align`, `stack`, `damage`, `apply_model`,
+  the fitted `Normalizer`, `save`/`load`, `text2mat` and the impute
+  backtest's `truth=`/`mask=` read any frame backend datawrangler
+  recognises through the shared predicates; a one-column DataFrame of
+  labels as `hue=` no longer raises `IndexError`, and `text2mat` accepts a
+  Series of documents. A static test (`tests/test_datatype_gate.py`) keeps
+  hand-rolled pandas/numpy type checks out of the library.
+  `tests/test_polars_inputs.py`, `tests/test_polars_inputs_wave1.py`.
 - **Palettes from images read as gradients, and a data matrix is a
   palette.** Colors extracted from an image are put in a deterministic
   order -- by value, dark to bright -- when the image is used as a plot

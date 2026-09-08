@@ -18,7 +18,6 @@ no-re-fitting path behind ``return_model=True``).
 """
 import datawrangler as dw
 import numpy as np
-import pandas as pd
 
 from .common import Manipulator
 from .normalize import Normalize
@@ -26,7 +25,10 @@ from .zscore import ZScore
 from .smooth import Smooth
 from .resample import Resample
 from .delay import Delay
-from ..core.shared import unpack_model, require_data, no_observations_message
+from ..core.shared import (unpack_model, require_data, no_observations_message,
+                           as_dataframe)
+from .._shared.helpers import (is_series_like, is_frame_dataset,
+                               is_array_dataset, as_pandas_dataframe)
 from ..core.pipeline import Pipeline
 
 
@@ -66,17 +68,63 @@ def _validate_manip_input(data):
         # a tuple of datasets is accepted exactly like a list (final wave
         # item 15: it used to leak a raw IndexError from the funnel)
         data = list(data)
-    if isinstance(data, pd.Series):
-        return data.to_frame()
-    if isinstance(data, (pd.DataFrame, np.ndarray)) and data.shape[0] == 0:
-        raise ValueError(no_observations)
     if isinstance(data, list):
         if len(data) == 0:
             raise ValueError(no_observations)
-        data = [d.to_frame() if isinstance(d, pd.Series) else d for d in data]
-        for d in data:
-            if isinstance(d, (pd.DataFrame, np.ndarray)) and d.shape[0] == 0:
-                raise ValueError(no_observations)
+        return _align_columns_for_stacking(
+            [_validate_one(d, no_observations) for d in data])
+    return _validate_one(data, no_observations)
+
+
+def _align_columns_for_stacking(datasets):
+    """Make a LIST of datasets stackable by datawrangler's funnel.
+
+    The funnel stacks the datasets into one frame and requires identical
+    column labels. A list that mixes an unnamed array with a named frame
+    (``[weights, df]``) therefore failed inside datawrangler with 'All
+    DataFrames must have the same columns' -- while `plot`, `reduce` and
+    `align` accept exactly that mix by position (`format_data`). Same rule
+    here: when at least one dataset carries no column names and every
+    dataset has the same width, all of them get positional columns; named
+    frames whose labels differ raise a hypertools error that says so
+    (aligning THOSE by position would silently pair unrelated columns).
+    """
+    framed = [is_frame_dataset(d) for d in datasets]
+    if all(framed):
+        labels = {tuple(map(str, d.columns)) for d in datasets}
+        widths = {d.shape[1] for d in datasets}
+        if len(labels) > 1 and len(widths) == 1:
+            raise ValueError(
+                'manip() got DataFrames with different column labels '
+                f'({sorted(labels)}); give every dataset the same columns '
+                '(or pass arrays, which are aligned by position).')
+        return datasets
+    if not any(framed):
+        return datasets
+    widths = {np.shape(d)[1] if np.ndim(d) > 1 else 1 for d in datasets}
+    if len(widths) != 1:
+        return datasets                    # the funnel reports the widths
+    return [as_dataframe(np.asarray(d)) for d in datasets]
+
+
+def _validate_one(data, no_observations):
+    """`_validate_manip_input` for ONE dataset: a Series-like becomes a
+    single-column frame, a DataFrame of any backend datawrangler knows
+    (pandas, polars, a LazyFrame, ...) becomes hypertools' internal pandas
+    frame, and an empty (0-row) array/frame raises. The datatype questions
+    are asked through datawrangler (the `_shared.helpers` predicates), never
+    by naming pandas/numpy types here (datatype audit, 2026-09-08)."""
+    if is_series_like(data):
+        # pandas and polars Series both expose `.to_frame()`; anything else
+        # series-like (an object with `.to_numpy()`) is wrangled through
+        # datawrangler as a single column
+        return (data.to_frame() if hasattr(data, 'to_frame')
+                else as_dataframe(np.asarray(data).reshape(-1, 1)))
+    if is_frame_dataset(data):
+        data = as_pandas_dataframe(data)
+    if (is_array_dataset(data) or is_frame_dataset(data)) \
+            and data.shape[0] == 0:
+        raise ValueError(no_observations)
     return data
 
 
@@ -294,6 +342,10 @@ def manip(data, model="ZScore", return_model=False, normalize=None, reduce=None,
         warnings.filterwarnings(
             'ignore', message='The copy keyword is deprecated',
             category=DeprecationWarning)
+        # backend='pandas': datawrangler's funnel otherwise PRESERVES a
+        # polars input's backend, and the manipulators are written against
+        # pandas (hypertools' internal frame type)
         return _funneled_manip(data, model=model, return_model=return_model,
                                normalize=normalize, reduce=reduce, ndims=ndims,
-                               align=align, cluster=cluster, **kwargs)
+                               align=align, cluster=cluster, backend='pandas',
+                               **kwargs)

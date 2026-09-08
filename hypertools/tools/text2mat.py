@@ -23,6 +23,7 @@ from sklearn.utils.validation import check_is_fitted
 from sklearn.exceptions import NotFittedError
 from sklearn.pipeline import Pipeline
 from .._shared.params import default_params
+from .._shared.helpers import is_array_dataset, is_series_like
 from ..io.load import load
 
 # vector models
@@ -336,7 +337,7 @@ def text2mat(data, vectorizer='CountVectorizer',
         def _all_text(c):
             if isinstance(c, str):
                 return True
-            if isinstance(c, (list, tuple, np.ndarray)):
+            if isinstance(c, (list, tuple)) or is_array_dataset(c):
                 return len(c) > 0 and all(_all_text(ci) for ci in c)
             return False
         if not _all_text(corpus):
@@ -529,7 +530,11 @@ def _as_text_datasets(x, argname):
     """
     if isinstance(x, str):
         return [[x]]
-    if isinstance(x, np.ndarray):
+    if is_series_like(x):
+        # a pandas/polars Series of documents is one dataset, like a 1-D
+        # array (datatype audit, 2026-09-08)
+        x = np.asarray(x)
+    if is_array_dataset(x):
         x = [x] if x.ndim <= 1 else list(x)
     if not isinstance(x, (list, tuple)):
         raise TypeError(
@@ -548,8 +553,10 @@ def _as_text_datasets(x, argname):
                 f'(element {i} is a str, others are lists): pass either a '
                 'flat list of text samples (one dataset) or a list of lists '
                 '(one dataset per inner list), not a mixture.')
-        if isinstance(item, np.ndarray):
-            item = item.ravel().tolist()
+        if is_series_like(item):
+            item = np.asarray(item)
+        if is_array_dataset(item):
+            item = np.asarray(item).ravel().tolist()
         if not isinstance(item, (list, tuple)) \
                 or not all(isinstance(doc, str) for doc in item):
             raise ValueError(

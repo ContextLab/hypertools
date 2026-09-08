@@ -8,7 +8,6 @@ stack-and-fit-once recipe is wrong for aligning a *list* to a shared template.
 import warnings
 
 import numpy as np
-import pandas as pd
 import datawrangler as dw
 
 from .common import Aligner, trim_and_pad
@@ -16,7 +15,8 @@ from .hyperalign import HyperAlign
 from .procrustes import Procrustes
 from .srm import SharedResponseModel, DeterministicSharedResponseModel, RobustSharedResponseModel
 from .null import NullAlign
-from ..core.shared import unpack_model
+from ..core.shared import unpack_model, as_dataframe
+from .._shared.helpers import is_text_item
 from ..core.model import external_stacklevel
 
 
@@ -175,10 +175,10 @@ def _apply_format_data(data):
     was_list = isinstance(data, list)
     items = data if was_list else [data]
     formatted = formatter(items, ppca=True)
-    rewrapped = [
-        pd.DataFrame(np.asarray(arr), index=getattr(orig, 'index', None))
-        for arr, orig in zip(formatted, items)
-    ]
+    # every item is a pandas frame here (the funnel ran with
+    # backend='pandas'), so its index is carried over as-is
+    rewrapped = [as_dataframe(arr).set_index(orig.index)
+                 for arr, orig in zip(formatted, items)]
     return rewrapped if was_list else rewrapped[0]
 
 
@@ -207,9 +207,8 @@ def _compute_score(return_score, score_metric, before_data, after_data,
     before_list = before_data if isinstance(before_data, list) else [before_data]
     after_list = after_data if isinstance(after_data, list) else [after_data]
     if trim:
-        before_list = trim_and_pad(
-            [d if isinstance(d, pd.DataFrame) else pd.DataFrame(np.asarray(d))
-             for d in before_list], warn=False)
+        before_list = trim_and_pad([as_dataframe(d) for d in before_list],
+                                   warn=False)
     return alignment_score(before_list, aligned=after_list, metric=score_metric)
 
 
@@ -529,7 +528,7 @@ def align(data, model='HyperAlign', return_model=False,
     _datasets = data if isinstance(data, list) else [data]
     for _i, _d in enumerate(_datasets):
         _ndim = getattr(_d, 'ndim', None)
-        if _ndim is None and not isinstance(_d, (str, bytes)):
+        if _ndim is None and not is_text_item(_d):
             try:
                 _ndim = np.ndim(_d)
             except Exception:
@@ -543,8 +542,12 @@ def align(data, model='HyperAlign', return_model=False,
                 'arrays/DataFrames (e.g. one per subject) instead of a '
                 'higher-dimensional stack -- e.g. list(x) for a 3-D '
                 'array x.')
+    # backend='pandas': datawrangler's funnel otherwise PRESERVES a polars
+    # input's backend, and the Aligners (datawrangler's unstack/stack,
+    # trim_and_pad) are written against pandas, hypertools' internal frame
+    # type (datatype audit, 2026-09-08)
     return _align(data, model=model, return_model=return_model,
                   return_score=return_score, score_metric=score_metric,
                   manip=manip, normalize=normalize, reduce=reduce,
                   ndims=ndims, cluster=cluster, format_data=format_data,
-                  **kwargs)
+                  backend='pandas', **kwargs)
