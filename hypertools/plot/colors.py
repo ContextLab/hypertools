@@ -451,18 +451,38 @@ class MatrixColormap(LinearSegmentedColormap):
 
     def __init__(self, name, anchors, N=256):
         anchors = np.asarray(anchors, dtype=float)[:, :3]
-        super().__init__(name, [tuple(c) for c in anchors], N=N)
+        if anchors.ndim != 2 or len(anchors) < 2:
+            raise ValueError(
+                'MatrixColormap needs at least two (r, g, b) anchor colors; '
+                f'got shape {anchors.shape}')
+        # the parent's segment data, exactly as `from_list` builds it, so
+        # the inherited lookup table, integer sampling, `resampled()`,
+        # `reversed()`, bad/under/over colors and masked input all work
+        # (Codex round 10: a bare list here broke every one of them)
+        grid = np.linspace(0.0, 1.0, len(anchors))
+        segmentdata = {channel: [(float(x), float(v), float(v))
+                                 for x, v in zip(grid, anchors[:, k])]
+                       for k, channel in enumerate(('red', 'green', 'blue'))}
+        segmentdata['alpha'] = [(0.0, 1.0, 1.0), (1.0, 1.0, 1.0)]
+        super().__init__(name, segmentdata, N=N)
         self.anchors = anchors
 
     def __call__(self, X, alpha=None, bytes=False):
         x = np.asarray(X)
-        if not np.issubdtype(x.dtype, np.floating):
+        if np.ma.isMaskedArray(X) or not np.issubdtype(x.dtype, np.floating) \
+                or not np.isfinite(x).all():
+            # integers index the lookup table; masked / NaN values take the
+            # 'bad' color: the parent's rules, unchanged
             return super().__call__(X, alpha=alpha, bytes=bytes)
         grid = np.linspace(0.0, 1.0, len(self.anchors))
         flat = np.clip(x.astype(float).ravel(), 0.0, 1.0)
         rgb = np.column_stack([np.interp(flat, grid, self.anchors[:, k])
                                for k in range(3)])
-        a = np.full((len(flat), 1), 1.0 if alpha is None else float(alpha))
+        if alpha is None:
+            a = np.ones((len(flat), 1))
+        else:
+            a = np.broadcast_to(np.clip(np.asarray(alpha, dtype=float), 0, 1),
+                                x.shape).reshape(-1, 1)
         out = np.hstack([rgb, a]).reshape(x.shape + (4,))
         if bytes:
             out = (out * 255).astype(np.uint8)

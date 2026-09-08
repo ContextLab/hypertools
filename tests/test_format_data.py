@@ -188,7 +188,8 @@ def test_string_naming_an_existing_file_is_a_document_not_a_path():
     # through the loader.
     import os
     root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-    readme = os.path.join(root, 'README.md')
+    readme = os.path.join(root, 'readme.md')     # lowercase in this repo: macOS
+    # resolves 'README.md' too, the Linux CI runners do not (2026-09-08)
     pyproject = os.path.join(root, 'pyproject.toml')
     assert os.path.exists(readme) and os.path.exists(pyproject)
     out = format_data(readme)

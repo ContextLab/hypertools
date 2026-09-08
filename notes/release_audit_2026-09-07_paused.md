@@ -1252,3 +1252,37 @@ VERDICT: FINDINGS
 - Agent observation, queued: `ndims=1` series mode forecasts on the drawn
   (index, value) pairs rather than the values alone (differs from
   `hyp.predict(series)`); to fix with the next wave.
+
+## Codex round 10
+
+Red-team review started 2026-09-08. Findings and verification evidence are appended incrementally below.
+
+### Initial verification
+
+- Reviewed HEAD `25b3ba6c` on `fix/1.1-release-review`. Read the original audit, every UPDATE, rounds 6–9, the release-review CHANGELOG, datatype survey, and `git log --oneline master..HEAD`; `git diff 650808f0..HEAD --stat` reports 44 files. Only this notes file was modified at start. No -o path was supplied in the conversation; this authorized notes append is the persistent report, with scratch evidence under `/tmp/hypertools-round10/`.
+- Reused round9 `extra.py`, `membership_colors.py`, and `composed_markers.py`: live TLS drop SKIPPED, certificate RAISED SSLError; shared cluster panels draw blue/red corresponding to global labels 1/0 on BOTH backends; every figure/cell marker-hue composition ends gold on BOTH backends. Command: `MPLBACKEND=Agg MPLCONFIGDIR=/tmp/hypertools-round10/mpl HYPERTOOLS_AUTO_INSTALL=0 PIP_NO_INDEX=1 PIP_CONFIG_FILE=/dev/null PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/Users/jmanning/hypertools .venv/bin/python` with `runpy.run_path` over those scripts. Evidence: `round9.log`. Extra's narrow fitted/truth paths construct with (3,1) forecasts. The old mixed_forecast scripts index column 1 of the formerly padded output and now hit IndexError in their PRINT statement; this is a stale reviewer harness, not a library error. Independent numerical verification follows.
+
+### R10-1 — MINOR: MatrixColormap breaks the advertised matplotlib Colormap contract
+
+- Location: `hypertools/plot/colors.py:450–468` (constructor and `__call__`), docstring at 445–447 explicitly promises inherited `resampled` and `reversed` behavior.
+- What is wrong: the constructor passes a LIST of RGB tuples as `LinearSegmentedColormap`'s segment-data argument, which requires channel-indexed segment data. The custom float sampler hides that until inherited operations initialize/read it. Integer sampling, `.resampled()`, and `.reversed()` all fail; the custom sampler also rejects an array of alpha values supported by Colormap.
+- Verified with real `matrix_palette(np.random.default_rng(0).normal(size=(8,5)))`, `.venv/bin/python` under Agg/autoinstall-off (`/tmp/hypertools-round10/colormap.log`). Float sampling succeeds; `c(0)`, `c(np.arange(3))`, and `c.resampled(8)(np.linspace(0,1,8))` raise `TypeError: list indices must be integers or slices, not str`; `c.reversed()` raises `AttributeError: 'list' object has no attribute 'items'`; `c([0.,1.], alpha=[.2,.8])` raises TypeError. The persistent script `palettes.py` repeats these public calls.
+- Suggested fix: initialize valid channel segment data (e.g. through `from_list`), or implement a Colormap subclass with correct integer, reversed, resampled, alpha/masked/bad/under/over semantics. Add real round-trip reversal and integer/float/resampled sampling tests; current tests only use the custom float arm.
+
+- Focused pytest completed: `MPLBACKEND=Agg MPLCONFIGDIR=/tmp/hypertools-round10/mpl PIP_NO_INDEX=1 PIP_CONFIG_FILE=/dev/null PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/test_plot_review_round9.py tests/test_palette_matrix_and_sort.py tests/test_polars_inputs.py tests/test_polars_inputs_wave1.py tests/test_datatype_gate.py tests/test_plot_review_round7.py tests/test_plot_review_round6.py tests/test_lazy_import.py`: **265 passed, 2 failed, 16 warnings in 43.15s** (`pytest.log`). Failures are the real tomli-install test with pip deliberately blocked, and unusable installed Chrome; these are environment limitations, not new library findings. All new palette/polars/static-gate/round9 tests pass.
+
+## Updates by the Claude session after Codex round 10 (2026-09-08) — NOT part of the Codex text above
+
+### UPDATE — R10-1 (MatrixColormap broke the Colormap contract): FIXED
+- `hypertools/plot/colors.py::MatrixColormap.__init__` now builds the parent's
+  channel segment data exactly as `LinearSegmentedColormap.from_list` does
+  (plus an alpha segment), so the inherited lookup table, integer sampling,
+  `resampled()`, `reversed()`, bad/under/over colours and masked/NaN input all
+  work; the exact float sampler accepts an alpha ARRAY and defers masked,
+  non-finite and integer input to the parent. Fewer than two anchors raises.
+- Test: `test_matrix_colormap_supports_the_inherited_colormap_operations`
+  (int index, `np.arange`, `resampled(8)`, `reversed()` at the ends and within
+  the table's resolution, alpha array, bytes, masked, NaN, `isinstance(..., Colormap)`).
+- Codex round 10 hit the usage limit right after this finding (retry 3:46 PM);
+  round 11 (scratchpad codex/prompt13.txt, relaunch13.sh at 15:48) continues
+  from here.

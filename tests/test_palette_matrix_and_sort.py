@@ -309,3 +309,38 @@ def test_forecast_palette_accepts_a_matrix_and_panels_forward_it():
     fig = hyp.plot([x, x + 2], panels=True, palette=[matrix(seed=1), matrix(seed=2)],
                    show=False)
     assert len(fig.axes) >= 2
+
+
+# --- the matrix colormap honours matplotlib's Colormap contract (Codex round 10)
+
+def test_matrix_colormap_supports_the_inherited_colormap_operations():
+    """`MatrixColormap` built its parent from a bare anchor list, so integer
+    sampling, `resampled()`, `reversed()`, an alpha array and masked input
+    all failed while float sampling (the only path the tests used) worked."""
+    cmap = matrix_palette(np.random.default_rng(0).normal(size=(8, 5)))
+    anchors = cmap.anchors
+    # exact float sampling at the anchors, and the parent's LUT agrees
+    assert np.allclose(cmap(np.linspace(0, 1, 8))[:, :3], anchors)
+    lut = cmap(np.arange(cmap.N))                       # integer indices
+    assert lut.shape == (cmap.N, 4) and np.allclose(lut[0, :3], anchors[0], atol=1e-6)
+    assert np.allclose(cmap(0)[:3], anchors[0]) and np.allclose(cmap(cmap.N - 1)[:3], anchors[-1])
+    # resampled() and reversed() are the inherited colormaps, consistent with the sampler
+    small = cmap.resampled(8)
+    assert np.allclose(small(np.linspace(0, 1, 8))[:, :3], anchors, atol=2e-3)
+    rev = cmap.reversed()
+    # the reversed map samples through the parent's 256-entry table, so
+    # intermediate points carry its interpolation error (~ slope / 255)
+    assert np.allclose(rev(np.linspace(0, 1, 8))[:, :3], anchors[::-1], atol=0.03)
+    assert np.allclose(rev(0.0)[:3], anchors[-1]) and np.allclose(rev(1.0)[:3], anchors[0])
+    # an alpha array, bytes, masked and NaN input follow matplotlib's rules
+    out = cmap(np.array([0.0, 0.5, 1.0]), alpha=np.array([0.2, 0.5, 1.0]))
+    assert np.allclose(out[:, 3], [0.2, 0.5, 1.0])
+    assert cmap(np.array([0.0, 1.0]), bytes=True).dtype == np.uint8
+    masked = cmap(np.ma.masked_array([0.0, 0.5], mask=[False, True]))
+    assert np.allclose(masked[1], cmap.get_bad())
+    assert np.allclose(cmap(np.array([np.nan]))[0], cmap.get_bad())
+    from matplotlib.colors import Colormap
+    assert isinstance(cmap, Colormap)
+    with pytest.raises(ValueError, match='at least two'):
+        from hypertools.plot.colors import MatrixColormap
+        MatrixColormap('x', np.ones((1, 3)))

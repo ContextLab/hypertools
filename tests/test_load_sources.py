@@ -634,14 +634,19 @@ def test_transient_classifier_reads_a_dropped_tls_connection_as_transient():
     assert not is_transient_network(certificate)
 
 
-def test_a_live_certificate_failure_is_never_skipped_while_a_tls_drop_is():
+def test_a_live_certificate_failure_is_never_skipped_while_a_tls_drop_is(monkeypatch):
     """Codex round 9: requests' `SSLError` inherits from `ConnectionError`, so
     a LIVE certificate failure took the transient path by ancestry (the
     equivalent text already failed classification). Both live shapes, as
-    requests raises them (the ssl error carried in args)."""
+    requests raises them (the ssl error carried in args). The drop SKIPS only
+    when live sources are not required: the live-source-gate CI job sets
+    HYPERTOOLS_REQUIRE_LIVE_SOURCES=1, under which the guard re-raises by
+    design (it failed this test there on 2026-09-08), so both modes are
+    pinned explicitly."""
     import ssl
     import requests
     from tests._netskip import is_transient_network, skip_on_transient_network
+    monkeypatch.delenv('HYPERTOOLS_REQUIRE_LIVE_SOURCES', raising=False)
     drop = requests.exceptions.SSLError(ssl.SSLEOFError(
         8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol'))
     cert = requests.exceptions.SSLError(ssl.SSLCertVerificationError(
@@ -654,3 +659,8 @@ def test_a_live_certificate_failure_is_never_skipped_while_a_tls_drop_is():
     with pytest.raises(requests.exceptions.SSLError):
         with skip_on_transient_network('a bad certificate'):
             raise cert
+    # with live sources REQUIRED even the drop is re-raised, never skipped
+    monkeypatch.setenv('HYPERTOOLS_REQUIRE_LIVE_SOURCES', '1')
+    with pytest.raises(requests.exceptions.SSLError):
+        with skip_on_transient_network('a dropped connection, required'):
+            raise drop
