@@ -336,7 +336,7 @@ def _forecast_style_from(src_line, alpha_scale=FORECAST_ALPHA_SCALE,
 
 def _draw_forecast_overlays(ax, raw_forecasts, antialias=True,
                             owner=None, overrides=None, labels=None,
-                            dataset_index=None):
+                            dataset_index=None, src_lines=None):
     """Overlay one forecast trace per input dataset (GH #169), styled to
     match its source line (`_forecast_style_from`): same colour, linestyle
     and linewidth, at half its alpha.
@@ -375,7 +375,9 @@ def _draw_forecast_overlays(ax, raw_forecasts, antialias=True,
     # (dataset index, artist) for every artist created, so the identity tag
     # below survives an `ax.plot` call returning more than one artist
     _artist_dataset = []
-    src_lines = list(ax.lines)
+    # `src_lines`: the observed lines the forecasts continue, run by run --
+    # THIS call's, when the axes already held an earlier call's
+    src_lines = list(ax.lines) if src_lines is None else list(src_lines)
     for i, fc in enumerate(raw_forecasts):
         # antialias (see `plot`'s `antialias=`): smooth the forecast the SAME
         # way as any other line, so a short forecast (e.g. t+1 = 5 vertices)
@@ -461,22 +463,46 @@ def _add_overlay_legend_entries(ax, forecast_artists=None, truth_artists=None,
     legend = ax.get_legend()
     if legend is None:
         return
-    handles = list(legend.legend_handles)
-    labels = [t.get_text() for t in legend.get_texts()]
-    new_handles = _forecast_legend_handles(forecast_artists or [])
-    new_handles = [h for h in new_handles if h.get_label() not in labels]
-    # forecasts list BEFORE a truth entry that is already there
-    at = labels.index('truth') if 'truth' in labels else len(labels)
-    handles[at:at] = new_handles
-    labels[at:at] = [h.get_label() for h in new_handles]
-    for artist in truth_artists or []:
-        label = artist.get_label()
-        if label and not label.startswith('_') and label not in labels:
-            handles.append(artist)
-            labels.append(label)
-            new_handles.append(artist)
-    if new_handles:
-        ax.legend(handles, labels, **legend_call)
+    # EVERY tagged overlay on the axes, this call's and earlier calls'
+    # into the same `ax=`: the legend is rebuilt by role -- the data
+    # entries `_draw` listed, then one entry per forecast label (its
+    # glyph decided over every forecast wearing that label, however many
+    # calls drew them), then one 'truth' (Codex round 4: three calls into
+    # one axes listed 'truth' three times and lost the earlier forecast
+    # keys)
+    from matplotlib.colors import to_rgba
+    from matplotlib.lines import Line2D
+    from .forecast import FORECAST_LEGEND_COLOR
+    fc_lines = [ln for ln in ax.lines
+                if getattr(ln, '_hyp_forecast_label', None) is not None
+                and getattr(ln, '_hyp_forecast_role', None)
+                in ('static', 'live')]
+    truth_lines = [ln for ln in ax.lines
+                   if getattr(ln, '_hyp_truth_label', None)]
+    if not fc_lines and not truth_lines:
+        return
+    fc_handles = _forecast_legend_handles(fc_lines)
+    overlay_labels = {h.get_label() for h in fc_handles}
+    truth_label = truth_lines[0]._hyp_truth_label if truth_lines else None
+    if truth_label is not None:
+        overlay_labels.add(truth_label)
+    kept = [(h, lab) for h, lab in zip(legend.legend_handles,
+                                       [t.get_text() for t in
+                                        legend.get_texts()])
+            if lab not in overlay_labels]
+    handles = [h for h, _ in kept] + fc_handles
+    labels = [lab for _, lab in kept] + [h.get_label() for h in fc_handles]
+    if truth_lines:
+        first = truth_lines[0]
+        colors = {to_rgba(ln.get_color()) for ln in truth_lines}
+        handles.append(Line2D(
+            [], [], color=(first.get_color() if len(colors) == 1
+                           else FORECAST_LEGEND_COLOR),
+            linestyle=first.get_linestyle(), linewidth=first.get_linewidth(),
+            marker=first.get_marker(), markersize=first.get_markersize(),
+            markevery=None, label=truth_label))
+        labels.append(truth_label)
+    ax.legend(handles, labels, **legend_call)
 
 
 def _forecast_legend_handles(artists):
@@ -528,7 +554,7 @@ TRUTH_STYLE = dict(linestyle='-', marker='o', markersize=4, alpha=1.0)
 
 
 def _draw_truth_overlays(ax, raw_truths, antialias=True, owner=None,
-                         label=None):
+                         label=None, src_lines=None):
     """Overlay each trace's ACTUAL continuation (`truth=`, GH #285).
 
     Styled from the trace it continues (same colour and linewidth, via
@@ -549,7 +575,7 @@ def _draw_truth_overlays(ax, raw_truths, antialias=True, owner=None,
     animation's reveal advances, so it stays put while the forecast moves.
     """
     artists = []
-    src_lines = list(ax.lines)
+    src_lines = list(ax.lines) if src_lines is None else list(src_lines)
     for i, tr in enumerate(raw_truths):
         tr = np.asarray(tr, dtype=float)
         _rows = tr.shape[0]
@@ -570,7 +596,11 @@ def _draw_truth_overlays(ax, raw_truths, antialias=True, owner=None,
         # trick `_plot_possibly_split` uses for a marker+line fmt).
         line_style = dict(style, markevery=[])
         marker_style = dict(style, linestyle='None')
-        _label = '_nolegend_' if label is None else label
+        # never labelled: the legend entry is a proxy glyph built by
+        # `_add_overlay_legend_entries` from the `_hyp_truth_label` tag,
+        # so a reused axes lists ONE 'truth' however many calls drew one
+        # (Codex round 4)
+        _label = '_nolegend_'
         _before = len(artists)
         d = drawn.shape[1] if drawn.ndim > 1 else 1
         if d >= 3:
@@ -601,6 +631,8 @@ def _draw_truth_overlays(ax, raw_truths, antialias=True, owner=None,
         for _a in artists[_before:]:
             _a._hyp_forecast_role = 'truth'
             _a._hyp_forecast_dataset = i
+        if label is not None and artists[_before:]:
+            artists[_before]._hyp_truth_label = str(label)
         # one 'truth' legend entry for the whole figure: every trace's
         # truth means the same thing, so repeating the label per dataset
         # would list it once per series
@@ -10192,6 +10224,7 @@ def plot(
             title_segment_colors=_title_segment_colors,
             legend_kwargs=_legend_kwargs,
             legend_entries=_final_legend_entries,
+            legend_explicit=_legend_entries is not None,
             axis_scale=_axis_scale,
             xlim=_data_xlim,
             ylim=_data_ylim,
@@ -10279,6 +10312,17 @@ def plot(
             plt.rcParams['axes.unicode_minus'] = False
 
             # draw the plot
+            # a legend exists when `legend=` asked for one OR a mixture
+            # `hue=` built one from swatches (which clears `legend` on
+            # the way; Codex round 4: those legends lost their forecast
+            # and truth entries)
+            _legend_present = (legend is not None
+                               or _final_legend_entries is not None)
+            # the lines an earlier call left on a reused `ax=`: the
+            # overlays below take their style from THIS call's lines only
+            # (Codex round 4: every forecast on a thrice-drawn axes wore
+            # the first call's colour)
+            _n_lines_before = len(ax.lines) if ax is not None else 0
             fig, ax, data, line_ani = _draw(
                 xform,
                 fmt=draw_fmt,
@@ -10376,6 +10420,7 @@ def plot(
             if raw_forecasts is not None and animate in (False, None, 'spin'):
                 _forecast_artists = _draw_forecast_overlays(
                     ax, raw_forecasts, antialias=antialias,
+                    src_lines=list(ax.lines)[_n_lines_before:],
                     owner=_forecast_owner, overrides=_forecast_overrides,
                     labels=_forecast_labels,
                     dataset_index=_model_forecast_owner)
@@ -10407,8 +10452,9 @@ def plot(
                 # too. None means the un-regrouped identity.
                 _truth_artists = _draw_truth_overlays(
                     ax, raw_truths, antialias=antialias,
+                    src_lines=list(ax.lines)[_n_lines_before:],
                     owner=_forecast_owner,
-                    label=('truth' if legend is not None else None))
+                    label=('truth' if _legend_present else None))
                 if animate:
                     # ANIMATED plots only, exactly like the forecast
                     # artists: `animate_plot3D` stretches the axes to the
@@ -10435,7 +10481,7 @@ def plot(
             # ...unless `legend_colors=[(label, color), ...]` defined the
             # entries outright: an explicit legend is exactly what was
             # asked for (Codex round 3)
-            if (legend is not None and _final_legend_entries is None
+            if (_legend_present and _legend_entries is None
                     and (_forecast_artists or _truth_artists)):
                 from .matplotlib_backend import legend_call_kwargs
                 _add_overlay_legend_entries(
@@ -10465,7 +10511,7 @@ def plot(
                 # its colour from forecast i-1. (Same guard
                 # `_draw_forecast_overlays` opens with.)
                 from .forecast import trail_alpha, trail_frames
-                _src_lines = list(ax.lines)
+                _src_lines = list(ax.lines)[_n_lines_before:]
                 _live_forecast_artists = []
                 # [dataset][age-1] -> artist. Preallocated: allocating
                 # artists mid-animation is what makes matplotlib animations
@@ -10566,7 +10612,7 @@ def plot(
                         _forecast_labels[_i] if _forecast_labels is not None
                         and _i < len(_forecast_labels) else None)
                     _live_forecast_artists.append(_art)
-                if (legend is not None and _final_legend_entries is None
+                if (_legend_present and _legend_entries is None
                         and _live_forecast_artists):
                     # the live forecasts' legend entries (static parity:
                     # one per model name, from the artists' own styles)
@@ -10606,11 +10652,15 @@ def plot(
                 # reintroduce the palette repaint; the invariant it rests on
                 # is pinned by `test_a_continuous_hue_animation_is_NEVER_
                 # regrouped_into_runs`.
+                from .forecast import override_has_color as _has_color
+                # a colour letter in forecast_fmt= pins the colour as an
+                # explicit forecast_hue=/palette= does (Codex round 4:
+                # 'ro:' forecasts were repainted in the head run's colour)
                 _override_colour = [
-                    bool((_forecast_overrides is not None
-                          and _i < len(_forecast_overrides)
-                          and isinstance(_forecast_overrides[_i], dict)
-                          and _forecast_overrides[_i].get('color') is not None)
+                    bool(_has_color(_forecast_overrides[_i]
+                                    if _forecast_overrides is not None
+                                    and _i < len(_forecast_overrides)
+                                    else None)
                          or line_colors is not None)
                     for _i in range(len(raw_forecasts))]
 

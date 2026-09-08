@@ -1045,6 +1045,35 @@ Because 1.1.0 had not been published, they ship in it.
   title room.** `legend_kwargs` x/y are translated into the cell instead
   of being replaced by the gutter placement, and a gutter rebuild keeps
   the top margin a multi-line title had reserved (Codex round 3).
+- **A `forecast_fmt=` colour letter survives a regrouped animation.**
+  Under `hue=`/`cluster=` the animated modes repaint each live forecast
+  in its head run's colour unless the colour is pinned, and only
+  `forecast_hue=`/`forecast_cluster=`/`forecast_palette=` counted as
+  pinning: `forecast_fmt='ro:'` forecasts animated cyan under red legend
+  keys on matplotlib, and plotly's per-frame colours halved the alpha a
+  recoloured forecast keeps (Codex round 4).
+- **Mixture-hue legends list forecasts and `truth`.** A matrix `hue=`
+  builds its legend from swatches (clearing `legend=` on the way), and
+  the forecast/truth entries were only added when `legend=` was still
+  set, so those legends read `1, 2` alone on both backends (Codex round 4).
+- **Repeated calls into one axes, figure or grid cell compose.** The
+  forecast and `truth=` overlays styled themselves from the FIRST call's
+  lines on a reused matplotlib axes (three walks, three red forecasts),
+  and the legend accumulated one `truth` per call while losing earlier
+  forecast keys; the overlays now take this call's lines and the legend
+  is rebuilt by role -- the data entries, one key per model over every
+  call's forecasts, one `truth` -- on both backends and in plotly cells
+  (Codex round 4).
+- **A plotly cell's legend and colorbar from separate calls sit side by
+  side**, and a multi-line title rebuilds the rows at once: the grid
+  tracks each cell's furniture and title room, sizing the gutter for the
+  busiest cell (Codex round 4: a colorbar added after a legend landed on
+  it; a three-line title widened the top margin but left the rows 37 px
+  apart).
+- **Plotly draws a marker-only `forecast_fmt` as markers**, as matplotlib
+  does, and its animated collection traces tag their SOURCE dataset in
+  ``meta['hyp_dataset']`` rather than the model-major forecast index
+  (Codex round 4).
 - **A `hyp.subplots(backend='plotly')` grid grows its legend room only
   when a cell asks for it.** The grid reserved a 118 px gutter beside
   every cell up front (it cannot know which cells will draw a legend), so

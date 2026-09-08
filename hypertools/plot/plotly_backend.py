@@ -645,6 +645,20 @@ def _plotly_legend_entry_traces(entries, ndims):
     return traces
 
 
+def _compose_scope_traces(into):
+    """The traces an `ax=` target already holds that a new call composes
+    with: every trace of a bare Figure, or the traces attached to a
+    `PlotlyCell`'s own legend; none for a fresh figure."""
+    if into is None:
+        return []
+    if isinstance(into, PlotlyCell):
+        key = cell_layout_keys(into.index)['legend']
+        return [tr for tr in into.figure.data
+                if getattr(tr, 'legend', None) == key
+                or (key == 'legend' and getattr(tr, 'legend', None) is None)]
+    return list(getattr(into, 'data', ()) or ())
+
+
 def _rgb_triplet(color):
     """The ``(r, g, b)`` of a plotly colour string, opacity dropped (an
     ``rgba(...)``/``rgb(...)`` string as `_to_plotly_color` builds; any
@@ -744,7 +758,8 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 legend_kwargs=None, legend_entries=None,
                 axis_scale='unit', xlim=None, ylim=None, x_date=False,
                 truths=None, forecast_labels=None,
-                forecast_datasets=None, datasets_drawn=None):
+                forecast_datasets=None, datasets_drawn=None,
+                legend_explicit=False):
     """Render grouped datasets with plotly, mirroring _draw's contract and
     the matplotlib renderer's appearance.
 
@@ -779,6 +794,12 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         fully-opaque, marked trace per dataset, tagged
         ``meta['hyp_forecast_role'] = 'truth'`` -- the plotly half of
         `plot._draw_truth_overlays`.
+    legend_explicit : bool
+        Whether `legend_entries` came from a caller's
+        ``legend_colors=[(label, color), ...]`` -- an explicit legend that
+        the forecast/truth entries stay out of -- rather than from a
+        mixture `hue=`'s automatic swatches, which they are added to (Codex
+        round 4: mixture legends lost their forecast and truth entries).
     datasets_drawn : int or None
         How many datasets the figure holds once this call's are added --
         recorded as ``layout.meta['hyp_datasets_drawn']`` (before the
@@ -1570,7 +1591,10 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                     **({} if fc_marker is None else dict(marker=fc_marker)),
                     meta=dict(
                         hyp_forecast_role='live' if age == 0 else 'trail',
-                        hyp_dataset=i, hyp_forecast_age=age,
+                        hyp_dataset=(forecast_datasets[i]
+                                     if forecast_datasets is not None
+                                     and i < len(forecast_datasets) else i),
+                        hyp_forecast_age=age,
                         hyp_forecast_alpha=alpha))
                 if ndims >= 3:
                     traces.append(go.Scatter3d(x=[], y=[], z=[], **fc_common))
@@ -1607,16 +1631,21 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 # `_forecast_frame_data` never consults this map at all
                 # (measured 2026-08-16). The anchor an animated forecast
                 # actually wears comes from `anchor_color=` above.
-                _pinned = (
-                    (isinstance(_ov, dict) and _ov.get('color') is not None)
-                    or _hue_anchor_color(point_colors, _src) is not None)
+                from .forecast import override_has_color
+                # a colour letter in forecast_fmt= pins the colour as an
+                # explicit forecast_hue=/palette= does (Codex round 4:
+                # 'ro:' forecasts were repainted in the head run's colour)
+                _pinned = (override_has_color(_ov)
+                           or _hue_anchor_color(point_colors, _src)
+                           is not None)
                 forecast_frame_colors.append({} if _pinned else {
                     _r: _forecast_style_from(
                         kwargs_list[_r] or {}, fmt[_r],
                         alpha=trail_alpha(
                             age, n_retained,
                             live_alpha=forecast_alpha(
-                                (kwargs_list[_r] or {}).get('alpha'))),
+                                (kwargs_list[_r] or {}).get('alpha'),
+                                forecast_alpha_scale_for(_ov))),
                         override=_ov)[0].get('color')
                     for _r in range(len(data))})
 
@@ -1630,6 +1659,12 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     # refitted as the reveal advances.
     if truths is not None:
         from .plot import TRUTH_STYLE
+        # composing into a figure/cell that already lists a truth entry:
+        # one entry covers every call's truth (Codex round 4)
+        _truth_already_listed = any(
+            (tr.meta or {}).get('hyp_forecast_role') == 'truth'
+            and tr.showlegend
+            for tr in _compose_scope_traces(into))
         for i, tr in enumerate(truths):
             src = (forecast_owner[i]
                    if forecast_owner is not None and i < len(forecast_owner)
@@ -1654,8 +1689,10 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 TRUTH_STYLE['markersize'], TRUTH_STYLE['marker'], ndims)
             tr_common = dict(
                 mode='lines+markers',
-                showlegend=bool(i == 0 and legend is not None
-                                and not legend_entries),
+                showlegend=bool(i == 0
+                                and (legend is not None or legend_entries)
+                                and not legend_explicit
+                                and not _truth_already_listed),
                 name='truth', hoverinfo='skip', line=tr_line,
                 marker=dict(size=marker_size, color=tr_line.get('color')),
                 # listed AFTER the forecast entries (which are appended as
@@ -2092,7 +2129,26 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     # with a legend to list in -- like the matplotlib proxies, which exist
     # only on an axes that has one -- so a legend-less figure's traces are
     # exactly its drawn ones.
-    if forecast_legend_specs and legend is not None and not legend_entries:
+    if forecast_legend_specs and not legend_explicit and (
+            legend is not None or legend_entries):
+        # composing into a figure/cell that already lists some of these
+        # models: hide the earlier keys and decide the new key's colour
+        # over EVERY forecast of that model in the scope (Codex round 4:
+        # three calls into one cell listed 'Kalman' three times)
+        names = {s[0] for s in forecast_legend_specs}
+        for tr in _compose_scope_traces(into):
+            meta = tr.meta or {}
+            if meta.get('hyp_legend_entry') in names:
+                tr.showlegend = False
+            elif (meta.get('hyp_forecast_role') in ('static', 'live')
+                    and tr.name in names):
+                marker = (tr.marker.to_plotly_json()
+                          if tr.marker is not None and tr.marker.symbol
+                          else None)
+                forecast_legend_specs.append(
+                    (tr.name, tr.line.to_plotly_json(),
+                     meta.get('hyp_forecast_alpha'), tr.mode or 'lines',
+                     marker))
         fig.add_traces(_forecast_legend_traces(forecast_legend_specs, ndims))
 
     if labels is not None:
@@ -2416,6 +2472,23 @@ def _grid_spec(target):
     return None
 
 
+def ensure_panel_layout(target, gutter_px=None, title_px=None):
+    """`ensure_panel_gutter` for both dimensions a drawn cell can grow: the
+    gutter beside every cell and the title room above every row. Either
+    one growing rebuilds the grid (Codex round 4: a three-line title
+    widened the top margin but left the rows 37 px apart)."""
+    spec = _grid_spec(target)
+    if spec is None:
+        return False
+    new_gutter = max(int(spec.get('gutter_px', 0)), int(gutter_px or 0))
+    new_title = max(int(spec.get('title_px') or 0), int(title_px or 0))
+    if (new_gutter == int(spec.get('gutter_px', 0))
+            and new_title == int(spec.get('title_px') or 0)):
+        return False
+    spec['title_px'] = new_title
+    return _rebuild_panel_grid(target, spec, new_gutter)
+
+
 def ensure_panel_gutter(target, gutter_px):
     """Give a `hyp.subplots(backend='plotly')` grid at least `gutter_px`
     of room beside every cell -- rebuilding its layout (width, margins,
@@ -2431,6 +2504,12 @@ def ensure_panel_gutter(target, gutter_px):
     spec = _grid_spec(target)
     if spec is None or int(spec.get('gutter_px', 0)) >= int(gutter_px):
         return False
+    return _rebuild_panel_grid(target, spec, int(gutter_px))
+
+
+def _rebuild_panel_grid(target, spec, gutter_px):
+    """Re-lay `target` out from `spec` with `gutter_px` (see
+    `ensure_panel_layout`) and re-place every drawn cell's furniture."""
     spec['gutter_px'] = int(gutter_px)
     grid = make_panel_grid(spec['nrows'], spec['ncols'], spec['ndims'],
                            size=spec.get('size'), gutter_px=spec['gutter_px'],
@@ -2496,12 +2575,15 @@ def _place_cell_furniture(target, index, ndims):
     placed = legend is not None and legend.x is not None
     meta = target.layout.meta if isinstance(target.layout.meta, dict) else {}
     explicit = (meta.get('hyp_cell_legends') or {}).get(str(index))
+    has_legend = placed or bool(
+        (meta.get('hyp_cell_furniture') or {}).get(str(index), {})
+        .get('legend'))
     if placed and explicit:
         legend.update(x=x0 + float(explicit['lx']) * (x1 - x0),
                       y=y0 + float(explicit['ly']) * (y1 - y0))
     elif placed:
         legend.update(x=x1 + PANEL_GUTTER_PAD_PX / plot_w, y=y_mid)
-    cb_offset = PANEL_GUTTER_PAD_PX + (PANEL_LEGEND_PX if placed else 0)
+    cb_offset = PANEL_GUTTER_PAD_PX + (PANEL_LEGEND_PX if has_legend else 0)
     for trace in target.data:
         if getattr(trace, 'legend', None) != keys['legend'] \
                 and not (index == 0 and getattr(trace, 'legend', None)
@@ -2554,13 +2636,36 @@ def transplant_panel(target, panel, row, col, index, ndims):
     and the `hyp.subplots(backend='plotly')` cells that `ax=` accepts.
     """
     keys = cell_layout_keys(index)
-    # a `hyp.subplots` grid is built without gutters; the first legend or
-    # colorbar a cell brings makes it grow them (`ensure_panel_gutter`),
-    # BEFORE this cell's domain is read below
-    ensure_panel_gutter(target, panel_gutter_px(
-        any(bool(trace.showlegend) for trace in panel.data),
-        any(getattr(getattr(trace, 'marker', None), 'showscale', None)
-            for trace in panel.data)))
+    # what this cell holds beside it once this panel is in -- a legend
+    # and/or a colorbar, from THIS call or an earlier one into the same
+    # cell -- recorded per cell, so the grid's gutter is sized for the
+    # busiest cell and a colorbar arriving after a legend goes beside it
+    # rather than on top of it (Codex round 4)
+    _meta = (dict(target.layout.meta)
+             if isinstance(target.layout.meta, dict) else {})
+    furniture = dict(_meta.get('hyp_cell_furniture') or {})
+    cell_furniture = dict(furniture.get(str(index))
+                          or {'legend': False, 'colorbar': False})
+    cell_furniture['legend'] = bool(
+        cell_furniture['legend']
+        or any(bool(trace.showlegend) for trace in panel.data))
+    cell_furniture['colorbar'] = bool(
+        cell_furniture['colorbar']
+        or any(getattr(getattr(trace, 'marker', None), 'showscale', None)
+               for trace in panel.data))
+    furniture[str(index)] = cell_furniture
+    target.layout.meta = {**_meta, 'hyp_cell_furniture': furniture}
+    # a `hyp.subplots` grid is built without gutters and one title line
+    # per row; the first legend/colorbar, or a taller title, a cell brings
+    # makes the grid grow (`ensure_panel_layout`), BEFORE this cell's
+    # domain is read below
+    ensure_panel_layout(
+        target,
+        gutter_px=max(panel_gutter_px(f.get('legend'), f.get('colorbar'))
+                      for f in furniture.values()),
+        title_px=(max(0, int(panel.layout.margin.t or 0) - PANEL_MARGIN_PX)
+                  if panel.layout.title is not None
+                  and panel.layout.title.text else 0))
     plot_w = (target.layout.width or int(DEFAULT_FIGSIZE[0] * 100)) \
         - (target.layout.margin.l or 0) - (target.layout.margin.r or 0)
     plot_w = max(plot_w, 1)
@@ -2625,7 +2730,7 @@ def transplant_panel(target, panel, row, col, index, ndims):
         y0, y1 = target.layout[keys['yaxis']].domain
 
     y_mid = 0.5 * (y0 + y1)
-    legend_entries = any(bool(trace.showlegend) for trace in panel.data)
+    legend_entries = bool(cell_furniture['legend'])
     # the panel's colorbar goes right of its legend when there is one,
     # else right of the cell, spanning the cell's height like the
     # single-axes colorbar spans the plot's (`len=0.75` of the paper there)
@@ -2731,16 +2836,9 @@ def transplant_panel(target, panel, row, col, index, ndims):
         needed = max(40, int(panel.layout.margin.t or 0))
         if (target.layout.margin.t or 0) < needed:
             target.layout.margin.t = needed
-        spec = _grid_spec(target)
-        if spec is not None and int(spec.get('title_px') or 0) \
-                < needed - PANEL_MARGIN_PX:
-            # ...and a later gutter rebuild (`ensure_panel_gutter`) keeps
-            # that room, per row (Codex round 3: it restored the one-line
-            # margin the grid was built with)
-            spec['title_px'] = needed - PANEL_MARGIN_PX
-            _meta = (dict(target.layout.meta)
-                     if isinstance(target.layout.meta, dict) else {})
-            target.layout.meta = {**_meta, 'hyp_grid': spec}
+    # reconcile this cell's furniture with what it already held (a
+    # colorbar arriving beside an earlier legend, or the reverse)
+    _place_cell_furniture(target, index, ndims)
     return keys
 
 
@@ -4017,7 +4115,10 @@ def _forecast_marker(tkwargs, override, line_color, ndims):
     size = _marker_size_px(
         tkwargs.get('markersize') or DEFAULT_MARKERSIZE_PT, marker_char,
         ndims=ndims)
-    return 'lines+markers', dict(symbol=symbol, size=size, color=line_color)
+    # the parsed mode: 'markers' for a marker-only string ('ro'), as the
+    # matplotlib overlay draws it (Codex round 4), else lines+markers
+    mode = 'markers' if 'lines' not in _mode else 'lines+markers'
+    return mode, dict(symbol=symbol, size=size, color=line_color)
 
 
 def _marker_size_px(markersize_pt, marker_char, ndims=2):
