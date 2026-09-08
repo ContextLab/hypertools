@@ -66,13 +66,28 @@ APT_TIMEOUT_SECONDS = 600
 
 _kaleido_ready = False
 
-#: every `set_autoinstall` object that is in force, oldest first: a direct
+#: every `set_autoinstall` setting that is in force, oldest first: a direct
 #: call stays until superseded, a `with` block removes ITS entry on exit, and
 #: the newest entry still in force decides. Process-global (shared by every
 #: thread), guarded by `_AUTO_INSTALL_LOCK`; empty means the environment
-#: decides (`auto_install_enabled`).
+#: decides (`auto_install_enabled`). Bounded: a new setting REPLACES a
+#: superseded one that no block holds open (a direct call's, or a
+#: `_Baseline` left by an exited block), remembering only its value, so a
+#: million direct calls keep one record and no handle outlives its use
+#: (Codex round 7).
 _AUTO_INSTALL_SCOPES = []
 _AUTO_INSTALL_LOCK = threading.Lock()
+
+
+class _Baseline:
+    """The value a superseded direct call left in force, kept in a block's
+    place when that block exits (so ``set_autoinstall(False)`` followed by
+    ``with set_autoinstall(True): ...`` is False again afterwards)."""
+    __slots__ = ('enabled',)
+    _entered = False
+
+    def __init__(self, enabled):
+        self.enabled = enabled
 
 
 def auto_install_enabled():
@@ -186,26 +201,41 @@ class set_autoinstall:
         If `enabled` is not ``True`` or ``False``.
     """
 
+    _entered = False
+
     def __init__(self, enabled=True):
         if not isinstance(enabled, bool):
             raise TypeError(
                 f'set_autoinstall expects True or False, got {enabled!r}')
         self.enabled = enabled
+        self._replaced = None
         with _AUTO_INSTALL_LOCK:
+            top = _AUTO_INSTALL_SCOPES[-1] if _AUTO_INSTALL_SCOPES else None
+            if top is not None and not top._entered:
+                # the newest setting is one no block holds open: this call
+                # supersedes it, so keep only its VALUE (restored if this
+                # object is later used as a block and exits)
+                _AUTO_INSTALL_SCOPES.pop()
+                self._replaced = _Baseline(top.enabled)
             _AUTO_INSTALL_SCOPES.append(self)
 
     def __enter__(self):
+        self._entered = True
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
         # remove THIS setting wherever it sits: a block that is not the
         # newest (another thread's block opened after it) must not restore
-        # a value from before that other block
+        # a value from before that other block; what this call superseded
+        # takes its place
         with _AUTO_INSTALL_LOCK:
             for i in range(len(_AUTO_INSTALL_SCOPES) - 1, -1, -1):
                 if _AUTO_INSTALL_SCOPES[i] is self:
                     del _AUTO_INSTALL_SCOPES[i]
+                    if self._replaced is not None:
+                        _AUTO_INSTALL_SCOPES.insert(i, self._replaced)
                     break
+        self._entered = False
 
     def __repr__(self):
         return f'set_autoinstall({self.enabled})'

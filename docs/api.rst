@@ -243,7 +243,7 @@ I/O
 
   io.lsl_stream
   io.LSLStream
-  io.lsl.synthetic_outlet
+  io.synthetic_outlet
 
 Exceptions
 ------------------
@@ -254,7 +254,8 @@ to read) is a `HypertoolsIOError`, importable from ``hypertools`` and
 ``hypertools.io``. `HypertoolsTrustError` is raised by `load` when a remote
 payload would have to be unpickled (a pickle, or an object-array .npy/.npz)
 and ``trust=True`` was not passed; it subclasses `ValueError`, not
-`HypertoolsError`, and lives in ``hypertools.io.sources``. Input-validation
+`HypertoolsError`, and is importable from ``hypertools`` (it is defined in
+``hypertools.io.sources``). Input-validation
 errors (invalid parameters or data shapes) raise standard
 `ValueError`/`TypeError` with actionable messages.
 
@@ -265,7 +266,7 @@ errors (invalid parameters or data shapes) raise standard
   HypertoolsBackendError
   HypertoolsIOError
   HypertoolsOfflineError
-  io.sources.HypertoolsTrustError
+  HypertoolsTrustError
 
 Tools
 ------------------

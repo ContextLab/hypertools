@@ -9,7 +9,8 @@ optional extras), plus the `io` submodule, `HyperAnimation`
 (the return type of animated plots), and `FrameContext` (the per-frame
 state `plot(..., on_frame=...)` hands to its callback). Exceptions raised
 by hypertools (`HypertoolsError`, `HypertoolsBackendError`,
-`HypertoolsIOError`) are also importable from here.
+`HypertoolsIOError`, `HypertoolsOfflineError`, `HypertoolsTrustError`) are
+also importable from here.
 
 Import-form note: several top-level functions share a name with the
 subpackage they live in, so attribute access like
@@ -40,7 +41,7 @@ from .core.model import apply_model, supported_models
 from .core.pipeline import Pipeline
 from .core.exceptions import (HypertoolsError, HypertoolsBackendError,
                               HypertoolsIOError)
-from .io.sources import HypertoolsOfflineError
+from .io.sources import HypertoolsOfflineError, HypertoolsTrustError
 from .manip.manip import manip
 from .predict.predict import predict
 from .impute.impute import impute
@@ -58,6 +59,6 @@ __all__ = [
     'set_interactive_backend', 'set_autoinstall', 'HyperAnimation',
     'FrameContext', 'io',
     'HypertoolsError', 'HypertoolsBackendError', 'HypertoolsIOError',
-    'HypertoolsOfflineError',
+    'HypertoolsOfflineError', 'HypertoolsTrustError',
     'damage', 'stack', 'text_windows', 'subplots',
 ]

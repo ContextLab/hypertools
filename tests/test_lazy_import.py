@@ -347,14 +347,14 @@ def test_overlapping_contexts_across_threads_keep_installation_off(_restore_auto
     def a():
         with hyp.set_autoinstall(False):
             a_in.set()
-            b_in.wait(10)
+            seen['a_saw_b'] = b_in.wait(10)
         a_out.set()
 
     def b():
-        a_in.wait(10)
+        seen['b_saw_a'] = a_in.wait(10)
         with hyp.set_autoinstall(False):
             b_in.set()
-            a_out.wait(10)
+            seen['b_saw_a_exit'] = a_out.wait(10)
             seen['inside_b_after_a_exit'] = L.auto_install_enabled()
 
     ta, tb = threading.Thread(target=a), threading.Thread(target=b)
@@ -362,5 +362,34 @@ def test_overlapping_contexts_across_threads_keep_installation_off(_restore_auto
     tb.start()
     ta.join(10)
     tb.join(10)
-    assert seen == {'inside_b_after_a_exit': False}
+    assert not ta.is_alive() and not tb.is_alive()
+    # every hand-off happened (a timed-out wait would run the check without
+    # the overlap it is meant to test)
+    assert seen == {'b_saw_a': True, 'a_saw_b': True, 'b_saw_a_exit': True,
+                    'inside_b_after_a_exit': False}
     assert L.auto_install_enabled() is True
+
+
+def test_superseded_direct_calls_are_not_retained(_restore_autoinstall):
+    """Codex round 7: every direct call appended a strong reference and only a
+    block's exit removed one, so 100k direct calls kept 100k handles alive.
+    A new setting replaces a superseded one no block holds open, keeping
+    only its value; the semantics above are unchanged."""
+    import gc
+    import weakref
+    import hypertools as hyp
+    first = hyp.set_autoinstall(False)
+    ref = weakref.ref(first)
+    del first
+    for i in range(10_000):
+        hyp.set_autoinstall(bool(i % 2))
+    gc.collect()
+    assert ref() is None                                   # not retained
+    assert len(L._AUTO_INSTALL_SCOPES) == 1                # bounded
+    assert L.auto_install_enabled() is True                # the last call
+    # the value a block supersedes comes back when the block exits
+    hyp.set_autoinstall(False)
+    with hyp.set_autoinstall(True):
+        assert L.auto_install_enabled() is True
+    assert L.auto_install_enabled() is False
+    assert len(L._AUTO_INSTALL_SCOPES) == 1

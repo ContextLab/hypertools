@@ -11,6 +11,7 @@ import collections.abc
 import copy
 import inspect
 import os
+import sys
 import warnings
 import matplotlib.pyplot as plt
 import numpy as np
@@ -251,6 +252,29 @@ def _fmt_color_letter(fmt):
         return _process_plot_format(fmt)[2]
     except Exception:  # noqa: BLE001 - an unparseable fmt names no colour
         return None
+
+
+def _palette_slots_consumed(n_drawn, mpl_kwargs, line_colors, draw_fmt):
+    """How many colour-cycle slots one call's `n_drawn` drawn datasets take
+    up: what a later ``ax=`` call into the same axes, figure or grid cell
+    continues the palette from, on BOTH backends.
+
+    Only a dataset coloured FROM the cycle consumes a slot. An explicit
+    ``color=`` (or a palette mapping resolved into one), a ``hue=``
+    colouring, and a colour letter in ``fmt=`` (``'r-'``) colour their
+    datasets without touching the cycle -- exactly as a matplotlib axes
+    treats them -- so ``hyp.plot(a, fmt='r-')`` followed by
+    ``hyp.plot(b, ax=...)`` gives ``b`` the FIRST palette colour, the one
+    the single call ``fmt=['r-', '-']`` gives it (1.1 release review, round
+    7: the count was every drawn dataset, so that second call drew the
+    SECOND palette colour on plotly, and in an initially empty
+    `hyp.subplots` cell on both backends)."""
+    if "color" in mpl_kwargs or line_colors is not None:
+        return 0
+    return sum(
+        1 for i in range(n_drawn)
+        if _fmt_color_letter(draw_fmt[i] if i < len(draw_fmt) else None)
+        is None)
 
 
 def _apply_forecast_override(style, override):
@@ -3279,9 +3303,8 @@ def _dataframe_axis_labels(x):
         return None
 
 def _panel_data_width(dataset):
-    """The column count of one numeric dataset (a 1-D array counts as one
-    column), or None when the width the pipeline will draw cannot be read
-    off the raw input (text, mixed-type frames, ragged lists)."""
+    """The column count of one ANALYZED dataset (a 1-D array counts as one
+    column), or None when it is not a numeric array."""
     try:
         arr = np.asarray(dataset)
     except Exception:  # noqa: BLE001 - not array-like: width unknown
@@ -3293,17 +3316,95 @@ def _panel_data_width(dataset):
 
 def _panel_cell_ndims(requested, datasets):
     """The dimensionality of a panel grid's cells: `requested` (1, 2 or 3),
-    lowered to 2 when every dataset is narrower than three columns --
-    exactly the axes the single-axes call gives that data (2-column data
+    lowered to 2 when every ANALYZED dataset is narrower than three columns
+    -- exactly the axes the single-axes call gives that data (2-column data
     on 2-D axes, 1-column data as an index-vs-value series). A requested
     ``1`` (series mode) is always kept, and a dataset whose width cannot be
-    read (`_panel_data_width` -> None) keeps the requested cells."""
+    read (`_panel_data_width` -> None) keeps the requested cells.
+
+    `datasets` must be the rows the panels DRAW, i.e. the pipeline's
+    output: the raw column count says nothing about it (1.1 release
+    review, round 7: two raw columns through ``manip='Delay'`` come out
+    three wide, and cells lowered from the raw width refused or flattened
+    the 3-D result on both backends)."""
     if requested <= 2 or not datasets:
         return requested
     widths = [_panel_data_width(d) for d in datasets]
     if any(w is None for w in widths):
         return requested
     return requested if max(widths) >= 3 else 2
+
+
+def _panel_probe(data, kw, ndims, caught_warnings):
+    """Fit one panel grid's pipeline exactly as the equivalent single-axes
+    call fits it -- by MAKING that call (``return_model=True``, figure
+    thrown away) -- and hand back ``(xform, pipeline)``: the analyzed rows
+    (one array per input dataset; for ``ndims`` > 3 the 3-D display
+    projection the single-axes call drew, since a reduce=None panel cannot
+    draw wider rows, P4) and the fitted pipeline. Every `panels=` mode goes
+    through here, and every panel is then DRAWN from these rows through
+    ``transform=``, so the cells' projection can be read off the data the
+    pipeline actually produced (round 7) and no panel ever fits twice.
+    Going through `plot()` itself -- rather than re-deriving
+    format_data/analyze here -- is what makes "a panel is analyzed exactly
+    as the single-axes call analyzes it" true by construction. The
+    warnings the call raises are appended to `caught_warnings` (see
+    `_reemit_panel_warnings`)."""
+    probe_kwargs = dict(kw)
+    probe_kwargs.update(return_model=True, show=False, save_path=None,
+                        colorbar=None, legend=None, labels=None,
+                        names=None, surface=None, density=None, title=None)
+    for key in _PANEL_PROBE_DROPPED_KWARGS:
+        probe_kwargs[key] = None
+    with warnings.catch_warnings(record=True) as caught:
+        # the fit's own warnings (a reducer's "connected components",
+        # a manip's resampling note) are emitted ONCE for the grid -- by
+        # `_reemit_panel_warnings`, after the panels are drawn, minus the
+        # draw-time ones every panel call repeats from the user's own
+        # kwargs (warning those twice is noise)
+        warnings.simplefilter('always')
+        probe = plot(data, **probe_kwargs)
+    caught_warnings.extend(caught)
+    probe_fig = probe.get('fig')
+    if isinstance(probe_fig, plt.Figure):
+        plt.close(probe_fig)
+    xform = [np.asarray(xi) for xi in probe['xform_data']]
+    # rows wider than a static axes can draw -- `ndims` > 3, or a
+    # `pipeline=` whose reduce stage kept more (round 7) -- were drawn by
+    # the single-axes call through ONE display projection to 3-D
+    # (`trace_data`, one entry per FINAL trace); the panels draw that
+    wide = any(xi.ndim == 2 and xi.shape[1] > 3 for xi in xform)
+    if (ndims is not None and ndims > 3) or wide:
+        trace = [np.asarray(xi) for xi in probe['trace_data']]
+        if len(trace) == len(xform):
+            xform = trace
+    return xform, probe.get('pipeline')
+
+
+def _reemit_panel_warnings(probe_caught, draw_caught):
+    """Re-issue the warnings a panel grid's calls raised, each from its
+    original location: every draw-time warning (the panel calls warn from
+    the user's own kwargs, one per panel, as they always have), preceded
+    by the fit-time ones only the probes saw -- each of those ONCE, and
+    not at all when a panel call repeated it (round 7: the panels are
+    drawn through ``transform=``, so a reducer's own warning would
+    otherwise be lost with the probe's figure)."""
+    seen = {(w.category, str(w.message)) for w in draw_caught}
+    to_emit = [w for w in probe_caught
+               if (w.category, str(w.message)) not in seen]
+    emitted = set()
+    for w in list(to_emit) + list(draw_caught):
+        key = (w.category, str(w.message), w.filename, w.lineno)
+        if w in to_emit and key in emitted:
+            continue
+        emitted.add(key)
+        registry = None
+        for mod in list(sys.modules.values()):
+            if getattr(mod, '__file__', None) == w.filename:
+                registry = mod.__dict__.setdefault('__warningregistry__', {})
+                break
+        warnings.warn_explicit(w.message, w.category, w.filename, w.lineno,
+                               registry=registry)
 
 
 def _plot_panels(x, panels, call_kwargs, _name='panels'):
@@ -3366,22 +3467,10 @@ def _plot_panels(x, panels, call_kwargs, _name='panels'):
     titles = _panel_titles(call_kwargs.get('title'), n_panels)
     ndims = call_kwargs.get('ndims', 3)
     # ndims > 3 is analyzed at that dimensionality and DRAWN in 3-D, as the
-    # single-axes path does (P4): the grid's cells are 3-D
+    # single-axes path does (P4): the grid's cells are at most 3-D...
     panel_ndims = 3 if (ndims is None or ndims > 3) else ndims
-    # ...unless the data is narrower than that: the single-axes call draws
-    # 2-column data on 2-D axes and 1-column data as a series, whatever
-    # ndims= says, and the grid's cells follow the data the same way (1.1
-    # release review, round 6: 2-column data with the default ndims= went
-    # into 3-D cells -- plotly refused the 2-D traces with "Trace type
-    # 'scatter' is not compatible with subplot type 'scene'", matplotlib
-    # drew a flat trajectory inside a cube). The raw datasets settle it in
-    # the modes that fit per panel; the shared fit refines it from its
-    # analyzed data below.
-    if per_panel_reduce:
-        panel_ndims = _panel_cell_ndims(
-            panel_ndims, datasets if datasets is not None else [x])
-    else:
-        panel_ndims = _panel_cell_ndims(panel_ndims, datasets)
+    # ...and are lowered to what the ANALYZED data needs below, once every
+    # panel's pipeline has run (`_panel_cell_ndims`)
     show = call_kwargs.get('show', True)
     # validated and normalized (``~``, path-likes, a missing directory) up
     # front, before any panel is analyzed or drawn -- the same rule the
@@ -3420,23 +3509,39 @@ def _plot_panels(x, panels, call_kwargs, _name='panels'):
             "of those panels already runs its own full pipeline over every "
             "dataset.")
 
+    # Every mode fits its pipeline(s) ONCE, through `plot()` itself
+    # (`_panel_probe`), and then draws each panel from the analyzed rows
+    # through `transform=`. The cells' projection is decided from those
+    # rows (round 7: two raw columns through a feature-expanding manip=/
+    # pipeline= are three wide after the analysis -- read from the raw
+    # input, the cells were 2-D, and the 3-D result was refused, flattened
+    # or rejected by plotly's 'xy' cell).
     #: the shared fit's pipeline (panel_fit='shared' only); each panel's
     #: own bundle carries its own fit in the other modes
     shared_pipeline = None
+    #: the warnings the probes raised, re-issued once the grid is drawn
+    probe_warnings = []
+    #: per panel: the input datasets it draws (for their index/column
+    #: labels), its analyzed rows (one array per dataset), its fitted
+    #: pipeline, and its narrowed kwargs
     if per_panel_reduce:
-        panel_data = [x] * n_panels
+        # one panel per REDUCER, each a full pipeline over every dataset
+        sources = datasets if datasets is not None else [x]
+        panel_sources = [sources] * n_panels
         panel_kwargs = []
         for spec in reduce_spec:
             kw = dict(shared)
             kw['reduce'] = spec
             panel_kwargs.append(kw)
+        probes = [_panel_probe(x, kw, ndims, probe_warnings)
+                  for kw in panel_kwargs]
+        panel_xforms = [xf for xf, _ in probes]
+        panel_pipelines = [pipe for _, pipe in probes]
     elif panel_fit == 'independent':
-        # one FULL pipeline per panel: each panel call is byte-for-byte the
-        # ``hyp.plot(datasets[i], ax=axes[i], ...)`` the caller would have
-        # written, so nothing here fixes or slices the analysis. The raw
-        # dataset is handed over untouched, which also means `plot()`
-        # derives that panel's DataFrame-column axis labels itself.
-        panel_data = [[d] for d in datasets]
+        # one FULL pipeline per panel: each panel's fit is byte-for-byte
+        # the ``hyp.plot(datasets[i], ...)`` the caller would have written,
+        # so nothing here fixes or slices the analysis
+        panel_sources = [[d] for d in datasets]
         lengths = [int(np.asarray(d).shape[0]) for d in datasets]
         panel_kwargs = []
         for i in range(n_panels):
@@ -3447,106 +3552,110 @@ def _plot_panels(x, panels, call_kwargs, _name='panels'):
             # mode
             _panel_narrow_kwargs(kw, i, n_panels, lengths)
             panel_kwargs.append(kw)
+        probes = [_panel_probe(panel_sources[i], panel_kwargs[i], ndims,
+                               probe_warnings)
+                  for i in range(n_panels)]
+        panel_xforms = [xf for xf, _ in probes]
+        panel_pipelines = [pipe for _, pipe in probes]
     else:
         # ONE shared fit across every dataset: run the very call the user
         # would have made without panels=, take its analyzed (pre-display-
-        # rescale) data, and throw its figure away. Going through plot()
-        # itself -- rather than re-deriving format_data/analyze here -- is
-        # what makes "the panels share the pipeline exactly as the
-        # single-axes call does" true by construction rather than by
-        # transcription.
-        probe_kwargs = dict(shared)
-        probe_kwargs.update(return_model=True, show=False, save_path=None,
-                            colorbar=None, legend=None, labels=None,
-                            names=None, surface=None,
-                            density=None, title=None)
-        for key in _PANEL_PROBE_DROPPED_KWARGS:
-            probe_kwargs[key] = None
-        with warnings.catch_warnings():
-            # whatever this call would warn about, the per-panel calls
-            # below warn about again -- from the user's own kwargs, with
-            # the user's own stacklevel. Warning twice is noise.
-            warnings.simplefilter('ignore')
-            probe = plot(x, **probe_kwargs)
-        probe_fig = probe.get('fig')
-        if isinstance(probe_fig, plt.Figure):
-            plt.close(probe_fig)
-        # the ONE fitted pipeline every panel is drawn from: handed back
-        # in the bundle (top level and in every panel's own bundle), since
-        # the panels themselves are drawn through `transform=`, whose
-        # bundles carry `pipeline=None` (release audit 2026-09-07, 3)
-        shared_pipeline = probe.get('pipeline')
-        if ndims is not None and ndims > 3:
-            # the ONE shared display projection to 3-D the single-axes call
-            # drew (`trace_data`); its analyzed `xform_data` is still
-            # `ndims`-wide, which a reduce=None panel cannot draw (P4)
-            xform = probe['trace_data']
-        else:
-            xform = probe['xform_data']
-        lengths = [int(np.asarray(xi).shape[0]) for xi in xform]
-        # the analyzed data's own width decides the cells (a text or
-        # DataFrame input's drawn width is only known after the pipeline)
-        panel_ndims = _panel_cell_ndims(panel_ndims, xform)
-        # each panel's rows, labelled with its source frame's index and
-        # column names so series mode keeps dates on x and the column on y
-        # exactly as the independent fit does (P2)
-        panel_data = [[_panel_frame(datasets[i], xform[i])]
-                      for i in range(n_panels)]
+        # rescale) data, and give each panel its own dataset's rows
+        xform, shared_pipeline = _panel_probe(x, shared, ndims,
+                                              probe_warnings)
+        lengths = [int(xi.shape[0]) for xi in xform]
+        panel_sources = [[datasets[i]] for i in range(n_panels)]
+        panel_xforms = [[xform[i]] for i in range(n_panels)]
+        panel_pipelines = [shared_pipeline] * n_panels
         panel_kwargs = []
         for i in range(n_panels):
             kw = dict(shared)
-            # the analysis already ran (above); each panel DRAWS its slice
-            kw.update(transform=[np.asarray(xform[i])], reduce=None,
-                      normalize=None, align=None, manip=None, pipeline=None,
-                      impute=None, resample=None, random_state=None)
             _panel_narrow_kwargs(kw, i, n_panels, lengths)
-            # DataFrame-column axis labels (GH #285): a shared-fit panel is
-            # drawn through `transform=`, which is exactly the case
-            # `plot()` refuses to infer labels for -- so derive them here,
-            # from the panel's OWN input dataset, under the same rule
-            # (2-D/3-D, one drawn axis per named column). An explicit
-            # xlabel=/ylabel=/zlabel= still wins.
-            # ...but not in `ndims=1` series mode, whose drawn axes are the
-            # row index and the values -- there a 3-column frame's labels
-            # were assigned to x/y/z and zlabel= then refused (P2)
-            _labels = (None if panel_ndims == 1
-                       else _dataframe_axis_labels(datasets[i]))
-            if (_labels is not None
-                    and len(_labels) == int(np.asarray(xform[i]).shape[1])
-                    and len(_labels) in (2, 3)):
-                for _key, _value in zip(('xlabel', 'ylabel', 'zlabel'),
-                                        _labels):
-                    if kw.get(_key) is None:
-                        kw[_key] = str(_value)
             panel_kwargs.append(kw)
+
+    # the analyzed data's own width decides the cells (a text or DataFrame
+    # input's drawn width, and a manip=/pipeline= stage's, are only known
+    # after the pipeline)
+    panel_ndims = _panel_cell_ndims(
+        panel_ndims, [xi for xf in panel_xforms for xi in xf])
+    panel_data = []
+    for i in range(n_panels):
+        kw = panel_kwargs[i]
+        xf = panel_xforms[i]
+        if panel_ndims == 3:
+            # a 2-wide panel in a grid whose other panels came out 3-wide
+            # (independent fits of unequal inputs): draw it flat in the
+            # 3-D cell on BOTH backends, the way a matplotlib 3-D axes
+            # draws 2-column rows -- plotly's 'scene' cell refuses a 2-D
+            # trace outright
+            xf = [np.column_stack([xi, np.zeros(xi.shape[0])])
+                  if xi.ndim == 2 and xi.shape[1] == 2 else xi
+                  for xi in xf]
+        # the analysis already ran (above); each panel DRAWS its rows
+        kw.update(transform=list(xf), reduce=None, normalize=None,
+                  align=None, manip=None, pipeline=None, impute=None,
+                  resample=None, random_state=None)
+        # each panel's rows, labelled with its source frame's index and
+        # column names so series mode keeps dates on x and the column on y
+        # exactly as the raw frame would (P2)
+        panel_data.append([_panel_frame(src, xi)
+                           for src, xi in zip(panel_sources[i], xf)])
+        # DataFrame-column axis labels (GH #285): a panel is drawn through
+        # `transform=`, which is exactly the case `plot()` refuses to infer
+        # labels for -- so derive them here, from the panel's OWN input
+        # dataset, under the same rule (2-D/3-D, one drawn axis per named
+        # column). An explicit xlabel=/ylabel=/zlabel= still wins.
+        # ...but not in `ndims=1` series mode, whose drawn axes are the
+        # row index and the values -- there a 3-column frame's labels
+        # were assigned to x/y/z and zlabel= then refused (P2)
+        _labels = (None if panel_ndims == 1 or len(xf) != 1
+                   else _dataframe_axis_labels(panel_sources[i]))
+        if (_labels is not None
+                and len(_labels) == int(xf[0].shape[1])
+                and len(_labels) in (2, 3)):
+            for _key, _value in zip(('xlabel', 'ylabel', 'zlabel'),
+                                    _labels):
+                if kw.get(_key) is None:
+                    kw[_key] = str(_value)
 
     if backend == 'plotly':
         plotly_kwargs = dict(call_kwargs)
         plotly_kwargs['save_path'] = save_path
-        return _plot_panels_plotly(panel_data, panel_kwargs, titles,
-                                   nrows, ncols, panel_ndims, plotly_kwargs,
-                                   shared_pipeline=shared_pipeline)
+        with warnings.catch_warnings(record=True) as draw_warnings:
+            warnings.simplefilter('always')
+            grid = _plot_panels_plotly(
+                panel_data, panel_kwargs, titles, nrows, ncols, panel_ndims,
+                plotly_kwargs, shared_pipeline=shared_pipeline,
+                panel_pipelines=panel_pipelines)
+        _reemit_panel_warnings(probe_warnings, draw_warnings)
+        return grid
 
     fig, axes = subplots(nrows, ncols, ndims=panel_ndims,
                          size=call_kwargs.get('size'), backend='matplotlib')
     panel_axes = []
     panel_models = []
-    for i in range(n_panels):
-        kw = dict(panel_kwargs[i])
-        kw.update(ax=axes[i], title=titles[i], show=False, save_path=None,
-                  return_model=return_model, size=None)
-        if panel_ndims < (3 if ndims is None else min(ndims, 3)):
-            # cells lowered to the data's width (`_panel_cell_ndims`): the
-            # panel call's `ax=` projection check reads ndims=, not the
-            # data, so tell it the dimensionality its axes actually has
-            # (the drawing is the same: narrow data never reduces)
-            kw['ndims'] = panel_ndims
-        result = plot(panel_data[i], **kw)
-        if return_model:
-            if shared_pipeline is not None:
-                result['pipeline'] = shared_pipeline
-            panel_models.append(result)
-        panel_axes.append(axes[i])
+    with warnings.catch_warnings(record=True) as draw_warnings:
+        warnings.simplefilter('always')
+        for i in range(n_panels):
+            kw = dict(panel_kwargs[i])
+            kw.update(ax=axes[i], title=titles[i], show=False,
+                      save_path=None, return_model=return_model, size=None)
+            if panel_ndims < (3 if ndims is None else min(ndims, 3)):
+                # cells lowered to the data's width (`_panel_cell_ndims`):
+                # the panel call's `ax=` projection check reads ndims=,
+                # not the data, so tell it the dimensionality its axes
+                # actually has (the drawing is the same: the rows are
+                # already analyzed)
+                kw['ndims'] = panel_ndims
+            result = plot(panel_data[i], **kw)
+            if return_model:
+                # the fit this panel was drawn from: the panel itself is
+                # drawn through `transform=`, whose bundles carry
+                # `pipeline=None` (release audit 2026-09-07, 3)
+                result['pipeline'] = panel_pipelines[i]
+                panel_models.append(result)
+            panel_axes.append(axes[i])
+    _reemit_panel_warnings(probe_warnings, draw_warnings)
     for spare in axes[n_panels:]:
         spare.set_visible(False)
     if call_kwargs.get('size') is None:
@@ -3603,7 +3712,8 @@ def _plot_panels(x, panels, call_kwargs, _name='panels'):
 
 
 def _plot_panels_plotly(panel_data, panel_kwargs, titles, nrows, ncols,
-                        ndims, call_kwargs, shared_pipeline=None):
+                        ndims, call_kwargs, shared_pipeline=None,
+                        panel_pipelines=None):
     """`panels=` under the plotly backend: the same grid, built with
     `plotly.subplots.make_subplots` (3-D panels get ``type='scene'``
     cells). Each panel is drawn by an ordinary `plot()` call and its traces
@@ -3620,8 +3730,10 @@ def _plot_panels_plotly(panel_data, panel_kwargs, titles, nrows, ncols,
     objects the panels were transplanted into (one ``layout.scene*`` per
     panel for 3-D, one ``(xaxis, yaxis)`` pair for 2-D), which is plotly's
     equivalent of the matplotlib bundle's ``Axes`` list. `shared_pipeline`
-    is the shared fit's pipeline (``panel_fit='shared'``), recorded in the
-    bundle exactly as the matplotlib grid records it.
+    is the shared fit's pipeline (``panel_fit='shared'``) and
+    `panel_pipelines` each panel's own fit (the panels are drawn through
+    ``transform=``), both recorded in the bundle exactly as the matplotlib
+    grid records them.
     """
     from .plotly_backend import (make_panel_grid, panel_gutter_px,
                                  transplant_panel)
@@ -3642,7 +3754,9 @@ def _plot_panels_plotly(panel_data, panel_kwargs, titles, nrows, ncols,
         result = plot(data, **kw)
         panel_figs.append(result['fig'] if return_model else result)
         if return_model:
-            if shared_pipeline is not None:
+            if panel_pipelines is not None:
+                result['pipeline'] = panel_pipelines[len(panel_models)]
+            elif shared_pipeline is not None:
                 result['pipeline'] = shared_pipeline
             panel_models.append(result)
     legend_present = call_kwargs.get('legend') is not None
@@ -10408,6 +10522,14 @@ def plot(
                              title_kwargs=_title_kwargs)
         _frame_hooks.add_internal(_update_dynamic_title)
 
+    # the colour-cycle slots this call's datasets take (what a later `ax=`
+    # call into the same axes/figure/cell continues the palette from):
+    # counted HERE, before the plotly branch below hands the palette to its
+    # backend as explicit per-dataset ``color=`` entries, which would make
+    # every dataset look explicitly coloured (round 7)
+    _palette_slots_taken = _palette_slots_consumed(
+        len(xform), mpl_kwargs, line_colors, draw_fmt)
+
     # interactive (plotly) backend: render with plotly and skip the
     # matplotlib pipeline entirely. backend='auto' resolves to plotly only
     # on Colab/Kaggle (see hypertools.plot.plotly_backend for the policy).
@@ -10573,8 +10695,10 @@ def plot(
             forecast_datasets=_model_forecast_owner,
             # what a later `ax=<this figure>` call continues the palette
             # from (see the colour block above) -- recorded on EVERY
-            # figure, since the first call is the one composed into
-            datasets_drawn=_plotly_palette_offset + len(xform),
+            # figure, since the first call is the one composed into; only
+            # the datasets coloured from the cycle count
+            # (`_palette_slots_consumed`)
+            datasets_drawn=_plotly_palette_offset + _palette_slots_taken,
         )
         ax = None
         data = xform
@@ -10720,10 +10844,17 @@ def plot(
                 ylim=_data_ylim,
                 x_date=_series_is_date,
             )
-            if _user_supplied_ax and ax is not None:
-                # what a later call into this same axes continues the
-                # palette from (see the prop-cycle block above)
-                ax._hyp_palette_offset = _palette_offset + len(xform)
+            if ax is not None and hasattr(ax, 'set_prop_cycle'):
+                # what a later `ax=<this axes>` call continues the palette
+                # from (see the prop-cycle block above): the slots THIS
+                # call's datasets took from the cycle, past the ones an
+                # earlier call took (`_palette_slots_consumed`). Recorded
+                # on hypertools' own axes too, as the plotly path records
+                # it on every figure, so composing into `fig.axes[0]` of
+                # a plain `hyp.plot` figure continues the palette exactly
+                # as composing into a `hyp.subplots` cell does (round 7)
+                ax._hyp_palette_offset = (_palette_offset
+                                          + _palette_slots_taken)
 
             # A caller-supplied ax= was created outside this rc context, so
             # its tick labels carry the 'sans-serif' ALIAS, which matplotlib

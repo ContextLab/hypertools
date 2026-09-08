@@ -600,7 +600,7 @@ def test_plotly_animation_export_honours_set_autoinstall_on_over_the_environment
     py = _interpreter_without(tmp_path, 'kaleido')
     text = _run_policy_driver(py, tmp_path, 'on')
     assert 'parent True' in text
-    assert 'RAISED' in text and 'EXPORTED' not in text
+    assert 'RAISED ImportError' in text and 'EXPORTED' not in text
     assert 'automatically failed' in text
     assert 'pip install "hypertools[interactive]"' in text
     assert 'automatic installation is off' not in text

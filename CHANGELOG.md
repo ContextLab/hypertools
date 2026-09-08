@@ -820,6 +820,24 @@ Because 1.1.0 had not been published, they ship in it.
   2-D cells on both backends, instead of raising `Trace type 'scatter' is
   not compatible with subplot type 'scene'` (plotly) or drawing flat
   trajectories inside cubes (matplotlib). `tests/test_plot_review_round6.py`.
+- **`set_autoinstall` keeps one record per superseded direct call.** Every
+  direct call appended a handle that only a block's exit removed, so a long
+  session of direct calls retained every handle; a new setting now replaces
+  a superseded one that no block holds open, keeping only its value, with
+  the block semantics unchanged. (Codex round 7.)
+- **`HypertoolsTrustError` is importable from `hypertools`**, beside
+  `HypertoolsOfflineError`, and the API reference documents it and
+  `io.synthetic_outlet` under those public names (the source-view backlinks
+  for both pointed at anchors that did not exist).
+- **`panels=` decides each cell's projection from the analyzed data** (after
+  `manip=`/`pipeline=`/`reduce=`), not the raw column count: a Delay-expanded
+  2-column dataset reduced to 3 components draws 3-D panels again in the
+  shared, independent and reducer-comparison modes on both backends, keeping
+  the requested `ndims` and each panel's fitted pipeline with no second fit
+  (every mode now fits through one probe and draws from its rows). Composing
+  a call into a figure, axes or cell after a `fmt='r-'`, `color=` or `hue=`
+  call continues the palette from the slots actually consumed, identically
+  on both backends. `tests/test_plot_review_round7.py`. (Codex round 7.)
 
 - **A repeated metric in `metrics=` raises `ValueError` that says which
   metric is repeated.** `hyp.predict(..., holdout=k, metrics=['mae', 'MAE'])`

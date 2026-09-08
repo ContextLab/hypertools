@@ -870,3 +870,169 @@ VERDICT: FINDINGS
   limit: mixed-width independent panels share one cell type (the maximum).
 - Tests: `tests/test_plot_review_round6.py` (18); the fmt xfail in
   `tests/test_plot_panels_audit.py` is removed so the assertion is live.
+
+## Codex round 7 (from its run log; the run hit the usage limit before writing its report or this section)
+
+Extracted verbatim by the Claude session from the Codex stdout log (scratchpad codex/run9b.log, lines 7080-7300) on 2026-09-08 08:00. Codex re-verified originals 1-6 and round-6 findings 1-3 (all FIXED, 6 pending release ops) and reported:
+
+**R7-1 — MAJOR: the new panel dimensionality inference runs before feature
+expansion, breaking valid Delay -> PCA plots.**
+`hypertools/plot/plot.py:3380–3384`, `_panel_cell_ndims` at `3294–3306`, and
+matplotlib's `ndims` replacement at `3538–3543`.
+
+Two raw columns do not imply two columns after the analysis pipeline. The
+new helper lowers the requested cell type using RAW data; its early return
+for requested <= 2 means the later shared-fit check cannot restore 3-D.
+Independent matplotlib panels also change the requested PCA fit to 2-D.
+
+Public reproduction (both backends, both panel_fit modes):
+
+```python
+x = [np.random.default_rng(i).normal(size=(20, 2)) for i in range(2)]
+hyp.plot(x, panels=True, panel_fit=fit,
+         manip={'model': 'Delay', 'kwargs': {'dims': 3}},
+         reduce='PCA', ndims=3, backend=backend,
+         return_model=True, show=False)
+```
+
+Command: `MPLBACKEND=Agg MPLCONFIGDIR=/tmp/hypertools-round7/mpl
+HYPERTOOLS_AUTO_INSTALL=0 .venv/bin/python /tmp/hypertools-round7/edges.py`
+(`edges.log`; focused form is `delay_minimal.py`). Ordinary plotting returns
+3-D traces and two `(18, 3)` arrays on both backends. With panels:
+
+- matplotlib/shared: `ValueError: the data to plot has 3 dimensions, but
+  static plots support at most 2; reduce=None disables dimensionality reduction`.
+- matplotlib/independent: **silently returns `(18, 2)`** per panel on
+  rectilinear axes despite `ndims=3`.
+- plotly/shared and plotly/independent: `ValueError: Trace type 'scatter3d'
+  is not compatible with subplot type 'xy' at grid position (1, 1)`.
+
+Regression attribution: from `/tmp`, run the repo `.venv/bin/python` on
+`delay_minimal.py` with `PYTHONPATH=/tmp/hypertools-round6/source` (the saved
+3f4b087d source). `delay-before.log` prints OK and `(18, 3)` for ALL FOUR
+combinations. Thus this is introduced by c700c85f, not a preexisting limitation.
+I opened the new ordinary 3-D and erroneous 2-D matplotlib PNGs; the latter
+really renders two flat panels. Plotly trace construction fails before export.
+Suggested fix: determine each cell's projection from its actual analyzed data,
+retaining the originally requested analysis dimensionality and fitted pipeline;
+do not infer final width from raw data when manip/pipeline can change it.
+Cover feature-expanding manip/pipeline input, shared/independent fits and
+reducer comparisons without adding a second fit.
+
+**R7-2 — MINOR: a fmt-pinned first call consumes a palette slot on composed
+Plotly figures, contrary to matplotlib and the new fmt contract.**
+`hypertools/plot/plot.py:10577` records `offset + len(xform)` even though the
+new branch at `10487–10495` excludes lettered fmt entries from consuming the
+palette. The matplotlib caller-axes counter at `10726` has the same issue
+for an initially empty `hyp.subplots` cell.
+
+Command: same environment, `.venv/bin/python
+/tmp/hypertools-round7/fmt_minimal.py` (`fmt-minimal.log`). In each backend,
+plot a `(20,3)` array with `fmt='r-'`, `palette=['navy','gold','green']`, then
+plot a second array into that figure's axes/figure with the same palette and
+no fmt colour. Observed:
+
+```
+matplotlib ['r', '(0.0, 0.0, 0.5019607843137255)']
+plotly ['rgba(255,0,0,1.0)', 'rgba(255,215,0,1.0)']
+```
+
+The second line is navy on matplotlib, gold on Plotly. `edges.py` also proves
+both backends' empty subplots-cell path uses gold, whereas a single call with
+`fmt=['r-', '-']` uses navy. Matplotlib comparison PNGs were opened and
+inspected; Plotly JSON records the actual trace colors (Chrome cannot render
+here). Suggested fix: track consumed cycle slots, consistently for a normal
+figure and a cell, rather than total drawn datasets; include explicit colours
+and hue in the accounting rules. Test a pinned-colour call followed by an
+uncoloured call, alongside the equivalent single call, on both backends.
+
+**R7-3 — MINOR: direct set_autoinstall calls leak every superseded handle.**
+`hypertools/_shared/lazy_import.py:194–195` appends a strong reference for
+EVERY call; only `__exit__` removes one. Direct calls never exit, so an older
+direct setting, documented as superseded, stays alive for the interpreter's
+lifetime. This is a retention bug, not a recurrence of the overlapping-OFF
+policy failure.
+
+Command: `.venv/bin/python /tmp/hypertools-round7/policy_extra.py`
+(`policy-extra.log`; MPLBACKEND=Agg). 100,000 public direct calls alternating
+False/True, deletion of local handles, and `gc.collect()` leave the first
+handle alive through a weakref and retain **8,004,888 bytes** by tracemalloc.
+No private policy state is mutated by the probe. Suggested fix: bound storage
+to active scopes and the necessary current direct baseline, dropping
+superseded direct records; preserve the verified out-of-order scope semantics.
+Add a real weakref/collection regression.
+
+**Nits / test and documentation drift.**
+
+- `tests/test_animation_export.py:603` still asserts only `'RAISED'` in the
+  Python-ON/env-OFF branch, although the OFF branch at 581 now asserts
+  `RAISED ImportError`. `nl -ba` inspection confirms this; the public driver
+  DOES return ImportError today. Tighten the ON branch too; the update's
+  broad statement that the export tests assert the type overstates coverage.
+- `tests/test_lazy_import.py:349,353,356,362–363` ignores Event.wait timeout
+  results and does not assert that joined threads terminated. Source
+  inspection shows a timed-out wait can let the test run without its intended
+  overlap. Assert successful waits and completed threads. This does not undo
+  my independent event-ordered public export reproduction, which passed.
+- `tests/AGENTS.md:23` still says no CI job runs doctests. The actual
+  `.github/workflows/test.yml` docs-clean step and fetched hosted logs show
+  that it does. Update the repository guidance; do not remove the CI check.
+- The generated viewcode `[docs]` backlinks for `synthetic_outlet` and
+  `HypertoolsTrustError` use alias anchors absent from their destination
+  pages. Relevant canonical declarations: `docs/api.rst:246,268` and
+  `docs/hypertools.io.lsl.synthetic_outlet.rst:6`,
+  `docs/hypertools.io.sources.HypertoolsTrustError.rst:6`.
+  The actual missing targets are `#hypertools.io.synthetic_outlet` and
+  `#hypertools.HypertoolsTrustError`. The pages exist; their canonical API
+  anchors use the defining-module names. Suggested fix: make viewcode links
+  use those canonical anchors or add the alias targets. See `links.json`.
+  My link parser resolves `/tmp` before indexing pages so symlink differences
+  cannot silently skip anchor checks; the previous round's parser did not.
+
+## Updates by the Claude session after Codex round 7 (2026-09-08) — NOT part of the Codex text above
+
+### UPDATE — R7-3 (superseded direct `set_autoinstall` handles retained): FIXED
+- `hypertools/_shared/lazy_import.py`: a new setting replaces a superseded one
+  that no block holds open (a direct call's, or the `_Baseline` an exited block
+  left), keeping only its value; a block that replaced one puts that value
+  back on exit. Semantics verified unchanged (older-block-exits-first, direct
+  call under a block). The reviewer's `/tmp/hypertools-round7/policy_extra.py`:
+  first handle alive False, retained 1208 bytes after 100k direct calls (was
+  8,004,888). Test: `test_superseded_direct_calls_are_not_retained` (weakref +
+  bounded stack + block restore).
+
+### UPDATE — nits: FIXED
+- `tests/test_animation_export.py` ON-branch asserts `RAISED ImportError` too.
+- `tests/test_lazy_import.py` two-thread test asserts every Event hand-off
+  succeeded and both threads finished.
+- `tests/AGENTS.md` (gitignored local guidance) says the docs-clean CI job runs
+  the doctest builder.
+- viewcode backlinks: sphinx's viewcode records ONE "referenced-as" module per
+  source file (`refname`), so objects first documented via `hypertools.io` /
+  `hypertools` got alias backlinks for every other object in that file.
+  `io.synthetic_outlet` and `HypertoolsTrustError` are now documented under
+  those public names (stubs renamed; `HypertoolsTrustError` is re-exported
+  from `hypertools` beside `HypertoolsOfflineError`, in `__all__`), so both
+  backlinks resolve.
+
+### UPDATE — R7-1 (panel cell dimensionality inferred from raw width): FIXED
+- `hypertools/plot/plot.py`: every `panels=` mode fits through one
+  `_panel_probe()` (a `plot(..., return_model=True)` call whose figure is
+  discarded) and draws each panel from the ANALYZED rows via `transform=`;
+  `_panel_cell_ndims` applies to the probe output only, so Delay-expanded
+  2-column data gets 3-D cells on both backends in shared / independent /
+  reducer-list modes, with the requested `ndims` and each panel's fitted
+  pipeline kept. A `pipeline=` whose reduce keeps more than 3 columns draws
+  through the single call's projection; a 2-wide panel in a 3-D grid is
+  zero-padded for plotly's scene cell; probe warnings are re-emitted once. A
+  counting PCA confirms 1 fit (shared) / 1 per panel (independent). The
+  reviewer's `/tmp/hypertools-round7/delay_minimal.py` and `edges.py` cases
+  pass on both backends and both modes.
+
+### UPDATE — R7-2 (fmt-pinned datasets consume a palette slot): FIXED
+- `_palette_slots_consumed()` counts only cycle-coloured datasets (explicit
+  `color=`, `hue=` and fmt colour letters consume none), computed before the
+  plotly branch injects palette colours; `datasets_drawn` (plotly) and
+  `ax._hyp_palette_offset` (matplotlib, now recorded on hypertools' own axes
+  too) use it, so a plain figure, a cell and plotly agree with the single call.
+- Tests: `tests/test_plot_review_round7.py` (32).

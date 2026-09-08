@@ -304,7 +304,7 @@ def test_all_names_resolve_and_cover_documented_api():
                   'HypertoolsIOError',
                   # 1.1.0 (GH #285): offline=True's error, importable from
                   # the top level like the other three exceptions
-                  'HypertoolsOfflineError',
+                  'HypertoolsOfflineError', 'HypertoolsTrustError',
                   # 1.1.0 (GH #285): the hand-written helpers folded in
                   'text_windows', 'damage', 'stack', 'subplots'}
     assert set(hyp.__all__) == documented
