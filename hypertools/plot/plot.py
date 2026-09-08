@@ -237,6 +237,22 @@ def _fmt_draws_line(fmt):
     return has_line_component(fmt)
 
 
+def _fmt_color_letter(fmt):
+    """The colour a matplotlib format string names (``'r-'`` -> ``'r'``),
+    or None when it names none, is not a string, or does not parse. The
+    plot.py twin of `plotly_backend._fmt_color_letter`: the plotly backend
+    has no colour cycle, so the palette is handed to it as explicit
+    per-dataset ``color=`` entries, and this is how a colour letter in
+    ``fmt=`` keeps its matplotlib precedence over that palette (1.1 release
+    review, round 6: ``fmt='r-'`` drew the palette colour on plotly)."""
+    if not isinstance(fmt, str) or not fmt or _process_plot_format is None:
+        return None
+    try:
+        return _process_plot_format(fmt)[2]
+    except Exception:  # noqa: BLE001 - an unparseable fmt names no colour
+        return None
+
+
 def _apply_forecast_override(style, override):
     """Overlay one dataset's `forecast_*=` override onto an inherited style.
 
@@ -2929,9 +2945,15 @@ def _panel_slice_forecast_kwargs(kw, index, n_datasets):
         _own = _panel_pick_model_major(_labels, index, n_datasets, n_models)
         _own_colours = _panel_pick_model_major(
             _colours, index, n_datasets, n_models)
-        _ordered = []
+        # one slot per DISTINCT LABEL, not per distinct colour: the
+        # panel's `resolve_forecast_overrides` spends the palette one
+        # colour per label it sees, so two labels that share a colour on
+        # purpose (``forecast_palette=['red', 'red']``, a palette name
+        # that cycles) must keep two entries (Codex round 6)
+        _seen, _ordered = [], []
         for _label, _colour in zip(_own, _own_colours):
-            if _label is not None and _colour not in _ordered:
+            if _label is not None and _label not in _seen:
+                _seen.append(_label)
                 _ordered.append(_colour)
         if _ordered:
             kw['forecast_palette'] = _ordered
@@ -3256,6 +3278,34 @@ def _dataframe_axis_labels(x):
     except Exception:            # noqa: BLE001 - label sugar never breaks a plot
         return None
 
+def _panel_data_width(dataset):
+    """The column count of one numeric dataset (a 1-D array counts as one
+    column), or None when the width the pipeline will draw cannot be read
+    off the raw input (text, mixed-type frames, ragged lists)."""
+    try:
+        arr = np.asarray(dataset)
+    except Exception:  # noqa: BLE001 - not array-like: width unknown
+        return None
+    if arr.dtype.kind not in 'biuf' or arr.ndim not in (1, 2):
+        return None
+    return 1 if arr.ndim == 1 else int(arr.shape[1])
+
+
+def _panel_cell_ndims(requested, datasets):
+    """The dimensionality of a panel grid's cells: `requested` (1, 2 or 3),
+    lowered to 2 when every dataset is narrower than three columns --
+    exactly the axes the single-axes call gives that data (2-column data
+    on 2-D axes, 1-column data as an index-vs-value series). A requested
+    ``1`` (series mode) is always kept, and a dataset whose width cannot be
+    read (`_panel_data_width` -> None) keeps the requested cells."""
+    if requested <= 2 or not datasets:
+        return requested
+    widths = [_panel_data_width(d) for d in datasets]
+    if any(w is None for w in widths):
+        return requested
+    return requested if max(widths) >= 3 else 2
+
+
 def _plot_panels(x, panels, call_kwargs, _name='panels'):
     """Draw one STATIC panel per dataset (or per `reduce=` entry) in a
     single figure -- the implementation behind `hyp.plot(..., panels=)`.
@@ -3318,6 +3368,20 @@ def _plot_panels(x, panels, call_kwargs, _name='panels'):
     # ndims > 3 is analyzed at that dimensionality and DRAWN in 3-D, as the
     # single-axes path does (P4): the grid's cells are 3-D
     panel_ndims = 3 if (ndims is None or ndims > 3) else ndims
+    # ...unless the data is narrower than that: the single-axes call draws
+    # 2-column data on 2-D axes and 1-column data as a series, whatever
+    # ndims= says, and the grid's cells follow the data the same way (1.1
+    # release review, round 6: 2-column data with the default ndims= went
+    # into 3-D cells -- plotly refused the 2-D traces with "Trace type
+    # 'scatter' is not compatible with subplot type 'scene'", matplotlib
+    # drew a flat trajectory inside a cube). The raw datasets settle it in
+    # the modes that fit per panel; the shared fit refines it from its
+    # analyzed data below.
+    if per_panel_reduce:
+        panel_ndims = _panel_cell_ndims(
+            panel_ndims, datasets if datasets is not None else [x])
+    else:
+        panel_ndims = _panel_cell_ndims(panel_ndims, datasets)
     show = call_kwargs.get('show', True)
     # validated and normalized (``~``, path-likes, a missing directory) up
     # front, before any panel is analyzed or drawn -- the same rule the
@@ -3420,6 +3484,9 @@ def _plot_panels(x, panels, call_kwargs, _name='panels'):
         else:
             xform = probe['xform_data']
         lengths = [int(np.asarray(xi).shape[0]) for xi in xform]
+        # the analyzed data's own width decides the cells (a text or
+        # DataFrame input's drawn width is only known after the pipeline)
+        panel_ndims = _panel_cell_ndims(panel_ndims, xform)
         # each panel's rows, labelled with its source frame's index and
         # column names so series mode keeps dates on x and the column on y
         # exactly as the independent fit does (P2)
@@ -3468,6 +3535,12 @@ def _plot_panels(x, panels, call_kwargs, _name='panels'):
         kw = dict(panel_kwargs[i])
         kw.update(ax=axes[i], title=titles[i], show=False, save_path=None,
                   return_model=return_model, size=None)
+        if panel_ndims < (3 if ndims is None else min(ndims, 3)):
+            # cells lowered to the data's width (`_panel_cell_ndims`): the
+            # panel call's `ax=` projection check reads ndims=, not the
+            # data, so tell it the dimensionality its axes actually has
+            # (the drawing is the same: narrow data never reduces)
+            kw['ndims'] = panel_ndims
         result = plot(panel_data[i], **kw)
         if return_model:
             if shared_pipeline is not None:
@@ -5757,7 +5830,11 @@ def plot(
         tall one, four form 2x2, six form 2x3; an ``int`` is
         the number of COLUMNS; an ``(nrows, ncols)`` pair is used verbatim
         and must have room for every panel. Spare cells are hidden, the
-        layout is tightened, and the one `Figure` is returned.
+        layout is tightened, and the one `Figure` is returned. Each cell
+        has the projection the single-axes call would draw that data in:
+        3-D by default, 2-D axes for ``ndims=2`` or ``ndims=1`` and for
+        2-column or 1-column data (which the single-axes call draws on
+        2-D axes whatever ``ndims=`` says).
         ``subplots=`` is an accepted alias (passing both raises).
 
         The analysis pipeline (`manip`/`normalize`/`reduce`/`align`) is fit
@@ -10396,9 +10473,26 @@ def plot(
                         (_meta or {}).get('hyp_datasets_drawn', 0)
                         if isinstance(_meta, dict) else 0)
                 _n_palette += _plotly_palette_offset
-            mpl_kwargs["color"] = list(sns_local.color_palette(
+            _palette_colors = list(sns_local.color_palette(
                 _seaborn_palette_arg(palette, _n_palette),
                 _n_palette))[_plotly_palette_offset:]
+            # a colour letter in fmt= ('r-', ['g--', 'b:']) colours its
+            # dataset, exactly as on matplotlib, where the letter beats the
+            # axes' colour cycle (an explicit color=/hue= is the other
+            # branch of this `if`, and still wins over the letter on both
+            # backends). A lettered dataset consumes no colour-cycle slot
+            # there either, so here the unlettered datasets take the
+            # palette colours in order, past the ones an earlier call into
+            # the same figure/cell already used (1.1 release review, round
+            # 6: plotly drew every fmt-lettered dataset in the palette
+            # colour, on the single-axes path, animated, and per panel).
+            _fmt_letters = [
+                _fmt_color_letter(draw_fmt[_i]) if _i < len(draw_fmt)
+                else None for _i in range(len(xform))]
+            _palette_iter = iter(_palette_colors)
+            mpl_kwargs["color"] = [
+                _letter if _letter is not None else next(_palette_iter)
+                for _letter in _fmt_letters]
             kwargs_list = parse_kwargs(xform, mpl_kwargs)
             _apply_extra_kwargs(kwargs_list, kwargs)
         fig = plotly_draw(

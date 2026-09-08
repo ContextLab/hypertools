@@ -206,7 +206,7 @@ def test_the_optional_import_scan_sees_a_plain_import():
 @pytest.fixture
 def _restore_autoinstall(monkeypatch):
     """Leave the module-level setting as this test found it."""
-    monkeypatch.setattr(L, '_AUTO_INSTALL', L._AUTO_INSTALL)
+    monkeypatch.setattr(L, '_AUTO_INSTALL_SCOPES', list(L._AUTO_INSTALL_SCOPES))
     monkeypatch.delenv('HYPERTOOLS_AUTO_INSTALL', raising=False)
 
 
@@ -308,3 +308,59 @@ def test_subprocess_env_carries_the_effective_setting_to_a_child_interpreter(_re
     derived = L.subprocess_env(base)
     assert derived['HYPERTOOLS_AUTO_INSTALL'] == '0' and derived['PATH'] == base['PATH']
     assert 'HYPERTOOLS_AUTO_INSTALL' not in base
+
+
+# --- overlapping contexts (Codex round 6, finding 1) -------------------------
+
+def test_exiting_an_older_context_leaves_the_newer_one_in_force(_restore_autoinstall):
+    """Two `with` blocks open at once (two threads, or a block entered from
+    inside another's lifetime): closing the OLDER one used to restore the
+    value saved before either, switching installation back on inside the
+    newer OFF block. The newest setting still in force decides, and a block
+    only removes its own."""
+    import hypertools as hyp
+    assert L.auto_install_enabled() is True
+    a = hyp.set_autoinstall(False)
+    a.__enter__()
+    b = hyp.set_autoinstall(False)
+    b.__enter__()
+    a.__exit__(None, None, None)                       # older block exits first
+    assert L.auto_install_enabled() is False           # b still in force
+    b.__exit__(None, None, None)
+    assert L.auto_install_enabled() is True            # back to the start
+    # a direct call underneath a block is what the block restores to
+    hyp.set_autoinstall(False)
+    with hyp.set_autoinstall(True):
+        assert L.auto_install_enabled() is True
+    assert L.auto_install_enabled() is False
+
+
+def test_overlapping_contexts_across_threads_keep_installation_off(_restore_autoinstall):
+    """The reviewer's shape, made deterministic with events: thread A enters
+    OFF, thread B enters OFF, A exits, B checks (must still be OFF), B exits,
+    the main thread checks (back to ON)."""
+    import threading
+    import hypertools as hyp
+    seen = {}
+    a_in, b_in, a_out = threading.Event(), threading.Event(), threading.Event()
+
+    def a():
+        with hyp.set_autoinstall(False):
+            a_in.set()
+            b_in.wait(10)
+        a_out.set()
+
+    def b():
+        a_in.wait(10)
+        with hyp.set_autoinstall(False):
+            b_in.set()
+            a_out.wait(10)
+            seen['inside_b_after_a_exit'] = L.auto_install_enabled()
+
+    ta, tb = threading.Thread(target=a), threading.Thread(target=b)
+    ta.start()
+    tb.start()
+    ta.join(10)
+    tb.join(10)
+    assert seen == {'inside_b_after_a_exit': False}
+    assert L.auto_install_enabled() is True

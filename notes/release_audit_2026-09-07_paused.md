@@ -517,3 +517,356 @@ the original findings above are left untouched.
 - A Sphinx doctest step in CI (docs-clean job) — not added yet; the local
   release pipeline runs the HTML build with `-W`; consider adding `-b doctest`.
 - Final full-suite run, commit, push and hosted CI after ALL fixes (pending).
+
+## Codex round 6 (resumed audit)
+
+Reviewed 2026-09-08: HEAD / pushed PR #286 head
+`3f4b087d02d4a5572ade50837ac040fa8a531c8c`, base/master
+`96ac8b7f43c132f6f455ad1be3ffc98e84adead5`. Read this checkpoint in full,
+CHANGELOG's release-review section, and `git log --oneline master..HEAD`.
+Working tree was clean at start and immediately before this append. No
+tracked file other than this append was intentionally changed, and no new
+repository files were left. No other process's kernel or LSL outlet was
+stopped. No subagents used. Evidence: `/tmp/hypertools-round6/` and
+`/tmp/hypertools-round6-pytest.log`.
+
+This run's sandbox disallows local socket binding, external DNS/network
+from shell commands, and successful Chrome startup. Approval is unavailable.
+These restrictions prevent completing the notebook/browser portions; they
+are NOT evidence that those features fail on an unrestricted machine.
+
+### Original findings 1–6: independently checked
+
+Commands below use the repo's `.venv/bin/python`, with `MPLBACKEND=Agg`,
+`MPLCONFIGDIR=/tmp/hypertools-round6/mpl`, `HYPERTOOLS_AUTO_INSTALL=0`, and
+`show=False` for direct plot probes unless a policy test explicitly enables
+installation in its throwaway interpreter.
+
+1. **FIXED (original severity major): offline hosted datasets.**
+   `hypertools/io/load.py:662,826,842`. Command:
+   `.venv/bin/python /tmp/hypertools-round6/offline.py`.
+   A passive socket.connect audit hook is installed BEFORE importing
+   hypertools; DATA_DIR is redirected to a temporary pathlib.Path.
+   Missing AND corrupt `spiral`, `weights`, and `wiki_model` each raise
+   `HypertoolsOfflineError`; all show `connects=0`; corrupt bytes remain
+   unchanged. A real pre-existing, verified spiral cache copy loads as
+   `[(1000, 3), (1000, 3)]`, also with zero connects. Log: `offline.log`.
+   No remaining fix recommended for this reproduction.
+   The first exploratory probe incorrectly assigned DATA_DIR a str; those
+   AttributeErrors in `probe.log` are harness errors, superseded by
+   `offline.py`/`offline.log`.
+
+2. **FIXED for the original lost-worker-policy bug (major); new related
+   defects below.** `hypertools/plot/plotly_backend.py:3239` passes
+   `env=subprocess_env()`. Command:
+   `.venv/bin/python /tmp/hypertools-round6/policy.py`.
+   Reuses the REAL isolated missing-kaleido interpreter and public export
+   driver from `tests/test_animation_export.py`, with PIP_NO_INDEX=1 and
+   PIP_CONFIG_FILE=/dev/null. `off` prints `parent False`, then a policy
+   failure naming the interactive extra and set_autoinstall(True), without
+   entering the install-failure branch. `on` prints `parent True` despite
+   env=0, then `installing it automatically failed (CalledProcessError)`.
+   No package installed. Log: `policy.log`.
+   Additional real child-interpreter probe (`precedence.log`) explicitly
+   prints `env 1 Python False parent False child False` and
+   `env 0 Python True parent True child True`.
+   Parent error TYPE is RuntimeError in both export cases, not the
+   documented ImportError (R6-3). Overlapping contexts break policy (R6-1).
+
+3. **FIXED (major/medium original): fitted panel pipelines.**
+   `hypertools/plot/plot.py:3371` onward.
+   `.venv/bin/python /tmp/hypertools-round6/probe.py` reports a Pipeline
+   and held-out transform shape `(4, 3)` for both backends and both fit
+   modes. All 33 `tests/test_plot_panels_audit.py` tests passed in the
+   combined run below, including held-out replay matching ordinary PCA,
+   replay of drawn coordinates, shared object identity, independent fits,
+   and the negative control that fresh held-out fitting differs.
+   No remaining fix recommended for the original PCA reproduction.
+
+4. **PARTLY FIXED (major/medium original): argument partitioning.**
+   `hypertools/plot/plot.py:2890–3009`.
+   `.venv/bin/python /tmp/hypertools-round6/probe.py` exercised palette
+   names, nested colour lists, forecast_fmt lists, red/blue forecast
+   palettes, two-model model-major forecast_hue, and a forecaster fitted
+   on two datasets. These original cases succeed on BOTH backends under
+   shared AND independent fits. Forecast colours are red then blue,
+   format styles are -- then :, and model-major colours stay attached to
+   their intended forecasts. The 33 behavioral tests also check fitted
+   forecasts against ordinary replay and distinguish them from refitting.
+   New repeated-colour counterexample fails (R6-2 below), so CHANGELOG's
+   broad claim that every per-forecast form is partitioned is premature.
+   Explicit plain legend colours are per FINAL legend entry, not per
+   input dataset; the four-entry/three-entry mismatch in exploratory
+   `probe.log` is NOT reported as a defect. Plotly deliberately rejects
+   plain legend colour lists and supports (label, colour) pairs instead.
+
+5. **FIXED for the original two NameErrors (minor/medium original);
+   whole doctest validation is NOT green here.**
+   `hypertools/io/load.py:346` now imports hypertools. Public reproduction:
+   `import numpy as np, hypertools; arr=np.zeros((10,3));
+   print(hypertools.load(arr) is arr);
+   print([type(d).__name__ for d in hypertools.load([arr,'spiral'])])`
+   prints `True` and `['ndarray', 'list']`.
+   `.venv/bin/python -m sphinx -b doctest /tmp/hypertools-round6/source/docs
+   /tmp/hypertools-round6/doctest` with
+   `HYPERTOOLS_DOCS_PLOT_GALLERY=0` ran **316 tests, 7 failures, zero
+   setup/cleanup failures**. No gallery-config type warning: the bool
+   override works. Three failures are inaccessible penguins, 538/bechdel,
+   and Kaggle data; four in hierarchy are a failed Chrome render and
+   three downstream undefined plotly_bundle checks. The original two
+   examples passed. Logs: `doctest.log`, `doctest/output.txt`.
+   CI now DOES run `sphinx -b doctest -W` in docs-clean
+   (`.github/workflows/test.yml:292`); the Claude update's pending-CI item
+   and tests/AGENTS.md's claim that no CI job runs doctests are stale.
+
+6. **PARTLY FIXED / release operations still pending (major as a release
+   prerequisite, not an instruction to publish during review).**
+   `RELEASE_CHECKLIST.md:18` and PR #286 description.
+   `git rev-parse 'v1.1.0^{}'` still returns `96ac8b7f...`, excluding
+   the PR fixes. GitHub connector GETs confirm PR open at reviewed HEAD,
+   issues #284/#285 open, and #284's final CI/tag/draft checkbox unchecked.
+   PR body still reports 4885 tests and the earlier review, omitting this
+   API and subsequent rounds. HEAD CI run 34187936967 was in progress
+   at last inspection (dataset/live-source/wheel succeeded; release-gate
+   skipped; matrix/docs pending). URL:
+   https://github.com/ContextLab/hypertools/actions/runs/34187936967
+   Local optional_dependencies.html and both API pages build successfully.
+   Current external RTD/PyPI publication could not be reliably rechecked:
+   shell gh/DNS denied; web RTD fetch failed; web PyPI result was stale;
+   connector release-by-tag returned 404 (not proof that a private draft
+   disappeared). Do not repeat the previous live 404/PyPI observations as
+   fresh verified facts. Refresh PR evidence, finish final gates, re-cut
+   release artifacts/tag after merge, and verify deployed RTD/PyPI.
+
+### Remaining findings
+
+**R6-1 — Major: overlapping OFF contexts can turn installation ON.**
+`hypertools/_shared/lazy_import.py:181,187–189` restores a stale global
+snapshot unconditionally. From initial True: thread A enters False;
+thread B enters False; A exits; B is still INSIDE its False block but sees
+True. After B exits the initial True is incorrectly left False.
+
+This is a process-global setting, not a thread-local one. The docs offer
+one-block use and recommend it wherever pip must not run, but do not state
+that overlapping thread contexts are unsupported. There is no lock/token
+bookkeeping; atomic assignment alone cannot solve the lifetime ordering.
+
+Real public-export reproduction, no mocks:
+`MPLBACKEND=Agg MPLCONFIGDIR=/tmp/hypertools-round6/mpl PIP_NO_INDEX=1
+PIP_CONFIG_FILE=/dev/null /tmp/hypertools-round6/policyenv/noenv/bin/python
+/tmp/hypertools-round6/thread_export.py`.
+The interpreter was created from the repo venv by policy.py and genuinely
+lacks kaleido. threading.Events impose the ordering above. Observed:
+`inside set_autoinstall(False): True`, followed by a worker install attempt
+and `installing it automatically failed (CalledProcessError)`; finally
+`after both contexts: False`. No package installed. `thread-export.log`.
+Suggested fix: define the concurrency contract and maintain scoped
+policies with lifetime-aware tokens under synchronization (or explicit
+context-local overrides carried into export workers); do not restore an
+exited scope over another active scope. Document global/thread semantics
+and add this deterministic real concurrent regression. Merely locking the
+individual assignments does not fix this ordering.
+
+**R6-2 — Major: panels deduplicate colours instead of forecast labels.**
+`hypertools/plot/plot.py:2932–2937`, especially `_colour not in _ordered`.
+Different categories may intentionally share one colour. Narrowing drops
+that duplicate, yielding too few palette entries for the panel categories.
+
+Command: `.venv/bin/python /tmp/hypertools-round6/duplicate_palette.py`.
+The essential public call is:
+
+```python
+x = [np.random.default_rng(i).normal(size=(20, 3)).cumsum(0)
+     for i in range(2)]
+hyp.plot(x, panels=True, panel_fit=fit, predict=['Kalman', 'ARIMA'], t=3,
+         forecast_hue=['a', 'a', 'b', 'b'],
+         forecast_palette=['red', 'red'], backend=backend, show=False)
+```
+
+For BOTH backends and BOTH fit modes, panels=False succeeds and
+panels=True raises `ValueError: palette= supplies 1 color(s) but 2 are
+required (one per category/component)`. `duplicate-palette.log`.
+Suggested fix: track first-seen nonmissing LABELS; append their colours
+once per label, retaining repeated colours across distinct labels. Add a
+behavioral comparison against ordinary plotting with repeated colours.
+
+**R6-3 — Minor: public animated export contradicts the documented error type.**
+`hypertools/plot/plotly_backend.py:3277` converts worker errors into
+RuntimeError; `docs/optional_dependencies.rst:94`, `docs/api.rst:168`,
+and `hypertools/_shared/lazy_import.py:145` promise ImportError for a
+missing extra with installation disabled. `policy.py`/`policy.log` prints
+`RAISED RuntimeError` for the off case; ImportError exists only in the
+worker traceback string. A caller's `except ImportError` does not catch it.
+Suggested fix: pass a structured worker error kind back and raise the
+promised public ImportError (and preserve appropriate export error types),
+or explicitly document the worker-export exception if intentional.
+
+Tests added in the audit-fix commit are generally meaningful real
+behavioral checks, especially held-out replay with a negative control and
+missing-dependency subprocess export. Two weaknesses matter here:
+`tests/test_animation_export.py:581,603` only require `RAISED` plus message
+substrings, so R6-3 passes them; assert the public exception class too.
+`tests/test_plot_panels_audit.py:468` checks the parameter roster, not the
+correctness of partitioning. It is a useful structural guard but cannot
+prove the universal CHANGELOG claim, and current distinct-colour examples
+miss R6-2. The new policy tests cover nested sequential contexts, not
+concurrent lifetime ordering. Old fake-kaleido/seeded-mkdtemp export tests
+pre-exist these audit-fix commits; do not attribute those to this patch.
+
+### Validation completion and limitations
+
+Combined command (all requested suites):
+
+```sh
+MPLBACKEND=Agg HYPERTOOLS_AUTO_INSTALL=0 .venv/bin/python -m pytest -q \
+  -p no:cacheprovider tests/test_load_offline.py tests/test_lazy_import.py \
+  tests/test_animation_export.py tests/test_plot_panels_audit.py \
+  tests/test_align_score.py tests/test_plot_review_round3.py \
+  tests/test_plot_review_round4.py tests/test_figure_review_gaps.py \
+  tests/test_plot_forecast_legend_style.py tests/test_plot_panels_geometry.py
+```
+
+**162 passed, 11 failed, 7 setup errors, 19 warnings, 138.51 seconds.**
+Seven setup errors are the offline test proxy's forbidden localhost bind;
+10 failures are Chrome startup/export. The remaining failure is CAUSED BY
+MY HYPERTOOLS_AUTO_INSTALL=0 invocation: the tomli real-install test expects
+installation on. Correctly rerun separately with HYPERTOOLS_AUTO_INSTALL=1:
+**1 skipped** for inaccessible package network (`install-test.log`). It is
+not a library failure. Original offline behavior was independently
+verified without the proxy (above). All 33 panel audit tests passed.
+
+The five named round-3/4/figure/forecast/panel-geometry modules contain
+73 tests: **70 passed; 3 pixel-parity tests could not render Chrome**.
+Thus their non-rendered assertions still hold, but visual Plotly parity
+is NOT independently confirmed this round.
+
+Weather command:
+`.venv/bin/python scripts/execute_tutorial.py
+/tmp/hypertools-round6/source/docs/tutorials/weather_decades.ipynb
+--out-dir /tmp/hypertools-round6/notebooks`.
+Source is a `git archive HEAD` copy because the notebook also saves
+weather_decades.mp4 beside itself even with --out-dir. The helper's
+NotebookClient fails before cell execution at socket.bind with
+`PermissionError: [Errno 1] Operation not permitted` (`weather.log`).
+**Weather remains NOT freshly executed/passed.** No tracked notebook or
+video was touched. Do not count the previous pause-induced run either.
+
+Docs command:
+`HYPERTOOLS_DOCS_PLOT_GALLERY=0
+READTHEDOCS_GIT_IDENTIFIER=fix/1.1-release-review .venv/bin/python -m sphinx
+-b html -W --keep-going /tmp/hypertools-round6/source/docs
+/tmp/hypertools-round6/html` (plus MPLBACKEND=Agg, writable MPLCONFIGDIR,
+autoinstall off). **Build succeeded**, no Sphinx warnings. Source copied
+from HEAD; the earlier scratch gallery cache was reused. **Zero gallery
+examples freshly executed**: this does NOT finish the earlier full-gallery
+execution requirement. `docs/post_build.py` on the TEMPORARY source with
+READTHEDOCS_OUTPUT=/tmp/hypertools-round6/html succeeded and processed
+51 example pages/thumbnails. `check_docs.py` parses all **171 HTML pages**:
+**0 missing internal file/anchor links**. API signatures for
+hypertools.set_autoinstall and hypertools.align.score.alignment_score are
+present in their generated HTML; optional_dependencies.html exists with
+Turning it off. Logs: `html.log`, `post-build.log`, `links.json`.
+`scripts/verify_docs_playwright.py` with external output/screenshots paths
+fails at its HTTP server's local socket bind (`browser-docs.log`). Browser
+rendering of the docs is not verified here.
+
+Visual/public-API probes: `render.py`, `render.log`, `row.py`, `row.log`,
+`renders/` (PNG for matplotlib; JSON/HTML for plotly). I personally opened
+and inspected SIX fresh matplotlib PNGs: hue-regrouped animated model
+collection + forecast_trail + truth; cluster-regrouped equivalent;
+column-MultiIndex animation; repeated-full-tuple row-MultiIndex animation;
+panels with forecasts/truth/legends/colorbars/two-line titles; and
+hyp.subplots with legends and colorbars arriving in separate calls and
+three-line titles. No additional layout defect observed in those renders.
+Both backends build the corresponding figures/bundles/frames. Every
+Plotly `fig.write_image` attempt fails with BrowserFailedError (installed
+Chrome closes immediately); **no new Plotly pixels were inspected**.
+The tests also cover legend_colors pairs on both backends and ordinary
+matplotlib legend-colour lists plus legend_kwargs positions.
+
+Exploratory combinations correctly rejected and NOT findings:
+truth= with hierarchical inputs (documented unsupported), unique full
+row-MultiIndex tuples with predict= (one-row traces; documented error),
+and animated panels (documented static-only ownership). Repeated full
+row tuples work; column hierarchy works. The initial render harness used
+the wrong bundle key `anim`; fixed to `animation` before rendering, not a
+library defect. No claim that every valid combination was exhaustively
+examined or every forecast numerically compared on held-out data.
+
+### Next steps / verdict
+
+1. Fix R6-1/R6-2 and settle R6-3's exception contract; add real regressions
+   for repeated colours, concurrent policy scopes, and public error types.
+2. Re-run the affected suites and the full suite at final HEAD. Finish
+   weather, a fresh gallery build, doctests with working network/Chrome,
+   and Plotly PNG/browser visual inspection in an environment permitting
+   those operations. This audit does not provide a green release gate.
+3. Refresh PR #286 evidence and wait for final hosted checks; reconcile
+   #284/#285 release bookkeeping. After merge follow RELEASE_CHECKLIST.md
+   against the exact final commit: notebook manifest publication,
+   wheel/sdist build/install checks, tag/draft/artifacts and tag CI,
+   publication and deployed RTD/latest/stable/PyPI verification. No release
+   operation was performed or authorized by this review.
+
+VERDICT: FINDINGS
+
+## Updates by the Claude session after Codex round 6 (2026-09-08) — NOT part of the Codex text above
+
+### UPDATE — Round 6 finding 1 (overlapping `set_autoinstall` contexts): FIXED
+- `hypertools/_shared/lazy_import.py`: the single saved-and-restored global is
+  replaced by a lock-guarded scope stack (`_AUTO_INSTALL_SCOPES`): every
+  `set_autoinstall` object is pushed when created; a `with` block removes ITS
+  OWN entry on exit wherever it sits; `auto_install_enabled()` returns the
+  newest entry still in force (else the environment). Contract documented in
+  the class docstring and docs/optional_dependencies.rst: process-global,
+  shared by every thread, newest call in force decides, a direct call stays
+  until the next call. The reviewer's `/tmp/hypertools-round6/thread_export.py`
+  now prints `inside set_autoinstall(False): False`, the export raises
+  `ImportError`, and `after both contexts: True`.
+- Tests (`tests/test_lazy_import.py`): a deterministic overlapping-context
+  test (older block exits first; direct call underneath a block) and the
+  two-thread shape with events.
+
+### UPDATE — Round 6 finding 3 (export raises RuntimeError, docs promise ImportError): FIXED
+- `hypertools/plot/_kaleido_export_worker.py` writes `{type, message}` to
+  `.worker-error.json` in the frames directory before exiting non-zero;
+  `plotly_backend._worker_error` re-raises an `ImportError` (a missing extra
+  with installation off, or a failed install) or `HypertoolsIOError` (no
+  usable Chrome) as that type without retrying; any other worker failure is
+  still the `RuntimeError` with the stderr tail. The reviewer's
+  `/tmp/hypertools-round6/policy.py` prints `RAISED ImportError` for both
+  cases. `tests/test_animation_export.py` asserts `RAISED ImportError`.
+
+### UPDATE — Round 6 finding 2 (panels discard repeated forecast colours): FIXED
+- `hypertools/plot/plot.py` (`_panel_slice_forecast_kwargs`): the per-panel
+  `forecast_palette` is built with one slot per distinct LABEL (first
+  appearance order) instead of per distinct colour, so labels that share a
+  colour keep their entries. The reviewer's
+  `/tmp/hypertools-round6/duplicate_palette.py`: all 8 combinations OK (were
+  4 ValueErrors).
+- Tests (`tests/test_plot_panels_audit.py`, real artist/trace colours against
+  the single-axes figure): the reviewer's exact case; per-dataset hue with 1
+  and 2 models; `forecast_cluster=`; a cycling palette NAME with more labels
+  than colours. The roster test the reviewer called weak now has a behavioural
+  companion: for each of 12 per-dataset roster entries a two-dataset call with
+  distinct values asserts each panel shows only its own value (equal to the
+  single-axes dataset's value, different from the other panel); `truth=` list
+  and nested hue/labels likewise; a test ties the roster to the case list.
+  Animation-only entries (chemtrails/precog/bullettime) and `density` (no list
+  form) are the documented exclusions.
+- Found while fixing (fixed next, see below): plotly dropped the colour letter
+  of a data `fmt=` string on the ordinary path (`'r-'` drew the palette
+  colour); plotly `panels=True` on 2-column data without `ndims=` raised
+  "Trace type 'scatter' is not compatible with subplot type 'scene'".
+
+### UPDATE — incidental plotly defects found in round 6 follow-up: FIXED
+- `hypertools/plot/plot.py`: the plotly palette-injection branch gives each
+  dataset whose `fmt` names a colour letter that colour (matplotlib
+  precedence: the letter beats `palette=`, loses to explicit `color=`/`hue=`,
+  consumes no cycle slot); static, animated, fmt lists, `panels=` and
+  `hyp.subplots` cells. Panel cells are lowered to 2-D when every dataset has
+  fewer than 3 columns (`_panel_cell_ndims`), on both backends; matplotlib
+  drew 2-column panels inside cubes and crashed on 1-column data. Known
+  limit: mixed-width independent panels share one cell type (the maximum).
+- Tests: `tests/test_plot_review_round6.py` (18); the fmt xfail in
+  `tests/test_plot_panels_audit.py` is removed so the assertion is live.

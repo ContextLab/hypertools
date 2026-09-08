@@ -111,9 +111,13 @@ not run inside a Python process. Where no Python runs before hypertools is
 imported (a CI image built ahead of time), the environment variable
 ``HYPERTOOLS_AUTO_INSTALL=0`` (``false``, ``no`` and ``off`` also work)
 sets the starting value; a ``set_autoinstall`` call overrides it.
-The setting also reaches the subprocess that renders a plotly animation's
-frames for export: it starts from the parent's effective value, whichever
-of the two set it.
+The setting is process-global (shared by every thread; the newest call
+still in force decides, and a ``with`` block removes only its own setting
+on exit), and it also reaches the subprocess that renders a plotly
+animation's frames for export, which starts from the parent's effective
+value, whichever of the two set it. That export raises ``ImportError``
+naming the manual command when kaleido is missing and installation is off,
+like any other call.
 
 Chrome for static plotly export
 -------------------------------

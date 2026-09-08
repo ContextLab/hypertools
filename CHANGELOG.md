@@ -794,6 +794,32 @@ Because 1.1.0 had not been published, they ship in it.
   form) was rejected as "2 per-dataset palettes but 4 dataset(s)" once
   `hue=` split the datasets into more runs than dicts; the dicts name
   categories and now resolve by name on both backends.
+- **`set_autoinstall` blocks that overlap keep the newest setting in
+  force.** Two `with hyp.set_autoinstall(False)` blocks open at once (two
+  threads, say) used to switch installation back on inside the later block
+  when the earlier one exited, because exit restored a value saved before
+  either. A block now removes only its own setting (a lock-guarded scope
+  stack); the setting is process-global and documented as such. (Codex
+  round 6.)
+- **Plotly animation export raises the documented exception type.** With
+  kaleido missing and installation off, the export worker's `ImportError`
+  (naming the manual command) reaches the caller as an `ImportError`, and a
+  missing Chrome as `HypertoolsIOError`, instead of a `RuntimeError` wrapping
+  the worker's traceback. (Codex round 6.)
+- **`panels=` keeps forecast labels that share a colour.** `forecast_hue=` /
+  `forecast_cluster=` with a `forecast_palette=` that gives two labels the
+  same colour (`['red', 'red']`, or a palette name that cycles) raised
+  `ValueError: palette= supplies N color(s)` inside the panels; each panel
+  now receives one palette slot per label, matching the single-axes figure.
+  Every per-dataset argument in the panel roster also has a behavioural
+  partitioning test. (Codex round 6.)
+- **The plotly backend honours the colour letter of a data `fmt=` string**
+  (`'r-'`, `['g--', 'b:']`) exactly as matplotlib does, including animated
+  plots and `panels=` cells; it drew the palette colour before. And
+  `panels=` on 2-column or 1-column data with the default `ndims=` draws
+  2-D cells on both backends, instead of raising `Trace type 'scatter' is
+  not compatible with subplot type 'scene'` (plotly) or drawing flat
+  trajectories inside cubes (matplotlib). `tests/test_plot_review_round6.py`.
 
 - **A repeated metric in `metrics=` raises `ValueError` that says which
   metric is repeated.** `hyp.predict(..., holdout=k, metrics=['mae', 'MAE'])`

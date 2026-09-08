@@ -401,6 +401,100 @@ def test_fitted_multi_dataset_forecaster_is_bound_per_panel(backend, fit):
         close_all()
 
 
+# --------------------- Codex round 6: forecast labels that share a colour
+
+@pytest.mark.parametrize('backend', BACKENDS)
+@pytest.mark.parametrize('fit', FITS)
+def test_forecast_labels_sharing_a_colour_keep_their_palette_slots(backend,
+                                                                   fit):
+    """Codex round 6 (the reviewer's probe): ``forecast_hue=['a', 'a',
+    'b', 'b']`` (model-major, two models x two datasets) with
+    ``forecast_palette=['red', 'red']`` -- two DISTINCT labels drawn in one
+    colour on purpose. The single-axes figure draws every forecast red;
+    the panel path resolved the grid's label -> colour map and then
+    deduplicated the COLOURS, handing each panel a one-entry palette for
+    its two labels (``ValueError: palette= supplies 1 color(s) but 2 are
+    required``) on both backends and in both `panel_fit=` modes."""
+    data = walks()
+    kwargs = dict(predict=['Kalman', 'ARIMA'], t=3,
+                  forecast_hue=['a', 'a', 'b', 'b'],
+                  forecast_palette=['red', 'red'])
+    single = quiet_plot(data, backend=backend, **kwargs)
+    grid = quiet_plot(data, panels=True, panel_fit=fit, backend=backend,
+                      **kwargs)
+    try:
+        for i in range(2):
+            want = [c for c, _ in forecast_artists(single, i, backend,
+                                                   panel=False)]
+            got = [c for c, _ in forecast_artists(grid, i, backend)]
+            assert len(want) == len(got) == 2
+            for color in want + got:
+                assert same_color(color, to_rgb('red'))
+    finally:
+        close_all()
+
+
+#: the sibling spellings of "several forecasts share a colour": a
+#: per-DATASET `forecast_hue=` (broadcast over a collection's models, and
+#: with a single model), `forecast_cluster=` grouping instead of labels,
+#: and a palette NAME that cycles -- 'Set2' has eight colours, so the
+#: ninth distinct label ('I', first seen at forecast 9 = model 1 of
+#: dataset 4) reuses the first label's colour, and dataset 4's panel holds
+#: both ('A' at forecast 4, 'I' at forecast 9).
+_SHARED_COLOUR_FORMS = {
+    'per-dataset hue, two models': (2, dict(
+        predict=['Kalman', 'AutoRegressor'], t=3, forecast_hue=['a', 'b'],
+        forecast_palette=['red', 'red'])),
+    'per-dataset hue, one model': (2, dict(
+        predict='Kalman', t=3, forecast_hue=['a', 'b'],
+        forecast_palette=['red', 'red'])),
+    'forecast_cluster': (2, dict(
+        predict=['Kalman', 'AutoRegressor'], t=3, forecast_cluster='KMeans',
+        forecast_n_clusters=2, forecast_palette=['red', 'red'])),
+    'palette name that cycles': (5, dict(
+        predict=['Kalman', 'AutoRegressor'], t=3,
+        forecast_hue=['A', 'B', 'C', 'D', 'A', 'E', 'F', 'G', 'H', 'I'],
+        forecast_palette='Set2')),
+}
+
+
+@pytest.mark.parametrize('backend', BACKENDS)
+@pytest.mark.parametrize('fit', FITS)
+@pytest.mark.parametrize('form', sorted(_SHARED_COLOUR_FORMS))
+def test_repeated_forecast_colours_match_the_single_axes_figure(backend, fit,
+                                                                form):
+    """Every panel's forecasts carry exactly the colours the single-axes
+    figure gives that dataset's forecasts, however the repetition is
+    spelled (`_SHARED_COLOUR_FORMS`) -- and the repetition is real: an
+    explicit ``['red', 'red']`` draws every forecast red, and the cycling
+    palette name gives dataset 4's two forecasts one colour."""
+    n_datasets, kwargs = _SHARED_COLOUR_FORMS[form]
+    data = walks(n_datasets)
+    single = quiet_plot(data, backend=backend, **kwargs)
+    grid = quiet_plot(data, panels=True, panel_fit=fit, backend=backend,
+                      **kwargs)
+    try:
+        n_models = 1 if isinstance(kwargs['predict'], str) else 2
+        for i in range(n_datasets):
+            want = [c for c, _ in forecast_artists(single, i, backend,
+                                                   panel=False)]
+            got = [c for c, _ in forecast_artists(grid, i, backend)]
+            assert len(want) == len(got) == n_models
+            for color, expected in zip(got, want):
+                assert same_color(color, expected)
+            if kwargs['forecast_palette'] == ['red', 'red']:
+                for color in got:
+                    assert same_color(color, to_rgb('red'))
+        if form == 'palette name that cycles':
+            last = [c for c, _ in forecast_artists(grid, 4, backend)]
+            assert same_color(last[0], last[1])
+            first = [c for c, _ in forecast_artists(grid, 0, backend)]
+            assert same_color(first[0], last[0])      # 'A' is red-ish
+            assert not same_color(first[0], first[1])  # 'A' vs 'E'
+    finally:
+        close_all()
+
+
 # ------------------------------------------------------ roster vs docstring
 
 _PER_DATASET_PHRASES = re.compile(
@@ -484,3 +578,190 @@ def test_panel_rosters_cover_every_documented_per_dataset_argument():
         '_NOT_SLICED here')
     stale = set(_NOT_SLICED) & sliced
     assert not stale, f'{stale} listed as not sliced but on a roster'
+
+
+# ------------------- roster: each per-dataset value reaches only its panel
+
+def _style(bundle, i, backend, panel=True):
+    """Everything a `_PANEL_PER_DATASET_KWARGS` argument can change, read
+    off the observed-data artist of panel `i` (or, ``panel=False``, of
+    dataset `i` on the single axes): colour, alpha, linestyle, marker,
+    marker size, line width, legend name, and the number of surfaces
+    drawn beside it."""
+    if backend == 'matplotlib':
+        ax = bundle['axes'][i] if panel else bundle['fig'].axes[0]
+        lines = [ln for ln in ax.lines
+                 if not getattr(ln, '_hyp_forecast_role', None)]
+        line = lines[0] if panel else lines[i]
+        if panel:
+            assert len(lines) == 1
+        return dict(
+            color=_rgba(line.get_color())[0], alpha=line.get_alpha(),
+            linestyle=line.get_linestyle(), marker=line.get_marker(),
+            markersize=line.get_markersize(),
+            linewidth=line.get_linewidth(), name=line.get_label(),
+            surfaces=sum(type(c).__name__ == 'Poly3DCollection'
+                         for c in ax.collections))
+    scene = bundle['axes'][i].plotly_name if panel else None
+    traces = [tr for tr in bundle['fig'].data
+              if not panel or tr.scene == scene]
+    lines = [tr for tr in traces if isinstance(tr.meta, dict)
+             and 'hyp_trace_index' in tr.meta]
+    line = lines[0] if panel else lines[i]
+    if panel:
+        assert len(lines) == 1
+    rgb, alpha = _rgba(line.line.color)
+    return dict(
+        color=rgb, alpha=alpha, linestyle=line.line.dash,
+        marker=line.marker.symbol if 'markers' in (line.mode or '') else None,
+        markersize=line.marker.size, linewidth=line.line.width,
+        name=line.name,
+        surfaces=sum(tr.type == 'mesh3d' for tr in traces))
+
+
+#: `_PANEL_PER_DATASET_KWARGS` entry -> (two distinct values, the
+#: `_style` keys they change). Every roster entry is either here, in
+#: `_PER_DATASET_TESTED_ELSEWHERE`, or in `_PER_DATASET_STATIC_INVISIBLE`
+#: (asserted below), so a new roster entry needs a partitioning test.
+_PER_DATASET_CASES = {
+    'fmt': (['r-', 'b--'], ('color', 'linestyle')),
+    'marker': (['o', 's'], ('marker',)),
+    'markers': (['o', 's'], ('marker',)),
+    'linestyle': (['-', '--'], ('linestyle',)),
+    'linestyles': (['-', '--'], ('linestyle',)),
+    'color': (['red', 'blue'], ('color',)),
+    'colors': (['red', 'blue'], ('color',)),
+    'alpha': ([0.3, 0.7], ('alpha',)),
+    'markersize': ([4, 10], ('markersize',)),
+    'linewidth': ([1, 4], ('linewidth',)),
+    'names': (['first', 'second'], ('name',)),
+    'surface': ([True, False], ('surfaces',)),
+}
+
+_PER_DATASET_TESTED_ELSEWHERE = {
+    'truth': 'test_truth_list_reaches_only_its_own_panel',
+}
+
+#: roster entries a STATIC grid cannot show: the three trails are
+#: animation-only (`panels=` rejects `animate=`), and `density=` has no
+#: per-dataset list form -- `plot()` rejects a list on the single-axes
+#: path and on every panel alike.
+_PER_DATASET_STATIC_INVISIBLE = {
+    'chemtrails': 'animation only',
+    'precog': 'animation only',
+    'bullettime': 'animation only',
+    'density': 'no per-dataset list form (plot() rejects a list)',
+}
+
+
+def test_every_per_dataset_roster_entry_has_a_partitioning_test():
+    covered = (set(_PER_DATASET_CASES) | set(_PER_DATASET_TESTED_ELSEWHERE)
+               | set(_PER_DATASET_STATIC_INVISIBLE))
+    roster = set(plot_module._PANEL_PER_DATASET_KWARGS)
+    assert roster == covered, (
+        f'roster entries without a partitioning test: {roster - covered}; '
+        f'tested names no longer on the roster: {covered - roster}')
+    for name in _PER_DATASET_TESTED_ELSEWHERE.values():
+        assert callable(globals().get(name)), name
+
+
+@pytest.mark.parametrize('backend', BACKENDS)
+@pytest.mark.parametrize('fit', FITS)
+@pytest.mark.parametrize('key', sorted(_PER_DATASET_CASES))
+def test_per_dataset_argument_reaches_only_its_own_panel(backend, fit, key):
+    """The reviewer's remark on the roster test: a name on
+    `_PANEL_PER_DATASET_KWARGS` proves nothing about what a panel DRAWS.
+    So, per entry: two datasets, two distinct values, and each panel's
+    artist shows its own value -- the one the single-axes figure gives
+    that dataset -- and not the other panel's."""
+    values, props = _PER_DATASET_CASES[key]
+    kwargs = {key: values}
+    if key == 'names':
+        kwargs['legend'] = True
+    data = walks()
+    single = quiet_plot(data, backend=backend, **kwargs)
+    grid = quiet_plot(data, panels=True, panel_fit=fit, backend=backend,
+                      **kwargs)
+    try:
+        styles = [_style(grid, i, backend) for i in range(2)]
+        for i in range(2):
+            want = _style(single, i, backend, panel=False)
+            for prop in props:
+                if prop == 'surfaces':
+                    assert styles[i][prop] == int(values[i])
+                    continue
+                if prop != 'color':
+                    assert styles[i][prop] == want[prop], (key, prop, i)
+                else:
+                    # includes fmt='s colour letter on plotly (round 6:
+                    # 'r-' drew the palette colour there; the xfail that
+                    # used to sit here is lifted)
+                    assert same_color(styles[i][prop], want[prop]), \
+                        (key, prop, i)
+        for prop in props:
+            assert styles[0][prop] != styles[1][prop], (key, prop)
+    finally:
+        close_all()
+
+
+def _truth_points(bundle, i, backend):
+    """The points of every `truth=` artist of panel `i`, in data units
+    (2-D, ``axis_scale='data'``), the seam to the last observation
+    dropped -- as `tests/test_plot_panels_fit.py` reads them."""
+    if backend == 'matplotlib':
+        return [np.asarray(ln.get_xydata())[1:]
+                for ln in bundle['axes'][i].lines
+                if getattr(ln, '_hyp_forecast_role', None) == 'truth']
+    yaxis = bundle['axes'][i][0].anchor          # 'y', 'y2', ...
+    return [np.column_stack([tr.x, tr.y])[1:] for tr in bundle['fig'].data
+            if tr.yaxis == yaxis and isinstance(tr.meta, dict)
+            and tr.meta.get('hyp_forecast_role') == 'truth']
+
+
+@pytest.mark.parametrize('backend', BACKENDS)
+@pytest.mark.parametrize('fit', FITS)
+def test_truth_list_reaches_only_its_own_panel(backend, fit):
+    """``truth=[t0, t1]``: panel `i` draws exactly `t_i` (two different
+    arrays), in both fit modes and on both backends. Drawn in the data's
+    own 2-D units (`axis_scale='data'`): a 3-D frame is rescaled into the
+    unit cube per axes, so its coordinates cannot be read back."""
+    data = walks(cols=2)
+    truth = [data[0][-1] + np.arange(1, 4)[:, None] * [1.0, 2.0],
+             data[1][-1] - np.arange(1, 4)[:, None] * [3.0, 1.0]]
+    grid = quiet_plot(data, panels=True, panel_fit=fit, backend=backend,
+                      ndims=2, axis_scale='data', antialias=False,
+                      predict='Kalman', t=3, truth=truth)
+    try:
+        for i in range(2):
+            drawn = _truth_points(grid, i, backend)
+            assert len(drawn) >= 1
+            for points in drawn:
+                assert np.allclose(points, truth[i])
+                assert not np.allclose(points, truth[1 - i])
+    finally:
+        close_all()
+
+
+@pytest.mark.parametrize('backend', BACKENDS)
+@pytest.mark.parametrize('fit', FITS)
+def test_nested_hue_and_labels_reach_only_their_own_panel(backend, fit):
+    """The per-OBSERVATION arguments, nested one sub-sequence per dataset:
+    panel `i`'s single trace carries hue label `i`, and only annotation
+    `i` is drawn on it."""
+    data = walks()
+    hue = [['first'] * 20, ['second'] * 20]
+    labels = [['p0'] + [None] * 19, ['p1'] + [None] * 19]
+    grid = quiet_plot(data, panels=True, panel_fit=fit, backend=backend,
+                      hue=hue, labels=labels, legend=True)
+    try:
+        for i, (group, text) in enumerate((('first', 'p0'),
+                                           ('second', 'p1'))):
+            artists = data_artists(grid, i, backend)
+            assert [a[3] for a in artists] == [group]
+            if backend == 'matplotlib':
+                drawn = [t.get_text() for t in grid['axes'][i].texts]
+            else:
+                drawn = [a.text for a in grid['axes'][i].annotations]
+            assert drawn == [text]
+    finally:
+        close_all()

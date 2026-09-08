@@ -21,6 +21,7 @@ palette assignment per trace.
 
 import contextlib
 import itertools
+import json
 import os
 import sys
 import threading
@@ -3184,6 +3185,31 @@ def _wait_with_progress(proc, count_completed,
             return 'ceiling'
 
 
+def _worker_error(frames_dir):
+    """The exception the export worker reported through its error file, as
+    the type the caller is promised (`ImportError` for a missing extra with
+    installation off, `HypertoolsIOError` when no Chrome could be provided),
+    or None when the worker failed some other way (rendering, a kill)."""
+    from ._kaleido_export_worker import ERROR_FILE
+    from ..core.exceptions import HypertoolsIOError
+    path = os.path.join(frames_dir, ERROR_FILE)
+    try:
+        with open(path, encoding='utf-8') as fh:
+            info = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+    types = {'ImportError': ImportError, 'ModuleNotFoundError': ImportError,
+             'HypertoolsIOError': HypertoolsIOError}
+    cls = types.get(info.get('type'))
+    if cls is None:
+        return None
+    return cls(f"plotly frame export: {info.get('message', '')}")
+
+
 def _render_frames_via_subprocess(fig, ext, width, height, n_frames):
     """Render every animation frame of `fig` to an image file (format `ext`) in
     a KILLABLE subprocess, guarded by a PROGRESS watchdog -- the only reliable
@@ -3267,6 +3293,15 @@ def _render_frames_via_subprocess(fig, ext, width, height, n_frames):
                         "subprocess and its browser, retrying")
                     continue
                 if proc.returncode != 0:
+                    reported = _worker_error(frames_dir)
+                    if reported is not None:
+                        # the worker could not import or provision what it
+                        # needs (a missing kaleido with installation off, no
+                        # usable Chrome): that is not a render failure to
+                        # retry, and the caller is promised the documented
+                        # exception type (ImportError naming the manual
+                        # command; HypertoolsIOError for Chrome)
+                        raise reported
                     tail = ''
                     try:
                         with open(err_path, encoding='utf-8',

@@ -33,6 +33,7 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
 from importlib import metadata
 
 #: import name -> the hypertools extra that provides it (the ONLY mapping
@@ -65,17 +66,22 @@ APT_TIMEOUT_SECONDS = 600
 
 _kaleido_ready = False
 
-#: what the last `set_autoinstall` call set; None while nothing was set from
-#: Python, in which case the environment decides (`auto_install_enabled`)
-_AUTO_INSTALL = None
+#: every `set_autoinstall` object that is in force, oldest first: a direct
+#: call stays until superseded, a `with` block removes ITS entry on exit, and
+#: the newest entry still in force decides. Process-global (shared by every
+#: thread), guarded by `_AUTO_INSTALL_LOCK`; empty means the environment
+#: decides (`auto_install_enabled`).
+_AUTO_INSTALL_SCOPES = []
+_AUTO_INSTALL_LOCK = threading.Lock()
 
 
 def auto_install_enabled():
     """True when hypertools may install a missing optional extra: what the
-    last `set_autoinstall` call set or, if none was made, the environment
+    newest `set_autoinstall` still in force set or, if none is, the environment
     variable ``HYPERTOOLS_AUTO_INSTALL`` (on unless it is 0/false/no/off)."""
-    if _AUTO_INSTALL is not None:
-        return _AUTO_INSTALL
+    with _AUTO_INSTALL_LOCK:
+        if _AUTO_INSTALL_SCOPES:
+            return _AUTO_INSTALL_SCOPES[-1].enabled
     return os.environ.get('HYPERTOOLS_AUTO_INSTALL', '1').strip().lower() \
         not in ('0', 'false', 'no', 'off')
 
@@ -153,6 +159,14 @@ class set_autoinstall:
     ``HYPERTOOLS_AUTO_INSTALL=0`` sets the starting value; a
     `set_autoinstall` call overrides it.
 
+    The setting is process-global: it is shared by every thread, and a
+    subprocess that renders plotly animation frames inherits the effective
+    value. The newest call still in force decides: a `with` block removes
+    its own setting on exit and leaves any other block that is still open
+    in force, so two threads each inside ``with set_autoinstall(False)``
+    both keep installation off until the LAST of them exits, whichever
+    order they finish in. A direct call stays in force until the next call.
+
     Parameters
     ----------
     enabled : bool, default True
@@ -173,20 +187,25 @@ class set_autoinstall:
     """
 
     def __init__(self, enabled=True):
-        global _AUTO_INSTALL
         if not isinstance(enabled, bool):
             raise TypeError(
                 f'set_autoinstall expects True or False, got {enabled!r}')
         self.enabled = enabled
-        self._previous = _AUTO_INSTALL
-        _AUTO_INSTALL = enabled
+        with _AUTO_INSTALL_LOCK:
+            _AUTO_INSTALL_SCOPES.append(self)
 
     def __enter__(self):
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
-        global _AUTO_INSTALL
-        _AUTO_INSTALL = self._previous
+        # remove THIS setting wherever it sits: a block that is not the
+        # newest (another thread's block opened after it) must not restore
+        # a value from before that other block
+        with _AUTO_INSTALL_LOCK:
+            for i in range(len(_AUTO_INSTALL_SCOPES) - 1, -1, -1):
+                if _AUTO_INSTALL_SCOPES[i] is self:
+                    del _AUTO_INSTALL_SCOPES[i]
+                    break
 
     def __repr__(self):
         return f'set_autoinstall({self.enabled})'

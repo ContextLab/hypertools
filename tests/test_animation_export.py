@@ -578,7 +578,7 @@ def test_plotly_animation_export_honours_set_autoinstall_off_in_the_worker(tmp_p
     py = _interpreter_without(tmp_path, 'kaleido')
     text = _run_policy_driver(py, tmp_path, 'off')
     assert 'parent False' in text
-    assert 'RAISED' in text and 'EXPORTED' not in text
+    assert 'RAISED ImportError' in text and 'EXPORTED' not in text   # the documented type, not RuntimeError
     assert 'kaleido is not installed' in text
     assert 'pip install "hypertools[interactive]"' in text
     assert 'automatic installation is off' in text
