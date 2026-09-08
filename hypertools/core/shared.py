@@ -12,20 +12,25 @@ import warnings
 import numpy as np
 import pandas as pd
 
+from .._shared.helpers import is_frame_dataset, as_pandas_dataframe
+
 #: sentinel distinguishing "no explicit default passed" in RobustDict.get
 _MISSING = object()
 
 
 def as_dataframe(data):
     """Coerce `data` to a pandas DataFrame (returned as-is if it already
-    is one).
+    is one; a DataFrame of another backend datawrangler recognises --
+    polars DataFrame/LazyFrame, modin, ... -- is converted via
+    ``dw.wrangle(..., backend='pandas')``; anything else goes through
+    ``pd.DataFrame(np.asarray(data))``, so a 1-D input is one column).
 
     Shared by `hypertools.predict.common` and `hypertools.impute.common`
     (2026-07 audit, X7-code-org-rest-019: previously duplicated verbatim
     in both modules).
     """
-    if isinstance(data, pd.DataFrame):
-        return data
+    if is_frame_dataset(data):
+        return as_pandas_dataframe(data)
     return pd.DataFrame(np.asarray(data))
 
 

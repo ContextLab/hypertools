@@ -25,6 +25,9 @@ import warnings
 import numpy as np
 import pandas as pd
 
+from .._shared.helpers import (is_array_dataset, is_frame_dataset,
+                               is_series_like)
+
 
 def _validate_stream_save_path(save_path):
     """Validate a streaming ``save_path`` BEFORE any samples are consumed,
@@ -73,10 +76,13 @@ def _validate_stream_save_path(save_path):
 
 def is_stream(x):
     """True when x is streaming data: a Python iterator/generator, or a
-    Hugging Face ``datasets.IterableDataset``. Materialized containers
-    (lists, tuples, arrays, DataFrames) and strings are not streams."""
-    if isinstance(x, (list, tuple, str, np.ndarray, pd.DataFrame, pd.Series,
-                      dict)):
+    Hugging Face ``datasets.IterableDataset``. Materialized data is not a
+    stream: containers (lists, tuples, dicts), strings, and every dataset
+    type datawrangler recognises -- arrays, DataFrames of any backend
+    (pandas, polars DataFrame/LazyFrame, dataframe-likes) and Series."""
+    if isinstance(x, (list, tuple, dict)) or np.isscalar(x):
+        return False
+    if is_array_dataset(x) or is_frame_dataset(x) or is_series_like(x):
         return False
     # generators and other iterators
     if isinstance(x, collections.abc.Iterator):

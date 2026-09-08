@@ -341,6 +341,31 @@ and reaches flat `hyp.predict` callers.
   so one `hyp.load` call can be the entry point over mixed names and
   in-memory data; other types still raise `TypeError`. Previously any
   non-string raised.
+- **Input datatype handling defers to datawrangler.** The shared coercion
+  layer (`format_data`, `get_type`/`get_dtype`, `as_dataframe`, the
+  `predict`/`impute` normalisation, `io.streaming.is_stream`) classifies
+  inputs with `dw.zoo` predicates and converts with `dw.wrangle` instead of
+  its own `isinstance` ladders, so polars DataFrames, LazyFrames and Series
+  are accepted wherever pandas is -- `plot`, `reduce`, `align`, `cluster`,
+  `normalize`, `manip`, `predict`, `impute`, `analyze`, `describe` -- with
+  identical results (polars nulls become missing data), and whatever
+  datawrangler adds later comes for free. `tests/test_polars_inputs.py`.
+- **Palettes from images read as gradients, and a data matrix is a
+  palette.** Colors extracted from an image are put in a deterministic
+  order -- by value, dark to bright -- when the image is used as a plot
+  palette (`palette_sort=` or a spec's `?sort=` picks `'value'`, `'hue'`,
+  `'lightness'`, `'columns'` or `'original'`; `image_palette()` itself and
+  a per-dataset image's lead color keep the salience order). A t x k data
+  matrix (array, nested list or DataFrame) passed as `palette=`,
+  `forecast_palette=` or a per-dataset entry is reduced to three dimensions
+  with `hyp.reduce` (`palette_reduce=`, default 'PCA', with
+  `palette_manip=`/`palette_normalize=`/`palette_align=` passed through),
+  each reduced column is scaled to [0, 1] as an RGB channel, the rows are
+  sorted (default along the first component) and the result is a colormap
+  resampled by interpolation to however many colors the plot needs
+  (`hypertools.plot.colors.matrix_palette`, `sort_colors`,
+  `MatrixColormap`). A 2-D array with 3 or 4 columns and every value in
+  [0, 1] stays a list of colors.
 - **Optional extras install themselves on demand.** The first call that
   needs plotly, kaleido, HF text embeddings, skaters (`Laplace`),
   chronos-forecasting (`Chronos`), torch (autoencoder reducers), gensim,
@@ -841,6 +866,20 @@ Because 1.1.0 had not been published, they ship in it.
   (`SSLError` with an EOF cause) as the host's fault and a certificate
   failure as a real error; one hosted ubuntu job had failed the Dropbox
   loader test on such a drop while eleven others loaded the file.
+- **`panels=` keeps the joint figure's cluster colours, forecasts narrow
+  panels in their own space, and a marker-only hue no longer advances the
+  palette.** Shared clustered panels keep the joint cluster-to-colour
+  mapping and legend names when a slice lacks a cluster (two panels each
+  drew red); a 1-/2-column panel of a mixed-width independent grid
+  forecasts, reads `truth=` and reports its bundle on its own analyzed
+  rows (the individual call's numbers; the display padding used to feed
+  the forecaster) and only its drawing is lifted into the 3-D cell; a
+  categorical `hue=` with a marker-only fmt consumes no palette slot on a
+  composed axes/figure/cell, and its group colours beat a fmt colour letter
+  on the marker path as on the line path. The live transient-network guard
+  now vetoes a TLS certificate failure carried inside a requests
+  `SSLError` (which inherits from `ConnectionError`).
+  `tests/test_plot_review_round9.py` (57). (Codex round 9.)
 - **`HypertoolsTrustError` is importable from `hypertools`**, beside
   `HypertoolsOfflineError`, and the API reference documents it and
   `io.synthetic_outlet` under those public names (the source-view backlinks

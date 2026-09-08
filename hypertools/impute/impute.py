@@ -25,6 +25,8 @@ import warnings
 import numpy as np
 import pandas as pd
 import datawrangler as dw
+from .._shared.helpers import (is_array_dataset, is_frame_dataset,
+                               is_series_like, as_pandas_dataframe)
 
 from .backtest import imputer_collection, score_imputations
 from .common import Imputer
@@ -49,14 +51,25 @@ def _spec_help():
 
 def _coerce_dataset(d):
     """Normalize ONE dataset-like object before wrangling: a 1-D array or a
-    pandas Series is a UNIVARIATE series -- n observations of 1 feature,
+    Series is a UNIVARIATE series -- n observations of 1 feature,
     i.e. an (n, 1) column -- matching format_data/plot's convention. (QC
     2026-07 red-team F17-impute-010: the funnel used to wrangle a (4,)
     array into ONE row of 4 features, whose NaN then became an all-missing
-    "column" silently filled with 0.0 instead of the series statistic.)"""
-    if isinstance(d, pd.Series):
-        return d.to_frame()
-    if isinstance(d, np.ndarray) and d.ndim == 1:
+    "column" silently filled with 0.0 instead of the series statistic.)
+
+    Types are classified with datawrangler's predicates (see
+    `hypertools._shared.helpers`): a DataFrame of any backend datawrangler
+    recognises (polars DataFrame/LazyFrame, ...) becomes a pandas
+    DataFrame, hypertools' internal frame type (a pandas frame passes
+    through untouched); a pandas or polars Series becomes its one-column
+    frame (index and name preserved)."""
+    if is_frame_dataset(d):
+        return as_pandas_dataframe(d)
+    if is_series_like(d):
+        if hasattr(d, 'to_frame'):
+            return _coerce_dataset(d.to_frame())
+        return _coerce_dataset(np.asarray(d))
+    if is_array_dataset(d) and d.ndim == 1:
         return d.reshape(-1, 1)
     return d
 
@@ -91,7 +104,7 @@ def _normalize_data(data):
         raise ValueError(
             f'cannot impute a single scalar observation ({data!r}); pass a '
             'dataset with at least 1 row and 1 column.')
-    if isinstance(data, np.ndarray):
+    if is_array_dataset(data):
         if data.ndim == 0:
             raise ValueError(
                 f'cannot impute a single scalar observation ({data!r}); pass '
@@ -103,10 +116,14 @@ def _normalize_data(data):
         data = _coerce_dataset(data)
         _check_finite_observed(data)
         return data
-    if isinstance(data, pd.DataFrame) and (data.shape[0] == 0 or data.shape[1] == 0):
-        raise ValueError(
-            f'input has no observations (got a DataFrame of shape '
-            f'{tuple(data.shape)}); there is nothing to impute.')
+    if is_frame_dataset(data):
+        # to pandas FIRST (a polars LazyFrame has no shape until collected)
+        data = _coerce_dataset(data)
+        if data.shape[0] == 0 or data.shape[1] == 0:
+            raise ValueError(
+                f'input has no observations (got a DataFrame of shape '
+                f'{tuple(data.shape)}); there is nothing to impute.')
+        return data
     if isinstance(data, list):
         if len(data) == 0:
             raise ValueError(
@@ -153,10 +170,10 @@ def _all_missing(data):
 
 def _mismatched_columns(data):
     """Whether `data` is a list of (wrangled) datasets that do NOT share
-    columns -- joint (stacked) imputation is impossible for those."""
+    columns -- joint (stacked) imputation is impossible for those. Called
+    on FUNNELED data only, so every element is a DataFrame already (no
+    per-element re-check)."""
     if not isinstance(data, list) or len(data) < 2:
-        return False
-    if not all(isinstance(d, pd.DataFrame) for d in data):
         return False
     first = list(data[0].columns)
     return any(list(d.columns) != first for d in data[1:])
@@ -221,24 +238,25 @@ def _wrangled_impute(data, model='PPCA', return_model=False, **kwargs):
     # audit, D09-tutorials-applied-012). Checked on the POOLED view -- for
     # a list sharing columns, a column observed in ANY dataset is informed
     # (the datasets are stacked and imputed jointly).
+    # (`data` is FUNNELED, so every dataset is a DataFrame already -- no
+    # per-element re-check.)
     _datasets = data if isinstance(data, list) else [data]
-    if all(isinstance(d, pd.DataFrame) for d in _datasets):
-        try:
-            _stacked = pd.concat(_datasets, axis=0)
-            _vals = _stacked.to_numpy(dtype=float)
-        except (TypeError, ValueError):
-            _vals = None
-        if _vals is not None and _vals.size:
-            _dead = np.isnan(_vals).all(axis=0)
-            if _dead.any():
-                _names = [str(c) for c, d_ in zip(_stacked.columns, _dead)
-                          if d_]
-                warnings.warn(
-                    f'column(s) {_names} have no observed values at all; '
-                    'their "imputed" values are not informed by any data '
-                    "(Kalman and PPCA fill such columns with 0.0). Drop "
-                    'these columns, or treat their filled values as '
-                    'placeholders rather than data.', UserWarning)
+    try:
+        _stacked = pd.concat(_datasets, axis=0)
+        _vals = _stacked.to_numpy(dtype=float)
+    except (TypeError, ValueError):
+        _vals = None
+    if _vals is not None and _vals.size:
+        _dead = np.isnan(_vals).all(axis=0)
+        if _dead.any():
+            _names = [str(c) for c, d_ in zip(_stacked.columns, _dead)
+                      if d_]
+            warnings.warn(
+                f'column(s) {_names} have no observed values at all; '
+                'their "imputed" values are not informed by any data '
+                "(Kalman and PPCA fill such columns with 0.0). Drop "
+                'these columns, or treat their filled values as '
+                'placeholders rather than data.', UserWarning)
 
     if isinstance(model, dict) and 'kwargs' not in model and 'args' not in model:
         # {'model': ..., 'params': {...}} form: unpack before handing the

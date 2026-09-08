@@ -142,6 +142,26 @@ Colors
 
 .. autofunction:: hypertools.plot.colors.continuous_colormap
 
+Colors extracted from an image are put in a deterministic order before they
+become a plot palette -- by value, dark to bright, unless ``palette_sort=``
+(or ``?sort=`` in an ``'image:<path>'`` spec) asks for another key -- while
+``image_palette`` itself, and the lead color of a dataset an image stands
+for, keep the most-salient-first order.
+
+.. autofunction:: hypertools.plot.colors.sort_colors
+
+A t x k data matrix is a palette too. ``matrix_palette`` reduces it to three
+dimensions with ``hypertools.reduce`` (``palette_reduce=`` in ``plot``,
+default ``'PCA'``, with ``palette_manip=``/``palette_normalize=``/
+``palette_align=`` passed through), scales each reduced column to [0, 1] as
+an RGB channel, sorts the rows (default ``'columns'``: along the first
+component) and returns a colormap that a plot resamples by interpolation to
+as many colors as it needs.
+
+.. autofunction:: hypertools.plot.colors.matrix_palette
+
+.. autoclass:: hypertools.plot.colors.MatrixColormap
+
 Set interactive backend
 ------------------------
 

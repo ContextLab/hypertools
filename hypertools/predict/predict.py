@@ -23,8 +23,9 @@ import numbers
 import warnings
 
 import numpy as np
-import pandas as pd
 import datawrangler as dw
+from .._shared.helpers import (is_array_dataset, is_frame_dataset,
+                               is_series_like, as_pandas_dataframe)
 
 from .backtest import backtest_predict, model_collection, spec_name
 from .common import Forecaster
@@ -54,15 +55,26 @@ def _spec_help():
 
 def _coerce_dataset(d):
     """Normalize ONE dataset-like object before wrangling: a 1-D array or a
-    pandas Series is a UNIVARIATE TIMESERIES -- n observations of 1 feature,
+    Series is a UNIVARIATE TIMESERIES -- n observations of 1 feature,
     i.e. an (n, 1) column -- matching format_data/plot's convention. (QC
     2026-07 red-team F16-predict-002/-003: the funnel used to wrangle a
     (200,) array into ONE row of 200 features -- crashing the default model
     or silently echoing the input as a (t, 200) "forecast" -- and wrangled a
-    Series into an EMPTY (0, 0) DataFrame, silently losing the data.)"""
-    if isinstance(d, pd.Series):
-        return d.to_frame()
-    if isinstance(d, np.ndarray) and d.ndim == 1:
+    Series into an EMPTY (0, 0) DataFrame, silently losing the data.)
+
+    Types are classified with datawrangler's predicates (see
+    `hypertools._shared.helpers`): a DataFrame of any backend datawrangler
+    recognises (polars DataFrame/LazyFrame, ...) becomes a pandas
+    DataFrame, hypertools' internal frame type (a pandas frame passes
+    through untouched); a pandas or polars Series becomes its one-column
+    frame (index and name preserved)."""
+    if is_frame_dataset(d):
+        return as_pandas_dataframe(d)
+    if is_series_like(d):
+        if hasattr(d, 'to_frame'):
+            return _coerce_dataset(d.to_frame())
+        return _coerce_dataset(np.asarray(d))
+    if is_array_dataset(d) and d.ndim == 1:
         return d.reshape(-1, 1)
     return d
 
@@ -84,7 +96,7 @@ def _normalize_data(data):
         raise ValueError(
             f'cannot forecast from a single scalar observation ({data!r}); '
             'pass a timeseries with at least 2 observations (rows).')
-    if isinstance(data, np.ndarray):
+    if is_array_dataset(data):
         if data.ndim == 0:
             raise ValueError(
                 f'cannot forecast from a single scalar observation '
@@ -96,12 +108,15 @@ def _normalize_data(data):
                     'forecast', f'got an array of shape {tuple(data.shape)}')
                 + ' Pass at least 2 observations (rows).')
         return _coerce_dataset(data)
-    if isinstance(data, pd.DataFrame) and (data.shape[0] == 0
-                                           or data.shape[1] == 0):
-        raise ValueError(
-            no_observations_message(
-                'forecast', f'got a DataFrame of shape {tuple(data.shape)}')
-            + ' Pass at least 2 observations (rows).')
+    if is_frame_dataset(data):
+        # to pandas FIRST (a polars LazyFrame has no shape until collected)
+        data = _coerce_dataset(data)
+        if data.shape[0] == 0 or data.shape[1] == 0:
+            raise ValueError(
+                no_observations_message(
+                    'forecast', f'got a DataFrame of shape {tuple(data.shape)}')
+                + ' Pass at least 2 observations (rows).')
+        return data
     if isinstance(data, list):
         if len(data) == 0:
             raise ValueError(
@@ -116,6 +131,13 @@ def _normalize_data(data):
             return np.asarray(data, dtype=float).reshape(-1, 1)
         return [_coerce_dataset(d) for d in data]
     return _coerce_dataset(data)
+
+
+def _is_hierarchical(data):
+    """Whether `data` (already normalized to pandas by `_normalize_data`)
+    is ONE DataFrame with a MultiIndex on its rows or its columns."""
+    return is_frame_dataset(data) and (data.index.nlevels >= 2
+                                       or data.columns.nlevels >= 2)
 
 
 def _validate_horizon(t):
@@ -603,8 +625,7 @@ def predict(data, model='Kalman', t=10, return_model=False, holdout=None,
                 'backtest fits one model per model spec and reports scores. '
                 'Use return_forecasts=True for the scored forecasts, then '
                 'refit on the full data with the winning spec.')
-        if isinstance(data, pd.DataFrame) and (data.index.nlevels >= 2
-                                               or data.columns.nlevels >= 2):
+        if _is_hierarchical(data):
             raise ValueError(
                 'holdout= is not supported on hierarchical (MultiIndex) '
                 'input; slice the groups and backtest them one at a time.')
@@ -644,8 +665,7 @@ def predict(data, model='Kalman', t=10, return_model=False, holdout=None,
     # or a tuple, so it is indifferent to `_normalize_data`'s tuple->list
     # conversion either way.
     reject_hierarchical_in_list(data, caller='hyp.predict', axes='both')
-    if isinstance(data, pd.DataFrame) and (data.index.nlevels >= 2
-                                           or data.columns.nlevels >= 2):
+    if _is_hierarchical(data):
         reject_dual_axis(data)
         if data.columns.nlevels >= 2:
             # `group_columns` returns (leaves, META); the group LABELS live in

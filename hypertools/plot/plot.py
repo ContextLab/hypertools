@@ -254,7 +254,8 @@ def _fmt_color_letter(fmt):
         return None
 
 
-def _palette_slots_consumed(n_drawn, mpl_kwargs, line_colors, draw_fmt):
+def _palette_slots_consumed(n_drawn, mpl_kwargs, line_colors, draw_fmt,
+                            category_colored=False):
     """How many colour-cycle slots one call's `n_drawn` drawn datasets take
     up: what a later ``ax=`` call into the same axes, figure or grid cell
     continues the palette from, on BOTH backends.
@@ -268,8 +269,16 @@ def _palette_slots_consumed(n_drawn, mpl_kwargs, line_colors, draw_fmt):
     the single call ``fmt=['r-', '-']`` gives it (1.1 release review, round
     7: the count was every drawn dataset, so that second call drew the
     SECOND palette colour on plotly, and in an initially empty
-    `hyp.subplots` cell on both backends)."""
-    if "color" in mpl_kwargs or line_colors is not None:
+    `hyp.subplots` cell on both backends).
+
+    `category_colored` says so EXPLICITLY when a ``hue=``/``cluster=``
+    grouping coloured the drawn groups by category: such a call consumes
+    no slot whatever its fmt. Inferring that from the resolved kwargs
+    alone missed the marker-only categorical grouping (``hue=...,
+    fmt='o'``), whose groups used to be drawn straight from the ambient
+    cycle -- so ordinary -> ``hue=`` with ``fmt='o'`` -> ordinary ended on
+    the THIRD palette colour instead of the second (round 9)."""
+    if category_colored or "color" in mpl_kwargs or line_colors is not None:
         return 0
     return sum(
         1 for i in range(n_drawn)
@@ -1452,6 +1461,58 @@ def _validate_forecast_trail(forecast_trail, predict):
             f"forecast_trail must be >= 1 when given as an int; got "
             f"{forecast_trail}.")
     return forecast_trail
+
+
+def _prepare_palettes(palette, forecast_palette, sort=None, reduce=None,
+                      manip=None, normalize=None, align=None):
+    """Resolve the palette forms that need the ``palette_*`` options.
+
+    A t x k data matrix (`colors.is_palette_matrix`) becomes a colormap
+    through `colors.matrix_palette` (reduced with ``palette_reduce`` --
+    default 'PCA' -- under ``palette_manip``/``palette_normalize``/
+    ``palette_align``, sorted by ``palette_sort``, default 'columns'). An
+    ``'image:<path>'`` spec gets ``?sort=<palette_sort>`` appended when the
+    call asks for a sort and the spec does not already carry one (images
+    default to 'value' inside `colors._image_palette_list`). Every other
+    form -- names, color lists, dicts, colormaps -- is returned as is, and a
+    per-dataset list is handled entry by entry. Idempotent, so the panels
+    branch can forward the result through a second plot() call."""
+    from .colors import (IMAGE_PALETTE_PREFIX, PALETTE_SORT_KEYS,
+                         _parse_image_spec, is_palette_matrix,
+                         matrix_palette)
+
+    if sort is not None and sort not in PALETTE_SORT_KEYS:
+        raise ValueError(
+            f"palette_sort= must be one of {PALETTE_SORT_KEYS} or None; "
+            f"got {sort!r}")
+
+    def one(spec):
+        """One palette spec, prepared."""
+        if is_palette_matrix(spec):
+            return matrix_palette(
+                spec, reduce=reduce if reduce is not None else 'PCA',
+                sort=sort if sort is not None else 'columns',
+                normalize=normalize, manip=manip, align=align)
+        if sort is not None and isinstance(spec, str) \
+                and spec.startswith(IMAGE_PALETTE_PREFIX):
+            source = spec[len(IMAGE_PALETTE_PREFIX):].strip()
+            path, options = _parse_image_spec(source)
+            if 'sort' in options:
+                return spec
+            joiner = '&' if options else '?'
+            return f'{IMAGE_PALETTE_PREFIX}{source}{joiner}sort={sort}'
+        return spec
+
+    def many(value):
+        """A whole-plot palette, or a per-dataset list entry by entry."""
+        if isinstance(value, (list, tuple)) and not is_palette_matrix(value) \
+                and any(is_palette_matrix(e) or (
+                    isinstance(e, str) and e.startswith(IMAGE_PALETTE_PREFIX))
+                        for e in value):
+            return [one(e) for e in value]
+        return one(value)
+
+    return many(palette), many(forecast_palette)
 
 
 def _validate_extra_plot_kwargs(extra_kwargs):
@@ -3230,30 +3291,94 @@ def _panel_slice_labels(value, index, lengths):
     return value
 
 
-def _panel_rows_in_3d(xi, source):
-    """One panel's analyzed rows `xi` as the 3-column rows a 3-D grid
-    cell draws: 3-wide rows as they are; 2-wide rows on the cell's floor
-    (``z=0``); a 1-column series as ``(x, value, 0)`` where x is what
-    `ndims=1` series mode draws the series against -- the `source` frame's
-    own numeric row index when it has one (`_series_x_axis`), otherwise
-    the row position. A date index is drawn by position (a 3-D scene has
-    no date axis)."""
+class _PanelLift:
+    """How one NARROW panel's analyzed rows are placed in a 3-D grid cell
+    (a 1- or 2-column dataset beside 3-column ones, `panel_fit=
+    'independent'`): 2-wide rows on the cell's floor (``z=0``); a
+    1-column series as ``(x, value, 0)`` where x is what `ndims=1` series
+    mode draws the series against -- the source frame's own numeric row
+    index when it has one (`_series_x_axis`), otherwise the row position
+    (a date index is drawn by position: a 3-D scene has no date axis).
+
+    The lift is a PLACEMENT, applied by the panel's own `plot()` call at
+    draw time, not a change of the data: the panel forecasts, resolves
+    `truth=` and reports its bundle in the analyzed (narrow) space, the
+    same numbers the individual ``hyp.plot(dataset)`` call produces, and
+    only the drawn rows, forecasts and truths are lifted. Round 8 padded
+    the rows BEFORE the panel call and handed the padded ``(index, value,
+    0)`` rows to the forecaster: a one-column panel's Kalman forecast then
+    differed from its individual call by 1.5, a forecaster fitted on the
+    one-column data refused the three padded features, and a one-column
+    `truth=` was rejected against a three-column trace (round 9)."""
+
+    __slots__ = ('width', 'x_values', 'step')
+
+    def __init__(self, width, x_values=None, step=1.0):
+        self.width = int(width)
+        self.x_values = (None if x_values is None
+                         else np.asarray(x_values, dtype=float))
+        self.step = float(step)
+
+    def __repr__(self):
+        return f"_PanelLift(width={self.width}, step={self.step})"
+
+    def _x(self, n_rows):
+        if self.x_values is not None and len(self.x_values) == n_rows:
+            return self.x_values
+        return np.arange(float(n_rows))
+
+    def rows(self, arr):
+        """The analyzed rows `arr` as the 3-column rows the cell draws."""
+        arr = np.asarray(arr, dtype=float)
+        if arr.ndim == 1:
+            arr = arr.reshape(-1, 1)
+        if arr.ndim != 2 or arr.shape[1] >= 3:
+            return arr
+        n_rows = arr.shape[0]
+        if arr.shape[1] == 2:
+            return np.column_stack([arr, np.zeros(n_rows)])
+        return np.column_stack([self._x(n_rows), arr[:, 0],
+                                np.zeros(n_rows)])
+
+    def continuation(self, arr):
+        """A forecast/truth overlay `arr` -- its trace's last observed row
+        followed by the `t` rows continuing it (`_compute_forecasts`,
+        `_resolve_truth`) -- lifted the way the rows it continues are: a
+        series continues the row index by one `step` per row."""
+        arr = np.asarray(arr, dtype=float)
+        if arr.ndim == 1:
+            arr = arr.reshape(-1, 1)
+        if arr.ndim != 2 or arr.shape[1] >= 3:
+            return arr
+        n_rows = arr.shape[0]
+        if arr.shape[1] == 2:
+            return np.column_stack([arr, np.zeros(n_rows)])
+        x_last = float(self.x_values[-1]) if (
+            self.x_values is not None and len(self.x_values)) else 0.0
+        x = x_last + self.step * np.arange(n_rows, dtype=float)
+        return np.column_stack([x, arr[:, 0], np.zeros(n_rows)])
+
+
+def _panel_lift_for(xi, source):
+    """The `_PanelLift` that places one panel's analyzed rows `xi` in a
+    3-D grid cell, or None when they are 3-wide already (drawn as they
+    are). `source` is the panel's input dataset, whose row index is the
+    x axis a 1-column series is drawn against."""
     xi = np.asarray(xi)
     if xi.ndim == 1:
         xi = xi.reshape(-1, 1)
     if xi.ndim != 2 or xi.shape[1] >= 3:
-        return xi
+        return None
     n_rows = xi.shape[0]
     if xi.shape[1] == 2:
-        return np.column_stack([xi, np.zeros(n_rows)])
+        return _PanelLift(2)
     index = getattr(source, 'index', None)
     if isinstance(source, np.ndarray) or isinstance(index, pd.MultiIndex):
         index = None
-    x_values, _, is_date, _ = _series_x_axis(index, n_rows)
+    x_values, step, is_date, _ = _series_x_axis(index, n_rows)
     if is_date:
-        x_values = np.arange(float(n_rows))
-    return np.column_stack([x_values, xi[:, 0].astype(float),
-                            np.zeros(n_rows)])
+        x_values, step = np.arange(float(n_rows)), 1.0
+    return _PanelLift(1, x_values=x_values, step=step)
 
 
 def _panel_frame(source, xi):
@@ -3371,25 +3496,71 @@ class _PanelClusterLabels:
     panel call's ``cluster=``, `plot()` uses the labels as they are and
     fits nothing -- before this, every panel re-clustered its analyzed
     rows without the caller's `random_state` and drew clusters the seeded
-    single-axes call never drew."""
+    single-axes call never drew.
 
-    __slots__ = ('labels', 'model', 'spec')
+    `categories` is the probe's COMPLETE cluster label set, in the order
+    the single-axes call colours it (sorted, as `plot()`'s cluster branch
+    sorts hard labels): the label-to-colour mapping every cell of the grid
+    shares. A shared fit's per-dataset slice can miss a cluster entirely,
+    and colouring the slice from ITS OWN label set drew global clusters 1
+    and 0 in the same first palette colour in adjacent panels (round 9);
+    None for soft (mixture) labels, whose blends carry their own colours.
+    """
 
-    def __init__(self, labels, model, spec):
+    __slots__ = ('labels', 'model', 'spec', 'categories')
+
+    def __init__(self, labels, model, spec, categories=None):
         self.labels = labels
         self.model = model
         self.spec = spec
+        self.categories = categories
 
     def __repr__(self):
         return (f"_PanelClusterLabels(model={self.model!r}, "
                 f"n={len(self.labels)})")
 
 
-def _panel_cluster_labels(probe_labels, model, spec, rows=None):
+def _hard_cluster_categories(labels):
+    """The sorted label set `plot()`'s cluster branch draws HARD cluster
+    `labels` in (first-appearance order when they do not sort), or None
+    for a soft (2-D, mixture-proportion) labelling."""
+    if labels is None:
+        return None
+    arr = np.asarray(labels)
+    if arr.ndim != 1:
+        return None
+    seen = list(dict.fromkeys(arr.tolist()))
+    try:
+        return sorted(seen)
+    except TypeError:
+        return seen
+
+
+def _replayed_cluster_colors(present, categories, palette):
+    """The colours of the cluster labels `present` (in drawn order) under
+    the SHARED mapping a `panels=` probe fitted: label ``categories[k]``
+    takes the k-th of the palette's ``len(categories)`` colours -- the
+    colour the single-axes call, which draws every category, gives it.
+    None when there is no shared mapping to apply: no `categories`, a
+    label the probe never produced, or a ``{category: color}`` palette,
+    which every path already resolves by NAME."""
+    if categories is None or isinstance(palette, collections.abc.Mapping):
+        return None
+    if any(c not in categories for c in present):
+        return None
+    import seaborn as sns
+    n = len(categories)
+    base = list(sns.color_palette(_seaborn_palette_arg(palette, n), n))
+    return [tuple(base[categories.index(c)]) for c in present]
+
+
+def _panel_cluster_labels(probe_labels, model, spec, rows=None,
+                          categories=None):
     """`probe_labels` (a probe's ``models['cluster_labels']``) as the
     `_PanelClusterLabels` one panel replays, sliced to `rows` (a
     ``(start, stop)`` pair, for a shared fit's per-dataset slice) or taken
-    whole; None when the probe did not cluster."""
+    whole; None when the probe did not cluster. `categories` is the
+    probe's complete label set (see `_PanelClusterLabels`)."""
     if probe_labels is None:
         return None
     if spec is None:
@@ -3402,7 +3573,7 @@ def _panel_cluster_labels(probe_labels, model, spec, rows=None):
         labels = labels[start:stop]
     if isinstance(labels, np.ndarray) and labels.ndim == 1:
         labels = labels.tolist()
-    return _PanelClusterLabels(labels, model, spec)
+    return _PanelClusterLabels(labels, model, spec, categories=categories)
 
 
 def _panel_probe(data, kw, ndims, caught_warnings):
@@ -3455,7 +3626,8 @@ def _panel_probe(data, kw, ndims, caught_warnings):
     clustering = None
     models = probe.get('models') or {}
     if models.get('cluster_labels') is not None:
-        clustering = (models['cluster_labels'], _panel_cluster_model(kw))
+        clustering = (models['cluster_labels'], _panel_cluster_model(kw),
+                      _hard_cluster_categories(models['cluster_labels']))
     return xform, probe.get('pipeline'), clustering
 
 
@@ -3636,7 +3808,7 @@ def _plot_panels(x, panels, call_kwargs, _name='panels'):
         # each reducer panel draws EVERY dataset: its probe's labels whole
         panel_clusters = [
             None if clus is None else _panel_cluster_labels(
-                clus[0], clus[1], kw.get('cluster'))
+                clus[0], clus[1], kw.get('cluster'), categories=clus[2])
             for (_, _, clus), kw in zip(probes, panel_kwargs)]
     elif panel_fit == 'independent':
         # one FULL pipeline per panel: each panel's fit is byte-for-byte
@@ -3661,7 +3833,7 @@ def _plot_panels(x, panels, call_kwargs, _name='panels'):
         # each probe clustered its own panel's rows: replayed whole
         panel_clusters = [
             None if clus is None else _panel_cluster_labels(
-                clus[0], clus[1], kw.get('cluster'))
+                clus[0], clus[1], kw.get('cluster'), categories=clus[2])
             for (_, _, clus), kw in zip(probes, panel_kwargs)]
     else:
         # ONE shared fit across every dataset: run the very call the user
@@ -3676,7 +3848,9 @@ def _plot_panels(x, panels, call_kwargs, _name='panels'):
         panel_kwargs = []
         # the ONE clustering fit across every dataset, each panel
         # replaying its own dataset's slice of the labels (the same rows
-        # `_panel_narrow_kwargs` slices a flat hue= by)
+        # `_panel_narrow_kwargs` slices a flat hue= by) under the ONE
+        # label-to-colour mapping (`categories=`: a slice missing a
+        # cluster must not shift the others' colours, round 9)
         panel_clusters = []
         offsets = np.cumsum([0] + lengths)
         for i in range(n_panels):
@@ -3688,7 +3862,8 @@ def _plot_panels(x, panels, call_kwargs, _name='panels'):
                 else _panel_cluster_labels(
                     shared_clustering[0], shared_clustering[1],
                     shared.get('cluster'),
-                    rows=(int(offsets[i]), int(offsets[i + 1]))))
+                    rows=(int(offsets[i]), int(offsets[i + 1])),
+                    categories=shared_clustering[2]))
 
     # the analyzed data's own width decides the cells (a text or DataFrame
     # input's drawn width, and a manip=/pipeline= stage's, are only known
@@ -3707,9 +3882,14 @@ def _plot_panels(x, panels, call_kwargs, _name='panels'):
             # trace outright. A ONE-column series in such a grid is drawn
             # as the series it is -- the row index on x, its values on y
             # -- flat on the cell's floor (round 8: it reached the 3-D
-            # cell as one column and crashed both backends)
-            xf = [_panel_rows_in_3d(xi, src)
-                  for xi, src in zip(xf, panel_sources[i])]
+            # cell as one column and crashed both backends). The panel
+            # call itself places the rows (`_PanelLift`), AFTER it has
+            # forecast and resolved `truth=` on the analyzed rows (round
+            # 9: padding them here changed the forecasting input)
+            lifts = [_panel_lift_for(xi, src)
+                     for xi, src in zip(xf, panel_sources[i])]
+            if any(lift is not None for lift in lifts):
+                kw['_panel_lift'] = lifts
         # the analysis already ran (above); each panel DRAWS its rows
         kw.update(transform=list(xf), reduce=None, normalize=None,
                   align=None, manip=None, pipeline=None, impute=None,
@@ -4001,6 +4181,11 @@ def plot(
     forecast_n_clusters=None,
     forecast_palette=None,
     forecast_fmt=None,
+    palette_sort=None,
+    palette_reduce=None,
+    palette_manip=None,
+    palette_normalize=None,
+    palette_align=None,
     slow_warning_seconds=_UNSET_SLOW_WARNING,
     frame_rate=30,
     focused=None,
@@ -4486,6 +4671,43 @@ def plot(
         hue (``['red', 'blue']`` over three datasets draws red, blue,
         red), as it always was.
 
+        A t x k DATA MATRIX is a palette too. It is reduced to three
+        dimensions with `hypertools.reduce` (``palette_reduce=``, default
+        'PCA', under ``palette_manip=``/``palette_normalize=``/
+        ``palette_align=``), each reduced column is scaled to [0, 1] as an
+        RGB channel, the rows are ordered by ``palette_sort=`` (default
+        ``'columns'``: along the first component) and the result is a
+        colormap that is resampled by interpolation to however many colors
+        the plot needs -- one per dataset, one per category, or a gradient
+        along a continuous `hue=`::
+
+            hyp.plot(x, hue=np.arange(len(x)), palette=weights)   # (t, k)
+
+        A 2-D array with 3 or 4 columns and every value in [0, 1] stays a
+        list of colors; pass a DataFrame (or values outside [0, 1]) for a
+        three-column matrix that is data. The palette is as smooth as the
+        matrix: the rows are ordered along the first component, so a
+        matrix whose other components follow the first (a trend with
+        oscillations) gives a clean gradient and an unstructured one a
+        striped palette. In a per-dataset list a matrix stands for its
+        most saturated color. Palettes extracted from an image
+        are sorted by value (dark to bright) so they read as a gradient;
+        ``palette_sort=`` (or ``?sort=`` in the spec) changes that, and the
+        most salient color still leads when an image stands for one
+        dataset in a per-dataset list.
+    palette_sort : {'value', 'hue', 'lightness', 'columns', 'original'} or None
+        How the colors of an image or matrix palette are ordered (see
+        `hypertools.plot.colors.sort_colors`). None (default) means
+        ``'value'`` for an image and ``'columns'`` for a matrix; a key given
+        here applies to `palette=` and `forecast_palette=` alike, including
+        every entry of a per-dataset list. A spec's own ``?sort=`` wins.
+    palette_reduce : reducer spec or None
+        The reducer `hypertools.reduce` applies to a matrix palette (default
+        'PCA'); any form `reduce=` accepts.
+    palette_manip, palette_normalize, palette_align : same forms as \
+            `manip=`, `normalize=`, `align=`, or None
+        Handed to `hypertools.reduce` when a matrix palette is reduced,
+        exactly as the same-named arguments would be for the data.
     hue : list, numpy array, pandas Series/Index/Categorical, or 2D matrix
         Values used to color the plot, one per observation, matched to the
         observations POSITIONALLY (a pandas Series' index is ignored).
@@ -6078,7 +6300,12 @@ def plot(
         say) share the wider grid: 2-column rows are drawn flat on the
         3-D cell's floor, and a 1-column series as row index vs value on
         that floor (its own numeric index on x when the frame has one,
-        positions otherwise).
+        positions otherwise). That placement is a matter of DRAWING only:
+        such a panel forecasts (`predict=`), reads `truth=` and reports
+        its bundle in its own analyzed space -- the numbers the individual
+        call for that dataset produces -- and its forecast and truth
+        overlays are placed the way its rows are (a series continues its
+        index one row per step).
         ``subplots=`` is an accepted alias (passing both raises).
 
         The analysis pipeline (`manip`/`normalize`/`reduce`/`align`) is fit
@@ -6669,11 +6896,24 @@ def plot(
 
     """
 
+    # a `panels=` grid's own instruction for placing one narrow panel's
+    # rows in its 3-D cell (`_PanelLift`, one entry per dataset of the
+    # panel, None for 3-wide ones): internal, never a user kwarg
+    _panel_lift = kwargs.pop('_panel_lift', None)
+
     # early kwarg validation (release-1.0 audit): catch renamed/misspelled/
     # unknown keyword arguments HERE, with a clear TypeError naming the
     # kwarg (plus a did-you-mean hint), BEFORE the expensive analyze/
     # reduce/align pipeline runs.
     _validate_extra_plot_kwargs(kwargs)
+
+    # palettes given as data MATRICES become colormaps here (reduced with
+    # hyp.reduce under the palette_* options), and image palettes carry the
+    # requested sort; done before the panels branch so every panel call
+    # receives plain palettes (see `_prepare_palettes`)
+    palette, forecast_palette = _prepare_palettes(
+        palette, forecast_palette, sort=palette_sort, reduce=palette_reduce,
+        manip=palette_manip, normalize=palette_normalize, align=palette_align)
 
     # panels=/subplots= (GH #285): compose several STATIC panels in one
     # figure. Handled by re-entering plot() once per panel, so this branch
@@ -6688,7 +6928,8 @@ def plot(
         _panels_name = 'panels' if panels is not None else 'subplots'
         _panel_call = {k: v for k, v in locals().items()
                        if k not in ('x', 'kwargs', 'panels', 'subplots',
-                                    '_panels_spec', '_panels_name')}
+                                    '_panels_spec', '_panels_name',
+                                    '_panel_lift')}
         _panel_call.update(kwargs)
         return _plot_panels(x, _panels_spec, _panel_call, _name=_panels_name)
 
@@ -8259,6 +8500,27 @@ def plot(
         _display_ndims = 2
 
     # axis_scale='data' (GH #285) keeps the pipeline's own coordinates, but
+    # a narrow panel of a 3-D `panels=` grid: from here on the figure is
+    # the 3-D one its cell draws -- the rows placed in the cell
+    # (`_PanelLift`), and every dimensionality check below reading that
+    # placement -- while `predict=`/`truth=` below read `_lift_source`,
+    # the analyzed rows, so the panel forecasts exactly what the
+    # individual call forecasts and its bundle (`xform_data`,
+    # `trace_data`, the forecasts) stays in that space (round 9)
+    _lift_source = None
+    if _panel_lift is not None:
+        if animate:
+            raise ValueError(
+                "internal error: a panels= cell is never animated, but "
+                "its placement (_panel_lift) reached an animated call.")
+        if len(_panel_lift) != len(xform):
+            raise ValueError(
+                f"internal error: panels= placed {len(_panel_lift)} "
+                f"dataset(s) in a cell drawing {len(xform)}.")
+        _lift_source = [np.asarray(xi, dtype=float) for xi in xform]
+        xform = [xi if lift is None else lift.rows(xi)
+                 for xi, lift in zip(_lift_source, _panel_lift)]
+
     # a 3-D plot's frame IS the unit cube -- there is no "raw units" cube to
     # draw the data in, and the camera/zoom geometry is defined against it.
     if _axis_scale == 'data' and xform[0].shape[1] >= 3:
@@ -8439,7 +8701,19 @@ def plot(
     _model_forecast_owner = None
     if predict is not None and _multiindex_meta is None:
         bundle_forecasts, raw_forecasts, analyze_histories = \
-            _compute_forecasts(xform)
+            _compute_forecasts(xform if _lift_source is None
+                               else _lift_source)
+        if _lift_source is not None:
+            # forecast in the analyzed space, drawn where the rows are
+            # (`_PanelLift.continuation`); the overlays are model-major,
+            # one per dataset per model
+            raw_forecasts = [
+                fc if _panel_lift[_i % len(_lift_source)] is None
+                else _panel_lift[_i % len(_lift_source)].continuation(fc)
+                for _i, fc in enumerate(raw_forecasts)]
+            analyze_histories = [
+                h if lift is None else lift.rows(h)
+                for h, lift in zip(analyze_histories, _panel_lift)]
         if _predict_names is not None:
             _model_forecast_owner = [_d for _ in _predict_names
                                      for _d in range(len(xform))]
@@ -8460,7 +8734,12 @@ def plot(
                 "traces, which have no observed continuation of their own. "
                 "Plot the groups separately, or flatten the frame "
                 "(df.reset_index(drop=True)).")
-        raw_truths = _resolve_truth(truth, xform, t, _series_step)
+        raw_truths = _resolve_truth(
+            truth, xform if _lift_source is None else _lift_source, t,
+            _series_step)
+        if _lift_source is not None:
+            raw_truths = [tr if lift is None else lift.continuation(tr)
+                          for tr, lift in zip(raw_truths, _panel_lift)]
 
     # per-point colors for multicolored lines (set by the hue branch below;
     # computed after interpolation). Dataset lengths are captured now so hue
@@ -8898,14 +9177,19 @@ def plot(
         _spec_kwargs = {}
         _spec_top_n = None
         _replayed_labels = None
+        _replayed_categories = None
         if isinstance(cluster, _PanelClusterLabels):
             # a `panels=` cell drawing rows its probe ALREADY clustered
             # (round 8): reuse that fit's memberships verbatim -- the
             # probe is the caller's own seeded single-axes call, and
             # re-clustering the analyzed rows here, once per panel and
             # without the caller's random_state, drew different clusters
-            # from the ones the individual call draws.
+            # from the ones the individual call draws. ...and colour them
+            # under the probe's COMPLETE label set (round 9): a shared
+            # fit's slice can lack a cluster, and colouring it from its
+            # own label set drew global cluster 1 in cluster 0's colour.
             _replayed_labels = cluster.labels
+            _replayed_categories = cluster.categories
             model = cluster.model
             cluster = cluster.spec
             params = {}
@@ -9114,8 +9398,14 @@ def plot(
             # separate datasets are never bridged (GH #291); each run is
             # coloured + labelled by its cluster id in sorted order, one
             # legend/colorbar entry per cluster.
+            _shared_colors = None
+            if _replayed_categories is not None:
+                _shared_colors = _replayed_cluster_colors(
+                    _hard_cluster_categories(cluster_labels),
+                    _replayed_categories, palette)
             _cat_color, _cat_label = _categorical_color_label_maps(
-                cluster_labels, palette, None, None, sort_numeric=True)
+                cluster_labels, palette, _shared_colors, None,
+                sort_numeric=True)
             _nd = len(xform)
             (xform, labels, _run_colors, hue_group_labels, _seg_ds,
              _run_cat_names, _seg_lengths,
@@ -9146,6 +9436,14 @@ def plot(
             hue = cluster_labels
             hue_group_labels = [str(_cats[i]) for i in _order]
             hue_category_names = list(hue_group_labels)
+            if _replayed_categories is not None and "color" not in mpl_kwargs:
+                # the shared mapping's colours for the clusters THIS cell
+                # draws (a missing cluster leaves a gap, not a shift)
+                _shared_colors = _replayed_cluster_colors(
+                    [_cats[i] for i in _order], _replayed_categories,
+                    palette)
+                if _shared_colors is not None:
+                    mpl_kwargs["color"] = _shared_colors
 
     # group data if there is a grouping var
     elif hue is not None:
@@ -9507,6 +9805,24 @@ def plot(
                 _named = resolve_category_colors(palette, hue_group_labels)
                 mpl_kwargs["color"] = [tuple(_named[c])
                                        for c in hue_group_labels]
+            elif ("color" not in mpl_kwargs and not _fmt_draws_line(fmt)
+                    and hue_group_labels is not None
+                    and len(hue_group_labels) == len(xform)):
+                # ...and every other palette on the MARKER path (round 9):
+                # the category colours are the palette's first
+                # `n_groups` entries, in drawn-group order -- exactly what
+                # the ambient cycle assigns on a fresh axes -- resolved
+                # here so they belong to the CATEGORIES: on a composed
+                # axes the cycle continues past the datasets an earlier
+                # call drew, so the groups' colours shifted with it, and a
+                # colour letter in fmt= (``'ro'``) painted every group
+                # red where the line path (``'r-'``) kept the hue colours.
+                import seaborn as sns
+                _n_groups = len(xform)
+                mpl_kwargs["color"] = [
+                    tuple(c) for c in sns.color_palette(
+                        _seaborn_palette_arg(palette, _n_groups),
+                        _n_groups)]
             _hue_regrouped_counts = (_n_datasets_before_hue, len(xform))
             # a PURE line cannot render a single-observation category -- it
             # draws NOTHING (and crashed animated interpolation, F02-002).
@@ -10696,7 +11012,9 @@ def plot(
     # backend as explicit per-dataset ``color=`` entries, which would make
     # every dataset look explicitly coloured (round 7)
     _palette_slots_taken = _palette_slots_consumed(
-        len(xform), mpl_kwargs, line_colors, draw_fmt)
+        len(xform), mpl_kwargs, line_colors, draw_fmt,
+        category_colored=hue is not None or cluster is not None
+        or n_clusters is not None)
 
     # interactive (plotly) backend: render with plotly and skip the
     # matplotlib pipeline entirely. backend='auto' resolves to plotly only

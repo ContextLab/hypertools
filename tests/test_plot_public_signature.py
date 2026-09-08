@@ -36,6 +36,11 @@ PUBLISHED_DEFAULTS = [
     ('cluster', None),
     ('normalize', None),
     ('manip', None),
+    ('palette_sort', None),
+    ('palette_reduce', None),
+    ('palette_manip', None),
+    ('palette_normalize', None),
+    ('palette_align', None),
 ]
 
 

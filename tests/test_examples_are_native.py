@@ -1500,7 +1500,7 @@ EXPECTED_VISIBLE_OUTPUTS = {
     'io': {2, 3, 4, 5, 6, 7, 8, 9, 10, 11},
     'pipelines': {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14},
     'manip': {1, 2, 3, 4, 5, 6, 7, 8, 9},  # 9: Normalize(mode='isotropic')
-    'plot': set(range(3, 29)) | {30},
+    'plot': set(range(3, 31)) | {32},
     'align': {2, 3, 4, 5, 6, 7, 8, 9, 10, 11},
     'analyze': {2, 3, 4, 5, 6, 7, 8, 9, 10},
     'reduce': {3, 4, 5, 6, 7, 8, 9, 10, 11, 12},

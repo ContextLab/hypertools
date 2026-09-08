@@ -181,11 +181,28 @@ def _type_names(exc):
     return {cls.__name__ for cls in type(exc).__mro__}
 
 
+def _certificate_failure(exc):
+    """True when a TLS CERTIFICATE failure sits anywhere in the chain -- as
+    an exception, as an exception carried in another's ``args`` (requests
+    wraps ``ssl.SSLCertVerificationError`` that way, and its `SSLError`
+    inherits from `ConnectionError`, which alone reads as transient), or as
+    the word 'certificate' in a message. That is our environment's fault or
+    ours, never the host's (Codex round 9)."""
+    for e in _chain(exc):
+        carried = [a for a in getattr(e, 'args', ()) if isinstance(a, BaseException)]
+        for item in (e, *carried):
+            if 'SSLCertVerificationError' in _type_names(item) \
+                    or 'certificate' in str(item).lower():
+                return True
+    return False
+
+
 def _exception_is_transient(exc):
     """Structural verdict on a LIVE exception: type names across the whole
-    ``__cause__``/``__context__`` chain, plus HTTP status. Text is not consulted.
+    ``__cause__``/``__context__`` chain, plus HTTP status. Text is consulted
+    only for the certificate veto.
     """
-    if _type_names(exc) & DEFECT_TYPES:
+    if _type_names(exc) & DEFECT_TYPES or _certificate_failure(exc):
         return False
     for e in _chain(exc):
         names = _type_names(e)

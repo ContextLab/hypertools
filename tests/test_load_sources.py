@@ -632,3 +632,25 @@ def test_transient_classifier_reads_a_dropped_tls_connection_as_transient():
         "SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate "
         "verify failed: unable to get local issuer certificate (_ssl.c:1016)')")
     assert not is_transient_network(certificate)
+
+
+def test_a_live_certificate_failure_is_never_skipped_while_a_tls_drop_is():
+    """Codex round 9: requests' `SSLError` inherits from `ConnectionError`, so
+    a LIVE certificate failure took the transient path by ancestry (the
+    equivalent text already failed classification). Both live shapes, as
+    requests raises them (the ssl error carried in args)."""
+    import ssl
+    import requests
+    from tests._netskip import is_transient_network, skip_on_transient_network
+    drop = requests.exceptions.SSLError(ssl.SSLEOFError(
+        8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol'))
+    cert = requests.exceptions.SSLError(ssl.SSLCertVerificationError(
+        1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed'))
+    assert is_transient_network(drop)
+    assert not is_transient_network(cert)
+    with pytest.raises(pytest.skip.Exception):
+        with skip_on_transient_network('a dropped connection'):
+            raise drop
+    with pytest.raises(requests.exceptions.SSLError):
+        with skip_on_transient_network('a bad certificate'):
+            raise cert

@@ -517,6 +517,10 @@ _NOT_SLICED = {
     'colorbar': 'drawn per panel',
     'label_anchor': 'positions a per-dataset labels= entry; one value',
     'legend_colors': 'per legend ENTRY, not per dataset',
+    'palette_sort': 'a grid-wide option resolved before the panels branch; '
+                    'it orders the colors of every palette, per-dataset '
+                    'list entries included, and each panel receives the '
+                    'already-prepared palette',
     'hue_mode': 'describes the hue matrix, one value',
     'color_reduce': 'reduces a hue matrix, one spec',
     't': 'one horizon for every forecast',
