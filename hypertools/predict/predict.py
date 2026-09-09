@@ -266,15 +266,11 @@ def _wrangle(data, **kwargs):
 def _holdout_datasets(data):
     """The wrangled dataset(s) `holdout=` scores, always as a list."""
     frames = _wrangle(data)
-    from .time import order_time_data
-    return [order_time_data(frame) for frame in
-            (frames if isinstance(frames, list) else [frames])]
+    return frames if isinstance(frames, list) else [frames]
 
 
-@dw.decorate.funnel
-def _wrangled_predict(data, model='Kalman', t=10, return_model=False, **kwargs):
-    """Funnel-wrapped core of `predict` (see its docstring)."""
-    t = _validate_horizon(t)
+def _make_forecaster(model, kwargs):
+    """Construct a model with the same spec/keyword policy for both paths."""
     resolved, kwargs = _resolve_forecaster_spec(model, kwargs)
 
     if isinstance(resolved, type):
@@ -295,6 +291,15 @@ def _wrangled_predict(data, model='Kalman', t=10, return_model=False, **kwargs):
             'already a constructed instance, so constructor parameters '
             'cannot be applied. Pass the class (or a name/dict spec) to '
             'set parameters.', stacklevel=external_stacklevel())
+
+    return resolved
+
+
+@dw.decorate.funnel
+def _wrangled_predict(data, model='Kalman', t=10, return_model=False, **kwargs):
+    """Funnel-wrapped core of `predict` (see its docstring)."""
+    t = _validate_horizon(t)
+    resolved = _make_forecaster(model, kwargs)
 
     if isinstance(resolved, Forecaster) and resolved.is_fitted:
         forecasts = resolved.predict_new(data, t)
@@ -467,11 +472,19 @@ def predict(data, model='Kalman', t=10, return_model=False, holdout=None,
         independent copy; the caller's instance is unchanged. Already fitted
         instances are refused because they may have seen the held-out rows.
 
-        **`t` is not consulted** for an int/float `holdout`: the horizon IS
-        the number of held-out rows, or the forecast would not line up
-        one-to-one with the truth. (Use ``holdout=True`` to say "hold out
-        `t` rows".) The horizon used is reported in the frame's ``horizon``
-        column.
+        **`t` is not consulted** for an int/float `holdout`. The number of
+        held-out observations is reported in the frame's ``horizon``
+        column. (Use ``holdout=True`` to say "hold out `t` rows".)
+
+        Timed rows are sorted before splitting. Models and their step sizes
+        are fitted on TRAINING rows only. GaussianProcess evaluates the
+        actual held-out times; regular-grid models forecast a covering grid
+        and linearly interpolate predictions to those times (with a warning
+        when interpolation is needed). Before the first full forecast step,
+        the last observed training value anchors interpolation. Missing
+        endpoints remain missing; no held-out values enter the model or the
+        interpolation. Returned predictions carry the held-out index.
+        Arrays/categorical labels/repeated numeric IDs use row positions.
 
         Not available on HIERARCHICAL input (which group is scored would
         have to become a fourth axis of the frame); slice the groups and
@@ -651,7 +664,7 @@ def predict(data, model='Kalman', t=10, return_model=False, holdout=None,
                                _FORECASTER_ALIASES)]
             specs = [model]
         return backtest_predict(
-            _holdout_datasets(data), predict, t, holdout, names, specs,
+            _holdout_datasets(data), _make_forecaster, t, holdout, names, specs,
             metrics=metrics, per_column=per_column,
             return_forecasts=return_forecasts, kwargs=kwargs)
     if collection is not None:

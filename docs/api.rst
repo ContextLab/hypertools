@@ -152,6 +152,43 @@ history, including enough interpolated grid points. If preprocessing changes
 the row count and discards the corresponding timestamps, pass the analyzed
 data with its updated index explicitly instead of guessing its times.
 
+Backtesting at observation times
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``hyp.predict(..., holdout=...)`` sorts timed observations before holding out
+the last rows. The model and its interval are fitted on the remaining training
+rows only. GaussianProcess evaluates predictions at the actual held-out times.
+Regular-grid models forecast far enough to cover those times, then select
+matching grid points or **linearly interpolate predictions** between them.
+For a held-out time before the first full forecast step, interpolation starts
+at the last observed training value. Missing endpoints remain missing;
+held-out values are never used in fitting or interpolation.
+
+Returned forecasts, the naive baseline and ``'truth'`` share the held-out
+index. ``horizon`` in the scores table counts held-out observations, which can
+differ from the number of regular forecast steps. Arrays, categorical row
+labels and repeated numeric row IDs are scored by observation position.
+Choosing trading-day positions instead of calendar dates is therefore an
+explicit modeling choice; the stock-forecasting tutorial demonstrates both.
+
+For example, these observations are scored at times 12 and 20, rather than
+being compared with the model's next two regular steps at times 9 and 10:
+
+.. doctest::
+
+   >>> import pandas as pd
+   >>> import hypertools as hyp
+   >>> from sklearn.gaussian_process.kernels import DotProduct
+   >>> timed = pd.DataFrame({'value': [0., 1., 2., 4., 7., 8., 12., 20.]},
+   ...                      index=[0., 1., 2., 4., 7., 8., 12., 20.])
+   >>> scores, evaluated = hyp.predict(
+   ...     timed, model='GaussianProcess', holdout=2, return_forecasts=True,
+   ...     kernel=DotProduct(sigma_0=1, sigma_0_bounds='fixed'))
+   >>> evaluated['GaussianProcess'].index.tolist()
+   [12.0, 20.0]
+   >>> evaluated['GaussianProcess'].index.equals(evaluated['truth'].index)
+   True
+
 Plot
 ------------------
 

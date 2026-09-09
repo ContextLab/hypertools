@@ -10760,9 +10760,14 @@ def plot(
             if key not in _timed_cache:
                 history = order_time_data(_forecast_frames[owner].iloc[list(rows)])
                 selected_model = model_spec
-                if (getattr(model_spec, 'is_fitted', False)
-                        and hasattr(model_spec, 'for_dataset')):
-                    selected_model = model_spec.for_dataset(owner)
+                candidate = (model_spec.get('model') if isinstance(model_spec, dict)
+                             else model_spec)
+                if (not isinstance(candidate, type)
+                        and getattr(candidate, 'is_fitted', False)
+                        and hasattr(candidate, 'for_dataset')):
+                    bound = candidate.for_dataset(owner)
+                    selected_model = ({**model_spec, 'model': bound}
+                                      if isinstance(model_spec, dict) else bound)
                 from ..core.exceptions import _InsufficientHistoryError
                 try:
                     future = _predictor(history, model=selected_model,
@@ -10781,6 +10786,9 @@ def plot(
             _series_owner[i] if _series_owner is not None else i, rows)
 
         def _build_schedule(model_spec):
+            # Repeated entries in a model comparison still own independent
+            # fits (and independent samples for stochastic forecasters).
+            _timed_cache.clear()
             _time_kwargs = {'forecast_function': _timed_forecast}
             if _reveal is not None:
                 # rows from the reveal, not counts from the drawn traces: a

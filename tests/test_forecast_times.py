@@ -71,6 +71,8 @@ def test_steps_are_per_dataset_and_reused_models_keep_their_time_scale():
 @pytest.mark.parametrize('backend', ['matplotlib', 'plotly'])
 @pytest.mark.parametrize('scale', [1., 100.])
 def test_series_plot_forecasts_match_joint_signal_forecasts(backend, scale):
+    if backend == 'plotly':
+        pytest.importorskip('plotly')
     values = np.random.default_rng(42).normal(size=(20, 2)).cumsum(axis=0)
     frame = pd.DataFrame(values, index=np.arange(20.) * scale)
     expected = hyp.predict(frame, t=3)
@@ -111,6 +113,8 @@ def test_animated_series_final_forecasts_use_the_same_timed_joint_model():
 
 @pytest.mark.parametrize('backend', ['matplotlib', 'plotly'])
 def test_datetime_horizon_uses_each_datasets_own_interval(backend):
+    if backend == 'plotly':
+        pytest.importorskip('plotly')
     frames = [pd.DataFrame(np.arange(10.)[:, None],
                           index=pd.date_range('2026-01-01', periods=10, freq=f))
               for f in ['1h', '3h']]
@@ -127,6 +131,8 @@ def test_datetime_horizon_uses_each_datasets_own_interval(backend):
 
 @pytest.mark.parametrize('backend', ['matplotlib', 'plotly'])
 def test_column_hierarchy_forecasts_use_the_original_times(backend):
+    if backend == 'plotly':
+        pytest.importorskip('plotly')
     columns = pd.MultiIndex.from_product([['A', 'B'], ['a', 'b'], ['x', 'y']])
     index = pd.to_datetime('2026-01-01') + pd.to_timedelta(
         [0, 1, 3, 6, 7, 9, 13, 15, 17, 20, 23, 24], unit='h')
@@ -236,6 +242,8 @@ def test_truth_preserves_its_explicit_observation_times():
 
 @pytest.mark.parametrize('backend', ['matplotlib', 'plotly'])
 def test_series_column_hierarchy_forecasts_values_at_actual_times(backend):
+    if backend == 'plotly':
+        pytest.importorskip('plotly')
     columns = pd.MultiIndex.from_product([['A', 'B'], ['x']])
     times = pd.date_range('2026-01-01', periods=12, freq='2h')
     frame = pd.DataFrame(np.random.default_rng(4).normal(size=(12, 2)),
@@ -259,3 +267,53 @@ def test_animation_cost_counts_joint_fits_once_for_multiple_columns():
                           animate=True, duration=1, frame_rate=4,
                           slow_warning_seconds=0., show=False, return_model=True)
     plt.close(bundle['fig'])
+
+
+class _CountedKalman(Kalman):
+    """An ordinary Kalman forecaster recording its real fits for this test."""
+
+    fitted_histories = []
+
+    def fit(self, data):
+        type(self).fitted_histories.append(data)
+        return super().fit(data)
+
+
+def test_repeated_animation_model_entries_each_fit_their_own_histories():
+    _CountedKalman.fitted_histories = []
+    frame = pd.DataFrame(np.random.default_rng(4).normal(size=(20, 2)))
+    bundle = hyp.plot(frame, ndims=1, reduce=None,
+                      predict=[_CountedKalman, _CountedKalman], t=3,
+                      animate=True, duration=1, frame_rate=4,
+                      slow_warning_seconds=None, show=False, return_model=True)
+    try:
+        # Two static full-history fits, then three visible histories per
+        # model. Each two-column history must still be fitted jointly.
+        assert len(_CountedKalman.fitted_histories) == 8
+        assert all((d[0] if isinstance(d, list) else d).shape[1] == 2
+                   for d in _CountedKalman.fitted_histories)
+    finally:
+        plt.close(bundle['fig'])
+
+
+def test_animation_reuses_each_datasets_model_inside_a_dictionary_spec():
+    frames = [pd.DataFrame(np.random.default_rng(i).normal(size=(12, 1)),
+                           index=np.arange(12.) * step)
+              for i, step in enumerate([1, 3])]
+    _, fitted = hyp.predict(frames, t=2, return_model=True)
+    expected = hyp.predict(frames, model=fitted, t=2)
+    bundle = hyp.plot(frames, ndims=1, reduce=None, predict={'model': fitted},
+                      animate=True, t=2, duration=1, frame_rate=3,
+                      slow_warning_seconds=None, antialias=False,
+                      return_model=True, show=False)
+    try:
+        animation = bundle['animation']
+        animation._func(2, *animation._args)
+        lines = [line for line in bundle['fig'].axes[0].lines
+                 if getattr(line, '_hyp_forecast_role', None) == 'live']
+        assert len(lines) == 2
+        for line, reference in zip(lines, expected):
+            np.testing.assert_allclose(line.get_xdata()[1:], reference.index)
+            np.testing.assert_allclose(line.get_ydata()[1:], reference.iloc[:, 0])
+    finally:
+        plt.close(bundle['fig'])

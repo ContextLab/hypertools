@@ -185,7 +185,8 @@ def test_all_identical_timestamps_message_comes_from_live_infer_step():
     import traceback
     frames = traceback.extract_tb(via_resolve_t.value.__traceback__)
     assert frames[-1].name == 'infer_step'
-    assert frames[-1].filename.endswith('predict/time.py')
+    from pathlib import Path
+    assert Path(frames[-1].filename).parts[-2:] == ('predict', 'time.py')
 
 
 def test_forecaster_predict_truncates_on_past_datetime_without_calling_forecaster():

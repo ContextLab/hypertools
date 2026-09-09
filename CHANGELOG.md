@@ -23,6 +23,12 @@ and reaches flat `hyp.predict` callers.
   columns together using the time index, including animated forecasts, instead
   of forecasting each `[index, value]` display pair. See the API guide for the
   interpolation policy and its limitations.
+- **Backtests score matching observation times.** GaussianProcess evaluates
+  held-out timestamps directly; discrete-time forecasts are linearly
+  interpolated to them, with a warning when needed. Training rows alone
+  determine the model and its step. Returned forecasts carry the same index
+  as the truth, and `horizon` reports held-out observations rather than the
+  number of generated grid steps.
 - **Manipulator input and row-wise fixes.** A 1-D array or flat numeric
   list/tuple consistently means one column in `manip`, direct classes,
   `Pipeline`, and fitted reuse. Row-wise ZScore/Normalize work on multiple

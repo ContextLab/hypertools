@@ -182,6 +182,9 @@ class GaussianProcess(Forecaster):
     red-team F16-predict-009).
     """
 
+    # The forecaster evaluates arbitrary future coordinates directly.
+    _uses_observation_times = True
+
     def __init__(self, kernel=None, alpha=1e-10, normalize_y=True, step=None):
         required = ['gp', 'n']
         super().__init__(step=step, kernel=kernel, alpha=alpha, normalize_y=normalize_y, fitter=fitter,
