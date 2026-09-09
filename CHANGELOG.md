@@ -14,6 +14,21 @@ and reaches flat `hyp.predict` callers.
 
 ### Added
 
+- **Forecasts use observation times.** Timed rows are sorted before fitting,
+  and one future step is the median positive timestamp gap (formerly the
+  minimum gap), independently per dataset. Every forecaster accepts a `step=`
+  override. GaussianProcess fits actual times; discrete-time models linearly
+  interpolate irregular observations onto a regular grid, with a warning.
+  Fitted reuse preserves the learned time scale. Series plots fit their signal
+  columns together using the time index, including animated forecasts, instead
+  of forecasting each `[index, value]` display pair. See the API guide for the
+  interpolation policy and its limitations.
+- **Manipulator input and row-wise fixes.** A 1-D array or flat numeric
+  list/tuple consistently means one column in `manip`, direct classes,
+  `Pipeline`, and fitted reuse. Row-wise ZScore/Normalize work on multiple
+  datasets while preserving each dataset's statistics, index and column names.
+  MatrixColormap's exact interpolation now honors `set_gamma()`.
+
 - **A column MultiIndex frame expands into one trace per group.** The
   innermost column level is the feature axis; every level above it groups,
   so a `(Market, Sector, Ticker)` frame draws one trajectory per sector plus

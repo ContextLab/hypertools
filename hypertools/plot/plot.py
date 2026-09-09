@@ -2025,11 +2025,9 @@ def _series_x_axis(index, n_rows, epoch_ms=False):
         matplotlib date numbers (`matplotlib.dates.date2num`), or epoch
         MILLISECONDS when `epoch_ms` is set, because that is what each
         backend's date axis reads.
-    step : float -- the spacing one observation advances x by (the MEDIAN
-        difference, so an irregular index still projects a sensible
-        forecast horizon). Used to place `predict=`/`truth=` overlays on the
-        x axis, since a forecast's own x values are an extrapolation the
-        plotting code, not the model, is entitled to decide.
+    step : float -- the median spacing, used as a fallback for truth rows
+        without an index. Forecast overlays use their model's future index;
+        this helper only converts those times to display coordinates.
     is_date : bool -- whether `values` are date numbers.
     label : str or None -- the index's name, for the default `xlabel=`. A
         `TimedeltaIndex` is drawn as elapsed time in the largest of
@@ -2047,6 +2045,8 @@ def _series_x_axis(index, n_rows, epoch_ms=False):
     fallback = (np.arange(float(n_rows)), 1.0, False, label)
     if index is None or len(index) != n_rows or n_rows == 0:
         return fallback
+    if isinstance(index, pd.PeriodIndex):
+        index = index.to_timestamp()
     if isinstance(index, pd.DatetimeIndex):
         if epoch_ms:
             # ...via an explicit millisecond cast, NOT `view('int64') / 1e6`:
@@ -2131,7 +2131,8 @@ def _resolve_date_xlim(xlim, epoch_ms):
     return tuple(out)
 
 
-def _resolve_truth(truth, datasets, t, series_step=None):
+def _resolve_truth(truth, datasets, t, series_step=None, forecast_paths=None,
+                   time_coordinates=None):
     """One seam-prepended ``(t + 1, d)`` truth array per DRAWN TRACE (GH #285).
 
     `truth=` is the ACTUAL continuation of each plotted trace, so it is
@@ -2160,6 +2161,7 @@ def _resolve_truth(truth, datasets, t, series_step=None):
 
     if isinstance(truth, (list, tuple)):
         items = [_as_2d(item) for item in truth]
+        indexes = [getattr(item, 'index', None) for item in truth]
     else:
         arr = _as_2d(truth)
         if n_traces > 1 and arr.shape[1] == n_traces and (
@@ -2169,6 +2171,7 @@ def _resolve_truth(truth, datasets, t, series_step=None):
             items = [arr[:, [j]] for j in range(n_traces)]
         else:
             items = [arr]
+        indexes = [getattr(truth, 'index', None)] * len(items)
     if len(items) != n_traces:
         raise ValueError(
             f"truth= must give the actual continuation of every drawn "
@@ -2178,16 +2181,26 @@ def _resolve_truth(truth, datasets, t, series_step=None):
 
     out = []
     for i, (item, data) in enumerate(zip(items, datasets)):
-        if item.shape[0] != t:
+        horizon = len(forecast_paths[i]) - 1 if forecast_paths is not None else t
+        if item.shape[0] != horizon:
             raise ValueError(
-                f"truth= must have exactly t={t} rows (the forecast "
+                f"truth= must have exactly t={horizon} rows (the forecast "
                 f"horizon), so it lines up with the forecast it is compared "
                 f"against; entry {i} has {item.shape[0]}. Pass t="
                 f"{item.shape[0]} to forecast that far instead, or trim the "
                 "held-out data.")
         if series and item.shape[1] == 1:
-            xs = (float(data[-1, 0])
-                  + series_step[i] * np.arange(1, t + 1, dtype=float))
+            idx = indexes[i]
+            explicit_times = (isinstance(idx, pd.Index)
+                              and not (isinstance(idx, pd.RangeIndex)
+                                       and idx.start == 0 and idx.step == 1))
+            if explicit_times and time_coordinates is not None:
+                xs = time_coordinates(idx, i)
+            elif forecast_paths is not None:
+                xs = forecast_paths[i][1:, 0]
+            else:
+                xs = (float(data[-1, 0])
+                      + series_step[i] * np.arange(1, horizon + 1, dtype=float))
             item = np.column_stack([xs, item[:, 0]])
         if item.shape[1] != data.shape[1]:
             raise ValueError(
@@ -2195,7 +2208,8 @@ def _resolve_truth(truth, datasets, t, series_step=None):
                 f"trace it continues has {data.shape[1]}; truth= is read in "
                 "the PLOTTED space (with reduce=None, the input space), so "
                 "it must carry the same features as the plotted data.")
-        out.append(np.vstack([np.asarray(data[-1:], dtype=float), item]))
+        seam = forecast_paths[i][:1] if forecast_paths is not None else data[-1:]
+        out.append(np.vstack([np.asarray(seam, dtype=float), item]))
     return out
 
 
@@ -8417,6 +8431,24 @@ def plot(
         # output, which is what `pipeline.transform()` reproduces.
         trace_data = xform
 
+    # Keep timestamps attached to VALUES before series mode adds a display
+    # coordinate. These same frames feed static and animated forecasts
+    # (release review 2026-09-08, finding 2).
+    _forecast_frames = []
+    for _i, _xi in enumerate(xform):
+        _idx = (_row_indices[_i] if _row_indices is not None
+                and _i < len(_row_indices) else None)
+        if _idx is not None and len(_idx) != len(_xi):
+            from ..predict.time import is_time_index
+            if predict is not None and is_time_index(_idx):
+                raise ValueError(
+                    'the analysis pipeline changed the row count, so the '
+                    'original observation times no longer identify the rows '
+                    'to forecast. Pass the analyzed data with its updated '
+                    'time index to plot(..., reduce=None, predict=...).')
+            _idx = None
+        _forecast_frames.append(pd.DataFrame(_xi, index=_idx))
+
     # ndims=1 series mode (GH #285) ---------------------------------------
     # Turn each dataset's k columns into k two-column ``[x, value]`` traces,
     # where x is the dataset's own row index. From here down the figure is
@@ -8426,11 +8458,11 @@ def plot(
     # that machinery rather than a second renderer.
     #
     # Placed AFTER the display-dimensionality reduction (so `reduce=` has
-    # had its say) and BEFORE `predict=` (so the forecast is computed on the
-    # expanded traces and lands in the same space they are drawn in; its x
-    # column is then pinned to the true index continuation rather than
-    # trusted to the model -- see `_series_step`).
+    # had its say). Forecasts use the indexed signal frames saved above,
+    # fitting all columns of each dataset together. Only the resulting
+    # predictions are expanded into display traces.
     _series_owner = None          # drawn trace -> input dataset
+    _series_columns = None
     _series_names = None          # per drawn trace, for legend=True
     _series_step = None           # per drawn trace, x units per observation
     _series_is_date = False
@@ -8490,6 +8522,7 @@ def plot(
                 "(df.reset_index(drop=True)), or use ndims=2/3.")
         _series_epoch_ms = resolve_backend(backend) == 'plotly'
         _new_xform, _series_owner, _series_names, _series_step = [], [], [], []
+        _series_columns = []
         _date_flags, _index_labels = [], []
         _series_named = []            # per drawn trace: named after a column?
         for _i, _xi in enumerate(xform):
@@ -8508,6 +8541,7 @@ def plot(
             for _j in range(_xi.shape[1]):
                 _new_xform.append(np.column_stack([_xs, _xi[:, _j]]))
                 _series_owner.append(_i)
+                _series_columns.append(_j)
                 _series_step.append(_step)
                 _series_named.append(_cols is not None)
                 if _cols is not None:
@@ -8661,12 +8695,19 @@ def plot(
     # `hyp.predict(x, model=[...])` returns -- there is one naming rule, not
     # two. `None` for the ordinary single-model form.
     _predict_names = None
+    _forecast_horizon = t
     if predict is not None and t is not None and not _is_int_horizon(t):
-        # a datetime-like t is `hyp.predict`'s documented form, but the
-        # forecaster below is handed bare arrays whose index was captured
-        # up front and dropped by format_data -- so it is resolved to a
-        # step count here, against the captured indexes (F2)
-        t = _resolve_datetime_horizon(t, _row_indices, _pre_series_lengths)
+        # The renderer needs an integer horizon; the forecasters retain the
+        # original target and resolve it against each dataset's own times.
+        if _multiindex_meta is not None:
+            t = _resolve_datetime_horizon(t, _row_indices, _pre_series_lengths)
+        else:
+            from ..predict.common import resolve_t
+            _steps = [resolve_t(frame, t)[0] for frame in _forecast_frames]
+            if any(n <= 0 for n in _steps):
+                raise ValueError('t is at or before a dataset\'s last observation; '
+                                 'plot draws future forecasts and does not truncate.')
+            t = max(_steps)
     if predict is not None:
         from ..predict.backtest import model_collection as _model_collection
         from ..predict.predict import _FORECASTER_ALIASES, FORECASTERS
@@ -8677,46 +8718,34 @@ def plot(
         if _collection is not None:
             _predict_names = list(_collection[0])
 
-    def _pin_series_x(datasets, forecasts):
-        """Give each forecast the row index's OWN continuation on x.
-
-        `ndims=1` series mode materialises the row index as the traces' x
-        column (see the expansion above), so the forecaster is handed a
-        perfectly regular ramp alongside the values and dutifully forecasts
-        it too. What x a future observation sits at is arithmetic the plot
-        knows exactly -- one `_series_step` per step -- so it is written
-        here rather than inherited from a fit.
-        """
-        if _series_step is None:
-            return forecasts
-        pinned = []
-        for _i, (_xi, _fc) in enumerate(zip(datasets, forecasts)):
-            _fc = np.array(_fc, dtype=float, copy=True)
-            _fc[:, 0] = (float(_xi[-1, 0])
-                         + _series_step[_i] * np.arange(1, len(_fc) + 1))
-            pinned.append(_fc)
-        return pinned
-
-    def _series_bundle(per_trace):
-        """`hyp.predict`'s shape for the `return_model=True` bundle in
-        `ndims=1` series mode: one ``(t, n_columns)`` array of VALUES per
-        INPUT dataset -- what ``hyp.predict(xform_data[i], ...)`` returns --
-        rather than one ``(t, 2)`` ``[x, value]`` array per drawn column
-        (F6). The x positions are the row index's own continuation and are
-        still what the overlay is DRAWN with (`_pin_series_x`). A hierarchy
-        keeps the per-trace form: its traces (leaves plus derived means)
-        are the documented unit there, and each is one column.
-        """
-        if _series_owner is None or _multiindex_meta is not None:
-            return per_trace
-        _n_in = max(_series_owner) + 1
-        return [np.column_stack([fc[:, 1] for fc, o in
-                                 zip(per_trace, _series_owner) if o == i])
-                for i in range(_n_in)]
+    def _forecast_coordinates(frame, owner, column=None):
+        """Put forecast values on the SAME time axis as their observations."""
+        if column is None:
+            return np.asarray(frame, dtype=float)
+        idx = frame.index
+        original = _forecast_frames[owner].index
+        if isinstance(idx, pd.DatetimeIndex):
+            if _series_epoch_ms:
+                xs = np.asarray(idx.as_unit('ms').asi8, dtype=float)
+            else:
+                from matplotlib.dates import date2num
+                xs = date2num(idx.to_pydatetime())
+        elif isinstance(idx, pd.TimedeltaIndex):
+            _, divisor = _timedelta_unit(np.asarray(original.total_seconds()))
+            xs = np.asarray(idx.total_seconds()) / divisor
+        else:
+            try:
+                xs = np.asarray(idx, dtype=float)
+            except (TypeError, ValueError):
+                xs = original.get_indexer(idx).astype(float)
+        return np.column_stack([xs, np.asarray(frame)[:, column]])
 
     def _compute_forecasts(datasets):
         from ..predict.predict import predict as _predictor
-        _out = _predictor(datasets, model=predict, t=t)
+        from ..predict.time import order_time_data
+        _inputs = _forecast_frames
+        _out = _predictor(_inputs, model=predict,
+                          t=_forecast_horizon)
         if _predict_names is None:
             _groups = [(None, _out)]
         else:
@@ -8725,10 +8754,16 @@ def plot(
         for _name, _fc in _groups:
             if not isinstance(_fc, list):
                 _fc = [_fc]
-            _fc = _pin_series_x(datasets,
-                                [np.asarray(f, dtype=float) for f in _fc])
-            _bundle[_name] = _series_bundle(_fc)
-            _flat.extend(_fc)
+            _bundle[_name] = [np.asarray(f, dtype=float) for f in _fc]
+            _owners = (_series_owner if _series_owner is not None
+                       else list(range(len(_inputs))))
+            _columns = (_series_columns if _series_columns is not None
+                        else [None] * len(_inputs))
+            for _owner, _column in zip(_owners, _columns):
+                _observed = order_time_data(_inputs[_owner])
+                _flat.append(np.vstack([
+                    _forecast_coordinates(_observed.iloc[-1:], _owner, _column),
+                    _forecast_coordinates(_fc[_owner], _owner, _column)]))
         return (
             # `bundle_forecasts` mirrors `hyp.predict`'s return shape: a
             # plain list for one model, a {name: [per dataset]} dict for a
@@ -8740,8 +8775,7 @@ def plot(
             # 2, ...) -- the order `MultiModelSchedule` addresses its
             # sub-schedules in, and the order `_forecast_owner` below is
             # built to match.
-            [np.vstack([np.asarray(datasets[_i % len(datasets)][-1:]), _fc])
-             for _i, _fc in enumerate(_flat)],
+            _flat,
             # ANALYZE-space copies for the animated per-frame schedule (see
             # hypertools/plot/forecast.py). Taken HERE, beside raw_forecasts,
             # so they keep the same 1:1 correspondence the regrouping guard
@@ -8794,7 +8828,12 @@ def plot(
                 "(df.reset_index(drop=True)).")
         raw_truths = _resolve_truth(
             truth, xform if _lift_source is None else _lift_source, t,
-            _series_step)
+            _series_step,
+            forecast_paths=raw_forecasts if _lift_source is None else None,
+            time_coordinates=(
+                lambda idx, i: _forecast_coordinates(
+                    pd.DataFrame(np.zeros((len(idx), 1)), index=idx),
+                    _series_owner[i], 0)[:, 0]) if _series_owner is not None else None)
         if _lift_source is not None:
             raw_truths = [tr if lift is None else lift.continuation(tr)
                           for tr, lift in zip(raw_truths, _panel_lift)]
@@ -9087,6 +9126,17 @@ def plot(
             # pre-center/pre-scale arrays that become `trace_data` below --
             # so Contract 5's `forecasts[i] == hyp.predict(trace_data[i])`
             # holds by construction rather than by coincidence.
+            # Column-hierarchy leaves and derived means share observation
+            # times. Row-hierarchy traces group by the entire row key, so
+            # their within-trace observations have positional coordinates.
+            _idx = (_row_indices[0] if _row_indices is not None
+                    and _multiindex_meta.get('axis') == 'columns' else None)
+            _forecast_frames = [pd.DataFrame(
+                arr[:, 1:] if _series_owner is not None else arr,
+                index=_idx) for arr in _ft.arrays]
+            if _series_owner is not None:
+                _series_owner = list(range(len(_ft.arrays)))
+                _series_columns = [0] * len(_ft.arrays)
             bundle_forecasts, raw_forecasts, analyze_histories = \
                 _compute_forecasts(_ft.arrays)
             if _predict_names is not None:
@@ -10697,16 +10747,52 @@ def plot(
         _slow_secs = (DEFAULT_SLOW_WARNING_SECONDS
                       if slow_warning_seconds is _UNSET_SLOW_WARNING
                       else slow_warning_seconds)
+        _timed_cache = {}
+
+        def _timed_forecast(i, rows, model_spec, horizon, min_history):
+            if len(rows) < min_history:
+                return None
+            from ..predict.predict import predict as _predictor
+            from ..predict.time import order_time_data
+            owner = _series_owner[i] if _series_owner is not None else i
+            column = _series_columns[i] if _series_columns is not None else None
+            key = (id(model_spec), owner, rows)
+            if key not in _timed_cache:
+                history = order_time_data(_forecast_frames[owner].iloc[list(rows)])
+                selected_model = model_spec
+                if (getattr(model_spec, 'is_fitted', False)
+                        and hasattr(model_spec, 'for_dataset')):
+                    selected_model = model_spec.for_dataset(owner)
+                from ..core.exceptions import _InsufficientHistoryError
+                try:
+                    future = _predictor(history, model=selected_model,
+                                        t=_forecast_horizon)
+                except _InsufficientHistoryError:
+                    # A sparse early prefix may contain too few regular-grid
+                    # rows even when it has enough original observations.
+                    return None
+                _timed_cache[key] = (history.iloc[-1:], future)
+            last, future = _timed_cache[key]
+            absolute = np.vstack([_forecast_coordinates(last, owner, column),
+                                  _forecast_coordinates(future, owner, column)])
+            return absolute - analyze_histories[i][rows[-1]]
+
+        _timed_forecast.fit_key = lambda i, rows: (
+            _series_owner[i] if _series_owner is not None else i, rows)
+
         def _build_schedule(model_spec):
+            _time_kwargs = {'forecast_function': _timed_forecast}
             if _reveal is not None:
                 # rows from the reveal, not counts from the drawn traces: a
                 # dataset may now be spread over several of them
                 return ForecastSchedule.for_regrouped(
                     analyze_histories, _reveal, model=model_spec, t=t,
-                    n_frames=_n_frames, slow_warning_seconds=_slow_secs)
+                    n_frames=_n_frames, slow_warning_seconds=_slow_secs,
+                    **_time_kwargs)
             return _builder(
                 analyze_histories, _grid_lengths, model=model_spec, t=t,
-                n_frames=_n_frames, slow_warning_seconds=_slow_secs)
+                n_frames=_n_frames, slow_warning_seconds=_slow_secs,
+                **_time_kwargs)
 
         if _predict_names is None:
             forecast_schedule = _build_schedule(predict)
@@ -10719,12 +10805,6 @@ def plot(
             forecast_schedule = MultiModelSchedule(
                 [_build_schedule(_spec) for _spec in _specs],
                 names=_predict_names)
-        if _series_step is not None:
-            # ndims=1 series mode: the x column is the row index's own
-            # continuation, not something a fit gets a vote on (see
-            # `_pin_series_x`, which does exactly this for the static
-            # overlay).
-            forecast_schedule.pin_ramp(0, _series_step)
 
     # Display space (GH #285): axis_scale='unit' -- what hypertools has
     # always done -- mean-centres every drawn vertex (data, forecasts, and
@@ -13544,4 +13624,3 @@ def _mixture_name(model):
     """Registry name for a cluster-model spec (string or class)."""
     return model if isinstance(model, str) \
         else getattr(model, "__name__", str(model))
-

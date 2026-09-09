@@ -91,8 +91,8 @@ def test_resolve_t_int_on_hourly_datetimeindex():
     assert list(future_index) == list(expected)
 
 
-def test_resolve_t_int_on_irregular_datetimeindex_uses_min_nonzero_diff():
-    # gaps (minutes): 1, 2, 1, 6 -> minimum non-zero diff is 1 minute
+def test_resolve_t_int_on_irregular_datetimeindex_uses_median_positive_gap():
+    # gaps (minutes): 1, 2, 1, 6 -> median positive gap is 1.5 minutes
     base = pd.Timestamp("2026-01-01")
     idx = pd.DatetimeIndex([base, base + pd.Timedelta(minutes=1), base + pd.Timedelta(minutes=3),
                              base + pd.Timedelta(minutes=4), base + pd.Timedelta(minutes=10)])
@@ -101,7 +101,7 @@ def test_resolve_t_int_on_irregular_datetimeindex_uses_min_nonzero_diff():
     n_steps, future_index = resolve_t(df, 2)
 
     assert n_steps == 2
-    expected = pd.DatetimeIndex([idx[-1] + pd.Timedelta(minutes=1), idx[-1] + pd.Timedelta(minutes=2)])
+    expected = pd.DatetimeIndex([idx[-1] + pd.Timedelta(minutes=1.5), idx[-1] + pd.Timedelta(minutes=3)])
     assert list(future_index) == list(expected)
 
 
@@ -169,11 +169,9 @@ def test_all_identical_timestamps_message_comes_from_live_infer_step():
     that branch dead code with a test that only pins the copy.
 
     Observed from the exception itself, not from a spy on `_infer_step`: the
-    raise site is the innermost frame of the error's own traceback, and the
-    message is byte-identical to what `_infer_step` raises on the same index.
+    raise site is the shared time helper in the error's own traceback, and
+    the message is byte-identical to what `_infer_step` raises on the same index.
     A copied string in `resolve_t` would put `resolve_t` in that last frame."""
-    import traceback
-
     from hypertools.predict import common as common_module
 
     df = _make_df(n=5, index=pd.DatetimeIndex(["2026-01-01"] * 5))
@@ -181,14 +179,13 @@ def test_all_identical_timestamps_message_comes_from_live_infer_step():
     with pytest.raises(ValueError, match="share one timestamp") as via_resolve_t:
         resolve_t(df, 3)
 
-    frames = traceback.extract_tb(via_resolve_t.value.__traceback__)
-    assert [f.name for f in frames[-2:]] == ["resolve_t", "_infer_step"], \
-        "the message must come from live _infer_step code, not a copy"
-    assert frames[-1].filename == common_module.__file__
-
     with pytest.raises(ValueError) as direct:
         common_module._infer_step(df.index)
     assert str(via_resolve_t.value) == str(direct.value)
+    import traceback
+    frames = traceback.extract_tb(via_resolve_t.value.__traceback__)
+    assert frames[-1].name == 'infer_step'
+    assert frames[-1].filename.endswith('predict/time.py')
 
 
 def test_forecaster_predict_truncates_on_past_datetime_without_calling_forecaster():

@@ -487,6 +487,10 @@ class MatrixColormap(LinearSegmentedColormap):
         bad = np.isnan(flat)
         under, over = flat < 0.0, flat > 1.0
         inside = np.clip(np.where(bad, 0.0, flat), 0.0, 1.0)
+        # set_gamma() is inherited from LinearSegmentedColormap. Apply its
+        # coordinate mapping to exact samples as well as to the parent's LUT
+        # (release review 2026-09-08, finding 4).
+        inside = inside ** self._gamma
         rgb = np.column_stack([np.interp(inside, grid, self.anchors[:, k])
                                for k in range(3)])
         out = np.hstack([rgb, np.ones((len(flat), 1))])

@@ -200,6 +200,11 @@ class AutoRegressor(Forecaster):
 
     Parameters
     ----------
+    step : number, duration string, Timedelta, or None
+        Duration of one future step. None infers the median positive gap
+        between sorted observation times. Numerical indexes use their own
+        units; datetime/duration indexes require a duration such as '1h'.
+        See `hypertools.predict` for the interpolation and reuse policies.
     model : str, class, or instance
         Regressor to use. String names are resolved from a small registry
         (Ridge, Lasso, LinearRegression, RandomForestRegressor,
@@ -231,7 +236,22 @@ class AutoRegressor(Forecaster):
     {'model': 'Ridge'}}``.
     """
 
-    def __init__(self, model='Ridge', lags=10, model_kwargs=None, **kwargs):
+    _regular_time_grid = True
+
+    @classmethod
+    def min_history_for(cls, model='Ridge', lags=10, **kwargs):
+        """Lagged predictors need at least one subsequent target row."""
+        return int(lags) + 1
+
+    @property
+    def min_history(self):
+        """Minimum observed rows needed to fit this lag configuration."""
+        return self.min_history_for(lags=self.lags)
+
+    def _min_history_detail(self):
+        return f'(lags={self.lags})'
+
+    def __init__(self, model='Ridge', lags=10, model_kwargs=None, step=None, **kwargs):
         # validate lags up front (2026-07 release audit, final wave item 12):
         # lags=0 leaked sklearn's "Found array with 0 feature(s)", negative
         # values built nonsense designs, and a float crashed with a raw
@@ -249,7 +269,7 @@ class AutoRegressor(Forecaster):
         if kwargs:
             model_kwargs = {**(model_kwargs or {}), **kwargs}
         required = ['estimator', 'lags', 'history', 'n_features']
-        super().__init__(model=model, lags=lags, model_kwargs=model_kwargs,
+        super().__init__(step=step, model=model, lags=lags, model_kwargs=model_kwargs,
                           fitter=fitter, forecaster=forecaster, applier=applier,
                           data=None, required=required)
 

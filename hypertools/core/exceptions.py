@@ -3,6 +3,14 @@ class HypertoolsError(Exception):
     pass
 
 
+class _InsufficientHistoryError(ValueError):
+    """A forecast needs more observations (including after time resampling).
+
+    Internal signal for animations to wait for more revealed history; other
+    fitting errors must still propagate. Public callers can catch ValueError.
+    """
+
+
 class HypertoolsBackendError(HypertoolsError):
     """Raised when a plotting backend (matplotlib/plotly) cannot satisfy a request."""
     def __init__(self, message):

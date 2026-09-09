@@ -19,7 +19,7 @@ no-re-fitting path behind ``return_model=True``).
 import datawrangler as dw
 import numpy as np
 
-from .common import Manipulator
+from .common import Manipulator, as_manip_frames
 from .normalize import Normalize
 from .zscore import ZScore
 from .smooth import Smooth
@@ -64,6 +64,7 @@ def _validate_manip_input(data):
     """
     no_observations = no_observations_message('manipulate')
     require_data(data, 'manip')
+    data = as_manip_frames(data)
     if isinstance(data, tuple):
         # a tuple of datasets is accepted exactly like a list (final wave
         # item 15: it used to leak a raw IndexError from the funnel)
@@ -207,6 +208,9 @@ def manip(data, model="ZScore", return_model=False, normalize=None, reduce=None,
         Dataset(s) to manipulate. A pandas `Series` is treated as a
         single-column dataset; a tuple of datasets is treated exactly like
         a list. `None` raises a `TypeError`.
+        A 1-D array or flat numeric list/tuple is ONE column of observations,
+        consistently across this dispatcher, direct Manipulator classes,
+        fitted-model reuse and `Pipeline`.
 
     model : str, dict, class, instance, list, Pipeline, False, or None
         Which manipulator(s) to apply (default: `'ZScore'`). `False` or
@@ -291,6 +295,7 @@ def manip(data, model="ZScore", return_model=False, normalize=None, reduce=None,
     >>> chained.shape
     (50, 2)
     """
+    original_data = data
     data = _validate_manip_input(data)
 
     # False is an explicit "skip this stage", for the model spec and every
@@ -309,7 +314,7 @@ def manip(data, model="ZScore", return_model=False, normalize=None, reduce=None,
         # nothing to do: hand the (validated) input back unchanged,
         # matching reduce(reduce=None)/cluster(cluster=None)/align(
         # model=None)
-        return (data, None) if return_model else data
+        return (original_data, None) if return_model else original_data
 
     import warnings
     with warnings.catch_warnings():

@@ -2,7 +2,8 @@
 import datawrangler as dw
 import pandas as pd
 
-from .common import Manipulator, stack_for_shared_fit
+from .common import (Manipulator, stack_for_shared_fit, fit_rowwise_list,
+                     transform_rowwise_list)
 from ..core.pipeline import as_internal_frames
 
 
@@ -79,6 +80,9 @@ def _fitter(data, axis=0, min=0, max=1, mode='minmax'):
             f"{', '.join(repr(m) for m in MODES)}")
 
     if isinstance(data, list):
+        if axis == 1 and mode == 'minmax':
+            return fit_rowwise_list(data, fitter, ('baseline', 'peak'),
+                                    min=min, max=max)
         data = stack_for_shared_fit(data, 'Normalize')
 
     if mode == 'isotropic':
@@ -186,6 +190,9 @@ def transformer(data, **kwargs):
     # audit, 2026-09-08)
     data = as_internal_frames(data)
     if isinstance(data, list):
+        if kwargs.get('transpose', False):
+            return transform_rowwise_list(data, transformer,
+                                          ('baseline', 'peak'), **kwargs)
         # each dataset is transformed on its own (the fitted statistics
         # are positional), so every frame keeps its own column labels and
         # index; stacking the list first demanded identical labels
@@ -291,12 +298,14 @@ class Normalize(Manipulator):
 
     Notes
     -----
-    For a LIST of datasets, ONE shared baseline/peak is fit across all of
+    For a LIST of datasets with ``axis=0``, ONE shared baseline/peak is fit across all of
     them (like ``normalize='across'``): in ``'minmax'`` mode the shared
     per-column min/max, in ``'isotropic'`` mode the shared centroid and
     the single scalar scale of the concatenated data, so every dataset in
     the list is moved and rescaled identically. Constant (zero-range)
     columns normalize to `min` rather than NaN in ``'minmax'`` mode.
+    With ``axis=1``, each row is normalized independently, including lists
+    whose datasets have different widths; labels and boundaries are retained.
 
     `inverse_transform` is supported for ``axis=0`` in both modes.
 

@@ -478,7 +478,8 @@ class ForecastSchedule:
 
     def __init__(self, histories, counts=None, model=None, t=None, rows=None,
                  min_history=DEFAULT_MIN_HISTORY, transform=None,
-                 slow_warning_seconds=DEFAULT_SLOW_WARNING_SECONDS):
+                 slow_warning_seconds=DEFAULT_SLOW_WARNING_SECONDS,
+                 forecast_function=None):
         if (counts is None) == (rows is None):
             raise ValueError(
                 "pass exactly one of counts= (a revealed ROW COUNT per "
@@ -518,6 +519,13 @@ class ForecastSchedule:
                     todo.append((i, r))
         self._paths.clear()
 
+        # Several drawn columns can share one multivariate fit. A callback
+        # may expose its fit key so timing/counts describe the model work,
+        # while the path cache still keeps every distinct drawn trace.
+        fit_key = getattr(forecast_function, 'fit_key', lambda i, rows: (i, rows))
+        fit_count = len({fit_key(i, r) for i, r in todo})
+        completed_fits = set()
+
         warned = slow_warning_seconds is None
         # Seconds keyed by revealed-history LENGTH, for fits that really
         # ran. A mapping rather than a list of samples, because the slope
@@ -527,21 +535,26 @@ class ForecastSchedule:
         self.projection = None       # filled in when a projection is made
         for n_done, (i, r) in enumerate(todo):
             start = time.perf_counter()
-            path = forecast_from_history(self.histories[i][list(r)],
-                                         self.model, self.t,
-                                         min_history=self.min_history,
-                                         dataset=i)
+            path = (forecast_function(i, r, self.model, self.t, self.min_history)
+                    if forecast_function is not None else
+                    forecast_from_history(self.histories[i][list(r)],
+                                          self.model, self.t,
+                                          min_history=self.min_history,
+                                          dataset=i))
             elapsed = time.perf_counter() - start
             spent += elapsed
-            if path is not None:
+            key = fit_key(i, r)
+            did_fit = path is not None and key not in completed_fits
+            if did_fit:
                 self.n_fits += 1
+                completed_fits.add(key)
             self._paths[(i, r)] = path
             # Time only REAL fits. The earliest (dataset, count) pairs are
             # histories shorter than min_history, where forecast_from_history
             # returns None without fitting anything -- timing one of those
             # projects 0.0 s for a job that may take minutes, which is worse
             # than not warning at all.
-            if path is not None:
+            if did_fit:
                 timings.setdefault(len(r), []).append(elapsed)
             # Wait for two DISTINCT history lengths. `todo` is ordered by
             # FRAME and then by DATASET, so every dataset is fitted at one
@@ -561,7 +574,9 @@ class ForecastSchedule:
                     and max(timings) >= min(PROJECTION_MIN_ROWS, longest)):
                 pooled = {rows: float(np.median(times))
                           for rows, times in timings.items()}
-                remaining = [len(rows) for _, rows in todo[n_done + 1:]]
+                remaining = list({fit_key(j, rows): len(rows)
+                                  for j, rows in todo[n_done + 1:]
+                                  if fit_key(j, rows) not in completed_fits}.values())
                 projected, per_row, setup, lengths = project_schedule_cost(
                     pooled, remaining)
                 total = spent + projected
@@ -575,7 +590,7 @@ class ForecastSchedule:
                 }
                 if total > slow_warning_seconds:
                     warnings.warn(
-                        f"predict= over this animation needs {len(todo)} "
+                        f"predict= over this animation needs {fit_count} "
                         f"forecast fits (one per distinct revealed history "
                         f"length), projected at roughly {total:.1f} s in "
                         f"total before the first frame can be drawn: "
@@ -596,7 +611,8 @@ class ForecastSchedule:
     @classmethod
     def for_parallel(cls, histories, grid_lengths, model, t, n_frames,
                      min_history=DEFAULT_MIN_HISTORY,
-                     slow_warning_seconds=DEFAULT_SLOW_WARNING_SECONDS):
+                     slow_warning_seconds=DEFAULT_SLOW_WARNING_SECONDS,
+                     forecast_function=None):
         """Schedule for a parallel/`'window'` animation.
 
         Every dataset advances together, so each one's revealed row count
@@ -609,12 +625,14 @@ class ForecastSchedule:
                   for f in range(n_frames)]
         return cls(histories, counts=counts, model=model, t=t,
                    min_history=min_history,
-                   slow_warning_seconds=slow_warning_seconds)
+                   slow_warning_seconds=slow_warning_seconds,
+                   forecast_function=forecast_function)
 
     @classmethod
     def for_serial(cls, histories, grid_lengths, model, t, n_frames,
                    min_history=DEFAULT_MIN_HISTORY,
-                   slow_warning_seconds=DEFAULT_SLOW_WARNING_SECONDS):
+                   slow_warning_seconds=DEFAULT_SLOW_WARNING_SECONDS,
+                   forecast_function=None):
         """Serial reveals one dataset at a time, so its schedule comes from
         the backend's own `serial_reveal_counts` (animation-core Task 7),
         mapped from frame-grid rows onto raw rows dataset by dataset."""
@@ -633,12 +651,14 @@ class ForecastSchedule:
             counts.append(row)
         return cls(histories, counts=counts, model=model, t=t,
                    min_history=min_history,
-                   slow_warning_seconds=slow_warning_seconds)
+                   slow_warning_seconds=slow_warning_seconds,
+                   forecast_function=forecast_function)
 
     @classmethod
     def for_regrouped(cls, histories, reveal, model, t, n_frames,
                       min_history=DEFAULT_MIN_HISTORY,
-                      slow_warning_seconds=DEFAULT_SLOW_WARNING_SECONDS):
+                      slow_warning_seconds=DEFAULT_SLOW_WARNING_SECONDS,
+                      forecast_function=None):
         """Schedule for an animation whose data `hue=`/`cluster=` regrouped.
 
         The revealed rows come from a `DatasetRevealSchedule` rather than from
@@ -651,7 +671,8 @@ class ForecastSchedule:
                 for f in range(n_frames)]
         return cls(histories, rows=rows, model=model, t=t,
                    min_history=min_history,
-                   slow_warning_seconds=slow_warning_seconds)
+                   slow_warning_seconds=slow_warning_seconds,
+                   forecast_function=forecast_function)
 
     # -- lookups -----------------------------------------------------------
     def revealed_rows(self, dataset, frame):

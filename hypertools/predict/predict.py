@@ -266,7 +266,9 @@ def _wrangle(data, **kwargs):
 def _holdout_datasets(data):
     """The wrangled dataset(s) `holdout=` scores, always as a list."""
     frames = _wrangle(data)
-    return frames if isinstance(frames, list) else [frames]
+    from .time import order_time_data
+    return [order_time_data(frame) for frame in
+            (frames if isinstance(frames, list) else [frames])]
 
 
 @dw.decorate.funnel
@@ -430,6 +432,19 @@ def predict(data, model='Kalman', t=10, return_model=False, holdout=None,
         data's first timestamp raises a `ValueError` (there is no data to
         truncate to and nothing to forecast -- it used to silently return
         an empty frame).
+
+    step : number, duration string, Timedelta, or None, optional
+        Constructor keyword for the selected model: duration of one future
+        step, inferred independently per dataset as the median positive gap
+        when omitted. Use e.g. '1h' for datetime/duration indexes, or 0.5
+        for numerical indexes. Timed observations are sorted before fitting.
+        GaussianProcess uses the actual times; Kalman, ARIMA, AutoRegressor,
+        Laplace and Chronos linearly interpolate irregular observations onto
+        a regular grid ending at the latest observation (with a warning).
+        No training values are extrapolated or missing values imputed.
+        Fitted-model reuse keeps the training interval. Period indexes use
+        their start timestamps; duplicate numeric row IDs remain positional.
+        See the API guide's observation-times section for the full policy.
 
     return_model : bool
         If True, also return the fitted (or reused) Forecaster instance, so

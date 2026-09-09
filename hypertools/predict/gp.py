@@ -1,6 +1,6 @@
 """Gaussian-process forecaster (scikit-learn).
 
-Fits a `GaussianProcessRegressor` against the time index (0..n-1) and
+Fits a `GaussianProcessRegressor` against actual observation times and
 predicts `t` steps beyond it. Default kernel is
 `DotProduct() + RBF(10.0) + WhiteKernel()`: the DotProduct (linear) component
 lets forecasts EXTRAPOLATE trends -- with a stationary-only kernel (e.g. plain
@@ -18,6 +18,7 @@ import numpy as np
 import pandas as pd
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF, WhiteKernel, DotProduct
+from .time import is_time_index, resolve_step, time_coordinates
 
 from .common import Forecaster
 
@@ -34,13 +35,14 @@ def _check_nan(y, context):
 
 
 def fitter(data, **kwargs):
-    """Fit a `GaussianProcessRegressor` against the time index (0..n-1) for `data`.
+    """Fit a `GaussianProcessRegressor` against observation times for `data`.
 
     Parameters
     ----------
     data : pandas.DataFrame
         Data to fit; the target `y` is `data`'s values, regressed
-        against the integer time index.
+        against elapsed times in units of the fitted step. Categorical or
+        repeated numeric row IDs use observation positions (0..n-1).
     **kwargs
         `kernel` : sklearn kernel or None, covariance kernel (default:
         `DotProduct() + RBF(10.0) + WhiteKernel()`). `alpha` : float,
@@ -65,12 +67,17 @@ def fitter(data, **kwargs):
     normalize_y = kwargs.get('normalize_y', True)
 
     n = len(data)
-    x = np.arange(n).reshape(-1, 1)
+    step = data.attrs.get('_hypertools_time_step', resolve_step(data.index))
+    origin = data.index[0]
+    timed = is_time_index(data.index)
+    x = (time_coordinates(data.index, origin, step) if timed
+         else np.arange(n)).reshape(-1, 1)
     y = data.to_numpy(dtype=float)
     _check_nan(y, 'fit')
 
     gp = GaussianProcessRegressor(kernel=kernel, alpha=alpha, normalize_y=normalize_y).fit(x, y)
-    return {'gp': gp, 'n': n}
+    return {'gp': gp, 'n': n, 'time_origin': origin, 'time_step': step,
+            'timed': timed}
 
 
 def forecaster(data, n_steps, future_index, **kwargs):
@@ -96,7 +103,9 @@ def forecaster(data, n_steps, future_index, **kwargs):
     gp = kwargs['gp']
     n = kwargs['n']
 
-    x_future = np.arange(n, n + n_steps).reshape(-1, 1)
+    x_future = (time_coordinates(future_index, kwargs['time_origin'],
+                                 kwargs['time_step']) if kwargs.get('timed')
+                else np.arange(n, n + n_steps)).reshape(-1, 1)
     y_pred = gp.predict(x_future)
     if y_pred.ndim == 1:
         y_pred = y_pred.reshape(-1, 1)
@@ -123,7 +132,11 @@ def applier(fitted_params, new_data, t):
         return new_data.loc[future_index]
 
     n_new = len(new_data)
-    x_new = np.arange(n_new).reshape(-1, 1)
+    step = fitted_params.get('time_step', resolve_step(new_data.index))
+    timed = is_time_index(new_data.index)
+    origin = new_data.index[0]
+    x_new = (time_coordinates(new_data.index, origin, step) if timed
+             else np.arange(n_new)).reshape(-1, 1)
     y_new = new_data.to_numpy(dtype=float)
     _check_nan(y_new, 'be conditioned on')
 
@@ -131,7 +144,8 @@ def applier(fitted_params, new_data, t):
         kernel=gp.kernel_, alpha=gp.alpha, normalize_y=gp.normalize_y,
         optimizer=None).fit(x_new, y_new)
 
-    x_future = np.arange(n_new, n_new + n_steps).reshape(-1, 1)
+    x_future = (time_coordinates(future_index, origin, step) if timed
+                else np.arange(n_new, n_new + n_steps)).reshape(-1, 1)
     y_pred = conditioned.predict(x_future)
     if y_pred.ndim == 1:
         y_pred = y_pred.reshape(-1, 1)
@@ -144,6 +158,11 @@ class GaussianProcess(Forecaster):
 
     Parameters
     ----------
+    step : number, duration string, Timedelta, or None
+        Duration of one future step. None infers the median positive gap
+        between sorted observation times. Numerical indexes use their own
+        units; datetime/duration indexes require a duration such as '1h'.
+        See `hypertools.predict` for the interpolation and reuse policies.
     kernel : sklearn.gaussian_process.kernels.Kernel or None
         Covariance kernel (default: `DotProduct() + RBF(10.0) + WhiteKernel()`;
         the linear DotProduct term lets forecasts extrapolate trends rather
@@ -163,9 +182,9 @@ class GaussianProcess(Forecaster):
     red-team F16-predict-009).
     """
 
-    def __init__(self, kernel=None, alpha=1e-10, normalize_y=True):
+    def __init__(self, kernel=None, alpha=1e-10, normalize_y=True, step=None):
         required = ['gp', 'n']
-        super().__init__(kernel=kernel, alpha=alpha, normalize_y=normalize_y, fitter=fitter,
+        super().__init__(step=step, kernel=kernel, alpha=alpha, normalize_y=normalize_y, fitter=fitter,
                           forecaster=forecaster, applier=applier, data=None,
                           required=required)
 

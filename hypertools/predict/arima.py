@@ -178,6 +178,11 @@ class ARIMA(Forecaster):
 
     Parameters
     ----------
+    step : number, duration string, Timedelta, or None
+        Duration of one future step. None infers the median positive gap
+        between sorted observation times. Numerical indexes use their own
+        units; datetime/duration indexes require a duration such as '1h'.
+        See `hypertools.predict` for the interpolation and reuse policies.
     order : tuple of (p, d, q)
         ARIMA order (default: ``(1, 1, 1)``). The default suits
         drift/random-walk-like signals only -- it damps to a near-constant
@@ -226,9 +231,11 @@ class ARIMA(Forecaster):
     def _min_history_detail(self):
         return f'(order={tuple(self.order)!r})'
 
-    def __init__(self, order=(1, 1, 1), **kwargs):
+    _regular_time_grid = True
+
+    def __init__(self, order=(1, 1, 1), step=None, **kwargs):
         required = ['results']
-        super().__init__(order=order, fitter=fitter, forecaster=forecaster, applier=applier,
+        super().__init__(step=step, order=order, fitter=fitter, forecaster=forecaster, applier=applier,
                           data=None, required=required, **kwargs)
 
         self.order = order

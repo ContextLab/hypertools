@@ -301,6 +301,11 @@ class Kalman(Forecaster):
 
     Parameters
     ----------
+    step : number, duration string, Timedelta, or None
+        Duration of one future step. None infers the median positive gap
+        between sorted observation times. Numerical indexes use their own
+        units; datetime/duration indexes require a duration such as '1h'.
+        See `hypertools.predict` for the interpolation and reuse policies.
     n_iter : int
         Number of EM iterations used to fit the transition/observation
         noise covariances and the initial state (default: 5). The
@@ -315,9 +320,11 @@ class Kalman(Forecaster):
         ``n_observations - 1``).
     """
 
-    def __init__(self, n_iter=5, lags=None):
+    _regular_time_grid = True
+
+    def __init__(self, n_iter=5, lags=None, step=None):
         required = ['kf', 'mean', 'cov', 'n_features']
-        super().__init__(n_iter=n_iter, lags=lags, fitter=fitter, forecaster=forecaster,
+        super().__init__(step=step, n_iter=n_iter, lags=lags, fitter=fitter, forecaster=forecaster,
                           applier=applier, data=None, required=required)
 
         self.n_iter = n_iter

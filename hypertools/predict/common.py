@@ -16,7 +16,6 @@ callables plus their own defaults.
 to conditioning on the new data directly (see `Forecaster.predict_new`).
 """
 import copy
-import warnings
 
 import numpy as np
 import pandas as pd
@@ -24,43 +23,22 @@ from sklearn.base import BaseEstimator
 from sklearn.exceptions import NotFittedError
 
 from ..core.shared import as_dataframe as _as_dataframe
+from ..core.exceptions import _InsufficientHistoryError
 
 
 def _infer_step(index):
-    """The minimum non-zero difference between any pair of observations.
-
-    Adjacent (sorted) observations always yield the smallest gaps, so this
-    is computed from successive differences of the sorted index.
-    """
-    if len(index) < 2:
-        return pd.Timedelta(1, unit='s') if isinstance(index, pd.DatetimeIndex) else 1
-
-    values = index.sort_values()
-    diffs = values[1:] - values[:-1]
-
-    if isinstance(index, pd.DatetimeIndex):
-        nonzero = diffs[diffs != pd.Timedelta(0)]
-        # a real raise (not `assert ..., ValueError(...)`, which raises
-        # AssertionError and is stripped under `python -O`) -- QC 2026-07.
-        if len(nonzero) == 0:
-            raise ValueError('cannot infer a timestep: all observations '
-                             'share one timestamp')
-        return nonzero.min()
-
-    diffs = np.asarray(diffs)
-    nonzero = diffs[diffs != 0]
-    if len(nonzero) == 0:
-        return 1
-    return nonzero.min()
+    """Median positive gap between sorted observation times."""
+    from .time import infer_step
+    return infer_step(index)
 
 
-def resolve_t(data, t):
+def resolve_t(data, t, step=None):
     """Resolve a forecast horizon into a step count and a continued index.
 
     Implements GH #169's ``t`` semantics:
 
     - ``t`` an int: forecast ``t`` timesteps ahead. The timestep duration is
-      the minimum non-zero difference between any pair of observations
+      the median positive gap between sorted observations
       (index-aware for time-indexed data; a plain ``RangeIndex`` uses a step
       of 1).
     - ``t`` a datetime-like value on time-indexed (``DatetimeIndex``) data:
@@ -78,15 +56,15 @@ def resolve_t(data, t):
       less than one full step ahead rounds up to a single step). A
       tz-naive ``t`` on tz-aware data is localized to the data's timezone.
 
-    An index that is not sorted ascending WARNS (forecasts continue from the
-    last row regardless), and a TIME index (`DatetimeIndex`, `TimedeltaIndex`
+    An index that is not sorted ascending WARNS and is sorted together with
+    its observations before fitting (forecasts continue from the latest time), and a TIME index (`DatetimeIndex`, `TimedeltaIndex`
     or `PeriodIndex`) carrying DUPLICATE entries raises a `ValueError`: the
     horizon is ill-defined when several observations share one position on
     the time axis. This is checked for every time-indexed input, flat or
     grouped (hypertools 1.1; `hyp.predict` names the offending group when the
     input was hierarchical). A duplicated NON-time index -- the stacked
     `pd.concat([run_a, run_b])` panel, whose index repeats 0..n-1 -- is
-    unaffected: its step is still the minimum non-zero difference and the
+    unaffected: its step is still the median positive gap and the
     forecast still continues from the last row.
 
     Parameters
@@ -104,22 +82,13 @@ def resolve_t(data, t):
     future_index : pandas.Index
         The continued index (or, for truncation, the sliced index).
     """
+    from .time import order_time_data, resolve_step
+    data = order_time_data(data)
     index = data.index
 
     if t is None:
         raise ValueError('t (forecast horizon) must be a positive integer '
                          'or a target datetime; got None')
-
-    # a descending (e.g. newest-first CSV export) or otherwise unsorted index
-    # silently produced a "forecast" from the OLDEST observation, landing
-    # inside the observed range (QC 2026-07 red-team F16-predict-016).
-    if len(index) > 1 and not index.is_monotonic_increasing:
-        from ..core.model import external_stacklevel
-        warnings.warn(
-            'the dataset index is not sorted in ascending order; forecasts '
-            'continue from the LAST row. If your data are newest-first, sort '
-            'them (e.g. df.sort_index()) before forecasting.',
-            stacklevel=external_stacklevel())
 
     # duplicate observation TIMES make the horizon ill-defined: `_infer_step`
     # would take the (zero-length) gap between the repeats out of the running
@@ -131,7 +100,7 @@ def resolve_t(data, t):
     # An unconditional check also rejected the `pd.concat([run_a, run_b])`
     # idiom, whose index repeats 0..n-1 -- measured at ea5d9b5e, that frame
     # forecast fine, and nothing about its horizon is ambiguous: the step is
-    # the minimum non-zero difference (1) and the forecast continues from the
+    # the median positive gap (1) and the forecast continues from the
     # last row. Rejecting it contradicts Decisions #4's own "legitimate
     # integer-indexed panels are not rejected", and the message's argument
     # ("one position on the time axis") does not describe a positional index.
@@ -155,12 +124,17 @@ def resolve_t(data, t):
             'Aggregate the repeats (e.g. df.groupby(level=-1).mean()) or '
             'give them distinct times before forecasting.')
 
+    step = resolve_step(index, step if step is not None else
+                        data.attrs.get('_hypertools_time_step'))
+
     if isinstance(t, (int, np.integer)) and not isinstance(t, bool):
         n_steps = int(t)
-        step = _infer_step(index)
         last = index[-1]
+        if not (isinstance(index, (pd.DatetimeIndex, pd.TimedeltaIndex))
+                or pd.api.types.is_numeric_dtype(index.dtype)):
+            return n_steps, pd.RangeIndex(len(index), len(index) + n_steps)
 
-        if isinstance(index, pd.RangeIndex):
+        if isinstance(index, pd.RangeIndex) and isinstance(step, int):
             future_index = pd.RangeIndex(start=last + step, stop=last + step * (n_steps + 1), step=step)
         else:
             future_index = pd.Index([last + step * (i + 1) for i in range(n_steps)])
@@ -186,7 +160,6 @@ def resolve_t(data, t):
         raise ValueError(
             f'the dataset index is timezone-naive but t={t!r} is '
             'timezone-aware; pass a tz-naive t (or localize the data index).')
-    step = _infer_step(index)
     last = index[-1]
 
     # a target BEFORE the first observation used to silently return an
@@ -271,7 +244,7 @@ class Forecaster(BaseEstimator):
         if d.shape[0] < needed:
             name = type(self).__name__
             detail = self._min_history_detail()
-            raise ValueError(
+            raise _InsufficientHistoryError(
                 f'cannot forecast with {name} from {d.shape[0]} row(s): '
                 f'{which} is shorter than the {needed} observation(s) '
                 f'(rows) {name}{detail} needs. Pass a longer history, or a '
@@ -284,6 +257,7 @@ class Forecaster(BaseEstimator):
         return ''
 
     def __init__(self, **kwargs):
+        self.step = kwargs.pop('step', None)
         self.data = kwargs.pop('data', None)
         self.fitter = kwargs.pop('fitter', None)
         self.forecaster = kwargs.pop('forecaster', None)
@@ -324,6 +298,7 @@ class Forecaster(BaseEstimator):
         single = not isinstance(data, list)
         datasets = [_as_dataframe(data)] if single else [_as_dataframe(d) for d in data]
 
+        from .time import prepare_time_data
         models = []
         for i, d in enumerate(datasets):
             # degenerate inputs used to fall through to model internals
@@ -349,11 +324,17 @@ class Forecaster(BaseEstimator):
             if self.fitter is None:
                 models.append({})
                 continue
-            params = self.fitter(d, **self.kwargs)
+            observed, model_data, delta = prepare_time_data(
+                d, self.step, regular=getattr(self, '_regular_time_grid', False))
+            self._check_min_history(model_data, which)
+            datasets[i] = observed
+            params = self.fitter(model_data, **self.kwargs)
             if not isinstance(params, dict):
                 raise ValueError('fit function must return a dictionary')
             if not all(r in params for r in self.required):
                 raise ValueError('one or more required fields not returned')
+            params['_time_data'] = model_data
+            params['_time_step'] = delta
             models.append(params)
 
         self.data = datasets[0] if single else datasets
@@ -409,7 +390,8 @@ class Forecaster(BaseEstimator):
                 continue
 
             merged = {**params, **self.kwargs}
-            forecasts.append(self.forecaster(d, n_steps, future_index, **merged))
+            forecasts.append(self.forecaster(params.get('_time_data', d),
+                                              n_steps, future_index, **merged))
 
         return forecasts[0] if single else forecasts
 
@@ -541,6 +523,16 @@ class Forecaster(BaseEstimator):
             for r in self.required:
                 if r not in params:
                     raise NotFittedError(f'missing fitted attribute: {r}')
+
+            from .time import prepare_time_data
+            observed, model_data, _ = prepare_time_data(
+                d, params.get('_time_step', self.step),
+                regular=getattr(self, '_regular_time_grid', False))
+            n_steps, future_index = resolve_t(observed, t)
+            if n_steps <= 0:
+                forecasts.append(observed.loc[future_index])
+                continue
+            d = model_data
 
             if self.applier is not None:
                 merged = {**params, **self.kwargs}

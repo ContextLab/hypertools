@@ -246,9 +246,16 @@ def test_datetime_t_without_a_datetime_index_is_refused(dated):
                  t=pd.Timestamp('2020-01-20'), show=False)
     shifted = frame.copy()
     shifted.index = shifted.index + pd.Timedelta(days=3)
-    with pytest.raises(ValueError, match='different number of steps'):
-        hyp.plot([frame, shifted], ndims=1, predict='Kalman',
-                 t=pd.Timestamp('2020-02-05'), show=False)
+    target = pd.Timestamp('2020-02-05')
+    bundle = hyp.plot([frame, shifted], ndims=1, predict='Kalman',
+                      t=target, return_model=True, show=False)
+    try:
+        expected = hyp.predict([frame, shifted], t=target)
+        assert len(expected[0]) != len(expected[1])
+        for actual, reference in zip(bundle['predict']['forecasts'], expected):
+            np.testing.assert_allclose(actual, reference)
+    finally:
+        plt.close(bundle['fig'])
 
 
 # --- F3: a predict= collection on a hierarchy ---------------------------

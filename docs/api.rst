@@ -114,6 +114,44 @@ also groups by the outer levels but treats the innermost one as the time
 axis, which survives as each group's index. The result is a list of
 forecasts, one per group -- see :doc:`hierarchy`.
 
+.. _observation-times:
+
+Observation times and future steps
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Forecasting uses each dataset's own observation times. Datetime, timedelta,
+period and unique numeric indexes are sorted together with their values before
+fitting. Periods are represented by their start timestamps. Duplicate time
+stamps are rejected; repeated numeric row IDs retain their positional meaning
+(for example, stacked runs). Arrays and categorical row labels use observation
+order. Shuffling timed rows therefore does not change the fitted forecast.
+
+One future step is the **median positive gap** between sorted timestamps.
+Override it with ``hyp.predict(data, step='1h')`` for datetime/duration indexes,
+or ``step=0.5`` for numeric coordinates. Each dataset gets its own inferred
+interval. A fitted model keeps its training interval when applied to new data,
+so a learned one-hour transition never silently becomes a three-hour transition.
+
+GaussianProcess fits the actual times, expressed as elapsed multiples of the
+model's step. Kalman, ARIMA, AutoRegressor, Laplace and Chronos assume regular
+steps: irregular data are **linearly interpolated** column by column onto a
+regular grid ending at the latest observation, with a warning. The grid stays
+inside the observed time span; training values are never extrapolated. Existing
+missing values are not imputed by this operation. Interpolation can smooth
+short-lived changes; choose the interval for your data, or use GaussianProcess
+to retain the original observation times without interpolation. Models retain
+their existing univariate/multivariate behavior.
+
+``hyp.plot(..., predict=...)`` follows the same policy. In ``ndims=1`` mode,
+the time index supplies predictor coordinates rather than becoming another
+signal column to forecast. The columns of each dataset are forecast together,
+then split into lines for drawing. For a step override in a plot, use
+``predict={'model': 'Kalman', 'kwargs': {'step': '1h'}}``. Animated forecasts
+use only the observations revealed so far and wait until the model has enough
+history, including enough interpolated grid points. If preprocessing changes
+the row count and discards the corresponding timestamps, pass the analyzed
+data with its updated index explicitly instead of guessing its times.
+
 Plot
 ------------------
 

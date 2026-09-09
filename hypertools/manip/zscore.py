@@ -2,7 +2,8 @@
 import datawrangler as dw
 import pandas as pd
 
-from .common import Manipulator, stack_for_shared_fit
+from .common import (Manipulator, stack_for_shared_fit, fit_rowwise_list,
+                     transform_rowwise_list)
 from ..core.pipeline import as_internal_frames
 
 
@@ -42,6 +43,8 @@ def fitter(data, axis=0):
 @dw.decorate.funnel
 def _fitter(data, axis=0):
     if isinstance(data, list):
+        if axis == 1:
+            return fit_rowwise_list(data, fitter, ('mean', 'std'))
         data = stack_for_shared_fit(data, 'ZScore')
 
     if axis == 1:
@@ -117,6 +120,9 @@ def transformer(data, **kwargs):
     # audit, 2026-09-08)
     data = as_internal_frames(data)
     if isinstance(data, list):
+        if kwargs.get('transpose', False):
+            return transform_rowwise_list(data, transformer, ('mean', 'std'),
+                                          **kwargs)
         # each dataset is transformed on its own (the fitted statistics
         # are positional), so every frame keeps its own column labels and
         # index; stacking the list first demanded identical labels
@@ -189,8 +195,10 @@ class ZScore(Manipulator):
     ``scipy.stats.zscore`` convention), so the two z-scoring entry points
     differ by a factor of ``sqrt(n / (n - 1))``.
 
-    For a LIST of datasets, ONE shared mean/std is fit across all of them
-    (like ``normalize='across'``); single-observation (or constant)
+    For a LIST of datasets with ``axis=0``, ONE shared mean/std is fit across
+    all of them (like ``normalize='across'``). With ``axis=1``, each row uses
+    its own statistics, including when datasets have different widths;
+    labels and dataset boundaries are retained. Single-observation (or constant)
     columns z-score to 0s rather than NaN.
 
     Examples
