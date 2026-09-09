@@ -48,7 +48,12 @@ def infer_step(index):
     if not temporal and not pd.api.types.is_numeric_dtype(index.dtype):
         return 1
     ordered = index.sort_values()
-    gaps = ordered[1:] - ordered[:-1]
+    # Release review 2026-09-09: integer differences must not wrap at the
+    # signed/unsigned dtype bounds. Subtract before converting to float so
+    # large epoch offsets do not erase small gaps either.
+    coordinates = (ordered.astype(object)
+                   if pd.api.types.is_integer_dtype(ordered.dtype) else ordered)
+    gaps = coordinates[1:] - coordinates[:-1]
     if temporal:
         gaps = gaps[gaps > pd.Timedelta(0)]
         if not len(gaps):
@@ -83,6 +88,10 @@ def resolve_step(index, step=None):
 
 def time_coordinates(index, origin, step):
     """Elapsed times in units of one model step, independent of calendar epoch."""
+    if pd.api.types.is_integer_dtype(index.dtype):
+        index = index.astype(object)
+    if isinstance(origin, (int, np.integer)):
+        origin = int(origin)
     return np.asarray((index - origin) / step, dtype=float)
 
 
@@ -115,7 +124,10 @@ def prepare_time_data(data, step=None, regular=False):
     grid = np.arange(1 - count, 1, dtype=float)
     values = observed.to_numpy(dtype=float)
     interpolated = np.column_stack([np.interp(grid, x, col) for col in values.T])
-    index = pd.Index([observed.index[-1] + int(i) * delta for i in grid],
+    origin = observed.index[-1]
+    if isinstance(origin, (int, np.integer)):
+        origin = int(origin)
+    index = pd.Index([origin + int(i) * delta for i in grid],
                      name=observed.index.name)
     fitted = pd.DataFrame(interpolated, index=index, columns=observed.columns)
     fitted.attrs['_hypertools_time_step'] = delta

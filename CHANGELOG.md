@@ -23,6 +23,10 @@ and reaches flat `hyp.predict` callers.
   columns together using the time index, including animated forecasts, instead
   of forecasting each `[index, value]` display pair. See the API guide for the
   interpolation policy and its limitations.
+- **Integer timestamp arithmetic preserves elapsed times.** Signed and
+  unsigned integer indexes use overflow-safe subtraction and addition,
+  including large epoch offsets. Discrete-time forecasting no longer rejects
+  valid unsigned timestamps because their past offsets wrap into the future.
 - **Backtests score matching observation times.** GaussianProcess evaluates
   held-out timestamps directly; discrete-time forecasts are linearly
   interpolated to them, with a warning when needed. Training rows alone

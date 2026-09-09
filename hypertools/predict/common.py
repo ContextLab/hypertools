@@ -130,6 +130,10 @@ def resolve_t(data, t, step=None):
     if isinstance(t, (int, np.integer)) and not isinstance(t, bool):
         n_steps = int(t)
         last = index[-1]
+        # Release review 2026-09-09: NumPy integer addition can wrap a
+        # valid future time into the past at the dtype's upper bound.
+        if isinstance(last, (int, np.integer)):
+            last = int(last)
         if not (isinstance(index, (pd.DatetimeIndex, pd.TimedeltaIndex))
                 or pd.api.types.is_numeric_dtype(index.dtype)):
             return n_steps, pd.RangeIndex(len(index), len(index) + n_steps)
