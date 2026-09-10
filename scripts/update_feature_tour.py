@@ -200,7 +200,7 @@ set_source(
     a=hyp.load('helix',n_samples=30,random_state=0)
     data=pd.DataFrame(a,index=pd.date_range('2026-01-01',periods=30))
     contexts=[]
-    obj=hyp.plot(data,backend='matplotlib',animate=True,duration=5,frame_rate=6,
+    obj=hyp.plot(data,backend='matplotlib',animate=True,duration=5,frame_rate=6,fmt='o-',markersize=4,
         companion=[{'data':a[:,0],'smooth':3,'position':'bottom','xlabel':'Sample','ylabel':'Helix x; black: trailing mean'},
                    {'data':a[:,1],'position':'right','reveal':False,'xlabel':'Sample','ylabel':'Helix y'}],
         title='{index:%Y-%m-%d}',on_frame=contexts.append,show=False)
@@ -688,14 +688,17 @@ for backend in ["matplotlib", "plotly"]:
     )
 
 # Hash normalized sources, excluding the hash declaration itself and all outputs.
-setup_source = re.sub(r"\nNOTEBOOK_SOURCE_SHA256 = '[^']*'", "", text(setup))
-set_source(setup, setup_source.rstrip())
+setup_source = re.sub(r"\nNOTEBOOK_SOURCE_SHA256 = '[^']*'", "", text(setup)).rstrip()
 digest = hashlib.sha256(
     json.dumps(
-        [(c["cell_type"], text(c)) for c in nb["cells"]], ensure_ascii=False
+        [
+            (c["cell_type"], setup_source if c is setup else text(c))
+            for c in nb["cells"]
+        ],
+        ensure_ascii=False,
     ).encode()
 ).hexdigest()
-set_source(setup, text(setup) + f"\nNOTEBOOK_SOURCE_SHA256 = '{digest}'\n")
+set_source(setup, setup_source + f"\nNOTEBOOK_SOURCE_SHA256 = '{digest}'\n")
 for index, cell in enumerate(nb["cells"]):
     cell.setdefault(
         "id", hashlib.sha256((str(index) + text(cell)).encode()).hexdigest()[:12]
