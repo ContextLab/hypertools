@@ -23,6 +23,7 @@ import contextlib
 import itertools
 import json
 import os
+import re
 import sys
 import threading
 import warnings
@@ -30,6 +31,7 @@ import warnings
 from .._shared.lazy_import import (lazy_import, ensure_kaleido_chrome,
                                    subprocess_env)
 import numpy as np
+
 
 from .meshutil import (blinn_phong_vertex_colors, points_enclosed,
                        vertex_colors_from_points)
@@ -59,6 +61,47 @@ from .trails import (RunWindow, anim_window_bounds, broadcast_trail_flag,
 from .._shared.helpers import (UNIT_FRAME_LIMIT, UNIT_FRAME_SCALE,
                                antialias_line, has_line_component)
 from . import morph as _morph
+
+
+def _normalize_scatter3d_alpha(trace, inherited_mode=None):
+    """Move uniform RGBA transparency to WebGL's native opacity control.
+
+    Only active components participate: an unused marker colour must not
+    prevent correcting a line. Nonuniform per-vertex alpha is retained;
+    replacing it by one trace opacity would change the requested data.
+    This operation is idempotent and also accepts partial frame traces.
+    """
+    if trace.type != 'scatter3d':
+        return
+    mode = trace.mode or inherited_mode or 'lines+markers'
+    components = []
+    for key, token in [('line', 'lines'), ('marker', 'markers')]:
+        if token not in mode:
+            continue
+        obj = getattr(trace, key)
+        color = obj.color
+        if color is None:
+            continue
+        scalar = isinstance(color, str)
+        values = [color] if scalar else list(color)
+        converted, alphas = [], []
+        for value in values:
+            match = re.fullmatch(r'rgba\(([^,]+),([^,]+),([^,]+),([^,]+)\)',
+                                 value.replace(' ', '')) if isinstance(value, str) else None
+            if not match:
+                converted.append(value)
+                alphas.append(1.)
+            else:
+                converted.append('rgb(' + ','.join(match.groups()[:3]) + ')')
+                alphas.append(float(match.group(4)))
+        if alphas:
+            components.append((obj, converted[0] if scalar else converted, alphas))
+    alphas = [a for _, _, values in components for a in values]
+    if not alphas or min(alphas) != max(alphas) or alphas[0] == 1:
+        return
+    for obj, color, _ in components:
+        obj.color = color
+    trace.opacity = (1 if trace.opacity is None else trace.opacity) * alphas[0]
 
 
 VALID_BACKENDS = ('auto', 'matplotlib', 'plotly')
@@ -2273,6 +2316,17 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         else:
             fig.layout.meta = {**_meta,
                                'hyp_datasets_drawn': int(datasets_drawn)}
+
+    # Notebook visual review 2026-09: Scatter3d's RGBA colour path can
+    # change hue under transparency. Use RGB + native opacity instead.
+    # Include frame payloads, which may override the base trace colours.
+    for frame in fig.frames:
+        indices = frame.traces if frame.traces is not None else range(len(frame.data))
+        for index, trace in zip(indices, frame.data):
+            _normalize_scatter3d_alpha(trace, fig.data[index].mode
+                                       if fig.data[index].type == 'scatter3d' else None)
+    for trace in fig.data:
+        _normalize_scatter3d_alpha(trace)
 
     if save_path is not None:
         ext = save_path.lower().rsplit('.', 1)[-1]

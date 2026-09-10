@@ -171,11 +171,27 @@ same artifacts you verify are the ones you publish.
       (no `git+`) — `docs/conf.py` emits this automatically on a tag build.
 - [ ] PyPI project page renders the README with all 8 images resolving (they
       now point at the `v1.1.0` tag).
-- [ ] **Feature tour on Colab.** Run `notes/colab/hypertools_1.1_feature_tour.ipynb`
-      (local, gitignored) top to bottom on Colab: its first cell installs
-      `hypertools[interactive,predict]==1.1.0` from PyPI (falling back to the
-      tag), and section 12.4 exercises the on-demand `[predict-hf]` install,
-      so this is the end-user smoke of the published wheel.
+- [ ] **Candidate feature tour on Colab (before publication).** Run
+      `notes/colab/hypertools_1.1_feature_tour.ipynb` in a fresh runtime using
+      its exact `REVIEW_COMMIT`. It installs a Git candidate with comprehensive
+      extras; it does not test a published wheel or missing-extra installation.
+      Run locally with `scripts/execute_tutorial.py --out-dir /tmp/tour-check
+      notes/colab/hypertools_1.1_feature_tour.ipynb`. Retain the executed notebook,
+      JSON/CSV reports, source hashes, dependency versions, decoded exports and
+      visual verdicts. Inspect early previews after Run all, then exercise the
+      shared interactive viewer and downloads. Resolve failures, blocked checks,
+      and any explicitly deferred manual checks before release sign-off.
+- [ ] **Published-wheel smoke (only AFTER approved publication).** In a fresh
+      environment, install `hypertools[interactive]==1.1.0` with
+      `--only-binary=hypertools --report wheel-install.json`; do not fall back
+      to a tag/source checkout. Check the report's wheel URL/hash, installed
+      version and import path, then run representative plotting and forecasting
+      examples. Keep this evidence separate from candidate Git verification.
+- [ ] **Missing-extra policy.** Use an isolated clean environment to check a
+      friendly error with autoinstall disabled and a real installation with it
+      enabled. The comprehensive tour's eager extras are not evidence for this
+      behavior. Never remove packages from a working research environment to
+      manufacture the missing-extra condition.
 
 ## 7. conda-forge bump (the feedstock exists since 1.0.0)
 

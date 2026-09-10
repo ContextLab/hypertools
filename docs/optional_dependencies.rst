@@ -65,7 +65,7 @@ The extras
        the plotly backend renders a volume either way)
    * - ``io``
      - openpyxl
-     - ``.xlsx`` support for ``hyp.load``
+     - ``.xlsx`` reading with ``hyp.load`` and writing with ``hyp.save``
 
 Extras combine: ``pip install "hypertools[interactive,torch]"``. The ``dev``
 extra holds the test and development dependencies and is not installed on

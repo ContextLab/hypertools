@@ -24,20 +24,14 @@ file change and cannot tell an unwanted execution from a wanted edit made in
 the same window. Execution still resolves relative paths against the
 notebook's ORIGINAL directory, so a redirected run reads the same data.
 
-**The Colab install cell is skipped, and this is not optional.** Every launch
-notebook opens with ``%pip install "hypertools[...] @ git+...@dev-1.0"`` for
-Colab. Executed locally, that cell installs the REMOTE branch over this venv's
-editable checkout, mid-run, so every later cell runs against whatever was
-last pushed rather than the code being documented. Measured 2026-09-03: the
-market notebook failed in its own kernel with "48 dimensions ... static plots
-support at most 2" -- the column-MultiIndex support that lands in 1.1 was
-gone -- and ``pip show hypertools`` afterwards reported the git install, not
-the editable one. The committed notebooks carry execution timestamps on that
-cell from 2026-07-30, when local and remote happened to agree, which is why
-nothing noticed. So cells whose source contains ``pip install`` are tagged
-``skip-execution`` in memory for the run (nbclient honours that tag), and the
-tag is stripped before writing, so the committed cell is byte-identical.
-The example gate already exempts install cells from having executed.
+**HyperTools installation cells are skipped during local verification.**
+Current tutorials use a version-aware PyPI installer; candidate verification
+must retain the selected checkout. Only explicitly tagged HyperTools installers
+(or legacy cells containing a live HyperTools pip command) are skipped.
+Configuration and independent prerequisites remain executable. Mixed legacy
+install/work cells must be split before verification; a comment mentioning pip
+is not an installation command. For the feature tour, configuration and its
+Colab-only installer are separate cells. Use --out-dir to preserve source files.
 
 **The executing user's home directory is rewritten to ``~`` in the outputs.**
 Warnings and tracebacks carry absolute paths (``/Users/<name>/hypertools/
@@ -50,6 +44,7 @@ else in an output is touched.
 
 import json
 import os
+import re
 import sys
 
 import nbformat
@@ -95,7 +90,7 @@ def scrub_home(nb, home=None):
 
 
 def skip_install_cells(nb):
-    """Tag every ``pip install`` code cell of `nb` skip-execution (in memory)
+    """Tag HyperTools installation cells of `nb` skip-execution (in memory)
     and drop the outputs it carried; return those cells for
     `restore_install_cells`.
 
@@ -104,8 +99,9 @@ def skip_install_cells(nb):
     local interpreter path, from a run that DID execute the install cell.
     A cell that did not run here has no output.
     """
-    installs = [c for c in nb.cells
-                if c.cell_type == 'code' and 'pip install' in c.source]
+    installs = [c for c in nb.cells if c.cell_type == 'code' and (
+        'hypertools-install' in c.metadata.get('tags', []) or
+        re.search(r'^\s*[%!]pip\s+install[^\n]*hypertools', c.source, re.M))]
     for cell in installs:
         cell.metadata.setdefault('tags', []).append(SKIP_TAG)
         cell.outputs = []

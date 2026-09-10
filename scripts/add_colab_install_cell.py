@@ -95,6 +95,13 @@ def hyp_spec(extras, branch):
     return f'hypertools[{extras}] @ {_GIT_URL}@{branch}'
 
 
+def guarded_install_source(extras="interactive", branch="master"):
+    """Version-aware tutorial setup; local source checkouts are preserved."""
+    spec = (f"hypertools[{extras}]>=1.1.0" if _is_release_ref(branch)
+            else hyp_spec(extras, branch))
+    return '# HyperTools setup: use 1.1 or newer; retain a current local checkout.\nimport importlib.util\nfrom importlib.metadata import version, PackageNotFoundError\nfrom packaging.version import Version\nfrom pathlib import Path\ntry:\n    _hypertools_version = Version(version(\'hypertools\'))\nexcept PackageNotFoundError:\n    _hypertools_version = Version(\'0\')\nif _hypertools_version < Version(\'1.1.0\'):\n    _spec = importlib.util.find_spec(\'hypertools\')\n    if _spec and _spec.origin and (Path(_spec.origin).resolve().parents[1] / \'.git\').exists():\n        raise RuntimeError(\'Select a HyperTools 1.1 checkout/kernel before running this tutorial; the installer will not replace your checkout.\')\n    %pip install -q "{spec}"\nelse:\n    print(\'Keeping HyperTools\', _hypertools_version, \'in this kernel. Optional extras are loaded when requested.\')\n'.format(spec=spec)
+
+
 def install_lines(branch):
     if _is_release_ref(branch):
         pip = '%pip install -q "hypertools[interactive]"'
@@ -164,6 +171,21 @@ def main():
     for path in sorted(NOTEBOOKS):
         with open(path) as f:
             nb = json.load(f)
+        guarded = [c for c in nb.get('cells', [])
+                   if 'hypertools-install' in c.get('metadata', {}).get('tags', [])]
+        if guarded and os.path.basename(os.path.dirname(path)) == 'tutorials':
+            cell = guarded[0]
+            source = ''.join(cell['source'])
+            extras = re.search(r'hypertools\[([^]]+)\]', source).group(1)
+            desired = guarded_install_source(extras, branch)
+            if source != desired:
+                cell['source'] = desired.splitlines(keepends=True)
+                cell['outputs'] = []
+                cell['execution_count'] = None
+                with open(path, 'w') as f:
+                    json.dump(nb, f, indent=1, ensure_ascii=False); f.write('\n')
+                retargeted += 1
+            continue
         if has_install(nb):
             # already has an install cell -> re-target it to this branch
             if retarget_notebook(nb, branch):

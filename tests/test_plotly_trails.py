@@ -143,7 +143,9 @@ def test_plotly_trail_alpha_honors_per_dataset_alpha():
     trail_traces = pfig.data[n:2 * n]
     assert len(trail_traces) == n
     ply_trail_alphas = [
-        float(t.line.color.rsplit(',', 1)[1].rstrip(') '))
+        (t.opacity if t.opacity is not None else 1.) *
+        (float(t.line.color.rsplit(',', 1)[1].rstrip(') '))
+         if t.line.color.startswith('rgba(') else 1.)
         for t in trail_traces]
     assert ply_trail_alphas == pytest.approx(expected), (
         "plotly trail traces must honor per-dataset alpha= (0.3 * alpha), "

@@ -6112,7 +6112,8 @@ def plot(
             so a panel and a date title can never disagree.
         ``reveal``
             ``True`` (default) reveals the series up to the head; ``False``
-            draws it whole on every frame.
+            draws it whole on every frame (including its smoothed trend).
+            The head marker still follows the current input row in both modes.
         ``smooth``
             An int rolling-mean window (>= 2) drawn as a black trend line
             over the revealed part, NaN until the window fills -- the same

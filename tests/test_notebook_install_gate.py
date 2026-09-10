@@ -66,7 +66,7 @@ def _tracked_tutorials():
 
 
 def _tracked_published_notebooks():
-    """Every git-tracked published notebook. Today this is the 15 tutorials:
+    """Every git-tracked published notebook. The hand-authored tutorials are tracked:
     docs/auto_examples/*.ipynb are GITIGNORED and regenerated at build time
     from docs/conf.py's branch-aware install cell, so they are not shipped and
     do not exist in a bare checkout (the release-gate CI job runs on a bare
@@ -99,7 +99,8 @@ def _hyp_install_lines(path):
 
 def test_there_are_tracked_published_notebooks():
     # guards against the scan silently passing because it found nothing
-    assert len(_tracked_tutorials()) >= 15
+    expected = set('align analyze animate_forecast cluster conversation_shape conversation_trajectories hierarchy hugging_face_embeddings io lsl_streaming manip market_sectors modern_sklearn_dynamics morph_shapes_zoo normalize painting_embeddings pipelines plot projectile_kalman reduce stock_forecasting streaming_data text weather_decades wikipedia_embeddings'.split())
+    assert {os.path.splitext(os.path.basename(p))[0] for p in _tracked_tutorials()} == expected
     # the published-notebook union is at least the tutorials
     assert len(_tracked_published_notebooks()) >= len(_tracked_tutorials())
 
@@ -222,3 +223,29 @@ def test_execute_tutorial_drops_the_outputs_of_the_cell_it_skips(tmp_path):
     path = tmp_path / 'nb.ipynb'
     nbformat.write(nb, path)
     assert _install_cells(path)[0]['outputs'] == []
+
+
+def test_tutorial_installers_enforce_version_and_preserve_prerequisites():
+    for path in _tracked_tutorials():
+        nb=json.load(open(path))
+        installers=[c for c in nb['cells'] if 'hypertools-install' in c.get('metadata',{}).get('tags',[])]
+        assert len(installers)==1, path
+        source=''.join(installers[0]['source'])
+        assert "Version('1.1.0')" in source and '>=1.1.0' in source, path
+        assert 'will not replace your checkout' in source, path
+        assert 'pip install -q convokit' not in source and 'pip install -q py7zr' not in source
+
+
+def test_executor_keeps_setup_and_independent_install_cells():
+    import importlib.util
+    import nbformat
+    spec=importlib.util.spec_from_file_location('execute_tutorial',os.path.join(_REPO,'scripts','execute_tutorial.py'))
+    module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+    config=nbformat.v4.new_code_cell("SETTINGS = {}\n# Optional: pip install extras")
+    prerequisite=nbformat.v4.new_code_cell('%pip install convokit')
+    install=nbformat.v4.new_code_cell("subprocess.check_call([sys.executable,'-m','pip','install',spec])",metadata={'tags':['hypertools-install']})
+    nb=nbformat.v4.new_notebook(cells=[config,prerequisite,install])
+    skipped=module.skip_install_cells(nb)
+    assert skipped==[install]
+    assert 'skip-execution' not in config.metadata.get('tags',[])
+    assert 'skip-execution' not in prerequisite.metadata.get('tags',[])

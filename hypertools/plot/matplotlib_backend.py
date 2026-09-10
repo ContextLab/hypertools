@@ -255,13 +255,14 @@ def update_companion_panel(panel, i):
     state on screen.
     """
     i = int(min(max(i, 0), panel['n_rows'] - 1))
-    if not panel['reveal']:
-        i = panel['n_rows'] - 1
-    panel['revealed'].set_segments(panel['segments'][:i])
+    # Notebook review 2026-09: full-curve visibility must not freeze the
+    # current-time marker. Keep the curve extent separate from the clock.
+    end = i if panel['reveal'] else panel['n_rows'] - 1
+    panel['revealed'].set_segments(panel['segments'][:end])
     if panel['hue'] is not None:
-        panel['revealed'].set_array(panel['hue'][1:i + 1])
+        panel['revealed'].set_array(panel['hue'][1:end + 1])
     if panel['trend'] is not None:
-        panel['trend'].set_data(panel['x'][:i + 1], panel['rolling'][:i + 1])
+        panel['trend'].set_data(panel['x'][:end + 1], panel['rolling'][:end + 1])
     if panel['head'] is not None:
         panel['head'].set_data([panel['x'][i]], [panel['y'][i]])
         if panel['head_colors'] is not None:

@@ -99,8 +99,10 @@ def _rgb(rgba):
     return tuple(int(v) for v in body.split(',')[:3])
 
 
-def _alpha(rgba):
-    return float(str(rgba).rstrip(')').rsplit(',', 1)[1])
+def _alpha(rgba, trace):
+    color_alpha = (float(str(rgba).rstrip(')').rsplit(',', 1)[1])
+                   if str(rgba).startswith('rgba(') else 1.)
+    return color_alpha * (trace.opacity if trace.opacity is not None else 1.)
 
 
 def _plot(*args, **kwargs):
@@ -173,7 +175,7 @@ def test_plotly_widths_match_the_documented_formula():
 
 def test_plotly_opacities_match_the_documented_formula():
     traces = _data_traces(_plot(market_frame(), '-', show=False))
-    assert [_alpha(t.line.color) for t in traces] == pytest.approx(
+    assert [_alpha(t.line.color, t) for t in traces] == pytest.approx(
         [0.7, 0.7, 1.0])
 
 
@@ -199,7 +201,7 @@ def test_plotly_hue_opacities_match_matplotlib():
         'the hierarchy alphas themselves regressed, so the parity assertion '
         'below would be comparing two wrong numbers')
     traces = _data_traces(_plot(df, '-', **kw))
-    assert [_alpha(t.line.color[-1]) for t in traces] == pytest.approx(
+    assert [_alpha(t.line.color[-1], t) for t in traces] == pytest.approx(
         mpl_alpha)
 
 
@@ -214,7 +216,7 @@ def test_plotly_hue_honours_a_plain_alpha_kwarg():
                  for c in _mpl_hue_collections(_mpl(x, '-', **kw))]
     assert mpl_alpha == pytest.approx([0.3])
     traces = _data_traces(_plot(x, '-', **kw))
-    assert [_alpha(t.line.color[-1]) for t in traces] == pytest.approx(
+    assert [_alpha(t.line.color[-1], t) for t in traces] == pytest.approx(
         mpl_alpha)
 
 
