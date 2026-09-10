@@ -230,13 +230,17 @@ def cell(kind, text, execution_count=None):
 
 
 def build(stem):
+    try:
+        from scripts.add_colab_install_cell import portable_video_source
+    except ModuleNotFoundError:
+        from add_colab_install_cell import portable_video_source
     module, dpi, spec = SPECS[stem]
     path = os.path.join(TUTORIALS, stem + '.ipynb')
     with open(path if os.path.exists(path) else TEMPLATE) as handle:
         old = json.load(handle)
     install = old['cells'][0]
     assert 'pip install' in ''.join(install['source']), path
-    install = {'cell_type': 'code', 'metadata': {}, 'execution_count': None,
+    install = {'cell_type': 'code', 'metadata': {'tags': ['hypertools-install']}, 'execution_count': None,
                'outputs': [], 'source': install['source']}
     with open(os.path.join(EXAMPLES, module + '.py')) as handle:
         source = handle.read()
@@ -251,7 +255,7 @@ def build(stem):
     cells.append(cell('code', main_body + DRAW_LAST))
     cells.append(cell('markdown', f'## {n + 1}. Save the animation\n'))
     cells.append(cell('code', f"anim.save('{stem}.mp4', dpi={dpi})\n"
-                              f"print('saved {stem}.mp4')\n"))
+                              f"print('saved {stem}.mp4')\n\n" + portable_video_source(stem+'.mp4')))
     title = docstring_to_markdown(doc).splitlines()[0][2:]
     # an mp4, not a GIF: the rebuilt clips run one to two minutes (1200-2400
     # frames), which a GIF cannot carry at any useful size. The <video> tag

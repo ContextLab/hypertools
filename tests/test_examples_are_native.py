@@ -265,13 +265,50 @@ DEFECT_ALLOWLIST = {
         1, 'one forecast panel per ticker on hyp.subplots(2, 2, ndims=1)'),
 }
 
+
+def _review_setup_overhead(path):
+    """Keep the existing example-code budget and strictly validate new setup.
+
+    The release review requires a version-aware installer and a portable Colab
+    movie display. Count their EXACT shared templates separately, rather than
+    enlarging the algorithm/example budget or exempting arbitrary tagged code.
+    """
+    if not path.endswith('.ipynb'):
+        return 0
+    import json
+    from scripts.add_colab_install_cell import guarded_install_source, portable_video_source
+    from scripts.measure_native_ratio import strip_docstrings
+    nb=json.loads(_read(path))
+    overhead=0
+    installers=[c for c in nb['cells'] if 'hypertools-install' in c.get('metadata',{}).get('tags',[])]
+    assert len(installers)<=1
+    for c in installers:
+        source=''.join(c['source'])
+        extras=re.search(r'hypertools\[([^]]+)\]',source).group(1)
+        assert source==guarded_install_source(extras), 'Noncanonical setup must not bypass the example budget'
+        # The prior one-line package installation already belonged to the budget.
+        overhead+=len(list(strip_docstrings(source.splitlines())))-1
+    videos=0
+    for c in nb['cells']:
+        source=''.join(c['source'])
+        marker='# Colab serves output frames separately'
+        if c['cell_type']=='code' and marker in source:
+            snippet=source[source.index(marker):]
+            filename=re.search(r"display\(Video\('([^']+)'",snippet).group(1)
+            assert snippet==portable_video_source(filename)
+            overhead+=len(list(strip_docstrings(snippet.splitlines())))
+            videos+=1
+    assert videos<=1
+    return overhead
+
+
 def _read(path):
     full = os.path.join(REPO, path)
     with open(full, encoding='utf-8') as handle:
         return handle.read()
 
 
-def _code_text(path):
+def _code_text(path, exclude_install=False):
     """Code only -- and DOCSTRINGS ARE NOT CODE here.
 
     Two reasons, both load-bearing:
@@ -303,6 +340,9 @@ def _code_text(path):
         # to eliminate it.
         kept = []
         for cell in nb['cells']:
+            if exclude_install and 'hypertools-install' in cell.get('metadata',{}).get('tags',[]):
+                _review_setup_overhead(path)  # exact canonical source required
+                continue
             if cell.get('cell_type') != 'code':
                 continue
             kept.extend(strip_docstrings(
@@ -389,8 +429,9 @@ def _parsable_code(path):
 @pytest.mark.parametrize('path,max_code', BUDGETS)
 def test_file_is_within_its_size_budget(path, max_code):
     code, _native = measure(os.path.join(REPO, path))
-    assert code <= max_code, (
-        f'{path}: {code} code lines exceeds the {max_code}-line budget')
+    example_code = code - _review_setup_overhead(path)
+    assert example_code <= max_code, (
+        f'{path}: {example_code} example code lines exceeds the {max_code}-line budget')
 
 
 def test_native_ratio_is_reported(capsys):
@@ -418,7 +459,7 @@ def test_native_ratio_is_reported(capsys):
 def test_no_defect_marker_in_the_launch_examples(path, _max, marker, fix):
     if (path, marker) in PRIVATE_API_EXCEPTIONS:
         pytest.skip(f'allowlisted: {PRIVATE_API_EXCEPTIONS[(path, marker)]}')
-    text = _code_text(path)
+    text = _code_text(path, exclude_install=True)
     assert not re.search(marker, text), (
         f'{path} contains {marker!r} again -- {fix}')
 

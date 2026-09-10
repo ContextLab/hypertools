@@ -13,6 +13,7 @@ matplotlib.use('Agg')
 
 import matplotlib.pyplot as plt
 import numpy as np
+from tests._plotly_colors import rgba as effective_rgba
 import pytest
 from matplotlib.colors import to_rgba
 
@@ -120,8 +121,8 @@ def test_plotly_single_model_forecast_is_listed_once():
     entry, = _plotly_legend_traces(fig)
     assert entry.meta['hyp_legend_entry'] == 'Kalman'
     assert 'hyp_forecast_role' not in entry.meta
-    assert entry.line.color == _to_plotly_color(FORECAST_LEGEND_COLOR,
-                                               FORECAST_LEGEND_MIN_ALPHA)
+    assert effective_rgba(entry)[:3] == pytest.approx(to_rgba(FORECAST_LEGEND_COLOR)[:3])
+    assert effective_rgba(entry)[-1] == pytest.approx(FORECAST_LEGEND_MIN_ALPHA)
     assert entry.line.dash == 'solid'
 
 
@@ -131,7 +132,7 @@ def test_plotly_single_dataset_entry_wears_the_forecast_colour():
     forecast, = _plotly_forecasts(fig)
     entry, = _plotly_legend_traces(fig)
     assert _rgb(entry.line.color) == _rgb(forecast.line.color)
-    assert entry.line.color.endswith(f',{FORECAST_LEGEND_MIN_ALPHA})')
+    assert effective_rgba(entry)[-1] == pytest.approx(FORECAST_LEGEND_MIN_ALPHA)
     assert entry.line.dash == forecast.line.dash == 'dash'
 
 
@@ -183,7 +184,9 @@ def test_plotly_collection_matches_the_matplotlib_rule():
     kalman, arima = _plotly_legend_traces(fig)
     assert kalman.line.dash == 'solid' and arima.line.dash == 'dash'
     neutral = _to_plotly_color(FORECAST_LEGEND_COLOR, FORECAST_LEGEND_MIN_ALPHA)
-    assert kalman.line.color == arima.line.color == neutral
+    assert effective_rgba(kalman) == effective_rgba(arima)
+    assert _rgb(kalman.line.color) == _rgb(neutral)
+    assert effective_rgba(kalman)[-1] == pytest.approx(FORECAST_LEGEND_MIN_ALPHA)
 
 
 @pytest.mark.parametrize('backend', ['matplotlib', 'plotly'])
@@ -275,6 +278,6 @@ def test_animated_plotly_forecast_is_listed():
     assert len(fig.frames) > 0
     assert [tr.name for tr in _plotly_entries(fig)] == ['1', '2', 'Kalman']
     entry, = _plotly_legend_traces(fig)
-    assert entry.line.color == _to_plotly_color(FORECAST_LEGEND_COLOR,
-                                               FORECAST_LEGEND_MIN_ALPHA)
+    assert effective_rgba(entry)[:3] == pytest.approx(to_rgba(FORECAST_LEGEND_COLOR)[:3])
+    assert effective_rgba(entry)[-1] == pytest.approx(FORECAST_LEGEND_MIN_ALPHA)
     assert all(not tr.showlegend for tr in _plotly_forecasts(fig, 'live'))

@@ -2,13 +2,18 @@
 cell that installs hypertools, so it runs standalone when opened in Google
 Colab.
 
-The install line is branch-aware:
+Gallery install lines are branch-aware:
 
 * on ``master`` OR a ``vX.Y.Z`` release tag it installs the RELEASED package
   (``%pip install -q "hypertools[interactive]"``);
 * on any other branch it installs THAT branch from GitHub, so the dev-1.0
   preview notebooks install the matching dev build rather than the older
   PyPI release.
+
+Tutorials use a separate version-aware guard: a current local installation is
+retained, an old checkout is refused with guidance, and a missing/old installed
+package resolves to >=1.1.0 on master/tags or the selected development branch.
+Optional extras remain available through on-demand installation.
 
 The script is idempotent AND self-correcting: a notebook that already has a
 hypertools install cell is not skipped -- its install target is RE-TARGETED to
@@ -26,9 +31,8 @@ Run after (re)generating notebooks, then commit:
 
 RELEASE NOTE: run this on the ``master`` BRANCH when cutting the release and
 commit the migrated notebooks BEFORE master/tag CI and the PyPI upload (see
-RELEASE_CHECKLIST.md for the full order). Until the upload the notebooks
-briefly resolve the previous PyPI release, which is harmless -- they are static
-source content. The ``release-gate`` CI job enforces that no ``git+``/``@dev``
+RELEASE_CHECKLIST.md for the full order). Before the upload, validate candidates with an explicit Git installation;
+the published tutorial requirement cannot resolve until 1.1 is available. The ``release-gate`` CI job enforces that no ``git+``/``@dev``
 install survives on a release build.
 """
 
@@ -100,6 +104,11 @@ def guarded_install_source(extras="interactive", branch="master"):
     spec = (f"hypertools[{extras}]>=1.1.0" if _is_release_ref(branch)
             else hyp_spec(extras, branch))
     return '# HyperTools setup: use 1.1 or newer; retain a current local checkout.\nimport importlib.util\nfrom importlib.metadata import version, PackageNotFoundError\nfrom packaging.version import Version\nfrom pathlib import Path\ntry:\n    _hypertools_version = Version(version(\'hypertools\'))\nexcept PackageNotFoundError:\n    _hypertools_version = Version(\'0\')\nif _hypertools_version < Version(\'1.1.0\'):\n    _spec = importlib.util.find_spec(\'hypertools\')\n    if _spec and _spec.origin and (Path(_spec.origin).resolve().parents[1] / \'.git\').exists():\n        raise RuntimeError(\'Select a HyperTools 1.1 checkout/kernel before running this tutorial; the installer will not replace your checkout.\')\n    %pip install -q "{spec}"\nelse:\n    print(\'Keeping HyperTools\', _hypertools_version, \'in this kernel. Optional extras are loaded when requested.\')\n'.format(spec=spec)
+
+
+def portable_video_source(filename):
+    """Frontend-specific playback; local docs retain their relative asset."""
+    return '# Colab serves output frames separately from kernel files; embed movie bytes.\ntry:\n    import google.colab\nexcept ImportError:\n    pass  # Local Jupyter/Sphinx uses the relative video below.\nelse:\n    from IPython.display import Video, display\n    display(Video({filename!r}, embed=True))\n'.format(filename=filename)
 
 
 def install_lines(branch):
@@ -183,7 +192,8 @@ def main():
                 cell['outputs'] = []
                 cell['execution_count'] = None
                 with open(path, 'w') as f:
-                    json.dump(nb, f, indent=1, ensure_ascii=False); f.write('\n')
+                    json.dump(nb, f, indent=1, ensure_ascii=False)
+                    f.write('\n')
                 retargeted += 1
             continue
         if has_install(nb):

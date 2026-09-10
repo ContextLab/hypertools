@@ -17,6 +17,7 @@ matplotlib.use('Agg')
 
 import matplotlib.pyplot as plt
 import numpy as np
+from tests._plotly_colors import rgba as effective_rgba
 import pytest
 from matplotlib.colors import to_hex, to_rgb
 
@@ -75,7 +76,7 @@ def test_regrouped_animation_keeps_a_forecast_fmt_colour():
     pl = hyp.plot(x, backend='plotly', **kw)
     live = _pl_role(pl, 'live')
     assert [_rgb_triplet(tr.line.color) for tr in live] == [(255, 0, 0)] * 2
-    assert all(tr.line.color.endswith(',0.7)') for tr in live)
+    assert all(effective_rgba(tr)[-1] == pytest.approx(.7) for tr in live)
     # no frame repaints a pinned colour
     for frame in pl.frames:
         for tr in frame.data:

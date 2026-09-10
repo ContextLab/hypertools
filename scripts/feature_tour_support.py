@@ -72,6 +72,9 @@ def save_report():
         "inventory_sha256": source_hash(json.dumps(CASES, sort_keys=True)),
         "interactive_plots": list(INTERACTIVE_PLOTS),
     }
+    install_log = globals().get("INSTALL_LOG")
+    if install_log is not None and Path(install_log).exists():
+        shutil.copyfile(install_log, SCRATCH / "install.log")
     (SCRATCH / "results.json").write_text(json.dumps(payload, indent=2, default=str))
     if RESULTS:
         pd.DataFrame(report_rows()).drop(columns=["traceback"], errors="ignore").to_csv(
@@ -80,7 +83,7 @@ def save_report():
     with zipfile.ZipFile(
         SCRATCH / "hypertools-feature-review.zip", "w", zipfile.ZIP_DEFLATED
     ) as archive:
-        for name in ["results.json", "results.csv"]:
+        for name in ["results.json", "results.csv", "install.log"]:
             if (SCRATCH / name).exists():
                 archive.write(SCRATCH / name, arcname=name)
 
@@ -216,25 +219,38 @@ def finite(value, shape=None):
 
 
 def download_artifact(path):
-    """Download bytes, not an absolute filesystem URL into a notebook server."""
-    path = Path(path)
-    if IN_COLAB:
-        import ipywidgets as widgets
-        from google.colab import files
+    """Prepare a frontend-safe download on demand, without bloating Run all."""
+    import ipywidgets as widgets
 
-        button = widgets.Button(
-            description="Download " + path.name, layout={"width": "auto"}
-        )
-        button.on_click(lambda _: files.download(str(path)))
-        display(button)
-    else:
-        data = base64.b64encode(path.read_bytes()).decode()
-        display(
-            HTML(
-                f'<a download="{html.escape(path.name, quote=True)}" '
-                f'href="data:application/octet-stream;base64,{data}">Download {html.escape(path.name)}</a>'
-            )
-        )
+    path = Path(path)
+    button = widgets.Button(
+        description=("Download " if IN_COLAB else "Prepare download: ") + path.name,
+        layout={"width": "auto"},
+    )
+    output = widgets.Output()
+
+    def prepare(_):
+        global _DOWNLOAD_OUTPUT
+        if "_DOWNLOAD_OUTPUT" in globals():
+            with _DOWNLOAD_OUTPUT:
+                clear_output(wait=False)
+        _DOWNLOAD_OUTPUT = output
+        with output:
+            if IN_COLAB:
+                from google.colab import files
+
+                files.download(str(path))
+            else:
+                data = base64.b64encode(path.read_bytes()).decode()
+                display(
+                    HTML(
+                        f'<a download="{html.escape(path.name, quote=True)}" '
+                        f'href="data:application/octet-stream;base64,{data}">Save {html.escape(path.name)}</a>'
+                    )
+                )
+
+    button.on_click(prepare)
+    display(widgets.VBox([button, output]))
 
 
 def show_result(obj):

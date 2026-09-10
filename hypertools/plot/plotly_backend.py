@@ -63,7 +63,7 @@ from .._shared.helpers import (UNIT_FRAME_LIMIT, UNIT_FRAME_SCALE,
 from . import morph as _morph
 
 
-def _normalize_scatter3d_alpha(trace, inherited_mode=None):
+def _normalize_scatter3d_alpha(trace, inherited_mode=None, *, frame=False):
     """Move uniform RGBA transparency to WebGL's native opacity control.
 
     Only active components participate: an unused marker colour must not
@@ -97,7 +97,9 @@ def _normalize_scatter3d_alpha(trace, inherited_mode=None):
         if alphas:
             components.append((obj, converted[0] if scalar else converted, alphas))
     alphas = [a for _, _, values in components for a in values]
-    if not alphas or min(alphas) != max(alphas) or alphas[0] == 1:
+    if not alphas or min(alphas) != max(alphas):
+        return
+    if alphas[0] == 1 and not frame:
         return
     for obj, color, _ in components:
         obj.color = color
@@ -2323,8 +2325,9 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     for frame in fig.frames:
         indices = frame.traces if frame.traces is not None else range(len(frame.data))
         for index, trace in zip(indices, frame.data):
-            _normalize_scatter3d_alpha(trace, fig.data[index].mode
-                                       if fig.data[index].type == 'scatter3d' else None)
+            _normalize_scatter3d_alpha(
+                trace, fig.data[index].mode
+                if fig.data[index].type == 'scatter3d' else None, frame=True)
     for trace in fig.data:
         _normalize_scatter3d_alpha(trace)
 

@@ -8,6 +8,7 @@ matplotlib.use("Agg")
 import warnings
 
 import numpy as np
+from tests._plotly_colors import rgba as effective_rgba
 import pytest
 
 import hypertools as hyp
@@ -73,9 +74,9 @@ def test_plotly_serial_trail_traces_are_faded():
     """Same 0.3 opacity the parallel trails already use
     (plotly_backend.py:953)."""
     fig = _plotly_fig(animate='serial', chemtrails=True)
-    alphas = [_alpha_of(t.line.color) for t in fig.data
+    alphas = [effective_rgba(t)[-1] for t in fig.data
               if t.line is not None and t.line.color is not None
-              and t.line.color.startswith('rgba')]
+              and t.line.color.startswith(('rgb(', 'rgba('))]
     assert alphas[:3] == pytest.approx([1.0, 1.0, 1.0])
     assert alphas[3:6] == pytest.approx([0.3, 0.3, 0.3])
 

@@ -28,6 +28,7 @@ import matplotlib
 matplotlib.use('Agg')
 
 import numpy as np                                              # noqa: E402
+from tests._plotly_colors import rgba as effective_rgba
 import pytest                                                   # noqa: E402
 import matplotlib.pyplot as plt                                 # noqa: E402
 from matplotlib.colors import to_rgb                            # noqa: E402
@@ -82,7 +83,7 @@ def data_artists(bundle, i, backend):
         if trace.scene != scene or not isinstance(trace.meta, dict) \
                 or 'hyp_trace_index' not in trace.meta:
             continue
-        rgb, alpha = _rgba(trace.line.color)
+        rgb, alpha = effective_rgba(trace)[:3], effective_rgba(trace)[-1]
         out.append((rgb, alpha, trace.line.dash, trace.name))
     return out
 
@@ -614,7 +615,7 @@ def _style(bundle, i, backend, panel=True):
     line = lines[0] if panel else lines[i]
     if panel:
         assert len(lines) == 1
-    rgb, alpha = _rgba(line.line.color)
+    rgb, alpha = effective_rgba(line)[:3], effective_rgba(line)[-1]
     return dict(
         color=rgb, alpha=alpha, linestyle=line.line.dash,
         marker=line.marker.symbol if 'markers' in (line.mode or '') else None,

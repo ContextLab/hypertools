@@ -65,8 +65,10 @@ if "if IN_COLAB:\n    spec =" in s:
 setup = next(c for c in nb["cells"] if "STARTED = datetime.datetime" in text(c))
 set_source(
     setup,
-    text(setup).replace(
-        "'status','--porcelain'", "'status','--porcelain','--untracked-files=no'"
+    re.sub(
+        r"'status','--porcelain'(?:,'--untracked-files=no')*",
+        "'status','--porcelain','--untracked-files=no'",
+        text(setup),
     ),
 )
 s = text(setup)
@@ -86,10 +88,31 @@ for install_cell in nb["cells"]:
     if "hypertools-install" in install_cell.get("metadata", {}).get("tags", []):
         set_source(
             install_cell,
-            text(install_cell).replace(
-                "'pyarrow', 'polars', 'ipywidgets'",
-                "'pyarrow', 'polars', 'ipywidgets', 'xlrd', 'xlwt'",
-            ),
+            """# Preserve the full installer transcript even if setup fails.
+from pathlib import Path
+import tempfile
+INSTALL_LOG = Path(tempfile.mkdtemp(prefix='hypertools-install-')) / 'install.log'
+if IN_COLAB:
+    spec = f'hypertools[{EXTRAS}] @ git+https://github.com/ContextLab/hypertools.git@{REVIEW_COMMIT}'
+    command = [sys.executable, '-m', 'pip', 'install', spec,
+               'pyarrow', 'polars', 'ipywidgets', 'xlrd', 'xlwt']
+    with INSTALL_LOG.open('w') as log:
+        process = subprocess.Popen(command, stdout=subprocess.PIPE,
+                                   stderr=subprocess.STDOUT, text=True)
+        for line in process.stdout:
+            print(line, end='')
+            log.write(line)
+        status = process.wait()
+    print('Retained installation log:', INSTALL_LOG)
+    if status:
+        from google.colab import files
+        files.download(str(INSTALL_LOG))
+        raise RuntimeError(f'Candidate installation failed ({status}); see {INSTALL_LOG}')
+else:
+    INSTALL_LOG.write_text('Local candidate verification: installer intentionally not run.\\n')
+    print('Local mode: retaining the installed package / editable checkout.')
+    print('Optional full environment:', f'python -m pip install -e ".[{EXTRAS}]" pyarrow polars ipywidgets xlrd xlwt')
+""",
         )
 helper = next(c for c in nb["cells"] if "def run_case(" in text(c))
 set_source(helper, Path("scripts/feature_tour_support.py").read_text())
@@ -626,6 +649,44 @@ for cell in nb["cells"]:
                 ),
             )
 
+# Keep the illustrative reducers well-conditioned; retain expected time/model warnings.
+for case_id, old, new in [
+    ("RED-NMF", "'max_iter': 30", "'max_iter': 1000"),
+    (
+        "RED-SpectralEmbedding",
+        "'random_state': 0",
+        "'random_state': 0, 'n_neighbors': 24",
+    ),
+    ("RED-UMAP", "'n_neighbors': 8", "'n_neighbors': 8, 'n_jobs': 1"),
+]:
+    cell = case_cell(case_id)
+    if new not in text(cell):
+        set_source(cell, text(cell).replace(old, new))
+mds = case_cell("RED-MDS")
+if "inspect.signature(MDS)" not in text(mds):
+    set_source(
+        mds,
+        """def demo():
+    from sklearn.manifold import MDS
+    a,_=fixtures()
+    kwargs={'random_state':0,'max_iter':300,'n_init':1}
+    if 'init' in inspect.signature(MDS).parameters:kwargs['init']='random'
+    out=hyp.reduce(a,reduce={'model':'MDS','kwargs':kwargs},ndims=2)
+    finite(out,(48,2));print('MDS',np.shape(out))
+
+run_case('RED-MDS', demo)""",
+    )
+
+# Mixture weights encode continuous blends, so there is no categorical legend.
+for backend in ["matplotlib", "plotly"]:
+    cell = case_cell("HIER-mixture-" + backend)
+    set_source(
+        cell,
+        text(cell).replace(
+            "legend=True,title='Means blend", "legend=False,title='Means blend"
+        ),
+    )
+
 # Hash normalized sources, excluding the hash declaration itself and all outputs.
 setup_source = re.sub(r"\nNOTEBOOK_SOURCE_SHA256 = '[^']*'", "", text(setup))
 set_source(setup, setup_source.rstrip())
@@ -635,5 +696,9 @@ digest = hashlib.sha256(
     ).encode()
 ).hexdigest()
 set_source(setup, text(setup) + f"\nNOTEBOOK_SOURCE_SHA256 = '{digest}'\n")
+for index, cell in enumerate(nb["cells"]):
+    cell.setdefault(
+        "id", hashlib.sha256((str(index) + text(cell)).encode()).hexdigest()[:12]
+    )
 PATH.write_text(json.dumps(nb, indent=1, ensure_ascii=False) + "\n")
 print(PATH, len(cases), "cases; source", digest)

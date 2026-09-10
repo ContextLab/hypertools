@@ -110,3 +110,67 @@ def test_rendered_transparent_steelblue_preserves_hue(tmp_path):
     # The faulty RGBA path makes G approach B (cyan), driving it towards zero.
     ratio = (pixels[:, 2] - pixels[:, 1]) / (pixels[:, 2] - pixels[:, 0])
     assert np.median(ratio) == pytest.approx((180 - 130) / (180 - 70), abs=0.12)
+
+
+def test_opaque_morph_frame_resets_the_base_trace_opacity():
+    go = pytest.importorskip("plotly.graph_objects")
+    from tests._plotly_colors import rgba
+
+    rng = np.random.default_rng(71)
+    fig = hyp.plot(
+        [rng.normal(size=(12, 3)), rng.normal(size=(12, 3))],
+        fmt="o",
+        backend="plotly",
+        animate="morph",
+        alpha=[0.2, 1.0],
+        duration=2,
+        frame_rate=6,
+        show=False,
+    )
+    index = fig.frames[-1].traces[0]
+    assert rgba(fig.data[index], "marker")[-1] == pytest.approx(0.2)
+    snapshot = go.Figure(fig)
+    for trace_index, update in zip(fig.frames[-1].traces, fig.frames[-1].data):
+        snapshot.data[trace_index].update(update.to_plotly_json())
+    assert rgba(snapshot.data[index], "marker")[-1] == pytest.approx(1.0)
+
+
+def test_tour_plotly_previews_do_not_allocate_live_plots_or_embed_html(tmp_path):
+    pytest.importorskip("plotly")
+    pytest.importorskip("kaleido")
+    pytest.importorskip("ipywidgets")
+    from IPython.utils.capture import capture_output
+    from pathlib import Path
+    import json
+
+    root = Path(__file__).resolve().parents[1]
+    ns = dict(SCRATCH=tmp_path, IN_COLAB=False)
+    exec(
+        compile(
+            (root / "scripts/feature_tour_support.py").read_text(),
+            str(root / "scripts/feature_tour_support.py"),
+            "exec",
+        ),
+        ns,
+    )
+    fig = hyp.plot(hyp.load("helix", n_samples=12), backend="plotly", show=False)
+    from IPython.core.interactiveshell import InteractiveShell
+
+    had_shell = InteractiveShell.initialized()
+    InteractiveShell.instance()
+    try:
+        with capture_output(display=True) as captured:
+            ns["show_result"](fig)
+    finally:
+        if not had_shell:
+            InteractiveShell.clear_instance()
+    data = [o.data for o in captured.outputs]
+    assert any("image/png" in item for item in data)
+    assert all("application/vnd.plotly.v1+json" not in item for item in data)
+    assert len(json.dumps(data)) < 1_000_000
+    assert len(ns["INTERACTIVE_PLOTS"]) == 1
+    path = Path(next(iter(ns["INTERACTIVE_PLOTS"].values())))
+    assert (
+        path.stat().st_size > 1_000_000
+    )  # standalone JS lives on disk, not in every cell
+    assert "Plotly.newPlot(" in path.read_text()

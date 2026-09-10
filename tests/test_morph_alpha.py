@@ -22,6 +22,7 @@ through a real Agg canvas.
 import re
 
 import numpy as np
+from tests._plotly_colors import rgba as effective_rgba
 import pytest
 
 import hypertools as hyp
@@ -210,32 +211,32 @@ class TestPlotlyMorphAlpha:
     def test_scalar_alpha_on_initial_trace_and_every_frame(self):
         fig = _plotly(_blobs(), alpha=0.25)
         morph_idx = fig.frames[0].traces[0]
-        assert _alpha_of(fig.data[morph_idx].marker.color) == 0.25
+        assert effective_rgba(fig.data[morph_idx], 'marker')[-1] == 0.25
         for k, frame in enumerate(fig.frames):
-            assert _alpha_of(frame.data[0].marker.color) == 0.25, f"frame {k}"
+            assert effective_rgba(frame.data[0], 'marker')[-1] == 0.25, f"frame {k}"
 
     def test_scalar_alpha_2d(self):
         data = [d[:, :2] for d in _blobs()]
         fig = _plotly(data, alpha=0.4)
         morph_idx = fig.frames[0].traces[0]
-        assert _alpha_of(fig.data[morph_idx].marker.color) == 0.4
+        assert effective_rgba(fig.data[morph_idx], 'marker')[-1] == 0.4
         for frame in fig.frames:
-            assert _alpha_of(frame.data[0].marker.color) == 0.4
+            assert effective_rgba(frame.data[0], 'marker')[-1] == 0.4
 
     def test_per_dataset_list_follows_the_hold_and_departing_rule(self):
         alphas = [0.2, 0.6, 1.0]
         fig = _plotly(_blobs(), alpha=alphas)
         fc, _, _ = morph.morph_schedule(3, len(fig.frames), 1, -60)
         h0, t_first, t_mid, t_last, h1 = _segment_frames(fc)
-        col = lambda k: fig.frames[k].data[0].marker.color  # noqa: E731
-        assert _alpha_of(col(h0)) == 0.2
-        assert _alpha_of(col(t_first)) == pytest.approx(0.2)
+        col = lambda k: effective_rgba(fig.frames[k].data[0], 'marker')[-1]  # noqa: E731
+        assert col(h0) == 0.2
+        assert col(t_first) == pytest.approx(0.2)
         expect = morph.morph_alpha(alphas, 1, t_mid - fc[0], fc[1])
         assert 0.2 < expect < 0.6
-        assert _alpha_of(col(t_mid)) == pytest.approx(expect)
-        assert _alpha_of(col(t_last)) == pytest.approx(0.6)
-        assert _alpha_of(col(h1)) == 0.6
-        assert _alpha_of(col(sum(fc) - 1)) == 1.0
+        assert col(t_mid) == pytest.approx(expect)
+        assert col(t_last) == pytest.approx(0.6)
+        assert col(h1) == 0.6
+        assert col(sum(fc) - 1) == 1.0
 
     def test_default_alpha_unchanged(self):
         """Regression: no `alpha=` -> the plain opaque `rgb(...)` colour
@@ -256,9 +257,9 @@ class TestPlotlyMorphAlpha:
         ref = _plotly(data, color='k', surface=spec)
         cloud_idx, mesh_idx = fig.frames[0].traces
         assert list(ref.frames[0].traces) == [cloud_idx, mesh_idx]
-        assert _alpha_of(fig.data[cloud_idx].marker.color) == 0.25
+        assert effective_rgba(fig.data[cloud_idx], 'marker')[-1] == 0.25
         assert ref.data[cloud_idx].marker.color.startswith('rgb(')
         assert fig.data[mesh_idx].opacity == ref.data[mesh_idx].opacity
         for frame, rframe in zip(fig.frames, ref.frames):
-            assert _alpha_of(frame.data[0].marker.color) == 0.25
+            assert effective_rgba(frame.data[0], 'marker')[-1] == 0.25
             assert frame.data[1].opacity == rframe.data[1].opacity

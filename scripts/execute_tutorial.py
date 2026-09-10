@@ -28,7 +28,9 @@ notebook's ORIGINAL directory, so a redirected run reads the same data.
 Current tutorials use a version-aware PyPI installer; candidate verification
 must retain the selected checkout. Only explicitly tagged HyperTools installers
 (or legacy cells containing a live HyperTools pip command) are skipped.
-Configuration and independent prerequisites remain executable. Mixed legacy
+Configuration and independent prerequisites remain executable. Successful
+setup-only prerequisite cells tagged ``prerequisite-install`` have their pip
+chatter cleared before saving; failures still abort execution. Mixed legacy
 install/work cells must be split before verification; a comment mentioning pip
 is not an installation command. For the feature tour, configuration and its
 Colab-only installer are separate cells. Use --out-dir to preserve source files.
@@ -117,6 +119,18 @@ def restore_install_cells(installs):
             del cell.metadata['tags']
 
 
+def clear_prerequisite_install_outputs(nb):
+    """Execute prerequisites normally, then omit successful pip chatter from docs.
+
+    Called only after NotebookClient succeeds, so installation failures still
+    propagate with their traceback. These tagged cells contain setup only.
+    """
+    for cell in nb.cells:
+        if 'prerequisite-install' in cell.metadata.get('tags', []):
+            cell.outputs = []
+            cell.execution_count = None
+
+
 def execute(path, out=None):
     """Execute `path`, writing the result to `out` (default: in place)."""
     nb = nbformat.read(path, as_version=4)
@@ -133,6 +147,7 @@ def execute(path, out=None):
     nb.metadata['kernelspec'] = original
     scrub_home(nb)
     restore_install_cells(installs)
+    clear_prerequisite_install_outputs(nb)
     nbformat.write(nb, out or path)
     executed = sum(1 for c in nb.cells
                    if c.cell_type == 'code' and c.get('outputs'))

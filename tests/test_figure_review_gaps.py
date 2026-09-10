@@ -20,6 +20,7 @@ matplotlib.use('Agg')
 
 import matplotlib.pyplot as plt
 import numpy as np
+from tests._plotly_colors import rgba as effective_rgba
 import pytest
 from matplotlib.colors import to_rgb
 
@@ -160,11 +161,11 @@ def test_recoloured_forecasts_are_not_faded(backend):
         def alpha(fig):
             tr = [t for t in fig.data
                   if (t.meta or {}).get('hyp_forecast_role') == 'static'][0]
-            return tr.meta['hyp_forecast_alpha'], tr.line.color
+            return tr.meta['hyp_forecast_alpha'], effective_rgba(tr)[-1]
         assert alpha(inherited)[0] == pytest.approx(0.35)
         a, color = alpha(recoloured)
         assert a == pytest.approx(0.7)
-        assert color.endswith(',0.7)')
+        assert color == pytest.approx(.7)
 
 
 def test_a_dash_only_override_keeps_the_fade():
