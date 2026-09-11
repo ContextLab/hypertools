@@ -532,6 +532,8 @@ _NOT_SLICED = {
     'size': 'one figure size for the whole grid',
     'loop': 'animation only; panels= is static',
     'on_frame': 'animation only; panels= is static',
+    'transform': 'replaces the pipeline for the panel probe, whose rows '
+                 'each panel then receives through its own transform=',
     'panels': 'the grid itself (its description names the sliced arguments)',
 }
 

@@ -91,4 +91,5 @@ surface_spec = {
 fig, ani = hyp.plot(clouds, fmt='.', color='k', markersize=0.6, alpha=0.25,
                     animate='morph', rotations=rotations,
                     duration=12, frame_rate=30,
-                    morph_samples=n_points, surface=surface_spec)
+                    morph_samples=n_points, surface=surface_spec,
+                    backend='matplotlib')   # (fig, ani) is matplotlib's form

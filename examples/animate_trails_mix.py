@@ -29,9 +29,12 @@ data_c = np.column_stack([np.sin(t), np.cos(t), t / 4]) + [-3, 0, 0]
 # dataset 0: chemtrails (past trail) only
 # dataset 1: precog (future trail) only
 # dataset 2: bullettime (full trail, past + future) only
+# backend='matplotlib': unpacking into (fig, ani) is the matplotlib
+# animation's form; on Colab the default backend would be plotly
 fig, ani = hyp.plot(
     [data_a, data_b, data_c],
     animate=True,
+    backend='matplotlib',
     chemtrails=[True, False, False],
     precog=[False, True, False],
     bullettime=[False, False, True],

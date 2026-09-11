@@ -73,4 +73,5 @@ print(f"dispersion after alignment:  {score['after']:.2f}")
 # overlapping near-opaque ribbons read as ONE coherent shape.
 fig, ani = hyp.plot(aligned, '-', palette='husl', alpha=0.85, linewidth=1.6,
                     reduce='IncrementalPCA', ndims=3, animate='window',
-                    focused=1.5, zoom=1.5, duration=9)
+                    focused=1.5, zoom=1.5, duration=9,
+                    backend='matplotlib')   # (fig, ani) is matplotlib's form

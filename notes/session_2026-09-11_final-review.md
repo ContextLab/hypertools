@@ -84,6 +84,39 @@ evidence/CI for the new head.
 - Routed to W3 with contract: name every hoverable trace with its legend label (category/dataset/column/model/'truth'),
   duplicates showlegend=False + same legendgroup; legend display still governed by legend=; single unlabeled dataset hides the extra box.
 
+### Visual QA adjudicator (scratchpad/visual_qa_adj/VERDICTS.md): OK 26, KNOWN 7, lib 39 rows (15 bugs), tour 12 rows (9), d 11
+- L1 plotly 3-D line width ~0.53x (-> W8 later); L2 3-D density volume stipples cube (-> W8); L3 white label connectors, L4 panel/ax titles DejaVu,
+  L5 nested legend colours, L6 cluster legend order (-> W4b); L7 plotly animated legend flicker (-> W3); L8 anim DOWNSAMPLING (helix 46% radius),
+  L9 morph no motion + dot size, L11 on_frame title off-canvas, L12 companion blue, L13b stream clamp warning (-> W9 new);
+  L10 plotly date axes shifted by viewer TZ (-> W4a); L13 pipeline cluster step dropped (-> W7); L14 docstrings (me, after merge); L15 zoom (W3)
+- DESIGN-QUESTION for Jeremy: 'unit' affine puts column means off-centre (data sit in upper half of cube) - centring per-axis midrange would change all figures.
+- Tour T1-T9 exact replacements in VERDICTS.md lines 287-316 (me, after merge). d: plotly Play/Pause over date ticks (-> W8).
+
+### Merges
+- W6 merged 0d4f0cab (22ae49c7 CHANGELOG, 05f7aeb6 checklist + stale-date release gate, e876a556 release notes). D-12 partial.
+  TODO after W4a/W4b/W9 merge, apply plot.py docstring fixes: :5333-5334 axis_scale '(-1.1,1.1)' -> data in [-1,1], frame half-width
+  1.125, axes pinned (-1.2375,1.2375); :7356 '[-1.1,1.1] frame box' -> '+/-1.2375 around the unit frame'; :5992-5993 slow-warning timing
+  -> 'emitted once fits at two or more history lengths (one of >=10 rows, or the longest available) have been timed'; :1124,:1133
+  'title must be a string (or None)' -> 'a string, a callable (ctx -> str), or None'. Also animation_context.py:207-209 window_bounds doc (L14).
+- W2 merged 70dc00b3 (9 commits: yahoo intraday tz, Normalizer 1-D, autoinstall teardown + re-entry order, offline errors, npz trust msg,
+  scikit-image>=0.25.0 (+docs/doc_requirements.txt), load TypeError polars, 0-255 palette -> ValueError, font='Noto Sans' fresh process).
+  DESIGN-QUESTION (Jeremy): set_autoinstall — does ENTERING an older handle count as a new call? Current rule: no (newest call by creation order).
+  FOLLOW-UPS: pip install -e .[dev] after all merges (metadata floor); io.ipynb re-exec; core floors (numpy 2.0.0, pandas 2.2.2, scipy 1.13.0,
+  matplotlib 3.9.0, sklearn 1.4.2, statsmodels 0.14.0) have no cp313 wheels, pillow 8 none for >=3.10 -> packaging decision for Jeremy.
+  CHANGELOG bullets drafted in W2 report (integrate at end).
+- Jeremy report ~16:40Z "surface colour doesn't match dots" (plot popped up in browser from agent test runs): ROOT CAUSE global IDW in
+  meshutil.vertex_colors_from_points -> washed-out mean colour. FIXED a422a97e (8-NN IDW) + tests; tests/conftest.py PLOTLY_RENDERER=json (headless).
+- W5 merged 5c09e1bb (launch/examples pinned matplotlib, market_sectors split-adjusted shares, A0 video block, prose). Re-exec needed:
+  market_sectors, weather_decades, painting_embeddings, conversation_shape, morph_shapes_zoo, animate_forecast (regenerated, no outputs),
+  io, manip, plot, align, analyze, cluster, pipelines, projectile_kalman, stock_forecasting, streaming_data, lsl_streaming, text.
+  Regenerate market_sectors.mp4, sphx_glr_animate_market_sectors_thumb.gif, Bluesky 20_market_sectors clip, plot_sotus render.
+  W5 library leftovers (-> W10): flat cluster spec {'model':'KMeans','n_clusters':4,'random_state':0} drops random_state (cluster.py ~111-123);
+  names= overrides explicit legend=False. Unverifiable market data: HON 2026-06 SEC count half of 2026-03; XOM SEC history starts 2026.
+- W1 merged 46c71700 (calendar-regular forecasting, cross-index reuse, ARIMA seasonal floor, warnings once). DESIGN-QUESTION (Jeremy):
+  flat-list datetime t= resolving to different step counts per dataset: code takes max(steps) (2e9669df) + test asserts differing lengths,
+  docstrings (plot.py:5586, :6836) say must be equal. Follow-ups: stock_forecasting.ipynb cells 11-12 prose (median gap/weekend interp)
+  stale; CHANGELOG 17-21 'one future step is always the median gap' stale.
+
 ### Visual expectation writer extra (code-vs-doc)
 - mpl fmt='-o' overrides marker=['o','s'] (backends disagree); markers= with '-' marks all smoothed pts (antialias docstring says true samples);
   plotly ignores frame_kwargs; static plotly applies zoom (doc: animation only); '^' -> diamond in plotly 3-D; legend_kwargs x/y yanchor;
