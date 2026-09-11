@@ -39,7 +39,7 @@ def test_failed_rerun_invalidates_visual_verdict_and_csv_keeps_both(tmp_path):
             )
         ],
     )
-    source = (root / "scripts/feature_tour_support.py").read_text()
+    source = (root / "scripts/feature_tour_support.py").read_text(encoding="utf-8")
     exec(compile(source, str(root / "scripts/feature_tour_support.py"), "exec"), ns)
     ns["run_case"]("check", good)
     first = ns["MANUAL"]["check"]["execution_id"]
@@ -52,7 +52,7 @@ def test_failed_rerun_invalidates_visual_verdict_and_csv_keeps_both(tmp_path):
     ns["save_report"]()
     csv = pd.read_csv(tmp_path / "results.csv")
     assert csv.loc[0, "visual"] == "fail" and csv.loc[0, "status"] == "FAIL"
-    report = json.loads((tmp_path / "results.json").read_text())
+    report = json.loads((tmp_path / "results.json").read_text(encoding="utf-8"))
     assert ns["report_rows"](report)[0]["visual_notes"] == "Broken display"
     assert report["cases"][0]["source_sha256"] == ns["source_hash"](
         inspect.getsource(bad)
@@ -66,7 +66,7 @@ def test_export_check_rejects_single_frame_image(tmp_path):
     ns = dict(globals(), IN_COLAB=False)
     exec(
         compile(
-            (root / "scripts/feature_tour_support.py").read_text(),
+            (root / "scripts/feature_tour_support.py").read_text(encoding="utf-8"),
             str(root / "scripts/feature_tour_support.py"),
             "exec",
         ),
@@ -78,3 +78,55 @@ def test_export_check_rejects_single_frame_image(tmp_path):
 
     with pytest.raises(AssertionError, match="only 1 frames"):
         ns["verify_export"](path, animated=True)
+
+
+def test_unicode_export_opens_in_the_actual_viewer(tmp_path):
+    """Windows' default cp1252 cannot decode this actual UTF-8 Plotly file."""
+    import html
+    import pytest
+
+    go = pytest.importorskip("plotly.graph_objects")
+    pytest.importorskip("ipywidgets")
+    from IPython.core.interactiveshell import InteractiveShell
+    from IPython.utils.capture import capture_output
+
+    root = Path(__file__).resolve().parents[1]
+    source = (root / "scripts/feature_tour_support.py").read_text(encoding="utf-8")
+    ns = dict(SCRATCH=tmp_path, IN_COLAB=False)
+    exec(compile(source, str(root / "scripts/feature_tour_support.py"), "exec"), ns)
+    label = "測定 “脳” — café"
+    path = tmp_path / "unicode-plot.html"
+    fig = go.Figure(
+        data=[go.Scatter(x=[0, 1], y=[0, 1])],
+        frames=[go.Frame(name="end", data=[go.Scatter(x=[0, 1], y=[1, 0])])],
+        layout={"title": label},
+    )
+    fig.write_html(
+        str(path),
+        include_plotlyjs=True,
+        auto_play=False,
+        post_script=f"document.title = {json.dumps(label, ensure_ascii=False)};",
+    )
+    assert label in path.read_text(encoding="utf-8")
+    with pytest.raises(UnicodeDecodeError):
+        path.read_bytes().decode("cp1252")
+    ns["INTERACTIVE_PLOTS"]["unicode"] = str(path)
+    had_shell = InteractiveShell.initialized()
+    InteractiveShell.instance()
+    try:
+        with capture_output(display=True) as captured:
+            ns["verify_export"](path, animated=True)
+            viewer = ns["interactive_viewer"]()
+            viewer.children[1].children[0].click()
+        frames = [
+            o.data["text/html"]
+            for o in captured.outputs
+            if "text/html" in o.data and "<iframe" in o.data["text/html"]
+        ]
+        assert len(frames) == 1
+        assert label in html.unescape(frames[0])
+        assert "Plotly.newPlot(" in html.unescape(frames[0])
+        viewer.children[1].children[1].click()
+    finally:
+        if not had_shell:
+            InteractiveShell.clear_instance()

@@ -108,7 +108,7 @@ def guarded_install_source(extras="interactive", branch="master"):
 
 def portable_video_source(filename):
     """Frontend-specific playback; local docs retain their relative asset."""
-    return '# Colab serves output frames separately from kernel files; embed movie bytes.\ntry:\n    import google.colab\nexcept ImportError:\n    pass  # Local Jupyter/Sphinx uses the relative video below.\nelse:\n    from IPython.display import Video, display\n    display(Video({filename!r}, embed=True))\n'.format(filename=filename)
+    return '# Colab serves output frames separately from kernel files; embed movie bytes.\ntry:\n    from google import colab as colab\nexcept ImportError:\n    pass  # Local Jupyter/Sphinx uses the relative video below.\nelse:\n    from IPython.display import Video, display\n    display(Video({filename!r}, embed=True))\n'.format(filename=filename)
 
 
 def install_lines(branch):
@@ -178,7 +178,7 @@ def main():
     note, pip = install_lines(branch)
     retargeted = added = 0
     for path in sorted(NOTEBOOKS):
-        with open(path) as f:
+        with open(path, encoding='utf-8') as f:
             nb = json.load(f)
         guarded = [c for c in nb.get('cells', [])
                    if 'hypertools-install' in c.get('metadata', {}).get('tags', [])]
@@ -191,7 +191,7 @@ def main():
                 cell['source'] = desired.splitlines(keepends=True)
                 cell['outputs'] = []
                 cell['execution_count'] = None
-                with open(path, 'w') as f:
+                with open(path, 'w', encoding='utf-8') as f:
                     json.dump(nb, f, indent=1, ensure_ascii=False)
                     f.write('\n')
                 retargeted += 1
@@ -199,7 +199,7 @@ def main():
         if has_install(nb):
             # already has an install cell -> re-target it to this branch
             if retarget_notebook(nb, branch):
-                with open(path, 'w') as f:
+                with open(path, 'w', encoding='utf-8') as f:
                     # ensure_ascii=False keeps literal UTF-8 (matching nbformat)
                     # so re-targeting doesn't churn every non-ASCII glyph into a
                     # \\uXXXX escape and bloat the diff.
@@ -219,7 +219,7 @@ def main():
                 keepends=True)
         else:
             cells.insert(0, new_code_cell(f'{note}\n{pip}'))
-        with open(path, 'w') as f:
+        with open(path, 'w', encoding='utf-8') as f:
             json.dump(nb, f, indent=1, ensure_ascii=False)
             f.write('\n')
         added += 1

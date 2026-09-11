@@ -108,6 +108,10 @@ jobs:
         # wheels for all three CI platforms/Python versions here.
         pip install -e ".[dev,torch]"
 
+    - name: Check repository lint (Ubuntu Python 3.12)
+      if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
+      run: python -m ruff check .
+
     - name: Pre-fetch headless Chrome for kaleido (Plotly image/GIF export)
       # tests/test_animation_export.py exports Plotly figures to GIF/MP4 via
       # kaleido 1.x, which drives a headless Chrome. Pre-fetching it here (into

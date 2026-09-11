@@ -75,7 +75,9 @@ def save_report():
     install_log = globals().get("INSTALL_LOG")
     if install_log is not None and Path(install_log).exists():
         shutil.copyfile(install_log, SCRATCH / "install.log")
-    (SCRATCH / "results.json").write_text(json.dumps(payload, indent=2, default=str))
+    (SCRATCH / "results.json").write_text(
+        json.dumps(payload, indent=2, default=str), encoding="utf-8"
+    )
     if RESULTS:
         pd.DataFrame(report_rows()).drop(columns=["traceback"], errors="ignore").to_csv(
             SCRATCH / "results.csv", index=False
@@ -315,7 +317,7 @@ def interactive_viewer():
 
     def show(_):
         close(None)
-        source = Path(INTERACTIVE_PLOTS[picker.value]).read_text()
+        source = Path(INTERACTIVE_PLOTS[picker.value]).read_text(encoding="utf-8")
         with output:
             display(
                 HTML(
@@ -326,7 +328,9 @@ def interactive_viewer():
 
     open_button.on_click(show)
     close_button.on_click(close)
-    display(widgets.VBox([picker, widgets.HBox([open_button, close_button]), output]))
+    viewer = widgets.VBox([picker, widgets.HBox([open_button, close_button]), output])
+    display(viewer)
+    return viewer
 
 
 def verify_export(path, animated=False):
@@ -381,7 +385,7 @@ def verify_export(path, animated=False):
     elif suffix == ".pdf":
         assert path.read_bytes().startswith(b"%PDF-")
     elif suffix == ".html":
-        text = path.read_text()
+        text = path.read_text(encoding="utf-8")
         assert "<html" in text.lower() or "<div" in text.lower()
         if animated:
             assert "Plotly.addFrames(" in text or "new Animation(" in text, (

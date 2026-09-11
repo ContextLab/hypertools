@@ -227,7 +227,8 @@ def test_execute_tutorial_drops_the_outputs_of_the_cell_it_skips(tmp_path):
 
 def test_tutorial_installers_enforce_version_and_preserve_prerequisites():
     for path in _tracked_tutorials():
-        nb=json.load(open(path))
+        with open(path, encoding='utf-8') as handle:
+            nb=json.load(handle)
         installers=[c for c in nb['cells'] if 'hypertools-install' in c.get('metadata',{}).get('tags',[])]
         assert len(installers)==1, path
         source=''.join(installers[0]['source'])
@@ -240,7 +241,8 @@ def test_executor_keeps_setup_and_independent_install_cells():
     import importlib.util
     import nbformat
     spec=importlib.util.spec_from_file_location('execute_tutorial',os.path.join(_REPO,'scripts','execute_tutorial.py'))
-    module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+    module=importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
     config=nbformat.v4.new_code_cell("SETTINGS = {}\n# Optional: pip install extras")
     prerequisite=nbformat.v4.new_code_cell('%pip install convokit')
     install=nbformat.v4.new_code_cell("subprocess.check_call([sys.executable,'-m','pip','install',spec])",metadata={'tags':['hypertools-install']})

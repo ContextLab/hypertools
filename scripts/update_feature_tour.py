@@ -12,7 +12,7 @@ import re
 from pathlib import Path
 
 PATH = Path("notes/colab/hypertools_1.1_feature_tour.ipynb")
-nb = json.loads(PATH.read_text())
+nb = json.loads(PATH.read_text(encoding="utf-8"))
 
 
 def text(cell):
@@ -96,7 +96,7 @@ if IN_COLAB:
     spec = f'hypertools[{EXTRAS}] @ git+https://github.com/ContextLab/hypertools.git@{REVIEW_COMMIT}'
     command = [sys.executable, '-m', 'pip', 'install', spec,
                'pyarrow', 'polars', 'ipywidgets', 'xlrd', 'xlwt']
-    with INSTALL_LOG.open('w') as log:
+    with INSTALL_LOG.open('w', encoding='utf-8') as log:
         process = subprocess.Popen(command, stdout=subprocess.PIPE,
                                    stderr=subprocess.STDOUT, text=True)
         for line in process.stdout:
@@ -115,7 +115,7 @@ else:
 """,
         )
 helper = next(c for c in nb["cells"] if "def run_case(" in text(c))
-set_source(helper, Path("scripts/feature_tour_support.py").read_text())
+set_source(helper, Path("scripts/feature_tour_support.py").read_text(encoding="utf-8"))
 
 inventory = next(
     c for c in nb["cells"] if text(c).startswith("# Explicit coverage inventory")
@@ -572,7 +572,7 @@ set_source(
     comparison,
     """OTHER_RESULTS = '' # downloaded results.json from the other environment
 if OTHER_RESULTS:
-    other=json.loads(Path(OTHER_RESULTS).read_text())
+    other=json.loads(Path(OTHER_RESULTS).read_text(encoding="utf-8"))
     print('Other environment:',other['environment'])
     print('This environment:',ENVIRONMENT)
     print('Same notebook source:',other.get('notebook_source_sha256')==NOTEBOOK_SOURCE_SHA256)
@@ -703,5 +703,5 @@ for index, cell in enumerate(nb["cells"]):
     cell.setdefault(
         "id", hashlib.sha256((str(index) + text(cell)).encode()).hexdigest()[:12]
     )
-PATH.write_text(json.dumps(nb, indent=1, ensure_ascii=False) + "\n")
+PATH.write_text(json.dumps(nb, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
 print(PATH, len(cases), "cases; source", digest)

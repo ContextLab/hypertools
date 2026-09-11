@@ -147,7 +147,7 @@ def test_tour_plotly_previews_do_not_allocate_live_plots_or_embed_html(tmp_path)
     ns = dict(SCRATCH=tmp_path, IN_COLAB=False)
     exec(
         compile(
-            (root / "scripts/feature_tour_support.py").read_text(),
+            (root / "scripts/feature_tour_support.py").read_text(encoding="utf-8"),
             str(root / "scripts/feature_tour_support.py"),
             "exec",
         ),
@@ -173,4 +173,4 @@ def test_tour_plotly_previews_do_not_allocate_live_plots_or_embed_html(tmp_path)
     assert (
         path.stat().st_size > 1_000_000
     )  # standalone JS lives on disk, not in every cell
-    assert "Plotly.newPlot(" in path.read_text()
+    assert "Plotly.newPlot(" in path.read_text(encoding="utf-8")

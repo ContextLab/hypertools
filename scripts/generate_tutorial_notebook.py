@@ -236,13 +236,13 @@ def build(stem):
         from add_colab_install_cell import portable_video_source
     module, dpi, spec = SPECS[stem]
     path = os.path.join(TUTORIALS, stem + '.ipynb')
-    with open(path if os.path.exists(path) else TEMPLATE) as handle:
+    with open(path if os.path.exists(path) else TEMPLATE, encoding='utf-8') as handle:
         old = json.load(handle)
     install = old['cells'][0]
     assert 'pip install' in ''.join(install['source']), path
     install = {'cell_type': 'code', 'metadata': {'tags': ['hypertools-install']}, 'execution_count': None,
                'outputs': [], 'source': install['source']}
-    with open(os.path.join(EXAMPLES, module + '.py')) as handle:
+    with open(os.path.join(EXAMPLES, module + '.py'), encoding='utf-8') as handle:
         source = handle.read()
     doc, sections, main_body = split_sections(source, spec)
     cells = [install, cell('markdown', docstring_to_markdown(doc))]
@@ -269,7 +269,7 @@ def build(stem):
                       f'[Download the clip]({stem}.mp4)\n'))
     notebook = {'cells': cells, 'metadata': old['metadata'],
                 'nbformat': old['nbformat'], 'nbformat_minor': old['nbformat_minor']}
-    with open(path, 'w') as handle:
+    with open(path, 'w', encoding='utf-8') as handle:
         json.dump(notebook, handle, indent=1, ensure_ascii=False)
         handle.write('\n')
     print(f'{stem}: {len(cells)} cells from examples/{module}.py')
