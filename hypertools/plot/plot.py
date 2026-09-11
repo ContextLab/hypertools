@@ -3585,8 +3585,7 @@ def _labels_as_lists(labels, n_datasets):
     out = []
     for el in labels:
         if is_array_dataset(el) or is_series_like(el):
-            arr = np.asarray(el.to_numpy() if hasattr(el, 'to_numpy')
-                             else el, dtype=object)
+            arr = np.asarray(el, dtype=object)
             if arr.ndim != 1:
                 # not one label per row; `_validate_labels_length` reports
                 return labels
@@ -11855,6 +11854,13 @@ def plot(
             _n_traces_before = len(
                 (_plotly_into.figure if _is_plotly_cell(_plotly_into)
                  else _plotly_into).data)
+        def _plotly_before_show(drawn):
+            _record_palette_used(
+                drawn, _plotly_into, _plotly_palette_offset,
+                _plotly_palette_used, _palette_taken_colors)
+            if _legend_order:
+                _rank_plotly_legend(drawn, _n_traces_before, _legend_order)
+
         fig = plotly_draw(
             xform,
             into=_plotly_into,
@@ -11940,14 +11946,12 @@ def plot(
             # the datasets coloured from the cycle count
             # (`_palette_slots_consumed`)
             datasets_drawn=_plotly_palette_offset + _palette_slots_taken,
+            # ...and, before the figure is saved or shown, the colours of
+            # those slots beside the count (read back by the colour block
+            # above on the next `ax=` call) and the categorical legend's
+            # order (`_rank_plotly_legend`)
+            before_show=_plotly_before_show,
         )
-        # ...and the colours of those slots, beside the count (read back
-        # by the colour block above on the next `ax=` call)
-        _record_palette_used(
-            fig, _plotly_into, _plotly_palette_offset, _plotly_palette_used,
-            _palette_taken_colors)
-        if _legend_order:
-            _rank_plotly_legend(fig, _n_traces_before, _legend_order)
         ax = None
         data = xform
         line_ani = None
