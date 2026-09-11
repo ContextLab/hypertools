@@ -287,3 +287,26 @@ def test_panels_forward_legend_colour_pairs_whole():
                    legend_colors=[('Key', 'k')], panels=True, show=False)
     for ax in fig.axes[:2]:
         assert _legend_colours(ax) == [('Key', _r3('k'))]
+
+
+# --- 5: two-column data into a 2-D ax= at the default ndims ----------------
+
+@pytest.mark.parametrize('kw', [{}, {'reduce': None}])
+def test_two_column_data_draws_into_a_2d_axes_at_default_ndims(kw):
+    two = _walks(1, rows=20)[0][:, :2]
+    fig, ax = plt.subplots()
+    out = hyp.plot(two, ax=ax, show=False, **kw)
+    assert out is fig
+    # the same 2-D drawing a figure of its own gets
+    own = hyp.plot(two, show=False, **kw).axes[0]
+    assert own.name == ax.name == 'rectilinear'
+    np.testing.assert_allclose(ax.lines[0].get_xydata(),
+                               own.lines[0].get_xydata())
+
+
+def test_three_column_data_still_refuses_a_2d_axes():
+    fig, ax = plt.subplots()
+    with pytest.raises(ValueError, match='ax must also be 3d'):
+        hyp.plot(_walks(1, rows=20)[0], ax=ax, show=False)
+    # nothing was drawn into the refused axes
+    assert not ax.lines

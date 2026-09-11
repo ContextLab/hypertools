@@ -8010,6 +8010,7 @@ def plot(
     # remember whether the USER supplied an axis before `_draw` reassigns the
     # local `ax` to the axis it created (used by the GH #148 close below).
     _user_supplied_ax = ax is not None
+    _ax_needs_3d = False
 
     if ax is not None:
         # An animated plot BUILDS ITS OWN FIGURE. Measured across every mode
@@ -8035,10 +8036,13 @@ def plot(
                 "panels out in the data and make a single plot call."
             )
         if ndims > 2:
-            if getattr(ax, "name", None) != "3d":
-                raise ValueError(
-                    "If passing ax and the plot is 3D, ax must " "also be 3d"
-                )
+            # a 2-D axes under the default (3-D) ndims: whether the plot IS
+            # 3-D is the ANALYZED data's width, known only after the
+            # pipeline -- two columns draw a 2-D plot, exactly as on a
+            # figure of their own -- so the refusal is made there
+            # (`_ax_needs_3d`; 1.1 release review: two-column data into a
+            # 2-D ax= raised "the plot is 3D" up front)
+            _ax_needs_3d = getattr(ax, "name", None) != "3d"
         elif getattr(ax, "name", None) == "3d":
             # the mirror image: a 2-D (or series-mode) plot drawn into a
             # 3-D axes silently became a Line3D at z=0, viewed from the
@@ -8766,6 +8770,17 @@ def plot(
         _lift_source = [np.asarray(xi, dtype=float) for xi in xform]
         xform = [xi if lift is None else lift.rows(xi)
                  for xi, lift in zip(_lift_source, _panel_lift)]
+
+    # a 2-D `ax=` under ndims > 2 (see the `ax=` checks at the top): refused
+    # only now that the drawn width is known, and only when it is 3-D
+    if (_ax_needs_3d and xform and np.ndim(xform[0]) == 2
+            and np.shape(xform[0])[1] >= 3):
+        raise ValueError(
+            "If passing ax and the plot is 3D, ax must also be 3d: ax= is a "
+            f"2-D axes, but the data is drawn in 3-D ({np.shape(xform[0])[1]} "
+            "columns after the pipeline). Pass a 3-D axes (hyp.subplots() "
+            "default, or fig.add_subplot(projection='3d')), or ndims=2 to "
+            "draw into this one.")
 
     # a 3-D plot's frame IS the unit cube -- there is no "raw units" cube to
     # draw the data in, and the camera/zoom geometry is defined against it.
