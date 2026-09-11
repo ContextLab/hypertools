@@ -47,6 +47,7 @@ from .surface import (
 )
 from .density import (
     DENSITY_DEFAULTS,
+    _padded_bounds,
     POOLED_COLOR,
     bbox_extent,
     density_alpha_boost,
@@ -2526,7 +2527,8 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     # every animation frame.
     if density is not None and ndims >= 3:
         traces.extend(_build_density_traces_3d(go, data, density,
-                                               density_colors))
+                                               density_colors,
+                                               limit=cube_scale))
 
     if ndims >= 3:
         # every 3-D DATA line so far (trajectories, forecasts, truth,
@@ -4574,7 +4576,8 @@ def _build_density_traces_2d(go, data, density, density_colors):
     return traces
 
 
-def _one_density_volume_trace(go, pts, spec, color_rgb, label="", boost=1.0):
+def _one_density_volume_trace(go, pts, spec, color_rgb, label="", boost=1.0,
+                              limit=None):
     """One ``go.Volume`` KDE iso-surface layer (GH #108/#191, 3-D), or
     ``None`` if `pts` is too small/degenerate to fit a KDE.
 
@@ -4631,7 +4634,21 @@ def _one_density_volume_trace(go, pts, spec, color_rgb, label="", boost=1.0):
     levels = spec.get('levels', DENSITY_DEFAULTS['levels'])
     pad, isomin, opacityscale, opacity, surface_count = (
         resolve_plotly_volume_params(spec['alpha'], levels, boost))
-    X, Y, Z, D, _, _ = kde_grid_3d(pts, kde, gridsize=gridsize, pad=pad)
+    if limit is None:
+        X, Y, Z, D, _, _ = kde_grid_3d(pts, kde, gridsize=gridsize, pad=pad)
+    else:
+        # the grid, padded past the data so the glow fades out, is CLIPPED
+        # to the scene's cube (1.1 release review, L2): a grid reaching
+        # past the scene range (x to +-1.3) drew its translucent shells
+        # over the cube's edges, which rendered stippled (1076 of 3551
+        # dark cube/marker pixels survived on the reviewer's case; all of
+        # them do clipped). The same `gridsize` samples the clipped box.
+        lo, hi = _padded_bounds(np.asarray(pts, dtype=float), pad)
+        lo, hi = np.maximum(lo, -limit), np.minimum(hi, limit)
+        axes_ = [np.linspace(lo[i], hi[i], gridsize) for i in range(3)]
+        X, Y, Z = np.meshgrid(*axes_, indexing='ij')
+        D = kde(np.vstack([X.ravel(), Y.ravel(), Z.ravel()])).reshape(
+            X.shape)
     dmax = D.max()
     if dmax <= 0:
         return None
@@ -4645,21 +4662,23 @@ def _one_density_volume_trace(go, pts, spec, color_rgb, label="", boost=1.0):
         showscale=False, hoverinfo='skip')
 
 
-def _build_density_traces_3d(go, data, density, density_colors):
+def _build_density_traces_3d(go, data, density, density_colors, limit=None):
     """Build each dataset's (or, with ``per_group=False``, one pooled)
     ``go.Volume`` KDE density layer (GH #108/#191, 3-D).
 
     Each per-dataset layer's opacity is boosted (GH #108 round 2) by how
     small that dataset's own bounding box is relative to the bounding box
     of the WHOLE scene (all datasets combined) -- see
-    :func:`~.density.density_alpha_boost`."""
+    :func:`~.density.density_alpha_boost`. `limit` (the scene cube's
+    half-width) clips every layer's grid to the cube (see
+    `_one_density_volume_trace`)."""
     if density[0] is not None and not density[0].get('per_group', True):
         all_pts = np.vstack([
             np.atleast_2d(np.asarray(arr, dtype=np.float64))[:, :3]
             for arr in data])
         trace = _one_density_volume_trace(go, all_pts, density[0],
                                           POOLED_COLOR, label=' (pooled)',
-                                          boost=1.0)
+                                          boost=1.0, limit=limit)
         return [trace] if trace is not None else []
     scene_pts = np.vstack([
         np.atleast_2d(np.asarray(arr, dtype=np.float64))[:, :3]
@@ -4672,7 +4691,8 @@ def _build_density_traces_3d(go, data, density, density_colors):
         pts = np.atleast_2d(np.asarray(arr, dtype=np.float64))[:, :3]
         boost = density_alpha_boost(bbox_extent(pts), scene_extent)
         trace = _one_density_volume_trace(go, pts, spec, density_colors[i],
-                                          label=f' {i}', boost=boost)
+                                          label=f' {i}', boost=boost,
+                                          limit=limit)
         if trace is not None:
             traces.append(trace)
     return traces
