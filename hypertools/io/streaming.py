@@ -380,9 +380,13 @@ def plot_stream(stream, fmt='-', stream_init=10000, stream_chunk=100,
             "reduce/ndims so samples are projected to <= 3 dimensions "
             "(e.g. reduce='IncrementalPCA', ndims=3).")
 
-    # initial plot on the head (already normalized/reduced -> disable both)
+    # initial plot on the head (already normalized/reduced -> disable both).
+    # Streams are always drawn with matplotlib: pin the render backend so a
+    # plotly preference (Colab/Kaggle auto-detection, or
+    # set_interactive_backend('plotly')) cannot turn this into a plotly
+    # figure (fresh-Colab feature tour, 2026-09-11).
     fig = hyp_plot(head_red, fmt, reduce=None, normalize=None, ndims=ndims,
-                   show=False, **plot_kwargs)
+                   show=False, backend='matplotlib', **plot_kwargs)
     artist = next(ln for ln in fig.axes[0].lines if len(ln.get_data()[0]))
 
     # the axis limits and the data->box transform are FROZEN from the head:

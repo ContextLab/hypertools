@@ -286,6 +286,40 @@ def test_title_no_missing_glyph_warnings():
     plt.close(fig)
 
 
+# Scripts the fallback STACK may lack while some other installed font covers
+# them (macOS ships Noto Sans Javanese/Syriac etc. outside the stack).
+_STACK_GAP_CANDIDATES = ['ꦲꦤꦕ', 'ܐܒܓ', 'ᏣᎳᎩ', 'ᠮᠣᠩ', 'ሀለሐ', 'ⴰⴱⴳ',
+                         'ཀཁག', 'กขค']
+
+
+def _stack_gap_text():
+    """Text that only an AUTO-DETECTED gap font can render: uncovered by the
+    fallback stack, covered by some installed font. None when this machine
+    has no such script."""
+    for text in _STACK_GAP_CANDIDATES:
+        if not _codepoints_uncovered_by_stack({ord(c) for c in text}):
+            continue
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')
+            if find_covering_font([text]) is not None:
+                return text
+    return None
+
+
+@pytest.mark.parametrize('kwarg', ['title', 'xlabel', 'ylabel', 'zlabel'])
+def test_axis_labels_join_the_font_gap_scan(kwarg):
+    # fresh-Colab review 2026-09-11: xlabel/ylabel/zlabel were not scanned
+    # for font gaps, so an axis label in a script outside the stack drew
+    # tofu while the same text as a title rendered.
+    text = _stack_gap_text()
+    if text is None:
+        pytest.skip('no installed font covers a script the fallback stack '
+                    'lacks on this machine')
+    fig = hyp.plot(_random_points(20), show=False, **{kwarg: text})
+    assert _missing_glyph_warnings(fig) == []
+    plt.close(fig)
+
+
 # ----------------------------------------------------------- font= kwarg forms
 
 @requires_covering_font

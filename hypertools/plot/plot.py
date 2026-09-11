@@ -7667,8 +7667,10 @@ def plot(
     # by the text-flattening helper. Resolving once up front means every
     # text surface `_draw`/`_add_colorbar` touches later shares the exact
     # same FontProperties, rather than each independently re-scanning
-    # installed fonts.
-    _font_texts = [labels, legend, title, hue]
+    # installed fonts. xlabel/ylabel/zlabel are drawn text too (fresh-Colab
+    # review 2026-09-11: an axis label alone in a script outside the stack
+    # rendered as tofu).
+    _font_texts = [labels, legend, title, hue, xlabel, ylabel, zlabel]
     if colorbar is not None:
         _font_texts.append(colorbar.get('label'))
         _font_texts.append(colorbar.get('ticks'))

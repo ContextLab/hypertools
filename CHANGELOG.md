@@ -1308,6 +1308,22 @@ Because 1.1.0 had not been published, they ship in it.
   `panels=` draws it, and the first cell that receives a legend or
   colorbar rebuilds the grid with gutters, moving the cells already
   drawn (their legends, colorbars and titles included).
+- **Streaming plots work when plotly is the render backend.** Colab and
+  Kaggle select plotly by default, and there every streaming `hyp.plot`
+  (a generator, a Hugging Face `IterableDataset`, `hyp.io.lsl_stream()`)
+  raised `AttributeError: 'HyperPlotlyFigure' object has no attribute
+  'axes'`, as did any stream after `hyp.set_interactive_backend('plotly')`.
+  The head plot now always renders with matplotlib, as the streaming
+  docstring states. The `streaming_data`, `lsl_streaming` and `io`
+  tutorials failed at their streaming cells on Colab because of it. Present
+  since 1.0.0. (Fresh-Colab feature tour 2026-09-11, STREAM-01/02/03.)
+- **`xlabel=`, `ylabel=` and `zlabel=` join the font-coverage scan.** The
+  scan that picks an installed font for characters the default font stack
+  lacks read `labels=`, `legend=`, `title=`, `hue=` and the colorbar text,
+  but not the axis labels. An axis label in such a script (Javanese on
+  stock macOS; CJK on a Linux machine whose CJK font is outside the stack)
+  drew as empty boxes, while the same text as a title rendered. Present
+  since 1.0.0.
 
 ### Documented limitations
 
