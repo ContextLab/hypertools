@@ -430,6 +430,60 @@ def test_plotly_date_figure_renders_identically_in_every_time_zone(tmp_path):
     assert int((pixels[0] != pixels[1]).any(axis=2).sum()) == 0
 
 
+# --- the 'truth' legend key --------------------------------------------------
+
+def _mpl_key(fig, label):
+    lg = fig.axes[0].get_legend()
+    (h,) = [h for t, h in zip(lg.get_texts(), lg.legend_handles)
+            if t.get_text() == label]
+    return h
+
+
+def _ply_key(fig, label):
+    (tr,) = [tr for tr in fig.data if tr.showlegend and tr.name == label]
+    return tr
+
+
+@pytest.mark.parametrize('backend', ['matplotlib', 'plotly'])
+def test_truth_key_is_neutral_when_truths_span_several_colours(backend):
+    """The one 'truth' entry stands for every dataset's truth, but it wore
+    dataset 0's colour -- reading as 'the truth of A'. Like a forecast key
+    spanning several datasets it is drawn in the neutral legend gray."""
+    from hypertools.plot.forecast import FORECAST_LEGEND_COLOR
+    data = _walks(n=3)
+    fig = hyp.plot(data, predict='Kalman', t=4, truth=[d[-4:] for d in data],
+                   legend=['A', 'B', 'C'], backend=backend, show=False)
+    gray = tuple(round(v, 3) for v in to_rgb(FORECAST_LEGEND_COLOR))
+    if backend == 'matplotlib':
+        key = _mpl_key(fig, 'truth')
+        assert to_hex(key.get_color()) == to_hex(FORECAST_LEGEND_COLOR)
+        assert key.get_marker() == 'o'
+        plt.close(fig)
+    else:
+        key = _ply_key(fig, 'truth')
+        assert np.allclose(_ply_rgb(key.line.color), gray, atol=0.01)
+        assert 'markers' in key.mode
+        # still exactly one truth trace per dataset, and one 'truth' entry
+        assert len(_ply_role(fig, 'truth')) == 3
+        assert sum(1 for tr in fig.data
+                   if tr.showlegend and tr.name == 'truth') == 1
+
+
+@pytest.mark.parametrize('backend', ['matplotlib', 'plotly'])
+def test_truth_key_keeps_the_colour_of_a_single_dataset(backend):
+    data = _walks(n=1)
+    fig = hyp.plot(data, predict='Kalman', t=4, truth=[data[0][-4:]],
+                   legend=['A'], backend=backend, show=False)
+    red = [round(v, 3) for v in to_rgb(sns.color_palette('hls', 1)[0])]
+    if backend == 'matplotlib':
+        assert np.allclose(to_rgb(_mpl_key(fig, 'truth').get_color()), red,
+                           atol=0.01)
+        plt.close(fig)
+    else:
+        assert np.allclose(_ply_rgb(_ply_key(fig, 'truth').line.color), red,
+                           atol=0.01)
+
+
 # --- transform= forms -----------------------------------------------------------
 
 def _dated_frame(n=30, d=3, seed=0):

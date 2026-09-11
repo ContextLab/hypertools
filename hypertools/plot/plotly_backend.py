@@ -1775,9 +1775,16 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         # composing into a figure/cell that already lists a truth entry:
         # one entry covers every call's truth (Codex round 4)
         _truth_already_listed = any(
-            (tr.meta or {}).get('hyp_forecast_role') == 'truth'
+            ((tr.meta or {}).get('hyp_forecast_role') == 'truth'
+             or (tr.meta or {}).get('hyp_legend_entry') == 'truth')
             and tr.showlegend
             for tr in _compose_scope_traces(into))
+        # the one 'truth' key stands for EVERY dataset's truth: when they
+        # span several colours it is a neutral proxy (added with the
+        # forecast keys below), not the first truth trace, which wore
+        # dataset 0's colour (1.1 release review, F10; matplotlib parity)
+        _truth_key_at = None
+        _truth_rgbs = set()
         for i, tr in enumerate(truths):
             src = (forecast_owner[i]
                    if forecast_owner is not None and i < len(forecast_owner)
@@ -1814,6 +1821,9 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 legendrank=1001,
                 meta=dict(hyp_forecast_role='truth', hyp_dataset=i,
                           hyp_forecast_age=0, hyp_forecast_alpha=1.0))
+            _truth_rgbs.add(_rgb_triplet(tr_line.get('color')))
+            if tr_common['showlegend']:
+                _truth_key_at = (len(traces), tr_line)
             if ndims >= 3:
                 traces.append(go.Scatter3d(x=tr_draw[:, 0], y=tr_draw[:, 1],
                                            z=tr_draw[:, 2], **tr_common))
@@ -1825,6 +1835,10 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                     x=_aa_x(tr_step, _rows_of(src, data[src]) - 1,
                             tr_draw.shape[0]),
                     y=tr_draw[:, 0], **tr_common))
+        if _truth_key_at is not None and len(_truth_rgbs) > 1:
+            traces[_truth_key_at[0]].showlegend = False
+        else:
+            _truth_key_at = None
 
     # low-opacity trail traces for chemtrails (past) / precog (future) /
     # bullettime (both) on window animations, mirroring the matplotlib
@@ -2262,6 +2276,22 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                      meta.get('hyp_forecast_alpha'), tr.mode or 'lines',
                      marker))
         fig.add_traces(_forecast_legend_traces(forecast_legend_specs, ndims))
+    if truths is not None and _truth_key_at is not None:
+        # the neutral 'truth' key (see the truth block): data-free, after
+        # the forecast keys, so the drawn traces' indices are untouched
+        from .forecast import FORECAST_LEGEND_COLOR
+        from .plot import TRUTH_STYLE
+        _gray = _to_plotly_color(FORECAST_LEGEND_COLOR, 1.0)
+        _key = dict(mode='lines+markers', name='truth', showlegend=True,
+                    hoverinfo='skip', legendrank=1001,
+                    line=dict(_truth_key_at[1], color=_gray),
+                    marker=dict(color=_gray, size=_marker_size_px(
+                        TRUTH_STYLE['markersize'], TRUTH_STYLE['marker'],
+                        ndims)),
+                    meta=dict(hyp_legend_entry='truth'))
+        fig.add_trace(go.Scatter3d(x=[None], y=[None], z=[None], **_key)
+                      if ndims >= 3 else go.Scatter(x=[None], y=[None],
+                                                    **_key))
 
     if labels is not None:
         point_annotations = _build_point_annotations(

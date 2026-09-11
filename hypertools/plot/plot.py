@@ -579,7 +579,11 @@ def _add_overlay_legend_entries(ax, forecast_artists=None, truth_artists=None,
     labels = [lab for _, lab in kept] + [h.get_label() for h in fc_handles]
     if truth_lines:
         first = truth_lines[0]
-        colors = {to_rgba(ln.get_color()) for ln in truth_lines}
+        # the colour decided over EVERY truth artist, not only the tagged
+        # first one: the key stands for all datasets' truths, and wore
+        # dataset 0's colour whatever the others were (1.1 review, F10)
+        colors = {to_rgba(ln.get_color()) for ln in ax.lines
+                  if getattr(ln, '_hyp_forecast_role', None) == 'truth'}
         handles.append(Line2D(
             [], [], color=(first.get_color() if len(colors) == 1
                            else FORECAST_LEGEND_COLOR),
