@@ -2216,10 +2216,7 @@ def _parse_payload(raw, name_hint='', trust=False, remote=False):
         if raw[:1] == b'\x80':
             return _unpickle_bytes(raw, trust=trust, remote=remote)
         if raw[:2] == b'PK':
-            try:
-                return _unpack_npz(raw, trust=trust, remote=remote)
-            except Exception:
-                return pd.read_parquet(io.BytesIO(raw))
+            return _unpack_sniffed_zip(raw, trust=trust, remote=remote)
         if _complete_pickle_stream(raw):
             # protocol-0 (ASCII) pickles carry no magic prefix (e.g.
             # hyp.save(..., protocol=0) to an arbitrary extension)
@@ -2237,10 +2234,7 @@ def _parse_payload(raw, name_hint='', trust=False, remote=False):
     if raw[:1] == b'\x80':
         return _unpickle_bytes(raw, trust=trust, remote=remote)
     if raw[:2] == b'PK':
-        try:
-            return _unpack_npz(raw, trust=trust, remote=remote)
-        except Exception:
-            return pd.read_parquet(io.BytesIO(raw))
+        return _unpack_sniffed_zip(raw, trust=trust, remote=remote)
     if _complete_pickle_stream(raw):
         # protocol-0 (ASCII) pickles carry no magic prefix and DO decode
         # as UTF-8, so they must be sniffed BEFORE text parsing or they
@@ -2365,6 +2359,22 @@ def _unpack_npz(raw, trust=False, remote=False):
                 'data from a remote source') from e
         raise
     return arrays[0] if len(arrays) == 1 else arrays
+
+
+def _unpack_sniffed_zip(raw, trust=False, remote=False):
+    """A payload sniffed as a zip (``'PK'`` magic, no or an unknown
+    extension): an ``.npz`` first, parquet as the fallback. The ``.npz``
+    reader's :class:`HypertoolsTrustError` -- a remote object array that
+    needs ``allow_pickle`` -- IS the answer, so it is raised as itself;
+    before, the parquet fallback swallowed it and the user saw "Parquet
+    magic bytes not found" instead of the ``trust=True`` remedy (review
+    2026-09-11)."""
+    try:
+        return _unpack_npz(raw, trust=trust, remote=remote)
+    except HypertoolsTrustError:
+        raise
+    except Exception:
+        return pd.read_parquet(io.BytesIO(raw))
 
 
 def _unpack_mat(raw):
