@@ -6,6 +6,7 @@ import numpy as np
 from .common import (Reducer, models, REDUCERS, AUTOENCODER_NAMES,  # noqa: F401 (re-export; hypertools.core.pipeline imports `models` from here for backward compatibility)
                      resolve_reducer)
 from ..core.model import external_stacklevel
+from ..core.shared import check_spec_keys
 from ..tools.format_data import format_data as formatter
 
 
@@ -83,7 +84,10 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, return_model=False,
         `{'model': ..., 'args': [...], 'kwargs': {...}}` (both `'args'`
         and `'kwargs'` are OPTIONAL, so the minimal `{'model': 'PCA'}`
         works too; passing the legacy `'params'` key alongside them warns
-        and ignores `'params'`), or the LEGACY
+        and ignores `'params'`; model parameters always go under
+        `'kwargs'`, and any other top-level key -- e.g. `{'model': 'PCA',
+        'whiten': True}` -- raises `ValueError` naming it rather than
+        being ignored), or the LEGACY
         dict spec `{'model' : 'PCA', 'params' : {'whiten' : True}}`
         (accepted for backward compatibility, but emits a
         `DeprecationWarning`). A previously-fitted `Reducer` (as returned
@@ -267,6 +271,9 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, return_model=False,
                 "under 'args' (positional) and 'kwargs' (keyword), e.g. "
                 "{'model': 'PCA', 'kwargs': {'whiten': True}} (the "
                 "legacy 'params' key is also accepted).")
+        # a flat key such as {'model': 'PCA', 'whiten': True} used to be
+        # dropped silently, so the model ran with its defaults (1.1 review)
+        check_spec_keys(reduce, 'reduce', param='reduce')
         if 'args' in reduce or 'kwargs' in reduce or 'params' not in reduce:
             # canonical 1.0 dict spec: {'model': ..., 'args': [...],
             # 'kwargs': {...}} -- BOTH 'args' and 'kwargs' are optional, so

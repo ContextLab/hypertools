@@ -16,6 +16,7 @@ list of numpy arrays, as the classic API promised.
 import numpy as np
 
 from ..align.align import align as _align_dispatch, _ALIAS as _MODEL_ALIAS
+from ..core.shared import check_spec_keys
 from .format_data import format_data as formatter
 
 
@@ -50,8 +51,9 @@ def align(data, align='hyper', n_iter=10, format_data=True):
         hyperalignment. If 'SRM', alignment algorithm will be shared response
         model.  You can also pass a dictionary for finer control, where the 'model'
         key is a string that specifies the model and the 'kwargs' key (or the
-        legacy 'params' key) is a dictionary of parameter values
-        (default : 'hyper').
+        legacy 'params' key) is a dictionary of parameter values; any other
+        top-level key (e.g. a flat {'model': 'hyper', 'n_iter': 3}) raises
+        ValueError naming it (default : 'hyper').
 
     n_iter : int
         Number of hyperalignment iterations: the common template is
@@ -80,6 +82,9 @@ def align(data, align='hyper', n_iter=10, format_data=True):
                          "algorithm instead, e.g. align='hyper' or align='SRM'.")
 
     if isinstance(align, dict):
+        # a flat key such as {'model': 'hyper', 'n_iter': 3} used to be
+        # dropped silently, so the default n_iter ran (1.1 review)
+        check_spec_keys(align, 'align', param='align')
         model = align['model']
         if model is None:
             return data

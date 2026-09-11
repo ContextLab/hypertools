@@ -153,6 +153,8 @@ def _fit_stream_models(head, reduce, ndims, normalize):
     fitted reduction estimator (None when no reduction was needed).
     """
     from ..reduce.reduce import _resolve_model
+    from ..core.shared import check_spec_keys
+    from ..core.model import external_stacklevel
 
     # normalization stats are computed ONCE, on the head, and reused for
     # every future sample (the fitted-transform semantics of issue #101).
@@ -181,24 +183,46 @@ def _fit_stream_models(head, reduce, ndims, normalize):
 
     # reduction spec: name / dict / class / instance, mirroring tools.reduce
     if isinstance(reduce, dict):
+        # a flat key such as {'model': 'PCA', 'whiten': True} used to be
+        # dropped silently, exactly as in hyp.reduce (1.1 review)
+        check_spec_keys(reduce, 'reduce', param='reduce')
         model_spec = reduce.get('model')
         # accept the canonical 'kwargs' key (falling back to the legacy 'params')
         # so a streaming reduce spec honors constructor kwargs like every other
         # dispatcher (QC 2026-07: only 'params' was read, so
         # reduce={'model':'PCA','kwargs':{'whiten':True}} silently used defaults).
         params = dict(reduce.get('kwargs', reduce.get('params', {})))
+        # positional constructor arguments were dropped the same way
+        # ({'model': 'PCA', 'args': [2]} fit ndims components; 1.1 review)
+        args = list(reduce.get('args', []))
+        if (args or params) and not isinstance(model_spec, (str, type)) \
+                and model_spec is not None:
+            # an already-constructed instance is used as-is (parity with
+            # hyp.reduce's warning: these used to vanish without a word)
+            warnings.warn(
+                f"the reduce spec's 'model' is an already-constructed "
+                f"{type(model_spec).__name__} instance (used as-is), so the "
+                "spec's 'args'/'kwargs' entries are ignored; configure the "
+                "instance directly, or pass the class (or its name) to "
+                "apply constructor parameters", UserWarning,
+                stacklevel=external_stacklevel())
     else:
         model_spec = reduce
         params = {}
-    params.setdefault('n_components', ndims)
+        args = []
+    if not args:
+        # with positional arguments, the component count may be among
+        # them, so ndims is not injected (as in hyp.apply_model)
+        params.setdefault('n_components', ndims)
 
-    if model_spec is None or head_n.shape[1] <= params['n_components']:
+    if model_spec is None or head_n.shape[1] <= params.get('n_components',
+                                                           ndims):
         return head_n, norm, None
 
     if isinstance(model_spec, str):
-        model = _resolve_model(model_spec)(**params)
+        model = _resolve_model(model_spec)(*args, **params)
     elif isinstance(model_spec, type):
-        model = model_spec(**params)
+        model = model_spec(*args, **params)
     else:
         model = model_spec  # already-instantiated estimator
 

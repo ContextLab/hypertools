@@ -34,7 +34,7 @@ from .ppca import PPCA
 from .sklearn_imputers import SimpleImputer, KNNImputer, IterativeImputer
 from .kalman import Kalman
 from ..core.model import external_stacklevel
-from ..core.shared import supported_names, unpack_model
+from ..core.shared import check_spec_keys, supported_names, unpack_model
 from ..predict.backtest import spec_name
 
 
@@ -261,6 +261,9 @@ def _wrangled_impute(data, model='PPCA', return_model=False, **kwargs):
                 'placeholders rather than data.', UserWarning,
                 stacklevel=external_stacklevel())
 
+    # a flat key such as {'model': 'KNNImputer', 'n_neighbors': 1} used to
+    # be dropped silently, so the imputer ran with its defaults (1.1 review)
+    check_spec_keys(model, 'impute')
     if isinstance(model, dict) and 'kwargs' not in model and 'args' not in model:
         # {'model': ..., 'params': {...}} form: unpack before handing the
         # inner model spec to unpack_model (which only auto-unpacks the
@@ -375,7 +378,10 @@ def impute(data, model='PPCA', return_model=False, truth=None, mask=None,
         SimpleImputer, KNNImputer, IterativeImputer, Kalman); names are
         matched case-insensitively ('ppca' works too). A dict may be
         `{'model': ..., 'params': {...}}` (deprecated) or
-        `{'model': ..., 'args': [...], 'kwargs': {...}}`. A class or an
+        `{'model': ..., 'args': [...], 'kwargs': {...}}`; any other
+        top-level key in a spec that has a `'model'` -- e.g. a flat
+        `{'model': 'KNNImputer', 'n_neighbors': 5}` -- raises `ValueError`
+        naming it rather than being ignored. A class or an
         already-constructed (unfitted) instance is used directly. An
         ALREADY-FITTED Imputer instance (returned from a previous
         `return_model=True` call) is applied to `data` via `transform`
