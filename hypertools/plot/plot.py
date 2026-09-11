@@ -590,6 +590,47 @@ def _add_overlay_legend_entries(ax, forecast_artists=None, truth_artists=None,
     ax.legend(handles, labels, **legend_call)
 
 
+def _recolor_overlay_legend(ax, colors, close_fig=None):
+    """Apply `legend_colors=`'s plain colour list to a legend that also
+    lists `predict=`/`truth=` overlay entries (data entries first, then the
+    overlays -- `_add_overlay_legend_entries`' order).
+
+    One colour per legend entry recolours them all. One colour per DATA
+    entry -- what the list meant before a forecast had a legend entry of
+    its own, and still what it means on a legend without overlays --
+    recolours the data entries and leaves the forecast/truth glyphs as
+    drawn (1.1 release review: ``legend_colors=['r', 'b']`` with
+    ``predict=`` raised 'the legend has 3'). Any other count raises
+    ``ValueError`` -- after closing `close_fig` (the figure this call
+    created), so a refused call leaves no stray figure open.
+    """
+    from .matplotlib_backend import _recolor_legend_handles
+    legend = ax.get_legend()
+    handles = list(legend.legend_handles)
+    texts = [t.get_text() for t in legend.get_texts()]
+    overlay = {getattr(ln, '_hyp_forecast_label', None) for ln in ax.lines
+               if getattr(ln, '_hyp_forecast_role', None)
+               in ('static', 'live')}
+    overlay |= {getattr(ln, '_hyp_truth_label', None) for ln in ax.lines}
+    overlay.discard(None)
+    n_data = sum(1 for t in texts if t not in overlay)
+    colors = list(colors)
+    if len(colors) not in (len(handles), n_data):
+        if close_fig is not None:
+            plt.close(close_fig)
+        raise ValueError(
+            f"legend_colors has {len(colors)} entries but the legend has "
+            f"{len(handles)} ({n_data} data entr"
+            f"{'y' if n_data == 1 else 'ies'} plus "
+            f"{len(handles) - n_data} forecast/truth entr"
+            f"{'y' if len(handles) - n_data == 1 else 'ies'}); pass one "
+            "color per data entry, one per legend entry, or (label, color) "
+            "pairs to define the entries outright.")
+    if len(colors) < len(handles):
+        colors += [h.get_color() for h in handles[len(colors):]]
+    _recolor_legend_handles(legend, colors)
+
+
 def _forecast_legend_handles(artists):
     """One proxy `Line2D` legend handle per distinct forecast label, from
     the ``_hyp_forecast_label`` tags `_draw_forecast_overlays` (and the
@@ -5034,7 +5075,9 @@ def plot(
     legend_colors : list of colors, or list of (label, color) pairs
         An explicit override of the legend's swatches. A plain list of
         colors -- one per legend entry, in order -- RECOLORS the entries
-        hypertools would draw anyway (matplotlib only; the plotly legend
+        hypertools would draw anyway; when `predict=`/`truth=` add their
+        own entries after the data's, one color per DATA entry is accepted
+        too and leaves those overlay glyphs as drawn (matplotlib only; the plotly legend
         takes its swatches from the traces themselves, so this form raises
         ``NotImplementedError`` there). A list of ``(label, color)`` pairs
         REPLACES the legend outright with exactly those entries, on both
@@ -11709,8 +11752,9 @@ def plot(
                     and ax.get_legend() is not None):
                 # the deferred plain-colour-list recolouring (see the
                 # `legend_colors=` argument to `_draw` above)
-                from .matplotlib_backend import _recolor_legend_handles
-                _recolor_legend_handles(ax.get_legend(), _legend_recolor)
+                _recolor_overlay_legend(
+                    ax, _legend_recolor,
+                    close_fig=None if _user_supplied_ax else fig)
 
             # ...and the time-progressing modes get one LIVE artist per
             # dataset instead, refilled every frame from the precomputed
@@ -11849,8 +11893,9 @@ def plot(
                         and _forecast_artists is None):
                     # the deferred plain-colour-list recolouring for the
                     # animated modes (the static path does it below)
-                    from .matplotlib_backend import _recolor_legend_handles
-                    _recolor_legend_handles(ax.get_legend(), _legend_recolor)
+                    _recolor_overlay_legend(
+                        ax, _legend_recolor,
+                        close_fig=None if _user_supplied_ax else fig)
 
                 # whether the user pinned this dataset's forecast colour
                 # (`forecast_hue=`/`forecast_cluster=`/`forecast_palette=`);

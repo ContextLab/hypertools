@@ -296,6 +296,50 @@ def test_marker_only_categorical_regrouping_refuses_even_at_equal_counts(
     plt.close('all')
 
 
+# --- legend_colors= plain list with predict= / truth= ------------------------
+
+@pytest.mark.parametrize('extra', [
+    {}, {'animate': True, 'duration': 1, 'frame_rate': 4}, {'truth': 'yes'}])
+def test_legend_colors_one_per_data_entry_still_works_with_overlays(extra):
+    """``legend_colors=['r', 'b']`` recolours the two data entries; the
+    forecast (and truth) entries predict= adds keep their own glyphs.
+    It raised 'legend has 3' after drawing (master accepted it)."""
+    data = _walks(n=2)
+    extra = dict(extra)
+    if extra.pop('truth', None):
+        extra['truth'] = [d[-5:] for d in data]
+    out = hyp.plot(data, legend=['A', 'B'], legend_colors=['r', 'b'],
+                   predict='Kalman', t=5, show=False, **extra)
+    fig = out.figure if hasattr(out, 'figure') else out
+    lg = fig.axes[0].get_legend()
+    got = {t.get_text(): to_hex(h.get_color())
+           for t, h in zip(lg.get_texts(), lg.legend_handles)}
+    assert got['A'] == '#ff0000' and got['B'] == '#0000ff'
+    from hypertools.plot.forecast import FORECAST_LEGEND_COLOR
+    assert got['Kalman'] == to_hex(FORECAST_LEGEND_COLOR)
+    plt.close(fig)
+
+
+def test_legend_colors_one_per_entry_recolours_the_overlay_entries_too():
+    data = _walks(n=2)
+    fig = hyp.plot(data, legend=['A', 'B'],
+                   legend_colors=['r', 'b', 'g'], predict='Kalman', t=5,
+                   show=False)
+    lg = fig.axes[0].get_legend()
+    assert [to_hex(h.get_color()) for h in lg.legend_handles] == \
+        ['#ff0000', '#0000ff', '#008000']
+    plt.close(fig)
+
+
+def test_legend_colors_wrong_count_raises_and_leaves_no_figure_open():
+    data = _walks(n=2)
+    plt.close('all')
+    with pytest.raises(ValueError, match='legend_colors has 4'):
+        hyp.plot(data, legend=['A', 'B'], legend_colors=['r', 'b', 'g', 'k'],
+                 predict='Kalman', t=5, show=False)
+    assert plt.get_fignums() == []
+
+
 # --- forecast_fmt markers sit on the forecast STEPS, not on every vertex -----
 
 def _marked_points(art):
