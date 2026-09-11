@@ -151,8 +151,33 @@ class TestAnimatedLinesKeepEveryObservation:
             counts = [ctx.revealed_counts[0] for ctx in seen]
             n_grid = seen[-1].datasets[0].shape[0]
             assert counts == sorted(counts)       # never runs backwards
-            assert 1 <= counts[0] < n_grid
+            assert counts[0] == 1                 # frame 0: the first row
             assert counts[-1] == n_grid           # the final frame is whole
+        finally:
+            _close(out)
+
+    @pytest.mark.parametrize('backend', BACKENDS)
+    @pytest.mark.parametrize('n_rows,n_frames', [(36, 9), (5, 40), (40, 12)])
+    def test_reveal_timing_is_the_old_one_row_per_frame_timing(
+            self, backend, n_rows, n_frames):
+        """The reveal is still paced from the first observation (frame 0)
+        to the last (final frame), linearly: frame k shows the observations
+        up to k * (n - 1) / (n_frames - 1) -- the timing lines had when
+        their grid was exactly one row per frame."""
+        src = helix(n_rows, turns=1.0)
+        out, seen = _collect(src, backend, animate=True,
+                             duration=n_frames / 4, frame_rate=4)
+        try:
+            assert len(seen) == n_frames
+            g = seen[-1].datasets[0].shape[0]
+            stride = (g - 1) // (n_rows - 1)
+            for ctx in seen:
+                head_row = ctx.revealed_counts[0] - 1
+                param = head_row / stride
+                exact = ctx.frame * (n_rows - 1) / (n_frames - 1)
+                # on the grid, never ahead of the exact timing and less
+                # than one grid step behind it
+                assert exact - 1.0 / stride < param <= exact + 1e-9
         finally:
             _close(out)
 
@@ -232,6 +257,34 @@ class TestAnimatedLinesKeepEveryObservation:
         else:
             drawn = [a.text for a in out.layout.scene.annotations]
         assert sorted(drawn) == sorted(lab for lab in labels if lab)
+
+    def test_a_label_is_shown_exactly_while_its_point_is_drawn(self):
+        """matplotlib animated labels: visible iff the labelled row is inside
+        the head window the trace was drawn over THIS frame. The old rule
+        compared the row index with the FRAME index, which only coincided
+        while every line had exactly one row per frame."""
+        labels = [f'L{i}' if i % 5 == 0 else None for i in range(36)]
+        state = []
+
+        def record(ctx):
+            s, e = ctx.window_bounds[0]
+            shown = {t.get_text() for t in ctx.axes.texts if t.get_visible()}
+            state.append((s, e, shown))
+
+        anim = hyp.plot(helix(36), backend='matplotlib', animate='window',
+                        focused=0.5, duration=3, frame_rate=6,
+                        labels=labels, on_frame=record, show=False)
+        try:
+            for f in range(anim.n_frames):
+                anim.draw_frame(f)
+        finally:
+            plt.close(anim.figure)
+        ever = set()
+        for s, e, shown in state[:anim.n_frames]:
+            expect = {f'L{i}' for i in range(36) if i % 5 == 0 and s <= i < e}
+            assert shown == expect, (s, e, shown)
+            ever |= shown
+        assert ever == {lab for lab in labels if lab}
 
     @pytest.mark.parametrize('backend', BACKENDS)
     def test_two_datasets_of_different_lengths_each_keep_their_rows(

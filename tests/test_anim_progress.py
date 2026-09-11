@@ -113,7 +113,10 @@ class TestRevealedCounts:
                 anim.draw_frame(i)
             assert len(checked) == anim.n_frames
             assert checked[0] == (1,) * 3
-            assert checked[-1] == (anim.n_frames,) * 3
+            # the last frame reveals every drawn row. (1.1 visual review
+            # L8: that was `n_frames` rows while every line was resampled
+            # onto one row per frame; a line now keeps its own rows.)
+            assert checked[-1] == tuple(len(d) for d in trajectories())
         finally:
             plt.close(anim.figure)
 

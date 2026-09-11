@@ -97,10 +97,15 @@ def test_serial_trail_geometry_matches_matplotlib_frame_for_frame(flags):
 
 
 def test_plain_serial_parity_is_unchanged():
-    """Regression guard: the no-trail serial reveal already matched."""
+    """Regression guard: the no-trail serial reveal already matched.
+
+    At frame 3 of 12 the serial clock has revealed 32 of dataset 0's 40
+    rows, drawn antialiased at 24 vertices per row: 31 * 24 + 1 = 745. (1.1
+    visual review L8: this was 657 = 8 * 82 + 1 while each 40-row dataset
+    was resampled onto one row per frame -- 9 of 12 grid rows.)"""
     mpl_heads, _ = _mpl_counts(animate='serial')
     ply_heads, _ = _plotly_counts(_plotly_fig(animate='serial'))
-    assert ply_heads == mpl_heads == [657, 0, 0]
+    assert ply_heads == mpl_heads == [745, 0, 0]
 
 
 def test_parallel_trail_parity_is_unchanged():

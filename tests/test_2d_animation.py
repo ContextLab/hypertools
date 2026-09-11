@@ -117,14 +117,21 @@ def test_mpl_window_exact_bounds_mid_animation_2d():
     total = ani._save_count
     num = total // 2
     window_frames = int(round(frame_rate * focused))
-    expected = data_lines[0][num - window_frames: num + 1]
+    # head on row floor(num * (n - 1) / (total - 1)), window = the rows the
+    # head passes in `window_frames` frames -- see the 3-D twin for why
+    # these are no longer `num`/`window_frames` themselves (1.1 visual
+    # review L8)
+    n = data_lines[0].shape[0]
+    head = num * (n - 1) // (total - 1)
+    w = int(round(window_frames * (n - 1) / (total - 1)))
+    expected = data_lines[0][head - w: head + 1]
 
     lines, _ = ani._func(num, *ani._args)
     xs, ys = lines[0].get_data()
     assert len(xs) == len(expected)
     np.testing.assert_allclose(xs, expected[:, 0])
-    np.testing.assert_allclose(xs[0], data_lines[0][num - window_frames, 0])
-    np.testing.assert_allclose(xs[-1], data_lines[0][num, 0])
+    np.testing.assert_allclose(xs[0], data_lines[0][head - w, 0])
+    np.testing.assert_allclose(xs[-1], data_lines[0][head, 0])
     plt.close('all')
 
 

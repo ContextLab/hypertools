@@ -1122,8 +1122,12 @@ def _draw(
 
         if lengths is not None:
             within = [j for L in lengths for j in range(int(L))]
+            # ...and which drawn trace each label belongs to, so an
+            # animation can test it against THAT trace's drawn window
+            run_of = [r for r, L in enumerate(lengths) for _ in range(int(L))]
         else:
             within = list(range(len(data)))
+            run_of = None
 
         if data[0].shape[-1] > 2:
             proj = ax.get_proj()
@@ -1170,6 +1174,8 @@ def _draw(
                     )
                     label._hyp_point_idx = within[idx]
                     label._hyp_global_idx = idx
+                    label._hyp_run_idx = (run_of[idx] if run_of is not None
+                                          else None)
                     labels_and_points.append((label, x[0], x[1], x[2]))
                 elif data[0].shape[-1] == 2:
                     x2, y2 = x[0], x[1]
@@ -1187,6 +1193,8 @@ def _draw(
                     label.draggable()
                     label._hyp_point_idx = within[idx]
                     label._hyp_global_idx = idx
+                    label._hyp_run_idx = (run_of[idx] if run_of is not None
+                                          else None)
                     labels_and_points.append((label, x[0], x[1]))
         fig.canvas.draw()
 
@@ -1229,16 +1237,21 @@ def _draw(
         fig.canvas.draw()
 
     def _sync_anim_labels(num, window_frames, all_visible=False, revealed=None,
-                          hide_all=False):
+                          hide_all=False, windows=None):
         """Per-animation-frame label bookkeeping (QC 2026-07): show each
         per-point label ONLY while its datapoint is currently drawn (previously
         every label was drawn on every frame), and reproject the visible ones
         for the (possibly rotated) camera. The visibility rule depends on the
         animation style:
 
-        * window / parallel: the datapoint is inside the head window
-          ``[num - window_frames, num]`` (matched on ``_hyp_point_idx``, the
-          within-dataset index, so multi-dataset plots window correctly);
+        * window / parallel: the datapoint is inside the head window its
+          trace was JUST drawn over -- ``windows[run]``, the ``(start,
+          end)`` row bounds the updater sliced the artist with (matched on
+          ``_hyp_point_idx``, the within-trace row, and ``_hyp_run_idx``).
+          A trace's rows are not frames (1.1 visual review L8: every line
+          keeps its observations on a grid of at least one row per frame),
+          so the historical ``[num - window_frames, num]`` rule, still the
+          fallback without `windows`, showed labels at the wrong time;
         * serial: the datapoint has been REVEALED, i.e. its global index
           (``_hyp_global_idx``) ``<= revealed`` (serial accumulates points, so
           there is no trailing edge);
@@ -1274,7 +1287,14 @@ def _draw(
                 visible = g is None or g <= revealed
             else:
                 j = getattr(label, "_hyp_point_idx", None)
-                visible = j is None or (lo <= j <= num)
+                r = getattr(label, "_hyp_run_idx", None)
+                if j is None:
+                    visible = True
+                elif windows is not None and r is not None \
+                        and r < len(windows):
+                    visible = windows[r][0] <= j < windows[r][1]
+                else:
+                    visible = lo <= j <= num
             label.set_visible(visible)
             if visible and is_3d:
                 x2, y2, _ = proj3d.proj_transform(entry[1], entry[2], entry[3],
@@ -1692,9 +1712,9 @@ def _draw(
                 prior_colls=prior, quiet=True,
                 surface_point_colors=window_spcs)
 
-        # per-point labels track their datapoint's visibility window (the same
-        # [num - tail_duration, num] window the head line uses above)
-        _sync_anim_labels(num, tail_duration)
+        # per-point labels track their datapoint's visibility: the SAME row
+        # window each head line was just sliced with (L8)
+        _sync_anim_labels(num, tail_duration, windows=head_bounds)
         if frame_hooks is not None:
             frame_hooks.record(
                 frame=int(num), n_frames=int(total_frames),
@@ -2635,7 +2655,7 @@ def _draw(
             window = _aa_window(i, start, end, artist=line)
             line.set_data(window[:, 0], window[:, 1])
 
-        _sync_anim_labels(num, tail_duration)
+        _sync_anim_labels(num, tail_duration, windows=head_bounds)
         if frame_hooks is not None:
             frame_hooks.record(
                 frame=int(num), n_frames=int(total_frames),

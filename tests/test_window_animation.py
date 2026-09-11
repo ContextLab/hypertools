@@ -53,6 +53,11 @@ def test_mpl_window_draws_only_current_window():
     full_len = ani._args[0][0].shape[0]
     frame_rate = 30
     focused_frames = int(round(frame_rate * 1))  # focused=1s @ 30fps -> 30
+    # the rows the reveal head passes in `focused` seconds. (1.1 visual
+    # review L8: this was `focused_frames` itself while every line was
+    # resampled onto exactly one row per frame -- which drew these
+    # 200-row walks through 120 of their points.)
+    focused_rows = int(round(focused_frames * (full_len - 1) / (total - 1)))
 
     for num in (total // 4, total // 2, 3 * total // 4):
         lines, trail_lines = ani._func(num, *ani._args)
@@ -60,8 +65,8 @@ def test_mpl_window_draws_only_current_window():
         assert all(t is None for t in trail_lines)
         for line in lines:
             xs, ys, zs = line.get_data_3d()
-            # the drawn window is AT MOST focused_frames + 1 points long
-            assert len(xs) <= focused_frames + 1
+            # the drawn window is AT MOST focused_rows + 1 points long
+            assert len(xs) <= focused_rows + 1
             # the full trajectory is NEVER fully drawn mid-animation
             assert len(xs) < full_len
 
@@ -87,14 +92,23 @@ def test_mpl_window_exact_bounds_mid_animation():
     total = ani._save_count
     num = total // 2
     window_frames = int(round(frame_rate * focused))
-    expected = data_lines[0][num - window_frames: num + 1]
+    # the head sits on row floor(num * (n - 1) / (total - 1)) -- the row
+    # `num` whenever there is exactly one row per frame -- and the window
+    # spans the rows the head passes in `window_frames` frames. (1.1 visual
+    # review L8: this used `num` and `window_frames` as ROW indices because
+    # every line was resampled onto one row per frame, drawing these
+    # 200-row walks through 80 of their points.)
+    n = data_lines[0].shape[0]
+    head = num * (n - 1) // (total - 1)
+    w = int(round(window_frames * (n - 1) / (total - 1)))
+    expected = data_lines[0][head - w: head + 1]
 
     lines, _ = ani._func(num, *ani._args)
     xs, ys, zs = lines[0].get_data_3d()
     assert len(xs) == len(expected)
     np.testing.assert_allclose(xs, expected[:, 0])
-    np.testing.assert_allclose(xs[0], data_lines[0][num - window_frames, 0])
-    np.testing.assert_allclose(xs[-1], data_lines[0][num, 0])
+    np.testing.assert_allclose(xs[0], data_lines[0][head - w, 0])
+    np.testing.assert_allclose(xs[-1], data_lines[0][head, 0])
 
     plt.close('all')
 
@@ -180,8 +194,11 @@ def test_plotly_window_exact_bounds_mid_animation():
     passed while plotly's window ran one point shorter than matplotlib's at
     every steady-state frame. The expectation below is derived from the
     public knobs alone: `focused` seconds at `frame_rate` frames per second
-    spans `focused * frame_rate` frames, plus the vertex the window opens
-    on. Both backends must land on it.
+    spans `focused * frame_rate` frames, over which the head passes
+    ``(n_rows - 1) / (n_frames - 1)`` rows per frame, plus the vertex the
+    window opens on. Both backends must land on it. (1.1 visual review L8:
+    the rows-per-frame factor was 1 while every line was resampled onto one
+    row per frame -- these 200-row walks drew through 80 of their points.)
     """
     pytest.importorskip('plotly')
     data = _walks()
@@ -192,7 +209,9 @@ def test_plotly_window_exact_bounds_mid_animation():
     fig = hyp.plot(data, backend='plotly', **kw)
     n_frames = len(fig.frames)
     mid_k = n_frames // 2
-    expected = int(frame_rate * focused) + 1
+    n_rows = data[0].shape[0]
+    expected = int(round(int(frame_rate * focused) * (n_rows - 1)
+                         / (n_frames - 1))) + 1
     assert len(fig.frames[mid_k].data[0].x) == expected
 
     ani = hyp.plot(data, return_model=True, **kw)['animation']
