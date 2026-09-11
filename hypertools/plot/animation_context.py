@@ -64,7 +64,12 @@ class FrameContext:
         while the artists inside it are the backend's own live objects and
         are meant to be mutated.
         BACKEND-NATIVE: on plotly these are that frame's ``go.Scatter``/
-        ``go.Scatter3d`` traces, in the same order.
+        ``go.Scatter3d`` traces, in the same order -- except that a
+        dataset drawn by SEVERAL traces (an animated multicoloured 2-D
+        line: one trace per colour bin) is one
+        `hypertools.plot.plotly_backend.PlotlyTraceGroup`, a tuple of its
+        traces that sets an assigned attribute (``artist.opacity = 0.4``)
+        on every member, so there is still one artist per dataset.
 
         ARTIST LIFETIME -- read this before writing a callback. Whether
         ``artists`` holds fresh objects per frame or the same objects
