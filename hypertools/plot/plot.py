@@ -8454,7 +8454,13 @@ def plot(
         else:
             xform = [transform]
         xform = [np.asarray(xi).reshape(-1, 1)
-                 if isinstance(xi, np.ndarray) and xi.ndim == 1 else xi
+                 if is_array_dataset(xi) and np.ndim(xi) == 1 else xi
+                 for xi in xform]
+        # polars (and other datawrangler) frames -> pandas, whose arithmetic
+        # the display scaling below relies on; a pandas frame keeps its own
+        # index for the forecast alignment check (2026-09-11 review: a
+        # polars transform= raised SchemaError in the unit scaling)
+        xform = [as_pandas_dataframe(xi) if is_frame_dataset(xi) else xi
                  for xi in xform]
         _input_finite = None
         if labels is not None:
@@ -8613,7 +8619,10 @@ def plot(
                     'to forecast. Pass the analyzed data with its updated '
                     'time index to plot(..., reduce=None, predict=...).')
             _idx = None
-        if (isinstance(_xi, pd.DataFrame) and _idx is not None
+        if is_frame_dataset(_xi):
+            # polars and other datawrangler frames carry no pandas index
+            _xi = as_pandas_dataframe(_xi)
+        if (is_frame_dataset(_xi) and _idx is not None
                 and not _xi.index.equals(_idx)):
             # a `transform=` frame with an index of its own: handing it to
             # `pd.DataFrame(frame, index=...)` RE-INDEXES it, and an index
