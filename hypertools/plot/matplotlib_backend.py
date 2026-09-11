@@ -60,14 +60,41 @@ from .density import (
 )
 
 
-def _apply_title(ax, text, font=None, title_kwargs=None):
+def _label_callout_kwargs(label_alpha, arrowstyle='-', facecolor='white'):
+    """`ax.annotate` box and connector styling for an observation label,
+    in the colours plotly's annotations use (`plotly_backend`: connector
+    rgba(0,0,0,0.6), box edge rgba(0,0,0,0.4), a white box at
+    `label_alpha`). Both colours are EXPLICIT: seaborn's whitegrid style
+    sets ``patch.edgecolor='w'``, so the defaults drew a white connector
+    and a white box edge -- an invisible link that cut white notches
+    through the markers (1.1 release review, figure QA). `label_alpha` stays
+    the box patch's own ``alpha`` (the documented `label_alpha=` contract),
+    which matplotlib applies to its edge too: a dark edge at that opacity
+    (0.5 by default, beside plotly's 0.4)."""
+    return dict(
+        bbox=dict(boxstyle="round,pad=0.5", fc=facecolor, ec='black',
+                  lw=0.8, alpha=label_alpha),
+        arrowprops=dict(arrowstyle=arrowstyle, connectionstyle="arc3,rad=0",
+                        color=(0, 0, 0, 0.6), lw=0.8),
+    )
+
+
+def _apply_title(ax, text, font=None, title_kwargs=None, family=None):
     """Set `ax`'s title, honoring the resolved `font=` and `title_kwargs=`
     (GH #285).
 
-    With `title_kwargs=None` this makes EXACTLY the call hypertools has
-    always made (`ax.set_title(text)`, or `ax.set_title(text,
+    With `title_kwargs=None` and `family=None` this makes EXACTLY the call
+    hypertools has always made (`ax.set_title(text)`, or `ax.set_title(text,
     fontproperties=font)` when a `font=` was resolved), so an un-styled
     title's Text artist is byte-identical to before.
+
+    `family` (a font-family list: hypertools' fallback stack) is given
+    EXPLICITLY when no `font=` is: an axes created outside hypertools'
+    ``rc_context`` -- a caller's ``ax=``, every `panels=` cell -- holds a
+    title Text whose family is the bare ``'sans-serif'`` alias, resolved at
+    DRAW time against the caller's rcParams, so those titles rendered in
+    DejaVu Sans while a figure of hypertools' own used Noto Sans (1.1
+    release review, figure QA). A family named in `title_kwargs` wins.
 
     `fontproperties` is inserted BEFORE the individual font properties,
     because `set_title` applies its kwargs in dict order and a
@@ -82,14 +109,21 @@ def _apply_title(ax, text, font=None, title_kwargs=None):
     between them is exactly the bug GH #285 reports (a resolved `font=`
     reached the static title and never a per-segment one).
     """
+    _family_keys = ('fontproperties', 'font_properties', 'family',
+                    'fontfamily', 'fontname', 'name', 'font')
     if title_kwargs:
         kwargs = {}
         if font is not None and 'fontproperties' not in title_kwargs:
             kwargs['fontproperties'] = font
+        elif family is not None and not any(k in title_kwargs
+                                            for k in _family_keys):
+            kwargs['fontfamily'] = family
         kwargs.update(title_kwargs)
         return ax.set_title(text, **kwargs)
     if font is not None:
         return ax.set_title(text, fontproperties=font)
+    if family is not None:
+        return ax.set_title(text, fontfamily=family)
     return ax.set_title(text)
 
 
@@ -833,9 +867,19 @@ def _draw(
     xlim=None,
     ylim=None,
     x_date=False,
+    legend_order=None,
 ):
     """
     Draws the plot
+
+    `legend_order` (1.1 release review): the legend labels in the order
+    their entries should be listed, or None for drawn-artist order. The
+    categorical LINE path draws one artist per contiguous run, so its
+    legend followed the order the categories first APPEAR along the data
+    (clusters ``0, 2, 1``) while the marker path lists them sorted; the
+    entries it names are sorted into this order among their own
+    positions, every other entry (an earlier call's, a forecast's) staying
+    where it was.
 
     `raw_data` (GH #141): the PRE-interpolation per-dataset points, same
     length as `x`/`fmt`. Used only by the STATIC (non-animated) plot1D/2D/
@@ -843,14 +887,16 @@ def _draw(
     (e.g. 'o-') is drawn as two artists -- a smoothed line from `x` (the
     already-interpolated data) plus markers at the raw sample points from
     `raw_data` -- so markers land on the true data regardless of how dense
-    the smoothed line is. Ignored (may be None) for pure line/marker-only
-    styles and for every ANIMATED style, which still draw marker+line
-    combos as a single artist against the (now also smoothed, since the
-    interpolation gate itself was fixed for GH #141) `x` data -- so an
-    animated 'o-' plot's line is correctly smoothed, but its markers
-    currently render at the interpolated points rather than only the
-    original samples; splitting the animated marker/line artists frame-by-
-    frame was judged out of scope for this fix.
+    the smoothed line is. A LINE fmt given its marker by ``marker=``/
+    ``markers=`` stays one artist, whose ``markevery`` picks out the raw
+    samples among the smoothed vertices. Ignored (may be None) for pure
+    line/marker-only styles. An
+    ANIMATED marker+line style keeps ONE artist per dataset (so its legend
+    handle shows marker and line), drawn against the smoothed frame-grid
+    `x` data; `raw_data` then locates each observation's nearest drawn
+    vertex, and each frame's ``markevery`` marks only those
+    (`_mark_observations`) -- before the 1.1 release review every
+    interpolated vertex carried a marker.
 
     `ownership` (a `hypertools.plot.ownership.TraceOwnership`, or None): which
     source dataset each drawn trace came from and which of its rows. When
@@ -951,10 +997,64 @@ def _draw(
             artist._hyp_row_window = (a, b)
         dense, step = _aa_curves[i]
         if step == 1:
-            return dense[a:b]
-        if b <= a:
-            return dense[0:0]
-        return dense[a * step:(b - 1) * step + 1]
+            lo, out = a, dense[a:b]
+        elif b <= a:
+            lo, out = a * step, dense[0:0]
+        else:
+            lo, out = a * step, dense[a * step:(b - 1) * step + 1]
+        if artist is not None:
+            _mark_observations(i, artist, lo, len(out))
+        return out
+
+    # markers at the TRUE observations in an animation (the shared marker
+    # contract; 1.1 release review): an animated line is resampled onto
+    # the frame grid (`plot._interp_anim_line`) and densified again above,
+    # so its vertices are not the observations, and a marker+line style
+    # ('o-', or a line fmt with marker=/markers=) marked every one of them
+    # -- a tube of ~500 markers for 48 samples. Mark, on the SAME artist
+    # (its legend handle keeps the marker), only the drawn vertex nearest
+    # each observation: found by position, in a window around the
+    # observation's proportional place along the curve, so it holds for
+    # whatever observation -> grid mapping the resampling produces.
+    _obs_vertices_cache = {}
+
+    def _observation_vertices(i):
+        if i in _obs_vertices_cache:
+            return _obs_vertices_cache[i]
+        found = None
+        if (animate and raw_data is not None and i < len(raw_data)
+                and raw_data[i] is not None):
+            raw = np.asarray(raw_data[i], dtype=float)
+            dense = np.asarray(_aa_curves[i][0], dtype=float)
+            n, d = raw.shape[0], dense.shape[0]
+            if (raw.ndim == 2 and dense.ndim == 2 and n and d
+                    and raw.shape[1] == dense.shape[1]):
+                if n == 1 or d == 1:
+                    found = np.array([0])
+                else:
+                    est = np.rint(np.arange(n) * (d - 1) / (n - 1)).astype(int)
+                    w = int(np.ceil((d - 1) / (n - 1)))
+                    idx = []
+                    for k in range(n):
+                        lo, hi = max(0, est[k] - w), min(d, est[k] + w + 1)
+                        gap = np.linalg.norm(dense[lo:hi] - raw[k], axis=1)
+                        idx.append(lo + int(np.argmin(gap)))
+                    found = np.unique(idx)
+        _obs_vertices_cache[i] = found
+        return found
+
+    def _mark_observations(i, artist, lo, count):
+        marker = artist.get_marker() if hasattr(artist, 'get_marker') else None
+        if marker in (None, 'None', 'none', '', ' '):
+            return
+        if not has_line_component(_fmt_at(i)) and artist.get_linestyle() in (
+                'None', 'none', '', ' '):
+            return                  # markers only: its vertices ARE the rows
+        verts = _observation_vertices(i)
+        if verts is None:
+            return
+        local = verts[(verts >= lo) & (verts < lo + count)] - lo
+        artist.set_markevery([int(v) for v in local])
 
     # handle static plots
     def dispatch_static(x, ax=None):
@@ -1009,6 +1109,35 @@ def _draw(
             fmt_ls, fmt_marker = split_marker_line_fmt(f)
             fmt_color = None
         line_token, marker_char = split_marker_line_fmt(f)
+        # an explicit marker= (or its markers= alias) wins over the fmt's
+        # marker, as the comment above promises and as plotly draws it:
+        # the split below used to discard it, so fmt='-o' with
+        # marker=['o', 's'] drew two circle datasets (1.1 release review).
+        _fmt_has_marker = marker_char is not None
+        _explicit_marker = ikwargs.get('marker')
+        if _explicit_marker is not None:
+            marker_char = (None if isinstance(_explicit_marker, str)
+                           and _explicit_marker.strip().lower() in ('', 'none')
+                           else _explicit_marker)
+        if (line_token is not None and marker_char is not None
+                and not _fmt_has_marker):
+            # a LINE fmt given its marker by marker=/markers= ('-' with
+            # markers='o'): one artist, as before, but marked only at the
+            # TRUE samples -- every one an exact vertex of the smoothed line
+            # (`antialias_line`: ``dense[::step]`` IS the data) -- rather
+            # than at all ~20x-denser interpolated vertices, which
+            # contradicted `antialias=`'s promise (1.1 release review)
+            n_dense, n_raw = len(coords[0]), len(raw_coords[0])
+            one_kwargs = dict(ikwargs)
+            one_kwargs.setdefault('linestyle', line_token)
+            if fmt_color is not None:
+                one_kwargs.setdefault('color', fmt_color)
+            if (raw_data is not None and 1 < n_raw < n_dense
+                    and (n_dense - 1) % (n_raw - 1) == 0):
+                one_kwargs.setdefault('markevery', list(range(
+                    0, n_dense, (n_dense - 1) // (n_raw - 1))))
+            ax.plot(*coords, **one_kwargs)
+            return
         if line_token is not None and marker_char is not None:
             line_kwargs = {k: v for k, v in ikwargs.items() if k != 'marker'}
             line_kwargs.setdefault('linestyle', line_token)
@@ -1168,8 +1297,7 @@ def _draw(
                         textcoords="offset points",
                         ha="right",
                         va="bottom",
-                        bbox=dict(boxstyle="round,pad=0.5", fc="white", alpha=label_alpha),
-                        arrowprops=dict(arrowstyle="-", connectionstyle="arc3,rad=0"),
+                        **_label_callout_kwargs(label_alpha),
                         **_label_font_kwargs,
                     )
                     label._hyp_point_idx = within[idx]
@@ -1186,8 +1314,7 @@ def _draw(
                         textcoords="offset points",
                         ha="right",
                         va="bottom",
-                        bbox=dict(boxstyle="round,pad=0.5", fc="white", alpha=label_alpha),
-                        arrowprops=dict(arrowstyle="-", connectionstyle="arc3,rad=0"),
+                        **_label_callout_kwargs(label_alpha),
                         **_label_font_kwargs,
                     )
                     label.draggable()
@@ -1430,8 +1557,7 @@ def _draw(
             textcoords="offset points",
             ha="right",
             va="bottom",
-            bbox=dict(boxstyle="round,pad=0.5", fc="yellow", alpha=0.5),
-            arrowprops=dict(arrowstyle="->", connectionstyle="arc3,rad=0"),
+            **_label_callout_kwargs(0.5, arrowstyle="->", facecolor="yellow"),
             **_explore_font_kwargs,
         )
         fig.canvas.draw()
@@ -3175,14 +3301,22 @@ def _draw(
     # point is that the drawn coordinates ARE the data's own, so its ticks
     # and spines stay on (matplotlib's defaults) and only the top/right
     # spines are dropped, the way a plain time-series panel is drawn.
+    # the font stack in force NOW (`plot()` draws inside the rc_context
+    # that sets it), given explicitly to the axis labels and title below:
+    # a caller's `ax=` (every `panels=` cell) created its label and title
+    # Text artists outside that context, with the bare 'sans-serif' alias,
+    # which resolves at DRAW time to the caller's rcParams -- DejaVu Sans
+    # beside hypertools' own Noto Sans figures (1.1 release review). On
+    # hypertools' own axes this is the family they were created with.
+    _text_family = list(plt.rcParams['font.family'])
     if axis_scale == 'data':
         for _side in ('top', 'right'):
             if _side in ax.spines:
                 ax.spines[_side].set_visible(False)
         if xlabel is not None:
-            ax.set_xlabel(xlabel)
+            ax.set_xlabel(xlabel, fontfamily=_text_family)
         if ylabel is not None:
-            ax.set_ylabel(ylabel)
+            ax.set_ylabel(ylabel, fontfamily=_text_family)
         if x_date:
             # the x column holds `date2num` day numbers (see `plot()`'s
             # ndims=1 series mode); without a date converter they would tick
@@ -3224,11 +3358,11 @@ def _draw(
             _axis.set_ticks([])
         ax.patch.set_visible(False)
         if xlabel is not None:
-            ax.set_xlabel(xlabel)
+            ax.set_xlabel(xlabel, fontfamily=_text_family)
         if ylabel is not None:
-            ax.set_ylabel(ylabel)
+            ax.set_ylabel(ylabel, fontfamily=_text_family)
         if zlabel is not None:
-            ax.set_zlabel(zlabel)
+            ax.set_zlabel(zlabel, fontfamily=_text_family)
         # `Axes3D.get_tightbbox` measures its axes "for layout only", which
         # drops the axis LABELS (matplotlib's `_get_tightbbox_for_layout_
         # only`), so a `bbox_inches='tight'` save -- every notebook's inline
@@ -3249,9 +3383,9 @@ def _draw(
         ax.grid(False)
         ax.patch.set_visible(False)
         if xlabel is not None:
-            ax.set_xlabel(xlabel)
+            ax.set_xlabel(xlabel, fontfamily=_text_family)
         if ylabel is not None:
-            ax.set_ylabel(ylabel)
+            ax.set_ylabel(ylabel, fontfamily=_text_family)
         # zlabel on a 2-D/1-D plot is rejected upstream in plot.py
         # (ValueError, before the pipeline even runs) -- zlabel is
         # guaranteed None here.
@@ -3261,7 +3395,8 @@ def _draw(
 
     # add title
     if title is not None:
-        _apply_title(ax, title, font=font, title_kwargs=title_kwargs)
+        _apply_title(ax, title, font=font, title_kwargs=title_kwargs,
+                     family=_text_family)
 
     # add legend: to the RIGHT of the plot, vertically centered on the
     # box (never overlapping the data). `prop=font` (GH #205) applies the
@@ -3280,6 +3415,18 @@ def _draw(
             ax.legend(handles=_legend_proxy_handles(legend_entries, fmt),
                       **_legend_call)
         else:
+            if legend_order:
+                _handles, _labels = ax.get_legend_handles_labels()
+                _rank = {str(lbl): k for k, lbl in enumerate(legend_order)}
+                _slots = [j for j, lbl in enumerate(_labels) if lbl in _rank]
+                _sorted = sorted(_slots, key=lambda j: _rank[_labels[j]])
+                if _sorted != _slots:
+                    _perm = list(range(len(_labels)))
+                    for _slot, _src in zip(_slots, _sorted):
+                        _perm[_slot] = _src
+                    _legend_call = dict(
+                        _legend_call, handles=[_handles[j] for j in _perm],
+                        labels=[_labels[j] for j in _perm])
             _legend_artist = ax.legend(**_legend_call)
             if legend_colors is not None:
                 _recolor_legend_handles(_legend_artist, legend_colors)

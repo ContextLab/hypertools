@@ -65,12 +65,29 @@ from . import morph as _morph
 
 
 def _normalize_scatter3d_alpha(trace, inherited_mode=None, *, frame=False):
-    """Move uniform RGBA transparency to WebGL's native opacity control.
+    """Keep a Scatter3d's hue when its colours carry transparency.
+
+    Plotly's WebGL line/marker path composites an ``rgba(...)`` colour
+    without premultiplying it, so a translucent colour ADDS to the white
+    background instead of blending with it: steelblue at alpha 0.5 renders
+    as (197, 255, 255), a pale cyan, rather than (162, 192, 217) (notebook
+    visual review 2026-09; 1.1 release review). The trace-level `opacity`
+    blends correctly, so:
+
+    * UNIFORM alpha (every active colour the same) moves to `opacity`
+      verbatim, with the colours made opaque -- true translucency.
+    * NONUNIFORM alpha (a translucent line with opaque markers, per-vertex
+      alpha, ...) cannot be one `opacity`. The largest alpha becomes the
+      trace `opacity`, and every colour is first composited over the white
+      paper (`_blend_toward_white`, the rule this module's Mesh3d surfaces
+      use) by its share ``alpha / max_alpha`` of it. Over white the result
+      is exactly the requested colour; what it cannot express is a
+      lower-alpha part showing ANOTHER trace through it at its own lower
+      opacity -- the price of drawing the right hue.
 
     Only active components participate: an unused marker colour must not
-    prevent correcting a line. Nonuniform per-vertex alpha is retained;
-    replacing it by one trace opacity would change the requested data.
-    This operation is idempotent and also accepts partial frame traces.
+    prevent correcting a line. This operation is idempotent and also
+    accepts partial frame traces.
     """
     if trace.type != 'scatter3d':
         return
@@ -98,13 +115,32 @@ def _normalize_scatter3d_alpha(trace, inherited_mode=None, *, frame=False):
         if alphas:
             components.append((obj, converted[0] if scalar else converted, alphas))
     alphas = [a for _, _, values in components for a in values]
-    if not alphas or min(alphas) != max(alphas):
+    if not alphas:
         return
-    if alphas[0] == 1 and not frame:
+    top = max(alphas)
+    if min(alphas) == top:
+        if top == 1 and not frame:
+            return
+        for obj, color, _ in components:
+            obj.color = color
+        trace.opacity = (1 if trace.opacity is None else trace.opacity) * top
         return
-    for obj, color, _ in components:
-        obj.color = color
-    trace.opacity = (1 if trace.opacity is None else trace.opacity) * alphas[0]
+    # nonuniform: opacity = the largest alpha, each colour pre-blended
+    # toward white by its own share of it
+    for obj, color, values in components:
+        scalar = isinstance(color, str)
+        colors = [color] if scalar else list(color)
+        blended = []
+        for value, alpha in zip(colors, values):
+            rgb = _rgb_triplet(value) if isinstance(value, str) else None
+            if not isinstance(rgb, tuple) or alpha == top:
+                blended.append(value)
+                continue
+            share = alpha / top if top > 0 else 0.0
+            mixed = _blend_toward_white(np.asarray(rgb) / 255.0, share)
+            blended.append(_rgb_string(mixed))
+        obj.color = blended[0] if scalar else blended
+    trace.opacity = (1 if trace.opacity is None else trace.opacity) * top
 
 
 VALID_BACKENDS = ('auto', 'matplotlib', 'plotly')
@@ -578,6 +614,134 @@ def _aa_resample_colors(colors, n_orig, n_dense):
     return [colors[j] for j in np.round(grid).astype(int)]
 
 
+def _observation_vertices(dense, raw, n_rows, aa_step):
+    """Indices, into a dataset's drawn (dense) curve, of its TRUE
+    observations.
+
+    `dense` is the curve plotly draws: the `n_rows`-row array `plot()` hands
+    over, subdivided `aa_step` times per row by `_build_aa_curves`. Those
+    rows are the observations themselves unless `plot()` resampled them
+    first -- static antialiasing (`plot._interp_static_line`) and the
+    animation frame grid (`plot._interp_anim_line`) both do -- and `raw`
+    (`plot()`'s pre-resampling ``raw_xform`` rows, in the same display
+    space) says where the observations are. Matched from that relationship,
+    not from any one grid's arithmetic:
+
+    * EXACT: when every observation is a vertex of the curve (static
+      antialiasing keeps each sample as an exact vertex, as does any frame
+      grid that contains the samples), those vertices, found in order.
+    * NEAREST: otherwise (a frame grid whose rows need not contain the
+      samples), the vertex nearest each observation's position along the
+      shared uniform parameter, at most half a grid row away -- the rule
+      the matplotlib backend's animated markers follow.
+
+    `raw` None (or with as many rows as `n_rows`) means the rows are the
+    observations: every `aa_step`-th vertex.
+    """
+    aa_step = max(int(aa_step), 1)
+    n_obs = None if raw is None else np.asarray(raw).shape[0]
+    if n_obs is None or n_obs == n_rows or n_obs < 2 or n_rows < 2:
+        return np.arange(n_rows) * aa_step
+    dense = np.asarray(dense, dtype=np.float64).reshape(len(dense), -1)
+    raw = np.asarray(raw, dtype=np.float64).reshape(n_obs, -1)
+    if raw.shape[1] == dense.shape[1]:
+        # EXACT: walk the curve once, taking each observation's first exact
+        # match at or after the previous one's (a doubling search window
+        # keeps this linear for any spacing)
+        span = float(np.nanmax(np.abs(dense))) if dense.size else 1.0
+        tol = 1e-9 * max(span, 1.0)
+        found, j = [], 0
+        for row in raw:
+            hit, width = None, 16
+            while j < len(dense):
+                window = dense[j:j + width]
+                close = np.flatnonzero(np.abs(window - row).max(axis=1)
+                                       <= tol)
+                if close.size:
+                    hit = j + int(close[0])
+                    break
+                if j + width >= len(dense):
+                    break
+                width *= 2
+            if hit is None:
+                found = None
+                break
+            found.append(hit)
+            j = hit + 1
+        if found is not None:
+            return np.asarray(found, dtype=int)
+    # NEAREST: plot()'s resampling grids are uniform in the parameter, so
+    # observation k sits at row k * (n_rows - 1) / (n_obs - 1)
+    pos = np.arange(n_obs) * ((n_rows - 1) / (n_obs - 1)) * aa_step
+    return np.unique(np.rint(pos).astype(int))
+
+
+def _observation_marker(marker, n_vertices, vertices, ndims):
+    """A trace's ``marker=`` dict with a marker at every TRUE OBSERVATION of
+    a smoothed line and none at the vertices the smoothing added.
+
+    `plot`'s ``antialias=`` promises that markers render at the true sample
+    points; a ``'o-'`` trace drawn as ONE ``lines+markers`` trace over the
+    dense curve would otherwise put a marker on every one of its ~900
+    vertices, which draws the line as a thick tube of overlapping dots
+    (1.1 release review). So the size becomes a per-vertex array: the
+    marker's size at `vertices` (`_observation_vertices`, or a plain step
+    for a curve whose every `step`-th vertex is a sample) and 0 elsewhere.
+    Keeping ONE trace keeps the legend key (line AND marker) and every
+    trace index an animation addresses unchanged; an animation frame sends
+    the matching slice of this array (`_aa_window_sizes`).
+
+    A per-point size array is what plotly calls a "bubble" trace, which
+    changes two of its defaults: markers become 70% opaque and (in 2-D) gain
+    a 1 px white outline. Both are pinned back to the scalar-size look here
+    (``opacity=1``; ``line.width=0``), so an observation marker is drawn
+    exactly as a marker-only trace draws it. The legend key is unaffected:
+    `plotly_draw` sets ``legend.itemsizing='constant'``.
+
+    `vertices` may also be an int step (every `step`-th vertex). `marker`
+    is returned unchanged when every vertex is an observation (nothing was
+    interpolated).
+    """
+    if marker is None:
+        return marker
+    if np.isscalar(vertices):
+        vertices = np.arange(0, int(n_vertices), max(int(vertices), 1))
+    vertices = np.asarray(vertices, dtype=int)
+    vertices = vertices[(vertices >= 0) & (vertices < int(n_vertices))]
+    if len(vertices) >= int(n_vertices):
+        return marker
+    marker = _bubble_safe_marker(marker, ndims)
+    sizes = np.zeros(int(n_vertices))
+    sizes[vertices] = marker.get('size') or 0
+    marker['size'] = sizes
+    return marker
+
+
+def _aa_window_sizes(sizes, step, a, b):
+    """The slice of a full-curve per-vertex marker-size array that goes with
+    `_aa_window`'s drawn window for ORIGINAL rows ``[a, b)`` -- the same
+    index arithmetic, so an animation frame's sizes line up with its
+    vertices."""
+    step = max(int(step), 1)
+    if step == 1:
+        return sizes[a:b]
+    if b <= a:
+        return sizes[0:0]
+    return sizes[a * step:(b - 1) * step + 1]
+
+
+def _bubble_safe_marker(marker, ndims):
+    """A copy of `marker` that looks the same once its `size` becomes a
+    per-point array: plotly's "bubble" defaults (70% opacity and, in 2-D, a
+    white outline) pinned back to an ordinary marker's. Also used for the
+    base of an animated trace whose FRAMES send such an array."""
+    marker = dict(marker)
+    marker.setdefault('opacity', 1)
+    if ndims < 3:
+        marker['line'] = dict(width=0)
+    return marker
+
+
 def _run_window(frame_windows, idx, n_rows, num, total_frames,
                 window_frames):
     """This trace's `RunWindow` at one frame.
@@ -740,6 +904,66 @@ def _plotly_legend_entry_traces(entries, ndims):
     return traces
 
 
+def _legend_anchors_for(legend_kwargs):
+    """``xanchor``/``yanchor`` that follow a caller's `legend_kwargs` x/y
+    when the caller gave a position but no anchor.
+
+    hypertools' default legend is anchored ``xanchor='left',
+    yanchor='middle'`` for its x=1.02/y=0.5 spot outside the right edge;
+    kept for a caller's ``{'x': 0, 'y': 1}`` those anchors put the legend's
+    MIDDLE on the top edge, half of it off the plot (1.1 release review).
+    Inside the paper the anchor follows the position by thirds (plotly's
+    own ``'auto'`` rule: left/bottom near 0, right/top near 1); outside it,
+    the legend hangs away from the plot (x > 1 -> left, x < 0 -> right,
+    y > 1 -> bottom, y < 0 -> top). An anchor the caller gave is kept.
+    """
+    out = {}
+    for axis, lo, mid, hi, key in (('x', 'left', 'center', 'right',
+                                    'xanchor'),
+                                   ('y', 'bottom', 'middle', 'top',
+                                    'yanchor')):
+        value = legend_kwargs.get(axis)
+        if value is None or key in legend_kwargs:
+            continue
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            continue
+        if value > 1:
+            out[key] = lo
+        elif value < 0:
+            out[key] = hi
+        elif value <= 1 / 3:
+            out[key] = lo
+        elif value >= 2 / 3:
+            out[key] = hi
+        else:
+            out[key] = mid
+    return out
+
+
+#: plotly trace types drawn in a 3-D `scene` (every other trace type
+#: hypertools can meet in a figure lives on 2-D axes)
+_SCENE_TRACE_TYPES = frozenset({'scatter3d', 'mesh3d', 'volume',
+                                'isosurface', 'surface', 'cone',
+                                'streamtube'})
+
+
+def _target_ndims(into):
+    """3 when an `ax=` target is a 3-D surface, 2 when it is 2-D axes,
+    None when there is nothing to tell (an empty figure).
+
+    A `PlotlyCell` knows what it was built for; a bare figure is read from
+    the traces it already draws."""
+    if isinstance(into, PlotlyCell):
+        return 3 if into.ndims >= 3 else 2
+    types = {getattr(t, 'type', None) for t in getattr(into, 'data', ())}
+    types.discard(None)
+    if not types:
+        return None
+    return 3 if types & _SCENE_TRACE_TYPES else 2
+
+
 def _compose_scope_traces(into):
     """The traces an `ax=` target already holds that a new call composes
     with: every trace of a bare Figure, or the traces attached to a
@@ -854,7 +1078,8 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 axis_scale='unit', xlim=None, ylim=None, x_date=False,
                 truths=None, forecast_labels=None,
                 forecast_datasets=None, datasets_drawn=None,
-                legend_explicit=False, row_counts=None):
+                legend_explicit=False, raw_data=None, frame_kwargs=None,
+                trace_names=None, row_counts=None, before_show=None):
     """Render grouped datasets with plotly, mirroring _draw's contract and
     the matplotlib renderer's appearance.
 
@@ -899,6 +1124,27 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         fully-opaque, marked trace per dataset, tagged
         ``meta['hyp_forecast_role'] = 'truth'`` -- the plotly half of
         `plot._draw_truth_overlays`.
+    trace_names : list of str or None
+        The name of every entry of `data` -- what its hover label shows --
+        from `plot._plotly_hover_names`: the label its legend entry shows or
+        would show under ``legend=True`` (a category for every run of it, a
+        hierarchy's top-level group for its leaves, a series' column, else
+        the dataset number), or None for a lone unlabelled dataset, which is
+        then drawn with no hover name box at all (`_hover_identity`). A name
+        shared by several traces becomes their `legendgroup`. Whether a
+        legend entry is DRAWN stays decided by `legend`. `None` (a direct
+        caller) keeps the historical naming (legend labels only).
+    raw_data : list of numpy.ndarray or None
+        The PRE-resampling observations, one per entry of `data`, in the
+        same display space (`plot()`'s ``raw_xform`` -- the matplotlib
+        backend's ``raw_data=``). `plot()` densifies a static line
+        (`antialias=`) and resamples an animated one onto its frame grid
+        before either backend sees it, so only this says where the true
+        observations are: a marker+line fmt (``'o-'``) marks exactly those
+        (the nearest frame-grid vertex, in an animation) and never the
+        interpolated vertices; a continuous `hue=` line in 1-D/2-D draws its
+        markers at these rows. `None` treats the rows of `data` as the
+        observations.
     legend_explicit : bool
         Whether `legend_entries` came from a caller's
         ``legend_colors=[(label, color), ...]`` -- an explicit legend that
@@ -913,6 +1159,11 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         Drawing into a `PlotlyCell` records it per cell instead
         (``layout.meta['hyp_cell_datasets_drawn'][str(index)]``): each cell
         keeps its own count, like a matplotlib axes of its own.
+    before_show : callable or None
+        Called as ``before_show(fig)`` with the finished figure, before it
+        is saved or shown -- so whatever `plot()` records on it (the
+        palette colours beside `datasets_drawn`, legend ranks) is in the
+        displayed and saved figure too.
     forecast_datasets : list of int or None
         GH #285. Which SOURCE DATASET each forecast belongs to, for
         ``meta['hyp_dataset']``. `None` means "forecast i is dataset i"; the
@@ -978,7 +1229,14 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         Past+future trail flag(s), per trace. Same `animate='serial'`
         support as `chemtrails` above.
     zoom : float
-        3-D camera zoom factor.
+        3-D camera zoom factor, for ANIMATIONS only (as `plot()` documents
+        it, and as the matplotlib backend applies it); a static figure keeps
+        the default view.
+    frame_kwargs : dict or None
+        `plot()`'s ``frame_kwargs=`` -- matplotlib keywords for the cube
+        (`plot_wireframe`) or square (`Rectangle`) frame, mapped onto the
+        plotly frame by `_frame_style` (colour, width, dash, alpha, 2-D
+        fill); unmappable keys are named in a warning.
     forecasts : list of numpy.ndarray or None
         predict= forecast traces (see below). ONE PER INPUT DATASET, which
         after `hue=`/`cluster=` regrouping is NOT one per drawn trace.
@@ -1122,6 +1380,9 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     only the drawn coordinate arrays change. Marker-only styles (e.g. 'o',
     '.') are never touched, so their markers stay on the true samples, and
     `animate='morph'` (traveling point CLOUDS, not lines) is excluded too.
+    A marker+line style ('o-') keeps its markers on the true samples as
+    well: its one trace gets a per-vertex marker size that is zero at every
+    interpolated vertex (`_observation_marker`, located via `raw_data`).
     `antialias=False` reproduces the pre-antialias figure exactly (same
     traces, same frames, same coordinate arrays).
 
@@ -1271,6 +1532,35 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
 
     ndims = data[0].shape[1] if data[0].ndim > 1 else 1
 
+    # `frame_kwargs=`: the cube/square's colour, width, dash (and 2-D fill)
+    _frame = _frame_style(frame_kwargs, ndims)
+
+    # ax= (`into`) must be the same KIND of surface as this plot: a 3-D
+    # scene for 3-D data, 2-D axes for 1-/2-D data. A mismatched grid cell
+    # used to die in `transplant_panel` with a bare "cannot unpack
+    # non-iterable NoneType" (its 3-D domain read off 2-D axes, or the
+    # reverse), and a mismatched figure silently overlaid a 2-D trace on a
+    # 3-D scene -- the plotly half of `plot()`'s matplotlib `ax=` check
+    # ("If passing ax and the plot is 3D, ax must also be 3d"), checked
+    # before anything is drawn (1.1 release review)
+    if into is not None:
+        _into_nd = _target_ndims(into)
+        if _into_nd is not None and (_into_nd >= 3) != (ndims >= 3):
+            _kind = ('cell of a hyp.subplots grid' if isinstance(
+                into, PlotlyCell) else 'plotly figure')
+            _this = ('3-D' if ndims >= 3
+                     else ('time-series (1-D)' if ndims == 1 else '2-D'))
+            raise ValueError(
+                f"ax= is a {'3-D' if _into_nd >= 3 else '2-D'} {_kind}, but "
+                f"this call draws a {_this} plot ({ndims} column"
+                f"{'s' if ndims != 1 else ''} after reduction). Pass a "
+                f"{'3-D' if ndims >= 3 else '2-D'} target -- "
+                f"hyp.subplots(..., ndims={3 if ndims >= 3 else 2}, "
+                "backend='plotly') for a grid, or the Figure of a "
+                f"{'3-D' if ndims >= 3 else '2-D'} hyp.plot -- or, if the "
+                f"data has the dimensions for it, pass "
+                f"ndims={3 if _into_nd >= 3 else 2} to draw into this one.")
+
     # animate='morph' (Hungarian point-cloud morphs, maintainer request):
     # `plot.py` already raises `NotImplementedError` for 1-D (or higher
     # than 3-D) data before ever calling this backend; this is a defensive
@@ -1283,6 +1573,16 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
             "animate='morph' is only supported for 2-D or 3-D plots; got "
             f"{ndims}-D data."
         )
+    # every other style: a single-column trajectory has nothing to reveal
+    # a path through -- the matplotlib backend's `_draw` refuses it with
+    # this exact message, and plotly used to animate it silently, drawing
+    # frame-grid row numbers as the x axis (1.1 release review). `ndims=1`
+    # SERIES mode is unaffected: `plot()` hands it over as (index, value)
+    # columns, a 2-D plot.
+    if animate and ndims not in (2, 3):
+        raise ValueError(
+            "Animations are only supported for 2-D or 3-D plots (got "
+            f"{ndims}-D data); pass ndims=2 or ndims=3 (the default).")
 
     # round17 #9 (GH #123): 'spin' rotates the 3-D camera and has no
     # meaning for 2-D data (2-D animations use a fixed, non-rotating
@@ -1306,6 +1606,18 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     # via `_aa_window`, so a dataset is never interpolated twice and the
     # smoothing is identical across the static figure and its frames.
     aa_curves = _build_aa_curves(data, fmt, antialias, morph_tags=morph_tags)
+    # where each dataset's TRUE observations are (see `raw_data` above); a
+    # list that does not pair up with `data` is ignored rather than guessed
+    if raw_data is not None and len(raw_data) != len(data):
+        raw_data = None
+    observations = [
+        (raw_data[i] if raw_data is not None and raw_data[i] is not None
+         and np.asarray(raw_data[i]).ndim > 0 else None)
+        for i in range(len(data))]
+    # full-curve per-vertex marker sizes for each observation-marked data
+    # (and trail) trace, which every animation frame slices to its window
+    # (`_aa_window_sizes`); None where the marker size is a plain scalar
+    obs_marker_sizes = [None] * len(data)
 
     def _rows_of(i, arr):
         """The ORIGINAL row count behind drawn trace `i` (see
@@ -1363,40 +1675,43 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         msize = _marker_size_px(
             tkwargs.get('markersize') or DEFAULT_MARKERSIZE_PT, marker_char,
             ndims=ndims)
-        name = _trace_name(legend, tkwargs, i)
+        # `legend_name` decides the legend entry (unchanged rules); `name`
+        # is what the trace is CALLED -- its hover label -- which every
+        # data trace gets, legend or not (`trace_names`)
+        legend_name = _trace_name(legend, tkwargs, i)
+        name = (legend_name if legend_name is not None
+                else _hover_name(trace_names, i))
 
         if ndims >= 3 and symbol not in _SYMBOLS_3D:
             symbol = _SYMBOL_3D_FALLBACK.get(symbol, 'circle')
 
         # multicolored lines: per-point colors along each trajectory.
         #
-        # TWO serializations, because the two backends treat this trace's
-        # `alpha=` differently and parity is stated against matplotlib, not
-        # against internal consistency:
-        #  * LINES carry it. `plot._apply_multicolor_lines` replaces the line
-        #    artist with a collection whose segment colours gain a 4th
-        #    channel from `tkwargs['alpha']` -- an alpha left on the
-        #    discarded artist is simply lost -- so the per-point colours are
-        #    the only place the alpha can live here either. Serializing them
-        #    through `_rgb_string` (which drops the 4th channel) with no
-        #    trace `opacity` is why a hierarchy's 0.7 leaves, and a plain
-        #    `hue=` + `alpha=`, rendered fully opaque on plotly alone.
-        #  * MARKERS do not. `plot._apply_multicolor_markers` scatters
-        #    `c=ci` -- the raw hue colours, with no alpha folded in
-        #    (measured: every facecolor's 4th channel is 1.0 under
-        #    `alpha=0.7`). Baking it in here would make plotly the ONLY
-        #    backend dimming a hue-coloured marker.
+        # The trace's `alpha=` lives in these per-point colours -- for the
+        # LINE and the MARKERS alike, exactly as a single-coloured trace's
+        # `alpha=` dims both its line and its markers (the reference every
+        # hue path is held to). On matplotlib, `plot._apply_multicolor_lines`
+        # gives the segment colours a 4th channel from `tkwargs['alpha']`
+        # and `plot._apply_multicolor_markers` scatters with the same alpha;
+        # serializing the colours through `_rgb_string` (which drops the 4th
+        # channel) with no trace `opacity` is why a hierarchy's 0.7 leaves,
+        # and a plain `hue=` + `alpha=`, once rendered fully opaque on plotly
+        # alone. (Until the 1.1 release review the markers deliberately
+        # kept opaque hue colours, copying a matplotlib path that dropped
+        # the alpha; both backends now honour it.) In 3-D the uniform alpha
+        # is then moved to the trace's native `opacity` by
+        # `_normalize_scatter3d_alpha`, which keeps Scatter3d's hue intact.
         trace_point_colors = None
         trace_line_colors = None
         if point_colors is not None and i < len(point_colors) \
                 and point_colors[i] is not None:
-            trace_point_colors = [
-                _rgb_string(c) for c in np.asarray(point_colors[i])]
             _pt_alpha = tkwargs.get('alpha')
-            trace_line_colors = (
-                trace_point_colors if _pt_alpha is None else
+            trace_point_colors = (
+                [_rgb_string(c) for c in np.asarray(point_colors[i])]
+                if _pt_alpha is None else
                 [_to_plotly_color(c, _pt_alpha)
                  for c in np.asarray(point_colors[i])])
+            trace_line_colors = trace_point_colors
 
         # surface= (GH #109) keep_points=False: hide this dataset's own
         # line/marker trace so only its surface shows.
@@ -1457,18 +1772,10 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 draw_arr = draw_arr.copy()
                 grid = np.linspace(0, arr.shape[0] - 1, draw_arr.shape[0])
                 draw_arr[enclosed_mask[np.round(grid).astype(int)]] = np.nan
-            # both serializations follow the SAME resampling, so the line
-            # and marker colour arrays stay index-aligned with each other
-            # and with the drawn vertices
-            _n_orig, _n_dense = arr.shape[0], draw_arr.shape[0]
-            if trace_line_colors is trace_point_colors:
-                trace_point_colors = trace_line_colors = _aa_resample_colors(
-                    trace_point_colors, _n_orig, _n_dense)
-            else:
-                trace_point_colors = _aa_resample_colors(
-                    trace_point_colors, _n_orig, _n_dense)
-                trace_line_colors = _aa_resample_colors(
-                    trace_line_colors, _n_orig, _n_dense)
+            # the line and marker colours follow the SAME resampling, so
+            # they stay index-aligned with the drawn vertices
+            trace_point_colors = trace_line_colors = _aa_resample_colors(
+                trace_point_colors, arr.shape[0], draw_arr.shape[0])
 
         common = dict(
             mode=mode,
@@ -1476,9 +1783,10 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
             # explicit `legend_entries` (legend_colors=[(label, color)])
             # define the legend outright, so the data traces stay out of
             # it (matplotlib parity; Codex round 3)
-            showlegend=(legend is not None and name is not None
-                       and not str(name).startswith('_')
+            showlegend=(legend is not None and legend_name is not None
+                       and not str(legend_name).startswith('_')
                        and not hide_points and not legend_entries),
+            **_hover_identity(name, trace_names, ndims),
             visible=not hide_points,
             line=dict(color=color, width=width, dash=dash),
             marker=dict(color=color, size=msize, symbol=symbol),
@@ -1493,49 +1801,71 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
             # positively so a decoration added later cannot leak in.
             meta=dict(hyp_trace_index=i),
         )
+        if trace_point_colors is not None:
+            # per-point marker colours, in every dimensionality: the 1-D
+            # branch used to fall through to the single `color`, so a
+            # marker-only continuous hue drew all 60 points in ONE palette
+            # colour there while matplotlib's `_apply_multicolor_markers`
+            # scattered them per point
+            common['marker'] = dict(color=trace_point_colors,
+                                    size=msize, symbol=symbol)
+        obs_vertices = _observation_vertices(
+            arr if aa_step == 1 else aa_curves[i][0], observations[i],
+            arr.shape[0], aa_step)
+        if 'markers' in mode:
+            # a marker on each OBSERVATION of a smoothed line, none on the
+            # vertices antialiasing (or the animation frame grid) added --
+            # `plot`'s `antialias=` contract
+            common['marker'] = _observation_marker(
+                common['marker'], draw_arr.shape[0], obs_vertices, ndims)
+            if not np.isscalar(common['marker']['size']):
+                obs_marker_sizes[i] = common['marker']['size']
         if ndims >= 3:
             if trace_point_colors is not None:
                 # Scatter3d supports per-point line colors natively
                 common['line'] = dict(color=trace_line_colors, width=width,
                                       dash=dash)
-                common['marker'] = dict(color=trace_point_colors,
-                                        size=msize, symbol=symbol)
             traces.append(go.Scatter3d(
                 x=draw_arr[:, 0], y=draw_arr[:, 1], z=draw_arr[:, 2],
                 **common))
-        elif ndims == 2:
-            if trace_point_colors is not None and 'lines' in mode:
-                # 2D Scatter has no per-point line colors; draw short
-                # segment traces instead (grouped under one legend entry)
-                traces.extend(_segment_traces_2d(
-                    go, draw_arr, trace_line_colors, width, dash, name,
-                    trace_index=i))
-                continue
-            if trace_point_colors is not None:
-                common['marker'] = dict(color=trace_point_colors,
-                                        size=msize, symbol=symbol)
-            traces.append(go.Scatter(x=draw_arr[:, 0], y=draw_arr[:, 1],
-                                     **common))
-        else:
-            xs = (_aa_x(aa_step, 0, draw_arr.shape[0]) if aa_step != 1
-                  else row_index_x(_rows_of(i, arr), draw_arr.shape[0]))
-            if trace_point_colors is not None and 'lines' in mode:
-                pts = np.column_stack([xs, draw_arr[:, 0]])
-                traces.extend(_segment_traces_2d(
-                    go, pts, trace_line_colors, width, dash, name,
-                    trace_index=i))
-                continue
-            if trace_point_colors is not None:
-                # the 1-D marker branch used to fall through to the single
-                # `color`, so a marker-only continuous hue drew all 60 points
-                # in ONE palette colour here while matplotlib's
-                # `_apply_multicolor_markers` scattered them per point
-                # (`ax.scatter(np.arange(n), xi[:, 0], c=ci, ...)`) -- the
-                # same per-point colours the 2-D and 3-D branches above
-                # already pass on.
-                common['marker'] = dict(color=trace_point_colors,
-                                        size=msize, symbol=symbol)
-            traces.append(go.Scatter(x=xs, y=draw_arr[:, 0], **common))
+            continue
+        # 1-D: x in ROW units (`row_counts`, `row_index_x`), matching
+        # matplotlib's plot1D -- not the densified vertex index
+        xs = (draw_arr[:, 0] if ndims == 2
+              else _aa_x(aa_step, 0, draw_arr.shape[0]) if aa_step != 1
+              else row_index_x(_rows_of(i, arr), draw_arr.shape[0]))
+        ys = draw_arr[:, 1] if ndims == 2 else draw_arr[:, 0]
+        if trace_point_colors is not None and 'lines' in mode:
+            # 2D Scatter has no per-point line colors; draw short segment
+            # traces instead (grouped under one legend entry) ...
+            traces.extend(_segment_traces_2d(
+                go, np.column_stack([xs, ys]), trace_line_colors, width,
+                dash, name, trace_index=i))
+            if 'markers' in mode:
+                # ... and, for a marker+line fmt ('o-'), the markers as ONE
+                # marker-only trace on the observations themselves, each in
+                # its own hue colour -- matplotlib's
+                # `_apply_multicolor_markers` scatter beside its
+                # LineCollection. The segments carry only the line, so
+                # without this the markers were silently dropped.
+                # (the observation vertices of the drawn curve: exactly the
+                # samples for a static plot, whose densified rows keep every
+                # one; their colours are the hue's own at those rows)
+                _ov = obs_vertices[obs_vertices < len(xs)]
+                obs_x, obs_y = xs[_ov], ys[_ov]
+                obs_point_colors = [trace_point_colors[j] for j in _ov]
+                traces.append(go.Scatter(
+                    x=obs_x, y=obs_y, mode='markers', name=name,
+                    showlegend=False, visible=not hide_points,
+                    **{k: v for k, v in _hover_identity(
+                        name, trace_names, ndims).items()
+                       if k != 'legendgroup'},
+                    legendgroup=name or 'multicolor',
+                    marker=dict(color=obs_point_colors, size=msize,
+                                symbol=symbol),
+                    meta=dict(hyp_trace_index=i)))
+            continue
+        traces.append(go.Scatter(x=xs, y=ys, **common))
 
     n_data_traces = len(traces) - n_surface_traces_2d - n_density_traces_2d
 
@@ -1626,6 +1956,12 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
             # prepended first point and the final point stay exact, so it
             # still joins the trajectory.
             fc_draw, fc_step = (antialias_line(fc) if antialias else (fc, 1))
+            if fc_marker is not None:
+                # `forecast_fmt='ro:'` marks the forecast's STEPS (and its
+                # seam), not every vertex of the smoothed curve -- which drew
+                # the dotted forecast as a solid tube of dots
+                fc_common['marker'] = _observation_marker(
+                    fc_marker, fc_draw.shape[0], fc_step, ndims)
             if ndims >= 3:
                 traces.append(go.Scatter3d(
                     x=fc_draw[:, 0], y=fc_draw[:, 1], z=fc_draw[:, 2],
@@ -1700,7 +2036,13 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 fc_common = dict(
                     mode=fc_mode, showlegend=False, hoverinfo='skip',
                     line=fc_line,
-                    **({} if fc_marker is None else dict(marker=fc_marker)),
+                    # each smoothed frame sends a per-vertex size array
+                    # marking only the forecast's steps
+                    # (`_forecast_frame_data`), so the base marker is made
+                    # to look the same under one
+                    **({} if fc_marker is None else dict(
+                        marker=(_bubble_safe_marker(fc_marker, ndims)
+                                if antialias else fc_marker))),
                     meta=dict(
                         hyp_forecast_role='live' if age == 0 else 'trail',
                         hyp_dataset=(forecast_datasets[i]
@@ -1803,9 +2145,13 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
             # (the same convention `_aa_x` builds the 1-D x from), so the
             # marker size is a per-vertex array that is 0 everywhere else
             # -- one trace, so a truth stays one trace per dataset.
-            marker_size = np.zeros(tr_draw.shape[0])
-            marker_size[::max(int(tr_step), 1)] = _marker_size_px(
-                TRUTH_STYLE['markersize'], TRUTH_STYLE['marker'], ndims)
+            # (`_observation_marker` also keeps plotly's bubble defaults --
+            # 70% opacity, a white outline in 2-D -- off these markers)
+            tr_marker = _observation_marker(
+                dict(size=_marker_size_px(TRUTH_STYLE['markersize'],
+                                          TRUTH_STYLE['marker'], ndims),
+                     color=tr_line.get('color')),
+                tr_draw.shape[0], tr_step, ndims)
             tr_common = dict(
                 mode='lines+markers',
                 showlegend=bool(i == 0
@@ -1813,7 +2159,7 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                                 and not legend_explicit
                                 and not _truth_already_listed),
                 name='truth', hoverinfo='skip', line=tr_line,
-                marker=dict(size=marker_size, color=tr_line.get('color')),
+                marker=tr_marker,
                 # listed AFTER the forecast entries (which are appended as
                 # the last traces), the order the matplotlib legend uses:
                 # data, forecasts, truth
@@ -1885,9 +2231,18 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         msize = _marker_size_px(
             tkwargs.get('markersize') or DEFAULT_MARKERSIZE_PT, marker_char,
             ndims=ndims)
+        trail_marker = dict(color=color, size=msize)
+        if 'markers' in mode:
+            # the observations of the dataset's whole smoothed curve; every
+            # frame sends its trail window's slice of these sizes
+            _n_rows = np.atleast_2d(np.asarray(data[i])).shape[0]
+            trail_marker = _observation_marker(
+                trail_marker, aa_curves[i][0].shape[0],
+                _observation_vertices(aa_curves[i][0], observations[i],
+                                      _n_rows, aa_curves[i][1]), ndims)
         trail = dict(mode=mode, showlegend=False, hoverinfo='skip',
                      line=dict(color=color, width=width, dash=dash),
-                     marker=dict(color=color, size=msize))
+                     marker=trail_marker)
         if ndims >= 3:
             traces.append(go.Scatter3d(x=[], y=[], z=[], **trail))
         else:
@@ -2095,7 +2450,9 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                                                density_colors))
 
     if ndims >= 3:
-        traces.append(_cube_trace(go, scale=cube_scale))
+        traces.append(_cube_trace(
+            go, scale=cube_scale, linewidth_pt=_frame['width_pt'],
+            color=_frame['color'], dash=_frame['dash']))
 
     # colorbar (GH #100): appended LAST (after the cube trace) so it never
     # falls within `trace_indices = range(n_data_traces [+ n_trail_traces])`
@@ -2213,7 +2570,9 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 {'range': [-cube_scale, cube_scale]}, zlabel, scene=True),
             camera=dict(eye=_camera_eye(
                 elev, azim,
-                r=_anim_zoom_r(zoom) if animate else _zoom_r(zoom))),
+                # `zoom=` is animation-only (plot()'s docstring; the
+                # matplotlib static view ignores it too)
+                r=_anim_zoom_r(zoom) if animate else _zoom_r(1))),
             # matplotlib's Axes3D uses a 4:4:3 box aspect by default; match
             # it so the cube renders wider than tall, exactly like the
             # matplotlib backend
@@ -2227,7 +2586,10 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
             {'range': [-UNIT_FRAME_LIMIT, UNIT_FRAME_LIMIT]}, xlabel)
         layout['yaxis'] = _labeled_axis_layout(
             {'range': [-UNIT_FRAME_LIMIT, UNIT_FRAME_LIMIT]}, ylabel)
-        layout['shapes'] = [_square_shape(scale=UNIT_FRAME_SCALE)]
+        layout['shapes'] = [_square_shape(
+            scale=UNIT_FRAME_SCALE, linewidth_pt=_frame['width_pt'],
+            color=_frame['color'], dash=_frame['dash'],
+            fill=_frame['fill'])]
     elif axis_scale == 'data':
         # GH #285: real units. No frame square, no unit range, and the axes
         # keep plotly's own ticks/labels -- the plotly half of
@@ -2237,6 +2599,27 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     else:
         layout['xaxis'] = _labeled_axis_layout({}, xlabel)
         layout['yaxis'] = _labeled_axis_layout({}, ylabel)
+
+    # An ANIMATION's legend rides on data-free proxy traces (1.1 release
+    # review, L7): plotly omits the legend item of a trace with no points,
+    # and a data trace is empty until the reveal reaches it (a later
+    # dataset, a later cluster's first run), so its entry appeared and
+    # vanished frame by frame while matplotlib's legend is complete from
+    # frame 0. Each proxy wears its data trace's style and shares its
+    # `legendgroup`, so a legend click still toggles the data; the data
+    # traces keep their `name` for hover.
+    if animate and animate != 'spin':
+        _proxies = []
+        for _k in range(data_trace_start, data_trace_start + n_data_traces):
+            _tr = fig.data[_k]
+            if not _tr.showlegend or _tr.name is None:
+                continue
+            _group = _tr.legendgroup or _tr.name
+            _tr.legendgroup = _group
+            _tr.showlegend = False
+            _proxies.append(_legend_proxy_for(_tr, ndims, _group))
+        if _proxies:
+            fig.add_traces(_proxies)
 
     # labels= (GH #205 F3): point annotations, at parity with matplotlib's
     # annotate_plot -- see _build_point_annotations for the exact mapping
@@ -2270,6 +2653,11 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 marker = (tr.marker.to_plotly_json()
                           if tr.marker is not None and tr.marker.symbol
                           else None)
+                if marker is not None and not np.isscalar(
+                        marker.get('size', 0)):
+                    # an observation-marked (per-vertex size) forecast: its
+                    # legend key takes the marker's one real size
+                    marker['size'] = float(np.max(marker['size']))
                 forecast_legend_specs.append(
                     (tr.name, tr.line.to_plotly_json(),
                      meta.get('hyp_forecast_alpha'), tr.mode or 'lines',
@@ -2309,7 +2697,9 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     # hypertools defaults above -- the same precedence the matplotlib
     # backend gives it over its own `Axes.legend` defaults.
     if legend_kwargs:
-        layout['legend'] = {**layout['legend'], **legend_kwargs}
+        layout['legend'] = {**layout['legend'],
+                            **_legend_anchors_for(legend_kwargs),
+                            **legend_kwargs}
 
     fig.update_layout(**layout)
 
@@ -2382,6 +2772,21 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                        # clock is driven from (see `_run_window`)
                        ownership=ownership)
 
+    # Notebook visual review 2026-09: Scatter3d's RGBA colour path can
+    # change hue under transparency. Use RGB + native opacity instead.
+    # Include frame payloads, which may override the base trace colours.
+    # Done HERE, on this call's own figure, before any `ax=` composition:
+    # a caller's figure keeps its own traces exactly as they were (1.1
+    # release review: this loop used to run over the composed figure and
+    # rewrote the caller's rgba traces too).
+    for frame in fig.frames:
+        indices = frame.traces if frame.traces is not None else range(len(frame.data))
+        for index, trace in zip(indices, frame.data):
+            _normalize_scatter3d_alpha(
+                trace, fig.data[index].mode
+                if fig.data[index].type == 'scatter3d' else None, frame=True)
+    for trace in fig.data:
+        _normalize_scatter3d_alpha(trace)
     if x_date:
         # dates as naive ISO strings, not epoch ms: plotly.js draws numeric
         # dates in the VIEWER's local time zone (see `_epoch_ms_to_iso`)
@@ -2418,17 +2823,8 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
             fig.layout.meta = {**_meta,
                                'hyp_datasets_drawn': int(datasets_drawn)}
 
-    # Notebook visual review 2026-09: Scatter3d's RGBA colour path can
-    # change hue under transparency. Use RGB + native opacity instead.
-    # Include frame payloads, which may override the base trace colours.
-    for frame in fig.frames:
-        indices = frame.traces if frame.traces is not None else range(len(frame.data))
-        for index, trace in zip(indices, frame.data):
-            _normalize_scatter3d_alpha(
-                trace, fig.data[index].mode
-                if fig.data[index].type == 'scatter3d' else None, frame=True)
-    for trace in fig.data:
-        _normalize_scatter3d_alpha(trace)
+    if before_show is not None:
+        before_show(fig)
 
     if save_path is not None:
         ext = save_path.lower().rsplit('.', 1)[-1]
@@ -2733,9 +3129,20 @@ def _place_cell_furniture(target, index, ndims):
     placed = legend is not None and legend.x is not None
     meta = target.layout.meta if isinstance(target.layout.meta, dict) else {}
     explicit = (meta.get('hyp_cell_legends') or {}).get(str(index))
-    has_legend = placed or bool(
-        (meta.get('hyp_cell_furniture') or {}).get(str(index), {})
-        .get('legend'))
+    # whether the cell SHOWS a legend -- what `transplant_panel` recorded
+    # from its traces -- not whether a `legendN` layout exists: every drawn
+    # cell gets one placed, so reading that pushed a legend-less cell's
+    # colorbar a legend's width right, onto the next cell (1.1 release
+    # review)
+    furniture = (meta.get('hyp_cell_furniture') or {}).get(str(index))
+    if furniture is not None:
+        has_legend = bool(furniture.get('legend'))
+    else:
+        has_legend = any(
+            bool(t.showlegend) for t in target.data
+            if getattr(t, 'legend', None) == keys['legend']
+            or (index == 0 and getattr(t, 'legend', None) in (None,
+                                                               'legend')))
     if placed and explicit:
         legend.update(x=x0 + float(explicit['lx']) * (x1 - x0),
                       y=y0 + float(explicit['ly']) * (y1 - y0))
@@ -2957,13 +3364,16 @@ def transplant_panel(target, panel, row, col, index, ndims):
     # a `make_subplots`-style annotation above the cell, positioned by
     # the same `x`/`y`/anchors the title carries, mapped from the single
     # figure's paper into the cell's domain. One per cell: drawing into
-    # the cell again REPLACES it (as a matplotlib axes title is replaced),
-    # while `labels=` annotations keep accumulating.
+    # the cell again with a `title=` REPLACES it (as a matplotlib axes
+    # title is replaced), and an untitled call leaves it alone (as an
+    # untitled `hyp.plot(..., ax=ax)` leaves the axes title; 1.1 release
+    # review: the second call deleted it), while `labels=` annotations
+    # keep accumulating.
     title_name = f'hyp-cell-title-{index}'
-    target.layout.annotations = tuple(
-        a for a in target.layout.annotations if a.name != title_name)
     title = panel.layout.title
     if title is not None and title.text:
+        target.layout.annotations = tuple(
+            a for a in target.layout.annotations if a.name != title_name)
         tx = 0.5 if title.x is None else float(title.x)
         default_y = title.y is None or abs(float(title.y) - 0.97) < 1e-9
         spec = dict(text=title.text, name=title_name,
@@ -3628,11 +4038,101 @@ def _export_animation_file(fig, save_path, frame_rate, duration, size):
                 check=True, capture_output=True)
 
 
-def _cube_trace(go, scale=1.0, linewidth_pt=CUBE_LINEWIDTH_PT):
+#: `frame_kwargs=` keys `_frame_style` maps (matplotlib spellings, as
+#: `matplotlib_backend.plot_cube`'s `plot_wireframe` and `plot_square`'s
+#: `Rectangle` take them)
+_FRAME_COLOR_KEYS = ('color', 'colors', 'edgecolor', 'edgecolors', 'ec')
+_FRAME_WIDTH_KEYS = ('linewidth', 'linewidths', 'lw')
+_FRAME_STYLE_KEYS = ('linestyle', 'linestyles', 'ls')
+_FRAME_FACE_KEYS = ('facecolor', 'fc')
+#: matplotlib's own default frame width (`plot_cube`/`plot_square`), which
+#: `CUBE_LINEWIDTH_PT` is calibrated to match on screen
+_MPL_FRAME_LINEWIDTH_PT = 1.0
+
+
+def _frame_style(frame_kwargs, ndims):
+    """The plotly styling of the cube/square frame from `plot()`'s
+    ``frame_kwargs=`` (matplotlib's `plot_wireframe`/`Rectangle` keywords).
+
+    Returns ``dict(color, width_pt, dash, fill)`` -- `color` a plotly colour
+    string (``alpha=`` folded in), `width_pt` the frame width in the
+    points `_cube_trace`/`_square_shape` take (a matplotlib ``linewidth``
+    scaled by the same factor that makes the default 1 pt frame match
+    matplotlib's on screen), `dash` a plotly dash name, `fill` the 2-D
+    square's fill colour or None. With no `frame_kwargs` this is exactly the
+    historical black frame. Keywords with no plotly equivalent (``zorder``,
+    ``rstride``, ...) are named in one warning instead of being dropped
+    silently (1.1 release review: plotly ignored `frame_kwargs=` outright,
+    so the cube stayed black whatever colour was asked for).
+    """
+    kw = dict(frame_kwargs or {})
+    alpha = kw.pop('alpha', None)
+    # `color`/`colors` style the whole frame (a Rectangle's edge AND face);
+    # the edge spellings style only its outline
+    both = next((kw.get(k) for k in ('color', 'colors')
+                 if kw.get(k) is not None), None)
+    edge = next((kw.get(k) for k in ('edgecolor', 'edgecolors', 'ec')
+                 if kw.get(k) is not None), None)
+    color = edge if edge is not None else both
+    for k in _FRAME_COLOR_KEYS:
+        kw.pop(k, None)
+    width = next((kw.pop(k) for k in _FRAME_WIDTH_KEYS
+                  if kw.get(k) is not None), None)
+    for k in _FRAME_WIDTH_KEYS:
+        kw.pop(k, None)
+    style = next((kw.pop(k) for k in _FRAME_STYLE_KEYS
+                  if kw.get(k) is not None), None)
+    for k in _FRAME_STYLE_KEYS:
+        kw.pop(k, None)
+    face = next((kw.pop(k) for k in _FRAME_FACE_KEYS
+                 if kw.get(k) is not None), None)
+    for k in _FRAME_FACE_KEYS:
+        kw.pop(k, None)
+    fill = kw.pop('fill', None)
+    # matplotlib's plot_wireframe/Rectangle defaults that are meaningless
+    # (or already implied) here
+    for k in ('rstride', 'cstride'):
+        kw.pop(k, None)
+    if kw:
+        warnings.warn(
+            "backend='plotly' cannot map the following frame_kwargs to the "
+            f"plotly frame and will ignore them: {sorted(kw)}. Supported: "
+            "color/edgecolor, linewidth, linestyle, alpha (and, for the 2-D "
+            "square, facecolor/fill).", UserWarning, stacklevel=3)
+    def _one(c):
+        # a `colors=` list (one per wireframe line): one colour here
+        if isinstance(c, (list, tuple)) and c and not isinstance(
+                c[0], (int, float, np.integer, np.floating)):
+            return c[0]
+        return c
+    color, both = _one(color), _one(both)
+    line_color = ('black' if color is None and alpha is None
+                  else _to_plotly_color(color if color is not None
+                                        else 'black', alpha))
+    width_pt = (CUBE_LINEWIDTH_PT if width is None
+                else float(width) * CUBE_LINEWIDTH_PT
+                / _MPL_FRAME_LINEWIDTH_PT)
+    dash = ('solid' if style is None
+            else _LINESTYLE_NAMES.get(style, 'solid'))
+    fill_color = None
+    if ndims < 3:
+        # matplotlib's `plot_square`: a `color=` (or a face colour) fills
+        # the square unless `fill=False`; with neither it is an outline
+        face_color = face if face is not None else both
+        if face_color is not None and fill is not False:
+            fill_color = _to_plotly_color(face_color, alpha)
+        elif fill is True:
+            fill_color = _to_plotly_color('C0', alpha)
+    return dict(color=line_color, width_pt=width_pt, dash=dash,
+                fill=fill_color)
+
+
+def _cube_trace(go, scale=1.0, linewidth_pt=CUBE_LINEWIDTH_PT, color='black',
+                dash='solid'):
     """hypertools' signature black wireframe cube as a single 3D trace.
 
     Mirrors matplotlib_backend's plot_cube: 12 edges at +/-scale, black,
-    1pt lines.
+    1pt lines (or the `frame_kwargs=` style `_frame_style` resolved).
     Edges are chained with None separators so one trace draws them all.
     """
     s = scale
@@ -3656,17 +4156,21 @@ def _cube_trace(go, scale=1.0, linewidth_pt=CUBE_LINEWIDTH_PT):
         x=xs, y=ys, z=zs, mode='lines',
         # boosted so the gl-rendered cube matches the SVG square's ~2px stroke
         # (see _CUBE_GL_WIDTH_BOOST) -- the 2D square uses no boost
-        line=dict(color='black',
-                  width=linewidth_pt * PT_TO_PX * _CUBE_GL_WIDTH_BOOST),
+        line=dict(color=color,
+                  width=linewidth_pt * PT_TO_PX * _CUBE_GL_WIDTH_BOOST,
+                  **({} if dash == 'solid' else dict(dash=dash))),
         showlegend=False, hoverinfo='skip')
 
 
-def _square_shape(scale=1.0, linewidth_pt=CUBE_LINEWIDTH_PT):
+def _square_shape(scale=1.0, linewidth_pt=CUBE_LINEWIDTH_PT, color='black',
+                  dash='solid', fill=None):
     """hypertools' 2D black square frame (mirrors matplotlib_backend's
-    plot_square)."""
+    plot_square; `color`/`dash`/`fill` from `_frame_style`)."""
     return dict(type='rect', x0=-scale, y0=-scale, x1=scale, y1=scale,
-                line=dict(color='black', width=linewidth_pt * PT_TO_PX),
-                fillcolor='rgba(0,0,0,0)', layer='below')
+                line=dict(color=color, width=linewidth_pt * PT_TO_PX,
+                          **({} if dash == 'solid' else dict(dash=dash))),
+                fillcolor=fill if fill is not None else 'rgba(0,0,0,0)',
+                layer='below')
 
 
 def _surface_base_rgb(spec, fallback_rgb):
@@ -4514,6 +5018,79 @@ def _hue_anchor_color(point_colors, src):
     return tuple(float(v) for v in np.asarray(pc[-1], dtype=np.float64)[:3])
 
 
+def _legend_proxy_for(trace, ndims, group):
+    """A data-free trace carrying `trace`'s legend entry (name, line and
+    marker style, `legendgroup`) -- how an animation keeps its legend
+    complete while its data traces are still empty (see `plotly_draw`)."""
+    import plotly.graph_objects as go
+
+    def _scalar(value):
+        if value is None or isinstance(value, str) or np.isscalar(value):
+            return value
+        values = [v for v in value if v is not None]
+        if not values:
+            return None
+        return (max(values) if all(np.isscalar(v) and not isinstance(v, str)
+                                   for v in values) else values[0])
+
+    line = trace.line.to_plotly_json() if trace.line is not None else {}
+    line['color'] = _scalar(line.get('color'))
+    common = dict(mode=trace.mode or 'lines', name=trace.name,
+                  showlegend=True, legendgroup=group, hoverinfo='skip',
+                  line=line,
+                  # NOT `hyp_legend_entry`, which marks the forecast
+                  # model keys (`_forecast_legend_traces`)
+                  meta=dict(hyp_legend_proxy=str(trace.name)))
+    if trace.opacity is not None:
+        common['opacity'] = trace.opacity
+    if trace.mode and 'markers' in trace.mode and trace.marker is not None:
+        marker = {k: v for k, v in trace.marker.to_plotly_json().items()
+                  if k in ('color', 'size', 'symbol', 'opacity')}
+        marker['color'] = _scalar(marker.get('color'))
+        marker['size'] = _scalar(marker.get('size'))
+        common['marker'] = marker
+    if ndims >= 3:
+        return go.Scatter3d(x=[None], y=[None], z=[None], **common)
+    return go.Scatter(x=[None], y=[None], **common)
+
+
+def _hover_name(trace_names, i):
+    """Data trace `i`'s name from `plotly_draw`'s `trace_names` (None when
+    it has none, or when no names were given)."""
+    if trace_names is None or i >= len(trace_names):
+        return None
+    name = trace_names[i]
+    return None if name is None else str(name)
+
+
+def _hover_identity(name, trace_names, ndims):
+    """Extra properties that give a data trace its hover identity (1.1
+    release review, maintainer finding: plotly showed "trace 0", "trace 1",
+    ... on hover because unlabelled data traces had no `name`).
+
+    * a name shared by several data traces (the runs of one hue/cluster
+      category, a hierarchy group's leaves and means) becomes their
+      `legendgroup`, so the one legend entry of the group toggles all of
+      them;
+    * a trace with no name at all (a lone, unlabelled dataset) gets a
+      `hovertemplate` with an empty ``<extra></extra>``: plotly would
+      otherwise print "trace 0" in the name box, a label that names
+      nothing -- the coordinates alone are shown.
+
+    Returns ``{}`` when `trace_names` was not given (a direct `plotly_draw`
+    caller), keeping that path exactly as it was.
+    """
+    if trace_names is None:
+        return {}
+    if name is None:
+        coords = ('x: %{x}<br>y: %{y}<br>z: %{z}' if ndims >= 3
+                  else '(%{x}, %{y})')
+        return dict(hovertemplate=coords + '<extra></extra>')
+    if sum(1 for n in trace_names if n is not None and str(n) == name) > 1:
+        return dict(legendgroup=name)
+    return {}
+
+
 def _trace_name(legend, tkwargs, i):
     """This trace's plotly `name`, or None when it has no legend entry.
 
@@ -4717,6 +5294,28 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
     frames = []
     trace_indices = list(range(data_trace_start, data_trace_start + n_data_traces))
     trail_dataset_indices = trail_dataset_indices or []
+
+    # observation markers (`_observation_marker`): a data or trail trace
+    # whose marker size is a per-vertex array over the dataset's whole
+    # smoothed curve gets, in every frame, the slice of it that matches the
+    # frame's window -- the markers stay on the observations that window
+    # holds instead of sliding with the window's start
+    _full_sizes = {}
+    for _k in range(len(fig.data)):
+        _m = fig.data[_k].marker if hasattr(fig.data[_k], 'marker') else None
+        _s = None if _m is None else _m.size
+        if _s is not None and not np.isscalar(_s):
+            _full_sizes[_k] = np.asarray(_s, dtype=float)
+
+    def _marker_window(trace_index, idx, a, b):
+        """``{'marker': {'size': ...}}`` for trace `trace_index` (drawing
+        dataset `idx`) over ORIGINAL rows ``[a, b)``, or ``{}`` when that
+        trace's marker size is a plain scalar."""
+        sizes = _full_sizes.get(trace_index)
+        if sizes is None or aa_curves is None:
+            return {}
+        return dict(marker=dict(size=_aa_window_sizes(
+            sizes, aa_curves[idx][1], a, b)))
     chemtrails = chemtrails if chemtrails is not None else [False] * len(data)
     precog = precog if precog is not None else [False] * len(data)
     bullettime = bullettime if bullettime is not None else [False] * len(data)
@@ -4830,6 +5429,14 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
             draw, step = (antialias_line(pts) if forecast_antialias
                           else (pts, 1))
             _extra = {} if _line is None else dict(line=_line)
+            _base = fig.data[forecast_trace_indices[_spec]]
+            if step != 1 and _base.mode and 'markers' in _base.mode:
+                # a `forecast_fmt='o:'` marker on each forecast STEP, not on
+                # every vertex of this frame's smoothed curve (the static
+                # overlay's rule, `_observation_marker`)
+                _sizes = np.zeros(draw.shape[0])
+                _sizes[::int(step)] = float(_base.marker.size)
+                _extra['marker'] = dict(size=_sizes)
             if ndims >= 3:
                 out.append(go.Scatter3d(x=draw[:, 0], y=draw[:, 1],
                                         z=draw[:, 2], **_extra))
@@ -5177,31 +5784,38 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                     window_colors_by_index[idx] = cols
 
                 draw_seg = _aa_window(aa_curves, idx, *head_bounds)
+                _mk = (_marker_window(trace_indices[idx], idx, *head_bounds)
+                       if idx < len(trace_indices) else {})
                 if ndims >= 3:
                     frame_traces.append(go.Scatter3d(
-                        x=draw_seg[:, 0], y=draw_seg[:, 1], z=draw_seg[:, 2]))
+                        x=draw_seg[:, 0], y=draw_seg[:, 1], z=draw_seg[:, 2],
+                        **_mk))
                 elif ndims == 2:
                     frame_traces.append(go.Scatter(x=draw_seg[:, 0],
-                                                   y=draw_seg[:, 1]))
+                                                   y=draw_seg[:, 1], **_mk))
                 else:
                     frame_traces.append(go.Scatter(
                         x=_aa_x(aa_curves[idx][1], head_bounds[0],
                                 draw_seg.shape[0]),
-                        y=draw_seg[:, 0]))
+                        y=draw_seg[:, 0], **_mk))
 
                 if has_trail:
                     t0, t1 = trail_bounds if trail_bounds is not None else (0, 0)
                     trail = _aa_window(aa_curves, idx, t0, t1)
+                    _tmk = (_marker_window(
+                        trail_trace_start + trail_dataset_indices.index(idx),
+                        idx, t0, t1) if idx in trail_dataset_indices else {})
                     if ndims >= 3:
                         trail_traces.append(go.Scatter3d(
-                            x=trail[:, 0], y=trail[:, 1], z=trail[:, 2]))
+                            x=trail[:, 0], y=trail[:, 1], z=trail[:, 2],
+                            **_tmk))
                     elif ndims == 2:
                         trail_traces.append(go.Scatter(x=trail[:, 0],
-                                                       y=trail[:, 1]))
+                                                       y=trail[:, 1], **_tmk))
                     else:
                         trail_traces.append(go.Scatter(
                             x=_aa_x(aa_curves[idx][1], t0, trail.shape[0]),
-                            y=trail[:, 0]))
+                            y=trail[:, 0], **_tmk))
                 elif has_trails and idx in trail_dataset_indices:
                     # this dataset has a trail TRACE but no trail THIS frame
                     empty = np.zeros((0, max(2, min(3, ndims))))
@@ -5266,7 +5880,15 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                     datasets=tuple(data), style='serial', order='serial',
                     current_index=_serial_idx, current_fraction=_serial_frac,
                     revealed_counts=tuple(_shown),
-                    window_bounds=tuple((0, c) for c in _shown))
+                    # the DRAWN head window -- a trailed dataset's comet
+                    # head starts after its trail, not at row 0 (the
+                    # matplotlib serial updater reports the same; the
+                    # FrameContext contract says every field but the
+                    # figure/axes/artists agrees across backends)
+                    window_bounds=tuple(
+                        tuple(int(v) for v in head_bounds_by_index.get(
+                            i, (0, c)))
+                        for i, c in enumerate(_shown)))
                 frame_hooks.dispatch(fig, None)
                 if dynamic_title is not None and 'text' in dynamic_title:
                     # GH #285: a callable / `{index...}` title=, computed
@@ -5352,16 +5974,19 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                 # antialias=: `seg` (ORIGINAL rows) still drives the surface
                 # mesh/hue windows above; only the DRAWN vertices are smoothed
                 draw_seg = _aa_window(aa_curves, idx, start, end)
+                _mk = (_marker_window(trace_indices[idx], idx, start, end)
+                       if idx < len(trace_indices) else {})
                 if ndims >= 3:
                     frame_traces.append(go.Scatter3d(
-                        x=draw_seg[:, 0], y=draw_seg[:, 1], z=draw_seg[:, 2]))
+                        x=draw_seg[:, 0], y=draw_seg[:, 1], z=draw_seg[:, 2],
+                        **_mk))
                 elif ndims == 2:
                     frame_traces.append(go.Scatter(x=draw_seg[:, 0],
-                                                   y=draw_seg[:, 1]))
+                                                   y=draw_seg[:, 1], **_mk))
                 else:
                     frame_traces.append(go.Scatter(
                         x=_aa_x(aa_curves[idx][1], start, draw_seg.shape[0]),
-                        y=draw_seg[:, 0]))
+                        y=draw_seg[:, 0], **_mk))
 
             # GH #127: trail traces exist (and are updated here) only for
             # datasets in `trail_dataset_indices`, in that SAME ascending
@@ -5401,16 +6026,20 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                     # antialias=: trail bounds stay ORIGINAL-row indices; the
                     # smooth curve spanning exactly those rows is drawn
                     trail = _aa_window(aa_curves, idx, t0, t1)
+                    _tmk = _marker_window(
+                        trail_trace_start + trail_dataset_indices.index(idx),
+                        idx, t0, t1)
                     if ndims >= 3:
                         trail_traces.append(go.Scatter3d(
-                            x=trail[:, 0], y=trail[:, 1], z=trail[:, 2]))
+                            x=trail[:, 0], y=trail[:, 1], z=trail[:, 2],
+                            **_tmk))
                     elif ndims == 2:
                         trail_traces.append(go.Scatter(
-                            x=trail[:, 0], y=trail[:, 1]))
+                            x=trail[:, 0], y=trail[:, 1], **_tmk))
                     else:
                         trail_traces.append(go.Scatter(
                             x=_aa_x(aa_curves[idx][1], t0, trail.shape[0]),
-                            y=trail[:, 0]))
+                            y=trail[:, 0], **_tmk))
             frame_traces.extend(trail_traces)
             frame_kwargs = dict(name=str(k), data=frame_traces,
                                 traces=list(trace_indices))

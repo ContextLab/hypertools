@@ -626,6 +626,27 @@ def test_transform_frame_with_the_same_index_is_used_as_is():
     plt.close('all')
 
 
+@pytest.mark.parametrize('predict', [None, 'Kalman'])
+def test_polars_transform_frame_matches_its_array(predict):
+    # 2026-09-11 review: a polars transform= raised SchemaError in the
+    # display scaling (polars frame minus a numpy row of means).
+    pl = pytest.importorskip('polars')
+    df = _dated_frame()
+    arr = np.asarray(df)
+    kwargs = {'predict': predict, 't': 5} if predict else {}
+    ref = hyp.plot(df, transform=[arr], show=False, return_model=True,
+                   **kwargs)
+    got = hyp.plot(df, transform=[pl.DataFrame(arr)], show=False,
+                   return_model=True, **kwargs)
+    assert np.allclose(np.asarray(got['xform_data'][0], float),
+                       np.asarray(ref['xform_data'][0], float))
+    if predict:
+        assert np.allclose(
+            np.asarray(got['predict']['forecasts'][0], float),
+            np.asarray(ref['predict']['forecasts'][0], float))
+    plt.close('all')
+
+
 @pytest.mark.parametrize('backend', ['matplotlib', 'plotly'])
 def test_bare_array_transform_is_one_dataset(backend):
     """A bare array passed validation ('already-transformed data ... or a

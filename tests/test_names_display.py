@@ -64,6 +64,85 @@ def test_names_and_legend_list_conflict_raises():
                  legend=['w', 'x', 'y', 'z'], show=False)
 
 
+# --- names= vs an explicit legend=False (1.1 review) -------------------
+#
+# names= turns the legend on by default, but it used to override an
+# explicit legend=False as well (found in the stock_forecasting tutorial):
+# the opt-out must win on both backends.
+
+def _mpl_legend_texts(fig):
+    """Every legend entry drawn anywhere on a matplotlib figure (axes
+    legends and figure-level legends)."""
+    legends = [ax.get_legend() for ax in fig.axes] + list(fig.legends)
+    return [t.get_text() for leg in legends if leg is not None
+            for t in leg.get_texts()]
+
+
+def test_names_legend_false_draws_no_legend_matplotlib():
+    data = _datasets(3)
+    fig = hyp.plot(data, names=['a', 'b', 'c'], legend=False, show=False)
+    assert _mpl_legend_texts(fig) == []
+    # the default (no legend=) still shows the names
+    fig = hyp.plot(data, names=['a', 'b', 'c'], show=False)
+    assert _mpl_legend_texts(fig) == ['a', 'b', 'c']
+
+
+def test_names_legend_false_draws_no_legend_plotly():
+    pytest.importorskip('plotly')
+    data = _datasets(3)
+    fig = hyp.plot(data, names=['a', 'b', 'c'], legend=False,
+                   backend='plotly', show=False)
+    shown = [tr.name for tr in fig.data if tr.showlegend is not False]
+    assert fig.layout.showlegend is not True
+    assert not any(name in ('a', 'b', 'c') for name in shown)
+    # identical legend state to the same call without names=
+    bare = hyp.plot(data, legend=False, backend='plotly', show=False)
+    assert fig.layout.showlegend == bare.layout.showlegend
+    assert ([tr.showlegend for tr in fig.data]
+            == [tr.showlegend for tr in bare.data])
+
+
+def test_names_legend_false_panels_draw_no_legend():
+    data = _datasets(3)
+    fig = hyp.plot(data, names=['a', 'b', 'c'], legend=False, panels=True,
+                   show=False)
+    assert len(fig.axes) >= 3
+    assert _mpl_legend_texts(fig) == []
+
+
+@pytest.mark.parametrize('backend', ['matplotlib', 'plotly'])
+@pytest.mark.parametrize('extra', [{'predict': 'Kalman', 't': 5},
+                                   {'animate': True}],
+                         ids=['predict', 'animate'])
+def test_names_legend_false_forecast_and_animation(backend, extra):
+    # the stock_forecasting tutorial's shape: named datasets plus a
+    # forecast overlay (and the animated form), with legend=False
+    if backend == 'plotly':
+        pytest.importorskip('plotly')
+    data = _datasets(3, rows=60, cols=2)
+    for legend_kw, want in (({}, True), ({'legend': False}, False)):
+        out = hyp.plot(data, names=['a', 'b', 'c'], backend=backend,
+                       show=False, **extra, **legend_kw)
+        if backend == 'plotly':
+            shown = [tr.name for tr in out.data if tr.showlegend]
+            drawn = bool(out.layout.showlegend) and bool(shown)
+            assert (set('abc') <= set(shown)) is want
+        else:
+            fig = getattr(out, 'figure', out)
+            texts = _mpl_legend_texts(fig)
+            drawn = bool(texts)
+            assert (set('abc') <= set(texts)) is want
+        assert drawn is want
+
+
+def test_names_legend_false_still_validates_names():
+    # legend=False hides the names; it does not make a malformed names=
+    # list acceptable
+    data = _datasets(3)
+    with pytest.raises(ValueError, match='one entry per dataset'):
+        hyp.plot(data, names=['a', 'b'], legend=False, show=False)
+
+
 # --- double-display ----------------------------------------------------
 #
 # Every notebook scenario below runs on a REAL `IPython.InteractiveShell`
