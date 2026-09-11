@@ -6377,9 +6377,14 @@ def plot(
         ``plt.show()`` -- call ``plt.show()`` yourself to open a window.
         Default: True.
 
-    transform : list of numpy arrays or None
+    transform : array, DataFrame, list of these, or None
         The transformed data, bypasses transformations if this is set
-        (default : None).
+        (default : None). One entry per dataset of `x`, row for row; a bare
+        array or DataFrame is one dataset. A DataFrame's rows are matched
+        to `x`'s by position; with `predict=`, whose observation times come
+        from `x`'s index, a DataFrame index that is neither a plain
+        ``0..n-1`` one nor `x`'s own raises ``ValueError`` rather than
+        guessing which observation each row is.
 
     vectorizer : str, dict, class or class instance
         The vectorizer to use. Built-in options are 'CountVectorizer' or
@@ -8409,7 +8414,19 @@ def plot(
             else:
                 xform = _analyzed
     else:
-        xform = transform
+        # one entry per dataset. A BARE array/frame is ONE dataset (a 3-D
+        # array is a stack of them): iterated as-is it was a list of ROWS,
+        # and passed validation only to crash with an IndexError (1.1
+        # release review, F15)
+        if isinstance(transform, (list, tuple)):
+            xform = list(transform)
+        elif getattr(transform, 'ndim', None) == 3:
+            xform = list(transform)
+        else:
+            xform = [transform]
+        xform = [np.asarray(xi).reshape(-1, 1)
+                 if isinstance(xi, np.ndarray) and xi.ndim == 1 else xi
+                 for xi in xform]
         _input_finite = None
         if labels is not None:
             # transform= skips the pipeline (and the per-observation check
@@ -8567,6 +8584,25 @@ def plot(
                     'to forecast. Pass the analyzed data with its updated '
                     'time index to plot(..., reduce=None, predict=...).')
             _idx = None
+        if (isinstance(_xi, pd.DataFrame) and _idx is not None
+                and not _xi.index.equals(_idx)):
+            # a `transform=` frame with an index of its own: handing it to
+            # `pd.DataFrame(frame, index=...)` RE-INDEXES it, and an index
+            # sharing no labels with x's made every value NaN -- forecast
+            # as silent zeros (1.1 release review, F7). A plain 0..n-1
+            # index carries no rows of its own, so the values are x's rows
+            # position for position; any other index is a real conflict.
+            _own = _xi.index
+            if transform is not None and predict is not None and not (
+                    isinstance(_own, pd.RangeIndex) and _own.start == 0
+                    and _own.step == 1):
+                raise ValueError(
+                    f"transform= entry {_i} is a DataFrame whose index does "
+                    "not match the rows of x it replaces (first labels "
+                    f"{list(_own[:2])} vs {list(_idx[:2])}), so there is no "
+                    "telling which observation each row is. Pass its values "
+                    "(frame.to_numpy()) or give it x's index.")
+            _xi = _xi.to_numpy()
         _forecast_frames.append(pd.DataFrame(_xi, index=_idx))
 
     # ndims=1 series mode (GH #285) ---------------------------------------

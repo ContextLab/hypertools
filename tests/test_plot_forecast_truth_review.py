@@ -430,6 +430,62 @@ def test_plotly_date_figure_renders_identically_in_every_time_zone(tmp_path):
     assert int((pixels[0] != pixels[1]).any(axis=2).sum()) == 0
 
 
+# --- transform= forms -----------------------------------------------------------
+
+def _dated_frame(n=30, d=3, seed=0):
+    rng = np.random.default_rng(seed)
+    return pd.DataFrame(rng.normal(size=(n, d)).cumsum(0),
+                        index=pd.date_range('2020-01-01', periods=n))
+
+
+def test_transform_frame_with_default_index_forecasts_its_rows():
+    """A transform= DataFrame with a plain 0..n-1 index was re-indexed
+    onto x's DatetimeIndex -- every value NaN -- and the forecast came out
+    as silent zeros. Its rows ARE x's rows, position for position."""
+    df = _dated_frame()
+    arr = np.asarray(df)
+    ref = hyp.plot(df, transform=[arr], predict='Kalman', t=5, show=False,
+                   return_model=True)['predict']['forecasts'][0]
+    got = hyp.plot(df, transform=[pd.DataFrame(arr)], predict='Kalman', t=5,
+                   show=False, return_model=True)['predict']['forecasts'][0]
+    got, ref = np.asarray(got, float), np.asarray(ref, float)
+    assert np.isfinite(got).all() and np.abs(got).max() > 0
+    assert np.allclose(got, ref)
+    plt.close('all')
+
+
+def test_transform_frame_with_a_conflicting_index_raises():
+    df = _dated_frame()
+    other = pd.DataFrame(np.asarray(df),
+                         index=pd.date_range('2021-06-01', periods=len(df)))
+    with pytest.raises(ValueError, match='transform='):
+        hyp.plot(df, transform=[other], predict='Kalman', t=5, show=False)
+    plt.close('all')
+
+
+def test_transform_frame_with_the_same_index_is_used_as_is():
+    df = _dated_frame()
+    got = hyp.plot(df, transform=[df.copy()], predict='Kalman', t=5,
+                   show=False, return_model=True)['predict']['forecasts'][0]
+    assert np.isfinite(np.asarray(got, float)).all()
+    plt.close('all')
+
+
+@pytest.mark.parametrize('backend', ['matplotlib', 'plotly'])
+def test_bare_array_transform_is_one_dataset(backend):
+    """A bare array passed validation ('already-transformed data ... or a
+    list of them') and then crashed with IndexError: it was iterated as a
+    list of ROWS."""
+    rng = np.random.default_rng(0)
+    x = rng.normal(size=(30, 5))
+    xf = rng.normal(size=(30, 3))
+    bundle = hyp.plot(x, transform=xf, backend=backend, show=False,
+                      return_model=True)
+    assert len(bundle['xform_data']) == 1
+    assert np.allclose(np.asarray(bundle['xform_data'][0]), xf)
+    plt.close('all')
+
+
 # --- panels= with forecast_trail= ---------------------------------------------
 
 @pytest.mark.parametrize('panel_fit', ['shared', 'independent'])
