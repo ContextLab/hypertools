@@ -255,3 +255,73 @@ def test_two_column_animated_forecast_draws_on_a_2d_axes(extra):
     if extra.get('forecast_trail'):
         assert len(_role(ax, 'trail')) == 2 * extra['forecast_trail']
     plt.close(anim.figure)
+
+
+# --- forecast_fmt markers sit on the forecast STEPS, not on every vertex -----
+
+def _marked_points(art):
+    """The vertices matplotlib draws a marker at (its markevery rule applied
+    to the artist's own vertex list)."""
+    xy = np.asarray(art.get_xydata()) if not hasattr(art, 'get_data_3d') \
+        else np.column_stack(art.get_data_3d())
+    every = art.get_markevery()
+    idx = np.arange(len(xy))
+    if every is None:
+        return xy
+    if isinstance(every, slice):
+        return xy[idx[every]]
+    return xy[np.asarray(every)]
+
+
+@pytest.mark.parametrize('dims', [3, 2, 1])
+def test_forecast_fmt_marker_is_drawn_only_at_the_forecast_steps(dims):
+    """``forecast_fmt='ro:'`` put a marker on all ~901 antialiased vertices,
+    so the dotted forecast drew as a solid red tube. A marker belongs on a
+    TRUE observation only (plot()'s antialias contract) -- here the seam
+    row and the t forecast steps -- and the dotted line stays smooth."""
+    T = 5
+    rng = np.random.default_rng(0)
+    x = np.cumsum(rng.standard_normal((40, dims)), 0)
+    if dims == 1:
+        x = x[:, 0]
+    fig = hyp.plot(x, predict='Kalman', t=T, forecast_fmt='ro:', show=False)
+    (fc,) = _role(fig.axes[0], 'static')
+    assert fc.get_marker() == 'o' and fc.get_linestyle() == ':'
+    n_vertices = (len(fc.get_data_3d()[0]) if hasattr(fc, 'get_data_3d')
+                  else len(fc.get_xdata()))
+    assert n_vertices > 100          # still the smooth curve
+    marked = _marked_points(fc)
+    assert len(marked) == T + 1      # seam + the t forecast steps
+    if dims == 1:
+        # ...at the forecast's own rows: x = 39 (the seam) .. 44
+        assert np.allclose(marked[:, 0], np.arange(39.0, 45.0))
+    plt.close(fig)
+
+
+def test_forecast_fmt_marker_off_antialias_marks_every_vertex():
+    T = 5
+    x = np.cumsum(np.random.default_rng(0).standard_normal((40, 2)), 0)
+    fig = hyp.plot(x, predict='Kalman', t=T, forecast_fmt='ro:',
+                   antialias=False, show=False)
+    (fc,) = _role(fig.axes[0], 'static')
+    assert len(fc.get_xdata()) == T + 1
+    assert len(_marked_points(fc)) == T + 1
+    plt.close(fig)
+
+
+def test_animated_forecast_fmt_marker_is_drawn_only_at_the_forecast_steps():
+    T = 4
+    rng = np.random.default_rng(0)
+    x = np.cumsum(rng.standard_normal((30, 3)), 0)
+    anim = hyp.plot(x, predict='Kalman', t=T, forecast_fmt='ro:',
+                    forecast_trail=1, animate=True, duration=1,
+                    frame_rate=8, show=False)
+    anim.draw_frame(7)
+    ax = anim.figure.axes[0]
+    for role in ('live', 'trail'):
+        for art in _role(ax, role):
+            if not art.get_visible():
+                continue
+            assert len(art.get_data_3d()[0]) > 100
+            assert len(_marked_points(art)) == T + 1
+    plt.close(anim.figure)

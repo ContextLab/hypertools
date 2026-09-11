@@ -466,14 +466,22 @@ def _draw_forecast_overlays(ax, raw_forecasts, antialias=True,
         # forecast spans `n_rows - 1` row units no matter how many vertices
         # it is drawn with (see the 1-D branch below).
         _fc_rows = fc.shape[0]
+        _fc_step = 1
         if antialias:
-            fc = _interp_static_line(fc)
+            fc, _fc_step = _antialias_static_line(fc)
         # `owner` maps forecast -> the RUN it continues, when hue=/cluster=
         # regrouped the traces. Without it, forecast i continues trace i.
         _src = owner[i] if owner is not None and i < len(owner) else i
         _src_line = src_lines[_src] if _src < len(src_lines) else None
         style = _forecast_style_from(
             _src_line, override=overrides[i] if overrides is not None else None)
+        # a `forecast_fmt=` marker ('ro:') belongs on the forecast's own
+        # STEPS -- the seam row and each forecast observation -- never on
+        # the ~900 antialiased vertices between them, which drew a dotted
+        # forecast as a solid tube of markers (1.1 release review; the
+        # marker contract of `plot`'s `antialias=`). One artist, so its
+        # legend glyph keeps the marker.
+        style['markevery'] = _step_markevery(_fc_step)
         d = fc.shape[1] if fc.ndim > 1 else 1
         _before = len(artists)
         _label = '_nolegend_'
@@ -916,7 +924,21 @@ def _interp_static_line(arr):
     `_STATIC_LINE_TARGET_VERTICES` vertices and contains every original sample
     exactly. This is the STATIC half of `plot`'s ``antialias=``.
     """
-    return antialias_line(arr, _STATIC_LINE_TARGET_VERTICES)[0]
+    return _antialias_static_line(arr)[0]
+
+
+def _antialias_static_line(arr):
+    """`_interp_static_line`, also returning the subdivision ``step``: the
+    densified ``dense[::step]`` is exactly `arr`, so ``step`` is what places
+    a marker on the ORIGINAL rows (`_step_markevery`)."""
+    return antialias_line(arr, _STATIC_LINE_TARGET_VERTICES)
+
+
+def _step_markevery(step):
+    """The matplotlib ``markevery`` that marks only the original rows of a
+    line densified with subdivision `step` (every vertex when ``step`` is
+    1, i.e. nothing was densified)."""
+    return None if step <= 1 else slice(0, None, int(step))
 
 
 def _interp_anim_line(arr, n_frames):
@@ -6005,7 +6027,10 @@ def plot(
         red, unless a colour is also given (via `forecast_palette=`,
         `forecast_hue=`, `forecast_cluster=`, or a colour letter in the
         format string itself -- an explicit colour beats the format string's,
-        matching matplotlib's own rule).
+        matching matplotlib's own rule). A marker in the format string
+        (``'ro:'``) is drawn at the forecast's own steps -- the seam
+        observation and each of the `t` forecast rows -- never at the
+        antialiased vertices between them (see `antialias`).
 
         Note that these four kwargs are independent, so observed and
         forecast data may differ in style, in grouping, in palette, or in
@@ -11888,8 +11913,11 @@ def plot(
 
                     def _fill(art, pts):
                         if _antialias:
-                            # documented parity with the static overlay
-                            pts = _interp_static_line(pts)
+                            # documented parity with the static overlay,
+                            # markers included: a forecast_fmt= marker sits
+                            # on the forecast's steps, not on every vertex
+                            pts, _step = _antialias_static_line(pts)
+                            art.set_markevery(_step_markevery(_step))
                         art.set_visible(True)
                         # the SAME three-way split `_draw_forecast_overlays`
                         # uses. A 3-D forecast artist is a Line3D: set_data
