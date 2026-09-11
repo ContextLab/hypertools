@@ -449,11 +449,12 @@ def backtest_predict(datasets, make_forecaster, t, holdout, names, specs,
             "model={'my naive model': <spec>}.")
 
     from .common import resolve_t
-    from .time import is_time_index, order_time_data
-    splits, horizons, timed = [], [], []
+    from .time import finalize_forecast, is_time_index, order_time_data
+    splits, horizons, timed, ordered = [], [], [], []
     for d in datasets:
         k = resolve_holdout(holdout, len(d), t)
         d = order_time_data(d)
+        ordered.append(d)
         # Validate the complete time index: a duplicate may straddle the
         # split while appearing unique in both halves separately.
         use_times = is_time_index(d.index)
@@ -517,6 +518,11 @@ def backtest_predict(datasets, make_forecaster, t, holdout, names, specs,
                           kind='forecast value')
     if not return_forecasts:
         return scores
-    out = {name: (f[0] if single else f) for name, f in forecasts.items()}
-    out['truth'] = splits[0][1] if single else [held for _, held in splits]
-    return scores, out
+    # a PeriodIndex input was split on its start timestamps; hand every
+    # returned frame (forecasts, baseline, truth) back as periods
+    forecasts['truth'] = [held for _, held in splits]
+    forecasts = {name: [finalize_forecast(f, observed)
+                        for f, observed in zip(frames, ordered)]
+                 for name, frames in forecasts.items()}
+    return scores, {name: (f[0] if single else f)
+                    for name, f in forecasts.items()}

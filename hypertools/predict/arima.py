@@ -178,10 +178,13 @@ class ARIMA(Forecaster):
 
     Parameters
     ----------
-    step : number, duration string, Timedelta, or None
-        Duration of one future step. None infers the median positive gap
-        between sorted observation times. Numerical indexes use their own
-        units; datetime/duration indexes require a duration such as '1h'.
+    step : number, duration string, Timedelta, calendar offset, or None
+        One future step. None infers it per dataset: a datetime index's
+        calendar frequency when it has one (business days, month starts, a
+        ``PeriodIndex``'s periods...), else the median positive gap between
+        sorted observation times. Numerical indexes use their own units;
+        datetime/duration indexes need a duration such as '1h' (datetime
+        indexes also take a calendar frequency such as 'B' or 'MS').
         See `hypertools.predict` for the interpolation and reuse policies.
     order : tuple of (p, d, q)
         ARIMA order (default: ``(1, 1, 1)``). The default suits

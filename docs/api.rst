@@ -121,16 +121,26 @@ Observation times and future steps
 
 Forecasting uses each dataset's own observation times. Datetime, timedelta,
 period and unique numeric indexes are sorted together with their values before
-fitting. Periods are represented by their start timestamps. Duplicate time
+fitting. Periods are fitted on their start timestamps and forecast as periods of
+the same frequency. Duplicate time
 stamps are rejected; repeated numeric row IDs retain their positional meaning
 (for example, stacked runs). Arrays and categorical row labels use observation
 order. Shuffling timed rows therefore does not change the fitted forecast.
 
-One future step is the **median positive gap** between sorted timestamps.
-Override it with ``hyp.predict(data, step='1h')`` for datetime/duration indexes,
+A datetime index with a **calendar frequency** -- stored in ``index.freq``,
+inferable with ``pd.infer_freq`` (business days, month starts, weeks, quarters,
+hours, tz-aware days across DST), or a ``PeriodIndex``'s own -- steps on that
+calendar, so it is regular: it is fitted on its own rows and forecast onto the
+next business days, month starts or periods. Weekday-only sessions that skip a
+few weekdays (exchange holidays) step in business days. Otherwise one future
+step is the **median positive gap** between sorted timestamps.
+Override it with ``hyp.predict(data, step='1h')`` for datetime/duration indexes
+(or a calendar frequency such as ``step='B'`` for datetime indexes),
 or ``step=0.5`` for numeric coordinates. Each dataset gets its own inferred
 interval. A fitted model keeps its training interval when applied to new data,
-so a learned one-hour transition never silently becomes a three-hour transition.
+so a learned one-hour transition never silently becomes a three-hour transition;
+reused on a different kind of index (fit on an array, applied to dated rows, or
+the reverse) it steps in the new data's own units.
 
 GaussianProcess fits the actual times, expressed as elapsed multiples of the
 model's step. Kalman, ARIMA, AutoRegressor, Laplace and Chronos assume regular

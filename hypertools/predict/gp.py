@@ -18,7 +18,8 @@ import numpy as np
 import pandas as pd
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF, WhiteKernel, DotProduct
-from .time import is_time_index, resolve_step, time_coordinates
+from .time import (TIME_STEP_ATTR, is_time_index, resolve_step,
+                   time_coordinates)
 
 from .common import Forecaster
 
@@ -67,7 +68,9 @@ def fitter(data, **kwargs):
     normalize_y = kwargs.get('normalize_y', True)
 
     n = len(data)
-    step = data.attrs.get('_hypertools_time_step', resolve_step(data.index))
+    step = data.attrs.get(TIME_STEP_ATTR)
+    if step is None:
+        step = resolve_step(data.index)
     origin = data.index[0]
     timed = is_time_index(data.index)
     x = (time_coordinates(data.index, origin, step) if timed
@@ -132,6 +135,9 @@ def applier(fitted_params, new_data, t):
         return new_data.loc[future_index]
 
     n_new = len(new_data)
+    # `predict_new` resolved the step for THIS index (the learned interval
+    # when it is in the new index's units, else the new data's own); a
+    # fitted row count cannot measure a dated index, nor a duration an array.
     step = fitted_params.get('time_step', resolve_step(new_data.index))
     timed = is_time_index(new_data.index)
     origin = new_data.index[0]
@@ -158,10 +164,13 @@ class GaussianProcess(Forecaster):
 
     Parameters
     ----------
-    step : number, duration string, Timedelta, or None
-        Duration of one future step. None infers the median positive gap
-        between sorted observation times. Numerical indexes use their own
-        units; datetime/duration indexes require a duration such as '1h'.
+    step : number, duration string, Timedelta, calendar offset, or None
+        One future step. None infers it per dataset: a datetime index's
+        calendar frequency when it has one (business days, month starts, a
+        ``PeriodIndex``'s periods...), else the median positive gap between
+        sorted observation times. Numerical indexes use their own units;
+        datetime/duration indexes need a duration such as '1h' (datetime
+        indexes also take a calendar frequency such as 'B' or 'MS').
         See `hypertools.predict` for the interpolation and reuse policies.
     kernel : sklearn.gaussian_process.kernels.Kernel or None
         Covariance kernel (default: `DotProduct() + RBF(10.0) + WhiteKernel()`;
