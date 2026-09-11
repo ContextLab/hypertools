@@ -60,19 +60,40 @@ def dispersion(trajectories):
     Reproduces `examples/plot_story_trajectories.py`'s `dispersion()`
     helper EXACTLY (same computation, same result for the same input) --
     kept as the library implementation of that example's inline function.
+
+    Raises `ValueError` when every dataset is constant (each one's
+    observations all at one point, a single observation included), naming
+    the datasets. Then the per-observation centroid is the same point as
+    the cloud's own mean, so the score is exactly 1.0 whatever the datasets
+    are (or, when they all sit at the SAME point, 0/0) -- it measures
+    nothing, matching `metric='isc'`, which has no correlation to compute
+    there either.
     """
     stack = np.stack([np.asarray(t) for t in trajectories])   # (subj, t, d)
+    # a dataset is constant when its observations never move (np.ptp is 0
+    # along the observation axis for every feature)
+    constant = np.all(np.ptp(stack, axis=1) == 0, axis=1)     # (subj,)
+    if constant.all():
+        # release review 2026-09-07 caught the all-at-one-point case (NaN
+        # with a RuntimeWarning); 1.1 release review 2026-09-11 the
+        # each-at-its-own-point case, which returned a meaningless 1.0
+        # while 'isc' raised on the same input
+        n_datasets, n_obs = stack.shape[0], stack.shape[1]
+        which = (f'dataset {n_datasets - 1}' if n_datasets == 1
+                 else f'datasets 0-{n_datasets - 1}' if n_datasets > 3
+                 else ', '.join(f'dataset {i}' for i in range(n_datasets)))
+        single = (' (a dataset with a single observation is constant)'
+                  if n_obs == 1 else '')
+        raise ValueError(
+            "alignment_score(metric='dispersion') is undefined when every "
+            f'dataset is constant: {which} each keep every observation at '
+            f'one point{single}. The per-observation centroid is then the '
+            "cloud's own mean, so the score would be 1.0 (0/0 when the "
+            'datasets share one point) whatever the alignment. Score '
+            'datasets whose observations vary.')
     centroid = stack.mean(axis=0, keepdims=True)
     spread = np.linalg.norm(stack - centroid, axis=2).mean()
     scale = np.linalg.norm(stack - stack.mean(axis=(0, 1)), axis=2).mean()
-    if scale == 0:
-        # every observation of every dataset sits at one point: the cloud
-        # has no scale to divide by (the example helper returned NaN with a
-        # RuntimeWarning here; release review 2026-09-07)
-        raise ValueError(
-            "alignment_score(metric='dispersion') is undefined when every "
-            'dataset is constant (all observations at one point): the cloud '
-            'has no scale to normalize by.')
     return spread / scale
 
 

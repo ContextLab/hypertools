@@ -1,11 +1,13 @@
 """Base class + helpers for hypertools aligners (scikit-learn compatible).
 
 An Aligner wraps a (fitter, transformer, required-params) triple operating on
-a *list* of DataFrames: `fit` unstacks the stored data into that list, trims to
+a *list* of DataFrames: `fit` coerces its input (arrays, DataFrames of any
+backend datawrangler recognises, or a list of these) into that list, trims to
 common rows and pads to common columns, runs the fitter, and stores the returned
 dict as attributes; `transform` re-derives the list and runs the transformer with
-those params. Child classes (HyperAlign, Procrustes, SharedResponseModel, ...)
-supply the three pieces plus their defaults.
+those params, handing each dataset back in its input's form. Child classes
+(HyperAlign, Procrustes, SharedResponseModel, ...) supply the three pieces plus
+their defaults.
 """
 import warnings
 
@@ -14,6 +16,10 @@ import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator
 from sklearn.exceptions import NotFittedError
+
+from .._shared.helpers import is_frame_dataset, is_series_like
+from ..core.model import external_stacklevel
+from ..core.shared import as_dataframe
 
 
 def reject_unknown_kwargs(cls_name, kwargs, supported):
@@ -113,7 +119,8 @@ def trim_and_pad(data, warn=True):
                     'label(s); alignment matches observations across '
                     'datasets by index value, so only the FIRST row for '
                     'each duplicated label is kept. Use unique row indices '
-                    '(e.g. df.reset_index(drop=True)) to keep every row.')
+                    '(e.g. df.reset_index(drop=True)) to keep every row.',
+                    stacklevel=external_stacklevel())
             d = d[~d.index.duplicated(keep='first')]
         deduped.append(d)
     data = deduped
@@ -138,23 +145,82 @@ def trim_and_pad(data, warn=True):
     # warn on data loss: alignment keeps only the rows COMMON to every dataset
     # (matched observation-by-observation), so datasets with different row
     # counts / indices are trimmed. This used to happen silently (QC 2026-07).
+    # Both warnings here name the CALLER's line (1.1 release review): a fixed
+    # stacklevel pointed into this module, whatever route reached it.
     if warn and any(len(rows) < d.shape[0] for d in data):
         warnings.warn(
             f"alignment keeps only the {len(rows)} row(s) common to all "
             "datasets; datasets with more rows were trimmed. Align datasets "
-            "with matching numbers of observations to avoid dropping data.")
+            "with matching numbers of observations to avoid dropping data.",
+            stacklevel=external_stacklevel())
     return [pad(d.loc[rows], c) for d in data]
+
+
+class _AlignerInput:
+    """One `fit`/`transform` argument, coerced to the list of pandas
+    DataFrames the fitters and transformers work on, plus what is needed
+    to hand results back in the input's own form.
+
+    `Aligner.fit` used to pass its argument straight to
+    ``datawrangler.unstack``, which only understands DataFrames, so the
+    most common hypertools input -- a list of numpy arrays -- raised a bare
+    ``Exception: Unsupported datatype: <class 'list'>`` (and so did a single
+    array), although `fit` documents ``DataFrame, array, or list of these``
+    (1.1 release review, 2026-09-11). Coercion follows ``hyp.align``: every
+    dataset becomes a pandas DataFrame (`as_dataframe`: a pandas frame is
+    kept as is, index included; other frame backends -- polars, ... -- are
+    converted by datawrangler; an array is wrapped), and a single
+    row-``MultiIndex`` DataFrame (``datawrangler.stack`` output) is
+    unstacked into its datasets, as before.
+
+    Attributes
+    ----------
+    frames : list of pandas.DataFrame
+        The datasets.
+    as_array : list of bool
+        Per dataset: whether its result goes back as a numpy array (the
+        input was not a frame or Series) rather than a pandas DataFrame.
+    single : bool
+        Whether the input was ONE dataset (not a list/tuple), so a
+        one-dataset result is returned bare rather than as a list of one.
+    """
+
+    def __init__(self, data):
+        if isinstance(data, tuple):
+            data = list(data)
+        self.single = not isinstance(data, list)
+        if self.single and is_frame_dataset(data):
+            # a stacked (row-MultiIndex) frame holds several datasets
+            frames = dw.unstack(as_dataframe(data))
+            self.frames = frames if isinstance(frames, list) else [frames]
+            self.as_array = [False] * len(self.frames)
+            return
+        items = [data] if self.single else data
+        self.as_array = [not (is_frame_dataset(d) or is_series_like(d))
+                         for d in items]
+        self.frames = [as_dataframe(d) for d in items]
+
+    def restore(self, results):
+        """`results` (one DataFrame per dataset) in the input's form."""
+        out = [np.asarray(r) if as_array else r
+               for r, as_array in zip(results, self.as_array)]
+        if self.single and len(out) == 1:
+            return out[0]
+        return out
 
 
 class Aligner(BaseEstimator):
     """Scikit-learn-compatible base class for hypertools aligners.
 
     Wraps a `(fitter, transformer, required)` triple that operates on a
-    *list* of DataFrames: `fit` unstacks the stored data into that list,
-    trims to common rows and zero-pads to common columns (see
-    `trim_and_pad`), runs `fitter` on it, and stores each key of the
+    *list* of DataFrames: `fit` coerces its input into that list (see
+    `_AlignerInput`), trims to common rows and zero-pads to common columns
+    (see `trim_and_pad`), runs `fitter` on it, and stores each key of the
     returned dict as an attribute on `self`; `transform` re-derives the
-    list the same way and runs `transformer` with those fitted params.
+    list the same way, runs `transformer` with those fitted params, and
+    returns each dataset in its input's form (an array for an array, a
+    pandas DataFrame for a DataFrame; a list for a list, one dataset for
+    one dataset).
     Child classes (e.g. HyperAlign, Procrustes, SharedResponseModel)
     supply `fitter`, `transformer`, and `required` (the list of
     attribute names `fitter` must return) via `**kwargs` to `__init__`.
@@ -210,26 +276,31 @@ class Aligner(BaseEstimator):
         return self.data is not None
 
     @staticmethod
-    def _shape_of(data):
-        """`(n_datasets, [n_columns_per_dataset])` for `data` (a single
-        DataFrame/array, or a list of them) -- the shape `transform`
-        validates new data against (GH #227)."""
-        items = data if isinstance(data, list) else [data]
-        return len(items), [np.asarray(d).shape[1] for d in items]
+    def _shape_of(frames):
+        """`(n_datasets, [n_columns_per_dataset])` for `frames` (the
+        coerced list of DataFrames, see `_AlignerInput`) -- the shape
+        `transform` validates new data against (GH #227)."""
+        return len(frames), [d.shape[1] for d in frames]
 
     def fit(self, data):
         """Fit the alignment on `data` and store the fitted parameters.
 
         Records `data` and its shape (for later validation in
-        `transform`), then -- if `self.fitter` is set -- unstacks,
-        trims, and pads `data` (see `trim_and_pad`) and calls
-        `self.fitter` on it, setting each key of the returned dict as an
-        attribute on `self`.
+        `transform`), then -- if `self.fitter` is set -- coerces `data`
+        to a list of pandas DataFrames (see `_AlignerInput`), trims and
+        pads it (see `trim_and_pad`), and calls `self.fitter` on it,
+        setting each key of the returned dict as an attribute on `self`.
 
         Parameters
         ----------
-        data : DataFrame, array, or list of these
-            The dataset(s) to fit the alignment on.
+        data : DataFrame, array, or list (or tuple) of these
+            The dataset(s) to fit the alignment on: numpy arrays, pandas
+            DataFrames, DataFrames of any other backend datawrangler
+            recognises (polars, ...), or a mix, each one dataset of
+            observations x features; a single row-`MultiIndex` DataFrame
+            (``datawrangler.stack`` output) holds one dataset per
+            top-level index value. Rows are matched across datasets by
+            index value (an array's rows by position).
 
         Returns
         -------
@@ -244,18 +315,20 @@ class Aligner(BaseEstimator):
             not return a dict, or if any name in `self.required` is
             missing from the returned dict.
         """
-        if data is None or (isinstance(data, list) and len(data) == 0):
+        if data is None or (isinstance(data, (list, tuple))
+                            and len(data) == 0):
             from ..core.shared import no_observations_message
             raise ValueError(
                 no_observations_message(
                     'align', 'data is None or an empty list')
                 + ' Pass one or more numeric arrays/DataFrames to fit the '
                 'aligner on.')
+        coerced = _AlignerInput(data)
         self.data = data
-        self._fit_shape = self._shape_of(data)
+        self._fit_shape = self._shape_of(coerced.frames)
         if self.fitter is None:
             return self
-        data = trim_and_pad(dw.unstack(self.data))
+        data = trim_and_pad(coerced.frames)
         params = self.fitter(data, **self.kwargs)
         if not isinstance(params, dict):
             raise ValueError(
@@ -286,8 +359,11 @@ class Aligner(BaseEstimator):
         Returns
         -------
         The aligned `new_data` (or the aligned fit-time data, when
-        `new_data` is `None`), in the same list/single-item shape as the
-        input.
+        `new_data` is `None`), in the input's own form: a list for a list
+        (or tuple), one dataset for one dataset, and per dataset a numpy
+        array for an array input or a pandas DataFrame (indexed by the
+        common rows) for a DataFrame input of any backend. (A single
+        row-`MultiIndex` DataFrame returns the list of its datasets.)
 
         Raises
         ------
@@ -310,13 +386,13 @@ class Aligner(BaseEstimator):
             # `new_data` may arrive as raw array(s) rather than
             # DataFrame(s) -- e.g. `model.transform(...)` called directly
             # (bypassing the `@dw.decorate.funnel`/`format_data` coercion
-            # `align()` applies before `fit`). Coerce here (single
-            # array|DataFrame, or list of these) to the same DataFrame(s)
-            # format `fit` uses, BEFORE shape validation/`dw.unstack` below
-            # -- `dw.wrangle` preserves each DataFrame's index and the
-            # single-vs-list shape of the input, matching the funnel path.
-            new_data = dw.wrangle(new_data)
-            n_datasets, n_columns = self._shape_of(new_data)
+            # `align()` applies before `fit`). It is coerced below exactly
+            # as `fit` coerces its input, BEFORE the shape validation.
+            data_to_use = new_data
+
+        coerced = _AlignerInput(data_to_use)
+        if new_data is not None:
+            n_datasets, n_columns = self._shape_of(coerced.frames)
             fit_n_datasets, fit_n_columns = self._fit_shape
             if n_datasets != fit_n_datasets or n_columns != fit_n_columns:
                 raise ValueError(
@@ -325,8 +401,6 @@ class Aligner(BaseEstimator):
                     f"dataset(s) with {n_columns} column(s) (fit-time "
                     f"shape: {fit_n_datasets} datasets x {fit_n_columns} "
                     f"columns)")
-            data_to_use = new_data
-
         if self.transformer is None:
             return data_to_use
         # only warn about trimmed rows for genuinely NEW data -- when
@@ -334,22 +408,25 @@ class Aligner(BaseEstimator):
         # fit_transform), fit's own trim_and_pad already warned, and
         # repeating the identical warning misled users into thinking two
         # separate trims happened (QC 2026-07, F12-align-003)
-        data = trim_and_pad(dw.unstack(data_to_use), warn=new_data is not None)
+        data = trim_and_pad(coerced.frames, warn=new_data is not None)
         required_params = {r: getattr(self, r) for r in self.required}
-        return self.transformer(data, **dw.core.update_dict(required_params, self.kwargs))
+        aligned = self.transformer(
+            data, **dw.core.update_dict(required_params, self.kwargs))
+        return coerced.restore(aligned)
 
     def fit_transform(self, data):
         """Fit the alignment on `data`, then immediately transform it.
 
         Parameters
         ----------
-        data : DataFrame, array, or list of these
-            The dataset(s) to fit and align.
+        data : DataFrame, array, or list (or tuple) of these
+            The dataset(s) to fit and align (see `fit`).
 
         Returns
         -------
-        The aligned `data`, in the same list/single-item shape as the
-        input (see `transform`).
+        The aligned `data`, in the input's own form: list or single
+        dataset, arrays for arrays and DataFrames for DataFrames (see
+        `transform`).
         """
         self.fit(data)
         # replay the just-fit data (rather than re-passing `data`) so the

@@ -11,6 +11,7 @@ import sys
 import warnings
 
 import numpy as np
+import pandas as pd
 import pytest
 from sklearn.decomposition import PCA
 
@@ -345,12 +346,23 @@ def test_pipeline_list_input_to_raw_step_raises_clear_error():
         pipe.fit_transform([x, y])
 
 
-def test_pipeline_aligner_step_ndarray_list_hint():
+def test_pipeline_aligner_step_accepts_ndarray_list():
+    """This test used to assert a TypeError telling the caller to wrap the
+    arrays in DataFrames: the Aligner classes could not read a list of
+    arrays (datawrangler's unstack raised "Unsupported datatype"). Since
+    the 1.1 release review (2026-09-11) they coerce arrays themselves, as
+    `Aligner.fit` documents, so the raw step aligns them and hands back
+    arrays -- the same numbers as the DataFrame route."""
     x = np.random.default_rng(10).standard_normal((40, 6))
     y = np.random.default_rng(11).standard_normal((40, 6))
     pipe = Pipeline(['HyperAlign'])
-    with pytest.raises(TypeError, match='DataFrame'):
-        pipe.fit_transform([x, y])
+    out = pipe.fit_transform([x, y])
+    reference = Pipeline(['HyperAlign']).fit_transform(
+        [pd.DataFrame(x), pd.DataFrame(y)])
+    assert isinstance(out, list) and len(out) == 2
+    for a, r in zip(out, reference):
+        assert type(a) is np.ndarray and a.shape == (40, 6)
+        np.testing.assert_allclose(a, np.asarray(r))
 
 
 # --------------------------------------------------------------------------
