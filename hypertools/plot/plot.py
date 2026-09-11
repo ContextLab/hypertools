@@ -3109,6 +3109,31 @@ def _panel_slice_legend(legend, index, n_datasets, kw):
     return [legend[index]]
 
 
+def _panel_slice_legend_colors(legend_colors, index, n_datasets, kw):
+    """Narrow a plain `legend_colors=` colour LIST to panel `index`.
+
+    On one axes a plain list recolours the legend's entries in order: one
+    per dataset first, then the entries every dataset shares (the forecast
+    model(s), ``truth``). Each panel's legend lists ITS dataset and those
+    shared entries, so it gets its dataset's colour followed by the shared
+    colours -- forwarding the whole list made every panel refuse it ("has 2
+    entries but the legend has 1", 1.1 release review), though the same
+    call works on one axes. Only when the entries name the DATASETS
+    (nothing regroups the traces, as in `_panel_slice_legend`); a
+    ``(label, color)`` pair list defines a whole legend and is forwarded to
+    every panel unchanged, as is anything `plot()` must report itself."""
+    try:
+        recolor, _ = _normalize_legend_colors(legend_colors)
+    except (TypeError, ValueError):
+        return legend_colors
+    if recolor is None or len(recolor) < n_datasets:
+        return legend_colors
+    if (kw.get('hue') is not None or kw.get('cluster')
+            or kw.get('n_clusters') is not None):
+        return legend_colors
+    return [recolor[index]] + list(recolor[n_datasets:])
+
+
 def _panel_forecast_models(predict):
     """How many forecasts each dataset gets from `predict=`: one for a
     single spec, one per model for a collection -- split with the SAME
@@ -3270,6 +3295,9 @@ def _panel_narrow_kwargs(kw, index, n_datasets, lengths):
     if kw.get('palette') is not None:
         kw['palette'] = _panel_slice_palette(kw['palette'], index,
                                              n_datasets)
+    if kw.get('legend_colors') is not None:
+        kw['legend_colors'] = _panel_slice_legend_colors(
+            kw['legend_colors'], index, n_datasets, kw)
     if kw.get('legend') is not None:
         kw['legend'] = _panel_slice_legend(kw['legend'], index, n_datasets,
                                            kw)
@@ -5098,8 +5126,12 @@ def plot(
         REPLACES the legend outright with exactly those entries, on both
         backends -- which is how a figure adds a key entry no trace
         corresponds to (e.g. a grey "Market" line alongside per-sector
-        swatches). Mixing the two forms raises ``ValueError``. Default
-        None.
+        swatches). Mixing the two forms raises ``ValueError``. Under
+        `panels=`, a plain list naming the datasets (one colour per
+        dataset, then one per shared entry such as a forecast model or
+        ``truth``) is split so each panel's legend gets its own dataset's
+        colour followed by the shared ones; a pair list is drawn whole in
+        every panel. Default None.
 
     colorbar : bool or dict
         If True, draws a colorbar reflecting the color mapping in use

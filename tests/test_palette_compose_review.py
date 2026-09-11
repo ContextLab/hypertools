@@ -245,3 +245,45 @@ def test_a_composed_colorbar_shows_the_drawn_colours(backend):
         mesh = fig.axes[-1].collections[-1]
         swatches = [_r3(mesh.cmap(i)) for i in range(mesh.cmap.N)]
         assert swatches == drawn
+
+
+# --- 4: panels= splits a plain legend_colors list per panel ----------------
+
+def _legend_colours(ax):
+    legend = ax.get_legend()
+    return [(t.get_text(), _r3(h.get_color()))
+            for t, h in zip(legend.get_texts(), legend.legend_handles)]
+
+
+@pytest.mark.parametrize('panel_fit', ['shared', 'independent'])
+def test_panels_split_a_plain_legend_colors_list(panel_fit):
+    data = _walks(2, rows=30)
+    single = hyp.plot(data, legend=['a', 'b'], legend_colors=['r', 'b'],
+                      show=False)
+    assert _legend_colours(single.axes[0]) == [('a', _r3('r')),
+                                               ('b', _r3('b'))]
+    fig = hyp.plot(data, legend=['a', 'b'], legend_colors=['r', 'b'],
+                   panels=True, panel_fit=panel_fit, show=False)
+    assert _legend_colours(fig.axes[0]) == [('a', _r3('r'))]
+    assert _legend_colours(fig.axes[1]) == [('b', _r3('b'))]
+
+
+def test_panels_keep_the_shared_legend_colours_after_the_datasets():
+    data = _walks(2, rows=30)
+    kw = dict(legend=['a', 'b'], predict='Kalman', t=3,
+              legend_colors=['r', 'b', 'k'], show=False)
+    single = hyp.plot(data, **kw)
+    assert _legend_colours(single.axes[0]) == [
+        ('a', _r3('r')), ('b', _r3('b')), ('Kalman', _r3('k'))]
+    fig = hyp.plot(data, panels=True, **kw)
+    assert _legend_colours(fig.axes[0]) == [('a', _r3('r')),
+                                            ('Kalman', _r3('k'))]
+    assert _legend_colours(fig.axes[1]) == [('b', _r3('b')),
+                                            ('Kalman', _r3('k'))]
+
+
+def test_panels_forward_legend_colour_pairs_whole():
+    fig = hyp.plot(_walks(2, rows=30), legend=True,
+                   legend_colors=[('Key', 'k')], panels=True, show=False)
+    for ax in fig.axes[:2]:
+        assert _legend_colours(ax) == [('Key', _r3('k'))]
