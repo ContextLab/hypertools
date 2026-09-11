@@ -34,6 +34,7 @@ import warnings
 from sklearn.base import BaseEstimator
 from sklearn.exceptions import NotFittedError
 
+from .model import external_stacklevel
 from .shared import unpack_model
 
 
@@ -147,7 +148,7 @@ def _step_transform(model, data, name=None):
             f"{label} has no transform/predict method; falling back to "
             "fit_predict, which RE-FITS the model on the new data (the "
             "returned labels come from a fresh fit, not the original one).",
-            stacklevel=3)
+            stacklevel=external_stacklevel())
         return np.asarray(model.fit_predict(data))
     raise TypeError(
         f"{label} cannot be applied to new data: it has no transform, "

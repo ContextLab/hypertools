@@ -262,7 +262,7 @@ def _align(data, model='HyperAlign', return_model=False,
             "align= is deprecated as a model-spec kwarg name on "
             "hypertools.align.align.align; use model= instead (e.g. "
             "hyp.align(data, model='hyper')).",
-            DeprecationWarning, stacklevel=2,
+            DeprecationWarning, stacklevel=external_stacklevel(),
         )
         model = legacy_model
 

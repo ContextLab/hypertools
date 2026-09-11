@@ -8,6 +8,7 @@ from scipy.ndimage import gaussian_filter1d, uniform_filter1d
 import warnings
 
 from .common import Manipulator
+from ..core.model import external_stacklevel
 from ..core.shared import as_dataframe
 
 
@@ -293,11 +294,15 @@ def transformer(data, **kwargs):
     center = kwargs.get('center', True)
     kw = kwargs.get('kernel_width')
     if kw is not None:
+        # both warnings name the caller's line (1.1 release review): with
+        # no stacklevel they pointed at this module
         if kw != int(np.round(kw)):
-            warnings.warn('Rounding smoothing kernel width to the nearest integer')
+            warnings.warn('Rounding smoothing kernel width to the nearest integer',
+                          stacklevel=external_stacklevel())
         kw = int(np.round(kw))
         if center and kw % 2 != 1:
-            warnings.warn('Increasing smoothing kernel width by 1 (must be odd)')
+            warnings.warn('Increasing smoothing kernel width by 1 (must be odd)',
+                          stacklevel=external_stacklevel())
             kw += 1
         if kw <= 0:
             requirement = 'a positive odd integer' if center else 'a positive integer'

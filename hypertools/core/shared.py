@@ -14,6 +14,7 @@ import pandas as pd
 
 from .._shared.helpers import (is_frame_dataset, is_series_like,
                                as_pandas_dataframe)
+from .model import external_stacklevel
 
 #: sentinel distinguishing "no explicit default passed" in RobustDict.get
 _MISSING = object()
@@ -166,7 +167,7 @@ def is_reused_pipeline(spec, stage_kwargs, spec_label):
                 f"{spec_label}= is an already-fitted Pipeline that encodes its "
                 f"own stages; ignoring redundant {', '.join(redundant)}= (the "
                 "fitted Pipeline is reused as-is via .transform).",
-                stacklevel=3)
+                stacklevel=external_stacklevel())
         return True
     return False
 
@@ -269,10 +270,14 @@ def unpack_model(m, valid=None, parent_class=None):
 
     if isinstance(m, dict):
         if "model" in m and "params" in m and "args" not in m and "kwargs" not in m:
+            # external_stacklevel (1.1 release review): a fixed stacklevel=2
+            # named the dispatcher or Pipeline that called unpack_model, so
+            # Python's default filters hid this DeprecationWarning from
+            # every script
             warnings.warn(
                 "{'model': ..., 'params': {...}} is deprecated; use "
                 "{'model': ..., 'args': [...], 'kwargs': {...}} instead",
-                DeprecationWarning, stacklevel=2)
+                DeprecationWarning, stacklevel=external_stacklevel())
             m = {"model": m["model"], "args": [], "kwargs": dict(m["params"])}
 
         # canonical dict spec: a 'model' key with OPTIONAL 'args'/'kwargs'
@@ -291,7 +296,7 @@ def unpack_model(m, valid=None, parent_class=None):
                     f"ignoring the legacy 'params' key ({dropped!r}) because "
                     "'args'/'kwargs' are also present in the model spec; "
                     "merge those values into 'kwargs' instead",
-                    DeprecationWarning, stacklevel=2)
+                    DeprecationWarning, stacklevel=external_stacklevel())
             resolved["model"] = unpack_model(m["model"], valid=valid, parent_class=parent_class)
             resolved.setdefault("args", [])
             resolved.setdefault("kwargs", {})
@@ -352,6 +357,6 @@ def get(value, i):
             f"parameter list of length {n} has no entry for dataset index "
             f"{i}; using the whole list as this dataset's value. Pass a "
             "scalar to share one value across all datasets, or a list with "
-            "one entry per dataset.", stacklevel=2)
+            "one entry per dataset.", stacklevel=external_stacklevel())
         return value
     return value
