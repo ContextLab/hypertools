@@ -26,7 +26,7 @@ from .smooth import Smooth
 from .resample import Resample
 from .delay import Delay
 from ..core.shared import (unpack_model, require_data, no_observations_message,
-                           as_dataframe)
+                           as_dataframe, check_spec_keys, merge_spec_kwargs)
 from .._shared.helpers import (is_series_like, is_frame_dataset,
                                is_array_dataset, as_pandas_dataframe)
 from ..core.pipeline import Pipeline
@@ -149,6 +149,16 @@ def _funneled_manip(data, model="ZScore", return_model=False, normalize=None,
     """Funnel-decorated core of `manip` (see `manip`'s docstring); `manip`
     validates raw input first, then delegates here so datawrangler's funnel
     only ever sees inputs it handles sensibly."""
+    if isinstance(model, dict):
+        # a flat key such as {'model': 'Smooth', 'kernel_width': 25} used
+        # to be dropped silently, so the manipulator ran with its defaults
+        # (1.1 review) ...
+        check_spec_keys(model, 'manip')
+        if 'model' in model:
+            # ... and so were the outer **kwargs next to a dict spec
+            # (manip(x, model={'model': 'Smooth'}, kernel_width=25)): they
+            # join the spec's own parameters, winning on a conflict
+            model, kwargs = merge_spec_kwargs(model, kwargs), {}
     # cross-module stage kwargs (#138): manip is the FIRST stage in the
     # canonical order (manip -> normalize -> reduce -> align -> cluster), so a
     # manip call carrying any downstream stage kwarg assembles + runs a Pipeline
@@ -222,7 +232,10 @@ def manip(data, model="ZScore", return_model=False, normalize=None, reduce=None,
         - A dict may be the canonical
           ``{'model': ..., 'args': [...], 'kwargs': {...}}`` or the LEGACY
           ``{'model': ..., 'params': {...}}`` form (accepted for backward
-          compatibility, but emits a `DeprecationWarning`).
+          compatibility, but emits a `DeprecationWarning`). Model
+          parameters always go under ``'kwargs'``: any other top-level
+          key -- e.g. ``{'model': 'Smooth', 'kernel_width': 25}`` --
+          raises `ValueError` naming it rather than being ignored.
         - A bare (uninstantiated) Manipulator subclass, or an
           already-constructed (unfitted) instance, is used directly.
         - A `list` chains its elements into a `hypertools.Pipeline`
@@ -259,8 +272,10 @@ def manip(data, model="ZScore", return_model=False, normalize=None, reduce=None,
 
     **kwargs
         Passed through to the manipulator's constructor when `model`
-        resolves to a class (ignored when `model` is a list, an already
-        -instantiated instance, or a fitted model/Pipeline being reused).
+        resolves to a class; next to a dict spec they join the spec's
+        `'kwargs'`, winning on a conflict (they used to be dropped
+        silently there). Ignored when `model` is a list, an already
+        -instantiated instance, or a fitted model/Pipeline being reused.
 
     Returns
     -------

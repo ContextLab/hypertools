@@ -35,7 +35,7 @@ from sklearn.base import BaseEstimator
 from sklearn.exceptions import NotFittedError
 
 from .model import external_stacklevel
-from .shared import unpack_model
+from .shared import check_spec_keys, unpack_model
 
 
 #: the single documented pipeline order (#153): impute happens during
@@ -84,6 +84,15 @@ def _resolve_step(spec):
         return spec
 
     if isinstance(spec, dict):
+        if 'model' not in spec:
+            # used to leak a bare KeyError: 'model' (1.1 review)
+            raise ValueError(
+                "a Pipeline step dict spec must include a 'model' key; got "
+                f"keys {sorted(spec, key=str)}. Pass e.g. "
+                "{'model': 'PCA', 'kwargs': {'n_components': 2}}.")
+        # a flat key such as {'model': 'PCA', 'whiten': True} used to be
+        # dropped silently (1.1 review)
+        check_spec_keys(spec, 'Pipeline step')
         resolved = unpack_model(spec, valid=[], parent_class=None)
         if isinstance(resolved, dict):
             inner = _resolve_ref(resolved['model'])
@@ -550,7 +559,9 @@ class Pipeline(BaseEstimator):
         spec is anything `unpack_model` accepts: a registry name (string),
         a class, an already-constructed (or already-fitted) instance, a
         dict spec (`{'model': ..., 'args': [...], 'kwargs': {...}}` or the
-        legacy `{'model': ..., 'params': {...}}`), or a nested `Pipeline`.
+        legacy `{'model': ..., 'params': {...}}`; any other top-level key,
+        e.g. a flat `{'model': 'PCA', 'whiten': True}`, raises
+        `ValueError` naming it), or a nested `Pipeline`.
         Raw scikit-learn-API estimators (e.g. ``PCA(n_components=3)``,
         fitted or not) are accepted as-is; see the Notes on what they
         receive.

@@ -23,6 +23,7 @@ from sklearn.utils.validation import check_is_fitted
 from sklearn.exceptions import NotFittedError
 from sklearn.pipeline import Pipeline
 from .._shared.params import default_params
+from ..core.shared import check_spec_keys
 from .._shared.helpers import is_array_dataset, is_series_like
 from ..io.load import load
 
@@ -270,7 +271,10 @@ def text2mat(data, vectorizer='CountVectorizer',
         'all-MiniLM-L6-v2'), via data-wrangler's HF embedding support. To
         change default parameters, set to a dictionary e.g.
         {'model' : 'CountVectorizer', 'kwargs' : {'max_features' : 10}}
-        (the legacy {'model', 'params'} form is also still accepted). See
+        (the legacy {'model', 'params'} form is also still accepted;
+        positional constructor arguments go under 'args', and any other
+        top-level key -- e.g. a flat {'model': 'CountVectorizer',
+        'max_features': 10} -- raises ValueError naming it). See
         https://scikit-learn.org/stable/api/sklearn.feature_extraction.html
         for scikit-learn details. You can also specify your own vectorizer
         model as a class, or class instance.  With either option, the class
@@ -295,7 +299,8 @@ def text2mat(data, vectorizer='CountVectorizer',
         change default
         parameters, set to a dictionary e.g. {'model' : 'NMF', 'kwargs' :
         {'n_components' : 10}} (the legacy {'model', 'params'} form is also
-        still accepted). See
+        still accepted; as for `vectorizer`, a top-level key other than
+        'model'/'args'/'kwargs' raises ValueError). See
         https://scikit-learn.org/stable/api/sklearn.decomposition.html
         for details on the two scikit-learn model options. You can also
         specify your own text model as a class, or class instance.  With
@@ -353,6 +358,19 @@ def text2mat(data, vectorizer='CountVectorizer',
     # `texts` registry key like any built-in scikit-learn one. This runs
     # BEFORE the corpus block so the embedding-vectorizer decision that
     # follows is made before any corpus is loaded or embedded.
+    for _argname, _spec in (('vectorizer', vectorizer),
+                            ('semantic', semantic)):
+        if isinstance(_spec, dict) and 'model' not in _spec:
+            # used to leak a bare KeyError: 'model' (1.1 review)
+            raise ValueError(
+                f"a {_argname}= dict spec must include a 'model' key; got "
+                f"keys {sorted(_spec, key=str)}. Pass e.g. "
+                "{'model': 'CountVectorizer', 'kwargs': {'max_features': "
+                "10}}.")
+        # a flat key such as {'model': 'CountVectorizer', 'max_features':
+        # 10} used to be dropped silently, so the model ran with its
+        # defaults (1.1 review)
+        check_spec_keys(_spec, _argname, param=_argname)
     _vname = _spec_model_name(vectorizer)
     if _vname is not None:
         _resolve_registry_name(_vname, vectorizer_models, 'vectorizer')
@@ -450,13 +468,19 @@ def text2mat(data, vectorizer='CountVectorizer',
         else:
             corpus = _as_text_datasets(corpus, 'corpus')
 
+    # a dict spec's positional 'args' reach the constructor too (they used
+    # to be dropped silently; 1.1 review)
+    vectorizer_args, text_args = [], []
+    vectorizer_user, text_user = {}, {}
     vtype = _check_mtype(vectorizer)
     if vtype == 'str':
         vectorizer_params = default_params(vectorizer) or {}
     elif vtype == 'dict':
+        vectorizer_args = list(vectorizer.get('args', []))
+        vectorizer_user = dict(vectorizer.get('kwargs',
+                                              vectorizer.get('params', {})))
         vectorizer_params = default_params(
-            vectorizer['model'],
-            vectorizer.get('kwargs', vectorizer.get('params', {}))) or {}
+            vectorizer['model'], vectorizer_user) or {}
         vectorizer = vectorizer['model']
     elif vtype in ('class', 'class_instance'):
         if hasattr(vectorizer, 'fit_transform'):
@@ -471,9 +495,9 @@ def text2mat(data, vectorizer='CountVectorizer',
     if ttype == 'str':
         text_params = default_params(semantic) or {}
     elif ttype == 'dict':
-        text_params = default_params(
-            semantic['model'],
-            semantic.get('kwargs', semantic.get('params', {}))) or {}
+        text_args = list(semantic.get('args', []))
+        text_user = dict(semantic.get('kwargs', semantic.get('params', {})))
+        text_params = default_params(semantic['model'], text_user) or {}
         semantic = semantic['model']
     elif ttype in ('class', 'class_instance'):
         if hasattr(semantic, 'fit_transform'):
@@ -486,7 +510,9 @@ def text2mat(data, vectorizer='CountVectorizer',
                                'https://scikit-learn.org/stable/data_transforms.html')
     if vectorizer:
         if vtype in ('str', 'dict'):
-            vmodel = vectorizer_models[vectorizer](**vectorizer_params)
+            vmodel = _construct(vectorizer_models[vectorizer],
+                                vectorizer_args, vectorizer_params,
+                                vectorizer_user)
         elif vtype == 'class':
             vmodel = vectorizer_models[vectorizer]()
         elif vtype == 'class_instance':
@@ -496,7 +522,8 @@ def text2mat(data, vectorizer='CountVectorizer',
 
     if semantic:
         if ttype in ('str', 'dict'):
-            tmodel = texts[semantic](**text_params)
+            tmodel = _construct(texts[semantic], text_args, text_params,
+                                text_user)
         elif ttype == 'class':
             tmodel = texts[semantic]()
         elif ttype == 'class_instance':
@@ -512,6 +539,29 @@ def text2mat(data, vectorizer='CountVectorizer',
         _fit_models(vmodel, tmodel, corpus, model_is_fit)
 
     return _transform(vmodel, tmodel, data)
+
+
+def _construct(cls, args, params, user_params):
+    """Instantiate a registry model from a spec's positional `args` and
+    its `params` (registry defaults updated with the spec's own
+    `user_params`).
+
+    A registry DEFAULT for a parameter that one of `args` fills
+    positionally is dropped (e.g. NMF's default ``n_components=20`` when
+    the spec is ``{'model': 'NMF', 'args': [2]}``); a parameter the spec
+    names in both 'args' and 'kwargs' still reaches the constructor twice
+    and raises its own `TypeError`, as the spec's author asked for it."""
+    if args:
+        try:
+            positional = [
+                p.name for p in inspect.signature(cls).parameters.values()
+                if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
+            ][:len(args)]
+        except (TypeError, ValueError):
+            positional = []
+        params = {k: v for k, v in params.items()
+                  if k not in positional or k in user_params}
+    return cls(*args, **params)
 
 
 def _as_text_datasets(x, argname):
