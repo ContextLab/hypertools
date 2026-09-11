@@ -193,9 +193,13 @@ same artifacts you verify are the ones you publish.
       the draft commit's wheel + sdist attached. Replace both assets with the
       step-3 files (`gh release upload v1.1.0 dist/hypertools-1.1.0.tar.gz dist/hypertools-1.1.0-py3-none-any.whl --clobber`),
       replace its body with `notes/release_notes_v1.1.0_draft.md` (re-check
-      it against the final `CHANGELOG.md` first; the draft body attached to
-      the release predates the release review), confirm it targets the
-      moved tag, then publish it.
+      it against the final `CHANGELOG.md` first, and curl its "Links": the
+      `/en/stable/tutorials/` pages 404 until the Read the Docs tag build
+      below, and the PyPI release exists once
+      `https://pypi.org/pypi/hypertools/1.1.0/json` stops answering 404 (the
+      HTML project page answers 200 for any version number); the draft body
+      attached to the release predates the release review), confirm it
+      targets the moved tag, then publish it.
 - [ ] `pip install hypertools` in a clean env → installs `1.1.0`; run the
       README quick-start snippet.
 - [ ] **Gallery notebooks: confirm still resolved.** They were already
