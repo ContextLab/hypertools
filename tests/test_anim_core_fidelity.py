@@ -258,6 +258,36 @@ class TestAnimatedLinesKeepEveryObservation:
             drawn = [a.text for a in out.layout.scene.annotations]
         assert sorted(drawn) == sorted(lab for lab in labels if lab)
 
+    @pytest.mark.parametrize('backend', BACKENDS)
+    def test_animated_markers_sit_exactly_on_the_observations(self, backend):
+        """The marker contract: an animated 'o-' line marks the drawn vertex
+        nearest each observation. On the refined grid every observation IS
+        a drawn vertex, so the markers land on the observations exactly --
+        every observation inside the drawn head window, and nothing else."""
+        src = helix(12, turns=1.0)
+        out, seen = _collect(src, backend, fmt='o-', animate=True,
+                             duration=4, frame_rate=10)
+        try:
+            grid = seen[-1].datasets[0]
+            stride = (grid.shape[0] - 1) // (src.shape[0] - 1)
+            start, end = seen[-1].window_bounds[0]
+            rows = [r for r in range(0, grid.shape[0], stride)
+                    if start <= r < end]
+            assert len(rows) >= 3
+            obs = grid[rows]
+            if backend == 'matplotlib':
+                line = seen[-1].artists[0]
+                drawn = np.column_stack(line.get_data_3d())
+                marked = drawn[np.asarray(line.get_markevery(), dtype=int)]
+            else:
+                tr = out.frames[-1].data[0]
+                drawn = np.column_stack([tr.x, tr.y, tr.z])
+                marked = drawn[np.asarray(tr.marker.size) > 0]
+            assert marked.shape == obs.shape
+            np.testing.assert_allclose(marked, obs, atol=1e-12)
+        finally:
+            _close(out)
+
     def test_a_label_is_shown_exactly_while_its_point_is_drawn(self):
         """matplotlib animated labels: visible iff the labelled row is inside
         the head window the trace was drawn over THIS frame. The old rule
