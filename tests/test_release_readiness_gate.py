@@ -7,7 +7,8 @@ publish. This module pins two of them:
 * README image URLs are pinned to a commit SHA today; at release they must be
   the ``v1.0.0`` git tag (immutable, survives the dev-1.0 branch deletion).
 * the CHANGELOG heading is ``(unreleased)`` today; at release it must carry a
-  real date.
+  real date, and not one earlier than the release commit's own date (a stale
+  draft date survives a re-cut otherwise).
 
 ALWAYS-ON checks (safe on any branch) verify internal consistency and that the
 referenced image files actually exist, so the tag will contain them. The
@@ -156,6 +157,40 @@ def _repo_head():
         return None
 
 
+def _repo_head_commit_date():
+    """The calendar date of the checkout's HEAD commit (committer date, in
+    the committer's own timezone), or None if this is not a git tree."""
+    try:
+        out = subprocess.run(['git', 'log', '-1', '--format=%cI', 'HEAD'],
+                             cwd=_REPO, capture_output=True,
+                             text=True).stdout.strip()
+        return datetime.date.fromisoformat(out[:10]) if out else None
+    except Exception:
+        return None
+
+
+def _changelog_date_problem(heading_date, commit_date):
+    """Why a CHANGELOG release date cannot belong to the commit being
+    released, or None when it can.
+
+    ``heading_date`` is the ``YYYY-MM-DD`` text from the top heading and
+    ``commit_date`` the release commit's ``datetime.date``. A date EARLIER
+    than the commit is a stale draft date: the 1.1.0 heading kept its draft
+    date (2026-09-04) through a re-cut from later commits, and the
+    real-calendar-date check alone accepted it (2026-09-11 release-document
+    review). The same day or later is fine.
+    """
+    try:
+        heading = datetime.date.fromisoformat(heading_date)
+    except (TypeError, ValueError):
+        return f'{heading_date!r} is not a YYYY-MM-DD date'
+    if heading < commit_date:
+        return (f'the heading is dated {heading.isoformat()}, earlier than '
+                f'the release commit ({commit_date.isoformat()}); re-date it '
+                'to the release day (RELEASE_CHECKLIST.md step 2)')
+    return None
+
+
 def _local_gallery_stems():
     """Stems of the locally built gallery (docs/auto_examples/*.ipynb), or None
     when it isn't built -- e.g. the remote release-gate CI job, which doesn't
@@ -236,6 +271,32 @@ def test_changelog_top_version_matches_pyproject():
     assert m.group(1) == _project_version(), (
         f'CHANGELOG top version {m.group(1)!r} != pyproject version '
         f'{_project_version()!r}')
+
+
+def test_changelog_date_problem_validator():
+    """The pure date comparison the release gate below relies on."""
+    commit = datetime.date(2026, 9, 11)
+    # a draft date earlier than the release commit -- must fail, naming both
+    reason = _changelog_date_problem('2026-09-04', commit)
+    assert reason and '2026-09-04' in reason and '2026-09-11' in reason
+    assert _changelog_date_problem('2025-12-31', commit)       # a year back
+    # the release day itself, and a later day, are both acceptable
+    assert _changelog_date_problem('2026-09-11', commit) is None
+    assert _changelog_date_problem('2026-09-12', commit) is None
+    # not a date at all -- reported, never compared
+    assert 'not a YYYY-MM-DD date' in _changelog_date_problem('unreleased',
+                                                              commit)
+    assert _changelog_date_problem('2026-02-30', commit)       # impossible
+
+
+def test_repo_head_commit_date_reads_this_checkout():
+    """The HEAD date helper returns the same date git prints for HEAD."""
+    out = subprocess.run(['git', 'log', '-1', '--format=%cs', 'HEAD'],
+                         cwd=_REPO, capture_output=True, text=True)
+    if out.returncode != 0 or not out.stdout.strip():
+        pytest.skip('not a git checkout (e.g. an unpacked sdist)')
+    assert _repo_head_commit_date() == datetime.date.fromisoformat(
+        out.stdout.strip())
 
 
 def test_manifest_is_complete_validator():
@@ -352,6 +413,24 @@ def test_release_gate_changelog_is_dated_not_unreleased():
     assert canonical and real, (
         'RELEASE GATE: the top CHANGELOG heading must carry a real release '
         f'date in YYYY-MM-DD form, not {date!r} (see RELEASE_CHECKLIST.md).')
+
+
+@pytest.mark.skipif(
+    not REQUIRE_RELEASE,
+    reason='release gate; set HYPERTOOLS_REQUIRE_RELEASE=1 (the release-gate '
+           'CI job does on master/tag builds)')
+def test_release_gate_changelog_is_not_dated_before_the_release_commit():
+    # a real calendar date can still be a stale DRAFT date: the heading must be
+    # the release commit's day or later, never earlier
+    text = open(_CHANGELOG, encoding='utf-8').read()
+    m = _CHANGELOG_HEADING_RE.search(text)
+    assert m, 'CHANGELOG.md has no "## X.Y.Z (...)" heading'
+    committed = _repo_head_commit_date()
+    if committed is None:
+        pytest.fail('RELEASE GATE: cannot determine the release HEAD commit '
+                    'date; run the gate from the git checkout being released.')
+    problem = _changelog_date_problem(m.group(2).strip(), committed)
+    assert problem is None, f'RELEASE GATE: CHANGELOG {m.group(1)}: {problem}'
 
 
 @pytest.mark.skipif(
