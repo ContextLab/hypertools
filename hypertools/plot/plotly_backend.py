@@ -1120,7 +1120,7 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 truths=None, forecast_labels=None,
                 forecast_datasets=None, datasets_drawn=None,
                 legend_explicit=False, raw_data=None, frame_kwargs=None,
-                trace_names=None, row_counts=None):
+                trace_names=None, row_counts=None, before_show=None):
     """Render grouped datasets with plotly, mirroring _draw's contract and
     the matplotlib renderer's appearance.
 
@@ -1200,6 +1200,11 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         Drawing into a `PlotlyCell` records it per cell instead
         (``layout.meta['hyp_cell_datasets_drawn'][str(index)]``): each cell
         keeps its own count, like a matplotlib axes of its own.
+    before_show : callable or None
+        Called as ``before_show(fig)`` with the finished figure, before it
+        is saved or shown -- so whatever `plot()` records on it (the
+        palette colours beside `datasets_drawn`, legend ranks) is in the
+        displayed and saved figure too.
     forecast_datasets : list of int or None
         GH #285. Which SOURCE DATASET each forecast belongs to, for
         ``meta['hyp_dataset']``. `None` means "forecast i is dataset i"; the
@@ -2940,6 +2945,9 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         else:
             fig.layout.meta = {**_meta,
                                'hyp_datasets_drawn': int(datasets_drawn)}
+
+    if before_show is not None:
+        before_show(fig)
 
     if save_path is not None:
         ext = save_path.lower().rsplit('.', 1)[-1]
