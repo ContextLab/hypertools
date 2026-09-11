@@ -31,16 +31,16 @@ def anim_window_bounds(num, total_frames, n_points, window_frames):
 
     Animations are paced by the FRAME grid (``total_frames ==
     round(frame_rate * duration)``), not by any single dataset's row count:
-    line datasets are pre-interpolated onto that exact grid by ``plot.py``
-    (identity mapping), while marker-only and 1-point datasets keep their
-    raw rows and are paced here instead (release-1.0 audit: F04-003
-    multi-dataset truncation, F04-005/F05-010 marker-only pacing, F05-012
-    single-point datasets). The identity holds for every frame count but
-    ONE: a request so short that ``round(frame_rate * duration)`` falls
-    below 2 still resamples lines to 2 rows, because PCHIP needs two
-    samples to interpolate between. Such a dataset takes the rescale branch
-    below like any other off-grid one, and both backends still agree,
-    because both consume the same resampled array.
+    every dataset is paced here onto the frames from its own row count
+    (release-1.0 audit: F04-003 multi-dataset truncation, F04-005/F05-010
+    marker-only pacing, F05-012 single-point datasets). A line dataset
+    reaches this function on ``plot._interp_anim_line``'s grid -- at least
+    `total_frames` rows and a uniform refinement of its observations, so
+    no observation is ever dropped (1.1 visual review, L8) -- and takes the
+    identity branch only when that grid happens to equal the frame count;
+    marker-only and 1-point datasets keep their raw rows. Both backends
+    agree whatever the row count, because both consume the same array
+    through this one function.
 
     BOTH backends call this one function, per dataset, per frame -- that is
     the point of it living here rather than inside either backend. The

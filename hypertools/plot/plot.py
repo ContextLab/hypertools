@@ -899,28 +899,60 @@ def _interp_static_line(arr):
     return antialias_line(arr, _STATIC_LINE_TARGET_VERTICES)[0]
 
 
-def _interp_anim_line(arr, n_frames):
-    """Resample one trajectory onto the animation's exact frame grid.
+def _anim_grid_stride(n_rows, n_frames):
+    """Grid rows per source row of an animated line: observation ``i`` of an
+    `n_rows`-row dataset is row ``i * stride`` of its animation grid.
 
-    PCHIP-interpolates (the same monotone interpolant the static path uses)
-    onto ``np.linspace(0, n - 1, n_frames)``: exactly `n_frames` rows -- one
-    per animation frame -- for EVERY dataset (release-1.0 audit: the
-    historical ``np.arange``-step grid was computed from the FIRST dataset
-    only, so later datasets of a different length were silently truncated or
-    ran out mid-animation, F04-003, and floating-point step error produced
-    901/41 frames where the docstring promises exactly
-    ``frame_rate * duration``, F04-004). Endpoints are exact, so the
-    animation provably reaches the final sample.
+    The grid is the smallest UNIFORM refinement of the source rows with at
+    least `n_frames` rows: ``stride = ceil((n_frames - 1) / (n_rows - 1))``
+    (at least 1), giving ``(n_rows - 1) * stride + 1`` rows. Returns 1 for a
+    dataset with fewer than 2 rows (nothing to interpolate).
+    """
+    n = int(n_rows)
+    if n < 2:
+        return 1
+    f = max(2, int(n_frames))
+    return max(1, -(-(f - 1) // (n - 1)))
+
+
+def _interp_anim_line(arr, n_frames):
+    """Put one line trajectory on its animation grid, never DOWNsampling.
+
+    The grid is ``np.linspace(0, n - 1, (n - 1) * stride + 1)`` with
+    ``stride = _anim_grid_stride(n, n_frames)``: a uniform refinement of the
+    source rows, so observation ``i`` is EXACTLY grid row ``i * stride`` and
+    the grid has at least `n_frames` rows. A dataset with at least as many
+    rows as frames keeps its rows as-is (``stride == 1``); a shorter one is
+    PCHIP-interpolated (the same monotone interpolant the static path uses)
+    between its observations. The backends pace any grid length onto the
+    ``round(frame_rate * duration)`` frames through
+    `trails.anim_window_bounds`, and every grid consumer (the forecast reveal
+    schedule, `trails.dataset_window_bounds`, per-point labels) maps grid
+    row ``j`` back to source parameter ``j * (n - 1) / (grid - 1)``, which
+    this grid keeps exact.
+
+    1.1 visual review (L8): the grid used to be exactly ``n_frames`` rows,
+    which DOWNsampled any dataset longer than the frame count -- a 36-sample
+    helix in a 9-frame animation was drawn through 9 of its points, a
+    zig-zag star with a drawn radius as low as 0.23 against a true 0.5.
+    Earlier history (release-1.0 audit): per-dataset gridding replaced a
+    grid computed from the FIRST dataset only (F04-003), and exact
+    endpoints replaced an ``np.arange`` step that missed the final sample
+    (F04-004).
     """
     from scipy.interpolate import PchipInterpolator as pchip
     arr = np.asarray(arr)
     n = arr.shape[0]
     if n < 2:
         return arr
-    grid = np.linspace(0.0, n - 1.0, max(2, int(n_frames)))
+    stride = _anim_grid_stride(n, n_frames)
+    if stride == 1:
+        return arr.copy()
+    grid = np.linspace(0.0, n - 1.0, (n - 1) * stride + 1)
     out = pchip(np.arange(n), arr)(grid)
-    out[0] = arr[0]
-    out[-1] = arr[-1]
+    # PCHIP passes through its knots only up to floating error: pin every
+    # observation so it is provably an exact vertex of the drawn line
+    out[::stride] = arr
     return out
 
 
@@ -4909,9 +4941,10 @@ def plot(
         count, in which case the two readings annotate the same points
         anyway and the per-observation one is kept.
 
-        In an ANIMATION whose frame grid is coarser than the data (fewer
-        than one frame per sample), each label is attached to the nearest
-        drawn frame point, so labels are never silently dropped.
+        In an ANIMATION every observation stays a vertex of the animated
+        line (the frame grid only ever adds points between observations),
+        so each label is attached to its own observation and none is
+        dropped.
 
         Supported on BOTH backends (GH #205/#F3): matplotlib draws these as
         `ax.annotate` call-outs; plotly draws the same points as
@@ -5014,9 +5047,10 @@ def plot(
         ``animate='morph'``) you may pass one string per dataset: each is
         shown while its dataset is the one being revealed, and morph
         TRANSITIONS show a blank title so only fully-formed clouds are
-        named (a hold and a transition both progress 0 -> 1, so the
-        distinction is the segment itself, not how far through it you
-        are). Anywhere else a non-string raises ``TypeError``: use
+        named: every transition frame draws a cloud strictly between the
+        two datasets, and only a hold draws a dataset's own cloud (a hold
+        and a transition both progress 0 -> 1, so the distinction is the
+        segment itself, not how far through it you are). Anywhere else a non-string raises ``TypeError``: use
         ``names=`` for per-dataset legend entries, or ``labels=`` for
         per-observation annotations. Rendered identically on the
         matplotlib and plotly backends.
@@ -6136,8 +6170,12 @@ def plot(
         ``pad``
             How much of `size` is left for the panel's own ticks and label
             (default 0.10, in figure fractions).
-        ``color``, ``xlabel``, ``ylabel``
-            Line colour and axis labels.
+        ``color``
+            Line and head-marker colour. Default: the colour the first
+            dataset's trajectory is drawn in (its ``fmt=`` colour letter,
+            ``color=``, or its palette colour).
+        ``xlabel``, ``ylabel``
+            Axis labels.
 
         What this deliberately does NOT do: no 3-D companion panels, no
         panel with its own animation schedule (it always follows the main
@@ -6178,7 +6216,11 @@ def plot(
         state.**
 
         Mutating what the context hands you is the point of the hook and is
-        fully supported -- the example below sets a title every frame.
+        fully supported -- the example below sets a title every frame. (A
+        3-D matplotlib animation passed ``on_frame=`` reserves the same top
+        margin a ``title=`` gets, so a title set by the callback is drawn
+        on the canvas; one attached later with ``HyperAnimation.on_frame()``
+        should pass ``title=' '`` to reserve it.)
         What is unsupported is accumulation (``count += 1``,
         ``alpha *= 0.9``), because a repeated frame would change the
         result. Precompute running quantities and index them by
@@ -10405,9 +10447,12 @@ def plot(
     # only ever ADDS points between samples, keeps every original sample
     # (including the final one) as a drawn vertex, and uses a fixed target
     # density -- so duration=/frame_rate= (animation kwargs) no longer
-    # change static rendering (F01-001/F01-007). ANIMATED plots keep the
-    # historical frame_rate*duration grid: there the interpolated rows ARE
-    # the animation's frame-sampling.
+    # change static rendering (F01-001/F01-007). ANIMATED plots put each
+    # line on a grid of at least frame_rate*duration rows that is a uniform
+    # refinement of its observations (`_interp_anim_line`): every
+    # observation stays an exact vertex, and nothing is ever DOWNsampled
+    # (1.1 visual review, L8). 'spin' reveals no rows at all, so it keeps
+    # the source rows untouched; the backends antialias them at draw time.
     def _finite_before(trace_index):
         """Whether the INPUT dataset behind drawn trace `trace_index` was
         finite before the pipeline ran (None when unknown)."""
@@ -10430,21 +10475,27 @@ def plot(
                         _require_finite_for_line(
                             _xi, _i, input_finite=_finite_before(_i),
                             manip=manip)
-                if animate:
-                    # Every multi-row dataset is resampled onto the EXACT
-                    # frame grid (release-1.0 audit): per-dataset
-                    # interpolation (previously the step came from
-                    # xform[0]'s length alone, silently truncating longer
-                    # LATER datasets, F04-003) with exactly
-                    # round(frame_rate * duration) rows (the docstring's
-                    # promised frame count -- the old np.arange step
-                    # produced 901/41 frames for some lengths, F04-004).
-                    # Per-dataset singleton guard (F02-002/F05-012): a
-                    # 1-point dataset (singleton hue category, or a
-                    # reference point plotted beside a trajectory) cannot
-                    # be PCHIP-interpolated (scipy needs >= 2 samples) --
-                    # leave it as-is instead of crashing the whole plot;
-                    # the backend paces it onto the frame grid.
+                if animate == 'spin':
+                    # 'spin' draws every row on every frame (only the camera
+                    # moves): there is no reveal to pace, so the rows stay
+                    # the observations themselves (L8)
+                    pass
+                elif animate:
+                    # Every multi-row dataset gets its OWN animation grid
+                    # (`_interp_anim_line`): at least
+                    # round(frame_rate * duration) rows, a uniform
+                    # refinement of its observations, never fewer rows than
+                    # it has (1.1 visual review, L8 -- the grid used to be
+                    # exactly the frame count, which downsampled long
+                    # datasets into zig-zags). Release-1.0 history: the
+                    # grid is per-dataset because a grid computed from
+                    # xform[0]'s length alone truncated longer LATER
+                    # datasets (F04-003). Per-dataset singleton guard
+                    # (F02-002/F05-012): a 1-point dataset (singleton hue
+                    # category, or a reference point plotted beside a
+                    # trajectory) cannot be PCHIP-interpolated (scipy needs
+                    # >= 2 samples) -- leave it as-is instead of crashing
+                    # the whole plot; the backend paces it onto the frames.
                     _n_frames = max(2, int(round(frame_rate * duration)))
                     xform = [xi if xi.shape[0] < 2
                              else _interp_anim_line(xi, _n_frames)
@@ -10460,14 +10511,16 @@ def plot(
                     _require_finite_for_line(
                         xi, idx, input_finite=_finite_before(idx),
                         manip=manip)
-                    # per-dataset exact frame grid -- see the F04-003/
-                    # F04-004 note in the single-fmt branch above. (The
-                    # historical interp_array_list call here treated the
-                    # 2D array as a LIST of rows, silently replacing the
-                    # dataset with a list of per-row interpolations --
-                    # latent for years because a bug made is_line() always
-                    # False.)
-                    if animate:
+                    # per-dataset animation grid -- see the L8/F04-003 note
+                    # in the single-fmt branch above ('spin' keeps its
+                    # rows). (The historical interp_array_list call here
+                    # treated the 2D array as a LIST of rows, silently
+                    # replacing the dataset with a list of per-row
+                    # interpolations -- latent for years because a bug made
+                    # is_line() always False.)
+                    if animate == 'spin':
+                        pass
+                    elif animate:
                         xform[idx] = _interp_anim_line(
                             xi, max(2, int(round(frame_rate * duration))))
                     elif antialias:
@@ -11988,15 +12041,19 @@ def plot(
             # leave zero room above the axes box, which IS the figure's own
             # top edge there (see _reserve_animated_3d_title_margin's
             # docstring for the full root-cause evidence). Gated on
-            # "will a title actually be drawn" (scalar OR per-segment, same
-            # condition the plotly fix uses) so a titleless 3-D animation
-            # keeps the exact same maximised canvas as before -- and on
-            # ndims >= 3 so 2-D animations (whose default, non-maximised
-            # axes already leave normal title room) are never touched.
+            # "can a title be drawn" -- scalar, per-segment or dynamic
+            # title=, or an `on_frame=` callback, which may set one every
+            # frame (the plot() docstring's own example does; 1.1 visual
+            # review L11: that title rendered at y=484-500 on a 480 px
+            # canvas) -- so a 3-D animation with neither keeps the exact
+            # same maximised canvas as before; and on ndims >= 3 so 2-D
+            # animations (whose default, non-maximised axes already leave
+            # normal title room) are never touched.
             if (ax is not None and line_ani is not None
                     and xform[0].shape[1] >= 3
                     and (title is not None or _segment_titles is not None
-                         or _dynamic_title is not None)):
+                         or _dynamic_title is not None
+                         or on_frame is not None)):
                 # a dynamic (callable / `{index...}`) title has no text yet:
                 # resolve FRAME 0's, purely to count its lines. That is a
                 # real frame-0 context, not a synthetic one, and the
@@ -12089,9 +12146,20 @@ def plot(
                 if colorbar_info is not None:
                     _cmap = colorbar_info.get('cmap')
                     _cnorm = colorbar_info.get('norm')
+                # a panel without its own color= takes the colour of the
+                # trajectory it accompanies (the first drawn dataset): an
+                # fmt= colour letter, else the resolved per-dataset colour
+                # (1.1 visual review L12: it fell back to matplotlib's
+                # global 'C0' blue, beside a trajectory in the palette's
+                # red)
+                _companion_color = _fmt_color_letter(
+                    draw_fmt[0] if draw_fmt else None)
+                if _companion_color is None:
+                    _companion_color = _resolve_dataset_colors()[0]
                 _panels_drawn = [
                     add_companion_panel(fig, spec, cmap=_cmap, norm=_cnorm,
-                                        font=_artist_font)
+                                        font=_artist_font,
+                                        default_color=_companion_color)
                     for spec in _companion]
 
                 def _update_companions(ctx, _drawn=_panels_drawn):

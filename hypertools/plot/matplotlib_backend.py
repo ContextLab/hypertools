@@ -179,7 +179,8 @@ def _grow_for_companion(fig, spec):
     return [1.0 - size + pad, 0.15, width, 0.75]
 
 
-def add_companion_panel(fig, spec, cmap=None, norm=None, font=None):
+def add_companion_panel(fig, spec, cmap=None, norm=None, font=None,
+                        default_color=None):
     """Draw one `companion=` panel and return the state its per-frame
     updater needs (GH #285).
 
@@ -187,13 +188,19 @@ def add_companion_panel(fig, spec, cmap=None, norm=None, font=None):
     (or, with ``hue=``, a `LineCollection` coloured through the plot's own
     colour scale) up to the reveal head, an optional trailing rolling mean,
     and an optional marker on the head itself.
+
+    The line and head marker are drawn in ``spec['color']``, else in
+    `default_color` -- `plot()` passes the colour of the trajectory the
+    panel accompanies -- else in matplotlib's ``'C0'`` (only a direct
+    caller that passes neither reaches that last fallback; 1.1 visual
+    review L12).
     """
     from matplotlib.collections import LineCollection
 
     rect = _grow_for_companion(fig, spec)
     pax = fig.add_axes(rect)
     x, y = _companion_xy(spec['data'])
-    color = spec['color'] or 'C0'
+    color = spec['color'] or default_color or 'C0'
 
     pax.plot(x, y, color=COMPANION_GHOST_COLOR, linewidth=0.6)
     points = np.column_stack([x, y])
@@ -2282,7 +2289,10 @@ def _draw(
                          else first_pts)
             _mkw = (kwargs_list[mesh_slot]
                    if isinstance(kwargs_list[mesh_slot], dict) else {})
-            morph_markersize = _mkw.get("markersize") or 1.5
+            # the shared default both backends read (L9: 1.5 pt dots were
+            # ~3 px here and sub-pixel on plotly)
+            morph_markersize = (_mkw.get("markersize")
+                                or _morph.MORPH_DEFAULT_MARKERSIZE_PT)
             # GH #284: `alpha=` (scalar, or the per-dataset list) lands in
             # each morph-tagged dataset's kwargs, but those datasets' own
             # `lines` are hidden above -- the ONE visible artist is this
@@ -2905,7 +2915,8 @@ def _draw(
                          else first_pts)
             _mkw = (kwargs_list[mesh_slot]
                    if isinstance(kwargs_list[mesh_slot], dict) else {})
-            morph_markersize = _mkw.get("markersize") or 1.5
+            morph_markersize = (_mkw.get("markersize")
+                                or _morph.MORPH_DEFAULT_MARKERSIZE_PT)
             # GH #284: see the identical note in `animate_plot3D`.
             ds_alphas = [
                 (kwargs_list[i] if isinstance(kwargs_list[i], dict)
