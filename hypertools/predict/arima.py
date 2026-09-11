@@ -198,16 +198,19 @@ class ARIMA(Forecaster):
     Notes
     -----
     ``min_history`` (see `Forecaster.min_history`) is computed from the
-    order by `min_history_for`: 3 rows for the default ``(1, 1, 1)``. `fit`
-    raises a ``ValueError`` naming the model, its order and that count for a
+    order and any ``seasonal_order`` by `min_history_for`: 3 rows for the
+    default ``(1, 1, 1)``, 27 for ``(1, 1, 1) x (1, 1, 1, 12)``. `fit`
+    raises a ``ValueError`` naming the model, its orders and that count for a
     shorter history (statsmodels used to raise a bare ``IndexError``), and
     an animated ``hyp.plot(..., predict='ARIMA')`` draws no forecast on the
     frames that have revealed fewer rows than that.
     """
 
     @classmethod
-    def min_history_for(cls, order=(1, 1, 1), **kwargs):
-        """The fewest rows an ARIMA of this ``order`` can be fit on.
+    def min_history_for(cls, order=(1, 1, 1), seasonal_order=(0, 0, 0, 0),
+                        **kwargs):
+        """The fewest rows an ARIMA of this ``order`` and ``seasonal_order``
+        can be fit on.
 
         ``max(d + 2, p + q + 1)``: statsmodels differences the series ``d``
         times and needs at least TWO rows left afterwards (measured on
@@ -222,16 +225,41 @@ class ARIMA(Forecaster):
         case the highest lag is the order that counts (the fit needs that
         many earlier rows), so the check accepts every order the fitter
         does (1.1 release review, round 2).
+
+        A ``seasonal_order=(P, D, Q, s)`` works the same way in lags of
+        ``s`` rows: the seasonal differencing consumes ``D * s`` more rows,
+        and the highest AR/MA lags become ``p + P*s`` and ``q + Q*s``, so the
+        floor is ``max(d + D*s + 2, p + P*s + q + Q*s + 1)`` (``P``/``Q`` may
+        be sparse lag lists too). Measured on statsmodels 0.14: a
+        ``(1, 1, 1) x (1, 1, 1, 12)`` fit raised a bare ``IndexError`` from
+        14 rows, and ``(1, 1, 0) x (0, 1, 1, 7)`` a ``LinAlgError`` from 3-8
+        rows and an ``IndexError`` from 9 (release review 2026-09-11); the
+        floors are 27 and 10.
         """
         p, d, q = order
-        return max(_lag_order(d) + 2, _lag_order(p) + _lag_order(q) + 1)
+        seasonal_p, seasonal_d, seasonal_q, period = (
+            tuple(seasonal_order) if seasonal_order is not None
+            else (0, 0, 0, 0))
+        period = int(period)
+        ar_lags = _lag_order(p) + _lag_order(seasonal_p) * period
+        ma_lags = _lag_order(q) + _lag_order(seasonal_q) * period
+        differenced = _lag_order(d) + _lag_order(seasonal_d) * period
+        return max(differenced + 2, ar_lags + ma_lags + 1)
 
     @property
     def min_history(self):
-        """`min_history_for(self.order)` -- see `Forecaster.min_history`."""
-        return self.min_history_for(self.order)
+        """`min_history_for(self.order, seasonal_order)` -- see
+        `Forecaster.min_history`."""
+        return self.min_history_for(self.order, self._seasonal_order())
+
+    def _seasonal_order(self):
+        return self.kwargs.get('seasonal_order', (0, 0, 0, 0))
 
     def _min_history_detail(self):
+        seasonal = self._seasonal_order()
+        if seasonal is not None and any(_lag_order(v) for v in tuple(seasonal)[:3]):
+            return (f'(order={tuple(self.order)!r}, '
+                    f'seasonal_order={tuple(seasonal)!r})')
         return f'(order={tuple(self.order)!r})'
 
     _regular_time_grid = True
