@@ -541,7 +541,7 @@ class Forecaster(BaseEstimator):
             if self.applier is None:
                 self._check_min_history(d, which)
 
-        from .time import finalize_forecast, prepare_time_data
+        from .time import finalize_forecast, prepare_time_data, step_matches_index
         forecasts = []
         for d, params in zip(new_datasets, paired_models):
             for r in self.required:
@@ -555,7 +555,8 @@ class Forecaster(BaseEstimator):
             # cannot be converted into each other, so the new data step in
             # their own units, as they did in 1.0 (release review
             # 2026-09-11: those reuses raised about `step` instead).
-            step = params.get('_time_step', self.step)
+            step = next((s for s in (params.get('_time_step'), self.step)
+                         if step_matches_index(s, d.index)), None)
             observed, model_data, _ = prepare_time_data(
                 d, step, regular=getattr(self, '_regular_time_grid', False))
             n_steps, future_index = resolve_t(observed, t)

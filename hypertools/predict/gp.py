@@ -19,7 +19,7 @@ import pandas as pd
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF, WhiteKernel, DotProduct
 from .time import (TIME_STEP_ATTR, is_time_index, resolve_step,
-                   time_coordinates)
+                   step_matches_index, time_coordinates)
 
 from .common import Forecaster
 
@@ -138,7 +138,11 @@ def applier(fitted_params, new_data, t):
     # `predict_new` resolved the step for THIS index (the learned interval
     # when it is in the new index's units, else the new data's own); a
     # fitted row count cannot measure a dated index, nor a duration an array.
-    step = fitted_params.get('time_step', resolve_step(new_data.index))
+    step = new_data.attrs.get(TIME_STEP_ATTR)
+    if step is None:
+        fitted_step = fitted_params.get('time_step')
+        step = (fitted_step if step_matches_index(fitted_step, new_data.index)
+                else resolve_step(new_data.index))
     timed = is_time_index(new_data.index)
     origin = new_data.index[0]
     x_new = (time_coordinates(new_data.index, origin, step) if timed
