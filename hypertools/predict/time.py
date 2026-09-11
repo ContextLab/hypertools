@@ -89,6 +89,8 @@ def _step_text(step):
     ``'MS'`` -- what ``step=`` accepts), anything else as ``str()``."""
     if isinstance(step, pd.offsets.BaseOffset):
         return repr(step.freqstr)
+    if isinstance(step, (float, np.floating)):
+        return format(float(step), '.6g')   # 0.04, not 0.04000000000000001
     return str(step)
 
 

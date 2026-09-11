@@ -128,3 +128,12 @@ def test_unsorted_index_under_plot_warns_once_at_the_callers_line(backend):
     assert len(unsorted) == 1, [(w.filename, w.lineno) for w in unsorted]
     assert unsorted[0].filename == __file__
     plt.close('all')
+
+
+def test_a_float_step_prints_without_representation_noise():
+    t = np.cumsum(np.full(40, 0.04)) + np.r_[0, 0.001, np.zeros(38)]
+    data = pd.DataFrame(_walk(40), index=pd.Index(t, name='t'))
+    messages = [str(w.message) for w in _caught(
+        lambda: hyp.predict(data, model='Kalman', t=3))
+        if 'interpolated' in str(w.message)]
+    assert messages and 'step=0.04 ' in messages[0], messages

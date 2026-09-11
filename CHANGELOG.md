@@ -1483,6 +1483,13 @@ Because 1.1.0 had not been published, they ship in it.
   clipped to the cube.
 - **Plotly Play/Pause sit below the axis labels.** On a date or data x axis
   they covered the tick labels.
+- **Forecast time warnings name your line, once.** The interpolation and
+  "not sorted" warnings pointed at hypertools' own files (tutorials printed
+  `.../hypertools/predict/common.py:435`), a calendar step read
+  `step=<BusinessDay>` and a float step `0.04000000000000001`, and a
+  shuffled index under `hyp.plot` warned twice. They now point at the
+  caller, print `step='B'` or `step=0.04`, and appear once per `plot()`
+  call.
 
 ### Documented limitations
 
