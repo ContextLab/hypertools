@@ -59,6 +59,24 @@ from .density import (
 )
 
 
+def _label_callout_kwargs(label_alpha, arrowstyle='-', facecolor='white'):
+    """`ax.annotate` box and connector styling for an observation label,
+    in the colours plotly's annotations use (`plotly_backend`: connector
+    rgba(0,0,0,0.6), box edge rgba(0,0,0,0.4), a white box at
+    `label_alpha`). Both colours are EXPLICIT: seaborn's whitegrid style
+    sets ``patch.edgecolor='w'``, so the defaults drew a white connector
+    and a white box edge -- an invisible link that cut white notches
+    through the markers (1.1 release review, figure QA)."""
+    from matplotlib.colors import to_rgb
+    return dict(
+        bbox=dict(boxstyle="round,pad=0.5",
+                  fc=(*to_rgb(facecolor), label_alpha),
+                  ec=(0, 0, 0, 0.4), lw=0.8),
+        arrowprops=dict(arrowstyle=arrowstyle, connectionstyle="arc3,rad=0",
+                        color=(0, 0, 0, 0.6), lw=0.8),
+    )
+
+
 def _apply_title(ax, text, font=None, title_kwargs=None):
     """Set `ax`'s title, honoring the resolved `font=` and `title_kwargs=`
     (GH #285).
@@ -1211,8 +1229,7 @@ def _draw(
                         textcoords="offset points",
                         ha="right",
                         va="bottom",
-                        bbox=dict(boxstyle="round,pad=0.5", fc="white", alpha=label_alpha),
-                        arrowprops=dict(arrowstyle="-", connectionstyle="arc3,rad=0"),
+                        **_label_callout_kwargs(label_alpha),
                         **_label_font_kwargs,
                     )
                     label._hyp_point_idx = within[idx]
@@ -1227,8 +1244,7 @@ def _draw(
                         textcoords="offset points",
                         ha="right",
                         va="bottom",
-                        bbox=dict(boxstyle="round,pad=0.5", fc="white", alpha=label_alpha),
-                        arrowprops=dict(arrowstyle="-", connectionstyle="arc3,rad=0"),
+                        **_label_callout_kwargs(label_alpha),
                         **_label_font_kwargs,
                     )
                     label.draggable()
@@ -1457,8 +1473,7 @@ def _draw(
             textcoords="offset points",
             ha="right",
             va="bottom",
-            bbox=dict(boxstyle="round,pad=0.5", fc="yellow", alpha=0.5),
-            arrowprops=dict(arrowstyle="->", connectionstyle="arc3,rad=0"),
+            **_label_callout_kwargs(0.5, arrowstyle="->", facecolor="yellow"),
             **_explore_font_kwargs,
         )
         fig.canvas.draw()

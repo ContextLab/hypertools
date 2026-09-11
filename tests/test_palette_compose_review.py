@@ -543,3 +543,30 @@ def test_one_nan_hue_value_warns_once_about_one_observation(fmt, backend):
     assert str(hits[0].message).startswith('1 observation(s) have')
     # attributed to the caller's line, not to hypertools' internals
     assert hits[0].filename == __file__
+
+
+# --- L3: observation-label call-outs are drawn in dark ink -----------------
+
+@pytest.mark.parametrize('ndims', [2, 3])
+def test_label_connectors_and_boxes_are_dark_like_plotly(ndims):
+    from matplotlib.colors import to_rgba
+    data = _walks(2, rows=10)
+    fig = hyp.plot(data, labels=['first path', 'second path'], ndims=ndims,
+                   show=False)
+    anns = fig.axes[0].texts
+    assert len(anns) == 2
+    for ann in anns:
+        # seaborn's whitegrid style made both edges white (patch.edgecolor
+        # 'w'): invisible connectors that notched the markers
+        assert to_rgba(ann.arrow_patch.get_edgecolor()) == \
+            pytest.approx((0, 0, 0, 0.6))
+        box = ann.get_bbox_patch()
+        assert to_rgba(box.get_edgecolor()) == pytest.approx((0, 0, 0, 0.4))
+        assert to_rgba(box.get_facecolor()) == pytest.approx((1, 1, 1, 0.5))
+    # ...the colours plotly's annotations use
+    pfig = hyp.plot(data, labels=['first path', 'second path'],
+                    ndims=ndims, show=False, backend='plotly')
+    panns = (pfig.layout.scene.annotations if ndims == 3
+             else pfig.layout.annotations)
+    assert {(a.arrowcolor, a.bordercolor) for a in panns} == {
+        ('rgba(0,0,0,0.6)', 'rgba(0,0,0,0.4)')}
