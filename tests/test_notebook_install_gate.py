@@ -251,3 +251,69 @@ def test_executor_keeps_setup_and_independent_install_cells():
     assert skipped==[install]
     assert 'skip-execution' not in config.metadata.get('tags',[])
     assert 'skip-execution' not in prerequisite.metadata.get('tags',[])
+
+
+def _load_executor():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        'execute_tutorial', os.path.join(_REPO, 'scripts', 'execute_tutorial.py'))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_executor_scrubs_the_kernel_cell_path_from_warnings():
+    """A warning raised by a cell names the kernel's per-session temp file
+    (plot.ipynb stored `/var/folders/<id>/T/ipykernel_21956/2889100357.py:14:
+    UserWarning: ...`, found 2026-09-11); the executor rewrites it to
+    `<cell>`, on every platform's spelling, and still rewrites the home dir."""
+    import nbformat
+    module = _load_executor()
+    home = '/Users/someone'
+    texts = [
+        '/var/folders/tp/qtzc39jx5w556wl5w3dj21wr0000gn/T/ipykernel_21956/'
+        '2889100357.py:14: UserWarning: Missing data\n',
+        '/tmp/ipykernel_77/123.py:3: UserWarning: x\n',
+        'C:\\Users\\someone\\AppData\\Local\\Temp\\ipykernel_5\\99.py:1: W\n',
+        '/Users/someone/hypertools/hypertools/predict/common.py:416: UserWarning\n',
+    ]
+    nb = nbformat.v4.new_notebook(cells=[nbformat.v4.new_code_cell(
+        'x', outputs=[nbformat.v4.new_output('stream', name='stderr', text=t)
+                      for t in texts])])
+    assert module.scrub_home(nb, home=home) == len(texts)
+    got = [o['text'] for o in nb.cells[0].outputs]
+    assert got[:3] == ['<cell>:14: UserWarning: Missing data\n',
+                       '<cell>:3: UserWarning: x\n', '<cell>:1: W\n']
+    assert got[3] == '~/hypertools/hypertools/predict/common.py:416: UserWarning\n'
+
+
+def test_executor_quiets_liblsl_info_logging(tmp_path):
+    """liblsl logs `api_config.cpp ... INFO| Loaded default config` to stderr
+    on first load, and lsl_streaming.ipynb stored two such lines (2026-09-10).
+    Measured on the real liblsl in a subprocess: the line appears with no
+    config (the control) and not under the config the executor installs.
+    Only a StreamInfo is built -- nothing is advertised on the network."""
+    import sys
+    pytest.importorskip('pylsl')
+    module = _load_executor()
+    probe = ("import pylsl; pylsl.StreamInfo('hyp-cfg-probe', 'HYPCFGPROBE', 1, "
+             "source_id='hyp-cfg-probe')")
+    env = {k: v for k, v in os.environ.items() if k != 'LSLAPICFG'}
+    control = subprocess.run([sys.executable, '-c', probe], env=env,
+                             capture_output=True, text=True, timeout=120)
+    assert control.returncode == 0, control.stderr
+    assert 'INFO|' in control.stderr, 'control run: liblsl no longer logs INFO'
+    path = module.quiet_liblsl_config(str(tmp_path), environ=env)
+    assert env['LSLAPICFG'] == path and os.path.exists(path)
+    quiet = subprocess.run([sys.executable, '-c', probe], env=env,
+                           capture_output=True, text=True, timeout=120)
+    assert quiet.returncode == 0, quiet.stderr
+    assert 'INFO|' not in quiet.stderr, quiet.stderr
+
+
+def test_executor_keeps_a_callers_liblsl_config(tmp_path):
+    module = _load_executor()
+    env = {'LSLAPICFG': '/somewhere/else.cfg'}
+    assert module.quiet_liblsl_config(str(tmp_path), environ=env) == '/somewhere/else.cfg'
+    assert env == {'LSLAPICFG': '/somewhere/else.cfg'}
+    assert not os.listdir(tmp_path)

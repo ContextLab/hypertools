@@ -64,10 +64,13 @@ for title, loader, clean in sources:
 n = max(len(loaded), 1)
 ncols = 2 if n > 1 else 1
 nrows = (n + ncols - 1) // ncols
-fig, axes = hyp.subplots(nrows, ncols, size=[5 * ncols, 5 * nrows])
+# backend='matplotlib' on the grid and on each call: the axes are
+# matplotlib's, and on Colab the default backend would be plotly
+fig, axes = hyp.subplots(nrows, ncols, size=[5 * ncols, 5 * nrows],
+                         backend='matplotlib')
 for ax in axes:
     ax.set_axis_off()  # hide any unused panels
 for (title, data), ax in zip(loaded, axes):
     ax.set_axis_on()
-    hyp.plot(data, '.', ax=ax, title=title, show=False)
+    hyp.plot(data, '.', ax=ax, title=title, backend='matplotlib', show=False)
 fig.tight_layout()

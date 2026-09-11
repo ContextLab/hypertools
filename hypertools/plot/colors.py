@@ -415,6 +415,16 @@ def is_palette_matrix(obj):
     a color list has 3 or 4 columns with every value in [0, 1], and keeps
     meaning exactly that. Anything else 2-D and numeric -- another column
     count, or values outside [0, 1] -- is data to reduce.
+
+    Raises
+    ------
+    ValueError
+        For an array or nested list (not a DataFrame) with 3 or 4 columns
+        of WHOLE numbers in 0..255, some above 1 -- e.g. ``[[255, 128, 0],
+        [0, 64, 255]]``. That is a list of 0-255 RGB(A) colors, not data;
+        reading it as a data matrix reduced, rescaled and re-sorted it into
+        different colors without a word (review 2026-09-11). Divide it by
+        255 to use the colors, or pass a DataFrame to use it as data.
     """
     if is_frame_dataset(obj):
         obj = as_pandas_dataframe(obj)
@@ -436,6 +446,20 @@ def is_palette_matrix(obj):
     if arr.shape[1] in (3, 4) and np.isfinite(arr).all() \
             and arr.min() >= 0.0 and arr.max() <= 1.0:
         return False                                  # a list of colors
+    if arr.shape[1] in (3, 4) and np.isfinite(arr).all() \
+            and arr.min() >= 0.0 and arr.max() <= 255.0 \
+            and np.array_equal(arr, np.round(arr)):
+        # whole numbers 0..255, some above 1: 0-255 colors, which neither
+        # hypertools nor matplotlib reads (RGB is in [0, 1]); never
+        # silently turn them into a data-matrix gradient
+        example = np.asarray(arr[:2], dtype=float).round().astype(int)
+        raise ValueError(
+            f'palette= looks like a list of 0-255 RGB(A) colors '
+            f'({example.tolist()}{", ..." if len(arr) > 2 else ""}), but '
+            'colors are read in [0, 1]. Divide by 255 to use them as '
+            'colors (np.asarray(palette) / 255), or pass the matrix as a '
+            'pandas DataFrame to use it as DATA (a t x k matrix palette, '
+            'reduced to three color channels).')
     return True
 
 

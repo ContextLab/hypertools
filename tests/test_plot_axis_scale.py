@@ -250,20 +250,20 @@ def test_S2_date_strings_set_xlim_on_matplotlib():
 def test_S2_date_strings_and_day_numbers_set_xlim_on_plotly():
     pytest.importorskip('plotly')
     from matplotlib.dates import date2num
-    epoch = pd.Timestamp('1970-01-01')
-    ms = [float((pd.Timestamp(d) - epoch) // pd.Timedelta('1ms'))
-          for d in ('2020-01-05', '2020-01-10')]
+    # the range is naive DATE STRINGS (1.1 release review: epoch-ms numbers
+    # were drawn in the viewer's local time zone), compared as dates
+    want = list(pd.to_datetime(['2020-01-05', '2020-01-10']))
     fig = hyp.plot(_dated_series(), ndims=1, backend='plotly',
                    xlim=('2020-01-05', '2020-01-10'), show=False)
     assert fig.layout.xaxis.type == 'date'
-    assert list(fig.layout.xaxis.range) == pytest.approx(ms)
+    assert list(pd.to_datetime(list(fig.layout.xaxis.range))) == want
     # a float is a matplotlib day number on BOTH backends (it used to be
     # read as epoch milliseconds here and drew a range in 1970)
     days = (date2num(pd.Timestamp('2020-01-05')),
             date2num(pd.Timestamp('2020-01-10')))
     fig = hyp.plot(_dated_series(), ndims=1, backend='plotly', xlim=days,
                    show=False)
-    assert list(fig.layout.xaxis.range) == pytest.approx(ms)
+    assert list(pd.to_datetime(list(fig.layout.xaxis.range))) == want
 
 
 def test_S2_a_non_date_xlim_on_a_date_axis_is_refused():

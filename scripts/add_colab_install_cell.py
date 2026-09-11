@@ -107,7 +107,17 @@ def guarded_install_source(extras="interactive", branch="master"):
 
 
 def portable_video_source(filename):
-    """Frontend-specific playback; local docs retain their relative asset."""
+    """Frontend-specific playback; local docs retain their relative asset.
+
+    The block ENDS its cell (tests/test_examples_are_native.py compares the
+    cell from its first line to the end with this template), so it is the
+    cell's last statement and IPython displays nothing after it: a figure or
+    tuple left as a bare expression just above it is evaluated and never
+    shown. Anything the cell should show goes through ``display(...)`` or
+    ``print(...)`` before the block (2026-09-11 review: io, manip, plot,
+    lsl_streaming and streaming_data lost their outputs that way;
+    ``test_no_colab_video_block_swallows_a_displayed_value`` guards it).
+    """
     return '# Colab serves output frames separately from kernel files; embed movie bytes.\ntry:\n    from google import colab as colab\nexcept ImportError:\n    pass  # Local Jupyter/Sphinx uses the relative video below.\nelse:\n    from IPython.display import Video, display\n    display(Video({filename!r}, embed=True))\n'.format(filename=filename)
 
 

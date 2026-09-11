@@ -68,3 +68,56 @@ def test_normalizer_reuse_list_returns_list():
     _, model, new = _fit_new('across')
     out = model.transform([new, new + 1.0])
     assert isinstance(out, list) and len(out) == 2 and out[0].shape == (10, 4)
+
+
+# --- a 1-D dataset is ONE column in fit and transform alike (review 2026-09-11)
+
+def _one_d_inputs():
+    import pandas as pd
+    import polars as pl
+    values = np.array([1., 2., 3., 4., 6.])
+    return values, [
+        ('1-D array', values),
+        ('pandas Series', pd.Series(values, name='v')),
+        ('polars Series', pl.Series('v', values)),
+        ('flat list', values.tolist()),
+    ]
+
+
+def test_fitted_normalizer_accepts_the_1d_data_it_was_fit_on():
+    # normalize() reads a 1-D array/Series/flat list as one column (via
+    # format_data), so its fitted Normalizer is fit on 1 column. Before the
+    # fix, .transform() on the SAME data turned it into a single ROW and
+    # raised "Normalizer was fit on 1 column(s) but got 5" (the flat list
+    # became five one-value datasets).
+    values, inputs = _one_d_inputs()
+    expected = ((values - values.mean()) / values.std()).reshape(-1, 1)
+    for label, obj in inputs:
+        for mode in ('across', 'within'):
+            normed, model = normalize(obj, normalize=mode, return_model=True)
+            assert np.allclose(normed, expected), (label, mode)
+            out = model.transform(obj)
+            assert isinstance(out, np.ndarray), (label, mode)
+            assert out.shape == (5, 1), (label, mode)
+            assert np.allclose(out, expected), (label, mode)
+
+
+def test_normalizer_fit_directly_on_1d_data_reads_one_column():
+    values, inputs = _one_d_inputs()
+    for label, obj in inputs:
+        model = Normalizer('across').fit(obj)
+        assert model.mean_.shape == (1,), label
+        assert np.allclose(model.mean_, values.mean()), label
+        # held-out 1-D data of a different length reuses the fit-time stats
+        new = np.array([2., 4.])
+        assert np.allclose(model.transform(new),
+                           ((new - values.mean()) / values.std())[:, None])
+
+
+def test_normalizer_list_of_1d_datasets_reads_each_as_one_column():
+    a, b = np.array([1., 2., 3.]), np.array([4., 5., 6., 7.])
+    normed, model = normalize([a, b], normalize='across', return_model=True)
+    out = model.transform([a, b])
+    assert [o.shape for o in out] == [(3, 1), (4, 1)]
+    for got, want in zip(out, normed):
+        assert np.allclose(got, want)

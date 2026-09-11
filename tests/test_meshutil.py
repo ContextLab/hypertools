@@ -580,6 +580,26 @@ class TestVertexColorsFromPoints:
         vc = vertex_colors_from_points(np.array([[1.0, 0, 0]]), pts, cols)
         assert vc[0, 0] > vc[0, 2]                           # reddish
 
+    @pytest.mark.parametrize('seed', [0, 1])
+    def test_hull_colors_follow_the_local_points(self, seed):
+        # Maintainer report 2026-09-11: a hue= surface did not match the
+        # dots beneath it. With a global 1/d**2 blend in 3-D, the many
+        # distant points outweigh the few near ones, so every vertex drifts
+        # toward the dataset's mean colour (washed out, locally wrong).
+        import colorsys
+        from matplotlib import colormaps
+        rng = np.random.default_rng(seed)
+        pts = np.cumsum(rng.normal(size=(400, 3)), axis=0)
+        cols = colormaps['viridis'](np.linspace(0, 1, len(pts)))[:, :3]
+        verts = smooth_hull_3d(pts)[0]
+        vc = vertex_colors_from_points(verts, pts, cols)
+        _, idx = cKDTree(pts).query(verts, k=3)
+        local = cols[idx].mean(axis=1)
+        assert np.median(np.abs(vc - local).max(axis=1)) < 0.03
+        def sat(c):
+            return np.median([colorsys.rgb_to_hsv(*x)[1] for x in c])
+        assert sat(vc) > sat(cols) - 0.05
+
     def test_output_shape_and_range(self):
         rng = np.random.default_rng(1)
         verts = rng.normal(size=(50, 3))

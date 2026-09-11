@@ -116,3 +116,19 @@ def test_typeerror_names_the_accepted_types():
         hyp.load({'a': 1})
     msg = str(info.value)
     assert 'DataFrame' in msg and 'numpy array' in msg and 'got dict' in msg
+
+
+def test_typeerror_names_polars_frames_which_load_accepts():
+    # polars DataFrames and LazyFrames pass through (the 1.1 datatype
+    # refactor), but the TypeError still listed only "pandas DataFrame or
+    # numpy array" (review 2026-09-11)
+    import polars as pl
+    frame = pl.DataFrame({'a': [1.0, 2.0], 'b': [3.0, 4.0]})
+    assert hyp.load(frame) is frame
+    lazy = frame.lazy()
+    assert hyp.load(lazy) is lazy
+    with pytest.raises(TypeError) as info:
+        hyp.load({'a': 1})
+    msg = str(info.value)
+    assert 'polars' in msg and 'LazyFrame' in msg and 'pandas' in msg
+    assert 'got dict' in msg

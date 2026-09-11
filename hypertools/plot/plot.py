@@ -21,7 +21,8 @@ import pandas as pd
 # and to a linter, instead of 186 F405 "may be undefined" findings.
 from .._shared.helpers import *
 from .._shared.helpers import (is_array_dataset, is_frame_dataset,
-                               is_series_like, as_pandas_dataframe)
+                               is_series_like, as_pandas_dataframe,
+                               row_index_x)
 from .._shared.params import default_params
 from ..core.model import external_stacklevel
 from ..tools.analyze import analyze
@@ -392,6 +393,22 @@ def _forecast_style_from(src_line, alpha_scale=FORECAST_ALPHA_SCALE,
         override)
 
 
+def _observed_run_lines(lines):
+    """The drawn observed RUNS among `lines`, one artist per run, in order.
+
+    A marker-plus-line fmt (``'o-'``, ``'s--'``) draws each run as TWO
+    artists -- the smoothed line and a markers-only companion at the true
+    observations (`matplotlib_backend._plot_possibly_split`, which tags the
+    companion ``_hyp_marker_companion``). Every consumer that looks a run up
+    by index (the forecast and truth overlays' style source, the animated
+    head-run colour) must skip the companions, or run ``i`` reads run
+    ``i // 2``'s artists: three ``'o-'`` datasets gave forecasts red, red,
+    green instead of red, green, blue (1.1 release review, F1).
+    """
+    return [ln for ln in lines
+            if not getattr(ln, '_hyp_marker_companion', False)]
+
+
 def _draw_forecast_overlays(ax, raw_forecasts, antialias=True,
                             owner=None, overrides=None, labels=None,
                             dataset_index=None, src_lines=None):
@@ -434,8 +451,10 @@ def _draw_forecast_overlays(ax, raw_forecasts, antialias=True,
     # below survives an `ax.plot` call returning more than one artist
     _artist_dataset = []
     # `src_lines`: the observed lines the forecasts continue, run by run --
-    # THIS call's, when the axes already held an earlier call's
-    src_lines = list(ax.lines) if src_lines is None else list(src_lines)
+    # THIS call's, when the axes already held an earlier call's -- one
+    # artist per run (a split 'o-' run's markers companion is skipped)
+    src_lines = _observed_run_lines(
+        list(ax.lines) if src_lines is None else list(src_lines))
     for i, fc in enumerate(raw_forecasts):
         # antialias (see `plot`'s `antialias=`): smooth the forecast the SAME
         # way as any other line, so a short forecast (e.g. t+1 = 5 vertices)
@@ -447,14 +466,22 @@ def _draw_forecast_overlays(ax, raw_forecasts, antialias=True,
         # forecast spans `n_rows - 1` row units no matter how many vertices
         # it is drawn with (see the 1-D branch below).
         _fc_rows = fc.shape[0]
+        _fc_step = 1
         if antialias:
-            fc = _interp_static_line(fc)
+            fc, _fc_step = _antialias_static_line(fc)
         # `owner` maps forecast -> the RUN it continues, when hue=/cluster=
         # regrouped the traces. Without it, forecast i continues trace i.
         _src = owner[i] if owner is not None and i < len(owner) else i
         _src_line = src_lines[_src] if _src < len(src_lines) else None
         style = _forecast_style_from(
             _src_line, override=overrides[i] if overrides is not None else None)
+        # a `forecast_fmt=` marker ('ro:') belongs on the forecast's own
+        # STEPS -- the seam row and each forecast observation -- never on
+        # the ~900 antialiased vertices between them, which drew a dotted
+        # forecast as a solid tube of markers (1.1 release review; the
+        # marker contract of `plot`'s `antialias=`). One artist, so its
+        # legend glyph keeps the marker.
+        style['markevery'] = _step_markevery(_fc_step)
         d = fc.shape[1] if fc.ndim > 1 else 1
         _before = len(artists)
         _label = '_nolegend_'
@@ -552,7 +579,11 @@ def _add_overlay_legend_entries(ax, forecast_artists=None, truth_artists=None,
     labels = [lab for _, lab in kept] + [h.get_label() for h in fc_handles]
     if truth_lines:
         first = truth_lines[0]
-        colors = {to_rgba(ln.get_color()) for ln in truth_lines}
+        # the colour decided over EVERY truth artist, not only the tagged
+        # first one: the key stands for all datasets' truths, and wore
+        # dataset 0's colour whatever the others were (1.1 review, F10)
+        colors = {to_rgba(ln.get_color()) for ln in ax.lines
+                  if getattr(ln, '_hyp_forecast_role', None) == 'truth'}
         handles.append(Line2D(
             [], [], color=(first.get_color() if len(colors) == 1
                            else FORECAST_LEGEND_COLOR),
@@ -561,6 +592,47 @@ def _add_overlay_legend_entries(ax, forecast_artists=None, truth_artists=None,
             markevery=None, label=truth_label))
         labels.append(truth_label)
     ax.legend(handles, labels, **legend_call)
+
+
+def _recolor_overlay_legend(ax, colors, close_fig=None):
+    """Apply `legend_colors=`'s plain colour list to a legend that also
+    lists `predict=`/`truth=` overlay entries (data entries first, then the
+    overlays -- `_add_overlay_legend_entries`' order).
+
+    One colour per legend entry recolours them all. One colour per DATA
+    entry -- what the list meant before a forecast had a legend entry of
+    its own, and still what it means on a legend without overlays --
+    recolours the data entries and leaves the forecast/truth glyphs as
+    drawn (1.1 release review: ``legend_colors=['r', 'b']`` with
+    ``predict=`` raised 'the legend has 3'). Any other count raises
+    ``ValueError`` -- after closing `close_fig` (the figure this call
+    created), so a refused call leaves no stray figure open.
+    """
+    from .matplotlib_backend import _recolor_legend_handles
+    legend = ax.get_legend()
+    handles = list(legend.legend_handles)
+    texts = [t.get_text() for t in legend.get_texts()]
+    overlay = {getattr(ln, '_hyp_forecast_label', None) for ln in ax.lines
+               if getattr(ln, '_hyp_forecast_role', None)
+               in ('static', 'live')}
+    overlay |= {getattr(ln, '_hyp_truth_label', None) for ln in ax.lines}
+    overlay.discard(None)
+    n_data = sum(1 for t in texts if t not in overlay)
+    colors = list(colors)
+    if len(colors) not in (len(handles), n_data):
+        if close_fig is not None:
+            plt.close(close_fig)
+        raise ValueError(
+            f"legend_colors has {len(colors)} entries but the legend has "
+            f"{len(handles)} ({n_data} data entr"
+            f"{'y' if n_data == 1 else 'ies'} plus "
+            f"{len(handles) - n_data} forecast/truth entr"
+            f"{'y' if len(handles) - n_data == 1 else 'ies'}); pass one "
+            "color per data entry, one per legend entry, or (label, color) "
+            "pairs to define the entries outright.")
+    if len(colors) < len(handles):
+        colors += [h.get_color() for h in handles[len(colors):]]
+    _recolor_legend_handles(legend, colors)
 
 
 def _forecast_legend_handles(artists):
@@ -633,7 +705,8 @@ def _draw_truth_overlays(ax, raw_truths, antialias=True, owner=None,
     animation's reveal advances, so it stays put while the forecast moves.
     """
     artists = []
-    src_lines = list(ax.lines) if src_lines is None else list(src_lines)
+    src_lines = _observed_run_lines(
+        list(ax.lines) if src_lines is None else list(src_lines))
     for i, tr in enumerate(raw_truths):
         tr = np.asarray(tr, dtype=float)
         _rows = tr.shape[0]
@@ -896,7 +969,21 @@ def _interp_static_line(arr):
     `_STATIC_LINE_TARGET_VERTICES` vertices and contains every original sample
     exactly. This is the STATIC half of `plot`'s ``antialias=``.
     """
-    return antialias_line(arr, _STATIC_LINE_TARGET_VERTICES)[0]
+    return _antialias_static_line(arr)[0]
+
+
+def _antialias_static_line(arr):
+    """`_interp_static_line`, also returning the subdivision ``step``: the
+    densified ``dense[::step]`` is exactly `arr`, so ``step`` is what places
+    a marker on the ORIGINAL rows (`_step_markevery`)."""
+    return antialias_line(arr, _STATIC_LINE_TARGET_VERTICES)
+
+
+def _step_markevery(step):
+    """The matplotlib ``markevery`` that marks only the original rows of a
+    line densified with subdivision `step` (every vertex when ``step`` is
+    1, i.e. nothing was densified)."""
+    return None if step <= 1 else slice(0, None, int(step))
 
 
 def _interp_anim_line(arr, n_frames):
@@ -2057,7 +2144,10 @@ def _series_x_axis(index, n_rows, epoch_ms=False):
             # A tz-AWARE index cannot be cast to a naive dtype at all
             # ("Cannot use .astype to convert from timezone-aware ..."), so
             # it is converted to UTC first -- epoch milliseconds are an
-            # absolute instant either way, and plotly reads them as UTC.
+            # absolute instant either way. These numbers are INTERNAL:
+            # plotly.js would draw a numeric date in the viewer's LOCAL
+            # time zone, so `plotly_backend._dates_as_iso` hands the figure
+            # naive date strings instead (1.1 release review).
             _idx = (index.tz_convert('UTC').tz_localize(None)
                     if index.tz is not None else index)
             values = np.asarray(
@@ -2104,6 +2194,13 @@ def _resolve_date_xlim(xlim, epoch_ms):
     from matplotlib.dates import date2num, num2date
     out = []
     for value in xlim:
+        if value is None:
+            # an OPEN side (``xlim=(None, '2020-01-10')``): left for the
+            # data bounds to fill, as a numeric axis leaves it to autoscale.
+            # `pd.Timestamp(None)` is NaT, which became a NaN limit and
+            # crashed "Axis limits cannot be NaN or Inf" (1.1 review, F8)
+            out.append(None)
+            continue
         if (isinstance(value, (int, float, np.integer, np.floating))
                 and not isinstance(value, bool)):
             number = float(value)
@@ -2189,7 +2286,20 @@ def _resolve_truth(truth, datasets, t, series_step=None, forecast_paths=None,
                 f"against; entry {i} has {item.shape[0]}. Pass t="
                 f"{item.shape[0]} to forecast that far instead, or trim the "
                 "held-out data.")
-        if series and item.shape[1] == 1:
+        if series and item.shape[1] != 1:
+            # a series-mode trace is ONE plotted column (its x is the
+            # index), so its truth is one column of values. Without this a
+            # 2-column truth for a 1-column trace matched the trace's
+            # internal (x, value) width and its first column was drawn as
+            # x -- a date axis stretched back to 1970 (1.1 release review,
+            # F3)
+            raise ValueError(
+                f"truth= entry {i} has {item.shape[1]} columns, but with "
+                "ndims=1 each trace is one plotted column (its x is the "
+                "index), so its truth= is one column of values. Pass one "
+                "single-column array per trace (or one array with one "
+                f"column per trace; {n_traces} trace(s) are plotted).")
+        if series:
             idx = indexes[i]
             explicit_times = (isinstance(idx, pd.Index)
                               and not (isinstance(idx, pd.RangeIndex)
@@ -2940,6 +3050,9 @@ _PANEL_PER_FORECAST_KWARGS = ('forecast_hue', 'forecast_fmt',
 _PANEL_PROBE_DROPPED_KWARGS = (
     'predict', 'truth', 'forecast_hue', 'forecast_cluster',
     'forecast_n_clusters', 'forecast_palette', 'forecast_fmt',
+    # validated against predict= -- kept alone it refused itself ("requires
+    # predict=") in a probe that had dropped predict= (1.1 review, F5)
+    'forecast_trail',
 )
 
 #: ...and the one that carries a value per OBSERVATION (flat), a
@@ -4747,7 +4860,9 @@ def plot(
 
         A 2-D array with 3 or 4 columns and every value in [0, 1] stays a
         list of colors; pass a DataFrame (or values outside [0, 1]) for a
-        three-column matrix that is data. The palette is as smooth as the
+        three-column matrix that is data. One with 3 or 4 columns of whole
+        numbers in 0..255 reads as 0-255 colors and raises ``ValueError``
+        (divide by 255 for the colors; a DataFrame for data). The palette is as smooth as the
         matrix: the rows are ordered along the first component, so a
         matrix whose other components follow the first (a trend with
         oscillations) gives a clean gradient and an unstructured one a
@@ -4979,7 +5094,9 @@ def plot(
     legend_colors : list of colors, or list of (label, color) pairs
         An explicit override of the legend's swatches. A plain list of
         colors -- one per legend entry, in order -- RECOLORS the entries
-        hypertools would draw anyway (matplotlib only; the plotly legend
+        hypertools would draw anyway; when `predict=`/`truth=` add their
+        own entries after the data's, one color per DATA entry is accepted
+        too and leaves those overlay glyphs as drawn (matplotlib only; the plotly legend
         takes its swatches from the traces themselves, so this form raises
         ``NotImplementedError`` there). A list of ``(label, color)`` pairs
         REPLACES the legend outright with exactly those entries, on both
@@ -5319,7 +5436,11 @@ def plot(
         overrides them; `legend=True` shows them). ``reduce=`` still
         applies first, to ONE component -- ``ndims=1, reduce='PCA'`` draws
         the first principal component over the index. An animation reveals
-        each line left to right along x. Before 1.1 this path drew a single
+        each line left to right along x. An index that is not in ascending
+        order is drawn in index order, as `predict=` forecasts it, with a
+        ``UserWarning`` -- unless `hue=`/`labels=`/`cluster=` are given per
+        observation in the input order, which keeps that order (and warns
+        that the line doubles back). Before 1.1 this path drew a single
         column against ``0..n-1`` with the values rescaled to ``[-1, 1]``,
         no visible axes, and refused 2+ columns -- so this is a deliberate
         behaviour change: what a 1-D figure draws is now the data's own
@@ -5559,7 +5680,10 @@ def plot(
         Requires `predict=`. One array per input dataset (a bare array for
         a single dataset), each with exactly `t` rows and the same number
         of columns as the plotted data; anything else raises ``ValueError``
-        naming the mismatch. It is read in the PLOTTED space -- with
+        naming the mismatch. With ``ndims=1`` each plotted column is its own
+        trace whose x is the index, so its truth is ONE column of values
+        (or one frame with one column per trace); its x continues the
+        index exactly as the forecast's does. It is read in the PLOTTED space -- with
         ``reduce=None`` (the case these figures use) that is the input
         space, and with a `reduce=` spec it is whatever that spec produced,
         so pass values already in it (hypertools does not re-project
@@ -5974,7 +6098,10 @@ def plot(
         red, unless a colour is also given (via `forecast_palette=`,
         `forecast_hue=`, `forecast_cluster=`, or a colour letter in the
         format string itself -- an explicit colour beats the format string's,
-        matching matplotlib's own rule).
+        matching matplotlib's own rule). A marker in the format string
+        (``'ro:'``) is drawn at the forecast's own steps -- the seam
+        observation and each of the `t` forecast rows -- never at the
+        antialiased vertices between them (see `antialias`).
 
         Note that these four kwargs are independent, so observed and
         forecast data may differ in style, in grouping, in palette, or in
@@ -6265,9 +6392,14 @@ def plot(
         ``plt.show()`` -- call ``plt.show()`` yourself to open a window.
         Default: True.
 
-    transform : list of numpy arrays or None
+    transform : array, DataFrame, list of these, or None
         The transformed data, bypasses transformations if this is set
-        (default : None).
+        (default : None). One entry per dataset of `x`, row for row; a bare
+        array or DataFrame is one dataset. A DataFrame's rows are matched
+        to `x`'s by position; with `predict=`, whose observation times come
+        from `x`'s index, a DataFrame index that is neither a plain
+        ``0..n-1`` one nor `x`'s own raises ``ValueError`` rather than
+        guessing which observation each row is.
 
     vectorizer : str, dict, class or class instance
         The vectorizer to use. Built-in options are 'CountVectorizer' or
@@ -7397,6 +7529,10 @@ def plot(
     # pattern is resolved per frame, so it is split off BEFORE the
     # per-segment check below -- which only ever sees the static forms it
     # already understood.
+    # kept so ndims=1 series mode can re-point a `{index}` pattern at the
+    # rows it reorders into time order (see `_resorted` below)
+    _title_pattern = (title if isinstance(title, str)
+                      and _title_is_pattern(title) else None)
     title, _dynamic_title = _validate_dynamic_title(title, animate,
                                                     _row_indices)
     _segment_titles = _validate_title(title, style=animate, order=order)
@@ -8307,7 +8443,19 @@ def plot(
             else:
                 xform = _analyzed
     else:
-        xform = transform
+        # one entry per dataset. A BARE array/frame is ONE dataset (a 3-D
+        # array is a stack of them): iterated as-is it was a list of ROWS,
+        # and passed validation only to crash with an IndexError (1.1
+        # release review, F15)
+        if isinstance(transform, (list, tuple)):
+            xform = list(transform)
+        elif getattr(transform, 'ndim', None) == 3:
+            xform = list(transform)
+        else:
+            xform = [transform]
+        xform = [np.asarray(xi).reshape(-1, 1)
+                 if isinstance(xi, np.ndarray) and xi.ndim == 1 else xi
+                 for xi in xform]
         _input_finite = None
         if labels is not None:
             # transform= skips the pipeline (and the per-observation check
@@ -8465,6 +8613,25 @@ def plot(
                     'to forecast. Pass the analyzed data with its updated '
                     'time index to plot(..., reduce=None, predict=...).')
             _idx = None
+        if (isinstance(_xi, pd.DataFrame) and _idx is not None
+                and not _xi.index.equals(_idx)):
+            # a `transform=` frame with an index of its own: handing it to
+            # `pd.DataFrame(frame, index=...)` RE-INDEXES it, and an index
+            # sharing no labels with x's made every value NaN -- forecast
+            # as silent zeros (1.1 release review, F7). A plain 0..n-1
+            # index carries no rows of its own, so the values are x's rows
+            # position for position; any other index is a real conflict.
+            _own = _xi.index
+            if transform is not None and predict is not None and not (
+                    isinstance(_own, pd.RangeIndex) and _own.start == 0
+                    and _own.step == 1):
+                raise ValueError(
+                    f"transform= entry {_i} is a DataFrame whose index does "
+                    "not match the rows of x it replaces (first labels "
+                    f"{list(_own[:2])} vs {list(_idx[:2])}), so there is no "
+                    "telling which observation each row is. Pass its values "
+                    "(frame.to_numpy()) or give it x's index.")
+            _xi = _xi.to_numpy()
         _forecast_frames.append(pd.DataFrame(_xi, index=_idx))
 
     # ndims=1 series mode (GH #285) ---------------------------------------
@@ -8543,11 +8710,33 @@ def plot(
         _series_columns = []
         _date_flags, _index_labels = [], []
         _series_named = []            # per drawn trace: named after a column?
+        # datasets whose index is not in ascending order: drawn in time
+        # order (`_resorted`), or -- where a per-observation argument is
+        # tied to the INPUT row order -- left as given (`_unsorted`)
+        _resorted, _unsorted = [], []
+        _row_order_bound = any(_v is not None and _v is not False
+                               for _v in (hue, labels, cluster))
         for _i, _xi in enumerate(xform):
             _idx = (_row_indices[_i] if _row_indices is not None
                     and _i < len(_row_indices) else None)
             _xs, _step, _is_date, _idx_label = _series_x_axis(
                 _idx, _xi.shape[0], epoch_ms=_series_epoch_ms)
+            if len(_xs) > 1 and np.any(np.diff(_xs) < 0):
+                # a shuffled index drew the rows in INPUT order against
+                # their x -- a scribble -- while `predict=` sorts timed
+                # observations and continues from the LATEST one, so the
+                # forecast did not join the drawn line (1.1 review, F14).
+                # Draw in time order, reordering the index with the rows so
+                # an `{index}` title still names each frame's own row.
+                if _row_order_bound:
+                    _unsorted.append(_i)
+                else:
+                    _order = np.argsort(_xs, kind='stable')
+                    _xs, _xi = _xs[_order], np.asarray(_xi)[_order]
+                    if _row_indices is not None and _i < len(_row_indices):
+                        _row_indices = list(_row_indices)
+                        _row_indices[_i] = _idx[_order]
+                    _resorted.append(_i)
             _date_flags.append(_is_date)
             _index_labels.append(_idx_label)
             _cols = (_column_names[_i] if _column_names is not None
@@ -8570,6 +8759,26 @@ def plot(
                         else f"dataset {_i + 1} column {_j + 1}")
                 else:
                     _series_names.append(f"dataset {_i + 1}")
+        if _resorted:
+            if _title_pattern is not None:
+                # the resolver read the index in its INPUT order; the rows
+                # (and so each frame's head row) are now in time order
+                _dynamic_title = _make_title_pattern_resolver(
+                    _title_pattern, _row_indices)
+            warnings.warn(
+                f"ndims=1: the index of dataset(s) {_resorted} is not in "
+                "ascending order, so its rows are drawn in time order (as "
+                "predict= forecasts them). Sort the data first "
+                "(df.sort_index()) to silence this.",
+                UserWarning, stacklevel=external_stacklevel())
+        if _unsorted:
+            warnings.warn(
+                f"ndims=1: the index of dataset(s) {_unsorted} is not in "
+                "ascending order, and hue=/labels=/cluster= are given per "
+                "observation in INPUT order, so the line is drawn in that "
+                "order and doubles back along x. Sort the data (and those "
+                "arguments) by time first (df.sort_index()).",
+                UserWarning, stacklevel=external_stacklevel())
         if any(_date_flags) and not all(_date_flags):
             raise ValueError(
                 "ndims=1 series mode draws every dataset against ONE x "
@@ -8742,6 +8951,10 @@ def plot(
             return np.asarray(frame, dtype=float)
         idx = frame.index
         original = _forecast_frames[owner].index
+        if isinstance(idx, pd.PeriodIndex):
+            # forecasts of periods are periods; draw them at their start
+            # times, as `_series_x_values` draws the observed periods
+            idx = idx.to_timestamp()
         if isinstance(idx, pd.DatetimeIndex):
             if _series_epoch_ms:
                 xs = np.asarray(idx.as_unit('ms').asi8, dtype=float)
@@ -8911,6 +9124,10 @@ def plot(
     # data by category -- names= (one name per INPUT dataset) cannot apply
     # after that regrouping (F02-009).
     _hue_regrouped_counts = None
+    #: True once a MARKER-only `hue=`/`cluster=` grouping ran through
+    #: `reshape_data`, which groups GLOBALLY by category: its drawn traces
+    #: are categories, never datasets, however the counts happen to fall
+    _global_regrouped = False
     # unfitted Clusterer built from the SAME resolved spec the figure's
     # cluster stage used (set in the cluster branch below), so the
     # return_model bundle's pipeline encodes the parameters the figure
@@ -9513,6 +9730,7 @@ def plot(
                 blended = mat2colors(cluster_labels, palette=palette)
                 group_ids, group_colors = colors2groups(blended)
                 xform, labels = reshape_data(xform, group_ids, labels)
+                _global_regrouped = True
                 mpl_kwargs["color"] = [
                     group_colors[gid]
                     for gid in sorted(set(group_ids), key=group_ids.index)
@@ -9547,6 +9765,7 @@ def plot(
             hue_category_names = [str(c) for c in _cats_sorted]
         else:
             xform, labels = reshape_data(xform, cluster_labels, labels)
+            _global_regrouped = True
             # reshape_data returns groups in first-appearance order;
             # reorder the drawn groups (and their legend/colorbar
             # labels) into sorted label order so a legend reads
@@ -9921,6 +10140,7 @@ def plot(
                 # boolean hue is grouped in first-appearance order then
                 # reordered into sorted numeric order (F13-005).
                 xform, labels = reshape_data(xform, hue, labels)
+                _global_regrouped = True
                 if _hue_sort_numeric:
                     _appear = list(sorted(set(hue), key=list(hue).index))
                     _order = sorted(range(len(_appear)),
@@ -10583,6 +10803,11 @@ def plot(
             _forecast_owner = list(_model_forecast_owner)
     elif raw_forecasts is not None and (
             len(raw_forecasts) != len(xform)
+            # ...or MARKER-only categorical regrouping, whose traces are
+            # CATEGORIES, never datasets -- even when the counts coincide
+            # (2 datasets under 2 categories silently drew dataset 1's
+            # forecast in category 1's colour; 1.1 release review)
+            or _global_regrouped
             # ...or a COLLECTION under hue=/cluster= regrouping: one
             # dataset split into two runs under two models gives two
             # forecasts for two runs, so the counts coincide by accident
@@ -10611,7 +10836,7 @@ def plot(
                 _owner[_ds] = _run           # last write wins = final run
             if set(_owner) >= set(_fc_dataset):
                 _forecast_owner = [_owner[_ds] for _ds in _fc_dataset]
-        elif _model_forecast_owner is not None:
+        elif _model_forecast_owner is not None and not _global_regrouped:
             # no regrouping: a collection's only "mismatch" is that there
             # are n_models forecasts per drawn trace, which the model/
             # dataset map already resolves
@@ -10917,16 +11142,37 @@ def plot(
         _bounds = np.vstack([np.asarray(r, dtype=float)
                              for r in _bounds_rows])
         _finite = _bounds[np.isfinite(_bounds).all(axis=1)]
-        if len(_finite):
+        if len(_finite) and _finite.shape[1] == 1:
+            # a ONE-column trace outside ndims=1 series mode draws its
+            # values on Y against the row index on x, so its one column
+            # bounds y. x (rows, continued by any forecast) is left to the
+            # backend's autoscale; this used to give the VALUE range to x
+            # as well, so the 40-row trace sat in an x window of (-5.5,
+            # 3.2) (1.1 release review)
+            _lo, _hi = float(_finite.min()), float(_finite.max())
+            _pad = (_hi - _lo) * 0.05 if _hi > _lo else 1.0
+            if _data_ylim is None:
+                _data_ylim = (_lo - _pad, _hi + _pad)
+        elif len(_finite):
             _lo = _finite.min(axis=0)
             _hi = _finite.max(axis=0)
             _pad = np.where(_hi > _lo, (_hi - _lo) * 0.05, 1.0)
+            _auto_x = (float(_lo[0] - _pad[0]), float(_hi[0] + _pad[0]))
             if _data_xlim is None:
-                _data_xlim = (float(_lo[0] - _pad[0]),
-                              float(_hi[0] + _pad[0]))
-            if _data_ylim is None and _finite.shape[1] > 1:
-                _data_ylim = (float(_lo[1] - _pad[1]),
-                              float(_hi[1] + _pad[1]))
+                _data_xlim = _auto_x
+            elif None in tuple(_data_xlim):
+                # an OPEN side (``xlim=(None, hi)``) takes the data bound:
+                # plotly has no partial range (``[None, hi]`` drew a
+                # year-2000 axis), and matplotlib then agrees with it
+                _data_xlim = tuple(_auto_x[_k] if _v is None else _v
+                                   for _k, _v in enumerate(_data_xlim))
+            if _finite.shape[1] > 1:
+                _auto_y = (float(_lo[1] - _pad[1]), float(_hi[1] + _pad[1]))
+                if _data_ylim is None:
+                    _data_ylim = _auto_y
+                elif None in tuple(_data_ylim):
+                    _data_ylim = tuple(_auto_y[_k] if _v is None else _v
+                                       for _k, _v in enumerate(_data_ylim))
 
     # handle palette with seaborn
     import seaborn as sns
@@ -11291,6 +11537,9 @@ def plot(
         fig = plotly_draw(
             xform,
             into=_plotly_into,
+            # rows behind each (antialiased) trace: a 1-D trace's x is the
+            # row index, as matplotlib's plot1D draws it
+            row_counts=[len(r) for r in raw_xform],
             # the same run -> dataset -> rows mapping the matplotlib updaters
             # pace their reveal with, so neither backend re-derives it
             ownership=_ownership,
@@ -11637,8 +11886,9 @@ def plot(
                     and ax.get_legend() is not None):
                 # the deferred plain-colour-list recolouring (see the
                 # `legend_colors=` argument to `_draw` above)
-                from .matplotlib_backend import _recolor_legend_handles
-                _recolor_legend_handles(ax.get_legend(), _legend_recolor)
+                _recolor_overlay_legend(
+                    ax, _legend_recolor,
+                    close_fig=None if _user_supplied_ax else fig)
 
             # ...and the time-progressing modes get one LIVE artist per
             # dataset instead, refilled every frame from the precomputed
@@ -11652,7 +11902,15 @@ def plot(
                 # its colour from forecast i-1. (Same guard
                 # `_draw_forecast_overlays` opens with.)
                 from .forecast import trail_alpha, trail_frames
-                _src_lines = list(ax.lines)[_n_lines_before:]
+                _src_lines = _observed_run_lines(
+                    list(ax.lines)[_n_lines_before:])
+                # the dimensionality the AXES draws, not the requested cap
+                # `_display_ndims`: 2-column data under the default ndims=3
+                # is drawn on a 2-D axes, where `ax.plot([], [], [])` makes
+                # TWO artists and the unpack below crashed (1.1 release
+                # review: 31 of 140 random option combinations)
+                _fc_ndims = (3 if getattr(ax, 'name', None) == '3d'
+                             else min(2, xform[0].shape[1]))
                 _live_forecast_artists = []
                 # [dataset][age-1] -> artist. Preallocated: allocating
                 # artists mid-animation is what makes matplotlib animations
@@ -11706,10 +11964,10 @@ def plot(
                     # own fan rather than under it
                     _row = []
                     for _age in range(1, _n_forecast_trail + 1):
-                        if _display_ndims >= 3:
+                        if _fc_ndims >= 3:
                             _t, = ax.plot([], [], [], label='_nolegend_',
                                           **_fc_style)
-                        elif _display_ndims == 2:
+                        elif _fc_ndims == 2:
                             _t, = ax.plot([], [], label='_nolegend_',
                                           **_fc_style)
                         else:
@@ -11735,11 +11993,11 @@ def plot(
                     _trail_forecast_artists.append(_row)
                     # the SAME three-way split and label
                     # `_draw_forecast_overlays` uses. 1-D is a real branch:
-                    # `_display_ndims` can be 1.
-                    if _display_ndims >= 3:
+                    # `_fc_ndims` can be 1.
+                    if _fc_ndims >= 3:
                         _art, = ax.plot([], [], [], label='_nolegend_',
                                         **_fc_style)
-                    elif _display_ndims == 2:
+                    elif _fc_ndims == 2:
                         _art, = ax.plot([], [], label='_nolegend_',
                                         **_fc_style)
                     else:
@@ -11769,8 +12027,9 @@ def plot(
                         and _forecast_artists is None):
                     # the deferred plain-colour-list recolouring for the
                     # animated modes (the static path does it below)
-                    from .matplotlib_backend import _recolor_legend_handles
-                    _recolor_legend_handles(ax.get_legend(), _legend_recolor)
+                    _recolor_overlay_legend(
+                        ax, _legend_recolor,
+                        close_fig=None if _user_supplied_ax else fig)
 
                 # whether the user pinned this dataset's forecast colour
                 # (`forecast_hue=`/`forecast_cluster=`/`forecast_palette=`);
@@ -11810,7 +12069,7 @@ def plot(
                                       _trails=_trail_forecast_artists,
                                       _retained=_n_forecast_trail,
                                       _antialias=antialias,
-                                      _ndims=_display_ndims,
+                                      _ndims=_fc_ndims,
                                       _reveal_sched=_reveal,
                                       _lines=_src_lines,
                                       _pinned=_override_colour,
@@ -11845,8 +12104,11 @@ def plot(
 
                     def _fill(art, pts):
                         if _antialias:
-                            # documented parity with the static overlay
-                            pts = _interp_static_line(pts)
+                            # documented parity with the static overlay,
+                            # markers included: a forecast_fmt= marker sits
+                            # on the forecast's steps, not on every vertex
+                            pts, _step = _antialias_static_line(pts)
+                            art.set_markevery(_step_markevery(_step))
                         art.set_visible(True)
                         # the SAME three-way split `_draw_forecast_overlays`
                         # uses. A 3-D forecast artist is a Line3D: set_data
@@ -11932,7 +12194,9 @@ def plot(
                         frame_hooks=_frame_hooks)
                 elif is_line(fmt):
                     _apply_multicolor_lines(ax, xform, line_colors,
-                                            kwargs_list)
+                                            kwargs_list,
+                                            row_counts=[len(r) for r in
+                                                        raw_xform])
                 elif has_line_component(fmt):
                     # marker+line combo fmt (e.g. 'o-') with continuous/
                     # matrix hue (GH #141 x F02-004): keep BOTH components
@@ -11944,7 +12208,9 @@ def plot(
                     # interpolated point (~45x more "data points" than
                     # exist).
                     _apply_multicolor_lines(ax, xform, line_colors,
-                                            kwargs_list)
+                                            kwargs_list,
+                                            row_counts=[len(r) for r in
+                                                        raw_xform])
                     _marker_colors = _multicolor_line_colors(
                         multicolor_hue, pre_interp_lengths, raw_xform,
                         palette, is_rgb=multicolor_hue_is_rgb)
@@ -13215,9 +13481,14 @@ def _multicolor_line_colors(hue_src, orig_lengths, xform, palette, is_rgb=False)
     return out
 
 
-def _apply_multicolor_lines(ax, xform, line_colors, kwargs_list):
+def _apply_multicolor_lines(ax, xform, line_colors, kwargs_list,
+                            row_counts=None):
     """Replace single-color line artists with per-segment-colored
-    collections (matplotlib backend)."""
+    collections (matplotlib backend).
+
+    `row_counts` (one per trace): the ORIGINAL row count behind each
+    (possibly antialiased) trace, so a 1-D trace's x stays the row index
+    (`row_index_x`) exactly as `matplotlib_backend`'s plot1D draws it."""
     from matplotlib.collections import LineCollection
     from mpl_toolkits.mplot3d.art3d import Line3DCollection
 
@@ -13253,7 +13524,10 @@ def _apply_multicolor_lines(ax, xform, line_colors, kwargs_list):
         tkwargs = kwargs_list[i] if i < len(kwargs_list) else {}
         lw = tkwargs.get('linewidth') or plt.rcParams['lines.linewidth']
         if xi.shape[1] == 1:
-            pts = np.column_stack([np.arange(xi.shape[0]), xi[:, 0]])
+            _rows = (row_counts[i] if row_counts is not None
+                     and i < len(row_counts) else xi.shape[0])
+            pts = np.column_stack([row_index_x(_rows, xi.shape[0]),
+                                   xi[:, 0]])
         else:
             pts = xi[:, :3] if is_3d else xi[:, :2]
         segments = np.stack([pts[:-1], pts[1:]], axis=1)

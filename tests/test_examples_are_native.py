@@ -1707,3 +1707,103 @@ def test_no_gated_notebook_committed_an_error_output():
                 assert out.get('output_type') != 'error', (
                     f"{stem}.ipynb: committed a traceback "
                     f"({out.get('ename')})")
+
+
+#: the first line of `scripts.add_colab_install_cell.portable_video_source`
+COLAB_VIDEO_MARKER = '# Colab serves output frames separately'
+
+
+def _swallowed_expression(source):
+    """The bare expression a trailing Colab video block swallows, or None.
+
+    IPython displays only a cell's LAST top-level expression, and the Colab
+    block (`portable_video_source`) must end its cell (`_review_setup_overhead`
+    compares everything from its marker to the end with the template). So an
+    expression statement right before the block -- a figure, a tuple -- is
+    evaluated and thrown away: io/manip/plot lost their "shown in place"
+    frames and lsl_streaming/streaming_data their tuples that way (2026-09-11
+    review, A0). A call is not flagged: `display()`/`print()` show their own
+    output.
+    """
+    head = source[:source.index(COLAB_VIDEO_MARKER)]
+    code = '\n'.join(('# ' + line) if line.lstrip()[:1] in ('%', '!') else line
+                     for line in head.split('\n'))
+    body = ast.parse(code).body
+    if body and isinstance(body[-1], ast.Expr) \
+            and not isinstance(body[-1].value, ast.Call):
+        return ast.get_source_segment(code, body[-1])
+    return None
+
+
+def test_the_swallowed_expression_detector_detects():
+    """The check below can fail: planted before the real template."""
+    from scripts.add_colab_install_cell import portable_video_source
+    block = portable_video_source('clip.mp4')
+    assert block.startswith(COLAB_VIDEO_MARKER)
+    assert _swallowed_expression('anim = f()\nanim.figure\n\n' + block) == 'anim.figure'
+    assert _swallowed_expression("fig.stream_info['n'], 3\n\n" + block) \
+        == "fig.stream_info['n'], 3"
+    assert _swallowed_expression('%matplotlib inline\nx = 1\nx\n' + block) == 'x'
+    assert _swallowed_expression('display(anim.figure)\n\n' + block) is None
+    assert _swallowed_expression("print('saved')\n\n" + block) is None
+
+
+def test_no_colab_video_block_swallows_a_displayed_value():
+    import glob
+    import json
+    offenders = []
+    for path in sorted(glob.glob(os.path.join(REPO, 'docs', 'tutorials', '*.ipynb'))):
+        rel = os.path.relpath(path, REPO).replace(os.sep, '/')
+        nb = json.loads(_read(rel))
+        for i, cell in enumerate(nb['cells']):
+            source = ''.join(cell['source'])
+            if cell['cell_type'] == 'code' and COLAB_VIDEO_MARKER in source:
+                expression = _swallowed_expression(source)
+                if expression:
+                    offenders.append(f'{rel} cell {i}: {expression!r}')
+    assert not offenders, (
+        'these values are evaluated and never shown, because the Colab video '
+        'block comes after them; display() or print() them: ' + '; '.join(offenders))
+
+
+def test_generated_launch_examples_pin_the_matplotlib_backend():
+    """scripts/generate_tutorial_notebook.py writes a build cell that calls
+    `anim.draw_frame(...)` and a save cell that calls `anim.save(..., dpi=)`:
+    the matplotlib `HyperAnimation`'s API. On Colab `backend='auto'`
+    resolves to plotly (`plotly_backend.resolve_backend`), whose figure has
+    neither, so every generated notebook raised AttributeError there
+    (2026-09-11 review, H-B1). Each SPECS example's `hyp.plot` call must
+    name `backend='matplotlib'`."""
+    from scripts.generate_tutorial_notebook import SPECS
+    unpinned = []
+    for module, _dpi, _sections in SPECS.values():
+        tree = ast.parse(_read(f'examples/{module}.py'))
+        calls = [node for node in ast.walk(tree) if isinstance(node, ast.Call)
+                 and ast.unparse(node.func) == 'hyp.plot']
+        assert calls, f'examples/{module}.py: no hyp.plot call found'
+        for call in calls:
+            backend = {k.arg: k.value for k in call.keywords}.get('backend')
+            if not (isinstance(backend, ast.Constant)
+                    and backend.value == 'matplotlib'):
+                unpinned.append(f'examples/{module}.py:{call.lineno}')
+    assert not unpinned, unpinned
+
+
+def test_a_pinned_launch_example_stays_matplotlib_under_a_plotly_default():
+    """The behaviour behind the pin, observed: with plotly as the render
+    preference (the public stand-in for Colab's default, which
+    `resolve_backend('auto')` consults first), the morph example still hands
+    back the matplotlib `HyperAnimation` whose `draw_frame`/`figure`/`save`
+    the generated notebook calls."""
+    import hypertools as hyp
+    import matplotlib.figure
+    module = _import_example_without_fetching('animate_morph_zoo')
+    with _offline(), hyp.set_interactive_backend('plotly'):
+        anim = module.construct_artifact(module.fixture_data())
+    try:
+        assert isinstance(anim, hyp.HyperAnimation)
+        assert isinstance(anim.figure, matplotlib.figure.Figure)
+        anim.draw_frame(anim.n_frames - 1)
+    finally:
+        import matplotlib.pyplot as plt
+        plt.close(anim.figure)
