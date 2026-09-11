@@ -145,7 +145,7 @@ evidence/CI for the new head.
 - Pushed e9db5204 (tour tooling: single viewer, no IFrame warning; DOC_GATE_OVERRIDE recorded). Headless tour at exact e9db5204:
   241/3/0. FRESH COLAB at e9db5204 (https://colab.research.google.com/drive/1bmQ-UMgWOmT_576hpkpbnL4S-dw2nyNq): 241 PASS / 3 SKIP, commit seen.
 - CI 34639769259 at e684d7cd: COMPLETED SUCCESS 16/16 (+ release-gate skipped); per-job totals in notes/final_review_2026-09-11/ci_status.md.
-- CI 34648813020 at e9db5204: running at 21:38Z.
+- CI 34648813020 at e9db5204: COMPLETED SUCCESS 17/17 (16 jobs + release-gate skipped) at ~23:20Z. Final candidate fully verified.
 
 ### Visual expectation writer extra (code-vs-doc)
 - mpl fmt='-o' overrides marker=['o','s'] (backends disagree); markers= with '-' marks all smoothed pts (antialias docstring says true samples);
