@@ -48,3 +48,29 @@
 ## W10
 - **A flat cluster spec no longer drops model parameters without a word.** `cluster={'model': 'KMeans', 'n_clusters': 4, 'random_state': 0}` ignored `random_state`, so the clusters changed on every call. Parameters go under `'kwargs'`, and any top-level key other than the `'n_clusters'` shortcut now raises `ValueError` naming it.
 - **`legend=False` now wins over `names=`.** Passing dataset names used to force the legend on even when `legend=False` was given, on both backends.
+
+## W3 batch 1
+- **Plotly markers sit on the observations.** 'o-' and `forecast_fmt='ro:'` put a dot on every smoothed vertex, drawing the line as a solid tube; now only the samples are marked (in animations, the frame-grid vertex nearest each sample). A continuous hue with 'o-' in 1-D/2-D now shows its markers.
+- **Plotly hue transparency.** Hue markers now honour `alpha=`, and translucent 3-D lines keep their colour instead of washing out to cyan.
+- **Plotly hover labels name what you point at.** They read "trace 0"; every data trace now carries its legend label, a lone unlabelled dataset shows only its coordinates, and animated legends no longer grow entry by entry.
+- **Plotly subplot cells.** Colorbars no longer land on the next cell, and an untitled call keeps the cell's title. A dimensionality mismatch raises a clear error, your own traces are left untouched, and a plotly `ax=` implies the plotly backend.
+- **Plotly `frame_kwargs=`, `zoom=` and legend position.** `frame_kwargs=` styles the frame, static figures ignore `zoom=`, and `legend_kwargs={'x':0,'y':1}` anchors at that corner.
+- **Plotly 1-D animations raise like matplotlib's.** Serial `FrameContext.window_bounds` now report the comet head.
+
+## W4b
+- **Dict-list palettes colour marker plots.** `fmt='o'` ignored a per-dataset list of {category: color} dicts.
+- **Composing into `ax=` no longer repeats a palette colour.** 'hls' drawn 2 + 2 now gives the four-colour 'hls' set; `colors` in the bundle and the colorbar show the colours actually drawn.
+- **`panels=` splits a plain `legend_colors=` list per panel.**
+- **Two-column data draws into a 2-D `ax=`** instead of raising "the plot is 3D".
+- **Per-dataset and nested `labels=` survive `hue=`/`cluster=`** instead of crashing; label arrays and Series are accepted.
+- **An explicit `marker=` wins over the fmt marker on matplotlib.**
+- **Markers on a smoothed line sit at the samples,** static and animated.
+- **Continuous-hue markers honour `alpha=` on matplotlib.** (fix CHANGELOG ~:712 'marker colours deliberately do not' claim)
+- **The NaN-hue warning counts observations** and points at the caller's line.
+- **Label connectors and box edges are visible** on matplotlib.
+- **Caller-axes and panel titles and axis labels use Noto Sans.**
+- **A nested-list input's legend names its outer groups.**
+- **Cluster and integer-hue line legends list categories in order** (0, 1, 2).
+
+## W11
+- **A dict model spec with a flat parameter raises instead of silently running defaults.** `{'model': 'PCA', 'whiten': True}` now raises `ValueError` naming the key and showing the corrected `'kwargs'` spec, in `reduce` (including streaming), `manip`, `align` (and `tools.align`), `impute`, `Pipeline`, `apply_model` and `text2mat`. Outer `**kwargs` next to a dict spec now reach `manip`/`align` models, and a spec's `'args'` now reach streaming and `text2mat` models.

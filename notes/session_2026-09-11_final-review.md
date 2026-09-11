@@ -123,6 +123,14 @@ evidence/CI for the new head.
   travel with window; 2-D segments static), L1 line width, L2 volume stipple, play/pause over date ticks.
 - CHANGELOG drafts accumulating in scratchpad/changelog_drafts.md (W1, W2, W4a, W7, W10, main).
 
+- W3 batch1 merged 4d6dd7ce; W4b merged 57553242 (I resolved 2 plotly_backend conflicts: signature + before_show hook, W3's relocated
+  alpha normalization kept); W11 merged cc418fa9; docstring fixes 4669ddba; CHANGELOG integration 27d46868 (43 bullets + 2 corrected claims).
+- Full suite 2 at 57553242: 6399 passed, 13 failed = 12 launch-notebook gates + 1 LSL collision with an agent's concurrent run (passes alone).
+- Remaining: W9 (animation core) + W3 batch 2 (animated hue, L1, L2, play/pause) -> then CHANGELOG bullets for them, animation_context.py
+  window_bounds doc (L14), then scratchpad/verify_pipeline.sh (tutorial re-exec, pytest, sphinx -W html+doctest, thumbs, smoke),
+  commit notebooks, set tour REVIEW_COMMIT, headless tour, push, CI, Colab re-run, refresh evidence packet.
+- NIT to sweep: predict/plot warnings attributed to library lines (e.g. plot.py:9383 'dataset index is not sorted').
+
 ### Visual expectation writer extra (code-vs-doc)
 - mpl fmt='-o' overrides marker=['o','s'] (backends disagree); markers= with '-' marks all smoothed pts (antialias docstring says true samples);
   plotly ignores frame_kwargs; static plotly applies zoom (doc: animation only); '^' -> diamond in plotly 3-D; legend_kwargs x/y yanchor;
