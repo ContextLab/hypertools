@@ -856,6 +856,44 @@ def _plotly_legend_entry_traces(entries, ndims):
     return traces
 
 
+def _legend_anchors_for(legend_kwargs):
+    """``xanchor``/``yanchor`` that follow a caller's `legend_kwargs` x/y
+    when the caller gave a position but no anchor.
+
+    hypertools' default legend is anchored ``xanchor='left',
+    yanchor='middle'`` for its x=1.02/y=0.5 spot outside the right edge;
+    kept for a caller's ``{'x': 0, 'y': 1}`` those anchors put the legend's
+    MIDDLE on the top edge, half of it off the plot (1.1 release review).
+    Inside the paper the anchor follows the position by thirds (plotly's
+    own ``'auto'`` rule: left/bottom near 0, right/top near 1); outside it,
+    the legend hangs away from the plot (x > 1 -> left, x < 0 -> right,
+    y > 1 -> bottom, y < 0 -> top). An anchor the caller gave is kept.
+    """
+    out = {}
+    for axis, lo, mid, hi, key in (('x', 'left', 'center', 'right',
+                                    'xanchor'),
+                                   ('y', 'bottom', 'middle', 'top',
+                                    'yanchor')):
+        value = legend_kwargs.get(axis)
+        if value is None or key in legend_kwargs:
+            continue
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            continue
+        if value > 1:
+            out[key] = lo
+        elif value < 0:
+            out[key] = hi
+        elif value <= 1 / 3:
+            out[key] = lo
+        elif value >= 2 / 3:
+            out[key] = hi
+        else:
+            out[key] = mid
+    return out
+
+
 #: plotly trace types drawn in a 3-D `scene` (every other trace type
 #: hypertools can meet in a figure lives on 2-D axes)
 _SCENE_TRACE_TYPES = frozenset({'scatter3d', 'mesh3d', 'volume',
@@ -992,7 +1030,7 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 axis_scale='unit', xlim=None, ylim=None, x_date=False,
                 truths=None, forecast_labels=None,
                 forecast_datasets=None, datasets_drawn=None,
-                legend_explicit=False, raw_data=None):
+                legend_explicit=False, raw_data=None, frame_kwargs=None):
     """Render grouped datasets with plotly, mirroring _draw's contract and
     the matplotlib renderer's appearance.
 
@@ -1117,7 +1155,14 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         Past+future trail flag(s), per trace. Same `animate='serial'`
         support as `chemtrails` above.
     zoom : float
-        3-D camera zoom factor.
+        3-D camera zoom factor, for ANIMATIONS only (as `plot()` documents
+        it, and as the matplotlib backend applies it); a static figure keeps
+        the default view.
+    frame_kwargs : dict or None
+        `plot()`'s ``frame_kwargs=`` -- matplotlib keywords for the cube
+        (`plot_wireframe`) or square (`Rectangle`) frame, mapped onto the
+        plotly frame by `_frame_style` (colour, width, dash, alpha, 2-D
+        fill); unmappable keys are named in a warning.
     forecasts : list of numpy.ndarray or None
         predict= forecast traces (see below). ONE PER INPUT DATASET, which
         after `hue=`/`cluster=` regrouping is NOT one per drawn trace.
@@ -1412,6 +1457,9 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     bullettime = broadcast_trail_flag(bullettime, len(data), "bullettime")
 
     ndims = data[0].shape[1] if data[0].ndim > 1 else 1
+
+    # `frame_kwargs=`: the cube/square's colour, width, dash (and 2-D fill)
+    _frame = _frame_style(frame_kwargs, ndims)
 
     # ax= (`into`) must be the same KIND of surface as this plot: a 3-D
     # scene for 3-D data, 2-D axes for 1-/2-D data. A mismatched grid cell
@@ -2297,7 +2345,9 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                                                density_colors))
 
     if ndims >= 3:
-        traces.append(_cube_trace(go, scale=cube_scale))
+        traces.append(_cube_trace(
+            go, scale=cube_scale, linewidth_pt=_frame['width_pt'],
+            color=_frame['color'], dash=_frame['dash']))
 
     # colorbar (GH #100): appended LAST (after the cube trace) so it never
     # falls within `trace_indices = range(n_data_traces [+ n_trail_traces])`
@@ -2415,7 +2465,9 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 {'range': [-cube_scale, cube_scale]}, zlabel, scene=True),
             camera=dict(eye=_camera_eye(
                 elev, azim,
-                r=_anim_zoom_r(zoom) if animate else _zoom_r(zoom))),
+                # `zoom=` is animation-only (plot()'s docstring; the
+                # matplotlib static view ignores it too)
+                r=_anim_zoom_r(zoom) if animate else _zoom_r(1))),
             # matplotlib's Axes3D uses a 4:4:3 box aspect by default; match
             # it so the cube renders wider than tall, exactly like the
             # matplotlib backend
@@ -2429,7 +2481,10 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
             {'range': [-UNIT_FRAME_LIMIT, UNIT_FRAME_LIMIT]}, xlabel)
         layout['yaxis'] = _labeled_axis_layout(
             {'range': [-UNIT_FRAME_LIMIT, UNIT_FRAME_LIMIT]}, ylabel)
-        layout['shapes'] = [_square_shape(scale=UNIT_FRAME_SCALE)]
+        layout['shapes'] = [_square_shape(
+            scale=UNIT_FRAME_SCALE, linewidth_pt=_frame['width_pt'],
+            color=_frame['color'], dash=_frame['dash'],
+            fill=_frame['fill'])]
     elif axis_scale == 'data':
         # GH #285: real units. No frame square, no unit range, and the axes
         # keep plotly's own ticks/labels -- the plotly half of
@@ -2500,7 +2555,9 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     # hypertools defaults above -- the same precedence the matplotlib
     # backend gives it over its own `Axes.legend` defaults.
     if legend_kwargs:
-        layout['legend'] = {**layout['legend'], **legend_kwargs}
+        layout['legend'] = {**layout['legend'],
+                            **_legend_anchors_for(legend_kwargs),
+                            **legend_kwargs}
 
     fig.update_layout(**layout)
 
@@ -3832,11 +3889,101 @@ def _export_animation_file(fig, save_path, frame_rate, duration, size):
                 check=True, capture_output=True)
 
 
-def _cube_trace(go, scale=1.0, linewidth_pt=CUBE_LINEWIDTH_PT):
+#: `frame_kwargs=` keys `_frame_style` maps (matplotlib spellings, as
+#: `matplotlib_backend.plot_cube`'s `plot_wireframe` and `plot_square`'s
+#: `Rectangle` take them)
+_FRAME_COLOR_KEYS = ('color', 'colors', 'edgecolor', 'edgecolors', 'ec')
+_FRAME_WIDTH_KEYS = ('linewidth', 'linewidths', 'lw')
+_FRAME_STYLE_KEYS = ('linestyle', 'linestyles', 'ls')
+_FRAME_FACE_KEYS = ('facecolor', 'fc')
+#: matplotlib's own default frame width (`plot_cube`/`plot_square`), which
+#: `CUBE_LINEWIDTH_PT` is calibrated to match on screen
+_MPL_FRAME_LINEWIDTH_PT = 1.0
+
+
+def _frame_style(frame_kwargs, ndims):
+    """The plotly styling of the cube/square frame from `plot()`'s
+    ``frame_kwargs=`` (matplotlib's `plot_wireframe`/`Rectangle` keywords).
+
+    Returns ``dict(color, width_pt, dash, fill)`` -- `color` a plotly colour
+    string (``alpha=`` folded in), `width_pt` the frame width in the
+    points `_cube_trace`/`_square_shape` take (a matplotlib ``linewidth``
+    scaled by the same factor that makes the default 1 pt frame match
+    matplotlib's on screen), `dash` a plotly dash name, `fill` the 2-D
+    square's fill colour or None. With no `frame_kwargs` this is exactly the
+    historical black frame. Keywords with no plotly equivalent (``zorder``,
+    ``rstride``, ...) are named in one warning instead of being dropped
+    silently (1.1 release review: plotly ignored `frame_kwargs=` outright,
+    so the cube stayed black whatever colour was asked for).
+    """
+    kw = dict(frame_kwargs or {})
+    alpha = kw.pop('alpha', None)
+    # `color`/`colors` style the whole frame (a Rectangle's edge AND face);
+    # the edge spellings style only its outline
+    both = next((kw.get(k) for k in ('color', 'colors')
+                 if kw.get(k) is not None), None)
+    edge = next((kw.get(k) for k in ('edgecolor', 'edgecolors', 'ec')
+                 if kw.get(k) is not None), None)
+    color = edge if edge is not None else both
+    for k in _FRAME_COLOR_KEYS:
+        kw.pop(k, None)
+    width = next((kw.pop(k) for k in _FRAME_WIDTH_KEYS
+                  if kw.get(k) is not None), None)
+    for k in _FRAME_WIDTH_KEYS:
+        kw.pop(k, None)
+    style = next((kw.pop(k) for k in _FRAME_STYLE_KEYS
+                  if kw.get(k) is not None), None)
+    for k in _FRAME_STYLE_KEYS:
+        kw.pop(k, None)
+    face = next((kw.pop(k) for k in _FRAME_FACE_KEYS
+                 if kw.get(k) is not None), None)
+    for k in _FRAME_FACE_KEYS:
+        kw.pop(k, None)
+    fill = kw.pop('fill', None)
+    # matplotlib's plot_wireframe/Rectangle defaults that are meaningless
+    # (or already implied) here
+    for k in ('rstride', 'cstride'):
+        kw.pop(k, None)
+    if kw:
+        warnings.warn(
+            "backend='plotly' cannot map the following frame_kwargs to the "
+            f"plotly frame and will ignore them: {sorted(kw)}. Supported: "
+            "color/edgecolor, linewidth, linestyle, alpha (and, for the 2-D "
+            "square, facecolor/fill).", UserWarning, stacklevel=3)
+    def _one(c):
+        # a `colors=` list (one per wireframe line): one colour here
+        if isinstance(c, (list, tuple)) and c and not isinstance(
+                c[0], (int, float, np.integer, np.floating)):
+            return c[0]
+        return c
+    color, both = _one(color), _one(both)
+    line_color = ('black' if color is None and alpha is None
+                  else _to_plotly_color(color if color is not None
+                                        else 'black', alpha))
+    width_pt = (CUBE_LINEWIDTH_PT if width is None
+                else float(width) * CUBE_LINEWIDTH_PT
+                / _MPL_FRAME_LINEWIDTH_PT)
+    dash = ('solid' if style is None
+            else _LINESTYLE_NAMES.get(style, 'solid'))
+    fill_color = None
+    if ndims < 3:
+        # matplotlib's `plot_square`: a `color=` (or a face colour) fills
+        # the square unless `fill=False`; with neither it is an outline
+        face_color = face if face is not None else both
+        if face_color is not None and fill is not False:
+            fill_color = _to_plotly_color(face_color, alpha)
+        elif fill is True:
+            fill_color = _to_plotly_color('C0', alpha)
+    return dict(color=line_color, width_pt=width_pt, dash=dash,
+                fill=fill_color)
+
+
+def _cube_trace(go, scale=1.0, linewidth_pt=CUBE_LINEWIDTH_PT, color='black',
+                dash='solid'):
     """hypertools' signature black wireframe cube as a single 3D trace.
 
     Mirrors matplotlib_backend's plot_cube: 12 edges at +/-scale, black,
-    1pt lines.
+    1pt lines (or the `frame_kwargs=` style `_frame_style` resolved).
     Edges are chained with None separators so one trace draws them all.
     """
     s = scale
@@ -3860,17 +4007,21 @@ def _cube_trace(go, scale=1.0, linewidth_pt=CUBE_LINEWIDTH_PT):
         x=xs, y=ys, z=zs, mode='lines',
         # boosted so the gl-rendered cube matches the SVG square's ~2px stroke
         # (see _CUBE_GL_WIDTH_BOOST) -- the 2D square uses no boost
-        line=dict(color='black',
-                  width=linewidth_pt * PT_TO_PX * _CUBE_GL_WIDTH_BOOST),
+        line=dict(color=color,
+                  width=linewidth_pt * PT_TO_PX * _CUBE_GL_WIDTH_BOOST,
+                  **({} if dash == 'solid' else dict(dash=dash))),
         showlegend=False, hoverinfo='skip')
 
 
-def _square_shape(scale=1.0, linewidth_pt=CUBE_LINEWIDTH_PT):
+def _square_shape(scale=1.0, linewidth_pt=CUBE_LINEWIDTH_PT, color='black',
+                  dash='solid', fill=None):
     """hypertools' 2D black square frame (mirrors matplotlib_backend's
-    plot_square)."""
+    plot_square; `color`/`dash`/`fill` from `_frame_style`)."""
     return dict(type='rect', x0=-scale, y0=-scale, x1=scale, y1=scale,
-                line=dict(color='black', width=linewidth_pt * PT_TO_PX),
-                fillcolor='rgba(0,0,0,0)', layer='below')
+                line=dict(color=color, width=linewidth_pt * PT_TO_PX,
+                          **({} if dash == 'solid' else dict(dash=dash))),
+                fillcolor=fill if fill is not None else 'rgba(0,0,0,0)',
+                layer='below')
 
 
 def _surface_base_rgb(spec, fallback_rgb):

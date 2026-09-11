@@ -4544,6 +4544,15 @@ def plot(
         count raises a ``ValueError`` naming fmt and both counts. A fmt tuple
         is accepted and treated exactly like the equivalent list.
 
+        Under ``backend='plotly'`` a 3-D plot can only draw plotly's
+        `Scatter3d` marker set (circle, square, diamond, cross, x and the
+        open circle/square/diamond), so other markers take the nearest of
+        those: triangles (``'^'``, ``'v'``, ``'<'``, ``'>'``) and ``'d'``
+        draw as diamonds, ``'*'`` as an open diamond, ``'+'``, ``'|'``,
+        ``'_'`` and ``'1'``-``'4'`` as crosses, ``'x'`` as an x, and
+        ``'p'``, ``'h'``, ``'H'`` and ``'8'`` as circles. 1-D/2-D plotly
+        plots and every matplotlib plot draw the marker asked for.
+
         Static line rendering is DATA-FAITHFUL: line styles are smoothed
         by PCHIP interpolation, which only ever ADDS points between
         samples -- every original sample (including the final one) is
@@ -11355,6 +11364,7 @@ def plot(
             # the pre-resampling observations, so an 'o-' marks only them
             # (the matplotlib `_draw` call's `raw_data=`)
             raw_data=raw_xform,
+            frame_kwargs=frame_kwargs,
             axis_scale=_axis_scale,
             xlim=_data_xlim,
             ylim=_data_ylim,
