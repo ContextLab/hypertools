@@ -856,6 +856,28 @@ def _plotly_legend_entry_traces(entries, ndims):
     return traces
 
 
+#: plotly trace types drawn in a 3-D `scene` (every other trace type
+#: hypertools can meet in a figure lives on 2-D axes)
+_SCENE_TRACE_TYPES = frozenset({'scatter3d', 'mesh3d', 'volume',
+                                'isosurface', 'surface', 'cone',
+                                'streamtube'})
+
+
+def _target_ndims(into):
+    """3 when an `ax=` target is a 3-D surface, 2 when it is 2-D axes,
+    None when there is nothing to tell (an empty figure).
+
+    A `PlotlyCell` knows what it was built for; a bare figure is read from
+    the traces it already draws."""
+    if isinstance(into, PlotlyCell):
+        return 3 if into.ndims >= 3 else 2
+    types = {getattr(t, 'type', None) for t in getattr(into, 'data', ())}
+    types.discard(None)
+    if not types:
+        return None
+    return 3 if types & _SCENE_TRACE_TYPES else 2
+
+
 def _compose_scope_traces(into):
     """The traces an `ax=` target already holds that a new call composes
     with: every trace of a bare Figure, or the traces attached to a
@@ -1390,6 +1412,32 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     bullettime = broadcast_trail_flag(bullettime, len(data), "bullettime")
 
     ndims = data[0].shape[1] if data[0].ndim > 1 else 1
+
+    # ax= (`into`) must be the same KIND of surface as this plot: a 3-D
+    # scene for 3-D data, 2-D axes for 1-/2-D data. A mismatched grid cell
+    # used to die in `transplant_panel` with a bare "cannot unpack
+    # non-iterable NoneType" (its 3-D domain read off 2-D axes, or the
+    # reverse), and a mismatched figure silently overlaid a 2-D trace on a
+    # 3-D scene -- the plotly half of `plot()`'s matplotlib `ax=` check
+    # ("If passing ax and the plot is 3D, ax must also be 3d"), checked
+    # before anything is drawn (1.1 release review)
+    if into is not None:
+        _into_nd = _target_ndims(into)
+        if _into_nd is not None and (_into_nd >= 3) != (ndims >= 3):
+            _kind = ('cell of a hyp.subplots grid' if isinstance(
+                into, PlotlyCell) else 'plotly figure')
+            _this = ('3-D' if ndims >= 3
+                     else ('time-series (1-D)' if ndims == 1 else '2-D'))
+            raise ValueError(
+                f"ax= is a {'3-D' if _into_nd >= 3 else '2-D'} {_kind}, but "
+                f"this call draws a {_this} plot ({ndims} column"
+                f"{'s' if ndims != 1 else ''} after reduction). Pass a "
+                f"{'3-D' if ndims >= 3 else '2-D'} target -- "
+                f"hyp.subplots(..., ndims={3 if ndims >= 3 else 2}, "
+                "backend='plotly') for a grid, or the Figure of a "
+                f"{'3-D' if ndims >= 3 else '2-D'} hyp.plot -- or, if the "
+                f"data has the dimensions for it, pass "
+                f"ndims={3 if _into_nd >= 3 else 2} to draw into this one.")
 
     # animate='morph' (Hungarian point-cloud morphs, maintainer request):
     # `plot.py` already raises `NotImplementedError` for 1-D (or higher
@@ -2515,6 +2563,22 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                        # clock is driven from (see `_run_window`)
                        ownership=ownership)
 
+    # Notebook visual review 2026-09: Scatter3d's RGBA colour path can
+    # change hue under transparency. Use RGB + native opacity instead.
+    # Include frame payloads, which may override the base trace colours.
+    # Done HERE, on this call's own figure, before any `ax=` composition:
+    # a caller's figure keeps its own traces exactly as they were (1.1
+    # release review: this loop used to run over the composed figure and
+    # rewrote the caller's rgba traces too).
+    for frame in fig.frames:
+        indices = frame.traces if frame.traces is not None else range(len(frame.data))
+        for index, trace in zip(indices, frame.data):
+            _normalize_scatter3d_alpha(
+                trace, fig.data[index].mode
+                if fig.data[index].type == 'scatter3d' else None, frame=True)
+    for trace in fig.data:
+        _normalize_scatter3d_alpha(trace)
+
     if into is not None:
         if animate:
             raise ValueError(
@@ -2545,18 +2609,6 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         else:
             fig.layout.meta = {**_meta,
                                'hyp_datasets_drawn': int(datasets_drawn)}
-
-    # Notebook visual review 2026-09: Scatter3d's RGBA colour path can
-    # change hue under transparency. Use RGB + native opacity instead.
-    # Include frame payloads, which may override the base trace colours.
-    for frame in fig.frames:
-        indices = frame.traces if frame.traces is not None else range(len(frame.data))
-        for index, trace in zip(indices, frame.data):
-            _normalize_scatter3d_alpha(
-                trace, fig.data[index].mode
-                if fig.data[index].type == 'scatter3d' else None, frame=True)
-    for trace in fig.data:
-        _normalize_scatter3d_alpha(trace)
 
     if save_path is not None:
         ext = save_path.lower().rsplit('.', 1)[-1]
@@ -2861,9 +2913,20 @@ def _place_cell_furniture(target, index, ndims):
     placed = legend is not None and legend.x is not None
     meta = target.layout.meta if isinstance(target.layout.meta, dict) else {}
     explicit = (meta.get('hyp_cell_legends') or {}).get(str(index))
-    has_legend = placed or bool(
-        (meta.get('hyp_cell_furniture') or {}).get(str(index), {})
-        .get('legend'))
+    # whether the cell SHOWS a legend -- what `transplant_panel` recorded
+    # from its traces -- not whether a `legendN` layout exists: every drawn
+    # cell gets one placed, so reading that pushed a legend-less cell's
+    # colorbar a legend's width right, onto the next cell (1.1 release
+    # review)
+    furniture = (meta.get('hyp_cell_furniture') or {}).get(str(index))
+    if furniture is not None:
+        has_legend = bool(furniture.get('legend'))
+    else:
+        has_legend = any(
+            bool(t.showlegend) for t in target.data
+            if getattr(t, 'legend', None) == keys['legend']
+            or (index == 0 and getattr(t, 'legend', None) in (None,
+                                                               'legend')))
     if placed and explicit:
         legend.update(x=x0 + float(explicit['lx']) * (x1 - x0),
                       y=y0 + float(explicit['ly']) * (y1 - y0))
@@ -3085,13 +3148,16 @@ def transplant_panel(target, panel, row, col, index, ndims):
     # a `make_subplots`-style annotation above the cell, positioned by
     # the same `x`/`y`/anchors the title carries, mapped from the single
     # figure's paper into the cell's domain. One per cell: drawing into
-    # the cell again REPLACES it (as a matplotlib axes title is replaced),
-    # while `labels=` annotations keep accumulating.
+    # the cell again with a `title=` REPLACES it (as a matplotlib axes
+    # title is replaced), and an untitled call leaves it alone (as an
+    # untitled `hyp.plot(..., ax=ax)` leaves the axes title; 1.1 release
+    # review: the second call deleted it), while `labels=` annotations
+    # keep accumulating.
     title_name = f'hyp-cell-title-{index}'
-    target.layout.annotations = tuple(
-        a for a in target.layout.annotations if a.name != title_name)
     title = panel.layout.title
     if title is not None and title.text:
+        target.layout.annotations = tuple(
+            a for a in target.layout.annotations if a.name != title_name)
         tx = 0.5 if title.x is None else float(title.x)
         default_y = title.y is None or abs(float(title.y) - 0.97) < 1e-9
         spec = dict(text=title.text, name=title_name,

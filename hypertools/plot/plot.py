@@ -6315,8 +6315,9 @@ def plot(
         `labels=` annotations, and its own legend and colorbar beside the
         cell), the same composition loop as the matplotlib
         ``fig, axes = hyp.subplots(...); hyp.plot(d, ax=axes[i])`` form.
-        A matplotlib Axes under plotly raises `ValueError`; a plotly Figure
-        or cell under matplotlib raises `TypeError`.
+        A plotly Figure or cell with the default ``backend='auto'`` draws
+        with plotly; with an explicit ``backend='matplotlib'`` it raises
+        `TypeError`. A matplotlib Axes under plotly raises `ValueError`.
 
         The datasets are drawn in the `palette` exactly as on a figure of
         their own (a caller's Axes used to keep the colour cycle of the
@@ -7098,6 +7099,11 @@ def plot(
                 "instance, a plotly Figure to draw into with the plotly "
                 "backend, or one cell of a hyp.subplots(..., "
                 f"backend='plotly') grid; got {type(ax).__name__!r}.")
+        if _is_plotly_fig and isinstance(backend, str) \
+                and backend.lower() == 'auto':
+            # a plotly Figure/cell names the backend to draw with: 'auto'
+            # (the default) follows it instead of raising below
+            backend = 'plotly'
         if resolve_backend(backend) == "plotly":
             if _is_mpl_axes:
                 raise ValueError(
