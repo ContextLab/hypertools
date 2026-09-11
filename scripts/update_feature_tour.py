@@ -346,7 +346,9 @@ add(
     a=hyp.load('helix',n_samples=12)
     for mode in ['parallel','window','spin']:
         contexts=[]
-        obj=hyp.plot(a,animate=mode,duration=2,frame_rate=6,show=False,
+        # draw_frame/n_frames are the matplotlib HyperAnimation API; Colab
+        # would otherwise auto-select plotly.
+        obj=hyp.plot(a,animate=mode,duration=2,frame_rate=6,show=False,backend='matplotlib',
                      title=lambda ctx:f"{ctx.style}: {ctx.progress:.0%}",on_frame=contexts.append)
         for frame in range(obj.n_frames):
             obj.draw_frame(frame);ctx=contexts[-1]
@@ -421,8 +423,10 @@ add(
     "Multibyte titles, labels and legends",
     """def demo():
     a,_=fixtures()
-    obj=hyp.plot(a,title='日本語 · Ελληνικά · café',legend=['測定'],xlabel='時間',show=False)
+    obj=hyp.plot(a,title='日本語 · Ελληνικά · café',legend=['測定'],xlabel='時間',
+                 backend='matplotlib',show=False)
     # Rasterization is required: glyph warnings may be delayed until draw.
+    # Plotly text is drawn by the browser, so this check is matplotlib-only.
     obj.canvas.draw()
     show_result(obj)""",
     ["behavior:multibyte-fonts"],
@@ -662,6 +666,22 @@ for case_id, old, new in [
     cell = case_cell(case_id)
     if new not in text(cell):
         set_source(cell, text(cell).replace(old, new))
+# describe(show=False) returns fig=None by design; render the curve so the
+# case's visual check has a figure (fresh-Colab review 2026-09-11).
+red = case_cell("RED-describe")
+if "show=True" not in text(red):
+    set_source(
+        red,
+        """def demo():
+    import matplotlib.figure
+    a,b=fixtures()
+    result=hyp.describe([a,b],reduce='PCA',max_dims=5,show=True,backend='matplotlib')
+    assert {'average','individual','fig'}<=set(result)
+    assert isinstance(result['fig'],matplotlib.figure.Figure)
+    print(result['average'])
+
+run_case('RED-describe', demo)""",
+    )
 mds = case_cell("RED-MDS")
 if "inspect.signature(MDS)" not in text(mds):
     set_source(
