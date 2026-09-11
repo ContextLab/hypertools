@@ -47,6 +47,7 @@ from .surface import (
 )
 from .density import (
     DENSITY_DEFAULTS,
+    _padded_bounds,
     POOLED_COLOR,
     bbox_extent,
     density_alpha_boost,
@@ -217,6 +218,31 @@ _PLOTLY_SANS_STACK = _plotly_font_family()
 # Andy). They now hang BELOW the plotting area, laid out horizontally, with the
 # bottom margin opened up so nothing is clipped.
 _ANIM_BUTTON_MARGIN_B = 64   # bottom margin reserved for the controls (px)
+_ANIM_BUTTON_HEIGHT_PX = 30  # rendered height of the Play/Pause row (px)
+_ANIM_BUTTON_GAP_PX = 6      # space above and below that row (px)
+
+
+def _x_axis_band_px(fig, ndims):
+    """Height (px) of what a 2-D figure's x axis draws below the plotting
+    area -- tick marks and labels (two lines on a date axis) and the axis
+    title -- or 0 when it draws nothing there (3-D; a hidden unit-scale
+    axis). The Play/Pause controls go below this band. Generous by a few
+    px: 12 px tick labels at plotly's 1.3 line height, 5 px outside ticks,
+    and a title placed under the labels with plotly's automatic standoff.
+    """
+    if ndims >= 3:
+        return 0
+    axis = fig.layout.xaxis
+    if axis is None or axis.visible is False:
+        return 0
+    band = 0
+    if axis.showticklabels:
+        lines = 2 if axis.type == 'date' else 1
+        band += 5 + 4 + lines * 16
+    title = axis.title.text if axis.title is not None else None
+    if title:
+        band += 30 if band else 22
+    return band
 CUBE_LINEWIDTH_PT = 1.5      # hypertools' frame linewidth, matching the
                              # matplotlib backend's ~2px frame (both the 3D
                              # wireframe cube and the 2D square)
@@ -229,6 +255,20 @@ CUBE_LINEWIDTH_PT = 1.5      # hypertools' frame linewidth, matching the
 # the kaleido/Chrome renderer (which also produces every exported image and the
 # docs gallery); the exact factor is not critical -- 1.3-1.7 all land on 2px.
 _CUBE_GL_WIDTH_BOOST = 1.5
+# DATA lines in 3-D (every Scatter3d line hypertools draws but the cube:
+# trajectories, trails, forecasts, truth) are asked for at their true width
+# times this. Measured 2026-09-11 in kaleido (ink area / stroke length, a
+# straight line, device scale 1 and 2): Scatter3d draws EXACTLY 0.50x the
+# requested width from 1.4 to 12 px -- 2.08 px asked, 1.00 drawn -- while
+# the SVG 2-D line draws what it is asked for. 1.1 release review (L1): a
+# 3-D data line was half as thick as the same line in 2-D and matplotlib.
+# The legend key is unaffected (`legend.itemsizing='constant'` draws every
+# key line at plotly's fixed width).
+_GL_LINE_WIDTH_BOOST = 2.0
+#: `plot()`'s documented default `linewidth` for ANIMATIONS (points) --
+#: what the matplotlib backend's animators pop (`linewidths = [... .pop(
+#: "linewidth", 1)]`); static plots use `DEFAULT_LINEWIDTH_PT`
+DEFAULT_ANIM_LINEWIDTH_PT = 1.0
 
 # matplotlib's '.' and ',' marker glyphs are defined with HALF the path
 # scale of every other marker character (verified via
@@ -1520,6 +1560,14 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
 
     fmt = fmt if fmt is not None else ['-'] * len(data)
     kwargs_list = kwargs_list if kwargs_list is not None else [{}] * len(data)
+    if animate:
+        # an animation's default width is 1 pt (`plot()`'s `linewidth`
+        # docstring, and what matplotlib's animators draw), not the static
+        # 1.5 -- set per dataset so the head, its trail and its forecast
+        # all inherit it; an explicit `linewidth=` still wins
+        kwargs_list = [
+            dict(kw or {}, linewidth=(kw or {}).get('linewidth')
+                 or DEFAULT_ANIM_LINEWIDTH_PT) for kw in kwargs_list]
 
     # chemtrails/precog/bullettime (GH #127): normalize to one bool per
     # dataset. `plot.py` already broadcasts/validates against the FINAL
@@ -1619,6 +1667,13 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     # (and trail) trace, which every animation frame slices to its window
     # (`_aa_window_sizes`); None where the marker size is a plain scalar
     obs_marker_sizes = [None] * len(data)
+    #: dataset -> the colour-bin representation of an ANIMATED multicoloured
+    #: 1-D/2-D line (`_hue_line_bins`): full-curve x/y, each segment's bin,
+    #: and the bins' colours -- what `_add_animation` re-slices every frame
+    hue_units = {}
+    #: dataset -> its drawn curve's per-vertex line colours, for an
+    #: ANIMATED multicoloured 3-D line, whose frames send the window's slice
+    hue_colors_3d = {}
 
     def _rows_of(i, arr):
         """The ORIGINAL row count behind drawn trace `i` (see
@@ -1826,6 +1881,7 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 # Scatter3d supports per-point line colors natively
                 common['line'] = dict(color=trace_line_colors, width=width,
                                       dash=dash)
+                hue_colors_3d[i] = list(trace_line_colors)
             traces.append(go.Scatter3d(
                 x=draw_arr[:, 0], y=draw_arr[:, 1], z=draw_arr[:, 2],
                 **common))
@@ -1837,11 +1893,35 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
               else row_index_x(_rows_of(i, arr), draw_arr.shape[0]))
         ys = draw_arr[:, 1] if ndims == 2 else draw_arr[:, 0]
         if trace_point_colors is not None and 'lines' in mode:
-            # 2D Scatter has no per-point line colors; draw short segment
-            # traces instead (grouped under one legend entry) ...
-            traces.extend(_segment_traces_2d(
-                go, np.column_stack([xs, ys]), trace_line_colors, width,
-                dash, name, trace_index=i))
+            if animate:
+                # an ANIMATED multicoloured 2-D line is re-drawn window by
+                # window, so its colours must travel with it: a fixed set
+                # of colour-BIN traces (`_hue_bin_units`), each drawing every
+                # segment of its colour that the frame's window holds
+                # (1.1 release review: one static trace per segment left
+                # the whole trajectory on screen, and every frame
+                # overwrote segment 0 with the window in one colour)
+                _bins = _hue_line_bins(trace_line_colors)
+                hue_units[i] = dict(xs=np.asarray(xs, dtype=float),
+                                    ys=np.asarray(ys, dtype=float),
+                                    bins=_bins, alpha=tkwargs.get('alpha'))
+                for _k, _color in enumerate(_bins['colors']):
+                    _bx, _by = _binned_polylines(
+                        hue_units[i]['xs'], hue_units[i]['ys'],
+                        _bins['seg_bin'], _k, 0, len(xs) - 1)
+                    traces.append(go.Scatter(
+                        x=_bx, y=_by, mode='lines', name=name,
+                        showlegend=False, hoverinfo='skip',
+                        visible=not hide_points,
+                        legendgroup=name or 'multicolor',
+                        line=dict(color=_color, width=width, dash=dash),
+                        meta=dict(hyp_trace_index=i, hyp_hue_bin=_k)))
+            else:
+                # 2D Scatter has no per-point line colors; draw short
+                # segment traces instead (grouped under one legend entry)
+                traces.extend(_segment_traces_2d(
+                    go, np.column_stack([xs, ys]), trace_line_colors, width,
+                    dash, name, trace_index=i))
             if 'markers' in mode:
                 # ... and, for a marker+line fmt ('o-'), the markers as ONE
                 # marker-only trace on the observations themselves, each in
@@ -1865,6 +1945,12 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                     marker=dict(color=obs_point_colors, size=msize,
                                 symbol=symbol),
                     meta=dict(hyp_trace_index=i)))
+                if i in hue_units:
+                    # an animation re-draws the observations a window
+                    # holds, each in its own colour
+                    hue_units[i]['markers'] = dict(
+                        vertices=np.asarray(_ov, dtype=int),
+                        colors=list(trace_point_colors))
             continue
         traces.append(go.Scatter(x=xs, y=ys, **common))
 
@@ -2193,10 +2279,12 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     # set anywhere created a trail trace for EVERY dataset). These do NOT
     # necessarily sit right after the data traces -- forecast traces
     # (predict=, above) are appended in between when both are present -- so
-    # `trail_trace_start` records their real position, and
-    # `trail_dataset_indices[k]` is the ORIGINAL dataset index that produced
-    # `traces[trail_trace_start + k]`, so `_add_animation` can look up the
-    # right dataset's data per frame.
+    # `trail_trace_start` records their real position, and every trail trace
+    # carries ``meta['hyp_trail_index']`` -- the ORIGINAL dataset index that
+    # produced it -- so `_add_animation` can look up the right dataset's data
+    # per frame. A dataset's trail is ONE trace, except an animated
+    # multicoloured 2-D line's, which is one trace per colour bin
+    # (`_hue_line_bins`); `n_trail_traces` counts traces, not datasets.
     #
     # Backend parity (Task 4): 'serial' builds these too, not just
     # True/'parallel' -- each currently-revealing dataset traces out its own
@@ -2243,12 +2331,35 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                                       _n_rows, aa_curves[i][1]), ndims)
         trail = dict(mode=mode, showlegend=False, hoverinfo='skip',
                      line=dict(color=color, width=width, dash=dash),
-                     marker=trail_marker)
+                     marker=trail_marker,
+                     # which dataset this trail belongs to (a multicoloured
+                     # 2-D trail is several colour-bin traces)
+                     meta=dict(hyp_trail_index=i))
+        if i in hue_units:
+            # a multicoloured 2-D trail: the head's colour bins at the
+            # trail's opacity (matplotlib's trail collection keeps the
+            # per-segment colours at 0.3 alpha), lines only, as matplotlib
+            # draws it
+            for _k, _color in enumerate(hue_units[i]['bins']['colors']):
+                traces.append(go.Scatter(
+                    x=[], y=[], mode='lines', showlegend=False,
+                    hoverinfo='skip',
+                    line=dict(color=_rgba_with_alpha(_color, _trail_alpha),
+                              width=width, dash=dash),
+                    meta=dict(hyp_trail_index=i, hyp_hue_bin=_k)))
+            continue
+        if i in hue_colors_3d:
+            # a multicoloured 3-D trail: the head's per-vertex colours at
+            # the trail's opacity; every frame sends its window's slice
+            trail['line'] = dict(
+                color=[_rgba_with_alpha(c, _trail_alpha)
+                       for c in hue_colors_3d[i]],
+                width=width, dash=dash)
         if ndims >= 3:
             traces.append(go.Scatter3d(x=[], y=[], z=[], **trail))
         else:
             traces.append(go.Scatter(x=[], y=[], **trail))
-    n_trail_traces = len(trail_dataset_indices)
+    n_trail_traces = len(traces) - trail_trace_start
 
     # surface= (GH #109), 3-D case: order doesn't matter here (plotly's 3-D
     # scene is depth-buffered, unlike 2-D's painter's-algorithm trace order),
@@ -2448,9 +2559,17 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     # every animation frame.
     if density is not None and ndims >= 3:
         traces.extend(_build_density_traces_3d(go, data, density,
-                                               density_colors))
+                                               density_colors,
+                                               limit=cube_scale))
 
     if ndims >= 3:
+        # every 3-D DATA line so far (trajectories, forecasts, truth,
+        # trails): Scatter3d draws half the width it is asked for (see
+        # `_GL_LINE_WIDTH_BOOST`); the cube below carries its own boost
+        for _tr in traces:
+            if _tr.type == 'scatter3d' and _tr.line is not None \
+                    and _tr.line.width is not None:
+                _tr.line.width = _tr.line.width * _GL_LINE_WIDTH_BOOST
         traces.append(_cube_trace(
             go, scale=cube_scale, linewidth_pt=_frame['width_pt'],
             color=_frame['color'], dash=_frame['dash']))
@@ -2771,7 +2890,10 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                        segment_title_colors=title_segment_colors,
                        # the run -> dataset -> rows mapping the reveal
                        # clock is driven from (see `_run_window`)
-                       ownership=ownership)
+                       ownership=ownership,
+                       # an animated multicoloured line's colours travel
+                       # with its window (`_hue_line_bins`)
+                       hue_units=hue_units, hue_colors_3d=hue_colors_3d)
 
     # Notebook visual review 2026-09: Scatter3d's RGBA colour path can
     # change hue under transparency. Use RGB + native opacity instead.
@@ -4489,7 +4611,8 @@ def _build_density_traces_2d(go, data, density, density_colors):
     return traces
 
 
-def _one_density_volume_trace(go, pts, spec, color_rgb, label="", boost=1.0):
+def _one_density_volume_trace(go, pts, spec, color_rgb, label="", boost=1.0,
+                              limit=None):
     """One ``go.Volume`` KDE iso-surface layer (GH #108/#191, 3-D), or
     ``None`` if `pts` is too small/degenerate to fit a KDE.
 
@@ -4546,7 +4669,21 @@ def _one_density_volume_trace(go, pts, spec, color_rgb, label="", boost=1.0):
     levels = spec.get('levels', DENSITY_DEFAULTS['levels'])
     pad, isomin, opacityscale, opacity, surface_count = (
         resolve_plotly_volume_params(spec['alpha'], levels, boost))
-    X, Y, Z, D, _, _ = kde_grid_3d(pts, kde, gridsize=gridsize, pad=pad)
+    if limit is None:
+        X, Y, Z, D, _, _ = kde_grid_3d(pts, kde, gridsize=gridsize, pad=pad)
+    else:
+        # the grid, padded past the data so the glow fades out, is CLIPPED
+        # to the scene's cube (1.1 release review, L2): a grid reaching
+        # past the scene range (x to +-1.3) drew its translucent shells
+        # over the cube's edges, which rendered stippled (1076 of 3551
+        # dark cube/marker pixels survived on the reviewer's case; all of
+        # them do clipped). The same `gridsize` samples the clipped box.
+        lo, hi = _padded_bounds(np.asarray(pts, dtype=float), pad)
+        lo, hi = np.maximum(lo, -limit), np.minimum(hi, limit)
+        axes_ = [np.linspace(lo[i], hi[i], gridsize) for i in range(3)]
+        X, Y, Z = np.meshgrid(*axes_, indexing='ij')
+        D = kde(np.vstack([X.ravel(), Y.ravel(), Z.ravel()])).reshape(
+            X.shape)
     dmax = D.max()
     if dmax <= 0:
         return None
@@ -4560,21 +4697,23 @@ def _one_density_volume_trace(go, pts, spec, color_rgb, label="", boost=1.0):
         showscale=False, hoverinfo='skip')
 
 
-def _build_density_traces_3d(go, data, density, density_colors):
+def _build_density_traces_3d(go, data, density, density_colors, limit=None):
     """Build each dataset's (or, with ``per_group=False``, one pooled)
     ``go.Volume`` KDE density layer (GH #108/#191, 3-D).
 
     Each per-dataset layer's opacity is boosted (GH #108 round 2) by how
     small that dataset's own bounding box is relative to the bounding box
     of the WHOLE scene (all datasets combined) -- see
-    :func:`~.density.density_alpha_boost`."""
+    :func:`~.density.density_alpha_boost`. `limit` (the scene cube's
+    half-width) clips every layer's grid to the cube (see
+    `_one_density_volume_trace`)."""
     if density[0] is not None and not density[0].get('per_group', True):
         all_pts = np.vstack([
             np.atleast_2d(np.asarray(arr, dtype=np.float64))[:, :3]
             for arr in data])
         trace = _one_density_volume_trace(go, all_pts, density[0],
                                           POOLED_COLOR, label=' (pooled)',
-                                          boost=1.0)
+                                          boost=1.0, limit=limit)
         return [trace] if trace is not None else []
     scene_pts = np.vstack([
         np.atleast_2d(np.asarray(arr, dtype=np.float64))[:, :3]
@@ -4587,7 +4726,8 @@ def _build_density_traces_3d(go, data, density, density_colors):
         pts = np.atleast_2d(np.asarray(arr, dtype=np.float64))[:, :3]
         boost = density_alpha_boost(bbox_extent(pts), scene_extent)
         trace = _one_density_volume_trace(go, pts, spec, density_colors[i],
-                                          label=f' {i}', boost=boost)
+                                          label=f' {i}', boost=boost,
+                                          limit=limit)
         if trace is not None:
             traces.append(trace)
     return traces
@@ -4956,6 +5096,113 @@ def _rgb_string(c):
     return f'rgb({r},{g},{b})'
 
 
+#: Most colour-bin traces an ANIMATED multicoloured 2-D line gets
+#: (`_hue_line_bins`). A plotly 2-D line has ONE colour per trace, and every
+#: frame must rewrite every trace of the line, so the per-segment colours
+#: are drawn with at most this many traces. A continuous `hue=` maps through
+#: a 100-colour ramp (`colors.continuous_colormap`'s `n_bins`), so it is
+#: drawn EXACTLY; only a line with more distinct colours than this (a
+#: matrix/RGB hue's blends) has each segment take its bin's mean colour
+#: (k-means over the distinct colours; measured 2026-09-11: 48 bins over a
+#: 100-colour ramp were at most 7-15/255 per channel off, 100 bins are exact).
+HUE_ANIM_MAX_BINS = 100
+
+
+class PlotlyTraceGroup(tuple):
+    """The several frame traces that draw ONE dataset -- an animated
+    multicoloured 2-D line is one trace per colour bin (`_hue_line_bins`)
+    -- handed to an `on_frame=` callback as that dataset's single entry of
+    `FrameContext.artists`.
+
+    It is a tuple of `go.Scatter` traces (iterate it to reach each one), and
+    ASSIGNING an attribute sets it on every member, so ``artist.opacity =
+    0.4`` -- what `dataset_fade=` and a portable callback do -- fades the
+    whole dataset. Reading an attribute reads the first member's.
+    """
+
+    def __setattr__(self, name, value):
+        for trace in self:
+            setattr(trace, name, value)
+
+    def __getattr__(self, name):
+        if not self:
+            raise AttributeError(name)
+        return getattr(self[0], name)
+
+
+def _parse_rgba(color):
+    """``(r, g, b, a)`` (0-255 channels, alpha 0-1) of a plotly
+    ``rgb(...)``/``rgba(...)`` string."""
+    text = str(color).strip()
+    parts = [float(p) for p in text[text.index('(') + 1:-1].split(',')]
+    return tuple(parts[:3]) + ((parts[3] if len(parts) > 3 else 1.0),)
+
+
+def _hue_line_bins(colors, max_bins=HUE_ANIM_MAX_BINS):
+    """Group a multicoloured line's SEGMENT colours into a bounded set of
+    colour bins, for the animated 2-D representation (see
+    `HUE_ANIM_MAX_BINS`).
+
+    `colors` is one plotly colour string per drawn VERTEX (segment ``j``
+    wears vertex ``j``'s colour, as `_segment_traces_2d` draws it). Returns
+    ``dict(seg_bin=<int array, one per segment>, colors=[bin colour
+    strings])``. Deterministic: the k-means starts from distinct colours
+    spread evenly over their first-appearance order.
+    """
+    seg_colors = list(colors[:-1]) if len(colors) > 1 else list(colors)
+    distinct = list(dict.fromkeys(seg_colors))
+    index_of = {c: k for k, c in enumerate(distinct)}
+    seg_distinct = np.array([index_of[c] for c in seg_colors], dtype=int)
+    if len(distinct) <= max_bins:
+        return dict(seg_bin=seg_distinct, colors=distinct)
+    rgba = np.array([_parse_rgba(c) for c in distinct], dtype=float)
+    weights = np.bincount(seg_distinct, minlength=len(distinct)).astype(float)
+    centres = rgba[np.linspace(0, len(distinct) - 1, max_bins).astype(int)]
+    for _ in range(25):
+        dist = ((rgba[:, None, :3] - centres[None, :, :3]) ** 2).sum(axis=2)
+        label = dist.argmin(axis=1)
+        moved = centres.copy()
+        for k in range(max_bins):
+            member = label == k
+            if member.any():
+                w = weights[member][:, None]
+                moved[k] = (rgba[member] * w).sum(axis=0) / w.sum()
+        if np.allclose(moved, centres):
+            break
+        centres = moved
+    used = sorted(set(label.tolist()))
+    renumber = {k: n for n, k in enumerate(used)}
+    bin_colors = []
+    for k in used:
+        r, g, b, a = centres[k]
+        bin_colors.append(f'rgba({int(round(r))},{int(round(g))},'
+                          f'{int(round(b))},{float(a)})')
+    return dict(seg_bin=np.array([renumber[label[d]] for d in seg_distinct],
+                                 dtype=int),
+                colors=bin_colors)
+
+
+def _binned_polylines(xs, ys, seg_bin, k, v0, v1):
+    """The x/y of colour bin `k`'s share of vertices ``v0..v1`` (inclusive)
+    of a multicoloured line: its runs of consecutive segments, each drawn
+    as one polyline, separated by NaN gaps (plotly breaks a line at a gap).
+    Empty arrays when the window holds none of the bin's segments."""
+    if v1 <= v0:
+        return np.zeros(0), np.zeros(0)
+    segs = np.arange(v0, v1)
+    segs = segs[seg_bin[v0:v1] == k]
+    if segs.size == 0:
+        return np.zeros(0), np.zeros(0)
+    # split into runs of consecutive segment indices
+    breaks = np.flatnonzero(np.diff(segs) > 1) + 1
+    out_x, out_y = [], []
+    for run in np.split(segs, breaks):
+        verts = np.arange(run[0], run[-1] + 2)
+        out_x.extend([xs[verts], [np.nan]])
+        out_y.extend([ys[verts], [np.nan]])
+    return np.concatenate(out_x[:-1]), np.concatenate(out_y[:-1])
+
+
 def _segment_traces_2d(go, pts, colors, width, dash, name, trace_index=None):
     """Per-segment colored 2D line, emitted as one small trace per segment
     (plotly's 2D Scatter lines accept only a single color per trace).
@@ -5151,7 +5398,8 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                    frame_hooks=None, segment_titles=None,
                    segment_title_style=None, segment_title_colors=None,
                    ownership=None,
-                   forecast_frame_colors=None, forecast_reveal=None):
+                   forecast_frame_colors=None, forecast_reveal=None,
+                   hue_units=None, hue_colors_3d=None):
     """Attach frames + play controls: 'spin' rotates the camera; True /
     'parallel' reveals trajectories through a sliding time window; 'morph'
     eases the single traveling point-cloud trace (+ mesh, if surfaced)
@@ -5187,11 +5435,12 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
     `chemtrails`/`precog`/`bullettime` (GH #127): per-dataset bool lists
     (length `len(data)`, broadcast/validated by `plotly_draw`). Only
     datasets with at least one of the three flags set get a trail trace at
-    all -- `trail_dataset_indices[k]` is the ORIGINAL dataset index that
-    produced the trail trace at `fig.data[trail_trace_start + k]`, so each
-    frame's trail geometry is built from `chemtrails[i]`/`precog[i]`/
+    all -- each trail trace's ``meta['hyp_trail_index']`` is the ORIGINAL
+    dataset index that produced it (an animated multicoloured 2-D line's
+    trail is several colour-bin traces, like its head), so each frame's
+    trail geometry is built from `chemtrails[i]`/`precog[i]`/
     `bullettime[i]` for that SAME original dataset index `i`, not from the
-    trail trace's own position `k`. This applies to `animate=True`/
+    trail trace's own position. This applies to `animate=True`/
     `'parallel'` AND `animate='serial'` (backend parity, Task 4): the
     `'serial'` branch below builds the SAME per-dataset trail semantics as
     `matplotlib_backend.update_lines_serial` (the ONE currently-revealing
@@ -5317,6 +5566,99 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
             return {}
         return dict(marker=dict(size=_aa_window_sizes(
             sizes, aa_curves[idx][1], a, b)))
+
+    # A dataset's head (and trail) may be SEVERAL traces -- an animated
+    # multicoloured 2-D line is one trace per colour bin (`_hue_line_bins`)
+    # -- so frames address each dataset's own traces, found by their tags,
+    # in trace order.
+    hue_units = hue_units or {}
+    _head_traces, _trail_traces = {}, {}
+    for _k in range(data_trace_start, data_trace_start + n_data_traces):
+        _i = (fig.data[_k].meta or {}).get('hyp_trace_index')
+        if _i is not None:
+            _head_traces.setdefault(_i, []).append(_k)
+    if trail_trace_start is not None:
+        for _k in range(trail_trace_start, trail_trace_start + n_trail_traces):
+            _i = (fig.data[_k].meta or {}).get('hyp_trail_index')
+            if _i is not None:
+                _trail_traces.setdefault(_i, []).append(_k)
+    if _head_traces:
+        trace_indices = [k for i in sorted(_head_traces)
+                         for k in _head_traces[i]]
+    # per-vertex colour arrays a trace carries over its dataset's whole
+    # curve (a multicoloured 3-D line and its trail): every frame sends the
+    # slice matching its window, so the colours travel with the data
+    # (1.1 release review: frames rewrote only the geometry, painting a late
+    # window with the colours of the trajectory's first rows)
+    _full_colors = {}
+    for _k in list(trace_indices) + [k for ks in _trail_traces.values()
+                                     for k in ks]:
+        _tr = fig.data[_k]
+        for _part in ('line', 'marker'):
+            _obj = getattr(_tr, _part, None)
+            _c = None if _obj is None else _obj.color
+            if _c is not None and not isinstance(_c, str) \
+                    and len(_c) > 1:
+                _full_colors[(_k, _part)] = list(_c)
+
+    def _dense_span(idx, a, b):
+        """Vertices ``v0..v1`` (inclusive) of dataset `idx`'s drawn curve
+        that ORIGINAL rows ``[a, b)`` span (`_aa_window`'s arithmetic)."""
+        step = max(int(aa_curves[idx][1]), 1)
+        return a * step, (b - 1) * step
+
+    def _entries(idx, trace_ids, a, b):
+        """The frame payload for the traces `trace_ids` that draw dataset
+        `idx`'s head (or trail) over ORIGINAL rows ``[a, b)``, one per
+        trace, in order."""
+        if not trace_ids:
+            return []
+        if idx in hue_units:
+            unit = hue_units[idx]
+            v0, v1 = _dense_span(idx, a, b)
+            out = []
+            for k in trace_ids:
+                meta = fig.data[k].meta or {}
+                if 'hyp_hue_bin' in meta:
+                    bx, by = _binned_polylines(
+                        unit['xs'], unit['ys'], unit['bins']['seg_bin'],
+                        meta['hyp_hue_bin'], v0, v1)
+                    out.append(go.Scatter(x=bx, y=by))
+                else:
+                    # the observation markers the window holds
+                    mk = unit.get('markers')
+                    verts = (np.zeros(0, dtype=int) if mk is None
+                             or b <= a else mk['vertices'][
+                                 (mk['vertices'] >= v0)
+                                 & (mk['vertices'] <= v1)])
+                    out.append(go.Scatter(
+                        x=unit['xs'][verts], y=unit['ys'][verts],
+                        marker=dict(color=[mk['colors'][j] for j in verts]
+                                    if mk is not None else [])))
+            return out
+        k = trace_ids[0]
+        seg = _aa_window(aa_curves, idx, a, b)
+        extra = dict(_marker_window(k, idx, a, b))
+        for part in ('line', 'marker'):
+            full = _full_colors.get((k, part))
+            if full is not None:
+                extra.setdefault(part, {})['color'] = _aa_window_sizes(
+                    full, aa_curves[idx][1], a, b)
+        if ndims >= 3:
+            return [go.Scatter3d(x=seg[:, 0], y=seg[:, 1], z=seg[:, 2],
+                                 **extra)]
+        if ndims == 2:
+            return [go.Scatter(x=seg[:, 0], y=seg[:, 1], **extra)]
+        return [go.Scatter(x=_aa_x(aa_curves[idx][1], a, seg.shape[0]),
+                           y=seg[:, 0], **extra)]
+
+    def _artists(entries_by_unit):
+        """`FrameContext.artists`: ONE artist per dataset head (then per
+        trail) -- a dataset drawn by several colour-bin traces is handed
+        over as one `PlotlyTraceGroup`, so a callback (`dataset_fade=`)
+        styling ``ctx.artists[i]`` styles the whole of dataset `i`."""
+        return tuple(e[0] if len(e) == 1 else PlotlyTraceGroup(e)
+                     for e in entries_by_unit if e)
     chemtrails = chemtrails if chemtrails is not None else [False] * len(data)
     precog = precog if precog is not None else [False] * len(data)
     bullettime = bullettime if bullettime is not None else [False] * len(data)
@@ -5743,6 +6085,9 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
             revealed = total_points * k / max(1, n_frames - 1)
             frame_traces = []
             trail_traces = []
+            # this frame's payload per dataset head / trail, for
+            # `FrameContext.artists` (`_artists`)
+            head_units, trail_units = [], []
             windows_by_index = {}
             window_colors_by_index = {}
             head_bounds_by_index = {}
@@ -5784,46 +6129,19 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                 if cols is not None:
                     window_colors_by_index[idx] = cols
 
-                draw_seg = _aa_window(aa_curves, idx, *head_bounds)
-                _mk = (_marker_window(trace_indices[idx], idx, *head_bounds)
-                       if idx < len(trace_indices) else {})
-                if ndims >= 3:
-                    frame_traces.append(go.Scatter3d(
-                        x=draw_seg[:, 0], y=draw_seg[:, 1], z=draw_seg[:, 2],
-                        **_mk))
-                elif ndims == 2:
-                    frame_traces.append(go.Scatter(x=draw_seg[:, 0],
-                                                   y=draw_seg[:, 1], **_mk))
-                else:
-                    frame_traces.append(go.Scatter(
-                        x=_aa_x(aa_curves[idx][1], head_bounds[0],
-                                draw_seg.shape[0]),
-                        y=draw_seg[:, 0], **_mk))
+                _heads = _entries(idx, _head_traces.get(idx, []),
+                                  *head_bounds)
+                frame_traces.extend(_heads)
+                head_units.append(_heads)
 
-                if has_trail:
-                    t0, t1 = trail_bounds if trail_bounds is not None else (0, 0)
-                    trail = _aa_window(aa_curves, idx, t0, t1)
-                    _tmk = (_marker_window(
-                        trail_trace_start + trail_dataset_indices.index(idx),
-                        idx, t0, t1) if idx in trail_dataset_indices else {})
-                    if ndims >= 3:
-                        trail_traces.append(go.Scatter3d(
-                            x=trail[:, 0], y=trail[:, 1], z=trail[:, 2],
-                            **_tmk))
-                    elif ndims == 2:
-                        trail_traces.append(go.Scatter(x=trail[:, 0],
-                                                       y=trail[:, 1], **_tmk))
-                    else:
-                        trail_traces.append(go.Scatter(
-                            x=_aa_x(aa_curves[idx][1], t0, trail.shape[0]),
-                            y=trail[:, 0], **_tmk))
-                elif has_trails and idx in trail_dataset_indices:
-                    # this dataset has a trail TRACE but no trail THIS frame
-                    empty = np.zeros((0, max(2, min(3, ndims))))
-                    trail_traces.append(
-                        go.Scatter3d(x=empty[:, 0], y=empty[:, 0],
-                                     z=empty[:, 0]) if ndims >= 3
-                        else go.Scatter(x=empty[:, 0], y=empty[:, 0]))
+                if has_trails and idx in _trail_traces:
+                    # (0, 0) -- an empty window -- when this dataset has a
+                    # trail TRACE but no trail THIS frame
+                    t0, t1 = (trail_bounds if has_trail
+                              and trail_bounds is not None else (0, 0))
+                    _trails = _entries(idx, _trail_traces[idx], t0, t1)
+                    trail_traces.extend(_trails)
+                    trail_units.append(_trails)
 
             frame_traces.extend(trail_traces)
             frame_kwargs = dict(name=str(k), data=frame_traces,
@@ -5877,7 +6195,8 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                                       segment_title_colors))
             if frame_hooks is not None:
                 frame_hooks.record(
-                    frame=k, n_frames=n_frames, artists=tuple(frame_traces),
+                    frame=k, n_frames=n_frames,
+                    artists=_artists(head_units + trail_units),
                     datasets=tuple(data), style='serial', order='serial',
                     current_index=_serial_idx, current_fraction=_serial_frac,
                     revealed_counts=tuple(_shown),
@@ -5948,6 +6267,7 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                 frame_windows = dataset_window_bounds(
                     k, n_frames, ownership, _grid_lengths, window_frames)
             frame_traces = []
+            head_units, trail_units = [], []
             windows_by_index = {}
             window_colors_by_index = {}
             forecast_anchors = {}
@@ -5974,20 +6294,9 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                     window_colors_by_index[idx] = cols
                 # antialias=: `seg` (ORIGINAL rows) still drives the surface
                 # mesh/hue windows above; only the DRAWN vertices are smoothed
-                draw_seg = _aa_window(aa_curves, idx, start, end)
-                _mk = (_marker_window(trace_indices[idx], idx, start, end)
-                       if idx < len(trace_indices) else {})
-                if ndims >= 3:
-                    frame_traces.append(go.Scatter3d(
-                        x=draw_seg[:, 0], y=draw_seg[:, 1], z=draw_seg[:, 2],
-                        **_mk))
-                elif ndims == 2:
-                    frame_traces.append(go.Scatter(x=draw_seg[:, 0],
-                                                   y=draw_seg[:, 1], **_mk))
-                else:
-                    frame_traces.append(go.Scatter(
-                        x=_aa_x(aa_curves[idx][1], start, draw_seg.shape[0]),
-                        y=draw_seg[:, 0], **_mk))
+                _heads = _entries(idx, _head_traces.get(idx, []), start, end)
+                frame_traces.extend(_heads)
+                head_units.append(_heads)
 
             # GH #127: trail traces exist (and are updated here) only for
             # datasets in `trail_dataset_indices`, in that SAME ascending
@@ -6026,21 +6335,10 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                         t0, t1 = _twin.future_start, arr.shape[0]
                     # antialias=: trail bounds stay ORIGINAL-row indices; the
                     # smooth curve spanning exactly those rows is drawn
-                    trail = _aa_window(aa_curves, idx, t0, t1)
-                    _tmk = _marker_window(
-                        trail_trace_start + trail_dataset_indices.index(idx),
-                        idx, t0, t1)
-                    if ndims >= 3:
-                        trail_traces.append(go.Scatter3d(
-                            x=trail[:, 0], y=trail[:, 1], z=trail[:, 2],
-                            **_tmk))
-                    elif ndims == 2:
-                        trail_traces.append(go.Scatter(
-                            x=trail[:, 0], y=trail[:, 1], **_tmk))
-                    else:
-                        trail_traces.append(go.Scatter(
-                            x=_aa_x(aa_curves[idx][1], t0, trail.shape[0]),
-                            y=trail[:, 0], **_tmk))
+                    _trails = _entries(idx, _trail_traces.get(idx, []),
+                                       t0, t1)
+                    trail_traces.extend(_trails)
+                    trail_units.append(_trails)
             frame_traces.extend(trail_traces)
             frame_kwargs = dict(name=str(k), data=frame_traces,
                                 traces=list(trace_indices))
@@ -6068,7 +6366,8 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                                           + forecast_trace_indices)
             if frame_hooks is not None:
                 frame_hooks.record(
-                    frame=k, n_frames=n_frames, artists=tuple(frame_traces),
+                    frame=k, n_frames=n_frames,
+                    artists=_artists(head_units + trail_units),
                     datasets=tuple(data), style=animate, order='parallel',
                     current_index=None, current_fraction=None,
                     revealed_counts=tuple(e for _, e in head_bounds),
@@ -6131,14 +6430,30 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
     # update_layout merges nested dicts, so l/r/t margins are preserved.
     # Symmetric `pad` centers each label in its button (the default padding
     # made 'Play' sit noticeably off-center).
+    #
+    # A VISIBLE 2-D x axis (`axis_scale='data'`, an `ndims=1` series, a date
+    # axis) draws its tick labels -- two lines on a date axis -- and its
+    # title exactly where y=-0.06 put the controls, which covered them (1.1
+    # release review: the "2020" under the first date tick). The controls
+    # then go below that band, and the margin grows to hold both.
+    _menu_y, _margin_b = -0.06, _ANIM_BUTTON_MARGIN_B
+    _band = _x_axis_band_px(fig, ndims)
+    if _band:
+        _margin_b = max(_ANIM_BUTTON_MARGIN_B,
+                        _band + _ANIM_BUTTON_HEIGHT_PX + 2 * _ANIM_BUTTON_GAP_PX)
+        _height = fig.layout.height or int(DEFAULT_FIGSIZE[1] * 100)
+        _top = (fig.layout.margin.t if fig.layout.margin
+                and fig.layout.margin.t is not None else 10)
+        _plot_h = max(_height - _top - _margin_b, 1)
+        _menu_y = -(_band + _ANIM_BUTTON_GAP_PX) / _plot_h
     fig.update_layout(
-        margin=dict(b=_ANIM_BUTTON_MARGIN_B),
+        margin=dict(b=_margin_b),
         updatemenus=[dict(
             type='buttons',
             direction='right',
             showactive=False,
             x=0, xanchor='left',
-            y=-0.06, yanchor='top',
+            y=_menu_y, yanchor='top',
             pad=dict(l=8, r=8, t=6, b=6),
             bgcolor='rgba(255,255,255,0.95)',
             bordercolor='rgba(0,0,0,0.22)',
