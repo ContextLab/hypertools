@@ -5389,7 +5389,10 @@ def plot(
         BayesianGaussianMixture, LatentDirichletAllocation and NMF. Can be
         passed as a string, or for finer control of the model parameters as a
         dictionary, e.g. cluster={'model': 'KMeans', 'kwargs': {'max_iter':
-        100}}. See scikit-learn specific model docs for details on parameters
+        100}} (as in `hyp.cluster`, a top-level key other than 'model',
+        'args', 'kwargs' and the 'n_clusters' shortcut raises
+        ``ValueError``). See scikit-learn specific model docs for details
+        on parameters
         supported for each model. If no parameters are specified a default set
         of parameters will be used: 3 clusters/components for most models
         (the same default as `hyp.cluster`), 20 components for
@@ -9288,7 +9291,8 @@ def plot(
         if isinstance(cluster, bytes):
             cluster = cluster.decode("utf-8")
 
-        from ..cluster.cluster import _resolve_cluster_spec
+        from ..cluster.cluster import (_check_cluster_spec_keys,
+                                       _resolve_cluster_spec)
         _n_clusters_explicit = n_clusters is not None
         _cluster_instance = None
         _spec_kwargs = {}
@@ -9325,6 +9329,9 @@ def plot(
                     "value of the 'model' key and a dictionary of custom "
                     "parameters as the value of the 'kwargs' key (the "
                     "legacy 'params' key is also accepted).")
+            # the spec is rebuilt below from its known keys only, so a
+            # flat 'random_state' would vanish: raise like hyp.cluster
+            _check_cluster_spec_keys(cluster)
             model = cluster["model"]
             model_key = model if isinstance(model, str) \
                 else getattr(model, "__name__", str(model))
