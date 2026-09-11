@@ -401,7 +401,9 @@ def resolve_font(font, texts):
       to the fallback stack (keeping Noto primary), NOT applied as a single
       face to whole text artists (see `hyp.plot`'s handling).
     - a `str`: either an installed font FAMILY NAME (resolved via
-      matplotlib's font lookup; hyphenated and generic names like
+      matplotlib's font lookup, with hypertools' bundled faces -- Noto
+      Sans -- registered first, so the bundled family resolves in any
+      process; hyphenated and generic names like
       'sans-serif' work) or a path to a `.ttf`/`.otf`/`.ttc` FILE
       (detected by `os.path.exists`, so relative and absolute paths both
       work; the file is verified to be a loadable font HERE, not at
@@ -443,6 +445,11 @@ def resolve_font(font, texts):
                 ) from exc
             return FontProperties(fname=font)
 
+        # the bundled faces must be registered BEFORE the lookup: they used
+        # to be registered only as a side effect of an earlier plot, so
+        # font='Noto Sans' (the bundled family) raised "not a recognized
+        # installed font family" in a fresh process (review 2026-09-11)
+        register_bundled_fonts()
         # family passed as a LIST: a bare string family is parsed by
         # matplotlib as a fontconfig PATTERN, so any hyphenated name --
         # including the generic 'sans-serif' -- crashed with an uncaught
