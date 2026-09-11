@@ -572,6 +572,51 @@ def test_label_connectors_and_boxes_are_dark_like_plotly(ndims):
         ('rgba(0,0,0,0.6)', 'rgba(0,0,0,0.4)')}
 
 
+# --- L5: nested-list input's legend names the outer groups -----------------
+
+def _legend_entries(fig, backend):
+    if backend == 'plotly':
+        return [(str(tr.name), _pl_rgb(tr)) for tr in _pl_data(fig)
+                if tr.showlegend is not False and tr.name]
+    legend = fig.axes[0].get_legend()
+    return [(t.get_text(), _r3(h.get_color()))
+            for t, h in zip(legend.get_texts(), legend.legend_handles)]
+
+
+@pytest.mark.parametrize('backend', ['matplotlib', 'plotly'])
+def test_nested_list_legend_names_the_outer_groups(backend):
+    a, b, c, d = _walks(4, rows=20)
+    hls2 = [_r3(col) for col in sns.color_palette('hls', 2)]
+    fig = hyp.plot([[a, b], [c, d]], legend=True, show=False,
+                   backend=backend)
+    assert _legend_entries(fig, backend) == [('1', hls2[0]), ('2', hls2[1])]
+    fig = hyp.plot([[a, b], [c, d]], legend=['Rig A', 'Rig B'], show=False,
+                   backend=backend)
+    assert _legend_entries(fig, backend) == [('Rig A', hls2[0]),
+                                             ('Rig B', hls2[1])]
+    # a per-LEAF list still labels every leaf
+    fig = hyp.plot([[a, b], [c, d]], legend=['a', 'b', 'c', 'd'],
+                   show=False, backend=backend)
+    assert [n for n, _ in _legend_entries(fig, backend)] == ['a', 'b', 'c',
+                                                             'd']
+
+
+def test_nested_list_legend_entry_is_the_groups_summary_leaf():
+    a, b, c, d = _walks(4, rows=20)
+    # group 1's shallowest leaf is `a`; b and c sit one level deeper
+    fig = hyp.plot([[a, [b, c]], d], legend=True, show=False)
+    ax = fig.axes[0]
+    named = [ln for ln in ax.lines if not ln.get_label().startswith('_')]
+    assert [ln.get_label() for ln in named] == ['1', '2']
+    # the labelled leaf is drawn in its group's thickest (summary) style:
+    # group 1 is the first three leaves (a, b, c)
+    group_one = ax.lines[:3]
+    assert named[0] is group_one[0]
+    assert named[0].get_linewidth() == max(ln.get_linewidth()
+                                           for ln in group_one)
+    assert named[0].get_linewidth() > group_one[1].get_linewidth()
+
+
 # --- L4: titles and axis labels on caller axes use hypertools' font --------
 
 def _font_file(text):

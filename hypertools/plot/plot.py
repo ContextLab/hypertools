@@ -5138,6 +5138,12 @@ def plot(
         with a ``UserWarning`` (that path colors by value, so there are
         no discrete groups to name).
 
+        A NESTED-list `x` (``[[a, b], [c, d]]``) colours every leaf by its
+        outer group, and its legend follows the same rule: one entry per
+        outer group (``1..n`` for ``True``, or a list with one name per
+        group), drawn on the group's shallowest leaf; a list with one entry
+        per LEAF still labels every leaf.
+
         Under a matrix-valued (mixture) `hue=` the blended per-observation
         colours have no discrete traces to label, so hypertools used to
         drop the legend with a warning. It now builds one proxy swatch per
@@ -8111,6 +8117,9 @@ def plot(
     # depth; these drive multilevel styling below (color by outer group,
     # thinner/fainter lines per deeper level)
     nested_groups = nested_depths = None
+    # set when the nested-list branch below colours every leaf by its outer
+    # group -- the legend then names the GROUPS (see "handle legend")
+    _nested_group_colored = False
     if isinstance(x, list) and any(isinstance(el, list) for el in x) \
             and not all(isinstance(el, str) for el in x) \
             and not all(isinstance(el, (list, tuple)) and len(el) > 0
@@ -10216,6 +10225,7 @@ def plot(
         base_colors = sns.color_palette(
             _seaborn_palette_arg(palette, n_outer), n_outer)
         mpl_kwargs["color"] = [base_colors[g] for g in nested_groups]
+        _nested_group_colored = True
         min_depth = min(nested_depths)
         if any(d != min_depth for d in nested_depths):
             mpl_kwargs["linewidth"] = [
@@ -10541,6 +10551,30 @@ def plot(
             else:
                 legend = [item for item in
                          sorted(set(hue), key=list(hue).index)]
+        elif (_nested_group_colored and hue is None
+                and len(nested_groups) == len(xform)
+                and (legend is True or (
+                    isinstance(legend, (list, tuple))
+                    and len(legend) == len(set(nested_groups))
+                    and len(legend) != len(xform)))):
+            # nested-list input colours every leaf by its OUTER group, so
+            # the legend names the groups, as a hierarchy's does
+            # (docs/hierarchy.rst: one labelled entry per top-level group,
+            # every other trace '_nolegend_'). legend=True numbered the
+            # LEAVES 1..n, so four swatches came in two identical colour
+            # pairs (1.1 release review, figure QA). The entry goes on the
+            # group's SUMMARY leaf (its shallowest, which the depth styling
+            # draws thickest and most opaque); a legend= list with one
+            # entry per outer group names them.
+            _group_names = (list(legend) if isinstance(legend, (list, tuple))
+                            else list(range(1, len(set(nested_groups)) + 1)))
+            _summary = {}
+            for _i, (_g, _d) in enumerate(zip(nested_groups, nested_depths)):
+                if _g not in _summary or _d < nested_depths[_summary[_g]]:
+                    _summary[_g] = _i
+            _owner = {_i: _g for _g, _i in _summary.items()}
+            legend = [_group_names[_owner[_i]] if _i in _owner
+                      else '_nolegend_' for _i in range(len(xform))]
         elif legend is True and hue is None:
             # ndims=1 series mode (GH #285) names each line by the COLUMN it
             # draws (or by its dataset, for one-column inputs) -- a bare
