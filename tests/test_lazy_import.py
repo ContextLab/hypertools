@@ -436,3 +436,89 @@ def test_a_constructed_but_not_yet_entered_context_survives_another_thread(_rest
                     'a_inside_after_b_enter': False,
                     'b_inside_after_a_exit': False}
     assert L.auto_install_enabled() is False
+
+
+# --- re-entering a handle follows the same call order (review 2026-09-11) -----
+
+def test_reentering_an_older_handle_ranks_by_call_order_like_a_first_entry(_restore_autoinstall):
+    """The newest CALL decides, and entering a handle is not a new call (the
+    round-8 test above: A, constructed before B, does not outrank B's block
+    by entering later). A RE-entered handle broke that: its record was
+    appended back on top of the list with its old construction number, so
+    it outranked a newer handle kept in a variable -- while the same handle
+    entered for the first time, or re-entered after a newer call that was
+    discarded, did not. All three shapes now agree."""
+    import hypertools as hyp
+
+    # first entry of an older handle, newer call kept in a variable
+    older = hyp.set_autoinstall(False)
+    newer = hyp.set_autoinstall(True)
+    with older:
+        first_entry = L.auto_install_enabled()
+    del older, newer
+
+    # re-entry of an older handle, newer call kept in a variable
+    again = hyp.set_autoinstall(False)
+    with again:
+        assert L.auto_install_enabled() is False
+    kept = hyp.set_autoinstall(True)
+    with again:
+        reentry_kept = L.auto_install_enabled()
+    assert L.auto_install_enabled() is True
+
+    # re-entry of an older handle, newer call discarded
+    del kept
+    import gc
+    gc.collect()
+    with again:
+        reentry_discarded = L.auto_install_enabled()
+
+    assert first_entry is reentry_kept is reentry_discarded is True
+    assert L.auto_install_enabled() is True
+
+
+def test_reentered_handle_record_keeps_the_list_in_call_order(_restore_autoinstall):
+    import hypertools as hyp
+    a = hyp.set_autoinstall(False)
+    with a:
+        pass
+    b = hyp.set_autoinstall(True)
+    c = hyp.set_autoinstall(True)
+    with a:
+        seqs = [s.seq for s in L._AUTO_INSTALL_SCOPES]
+        assert seqs == sorted(seqs)                   # oldest first, as documented
+        assert L.auto_install_enabled() is True       # c is the newest call
+    del b, c
+
+
+# --- interpreter shutdown (review 2026-09-11) --------------------------------
+
+@pytest.mark.parametrize('body', [
+    # the reviewer's repro: a direct-call handle kept in a module global
+    'cm = hyp.set_autoinstall(False)',
+    # a handle whose block has exited, kept alive until shutdown
+    'cm = hyp.set_autoinstall(False)\nwith cm:\n    pass',
+    # a handle still inside a block that is never exited
+    'cm = hyp.set_autoinstall(False)\ncm.__enter__()',
+    # several live handles and a baseline
+    'hyp.set_autoinstall(True)\na = hyp.set_autoinstall(False)\n'
+    'b = hyp.set_autoinstall(True)',
+])
+def test_live_handles_at_interpreter_shutdown_print_no_ignored_exception(tmp_path, body):
+    """A handle alive at interpreter exit dies during module teardown, after
+    `lazy_import`'s globals have been cleared to None. Its weakref callback
+    looked `_scope_handle_died` up by name then and printed "Exception
+    ignored in: <function set_autoinstall.__init__.<locals>.<lambda>> ...
+    TypeError: 'NoneType' object is not callable" on every such exit. Run
+    as a real script in a fresh interpreter."""
+    script = tmp_path / 'shutdown.py'
+    script.write_text('import hypertools as hyp\n'
+                      'from hypertools._shared import lazy_import as L\n'
+                      f'{body}\n'
+                      'print("done")\n')
+    out = subprocess.run([sys.executable, str(script)], capture_output=True,
+                         text=True, timeout=300)
+    assert out.returncode == 0, out.stderr[-2000:]
+    assert out.stdout.strip().endswith('done')
+    assert 'Exception ignored' not in out.stderr, out.stderr[-2000:]
+    assert 'Traceback' not in out.stderr, out.stderr[-2000:]
