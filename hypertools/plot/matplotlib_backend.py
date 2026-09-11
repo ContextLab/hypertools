@@ -858,9 +858,19 @@ def _draw(
     xlim=None,
     ylim=None,
     x_date=False,
+    legend_order=None,
 ):
     """
     Draws the plot
+
+    `legend_order` (1.1 release review): the legend labels in the order
+    their entries should be listed, or None for drawn-artist order. The
+    categorical LINE path draws one artist per contiguous run, so its
+    legend followed the order the categories first APPEAR along the data
+    (clusters ``0, 2, 1``) while the marker path lists them sorted; the
+    entries it names are sorted into this order among their own
+    positions, every other entry (an earlier call's, a forecast's) staying
+    where it was.
 
     `raw_data` (GH #141): the PRE-interpolation per-dataset points, same
     length as `x`/`fmt`. Used only by the STATIC (non-animated) plot1D/2D/
@@ -3349,6 +3359,18 @@ def _draw(
             ax.legend(handles=_legend_proxy_handles(legend_entries, fmt),
                       **_legend_call)
         else:
+            if legend_order:
+                _handles, _labels = ax.get_legend_handles_labels()
+                _rank = {str(lbl): k for k, lbl in enumerate(legend_order)}
+                _slots = [j for j, lbl in enumerate(_labels) if lbl in _rank]
+                _sorted = sorted(_slots, key=lambda j: _rank[_labels[j]])
+                if _sorted != _slots:
+                    _perm = list(range(len(_labels)))
+                    for _slot, _src in zip(_slots, _sorted):
+                        _perm[_slot] = _src
+                    _legend_call = dict(
+                        _legend_call, handles=[_handles[j] for j in _perm],
+                        labels=[_labels[j] for j in _perm])
             _legend_artist = ax.legend(**_legend_call)
             if legend_colors is not None:
                 _recolor_legend_handles(_legend_artist, legend_colors)

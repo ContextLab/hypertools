@@ -375,6 +375,33 @@ def _record_palette_used(fig, into, offset, used, taken):
         layout.meta = {**meta, 'hyp_palette_used': new}
 
 
+def _rank_plotly_legend(fig, first_trace, order):
+    """The plotly form of `_draw`'s ``legend_order=``: list this call's
+    legend entries (the traces from `first_trace` on) with the ones named
+    in `order` sorted into that order among their own positions, via
+    ``legendrank``. Every earlier trace keeps its place ahead of them."""
+    data = getattr(fig, 'data', None)
+    if not data:
+        return
+    own = [tr for tr in data[first_trace:]
+           if tr.showlegend is not False and tr.name is not None]
+    rank = {str(lbl): k for k, lbl in enumerate(order)}
+    slots = [j for j, tr in enumerate(own) if str(tr.name) in rank]
+    wanted = sorted(slots, key=lambda j: rank[str(own[j].name)])
+    if wanted == slots:
+        return
+    perm = list(range(len(own)))
+    for slot, src in zip(slots, wanted):
+        perm[slot] = src
+    # plotly lists entries by (legendrank, trace order); the default rank
+    # is 1000, so this call's entries start there -- after any earlier
+    # trace of equal rank -- and count up in the wanted order
+    base = max([1000] + [tr.legendrank for tr in data[:first_trace]
+                         if tr.legendrank is not None])
+    for position, j in enumerate(perm):
+        own[j].legendrank = base + position
+
+
 def _sync_color_scales(drawn, *infos):
     """Rewrite each discrete colour scale in `infos` (the return_model
     bundle's ``'colors'``, a discrete colorbar's info) in place to the
@@ -9120,6 +9147,13 @@ def plot(
     # set together with `_seg_ds` by `_regroup_categorical_lines`
     _seg_lengths = None
     _seg_bridged = None
+    #: The categorical LINE path's legend labels in CATEGORY order (the
+    #: drawn order `_categorical_color_label_maps` resolved: sorted for
+    #: integer hue / cluster ids, first appearance for strings). Its runs
+    #: are drawn in data order, so the legend would otherwise list the
+    #: categories in the order they first APPEAR ('0, 2, 1') where the
+    #: marker path lists them sorted (1.1 release review, figure QA).
+    _legend_order = None
     # (n_input_datasets, n_hue_groups) when a categorical hue regrouped the
     # data by category -- names= (one name per INPUT dataset) cannot apply
     # after that regrouping (F02-009).
@@ -9750,6 +9784,7 @@ def plot(
              _run_cat_names, _seg_lengths,
              _seg_bridged) = _regroup_categorical_lines(
                  xform, cluster_labels, labels, _cat_color, _cat_label)
+            _legend_order = [str(v) for v in _cat_label.values()]
             fmt = _expand_styles_to_runs(fmt, mpl_kwargs, _seg_ds, _nd)
             mpl_kwargs["color"] = _run_colors
             hue = cluster_labels
@@ -10125,6 +10160,7 @@ def plot(
                  _run_cat_names, _seg_lengths,
                  _seg_bridged) = _regroup_categorical_lines(
                      xform, hue, labels, _cat_color, _cat_label)
+                _legend_order = [str(v) for v in _cat_label.values()]
                 fmt = _expand_styles_to_runs(
                     fmt, mpl_kwargs, _seg_ds, _n_datasets_before_hue)
                 mpl_kwargs["color"] = _run_colors
@@ -11565,6 +11601,13 @@ def plot(
                                    colorbar_info)
             kwargs_list = parse_kwargs(xform, mpl_kwargs)
             _apply_extra_kwargs(kwargs_list, kwargs)
+        # the traces already in the figure/grid this call draws into (its
+        # own are appended after them; see `_rank_plotly_legend`)
+        _n_traces_before = 0
+        if _plotly_into is not None:
+            _n_traces_before = len(
+                (_plotly_into.figure if _is_plotly_cell(_plotly_into)
+                 else _plotly_into).data)
         fig = plotly_draw(
             xform,
             into=_plotly_into,
@@ -11653,6 +11696,8 @@ def plot(
         _record_palette_used(
             fig, _plotly_into, _plotly_palette_offset, _plotly_palette_used,
             _palette_taken_colors)
+        if _legend_order:
+            _rank_plotly_legend(fig, _n_traces_before, _legend_order)
         ax = None
         data = xform
         line_ani = None
@@ -11803,6 +11848,7 @@ def plot(
                 title_kwargs=_title_kwargs,
                 legend_kwargs=_legend_kwargs,
                 legend_entries=_final_legend_entries,
+                legend_order=_legend_order,
                 # a plain colour list recolours the FINAL legend, so it is
                 # applied after the forecast/truth entries below when
                 # there are any (Codex round 3: validated too early, it

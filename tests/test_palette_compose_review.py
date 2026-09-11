@@ -628,6 +628,55 @@ def test_nested_list_legend_entry_is_the_groups_summary_leaf():
     assert named[0].get_linewidth() > group_one[1].get_linewidth()
 
 
+# --- L6: the categorical line path lists its legend in category order -----
+
+def _shown_legend_order(fig, backend):
+    if backend == 'plotly':
+        shown = [(tr.legendrank if tr.legendrank is not None else 1000, i,
+                  str(tr.name))
+                 for i, tr in enumerate(fig.data)
+                 if tr.showlegend is not False and tr.name]
+        return [name for _, _, name in sorted(shown)]
+    return [t.get_text() for t in fig.axes[0].get_legend().get_texts()]
+
+
+_CLUSTER = dict(cluster='KMeans', n_clusters=3, random_state=0)
+_INT_HUE = dict(hue=[np.repeat([2, 0, 1], 16), np.repeat([1, 2, 0], 16)])
+
+
+@pytest.mark.parametrize('backend', ['matplotlib', 'plotly'])
+@pytest.mark.parametrize('group', [_CLUSTER, _INT_HUE],
+                         ids=['cluster', 'int-hue'])
+def test_line_path_legend_order_matches_the_marker_path(backend, group):
+    data = _walks(2, rows=48, seed=41)
+    lines = hyp.plot(data, legend=True, show=False, backend=backend, **group)
+    marks = hyp.plot(data, legend=True, fmt='o', show=False,
+                     backend=backend, **group)
+    assert _shown_legend_order(marks, backend) == ['0', '1', '2']
+    assert _shown_legend_order(lines, backend) == ['0', '1', '2']
+    if backend == 'matplotlib':
+        # each entry keeps its own category's colour
+        a = dict(_legend_colours(lines.axes[0]))
+        b = dict(_legend_colours(marks.axes[0]))
+        assert a == b
+
+
+def test_line_path_legend_keeps_forecast_entries_after_the_categories():
+    data = _walks(2, rows=48, seed=41)
+    fig = hyp.plot(data, legend=True, predict='Kalman', t=3, show=False,
+                   **_INT_HUE)
+    assert _shown_legend_order(fig, 'matplotlib') == ['0', '1', '2',
+                                                      'Kalman']
+
+
+def test_a_string_hue_legend_keeps_first_appearance_order():
+    data = _walks(2, rows=48, seed=41)
+    hue = [np.repeat(['z', 'x', 'y'], 16), np.repeat(['y', 'z', 'x'], 16)]
+    for fmt in ('-', 'o'):
+        fig = hyp.plot(data, hue=hue, fmt=fmt, legend=True, show=False)
+        assert _shown_legend_order(fig, 'matplotlib') == ['z', 'x', 'y']
+
+
 # --- L4: titles and axis labels on caller axes use hypertools' font --------
 
 def _font_file(text):
