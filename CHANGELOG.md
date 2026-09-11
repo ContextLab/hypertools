@@ -15,10 +15,13 @@ and a matplotlib Axes passed as `ax=` under the plotly backend.
 
 ### Added
 
-- **Forecasts use observation times.** Timed rows are sorted before fitting,
-  and one future step is the median positive timestamp gap (formerly the
-  minimum gap), independently per dataset. Every forecaster accepts a `step=`
-  override. GaussianProcess fits actual times; discrete-time models linearly
+- **Forecasts use observation times.** Timed rows are sorted before fitting.
+  An index with a regular calendar (a stored or inferable frequency, a
+  `PeriodIndex`, month starts/ends, business-day sessions) is stepped on that
+  calendar; otherwise one future step is the median positive timestamp gap
+  (formerly the minimum gap), independently per dataset. Every forecaster
+  accepts a `step=` override, including calendar aliases such as `'B'` and
+  `'MS'`. GaussianProcess fits actual times; discrete-time models linearly
   interpolate irregular observations onto a regular grid, with a warning.
   Fitted reuse preserves the learned time scale. Series plots fit their signal
   columns together using the time index, including animated forecasts, instead
@@ -721,10 +724,9 @@ input too.
 - **plotly discarded the per-trace alpha under a continuous `hue=`** for the
   same figures, from the other direction: the colour serializer drops the
   4th channel and nothing set the trace `opacity`, so a hue plot that
-  matplotlib drew at `alpha=0.7` rendered fully opaque on plotly. Line
-  colours now carry the alpha; **marker** colours deliberately do not,
-  because matplotlib's per-point marker colours carry none either, and
-  parity is stated against matplotlib.
+  matplotlib drew at `alpha=0.7` rendered fully opaque on plotly. Line and
+  marker colours now carry the alpha on both backends (hue-coloured markers
+  ignored `alpha=` on matplotlib too until the release review).
 
 - **With `ndims=1`, matplotlib drew the `predict=` overlay at x = 0..t**
   instead of continuing the observed series: the overlay was plotted with no
@@ -1308,6 +1310,145 @@ Because 1.1.0 had not been published, they ship in it.
   stock macOS; CJK on a Linux machine whose CJK font is outside the stack)
   drew as empty boxes, while the same text as a title rendered. Present
   since 1.0.0.
+- **A `hue=` surface matches the points beneath it.** Each hull vertex
+  blended every point in its dataset with inverse-squared-distance weights;
+  in 3-D the many distant points outweighed the near ones, so the hull took
+  the dataset's washed-out mean colour. Vertices now blend their nearest
+  points, on both backends.
+- **Markers sit on the observations.** `'o-'`, `markers=` and
+  `forecast_fmt='ro:'` put a marker on every antialiased vertex (about 900
+  for a 40-row path), drawing the line as a solid tube; now only the samples
+  are marked, static and animated (in an animation, the frame-grid vertex
+  nearest each sample), on both backends. An explicit `marker=` wins over
+  the fmt marker on matplotlib, and a continuous hue with `'o-'` in 1-D/2-D
+  shows its markers on plotly.
+- **Hue transparency.** Continuous-hue markers honour `alpha=` on both
+  backends, and translucent plotly 3-D lines keep their colour instead of
+  washing out to cyan.
+- **Plotly hover labels name what you point at.** They read "trace 0"; every
+  data trace now carries its legend label (category, dataset, series column,
+  model or 'truth'), a lone unlabelled dataset shows only its coordinates,
+  and animated legends no longer grow entry by entry.
+- **Plotly subplot cells.** Colorbars no longer land on the next cell, an
+  untitled call keeps the cell's title, a dimensionality mismatch raises a
+  clear error, your own traces are left untouched, and a plotly `ax=`
+  implies the plotly backend.
+- **Plotly `frame_kwargs=`, `zoom=` and legend position.** `frame_kwargs=`
+  styles the plotly frame, static figures ignore `zoom=` (animation-only, as
+  documented), and `legend_kwargs={'x': 0, 'y': 1}` anchors the legend at
+  that corner.
+- **Plotly date axes show the same dates in every time zone.** Numeric dates
+  were drawn in the viewer's local time, so a series starting at midnight on
+  1 January began on the evening of 31 December in New York.
+- **Composing into `ax=` no longer repeats a palette colour.** `'hls'` drawn
+  2 + 2 now gives the four-colour `'hls'` set, and the bundle's `colors` and
+  the colorbar show the colours actually drawn.
+- **Dict-list palettes colour marker plots.** `fmt='o'` ignored a per-
+  dataset list of `{category: color}` dicts.
+- **Per-dataset and nested `labels=` survive `hue=`/`cluster=`** instead of
+  crashing on both backends; label arrays and Series are accepted.
+- **Legends.** A nested-list input's legend names its outer groups instead
+  of four leaves in two colours; cluster and integer-hue line legends list
+  categories in order (0, 1, 2), as the marker path did; `legend=False` wins
+  over `names=`; `panels=` splits a plain `legend_colors=` list per panel;
+  and `legend_colors=` accepts one colour per data entry beside forecast and
+  truth entries.
+- **Label connectors and box edges are visible on matplotlib.** Under the
+  seaborn style they were drawn white, so labels floated with no visible
+  link and cut notches through markers.
+- **Caller-axes and panel titles and axis labels use the Noto Sans stack**
+  instead of DejaVu Sans. `font='Noto Sans'` (the bundled face) works in a
+  fresh process.
+- **Two-column data draws into a 2-D `ax=`** instead of raising "the plot is
+  3D".
+- **0-255 colour lists raise `ValueError`.** `palette=[[255, 128, 0], ...]`
+  was silently read as a data matrix, reordering and rescaling the colours;
+  the error says to divide by 255 or pass a DataFrame.
+- **The NaN-hue warning counts observations** (it counted antialiased
+  vertices) and points at the caller's line.
+- **Forecasts and truth keep their own dataset's style with `'o-'`.** Each
+  marker-plus-line dataset was drawn as two artists, so three datasets'
+  forecasts came out red, red, green.
+- **A one-column trace is drawn against its row index.** Antialiasing put a
+  40-row line at x 0..936, squashing its forecast 24x; `axis_scale='data'`
+  also gave the value range to x.
+- **`ndims=1` `truth=` takes one column of values per trace.** A two-column
+  truth used its first column as x, stretching a date axis back to 1970; it
+  now raises `ValueError`.
+- **Marker-only `hue=`/`cluster=` always refuses forecasts and warns**, even
+  when the category count equals the dataset count (the forecasts were
+  silently drawn in the wrong category's colour).
+- **The 'truth' legend key is gray when truths span several colours**,
+  instead of always showing dataset 0's colour.
+- **Animated forecasts on two-column data no longer crash** with "too many
+  values to unpack".
+- **`xlim=(None, date)` works on date axes**; the open side takes the data
+  bound.
+- **`panels=` accepts `forecast_trail=`** alongside `predict=`.
+- **`transform=` fixes.** A bare array is one dataset instead of crashing, a
+  DataFrame with its own index no longer gives all-zero forecasts, and a
+  polars frame no longer raises `SchemaError`.
+- **A shuffled time index is drawn in time order**, so the forecast joins
+  the end of the line (with a warning).
+- **`ndims=1` date ticks no longer collide**; matplotlib uses concise date
+  labels.
+- **Regular calendar data are forecast on their own calendar.** Business-
+  day, month-start, weekly, quarterly and tz-aware daily indexes, and
+  `PeriodIndex` data, are fitted on their own rows and forecast onto the
+  next business days, month starts or periods. Before, business-day bars
+  were interpolated onto calendar days and forecast onto weekends, month
+  starts drifted, a fall DST change duplicated a day, and periods came back
+  as timestamps.
+- **A fitted forecaster works across index kinds again.** A model fitted on
+  an array and reused on dated rows, or the reverse, raised an error about
+  `step`; it now steps in the new data's own units, as 1.0 did.
+- **ARIMA's minimum history includes `seasonal_order`.** A short seasonal
+  fit gets the "needs N observations" message instead of a bare `IndexError`
+  or `LinAlgError`.
+- **Time warnings appear once, and only when they apply.** A stacked panel
+  warns "not sorted" once per call instead of three times, and an explicit
+  `step=` on evenly spaced data no longer calls them irregular.
+- **`yahoo:` intraday bars keep their timestamps.** `interval='1h'` put
+  every bar at midnight, so `hyp.predict` rejected the index; intraday bars
+  are tz-aware in the exchange's time zone.
+- **A dict model spec with a flat parameter raises instead of silently
+  running defaults.** `{'model': 'PCA', 'whiten': True}` or
+  `cluster={'model': 'KMeans', 'n_clusters': 4, 'random_state': 0}` dropped
+  the extra keys; they now raise `ValueError` naming them and showing the
+  `'kwargs'` form, in `reduce` (including streaming), `cluster`, `manip`,
+  `align`, `impute`, `Pipeline`, `apply_model` and `text2mat`. The
+  documented `n_clusters` shortcut still works. Outer `**kwargs` next to a
+  dict spec now reach `manip`/`align` models, and a spec's `'args'` reach
+  streaming and `text2mat` models.
+- **`hyp.plot(x, pipeline=p)` draws the pipeline's clusters.** A fitted
+  trailing cluster step colours the figure with the fit figure's colours; it
+  was dropped silently.
+- **Aligner classes accept arrays.** `HyperAlign().fit(xs).transform(ys)` on
+  a list of NumPy arrays, or a single array, raised "Unsupported datatype";
+  the aligners accept what `hyp.align` does and return each dataset in its
+  input's form.
+- **`alignment_score(metric='dispersion')` rejects all-constant datasets.**
+  Datasets each constant at a different value scored exactly 1.0; they now
+  raise, like `'isc'`.
+- **Rows a `manip=` stage empties stop the pipeline at that stage.** A
+  trailing `Smooth(center=False)` no longer triggers misleading PPCA
+  imputation warnings or sklearn NaN errors; the error names the stage and
+  suggests `min_periods=1`.
+- **A fitted `Normalizer` accepts 1-D data.** A 1-D array, Series or list of
+  numbers is one column in both fit and transform.
+- **Offline errors say what happened.** A missing 25+ character bare name
+  lists the full resolution chain instead of a Google Drive cache miss, a
+  cached copy that fails to parse raises `HypertoolsIOError` naming the
+  file, and an extensionless remote `.npz` reports the `trust=True` error
+  instead of a parquet one.
+- **`load()`'s TypeError names polars frames**, which it accepts.
+- **`set_autoinstall` handles are quiet at exit.** A live handle printed
+  "Exception ignored ... TypeError" at interpreter shutdown; a re-entered
+  handle keeps its creation order.
+- **Align, impute and manip warnings point at your own line**, so deprecated
+  spellings are no longer hidden inside the library.
+- **`[density3d]` needs `scikit-image>=0.25.0`**, the first release with
+  Python 3.13 wheels.
 
 ### Documented limitations
 
