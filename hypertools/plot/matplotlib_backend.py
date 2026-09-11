@@ -835,14 +835,14 @@ def _draw(
     (e.g. 'o-') is drawn as two artists -- a smoothed line from `x` (the
     already-interpolated data) plus markers at the raw sample points from
     `raw_data` -- so markers land on the true data regardless of how dense
-    the smoothed line is. Ignored (may be None) for pure line/marker-only
-    styles and for every ANIMATED style, which still draw marker+line
-    combos as a single artist against the (now also smoothed, since the
-    interpolation gate itself was fixed for GH #141) `x` data -- so an
-    animated 'o-' plot's line is correctly smoothed, but its markers
-    currently render at the interpolated points rather than only the
-    original samples; splitting the animated marker/line artists frame-by-
-    frame was judged out of scope for this fix.
+    the smoothed line is (an explicit ``marker=`` on a line fmt splits the
+    same way). Ignored (may be None) for pure line/marker-only styles. An
+    ANIMATED marker+line style keeps ONE artist per dataset (so its legend
+    handle shows marker and line), drawn against the smoothed frame-grid
+    `x` data; `raw_data` then locates each observation's nearest drawn
+    vertex, and each frame's ``markevery`` marks only those
+    (`_mark_observations`) -- before the 1.1 release review every
+    interpolated vertex carried a marker.
 
     `ownership` (a `hypertools.plot.ownership.TraceOwnership`, or None): which
     source dataset each drawn trace came from and which of its rows. When
@@ -943,10 +943,64 @@ def _draw(
             artist._hyp_row_window = (a, b)
         dense, step = _aa_curves[i]
         if step == 1:
-            return dense[a:b]
-        if b <= a:
-            return dense[0:0]
-        return dense[a * step:(b - 1) * step + 1]
+            lo, out = a, dense[a:b]
+        elif b <= a:
+            lo, out = a * step, dense[0:0]
+        else:
+            lo, out = a * step, dense[a * step:(b - 1) * step + 1]
+        if artist is not None:
+            _mark_observations(i, artist, lo, len(out))
+        return out
+
+    # markers at the TRUE observations in an animation (the shared marker
+    # contract; 1.1 release review): an animated line is resampled onto
+    # the frame grid (`plot._interp_anim_line`) and densified again above,
+    # so its vertices are not the observations, and a marker+line style
+    # ('o-', or a line fmt with marker=/markers=) marked every one of them
+    # -- a tube of ~500 markers for 48 samples. Mark, on the SAME artist
+    # (its legend handle keeps the marker), only the drawn vertex nearest
+    # each observation: found by position, in a window around the
+    # observation's proportional place along the curve, so it holds for
+    # whatever observation -> grid mapping the resampling produces.
+    _obs_vertices_cache = {}
+
+    def _observation_vertices(i):
+        if i in _obs_vertices_cache:
+            return _obs_vertices_cache[i]
+        found = None
+        if (animate and raw_data is not None and i < len(raw_data)
+                and raw_data[i] is not None):
+            raw = np.asarray(raw_data[i], dtype=float)
+            dense = np.asarray(_aa_curves[i][0], dtype=float)
+            n, d = raw.shape[0], dense.shape[0]
+            if (raw.ndim == 2 and dense.ndim == 2 and n and d
+                    and raw.shape[1] == dense.shape[1]):
+                if n == 1 or d == 1:
+                    found = np.array([0])
+                else:
+                    est = np.rint(np.arange(n) * (d - 1) / (n - 1)).astype(int)
+                    w = int(np.ceil((d - 1) / (n - 1)))
+                    idx = []
+                    for k in range(n):
+                        lo, hi = max(0, est[k] - w), min(d, est[k] + w + 1)
+                        gap = np.linalg.norm(dense[lo:hi] - raw[k], axis=1)
+                        idx.append(lo + int(np.argmin(gap)))
+                    found = np.unique(idx)
+        _obs_vertices_cache[i] = found
+        return found
+
+    def _mark_observations(i, artist, lo, count):
+        marker = artist.get_marker() if hasattr(artist, 'get_marker') else None
+        if marker in (None, 'None', 'none', '', ' '):
+            return
+        if not has_line_component(_fmt_at(i)) and artist.get_linestyle() in (
+                'None', 'none', '', ' '):
+            return                  # markers only: its vertices ARE the rows
+        verts = _observation_vertices(i)
+        if verts is None:
+            return
+        local = verts[(verts >= lo) & (verts < lo + count)] - lo
+        artist.set_markevery([int(v) for v in local])
 
     # handle static plots
     def dispatch_static(x, ax=None):
@@ -1001,6 +1055,19 @@ def _draw(
             fmt_ls, fmt_marker = split_marker_line_fmt(f)
             fmt_color = None
         line_token, marker_char = split_marker_line_fmt(f)
+        # an explicit marker= (or its markers= alias) wins over the fmt's
+        # marker, as the comment above promises and as plotly draws it:
+        # the split below used to discard it, so fmt='-o' with
+        # marker=['o', 's'] drew two circle datasets (1.1 release review).
+        # A line fmt given a marker= this way is a marker+line combo too,
+        # so it takes the same split: markers only at the TRUE samples,
+        # never at the interpolated vertices (`antialias=`'s promise; the
+        # single artist marked all ~20x-denser smoothed vertices)
+        _explicit_marker = ikwargs.get('marker')
+        if _explicit_marker is not None:
+            marker_char = (None if isinstance(_explicit_marker, str)
+                           and _explicit_marker.strip().lower() in ('', 'none')
+                           else _explicit_marker)
         if line_token is not None and marker_char is not None:
             line_kwargs = {k: v for k, v in ikwargs.items() if k != 'marker'}
             line_kwargs.setdefault('linestyle', line_token)

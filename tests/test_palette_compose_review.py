@@ -380,3 +380,122 @@ def test_per_dataset_labels_survive_a_regrouping(backend, labels, group):
         arr = np.asarray([pos[k] for k in keys], float)
         return arr - arr.mean(axis=0)
     np.testing.assert_allclose(centred(got), centred(ref), atol=1e-5)
+
+
+# --- 7 / 8: explicit marker= wins; markers only at the true samples -------
+
+def _walk48():
+    return _walks(2, rows=48)
+
+
+def _marked(ax):
+    """(label, marker, n marked points) for every artist that draws a
+    marker, reading markevery (None = every vertex)."""
+    out = []
+    for ln in ax.lines:
+        mk = ln.get_marker()
+        if mk in (None, 'None', '', ' '):
+            continue
+        me = ln.get_markevery()
+        n = len(ln.get_xdata()) if me is None else len(np.atleast_1d(me))
+        out.append((ln.get_label(), mk, n))
+    return out
+
+
+def test_an_explicit_marker_list_wins_over_the_fmt_marker():
+    fig = hyp.plot(_walk48(), fmt='-o', marker=['o', 's'], legend=['a', 'b'],
+                   show=False)
+    ax = fig.axes[0]
+    drawn = [(lbl, mk) for lbl, mk, n in _marked(ax) if n]
+    assert drawn == [('_nolegend_', 'o'), ('_nolegend_', 's')]
+    legend = ax.get_legend()
+    assert [h.get_marker() for h in legend.legend_handles] == ['o', 's']
+    # plotly draws the same symbols
+    pfig = hyp.plot(_walk48(), fmt='-o', marker=['o', 's'], show=False,
+                    backend='plotly')
+    assert [tr.marker.symbol for tr in _pl_data(pfig)] == ['circle',
+                                                            'square']
+
+
+@pytest.mark.parametrize('kw', [dict(markers='o'), dict(marker='o'),
+                                dict(fmt='--', marker='s'),
+                                dict(fmt='-o')])
+def test_markers_on_a_smoothed_line_sit_only_at_the_samples(kw):
+    data = _walk48()
+    fig = hyp.plot(data, legend=['a', 'b'], show=False, **kw)
+    ax = fig.axes[0]
+    marked = [(lbl, n) for lbl, _, n in _marked(ax) if n]
+    # one markers-only artist per dataset, one marker per SAMPLE
+    assert marked == [('_nolegend_', 48), ('_nolegend_', 48)]
+    # ...drawn at the samples themselves: every one is a vertex of the
+    # smoothed line of the same dataset (antialias keeps each sample)
+    lines = [ln for ln in ax.lines if ln.get_label() in ('a', 'b')]
+    dots = [ln for ln in ax.lines if ln.get_label() == '_nolegend_']
+    for line, dot in zip(lines, dots):
+        curve = np.column_stack(line.get_data_3d())
+        pts = np.column_stack(dot.get_data_3d())
+        assert len(curve) > 5 * len(pts)          # the line IS smoothed
+        gap = np.min(np.linalg.norm(curve[:, None] - pts[None], axis=-1),
+                     axis=0)
+        assert gap.max() < 1e-9
+    # the legend glyph still shows the marker with the line
+    assert [h.get_marker() for h in ax.get_legend().legend_handles] == \
+        [kw.get('marker', 'o')] * 2
+
+
+@pytest.mark.parametrize('kw', [dict(fmt='o-'), dict(markers='o'),
+                                dict(fmt='--', marker='s')])
+def test_animated_markers_sit_at_the_samples_not_every_vertex(kw):
+    data = _walk48()
+    anim = hyp.plot(data, animate='spin', duration=3, frame_rate=20,
+                    legend=['a', 'b'], show=False, **kw)
+    anim.draw_frame(anim.n_frames - 1)
+    ax = anim.figure.axes[0]
+    lines = [ln for ln in ax.lines if ln.get_label() in ('a', 'b')]
+    assert len(lines) == 2
+    # the observations, in the figure's coordinates: a static plot of the
+    # same data marks them exactly (see the static test above)
+    static = hyp.plot(data, fmt='o-', show=False).axes[0]
+    obs = [np.column_stack(ln.get_data_3d()) for ln in static.lines
+           if ln.get_label() == '_nolegend_']
+    n_grid = anim.n_frames          # the frame grid the line is drawn from
+    for line, pts in zip(lines, obs):
+        verts = np.column_stack(line.get_data_3d())
+        marked = np.atleast_1d(line.get_markevery())
+        n_verts = len(verts)
+        assert n_verts > 5 * len(pts)             # smoothed, dense curve
+        assert len(marked) == len(pts) == 48      # one marker per sample
+        # in order along the curve, from its first vertex to its last...
+        assert np.all(np.diff(marked) > 0)
+        assert marked[0] == 0 and marked[-1] == n_verts - 1
+        # ...each within one frame-grid row of its sample's place along it
+        per_row = (n_verts - 1) / (n_grid - 1)
+        place = np.arange(48) * (n_verts - 1) / 47
+        assert np.abs(marked - place).max() <= per_row
+        # and, in space, within half a grid row of the sample itself (the
+        # static figure's coordinates differ from the animation's by the
+        # small offset the curve's exact endpoints show)
+        offset = np.linalg.norm(verts[[0, -1]] - pts[[0, -1]], axis=1).max()
+        row_len = np.linalg.norm(np.diff(verts, axis=0), axis=1).sum() / (
+            n_grid - 1)
+        gap = np.linalg.norm(verts[marked] - pts, axis=1)
+        assert gap.max() <= 0.5 * row_len + offset
+    # the legend handle is the same artist, so it keeps the marker
+    assert [h.get_marker() for h in ax.get_legend().legend_handles] == \
+        [kw.get('marker', 'o')] * 2
+
+
+def test_animated_window_marks_only_the_revealed_samples():
+    data = _walk48()
+    anim = hyp.plot(data, animate=True, fmt='o-', duration=3,
+                    frame_rate=20, show=False)
+    anim.draw_frame(anim.n_frames // 2)
+    for line in anim.figure.axes[0].lines:
+        if line.get_marker() in (None, 'None', '', ' '):
+            continue
+        marked = np.atleast_1d(line.get_markevery())
+        n_verts = len(line.get_xdata())
+        # a fraction of the 48 samples, and far fewer than the vertices
+        assert 0 < len(marked) < 48
+        assert len(marked) * 5 < n_verts
+        assert marked.max() < n_verts
