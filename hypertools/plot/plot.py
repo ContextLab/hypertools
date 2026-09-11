@@ -288,6 +288,119 @@ def _palette_slots_consumed(n_drawn, mpl_kwargs, line_colors, draw_fmt,
         is None)
 
 
+def _palette_continuation(palette, n, offset=0, used=None):
+    """The `n` colours a call draws from `palette` into an axes, figure or
+    grid cell where earlier hypertools calls already took `offset` slots --
+    `used` being those slots' colours, in order (None when unknown).
+
+    With no earlier slots this is the palette's own `n`-colour sampling,
+    exactly what a fresh call draws. With earlier slots the palette is
+    CONTINUED, never restarted and never repeated:
+
+    - a fixed-sequence palette (a colour list, 'deep', 'Set2', ...) gives
+      the next colours in its sequence -- the `offset`-th onward of its
+      ``offset + n`` sampling, what one call with every dataset would draw;
+    - an evenly RE-SAMPLED palette ('hls', 'husl', a colormap such as
+      'viridis') places its colours by count, so the ``offset + n``
+      sampling is not an extension of the ``offset`` one: 'hls' at 2 is
+      0 and 180 degrees, at 4 it is 0/90/180/270, so taking its last two
+      repeated 180 (1.1 release review: two datasets then two more drew
+      a2 == b1). Instead take the smallest sampling of ``m >= offset + n``
+      colours that CONTAINS every colour already used and fill its free
+      slots in palette order -- 'hls' 2 + 2 draws exactly the 4-colour
+      'hls' set, and 1 + 1 still draws what one call with both draws.
+
+    When no such sampling exists (the earlier colours came from another
+    palette, or a short colour list has no free slot left to fill), it
+    falls back to the ``offset``-th onward of the ``offset + n`` sampling.
+    """
+    import seaborn as sns
+
+    def sample(m):
+        return [tuple(float(v) for v in c[:3]) for c in sns.color_palette(
+            _seaborn_palette_arg(palette, m), m)]
+
+    if n <= 0:
+        return []
+    if offset <= 0:
+        return sample(n)
+    fallback = sample(offset + n)[offset:]
+    if used is None or len(used) != offset:
+        return fallback
+    used_arr = np.asarray([tuple(c)[:3] for c in used], dtype=float)
+    # every sampling that could hold `used` plus `n` free slots; the upper
+    # bound covers the nested refinements repeated composition produces
+    # (each at most doubles the grid the used colours sit on)
+    for m in range(offset + n, 4 * (offset + n) + 9):
+        cand = np.asarray(sample(m), dtype=float)
+        dist = np.abs(cand[:, None, :] - used_arr[None, :, :]).max(axis=-1)
+        taken = dist < 1e-6
+        if not taken.any(axis=0).all():
+            continue
+        free = [i for i in range(m) if not taken[i].any()]
+        if len(free) >= n:
+            return [tuple(cand[i]) for i in free[:n]]
+    return fallback
+
+
+def _extend_palette_used(offset, used, taken):
+    """The palette-slot colours an axes/figure/cell holds after a call that
+    took `taken` past `offset` earlier slots whose colours were `used`, or
+    None when the earlier colours are unknown (then the next call falls back
+    to the count alone; see `_palette_continuation`)."""
+    if offset <= 0:
+        return [tuple(float(v) for v in c[:3]) for c in taken]
+    if used is None or len(used) != offset:
+        return None
+    return ([tuple(float(v) for v in c[:3]) for c in used]
+            + [tuple(float(v) for v in c[:3]) for c in taken])
+
+
+def _record_palette_used(fig, into, offset, used, taken):
+    """Record the palette-slot colours on a plotly figure's ``layout.meta``,
+    beside the slot count the plotly backend records there: per figure as
+    ``'hyp_palette_used'``, per `PlotlyCell` as
+    ``'hyp_cell_palette_used'[str(index)]``."""
+    layout = getattr(fig, 'layout', None)
+    if layout is None:
+        return
+    new = _extend_palette_used(offset, used, taken)
+    new = None if new is None else [list(c) for c in new]
+    meta = layout.meta if isinstance(layout.meta, dict) else {}
+    if into is not None and _is_plotly_cell(into):
+        cells = dict(meta.get('hyp_cell_palette_used') or {})
+        cells[str(into.index)] = new
+        layout.meta = {**meta, 'hyp_cell_palette_used': cells}
+    else:
+        layout.meta = {**meta, 'hyp_palette_used': new}
+
+
+def _sync_color_scales(drawn, *infos):
+    """Rewrite each discrete colour scale in `infos` (the return_model
+    bundle's ``'colors'``, a discrete colorbar's info) in place to the
+    per-dataset colours `drawn` -- the colours the datasets were actually
+    drawn in -- when it has one colour per dataset. Only for datasets
+    coloured from the palette cycle (see `_color_scales_from_cycle` in
+    `plot`), whose scale was resolved from the palette's fresh sampling."""
+    from matplotlib.colors import BoundaryNorm, ListedColormap, to_rgb
+    rgb = np.asarray([to_rgb(c) for c in drawn], dtype=float)
+    for info in infos:
+        if (not isinstance(info, dict) or info.get('kind') != 'discrete'
+                or info.get('colors') is None
+                or len(info['colors']) != len(rgb) or not len(rgb)):
+            continue
+        info['colors'] = rgb.copy()
+        if 'cmap' in info:
+            info['cmap'] = ListedColormap(info['colors'])
+        if info.get('norm') is not None:
+            info['norm'] = BoundaryNorm(np.arange(len(rgb) + 1) - 0.5,
+                                        len(rgb))
+        if info.get('categories'):
+            info['categories'] = {
+                str(label): tuple(color)
+                for label, color in zip(info['labels'], info['colors'])}
+
+
 def _apply_forecast_override(style, override):
     """Overlay one dataset's `forecast_*=` override onto an inherited style.
 
@@ -6323,7 +6436,13 @@ def plot(
         figure it came from), and a second call into the SAME Axes or
         plotly Figure continues the palette past the datasets the earlier
         call drew, on both backends -- so composing two calls does not
-        draw both in the first colour. Pass `color=` to choose instead.
+        draw both in the first colour. A fixed-sequence palette (a colour
+        list, 'deep', 'Set2') gives its next colours; an evenly re-sampled
+        one ('hls', 'husl', a colormap) fills the gaps between the colours
+        already drawn rather than repeating one ('hls' drawn as 2 datasets
+        and then 2 more gives the four 4-colour 'hls' hues). The
+        return_model bundle's ``'colors'`` (and a colorbar) report the
+        colours drawn. Pass `color=` to choose instead.
 
         STATIC PLOTS ONLY. An animated plot (any truthy ``animate=``) owns
         its own figure: it creates one, draws there, and returns it, so an
@@ -10382,6 +10501,17 @@ def plot(
         legend, palette, hue_group_labels=hue_group_labels,
         hierarchy_labels=_mi_colorbar_labels,
         legend_entries=_final_legend_entries)
+    # ...which, for datasets coloured from the palette CYCLE (no color=,
+    # hue=, cluster=, palette mapping), reads the palette's fresh sampling;
+    # the colours actually drawn differ when a composed `ax=` continues the
+    # palette or a fmt= colour letter colours a dataset, so each backend
+    # branch below re-syncs both scales to the drawn colours
+    # (`_sync_color_scales`; 1.1 release review)
+    _color_scales_from_cycle = (
+        "color" not in mpl_kwargs and hue is None and cluster is None
+        and n_clusters is None and multicolor_hue is None
+        and not isinstance(palette, collections.abc.Mapping)
+        and not _looks_like_dataset_palettes(palette))
 
     # interpolate if its a line plot. animate='morph' treats every dataset
     # as a POINT CLOUD (Hungarian-matched to its neighbors in `morph.py`),
@@ -11242,6 +11372,9 @@ def plot(
         # the next ordinary call restarted the palette (round 8; the
         # matplotlib `ax=` path keeps the axes' count across such calls)
         _plotly_palette_offset = 0
+        # ...and the COLOURS those slots took (`_palette_continuation`
+        # fills the gaps of an evenly re-sampled palette with them)
+        _plotly_palette_used = None
         if _plotly_into is not None:
             if _is_plotly_cell(_plotly_into):
                 _meta = _plotly_into.figure.layout.meta
@@ -11249,16 +11382,21 @@ def plot(
                 _plotly_palette_offset = int((_meta.get(
                     'hyp_cell_datasets_drawn') or {}).get(
                         str(_plotly_into.index), 0))
+                _plotly_palette_used = (_meta.get(
+                    'hyp_cell_palette_used') or {}).get(
+                        str(_plotly_into.index))
             else:
                 _meta = getattr(_plotly_into, 'layout', None)
                 _meta = _meta.meta if _meta is not None else None
+                _meta = _meta if isinstance(_meta, dict) else {}
                 _plotly_palette_offset = int(
-                    (_meta or {}).get('hyp_datasets_drawn', 0)
-                    if isinstance(_meta, dict) else 0)
+                    _meta.get('hyp_datasets_drawn', 0))
+                _plotly_palette_used = _meta.get('hyp_palette_used')
+        # the palette colours this call's cycle-coloured datasets take,
+        # recorded below for the next `ax=` call into the same figure/cell
+        _palette_taken_colors = []
         if "color" not in mpl_kwargs:
-            import seaborn as sns_local
             mpl_kwargs = dict(mpl_kwargs)
-            _n_palette = len(xform)
             # continue the palette past the datasets an earlier call drew
             # here, as the matplotlib `ax=` path does (a per-dataset
             # palette mapping/list is not a cycle to continue)
@@ -11267,10 +11405,10 @@ def plot(
                     and not (isinstance(palette, collections.abc.Mapping)
                              or _looks_like_dataset_palettes(palette))):
                 _cycle_offset = _plotly_palette_offset
-                _n_palette += _cycle_offset
-            _palette_colors = list(sns_local.color_palette(
-                _seaborn_palette_arg(palette, _n_palette),
-                _n_palette))[_cycle_offset:]
+            _palette_colors = _palette_continuation(
+                palette, len(xform), _cycle_offset,
+                _plotly_palette_used if _cycle_offset else None)
+            _palette_taken_colors = _palette_colors[:_palette_slots_taken]
             # a colour letter in fmt= ('r-', ['g--', 'b:']) colours its
             # dataset, exactly as on matplotlib, where the letter beats the
             # axes' colour cycle (an explicit color=/hue= is the other
@@ -11288,6 +11426,9 @@ def plot(
             mpl_kwargs["color"] = [
                 _letter if _letter is not None else next(_palette_iter)
                 for _letter in _fmt_letters]
+            if _color_scales_from_cycle:
+                _sync_color_scales(mpl_kwargs["color"], colors_info,
+                                   colorbar_info)
             kwargs_list = parse_kwargs(xform, mpl_kwargs)
             _apply_extra_kwargs(kwargs_list, kwargs)
         fig = plotly_draw(
@@ -11373,6 +11514,11 @@ def plot(
             # (`_palette_slots_consumed`)
             datasets_drawn=_plotly_palette_offset + _palette_slots_taken,
         )
+        # ...and the colours of those slots, beside the count (read back
+        # by the colour block above on the next `ax=` call)
+        _record_palette_used(
+            fig, _plotly_into, _plotly_palette_offset, _plotly_palette_used,
+            _palette_taken_colors)
         ax = None
         data = xform
         line_ani = None
@@ -11389,6 +11535,11 @@ def plot(
                 n_colors=len(xform))
             sns.set_style(style="whitegrid")
             _palette_offset = 0
+            _palette_used = None
+            # this call's cycle colours: the palette's own sampling on a
+            # fresh axes (what `sns.set_palette` above gives it), continued
+            # past an earlier call's slots on a reused one (below)
+            _cycle = _palette_continuation(palette, len(xform))
             if ax is not None and hasattr(ax, 'set_prop_cycle'):
                 # a caller's axes (`ax=`, every `panels=` cell) captured
                 # ITS figure's colour cycle when it was created, so the
@@ -11400,16 +11551,30 @@ def plot(
                 # an earlier hypertools call drew there, so composing two
                 # calls on one axes does not draw both in the first colour
                 # (the plotly `ax=<figure>` path keeps the same count).
-                _cycle_palette = _seaborn_palette_arg(palette, len(xform))
-                _n_cycle = len(xform)
+                # `_palette_continuation` continues it without repeating an
+                # earlier call's colour, from the colours those slots took.
                 if not (isinstance(palette, collections.abc.Mapping)
                         or _looks_like_dataset_palettes(palette)):
                     _palette_offset = int(getattr(
                         ax, '_hyp_palette_offset', 0) or 0)
-                    _n_cycle += _palette_offset
-                    _cycle_palette = _seaborn_palette_arg(palette, _n_cycle)
-                _cycle = list(sns.color_palette(_cycle_palette, _n_cycle))
-                ax.set_prop_cycle(color=_cycle[_palette_offset:] or _cycle)
+                    _palette_used = getattr(ax, '_hyp_palette_used', None)
+                    _cycle = _palette_continuation(
+                        palette, len(xform), _palette_offset, _palette_used)
+                ax.set_prop_cycle(color=_cycle or _palette_continuation(
+                    palette, 1))
+            if _color_scales_from_cycle:
+                # what each dataset is drawn in: its fmt= colour letter
+                # (which takes no cycle slot) or the next cycle colour
+                _cycle_iter = iter(_cycle)
+                _drawn_colors = []
+                for _i in range(len(xform)):
+                    _letter = _fmt_color_letter(
+                        draw_fmt[_i] if _i < len(draw_fmt) else None)
+                    _drawn_colors.append(_letter if _letter is not None
+                                         else next(_cycle_iter, None))
+                if None not in _drawn_colors:
+                    _sync_color_scales(_drawn_colors, colors_info,
+                                       colorbar_info)
             # Font, applied AFTER sns.set_style (which sets its own font
             # rcParams). A LIST gives matplotlib >= 3.6 PER-GLYPH fallback, so
             # text mixing scripts renders fully instead of showing "tofu" for
@@ -11528,6 +11693,10 @@ def plot(
                 # as composing into a `hyp.subplots` cell does (round 7)
                 ax._hyp_palette_offset = (_palette_offset
                                           + _palette_slots_taken)
+                # ...and the colours of those slots
+                ax._hyp_palette_used = _extend_palette_used(
+                    _palette_offset, _palette_used,
+                    _cycle[:_palette_slots_taken])
 
             # A caller-supplied ax= was created outside this rc context, so
             # its tick labels carry the 'sans-serif' ALIAS, which matplotlib
