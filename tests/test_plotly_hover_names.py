@@ -194,6 +194,7 @@ def test_animated_legend_entries_ride_on_data_free_proxies():
     for t in entries:
         # data-free: nothing a frame could empty
         assert list(t.x) == [None]
+        assert t.meta["hyp_legend_proxy"] == t.name
         members = [d for d in _hoverable_data(fig)
                    if d.legendgroup == t.legendgroup]
         assert members and all(d.name == t.name for d in members)

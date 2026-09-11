@@ -4929,7 +4929,10 @@ def _legend_proxy_for(trace, ndims, group):
     line['color'] = _scalar(line.get('color'))
     common = dict(mode=trace.mode or 'lines', name=trace.name,
                   showlegend=True, legendgroup=group, hoverinfo='skip',
-                  line=line, meta=dict(hyp_legend_entry=str(trace.name)))
+                  line=line,
+                  # NOT `hyp_legend_entry`, which marks the forecast
+                  # model keys (`_forecast_legend_traces`)
+                  meta=dict(hyp_legend_proxy=str(trace.name)))
     if trace.opacity is not None:
         common['opacity'] = trace.opacity
     if trace.mode and 'markers' in trace.mode and trace.marker is not None:
