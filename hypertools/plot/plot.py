@@ -1415,8 +1415,8 @@ def _validate_title(title, style=None, order=None, n_datasets=None):
     if not serial_style or not isinstance(title, (list, tuple)):
         if _style_cannot_go_serial and isinstance(title, (list, tuple)):
             raise TypeError(
-                f"title must be a string (or None), not "
-                f"{type(title).__name__}. animate={_style!r} has no serial "
+                f"title must be a string, a callable (ctx -> str), or None, "
+                f"not {type(title).__name__}. animate={_style!r} has no serial "
                 "ordering (it does not reveal datasets one at a time), so "
                 "order='serial' is ignored and per-dataset title lists are "
                 "not meaningful for it -- pass a single string title "
@@ -1424,7 +1424,8 @@ def _validate_title(title, style=None, order=None, n_datasets=None):
                 "for a style that supports per-dataset titles."
             )
         raise TypeError(
-            f"title must be a string (or None), not {type(title).__name__}. "
+            f"title must be a string, a callable (ctx -> str), or None, not "
+            f"{type(title).__name__}. "
             "Per-dataset titles are only meaningful for serial-style "
             "animations (order='serial' or animate='morph'), and must be a "
             "list/tuple there. For a per-dataset legend entry use names=; "
@@ -5749,9 +5750,11 @@ def plot(
         default for 2-D and 3-D plots: the (possibly reduced/aligned)
         coordinates are mean-centred and rescaled into ``[-1, 1]`` by a
         single shared affine transform across all datasets (and, with
-        `predict=`, across every forecast vertex), the axes are pinned to
-        ``(-1.1, 1.1)``, and hypertools' own frame square/cube is drawn in
-        place of matplotlib's ticks and spines. Coordinates read off the
+        `predict=`, across every forecast vertex), the axes are pinned
+        around hypertools' own frame (2-D: ``(-1.2375, 1.2375)`` around a
+        frame square of half-width 1.125; 3-D: the ``[-1, 1]`` cube, grown
+        to fit a `surface=`), and that frame square/cube is drawn in place
+        of matplotlib's ticks and spines. Coordinates read off the
         returned Figure are therefore an affine IMAGE of the analyzed data,
         not the raw values, and are not comparable across figures.
 
@@ -6417,8 +6420,9 @@ def plot(
         more distinct histories AND a costlier fit each. Nothing is skipped
         to make that faster -- sampling the reveal would change what is
         plotted -- so the notice exists to make a long wait expected rather
-        than mysterious. It is emitted as soon as one real fit has been
-        timed, not after the wait.
+        than mysterious. It is emitted once fits at two or more history
+        lengths (one of at least 10 rows, or the longest available) have
+        been timed, not after the wait.
 
     frame_rate (animation only) : int or float
         Frame rate for animation in frames per second (default: 30).
@@ -7805,7 +7809,8 @@ def plot(
         raise ValueError(
             f"{'xlim' if xlim is not None else 'ylim'}= sets limits in the "
             "DRAWN coordinates, but axis_scale='unit' pins both axes to the "
-            "[-1.1, 1.1] frame box, so the limits would be overwritten. "
+            "frame box (+/-1.2375 around the unit data square), so the "
+            "limits would be overwritten. "
             "Pass axis_scale='data' to draw in the data's own units.")
     for _lim_name, _lim in (('xlim', xlim), ('ylim', ylim)):
         if _lim is None:
