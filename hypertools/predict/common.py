@@ -37,10 +37,14 @@ def resolve_t(data, t, step=None):
 
     Implements GH #169's ``t`` semantics:
 
-    - ``t`` an int: forecast ``t`` timesteps ahead. The timestep duration is
-      the median positive gap between sorted observations
-      (index-aware for time-indexed data; a plain ``RangeIndex`` uses a step
-      of 1).
+    - ``t`` an int: forecast ``t`` timesteps ahead. One timestep is the
+      index's CALENDAR frequency when it has one -- stored, inferable with
+      ``pd.infer_freq``, a ``PeriodIndex``'s own, or business days for
+      weekday-only sessions -- so business-day data continue onto the next
+      business days and month starts onto month starts (tz-aware days keep
+      their local wall-clock time across DST); otherwise it is the median
+      positive gap between sorted observations (a plain ``RangeIndex`` uses
+      a step of 1). See `hypertools.predict.time`.
     - ``t`` a datetime-like value on time-indexed (``DatetimeIndex``) data:
       the number of steps (using the inferred step) from the last
       observation up to ``t``. If ``t`` is at or before the last
@@ -55,6 +59,8 @@ def resolve_t(data, t, step=None):
       the last observation always forecasts at least one step (a target
       less than one full step ahead rounds up to a single step). A
       tz-naive ``t`` on tz-aware data is localized to the data's timezone.
+      On a ``PeriodIndex`` the periods' start times are compared, and ``t``
+      may also be a ``pd.Period``.
 
     An index that is not sorted ascending WARNS and is sorted together with
     its observations before fitting (forecasts continue from the latest time), and a TIME index (`DatetimeIndex`, `TimedeltaIndex`
@@ -73,6 +79,9 @@ def resolve_t(data, t, step=None):
         The dataset whose index is being extended (or truncated).
     t : int or datetime-like
         The forecast horizon.
+    step : number, duration, calendar offset, or None
+        One step (see `hypertools.predict.time.resolve_step`); None uses the
+        step `data` was prepared with, else infers it from the index.
 
     Returns
     -------
@@ -80,9 +89,12 @@ def resolve_t(data, t, step=None):
         Number of steps to forecast; zero or negative means "truncate"
         (see above).
     future_index : pandas.Index
-        The continued index (or, for truncation, the sliced index).
+        The continued index (or, for truncation, the sliced index). A
+        ``PeriodIndex`` input is described by its start timestamps here;
+        `Forecaster` returns forecasts as periods again.
     """
-    from .time import order_time_data, resolve_step
+    from .time import (default_step, future_times, is_calendar_step,
+                       order_time_data, resolve_step, time_coordinates)
     data = order_time_data(data)
     index = data.index
 
@@ -124,8 +136,7 @@ def resolve_t(data, t, step=None):
             'Aggregate the repeats (e.g. df.groupby(level=-1).mean()) or '
             'give them distinct times before forecasting.')
 
-    step = resolve_step(index, step if step is not None else
-                        data.attrs.get('_hypertools_time_step'))
+    step = resolve_step(index, step if step is not None else default_step(data))
 
     if isinstance(t, (int, np.integer)) and not isinstance(t, bool):
         n_steps = int(t)
@@ -141,7 +152,7 @@ def resolve_t(data, t, step=None):
         if isinstance(index, pd.RangeIndex) and isinstance(step, int):
             future_index = pd.RangeIndex(start=last + step, stop=last + step * (n_steps + 1), step=step)
         else:
-            future_index = pd.Index([last + step * (i + 1) for i in range(n_steps)])
+            future_index = future_times(last, step, n_steps)
         return n_steps, future_index
 
     # a real raise (not `assert ..., ValueError(...)`, which raises
@@ -152,7 +163,7 @@ def resolve_t(data, t, step=None):
                          f'{type(index).__name__}. For numerically-indexed '
                          'data, pass t as a positive integer number of steps.')
 
-    target = pd.Timestamp(t)
+    target = t.start_time if isinstance(t, pd.Period) else pd.Timestamp(t)
     # tz-aware index + tz-naive t raised a raw pandas "Cannot compare
     # tz-naive and tz-aware timestamps" (QC 2026-07 red-team
     # F16-predict-020): localize the naive target to the data's timezone
@@ -192,8 +203,14 @@ def resolve_t(data, t, step=None):
     # target is strictly after the last observation: always forecast at
     # least one step (a target within half a step of the end used to round
     # to n_steps=0 and crash downstream -- QC 2026-07 red-team).
-    n_steps = max(1, int(np.round((target - last) / step)))
-    future_index = pd.DatetimeIndex([last + step * (i + 1) for i in range(n_steps)])
+    if is_calendar_step(step):
+        # the nearest point of the calendar grid (business days, month
+        # starts, ...), measured the way the model's time axis is
+        elapsed = time_coordinates(pd.DatetimeIndex([target]), last, step)[0]
+    else:
+        elapsed = (target - last) / step
+    n_steps = max(1, int(np.round(elapsed)))
+    future_index = pd.DatetimeIndex(future_times(last, step, n_steps))
     return n_steps, future_index
 
 
@@ -370,6 +387,7 @@ class Forecaster(BaseEstimator):
         if self.data is None or not hasattr(self, 'models_'):
             raise NotFittedError('must fit forecaster before predicting')
 
+        from .time import finalize_forecast
         single = not isinstance(self.data, list)
         datasets = [self.data] if single else self.data
 
@@ -386,16 +404,17 @@ class Forecaster(BaseEstimator):
                 # than forecast (n_steps == 0 used to fall through to the
                 # model with a zero-step horizon -- QC 2026-07 red-team
                 # F16-predict-004).
-                forecasts.append(d.loc[future_index])
+                forecasts.append(finalize_forecast(d.loc[future_index], d))
                 continue
 
             if self.forecaster is None:
-                forecasts.append(d)
+                forecasts.append(finalize_forecast(d, d))
                 continue
 
             merged = {**params, **self.kwargs}
-            forecasts.append(self.forecaster(params.get('_time_data', d),
-                                              n_steps, future_index, **merged))
+            forecasts.append(finalize_forecast(
+                self.forecaster(params.get('_time_data', d), n_steps,
+                                future_index, **merged), d))
 
         return forecasts[0] if single else forecasts
 
@@ -522,25 +541,35 @@ class Forecaster(BaseEstimator):
             if self.applier is None:
                 self._check_min_history(d, which)
 
+        from .time import finalize_forecast, prepare_time_data, step_matches_index
         forecasts = []
         for d, params in zip(new_datasets, paired_models):
             for r in self.required:
                 if r not in params:
                     raise NotFittedError(f'missing fitted attribute: {r}')
 
-            from .time import prepare_time_data
+            # The learned interval is kept when it is expressed in the new
+            # index's units (a one-hour transition never silently becomes a
+            # three-hour one). Across index KINDS -- fit on an array, reused
+            # on dated rows, or the reverse -- a row count and a duration
+            # cannot be converted into each other, so the new data step in
+            # their own units, as they did in 1.0 (release review
+            # 2026-09-11: those reuses raised about `step` instead).
+            step = next((s for s in (params.get('_time_step'), self.step)
+                         if step_matches_index(s, d.index)), None)
             observed, model_data, _ = prepare_time_data(
-                d, params.get('_time_step', self.step),
-                regular=getattr(self, '_regular_time_grid', False))
+                d, step, regular=getattr(self, '_regular_time_grid', False))
             n_steps, future_index = resolve_t(observed, t)
             if n_steps <= 0:
-                forecasts.append(observed.loc[future_index])
+                forecasts.append(finalize_forecast(observed.loc[future_index],
+                                                   observed))
                 continue
             d = model_data
 
             if self.applier is not None:
                 merged = {**params, **self.kwargs}
-                forecasts.append(self.applier(merged, d, t))
+                forecasts.append(finalize_forecast(self.applier(merged, d, t),
+                                                   observed))
                 continue
 
             # No reusable learned parameters: condition on the new data
@@ -548,13 +577,14 @@ class Forecaster(BaseEstimator):
             # fitter/hyperparameters, then forecast forward).
             n_steps, future_index = resolve_t(d, t)
             if n_steps <= 0:
-                forecasts.append(d.loc[future_index])
+                forecasts.append(finalize_forecast(d.loc[future_index], observed))
                 continue
             if self.forecaster is None:
-                forecasts.append(d)
+                forecasts.append(finalize_forecast(d, observed))
                 continue
             new_params = self.fitter(d, **self.kwargs) if self.fitter is not None else {}
             merged = {**new_params, **self.kwargs}
-            forecasts.append(self.forecaster(d, n_steps, future_index, **merged))
+            forecasts.append(finalize_forecast(
+                self.forecaster(d, n_steps, future_index, **merged), observed))
 
         return forecasts[0] if single else forecasts

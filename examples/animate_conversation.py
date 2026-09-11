@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-===========================================================================
-The shape of a conversation: per-speaker paths, revealed one turn at a time
-===========================================================================
+=========================================================================
+The shape of a conversation: one path per turn, coloured by its speaker
+=========================================================================
 
 A conversation as geometry, in one ``hyp.plot`` call on raw dialogue. Each
 **turn** (a contiguous run of speech by one speaker) is cut into sliding
@@ -23,16 +23,18 @@ size (and the library now reserves the animated 3-D title's own vertical
 margin, sized to the tallest wrapped title, so the figure never has to grow
 by hand); the legend maps colours to names.
 
-The one bespoke effect left is a **recency fade** across turns: the current
-turn is opaque, earlier turns recede slowly (a turn keeps most of its
-opacity for several exchanges before settling at a visible floor, so the
+The one effect written out by hand is a **recency fade** across turns: the
+current turn is opaque, earlier turns recede slowly (a turn keeps most of
+its opacity for several exchanges before settling at a visible floor, so the
 conversation's recent past stays legible), and unspoken turns are hidden.
-Nothing in 1.1 fades across already-revealed datasets, so it is real custom
-work -- but it runs on the public ``on_frame`` hook and reads the schedule
-the library publishes (``ctx.current_index``, ``ctx.revealed_counts``).
-Before 1.1 this example monkeypatched ``ani._func`` and re-derived that
-schedule by hand; the hook replaces both. The clip runs 30 seconds with two
-full camera rotations.
+1.1 ships the same fade as one keyword -- ``dataset_fade={'floor': FLOOR,
+'decay': DECAY}`` gives every head and trail exactly these alphas -- and
+this example keeps it as a hook to show what the public ``on_frame`` hook
+can do: it reads the schedule the library publishes (``ctx.current_index``,
+``ctx.revealed_counts``) and assigns every artist on every frame. Before
+1.1 this example monkeypatched ``ani._func`` and re-derived that schedule by
+hand; the hook replaces both. The clip runs 30 seconds with two full camera
+rotations.
 
 Here the conversation is Lewis Carroll's *Mad Tea-Party* (Alice in
 Wonderland). The turns are bundled inline -- quoted verbatim from the
@@ -119,9 +121,9 @@ WINDOW, STEP, MIN_WINDOWS = 6, 2, 3
 FLOOR, DECAY = 0.18, 0.7
 # Title size and wrap width. At 14 pt a character is ~8.7 px wide at 100 dpi,
 # so a 64-character line is ~560 px over the 800 px-wide axes -- centred with
-# clear margin either side -- and the longest turn (118 characters) wraps to
-# exactly two lines; no turn needs a third (verified by rendering turns
-# 15-17 and 22, the long ones).
+# clear margin either side -- and the longest turn (117 characters, 119 with
+# the quotes the title adds) wraps to exactly two lines; no turn needs a
+# third (verified by rendering turns 15-17 and 22, the long ones).
 TITLE_SIZE, TITLE_WIDTH = 14, 64
 # How many seconds of the current turn's reveal the opaque comet-head spans
 # (hyp.plot's tail_duration; default 2). Raised so the head covers more of
@@ -142,9 +144,10 @@ def windows(text, size=WINDOW, step=STEP, min_windows=MIN_WINDOWS):
 
     ``min_windows`` prevents a real rendering artifact: ``hyp.plot`` draws a
     ONE-ROW dataset as a dot (there is no line through a single point), and
-    with a fixed 6-word window, 12 of the 28 turns above collapse to a
-    single window and would show up as stray specks. Shrinking the window,
-    and the step if needed, keeps every turn a real path.
+    with a fixed 6-word window stepping by 2, 12 of the 28 turns above get
+    fewer than three windows -- 9 of them none at all, 3 a single window
+    that would show up as a stray speck. Shrinking the window, and the step
+    if needed, keeps every turn a real path.
     """
     words = text.split()
     n = len(words)
@@ -190,9 +193,11 @@ def recency_fade(ctx):
     """The one bespoke effect left: earlier turns recede as the talk moves on.
 
     ``chemtrails``/``precog``/``bullettime`` fade WITHIN one trajectory;
-    nothing in 1.1 fades ACROSS already-revealed datasets, so this is real
-    custom work -- but it runs on the public per-frame hook and reads the
-    library's own published schedule instead of re-deriving it.
+    this fades ACROSS already-revealed datasets. It is the hand-written
+    form of ``dataset_fade={'floor': FLOOR, 'decay': DECAY}`` (same
+    formula, heads and trails alike), kept here to show the public
+    per-frame hook reading the library's own published schedule instead of
+    re-deriving it.
 
     ``ctx.artists`` is NOT one artist per dataset. It is heads first, then
     trails (animation_context.FrameContext), so with ``chemtrails=True`` it
@@ -240,7 +245,9 @@ def construct_artifact(data):
     titles = [textwrap.fill(f'\u201c{text}\u201d', TITLE_WIDTH)
               for text in data.texts]
     # THE hypertools call: raw dialogue in, one disjoint trajectory per
-    # turn, coloured by speaker, revealed ONE TURN AT A TIME.
+    # turn, coloured by speaker, revealed ONE TURN AT A TIME. backend= is
+    # pinned because the hook sets matplotlib alphas, and on Colab the
+    # default backend would be plotly.
     anim = hyp.plot(
         data.turns, '-',
         vectorizer=data.vectorizer, semantic=None, corpus=None,
@@ -256,7 +263,7 @@ def construct_artifact(data):
         title_kwargs={'size': TITLE_SIZE},
         title_color=[SPEAKER_COLOR[s] for s in data.speakers],
         duration=30, rotations=2, frame_rate=16, elev=16, size=(8, 8),
-        show=False)
+        backend='matplotlib', show=False)
     anim.on_frame(recency_fade)
     return anim
 

@@ -40,14 +40,25 @@ Warnings and tracebacks carry absolute paths (``/Users/<name>/hypertools/
 hypertools/tools/format_data.py:495: UserWarning: ...``), so an executed
 notebook committed as-is publishes whoever ran it. After execution, every
 stream output, error traceback and ``text/plain`` result has
-``os.path.expanduser('~')`` replaced by ``~`` (see `scrub_home`); nothing
-else in an output is touched.
+``os.path.expanduser('~')`` replaced by ``~`` (see `scrub_home`). A warning
+raised by a notebook cell names the kernel's per-session temp file for that
+cell (``/var/folders/<id>/T/ipykernel_21956/2889100357.py:14``); that path is
+rewritten to ``<cell>`` (``<cell>:14: UserWarning: ...``). Nothing else in
+an output is touched.
+
+**liblsl's INFO log lines are kept out of the outputs.** liblsl logs
+``api_config.cpp ... INFO| Loaded default config`` and a build line to
+stderr the first time it loads (seen stored in lsl_streaming.ipynb,
+2026-09-10). Unless ``LSLAPICFG`` is already set, the kernel is pointed at a
+config file whose only setting is ``[log] level = -1`` (warnings and
+errors still print; INFO does not) -- see `quiet_liblsl_config`.
 """
 
 import json
 import os
 import re
 import sys
+import tempfile
 
 import nbformat
 from nbclient import NotebookClient
@@ -64,13 +75,24 @@ KERNEL = 'hypertools-venv'
 os.environ.setdefault('HF_HUB_DISABLE_PROGRESS_BARS', '1')
 SKIP_TAG = 'skip-execution'         # what nbclient honours
 TIMEOUT = 1800
+#: a cell's code as the kernel names it in a warning: a per-session temp file
+#: (``.../T/ipykernel_21956/2889100357.py`` on macOS, ``/tmp/ipykernel_...``
+#: on Linux, backslashes on Windows)
+_CELL_FILE_RE = re.compile(r'[^\s"\'<>]*ipykernel_\d+[/\\]\d+\.py')
+#: the liblsl configuration `quiet_liblsl_config` writes: INFO off, warnings on
+LSL_QUIET_CONFIG = '[log]\nlevel = -1\n'
+
+
+def _scrub_text(text, home):
+    return _CELL_FILE_RE.sub('<cell>', text.replace(home, '~'))
 
 
 def scrub_home(nb, home=None):
-    """Rewrite `home` (default: this user's home directory) to ``~`` in every
-    text output of `nb`, in place: stream text, error tracebacks and
-    ``evalue``, and ``text/plain`` display/execute-result data. Returns the
-    number of outputs changed."""
+    """Rewrite `home` (default: this user's home directory) to ``~``, and a
+    kernel cell's temp-file path to ``<cell>``, in every text output of
+    `nb`, in place: stream text, error tracebacks and ``evalue``, and
+    ``text/plain`` display/execute-result data. Returns the number of
+    outputs changed."""
     home = home or os.path.expanduser('~')
     changed = 0
     for cell in nb.cells:
@@ -78,17 +100,32 @@ def scrub_home(nb, home=None):
             before = json.dumps(output, sort_keys=True)
             kind = output.get('output_type')
             if kind == 'stream':
-                output['text'] = output['text'].replace(home, '~')
+                output['text'] = _scrub_text(output['text'], home)
             elif kind == 'error':
-                output['traceback'] = [line.replace(home, '~')
+                output['traceback'] = [_scrub_text(line, home)
                                        for line in output['traceback']]
-                output['evalue'] = output['evalue'].replace(home, '~')
+                output['evalue'] = _scrub_text(output['evalue'], home)
             elif kind in ('display_data', 'execute_result'):
                 text = output.get('data', {}).get('text/plain')
                 if isinstance(text, str):
-                    output['data']['text/plain'] = text.replace(home, '~')
+                    output['data']['text/plain'] = _scrub_text(text, home)
             changed += json.dumps(output, sort_keys=True) != before
     return changed
+
+
+def quiet_liblsl_config(directory, environ=None):
+    """Point ``LSLAPICFG`` in `environ` (default ``os.environ``, which the
+    kernel inherits) at a config in `directory` that turns liblsl's INFO
+    logging off, unless the caller already set ``LSLAPICFG``. Returns the
+    config path in use."""
+    environ = os.environ if environ is None else environ
+    if environ.get('LSLAPICFG'):
+        return environ['LSLAPICFG']
+    path = os.path.join(directory, 'lsl_api.cfg')
+    with open(path, 'w', encoding='utf-8') as handle:
+        handle.write(LSL_QUIET_CONFIG)
+    environ['LSLAPICFG'] = path
+    return path
 
 
 def skip_install_cells(nb):
@@ -141,9 +178,18 @@ def execute(path, out=None):
     # data paths resolve -- `or '.'` because a bare filename has no dirname
     # (`'reduce.ipynb'.rsplit('/', 1)[0]` is the filename itself, which would
     # make the kernel's cwd a nonexistent directory)
-    NotebookClient(nb, timeout=TIMEOUT, kernel_name=KERNEL,
-                   resources={'metadata': {'path': os.path.dirname(path)
-                                           or '.'}}).execute()
+    saved_lsl = os.environ.get('LSLAPICFG')
+    with tempfile.TemporaryDirectory() as scratch:
+        quiet_liblsl_config(scratch)       # the kernel inherits os.environ
+        try:
+            NotebookClient(nb, timeout=TIMEOUT, kernel_name=KERNEL,
+                           resources={'metadata': {'path': os.path.dirname(path)
+                                                   or '.'}}).execute()
+        finally:
+            if saved_lsl is None:
+                os.environ.pop('LSLAPICFG', None)
+            else:
+                os.environ['LSLAPICFG'] = saved_lsl
     nb.metadata['kernelspec'] = original
     scrub_home(nb)
     restore_install_cells(installs)

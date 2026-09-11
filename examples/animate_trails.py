@@ -27,9 +27,13 @@ data = hyp.load('weights_avg')
 
 # %%
 # Chemtrails: a faint trace of the past trajectory follows the moving points.
-fig, ani_past = hyp.plot(data, animate=True, chemtrails=True)
+# backend='matplotlib': unpacking into (fig, ani) is the matplotlib
+# animation's form; on Colab the default backend would be plotly
+fig, ani_past = hyp.plot(data, animate=True, chemtrails=True,
+                         backend='matplotlib')
 
 # %%
 # Precognition: a faint trace of the future trajectory leads the moving
 # points.
-fig, ani_future = hyp.plot(data, animate=True, precog=True)
+fig, ani_future = hyp.plot(data, animate=True, precog=True,
+                           backend='matplotlib')

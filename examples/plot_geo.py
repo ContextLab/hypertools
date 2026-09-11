@@ -37,8 +37,9 @@ import hypertools as hyp
 # load some data -- a list of arrays, ready to plot as-is
 data = hyp.load('spiral')
 
-# plot: the return value is just a matplotlib Figure
-fig = hyp.plot(data, ndims=3)
+# plot: the return value is just a matplotlib Figure (backend='matplotlib'
+# asks for it explicitly: on Colab the default backend would be plotly)
+fig = hyp.plot(data, ndims=3, backend='matplotlib')
 
 # treat it like any other Figure
 png_path = os.path.join(tempfile.mkdtemp(), 'spiral.png')

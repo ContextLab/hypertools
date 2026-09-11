@@ -168,10 +168,12 @@ class Laplace(Forecaster):
 
     Parameters
     ----------
-    step : number, duration string, Timedelta, or None
-        Duration of one future step. None uses the median positive gap
-        between sorted observation times. Irregular observations are
-        linearly interpolated onto this grid before forecasting.
+    step : number, duration string, Timedelta, calendar offset, or None
+        One future step. None uses a datetime index's calendar frequency
+        when it has one (business days, month starts, ...), else the median
+        positive gap between sorted observation times. Irregular
+        observations are linearly interpolated onto this grid before
+        forecasting.
     """
 
     _regular_time_grid = True

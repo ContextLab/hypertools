@@ -28,6 +28,8 @@ lack them (a fresh Colab or Kaggle kernel, measured 2026-09-04), the four
 shared libraries that Chrome needs to start.
 """
 
+import bisect
+import functools
 import importlib
 import os
 import shutil
@@ -96,10 +98,21 @@ class _Scope:
         self.ref = None
 
 
-def _scope_handle_died(scope):
-    """Weakref callback: the handle of `scope` is gone. Inside a block that
+def _scope_handle_died(scope, _ref=None):
+    """Weakref callback (`_ref` is the dead weak reference, unused): the
+    handle of `scope` is gone. Inside a block that
     cannot happen (the block holds it), so this was a direct call: the
-    newest direct call's value is the baseline."""
+    newest direct call's value is the baseline.
+
+    A handle still alive when the interpreter exits dies during module
+    teardown, after this module's globals have been cleared to None; there
+    is no setting left to maintain then, so the callback does nothing
+    rather than raise (which Python reports as "Exception ignored in ...";
+    review 2026-09-11). The callback holds this function itself (see
+    `set_autoinstall.__init__`), so it never looks the name up then."""
+    if _AUTO_INSTALL_LOCK is None or _AUTO_INSTALL_SCOPES is None \
+            or _AUTO_INSTALL_BASELINE is None:
+        return                      # interpreter shutdown
     with _AUTO_INSTALL_LOCK:
         if scope.finished or scope.entered:
             return                  # a block's handle, not a direct call
@@ -209,6 +222,9 @@ class set_autoinstall:
     in force, so two threads each inside ``with set_autoinstall(False)``
     both keep installation off until the LAST of them exits, whichever
     order they finish in. A direct call stays in force until the next call.
+    Calls are ordered by when ``set_autoinstall(...)`` was called, not by
+    when a handle enters its block: ``with h:`` on a handle ``h`` created
+    before a later call does not outrank that later call.
 
     Parameters
     ----------
@@ -237,15 +253,23 @@ class set_autoinstall:
         with _AUTO_INSTALL_LOCK:
             _AUTO_INSTALL_SEQ[0] += 1
             self._scope = _Scope(enabled, _AUTO_INSTALL_SEQ[0])
+            # the callback binds the function object now: at interpreter
+            # shutdown a surviving handle dies after the module's globals
+            # are cleared, when the name would resolve to None
             self._scope.ref = weakref.ref(
-                self, lambda _ref, scope=self._scope: _scope_handle_died(scope))
+                self, functools.partial(_scope_handle_died, self._scope))
             _AUTO_INSTALL_SCOPES.append(self._scope)
 
     def __enter__(self):
         with _AUTO_INSTALL_LOCK:
             if self._scope.finished:          # re-entered after an exit
                 self._scope.finished = False
-                _AUTO_INSTALL_SCOPES.append(self._scope)
+                # back in CALL order (the list is oldest first): entering is
+                # not a new call, so a re-entered handle ranks where its
+                # construction put it, exactly as on its first entry -- not
+                # on top of newer handles (review 2026-09-11)
+                bisect.insort(_AUTO_INSTALL_SCOPES, self._scope,
+                              key=lambda s: s.seq)
             self._scope.entered = True
         return self
 

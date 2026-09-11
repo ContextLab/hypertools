@@ -22,4 +22,102 @@ evidence/CI for the new head.
 
 ## Findings log
 
-(append as found)
+### Fresh Colab run at fa3e60e5 (15:25-15:35Z): 236 PASS / 5 FAIL / 3 SKIP
+- STREAM-01/02/03 FAIL `'HyperPlotlyFigure' object has no attribute 'axes'` -> LIBRARY BUG (1.0 too):
+  plot_stream's inner head plot followed the plotly render preference (Colab auto). FIXED 2503a543
+  (+ test_stream_plot_under_global_plotly_render_backend). Tutorials streaming_data/lsl_streaming/io hit it on Colab.
+- ANIM-clock / PLOT-cjk FAIL (tour assumed matplotlib) -> tour fix deeb1f93 (backend='matplotlib').
+- RED-describe displayed `None` (describe(show=False) returns fig=None by documented design) -> tour fix deeb1f93.
+  QUESTION for Jeremy: plot(show=False) returns a fig but describe(show=False) does not -- change API?
+- Font scan skipped xlabel/ylabel/zlabel -> tofu for axis-label-only scripts. FIXED 2503a543 (+ test_axis_labels_join_the_font_gap_scan).
+
+### Data/predict/io reviewer (repro scripts: scratchpad/review_data/p*.py)
+- MAJOR predict/time.py:41,116 business-day/monthly data treated as irregular -> interpolated weekends, PeriodIndex->DatetimeIndex, DST dup
+- MAJOR regression vs 1.0 predict/common.py:533,time.py:76-83 reuse fitted forecaster across index kinds crashes
+- MAJOR io/sources.py:1264 yahoo interval='1h' bars all at midnight -> duplicate index
+- MINOR arima.py:224 min-history ignores seasonal_order; tools/normalize.py:43 fitted Normalizer rejects its own 1-D input (also master);
+  lazy_import.py:244 stale set_autoinstall handle; sources.py:1722 misleading offline Drive error
+- NIT sources.py:1786, time.py triple warnings, npz parquet fallback, scikit-image floor py3.13, load() TypeError text omits polars
+- Clean: pickle trust (13 payloads), dataset pins, lazy_import input safety, datatype round-trips, backtest
+
+### Plotly/colors/forecast reviewer (repros: scratchpad/review_plotly/r*.py)
+- MAJOR plotly fmt='o-' markers on every smoothed vertex (945 vs 60) (r05,r06); continuous hue + 'o-' in 1-D/2-D plotly draws no markers
+- MAJOR cyan shift remains when line/marker alpha differ (hue+alpha+'o-' 3-D) (r13)
+- MAJOR ax= palette continuation re-samples -> repeated colors ('hls' 2+2: a2==b1) plot.py:11252/11392 (r14,r37)
+- MAJOR plotly panels/subplots: every cell counts as having a legend -> colorbar pushed onto next cell (r26,r27)
+- MAJOR 1-D data w/o ndims=1: x in upsampled units but forecast/truth raw steps (24x squash); axis_scale='data' uses y range for x (r31-r34)
+- MAJOR forecast_fmt='ro:' marks all smoothed vertices (both backends) (r09)
+- MAJOR (plot-core) plot.py:11725 2-col data + animate + predict crashes unpack (r40)
+- MINOR second draw into plotly cell deletes title (r15); colors.py:410 0-255 RGB list treated as matrix (r22);
+  2-D into 3-D cell cryptic TypeError (r28); ax= bundle colors mismatch (r36); 1-D animation plotly silent vs mpl error (r38)
+- NIT plotly_backend.py:2331 mutates caller's traces
+### Plot-core reviewer (repros: scratchpad/review_plotcore/r*.py)
+- MAJOR F1 forecast/truth overlay style indexing w/ marker+line fmt (also master); F2 dict palettes ignored with markers-only fmt;
+  F3 ndims=1 2-col truth read as (x,value)
+- MINOR F4 legend_colors+predict "legend has 3" (regression); F5 panels+forecast_trail; F6 panels legend_colors split; F7 transform DF index->NaN->zero fc;
+  F8 xlim=(None,date) crash; F9 datetime t= per-dataset steps; F10 truth legend key colour; F11 serial {index} title (DELIBERATE 1.1 -> ask Jeremy);
+  F12 0-255 palette (same as plotly r22); F13 ndims=1 date ticks overlap; F14 shuffled index scribble; F15 bare-array transform IndexError; F16 2-col into 2-D ax=; F17 labels arrays
+- also: font='Noto Sans' fails in fresh process (verified by me)
+
+### Fix wave (worktrees, launched ~16:30Z)
+- W1 predict (D1,D2,D4,D9,F9); W2 io/tools/_shared/colors/fonts (D3,D5-D8,D10-D12, 0-255 palette, Noto Sans);
+  W3 plotly_backend (Y1,Y2,Y3,Y5,Y7-plotly,Y8,Y10,r38,NIT,frame_kwargs/zoom/yanchor/'^');
+  W4a forecast/truth (F1,F3,Y6,r40,Y7-mpl,F4,F5,F7,F8,F10,F14,F15,F13); W4b palettes/markers/panels (F2,Y4,Y11,F6,F16,F17,marker override, markers= smoothed)
+- Shared marker contract: markers only at true observations on both backends incl. forecast_fmt.
+- After merge: integrate CHANGELOG bullets, full pytest, ruff, docs build, re-run tour headless + Colab at new pushed SHA.
+
+### Docs/claims reviewer (scratchpad/review_docs/FINDINGS.md, 1555 lines)
+- BLOCKER H-B1 5 launch notebooks crash on Colab (plotly auto; anim.on_frame/figure/draw_frame) -> W5
+- BLOCKER E-B1 hyp.plot([a,b], hue=['x','y'], labels=['A','B']) crash (per-dataset labels + hue/cluster) -> W4b
+- BLOCKER H-B2 market_sectors weights: split-adjusted close x as-reported SEC shares -> W5
+- MAJOR A0 Colab video block swallows 6 tutorial cell outputs -> W5; A1 RTD webhook 400, nothing built since 07-24,
+  README latest/optional_dependencies.html 404 -> checklist (W6) + JEREMY must re-sync RTD integration
+- MAJOR A2 release notes stale, A3 checklist order -> W6; C-F1 hue markers ignore alpha -> W4b+W3; E-M1 marker-only regroup fc -> W4a
+- 10 tutorial prose MAJORs + many MINORs -> W5; CHANGELOG/checklist MINOR/NIT -> W6; D-1 plotly window_bounds, D-6 ax=cell -> W3;
+  D-2 aligner fit arrays, D-3 dispersion, D-5 PPCA warnings -> W7; A12 set_autoinstall teardown -> W2
+- Worktree tool sometimes bases on 96ac8b7f (origin default = master)! Prompts now force reset to 09f56b2c/deeb1f93.
+
+### Jeremy report 2026-09-11 ~16:10Z: plotly hover says "trace 0/1" instead of legend names
+- Confirmed: nearly every hoverable plotly data trace is unnamed (no-legend plots, panels, animations, forecasts, series curves);
+  with a legend, only the first segment per hue/cluster/hierarchy group is named (ANIM-dict-cluster, HIER). Continuous hue drops legend names.
+  Animation playback keeps base names (verified in Chromium via gd._fullData after Plotly.animate).
+- Routed to W3 with contract: name every hoverable trace with its legend label (category/dataset/column/model/'truth'),
+  duplicates showlegend=False + same legendgroup; legend display still governed by legend=; single unlabeled dataset hides the extra box.
+
+### Visual QA adjudicator (scratchpad/visual_qa_adj/VERDICTS.md): OK 26, KNOWN 7, lib 39 rows (15 bugs), tour 12 rows (9), d 11
+- L1 plotly 3-D line width ~0.53x (-> W8 later); L2 3-D density volume stipples cube (-> W8); L3 white label connectors, L4 panel/ax titles DejaVu,
+  L5 nested legend colours, L6 cluster legend order (-> W4b); L7 plotly animated legend flicker (-> W3); L8 anim DOWNSAMPLING (helix 46% radius),
+  L9 morph no motion + dot size, L11 on_frame title off-canvas, L12 companion blue, L13b stream clamp warning (-> W9 new);
+  L10 plotly date axes shifted by viewer TZ (-> W4a); L13 pipeline cluster step dropped (-> W7); L14 docstrings (me, after merge); L15 zoom (W3)
+- DESIGN-QUESTION for Jeremy: 'unit' affine puts column means off-centre (data sit in upper half of cube) - centring per-axis midrange would change all figures.
+- Tour T1-T9 exact replacements in VERDICTS.md lines 287-316 (me, after merge). d: plotly Play/Pause over date ticks (-> W8).
+
+### Merges
+- W6 merged 0d4f0cab (22ae49c7 CHANGELOG, 05f7aeb6 checklist + stale-date release gate, e876a556 release notes). D-12 partial.
+  TODO after W4a/W4b/W9 merge, apply plot.py docstring fixes: :5333-5334 axis_scale '(-1.1,1.1)' -> data in [-1,1], frame half-width
+  1.125, axes pinned (-1.2375,1.2375); :7356 '[-1.1,1.1] frame box' -> '+/-1.2375 around the unit frame'; :5992-5993 slow-warning timing
+  -> 'emitted once fits at two or more history lengths (one of >=10 rows, or the longest available) have been timed'; :1124,:1133
+  'title must be a string (or None)' -> 'a string, a callable (ctx -> str), or None'. Also animation_context.py:207-209 window_bounds doc (L14).
+- W2 merged 70dc00b3 (9 commits: yahoo intraday tz, Normalizer 1-D, autoinstall teardown + re-entry order, offline errors, npz trust msg,
+  scikit-image>=0.25.0 (+docs/doc_requirements.txt), load TypeError polars, 0-255 palette -> ValueError, font='Noto Sans' fresh process).
+  DESIGN-QUESTION (Jeremy): set_autoinstall — does ENTERING an older handle count as a new call? Current rule: no (newest call by creation order).
+  FOLLOW-UPS: pip install -e .[dev] after all merges (metadata floor); io.ipynb re-exec; core floors (numpy 2.0.0, pandas 2.2.2, scipy 1.13.0,
+  matplotlib 3.9.0, sklearn 1.4.2, statsmodels 0.14.0) have no cp313 wheels, pillow 8 none for >=3.10 -> packaging decision for Jeremy.
+  CHANGELOG bullets drafted in W2 report (integrate at end).
+- Jeremy report ~16:40Z "surface colour doesn't match dots" (plot popped up in browser from agent test runs): ROOT CAUSE global IDW in
+  meshutil.vertex_colors_from_points -> washed-out mean colour. FIXED a422a97e (8-NN IDW) + tests; tests/conftest.py PLOTLY_RENDERER=json (headless).
+- W5 merged 5c09e1bb (launch/examples pinned matplotlib, market_sectors split-adjusted shares, A0 video block, prose). Re-exec needed:
+  market_sectors, weather_decades, painting_embeddings, conversation_shape, morph_shapes_zoo, animate_forecast (regenerated, no outputs),
+  io, manip, plot, align, analyze, cluster, pipelines, projectile_kalman, stock_forecasting, streaming_data, lsl_streaming, text.
+  Regenerate market_sectors.mp4, sphx_glr_animate_market_sectors_thumb.gif, Bluesky 20_market_sectors clip, plot_sotus render.
+  W5 library leftovers (-> W10): flat cluster spec {'model':'KMeans','n_clusters':4,'random_state':0} drops random_state (cluster.py ~111-123);
+  names= overrides explicit legend=False. Unverifiable market data: HON 2026-06 SEC count half of 2026-03; XOM SEC history starts 2026.
+- W1 merged 46c71700 (calendar-regular forecasting, cross-index reuse, ARIMA seasonal floor, warnings once). DESIGN-QUESTION (Jeremy):
+  flat-list datetime t= resolving to different step counts per dataset: code takes max(steps) (2e9669df) + test asserts differing lengths,
+  docstrings (plot.py:5586, :6836) say must be equal. Follow-ups: stock_forecasting.ipynb cells 11-12 prose (median gap/weekend interp)
+  stale; CHANGELOG 17-21 'one future step is always the median gap' stale.
+
+### Visual expectation writer extra (code-vs-doc)
+- mpl fmt='-o' overrides marker=['o','s'] (backends disagree); markers= with '-' marks all smoothed pts (antialias docstring says true samples);
+  plotly ignores frame_kwargs; static plotly applies zoom (doc: animation only); '^' -> diamond in plotly 3-D; legend_kwargs x/y yanchor;
+  font='Noto Sans' ValueError in fresh process before bundled fonts registered

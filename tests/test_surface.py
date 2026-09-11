@@ -677,6 +677,48 @@ class TestSurfaceHuePerVertex:
         corrs = [abs(np.corrcoef(z, vc[:, c])[0, 1]) for c in range(3)]
         assert max(corrs) > 0.3
 
+    @pytest.mark.parametrize('backend', ['matplotlib', 'plotly'])
+    def test_surface_colour_matches_the_dots_beneath_it(self, backend):
+        # Maintainer report 2026-09-11: a hue= surface did not match the dots
+        # underneath it -- every vertex blended ALL points, so the hull took
+        # the dataset's washed-out mean colour. Compare each mesh vertex's
+        # chromaticity (shading-free: rgb / sum) with its nearest drawn dots.
+        from scipy.spatial import cKDTree
+        traj = np.cumsum(np.random.default_rng(3).normal(size=(300, 3)), axis=0)
+        hue = np.arange(len(traj), dtype=float)
+        fig = hyp.plot(traj, '.', hue=hue, surface=True, backend=backend,
+                       palette='viridis', show=False)
+        if backend == 'plotly':
+            dots = [t for t in fig.data if t.type == 'scatter3d'
+                    and t.hoverinfo != 'skip']
+            pts = np.concatenate([np.c_[t.x, t.y, t.z] for t in dots])
+            cols = np.concatenate([
+                [[float(v) for v in c[c.index('(') + 1:-1].split(',')[:3]]
+                 for c in t.marker.color] for t in dots]) / 255
+            mesh = [t for t in fig.data if t.type == 'mesh3d'][0]
+            verts = np.c_[mesh.x, mesh.y, mesh.z]
+            vcols = _plotly_vertexcolors(fig) / 255
+        else:
+            ax = fig.axes[0]
+            scat = [c for c in ax.collections if hasattr(c, '_offsets3d')][0]
+            pts = np.column_stack(scat._offsets3d)
+            cols = np.asarray(scat.get_facecolor())[:, :3]
+            poly = [c for c in ax.collections
+                    if isinstance(c, Poly3DCollection)][0]
+            verts = _poly3d_verts(poly).reshape(-1, 3, 3).mean(axis=1)
+            # get_facecolor() is depth-SORTED after a draw while the 3-D
+            # vertices keep their order; the unsorted colours sit here
+            vcols = np.asarray(poly._facecolor3d)[:, :3]
+
+        def chroma(rgb):
+            return rgb / (rgb.sum(axis=1, keepdims=True) + 1e-9)
+        _, idx = cKDTree(pts).query(verts, k=3)
+        local = chroma(cols)[idx].mean(axis=1)
+        err = np.abs(chroma(vcols) - local).max(axis=1)
+        assert np.median(err) < 0.04
+        import matplotlib.pyplot as plt
+        plt.close('all')
+
     def test_hue_adds_chromatic_variation_over_flat_surface(self):
         # A no-hue surface is one base color (a saturated palette color) whose
         # faces differ only by SHADING (a brightness scaling). Dividing each

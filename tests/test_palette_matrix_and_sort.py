@@ -312,7 +312,7 @@ def test_palette_reduce_and_stage_kwargs_reach_the_matrix(backend):
     # stage kwargs but only exercised palette_reduce/palette_sort)
     tol = 1e-6 if backend == 'matplotlib' else 3e-3
     for stage, value in (('manip', 'Smooth'), ('normalize', 'across'),
-                         ('align', 'hyper')):
+                         ('align', 'HyperAlign')):
         staged = hyp.plot(x, hue=hue, palette=weights, show=False,
                           backend=backend, **{f'palette_{stage}': value})
         reduced = hyp.reduce([weights, weights] if stage == 'align' else weights,
@@ -452,3 +452,73 @@ def test_polars_forecast_hue_is_partitioned_under_panels(backend):
     got = forecast_colors(fig_pl)
     assert got == forecast_colors(fig_pd) and len(got) == 2
     assert got[0] != got[1]
+
+
+# --- 0-255 colour lists are not data (review 2026-09-11) ----------------------
+
+RGB255 = [[255, 128, 0], [0, 64, 255]]            # orange, blue
+
+
+@pytest.mark.parametrize('palette', [
+    RGB255,                                        # nested list
+    [tuple(c) for c in RGB255],                    # list of tuples
+    np.array(RGB255),                              # integer array
+    np.array(RGB255, dtype=float),                 # whole-number floats
+    np.array(RGB255, dtype=np.uint8),
+    [[255, 128, 0, 255], [0, 64, 255, 128]],       # RGBA
+])
+def test_a_0_255_colour_list_is_refused_not_read_as_data(palette):
+    """[[255, 128, 0], [0, 64, 255]] is an obvious list of 0-255 colours,
+    but its values fall outside [0, 1], so it was read as a DATA MATRIX:
+    reduced, rescaled and re-sorted into blue + yellow, silently (review
+    2026-09-11; master raised). It raises a clear error naming both
+    remedies instead."""
+    with pytest.raises(ValueError, match='0-255') as info:
+        is_palette_matrix(palette)
+    msg = str(info.value)
+    assert '/ 255' in msg and 'DataFrame' in msg
+
+
+@pytest.mark.parametrize('backend', ['matplotlib', 'plotly'])
+def test_plot_refuses_a_0_255_palette_on_both_backends(backend):
+    x = [_walk(seed=1), _walk(seed=2)]
+    with pytest.raises(ValueError, match='0-255'):
+        hyp.plot(x, palette=RGB255, show=False, backend=backend)
+    # as forecast_palette= and as one dataset's entry in a per-dataset list
+    with pytest.raises(ValueError, match='0-255'):
+        hyp.plot(x, predict='Kalman', t=2, forecast_palette=RGB255,
+                 show=False, backend=backend)
+    with pytest.raises(ValueError, match='0-255'):
+        hyp.plot(x, palette=[RGB255, 'viridis'], show=False, backend=backend)
+
+
+@pytest.mark.parametrize('backend', ['matplotlib', 'plotly'])
+def test_the_divided_palette_draws_orange_then_blue_on_both_backends(backend):
+    # the remedy the error names: the same colours, in the given order
+    x = [_walk(seed=1), _walk(seed=2)]
+    palette = np.array(RGB255) / 255
+    fig = hyp.plot(x, palette=palette, show=False, backend=backend)
+    if backend == 'matplotlib':
+        got = [np.asarray(matplotlib.colors.to_rgb(ln.get_color()))
+               for ln in fig.axes[0].lines[:2]]
+    else:
+        tr = [t for t in fig.data
+              if (t.meta or {}).get('hyp_trace_index') is not None]
+        got = [np.array(_rgb_triplet(t.line.color)) / 255.0 for t in tr[:2]]
+    for g, want in zip(got, palette):
+        assert np.linalg.norm(g - want) < 0.01, (g, want)
+
+
+def test_whole_number_data_still_reaches_the_matrix_path():
+    # data that only LOOKS like 0-255 colours: as a DataFrame it is a
+    # matrix palette, as documented; whole numbers outside 0-255, other
+    # column counts and fractional values stay data as before
+    assert is_palette_matrix(pd.DataFrame(RGB255))
+    assert is_palette_matrix(np.array([[300, 2, 5], [7, 1, 9]]))
+    assert is_palette_matrix(np.array([[-3, 2, 5], [7, 1, 9]]))
+    assert is_palette_matrix([[1.5, 0, 0], [0, 1, 0]])
+    assert is_palette_matrix(np.arange(10).reshape(5, 2) * 40)
+    assert not is_palette_matrix([[1, 0, 0], [0, 0, 1]])   # 0/1 colours
+    fig = hyp.plot([_walk(seed=1), _walk(seed=2)],
+                   palette=pd.DataFrame(RGB255), show=False)
+    assert len(fig.axes[0].lines) >= 2

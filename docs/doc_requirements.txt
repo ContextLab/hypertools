@@ -39,7 +39,7 @@ skaters>=0.11
 # plot(..., density=True) 3-D iso-surfaces ([density3d] extra); gallery
 # examples build with it installed so the docs show the iso-surface path
 # rather than the scatter-fog fallback
-scikit-image>=0.23.2
+scikit-image>=0.25.0
 # hypertools.reduce.autoencoders (GH #162) and hypertools.tools.gensim_models
 # (GH #198) import torch/gensim unconditionally at module level, so both are
 # needed for autodoc/autosummary to import those modules (docs/api.rst's

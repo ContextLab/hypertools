@@ -37,5 +37,8 @@ group2 = np.mean(data[18:], 0)
 
 # animate the two group trajectories and write the movie to disk
 save_path = os.path.join(tempfile.mkdtemp(), 'animation.mp4')
-fig, ani = hyp.plot([group1, group2], animate=True, save_path=save_path)
+# backend='matplotlib': the matplotlib animation is what the ffmpeg writer
+# encodes, and (fig, ani) is its form; on Colab the default would be plotly
+fig, ani = hyp.plot([group1, group2], animate=True, save_path=save_path,
+                    backend='matplotlib')
 print(f'saved {os.path.getsize(save_path) // 1024} KB to {save_path}')

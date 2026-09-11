@@ -438,17 +438,28 @@ def predict(data, model='Kalman', t=10, return_model=False, holdout=None,
         truncate to and nothing to forecast -- it used to silently return
         an empty frame).
 
-    step : number, duration string, Timedelta, or None, optional
-        Constructor keyword for the selected model: duration of one future
-        step, inferred independently per dataset as the median positive gap
-        when omitted. Use e.g. '1h' for datetime/duration indexes, or 0.5
-        for numerical indexes. Timed observations are sorted before fitting.
+    step : number, duration string, Timedelta, calendar offset, or None, optional
+        Constructor keyword for the selected model: one future step,
+        inferred independently per dataset when omitted. A datetime index
+        with a calendar frequency -- stored in ``index.freq``, inferable with
+        ``pd.infer_freq`` (business days, month starts, weeks, quarters,
+        hours, tz-aware days across DST), or a ``PeriodIndex``'s periods --
+        steps on that calendar, so it is regular: fitted on its own rows and
+        forecast onto the next business days / month starts / periods.
+        Weekday-only sessions that skip a few weekdays (exchange holidays)
+        step in business days. Any other index steps by the median positive
+        gap. Pass e.g. '1h' for datetime/duration indexes, a calendar
+        frequency such as 'B' or 'MS' for datetime indexes, or 0.5 for
+        numerical indexes. Timed observations are sorted before fitting.
         GaussianProcess uses the actual times; Kalman, ARIMA, AutoRegressor,
         Laplace and Chronos linearly interpolate irregular observations onto
         a regular grid ending at the latest observation (with a warning).
         No training values are extrapolated or missing values imputed.
-        Fitted-model reuse keeps the training interval. Period indexes use
-        their start timestamps; duplicate numeric row IDs remain positional.
+        Fitted-model reuse keeps the training interval when the new index
+        is of the same kind (a model fit on an array and reused on dated
+        rows, or the reverse, steps in the new data's own units). Period
+        indexes are fitted on their start timestamps and forecast as periods
+        of the same frequency; duplicate numeric row IDs remain positional.
         See the API guide's observation-times section for the full policy.
 
     return_model : bool

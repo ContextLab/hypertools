@@ -8,8 +8,8 @@ Twenty-seven large-cap stocks in six sectors, every month since 2000, drawn
 as seven paths through one shared 3-D space. Each **sector** is handed to
 the library as its own matrix -- months down the rows, that sector's stocks
 across the columns (four or five of them; the counts differ on purpose) --
-and each cell is the stock's **trailing twelve-month return**. Three library
-calls turn that into the figure:
+and each cell is the stock's **cumulative log return since the first
+month** (a growth curve). Three library calls turn that into the figure:
 
 1. ``hyp.reduce`` takes every sector from its own handful of stocks to three
    dimensions **separately**, so a sector is a trajectory in a space made
@@ -27,12 +27,16 @@ weighted blend (``hue_mode='mixture'``). A sector's weights are a one-hot
 row, so it keeps its own colour; the market path's weights are each
 sector's **share of the basket's market capitalisation** that month
 (reported share counts x price), so its colour shifts toward whichever
-sectors dominate -- tech-blue-red as the 1990s bubble deflates, more
-financial-gold before 2008, and back again. The title is the **current
-date**, tinted by the basket's own trailing twelve-month return: red when
-the market is below where it stood a year earlier, green when it is above.
-The camera makes three turns over one minute, and nothing that has been
-drawn fades, so the last frame is the whole quarter century.
+sectors dominate -- away from technology red as the dot-com bubble deflates
+(about a third of the basket in mid-2000, a fifth by 2004), toward
+financial gold before 2008 (the largest sector in 2006), then back to
+technology, about half the basket through the 2020s. The title is the
+**current date**, tinted by the basket's own trailing twelve-month return:
+red when the market is below where it stood a year earlier, green when it
+is above. The camera makes three turns over one minute. Only the last six
+seconds of path are drawn at full strength, but nothing disappears: older
+path stays on as a faint trail, so the last frame is the whole quarter
+century.
 
 **Zero padding, verified.** ``hyp.align`` zero-pads datasets with different
 numbers of columns to a common width automatically (its ``trim_and_pad``
@@ -41,14 +45,18 @@ list of unequal-width datasets deliberately refuses (it stacks them into one
 shared fit), which is exactly why the reduction here is per sector -- the
 sectors do not share columns, and should not share a projection.
 
-**Data & graceful degradation.** Adjusted and unadjusted daily closes come
-from Yahoo Finance's chart endpoint (full history, month-end decimated so no
-future observation reaches back into a bar) and share counts from the SEC's
-XBRL company-facts API (quarterly, from 2009; earlier months back-fill the
-first reported capitalisation along the adjusted price). Everything is
-cached on disk. If the network is unavailable the example falls back to a
-seeded synthetic basket with the same sector structure and share counts, so
-it always renders, and the technique is identical either way.
+**Data & graceful degradation.** Daily closes and split events come from
+Yahoo Finance's chart endpoint (full history, month-end decimated so no
+future observation reaches back into a bar). Both of its closes are
+split-adjusted -- ``adjclose`` also reinvests dividends -- so the share
+counts, which the SEC's XBRL API (the per-concept endpoint, falling back to
+company facts; quarterly, from 2009) reports as they stood on the day, are
+multiplied by every later split before they meet the price. Earlier months
+back-fill the first reported capitalisation along the adjusted price.
+Everything is cached on disk. If the network is unavailable the example
+falls back to a seeded synthetic basket with the same sector structure and
+share counts, so it always renders, and the technique is identical either
+way.
 """
 
 # Code source: Contextual Dynamics Laboratory
@@ -126,8 +134,9 @@ def _cached_json(name, url):
 
 # --- the data half: the ONLY code here that reaches the network -------------
 def fetch_prices(sectors=SECTORS):
-    """Daily ADJUSTED and unadjusted closes for every ticker, or ``None``
-    if anything (network, parsing) goes wrong."""
+    """Daily dividend-and-split-adjusted and split-adjusted closes for every
+    ticker plus its split events, or ``None`` if anything (network,
+    parsing) goes wrong."""
     # outside the try, so it raises instead of being caught and quietly
     # downgraded: a test that sets HYPERTOOLS_OFFLINE is asserting that no
     # fetch happened, and a swallowed exception would hide one
@@ -135,33 +144,40 @@ def fetch_prices(sectors=SECTORS):
         raise RuntimeError('HYPERTOOLS_OFFLINE is set: refusing to fetch')
     os.makedirs(CACHE, exist_ok=True)
     try:
-        adjusted, raw = {}, {}
+        adjusted, close, splits = {}, {}, {}
         for tickers in sectors.values():
             for ticker in tickers:
                 # an explicit window: `range=max` silently degrades to
                 # 3-month bars (measured 2026-09-03), a period does not
                 result = _cached_json(
-                    f'yahoo_daily_{ticker}.json',
+                    f'yahoo_daily_splits_{ticker}.json',
                     'https://query1.finance.yahoo.com/v8/finance/chart/'
-                    f'{ticker}?period1={PERIOD1}&period2={PERIOD2}&interval=1d'
+                    f'{ticker}?period1={PERIOD1}&period2={PERIOD2}&interval=1d&events=split'
                 )['chart']['result'][0]
                 stamps = pd.to_datetime(result['timestamp'], unit='s').normalize()
                 quote = result['indicators']
-                adjusted[ticker] = pd.Series(
-                    quote['adjclose'][0]['adjclose'], index=stamps, dtype=float)
-                raw[ticker] = pd.Series(
-                    quote['quote'][0]['close'], index=stamps, dtype=float)
-        return pd.DataFrame(adjusted).sort_index(), pd.DataFrame(raw).sort_index()
+                adjusted[ticker] = pd.Series(quote['adjclose'][0]['adjclose'], index=stamps, dtype=float)
+                # the chart's `close` is SPLIT-adjusted as well (only
+                # dividends are left in: GE's 2009-12-31 close comes back as
+                # 72.51, as-traded 15.13), so the splits come along to put the
+                # SEC's as-reported share counts in the same units
+                close[ticker] = pd.Series(quote['quote'][0]['close'], index=stamps, dtype=float)
+                splits[ticker] = [(pd.Timestamp(s['date'], unit='s').normalize(), s['numerator'] / s['denominator'])
+                                  for s in result.get('events', {}).get('splits', {}).values()]
+        return pd.DataFrame(adjusted).sort_index(), pd.DataFrame(close).sort_index(), splits
     except Exception as error:
         print(f'price history unavailable ({error!r})')
         return None
 
 
-def fetch_shares(tickers):
+def fetch_shares(tickers, splits):
     """Reported shares outstanding per ticker from the SEC's XBRL API, as a
     month-end series (forward-filled between filings, NaN before the first),
-    or ``None``. Counts are as reported -- NOT split-adjusted -- which is why
-    market cap below multiplies them by the UNADJUSTED close."""
+    or ``None``. The counts are filed as they stood on the day; each is
+    multiplied by the ratio of every LATER split in `splits` (ticker ->
+    [(date, ratio)]), which puts it in the units of Yahoo's split-adjusted
+    close -- the pair multiply to the true capitalisation, even in the
+    months between a split and the next filing."""
     if os.environ.get('HYPERTOOLS_OFFLINE'):
         raise RuntimeError('HYPERTOOLS_OFFLINE is set: refusing to fetch')
     try:
@@ -182,8 +198,12 @@ def fetch_shares(tickers):
             # one value per period end: the LATEST filing wins over amendments
             frame = pd.DataFrame(facts).sort_values('filed')
             frame = frame.drop_duplicates('end', keep='last')
-            series = pd.Series(frame['val'].to_numpy(float),
-                               index=pd.to_datetime(frame['end']))
+            series = pd.Series(frame['val'].to_numpy(float), index=pd.to_datetime(frame['end']))
+            series *= [np.prod([r for day, r in splits[ticker] if end < day]) for end in series.index]
+            # filings carry the odd slip (measured 2026-09-11: ORCL 2012-09
+            # 4.8e15 shares for 4.8e9, MRK 2009-06 and KO 2009-10 zero); in
+            # split-adjusted units a count never strays 100x from its median
+            series = series[(series / series.median()).between(0.01, 100)]
             shares[ticker] = series.resample('ME').last().ffill()
         return pd.DataFrame(shares)
     except Exception as error:
@@ -193,7 +213,8 @@ def fetch_shares(tickers):
 
 def synthetic_market(sectors=SECTORS, days=7000, seed=0):
     """The same sector structure, seeded, so the figure renders offline:
-    daily closes (adjusted == unadjusted) and a constant share count."""
+    daily closes (no dividends, no splits: both closes are one series) and a
+    constant share count."""
     rng = np.random.default_rng(seed)
     index = pd.date_range('1999-01-04', periods=days, freq='B')
     tickers = [t for ts in sectors.values() for t in ts]
@@ -207,7 +228,7 @@ def synthetic_market(sectors=SECTORS, days=7000, seed=0):
     return closes, closes, shares
 
 
-def assemble(adjusted, raw, shares, sectors, source):
+def assemble(adjusted, close, shares, sectors, source):
     """Month-end trailing returns per sector, market-cap weights per sector
     and the basket's own return, on one shared monthly index from START."""
     # month-end levels; a month still in progress is DROPPED (resample
@@ -220,9 +241,10 @@ def assemble(adjusted, raw, shares, sectors, source):
     # month, so a sector's matrix is a set of growth curves and its 3-D path
     # is a journey rather than a tangle of month-to-month noise
     paths = levels.loc[months] - levels.loc[months[0]]
-    # market cap = UNADJUSTED close x reported shares; before the first
-    # filing, the first known cap is carried back along the ADJUSTED price
-    cap = raw.resample('ME').last().reindex(months) * shares.reindex(months).ffill()
+    # market cap = split-adjusted close x split-adjusted shares; before the
+    # first filing, the first known cap is carried back along the ADJUSTED
+    # (dividend-reinvested) price
+    cap = close.resample('ME').last().reindex(months) * shares.reindex(months).ffill()
     first = cap.apply(lambda col: col.first_valid_index())
     for ticker in cap:
         known = cap.loc[first[ticker], ticker]
@@ -241,13 +263,13 @@ def load_market(sectors=SECTORS):
     try:
         prices = fetch_prices(sectors)
         if prices is not None:
-            shares = fetch_shares([t for ts in sectors.values() for t in ts])
+            shares = fetch_shares([t for ts in sectors.values() for t in ts], prices[2])
     except RuntimeError:
         pass
     if prices is None or shares is None:
         return assemble(*synthetic_market(sectors), sectors,
                         'synthetic basket (offline)')
-    return assemble(*prices, shares, sectors,
+    return assemble(*prices[:2], shares, sectors,
                     'Yahoo Finance closes, SEC share counts')
 
 
@@ -272,11 +294,13 @@ def construct_artifact(data):
     # path's rows are the sectors' shares of the basket's capitalisation.
     hue = [np.tile(np.eye(len(names))[i], (n_months, 1))
            for i in range(len(names))] + [data.weights.to_numpy()]
-    # THE call: seven paths, one minute, three turns of the camera, and
-    # a trail as long as the clip so nothing drawn ever fades.
+    # THE call: seven paths, one minute, three turns of the camera; a
+    # six-second bright head, and a chemtrail that keeps everything older.
     months, basket = data.weights.index, data.market.to_numpy()
     # the title is restyled per frame below; the library reserves its margin
-    # at build time from rcParams, so the size is declared here as well
+    # at build time from rcParams, so the size is declared here as well.
+    # backend='matplotlib': the hook and legend below use the matplotlib
+    # figure, and on Colab the default backend would be plotly
     with plt.rc_context({'axes.titlesize': TITLE_SIZE, 'axes.titleweight': 'bold'}):
         anim = hyp.plot(aligned + [market], '-', hue=hue, palette=SECTOR_COLORS,
                         hue_mode='mixture', linewidth=[1.1] * len(names) + [3.4],
@@ -284,7 +308,7 @@ def construct_artifact(data):
                         tail_duration=TAIL, duration=DURATION, frame_rate=FPS,
                         rotations=ROTATIONS, colorbar=False,
                         title=f'{months[0]:%B} {months[0].day}, {months[0].year}',
-                        size=(8, 8), show=False)
+                        size=(8, 8), backend='matplotlib', show=False)
     ax = anim.figure.axes[0]
     ax.legend(handles=[Line2D([], [], color=c, lw=2, label=s)
                        for s, c in zip(names, SECTOR_COLORS)]

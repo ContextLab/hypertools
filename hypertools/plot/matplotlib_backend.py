@@ -30,6 +30,7 @@ from .animate import HyperFuncAnimation
 import matplotlib.patches as patches
 from .._shared.helpers import *
 from .._shared.helpers import UNIT_FRAME_LIMIT, UNIT_FRAME_SCALE
+from .._shared.helpers import row_index_x
 from ..core.model import external_stacklevel
 from .meshutil import (backface_cull, blinn_phong_colors,
                        vertex_colors_from_points, face_colors_from_vertex_colors)
@@ -1153,7 +1154,10 @@ def _draw(
             # 'o-' datasets rendered with identical color pairs.
             marker_kwargs.setdefault('color', line_artist.get_color())
             marker_coords = raw_coords if raw_data is not None else coords
-            ax.plot(*marker_coords, **marker_kwargs)
+            # tagged so run-indexed consumers (the forecast/truth overlays
+            # in plot.py) skip it: it is the SAME run's markers, not a run
+            ax.plot(*marker_coords, **marker_kwargs)[0] \
+                ._hyp_marker_companion = True
         elif _process_plot_format is not None:
             plot_kwargs = dict(ikwargs)
             if fmt_ls is not None:
@@ -1172,7 +1176,16 @@ def _draw(
         n = len(data)
         for i in range(n):
             raw = raw_data[i] if raw_data is not None else data[i]
-            _plot_possibly_split(ax, (data[i][:, 0],), (raw[:, 0],), i)
+            # x is the ROW index: static antialiasing densified `data[i]`
+            # upstream (uniformly, every original row kept), so its vertices
+            # span the same 0..n_rows-1 as the raw rows. Plotting it with no
+            # x put it on the VERTEX index (0..936 for 40 rows) while the
+            # forecast/truth overlays continue in rows -- squashing a
+            # forecast 24x at the far end (1.1 release review)
+            _xs = row_index_x(raw.shape[0], data[i].shape[0])
+            _plot_possibly_split(
+                ax, (_xs, data[i][:, 0]),
+                (np.arange(raw.shape[0], dtype=float), raw[:, 0]), i)
         return fig, ax, data
 
     # plot data in 2D
@@ -3277,6 +3290,17 @@ def _draw(
             # ndims=1 series mode); without a date converter they would tick
             # as five-digit floats
             ax.xaxis_date()
+            # ...and matplotlib's default date formatter writes every tick
+            # as a full 'YYYY-MM-DD', which collide at the default figure
+            # size (7 of 7 adjacent pairs overlapped for a 30-day index;
+            # 1.1 release review, F13). The concise formatter writes only
+            # what changes between ticks, with the rest once as an offset,
+            # which is also what plotly's date axis draws.
+            import matplotlib.dates as mdates
+            _locator = mdates.AutoDateLocator()
+            ax.xaxis.set_major_locator(_locator)
+            ax.xaxis.set_major_formatter(
+                mdates.ConciseDateFormatter(_locator))
     elif xlabel is None and ylabel is None and zlabel is None:
         ax.set_axis_off()
     elif hasattr(ax, "get_proj"):

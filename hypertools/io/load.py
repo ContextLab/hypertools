@@ -337,7 +337,8 @@ def load(
         The name of a built-in example dataset (listed below), a dataset
         name resolvable per the steps above, or a file path / URL.
 
-        Data that is already loaded -- a pandas DataFrame, a numpy array,
+        Data that is already loaded -- a DataFrame (pandas, or a polars
+        DataFrame/LazyFrame), a numpy array,
         or a list/tuple of DataFrames/arrays (one hypertools dataset per
         element, the same shape ``hypertools.load('weights')`` returns) --
         is passed through unchanged, so ``hypertools.load`` can serve as a
@@ -375,8 +376,8 @@ def load(
         `mushrooms` is a pandas DataFrame of categorical features
         (columns) describing 8,124 mushroom samples (rows).
 
-        `sotus` is a list of 29 State of the Union addresses (1989-2018),
-        as strings.
+        `sotus` is a list of 29 State of the Union addresses (1989-2017),
+        as strings, grouped by president rather than in date order.
 
         `wiki` is a list of 3,136 wikipedia page texts (strings), used to
         fit `wiki_model`.
@@ -569,7 +570,8 @@ def load(
         raise TypeError(
             'hypertools.load: dataset must be a string (a dataset name, '
             'file path, or URL), a path-like object, an already-loaded '
-            'pandas DataFrame or numpy array, or a list/tuple of those; '
+            'DataFrame (pandas, or polars DataFrame/LazyFrame) or numpy '
+            'array, or a list/tuple of those; '
             f'got {type(dataset).__name__}')
     else:
         dataset = os.fspath(dataset)
