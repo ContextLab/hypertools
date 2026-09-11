@@ -73,3 +73,58 @@ def test_irregular_data_with_an_explicit_step_are_still_called_irregular():
     frame = pd.DataFrame(_walk(10, seed=4), index=times)
     _, messages = _messages(lambda: hyp.predict(frame, model='Kalman', t=2, step='2h'))
     assert any('Irregular' in m for m in messages)
+
+
+# ---------------------------------------------------------------------------
+# Attribution (2026-09-11 tutorial re-execution): the time-policy warnings
+# used a fixed stacklevel that landed on hypertools' own frames, so the
+# tutorials printed '~/hypertools/hypertools/predict/common.py:435:
+# UserWarning' and a shuffled index under hyp.plot warned twice (from two
+# different library lines). They must point at the caller's line.
+
+def _trading_days():
+    idx = pd.bdate_range('2026-06-01', '2026-09-10')
+    holidays = pd.to_datetime(['2026-06-19', '2026-07-03', '2026-09-07'])
+    idx = idx[~idx.isin(holidays)]
+    return pd.DataFrame({'v': _walk(len(idx))[:, 0]}, index=idx)
+
+
+def _caught(call):
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter('always')
+        call()
+    return caught
+
+
+def test_interpolation_warning_names_the_callers_line_and_a_readable_step():
+    caught = [w for w in _caught(
+        lambda: hyp.predict(_trading_days(), model='Kalman', t=3))
+        if 'interpolated' in str(w.message)]
+    assert caught
+    assert all(w.filename == __file__ for w in caught), \
+        [(w.filename, w.lineno) for w in caught]
+    # a calendar step reads as its alias, not an object repr
+    assert "step='B'" in str(caught[0].message), str(caught[0].message)
+
+
+def test_backtest_interpolation_warning_names_the_callers_line():
+    caught = [w for w in _caught(
+        lambda: hyp.predict(_trading_days(), model='Kalman', holdout=5))
+        if 'interpolated' in str(w.message)]
+    assert caught
+    assert all(w.filename == __file__ for w in caught), \
+        [(w.filename, w.lineno) for w in caught]
+
+
+@pytest.mark.parametrize('backend', ['matplotlib', 'plotly'])
+def test_unsorted_index_under_plot_warns_once_at_the_callers_line(backend):
+    import matplotlib.pyplot as plt
+    data = _trading_days().sample(frac=1.0, random_state=0)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter('default')   # Python's display filter
+        hyp.plot(data, ndims=1, reduce=None, predict='Kalman', t=3,
+                 backend=backend, show=False)
+    unsorted = [w for w in caught if 'not sorted' in str(w.message)]
+    assert len(unsorted) == 1, [(w.filename, w.lineno) for w in unsorted]
+    assert unsorted[0].filename == __file__
+    plt.close('all')

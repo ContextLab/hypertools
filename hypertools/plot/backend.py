@@ -1363,7 +1363,8 @@ def manage_backend(plot_func):
 
         try:
             try:
-                with backend_context(tmp_backend):
+                from ..predict.time import warn_once_per_call
+                with backend_context(tmp_backend), warn_once_per_call():
                     if BACKEND_WARNING is not None:
                         warnings.warn(BACKEND_WARNING)
 
