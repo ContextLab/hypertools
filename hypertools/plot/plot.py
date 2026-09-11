@@ -4747,7 +4747,9 @@ def plot(
 
         A 2-D array with 3 or 4 columns and every value in [0, 1] stays a
         list of colors; pass a DataFrame (or values outside [0, 1]) for a
-        three-column matrix that is data. The palette is as smooth as the
+        three-column matrix that is data. One with 3 or 4 columns of whole
+        numbers in 0..255 reads as 0-255 colors and raises ``ValueError``
+        (divide by 255 for the colors; a DataFrame for data). The palette is as smooth as the
         matrix: the rows are ordered along the first component, so a
         matrix whose other components follow the first (a trend with
         oscillations) gives a clean gradient and an unstructured one a
