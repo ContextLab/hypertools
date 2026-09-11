@@ -1661,7 +1661,14 @@ def load_source(source, split=None, streaming=False, trust=False,
     ``cache``/``offline`` govern the on-disk URL cache (see
     :func:`url_cache_dir`): ``cache=True`` stores every URL/Drive/Dropbox/
     Sheets download and reuses it next time, ``offline=True`` reads ONLY
-    from that cache and raises rather than touching the network.
+    from that cache and raises rather than touching the network: an
+    explicit URL / Drive / Sheets / Dropbox link that is not cached raises
+    ``HypertoolsOfflineError`` at once, while a string that is only
+    GUESSED to be one (a bare 25+ character name read as a Drive id, a
+    scheme-less ``host.tld/...``) adds its miss to the "tried, in order"
+    digest, raised as ``HypertoolsOfflineError`` when nothing matched. A
+    cached copy that is read but does not parse raises
+    ``HypertoolsIOError`` naming the cached file (it is not a miss).
     ``decode_labels`` is threaded to :func:`_load_hf`. Any remaining
     keyword arguments belong to the synthetic (step 6) and web-prefix
     (step 7) sources and are passed to whichever of those matches; passing
@@ -1747,47 +1754,73 @@ def load_source(source, split=None, streaming=False, trust=False,
             attempts.append(f'Hugging Face dataset: {type(e).__name__}: '
                             f'{str(e).splitlines()[0][:120]}')
 
+    # steps 10-13 download (or, with cache=/offline=, read from the URL
+    # cache) and parse. Two things are tracked for the final error:
+    # - an offline MISS escapes at once only when the source is
+    #   unmistakably that kind of link (is_url_like); for a GUESSED
+    #   interpretation -- a bare 25+ character string read as a Drive id,
+    #   a scheme-less 'host.tld/...' read as a URL, an 's/...' Dropbox
+    #   path -- the miss is one line of the digest, next to the local-file
+    #   miss the user more likely meant (review 2026-09-11)
+    # - a cached copy that was READ but did not parse is a parse failure,
+    #   not a cache miss, so the final error is then a HypertoolsIOError
+    #   naming the cached file rather than the offline "cache it first"
+    #   refusal (review 2026-09-11)
+    unparsed_cached = []
+    miss = object()
+
+    def _fetch_and_parse(url, label, hint):
+        from_cache = (cache or offline) and cached_url_path(url).is_file()
+        try:
+            raw, name_hint = _fetch_bytes(url, cache=cache, offline=offline)
+        except HypertoolsOfflineError:
+            if is_url_like:
+                raise
+            attempts.append(f'{label}: not in the hypertools URL cache '
+                            f'(looked for {cached_url_path(url)})')
+            return miss
+        except HypertoolsTrustError:
+            raise
+        except Exception as e:
+            attempts.append(f'{label}: {type(e).__name__}: {e}')
+            return miss
+        try:
+            return _parse_payload(raw, name_hint or hint, trust=trust,
+                                  remote=True)
+        except (HypertoolsTrustError, HypertoolsOfflineError):
+            raise
+        except Exception as e:
+            if from_cache:
+                path = cached_url_path(url)
+                unparsed_cached.append(path)
+                attempts.append(f'{label}: the cached copy at {path} could '
+                                f'not be parsed: {type(e).__name__}: {e}')
+            else:
+                attempts.append(f'{label}: {type(e).__name__}: {e}')
+            return miss
+
     # 10. Google Sheets URL -> CSV export (checked before generic Drive id
     # extraction, since a Sheets URL also matches the '/d/<id>' pattern)
     sheet_url = _normalize_google_sheet(source)
     if sheet_url is not None:
-        try:
-            raw, name_hint = _fetch_bytes(sheet_url, cache=cache,
-                                          offline=offline)
-            return _parse_payload(raw, name_hint or 'sheet.csv',
-                                  trust=trust, remote=True)
-        except (HypertoolsTrustError, HypertoolsOfflineError):
-            raise
-        except Exception as e:
-            attempts.append(f'Google Sheets: {type(e).__name__}: {e}')
+        data = _fetch_and_parse(sheet_url, 'Google Sheets', 'sheet.csv')
+        if data is not miss:
+            return data
 
     # 11. Google Drive URL or bare ID
     drive_id = _extract_drive_id(source)
     if drive_id is not None:
         url = f'https://drive.google.com/uc?export=download&id={drive_id}'
-        try:
-            raw, name_hint = _fetch_bytes(url, cache=cache,
-                                          offline=offline)
-            return _parse_payload(raw, name_hint or source,
-                                  trust=trust, remote=True)
-        except (HypertoolsTrustError, HypertoolsOfflineError):
-            raise
-        except Exception as e:
-            attempts.append(f'Google Drive ({drive_id}): '
-                            f'{type(e).__name__}: {e}')
+        data = _fetch_and_parse(url, f'Google Drive ({drive_id})', source)
+        if data is not miss:
+            return data
 
     # 12. Dropbox URL or shared-link path
     dropbox_url = _normalize_dropbox(source)
     if dropbox_url is not None:
-        try:
-            raw, name_hint = _fetch_bytes(dropbox_url, cache=cache,
-                                          offline=offline)
-            return _parse_payload(raw, name_hint or source,
-                                  trust=trust, remote=True)
-        except (HypertoolsTrustError, HypertoolsOfflineError):
-            raise
-        except Exception as e:
-            attempts.append(f'Dropbox: {type(e).__name__}: {e}')
+        data = _fetch_and_parse(dropbox_url, 'Dropbox', source)
+        if data is not miss:
+            return data
 
     # 13. any URL, with or without a scheme
     url = None
@@ -1810,15 +1843,9 @@ def load_source(source, split=None, streaming=False, trust=False,
             'address without a scheme; add an explicit http:// or '
             'https:// prefix')
     if url is not None:
-        try:
-            raw, name_hint = _fetch_bytes(url, cache=cache,
-                                          offline=offline)
-            return _parse_payload(raw, name_hint or source,
-                                  trust=trust, remote=True)
-        except (HypertoolsTrustError, HypertoolsOfflineError):
-            raise
-        except Exception as e:
-            attempts.append(f'URL ({url}): {type(e).__name__}: {e}')
+        data = _fetch_and_parse(url, f'URL ({url})', source)
+        if data is not miss:
+            return data
 
     tried = '\n  - '.join(attempts) if attempts else 'no interpretation ' \
         'matched (not a file, URL, Drive/Dropbox link, or dataset id)'
@@ -1826,6 +1853,12 @@ def load_source(source, split=None, streaming=False, trust=False,
     suggestion = _closest_dataset_name(source)
     if suggestion is not None:
         message += f"\nDid you mean {suggestion!r}?"
+    if unparsed_cached:
+        raise HypertoolsIOError(
+            f'{message}\n(the cached download at '
+            f'{", ".join(str(p) for p in unparsed_cached)} was read but '
+            'could not be parsed; it is kept as is -- delete it and load '
+            'again with cache=True while online to download a fresh copy.)')
     if offline:
         raise HypertoolsOfflineError(
             f'offline=True: {message}\n(offline=True serves ONLY Google '

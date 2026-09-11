@@ -376,7 +376,10 @@ def test_yahoo_live_hourly_bars_are_unique_and_forecastable():
     assert df.index.is_monotonic_increasing
     assert str(df.index.tz) == 'America/New_York'
     assert '09:30' in set(df.index.strftime('%H:%M'))  # the session open
-    forecast = hyp.predict(df[['close']], t=2)
+    # the overnight/weekend gaps make the grid irregular; predict says so
+    # (a real warning about real data, not a failure)
+    with pytest.warns(UserWarning, match='Irregular observation times'):
+        forecast = hyp.predict(df[['close']], t=2)
     assert len(forecast) == 2
     assert (forecast.index > df.index[-1]).all()
 
