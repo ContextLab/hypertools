@@ -2274,10 +2274,12 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     # set anywhere created a trail trace for EVERY dataset). These do NOT
     # necessarily sit right after the data traces -- forecast traces
     # (predict=, above) are appended in between when both are present -- so
-    # `trail_trace_start` records their real position, and
-    # `trail_dataset_indices[k]` is the ORIGINAL dataset index that produced
-    # `traces[trail_trace_start + k]`, so `_add_animation` can look up the
-    # right dataset's data per frame.
+    # `trail_trace_start` records their real position, and every trail trace
+    # carries ``meta['hyp_trail_index']`` -- the ORIGINAL dataset index that
+    # produced it -- so `_add_animation` can look up the right dataset's data
+    # per frame. A dataset's trail is ONE trace, except an animated
+    # multicoloured 2-D line's, which is one trace per colour bin
+    # (`_hue_line_bins`); `n_trail_traces` counts traces, not datasets.
     #
     # Backend parity (Task 4): 'serial' builds these too, not just
     # True/'parallel' -- each currently-revealing dataset traces out its own
@@ -5425,11 +5427,12 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
     `chemtrails`/`precog`/`bullettime` (GH #127): per-dataset bool lists
     (length `len(data)`, broadcast/validated by `plotly_draw`). Only
     datasets with at least one of the three flags set get a trail trace at
-    all -- `trail_dataset_indices[k]` is the ORIGINAL dataset index that
-    produced the trail trace at `fig.data[trail_trace_start + k]`, so each
-    frame's trail geometry is built from `chemtrails[i]`/`precog[i]`/
+    all -- each trail trace's ``meta['hyp_trail_index']`` is the ORIGINAL
+    dataset index that produced it (an animated multicoloured 2-D line's
+    trail is several colour-bin traces, like its head), so each frame's
+    trail geometry is built from `chemtrails[i]`/`precog[i]`/
     `bullettime[i]` for that SAME original dataset index `i`, not from the
-    trail trace's own position `k`. This applies to `animate=True`/
+    trail trace's own position. This applies to `animate=True`/
     `'parallel'` AND `animate='serial'` (backend parity, Task 4): the
     `'serial'` branch below builds the SAME per-dataset trail semantics as
     `matplotlib_backend.update_lines_serial` (the ONE currently-revealing
