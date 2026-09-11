@@ -6761,6 +6761,10 @@ def plot(
         ``'o-'``). MARKER-ONLY styles (e.g. ``'o'``, ``'.'``) are never
         touched: markers always render at the true sample points. Forecast
         overlays drawn by `predict=` are smoothed the same way.
+        A marker+line style (``'o-'``, or a ``forecast_fmt='o:'``) marks
+        only the true samples, never the vertices smoothing adds; in an
+        animation, whose lines are resampled onto the frame grid, each
+        marker sits on the grid vertex nearest its sample.
 
         Pass ``antialias=False`` to draw raw straight segments between
         consecutive samples (the pre-1.1.0 behavior).
@@ -11342,6 +11346,9 @@ def plot(
             legend_kwargs=_legend_kwargs,
             legend_entries=_final_legend_entries,
             legend_explicit=_legend_entries is not None,
+            # the pre-resampling observations, so an 'o-' marks only them
+            # (the matplotlib `_draw` call's `raw_data=`)
+            raw_data=raw_xform,
             axis_scale=_axis_scale,
             xlim=_data_xlim,
             ylim=_data_ylim,

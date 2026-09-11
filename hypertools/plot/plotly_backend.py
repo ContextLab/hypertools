@@ -64,12 +64,29 @@ from . import morph as _morph
 
 
 def _normalize_scatter3d_alpha(trace, inherited_mode=None, *, frame=False):
-    """Move uniform RGBA transparency to WebGL's native opacity control.
+    """Keep a Scatter3d's hue when its colours carry transparency.
+
+    Plotly's WebGL line/marker path composites an ``rgba(...)`` colour
+    without premultiplying it, so a translucent colour ADDS to the white
+    background instead of blending with it: steelblue at alpha 0.5 renders
+    as (197, 255, 255), a pale cyan, rather than (162, 192, 217) (notebook
+    visual review 2026-09; 1.1 release review). The trace-level `opacity`
+    blends correctly, so:
+
+    * UNIFORM alpha (every active colour the same) moves to `opacity`
+      verbatim, with the colours made opaque -- true translucency.
+    * NONUNIFORM alpha (a translucent line with opaque markers, per-vertex
+      alpha, ...) cannot be one `opacity`. The largest alpha becomes the
+      trace `opacity`, and every colour is first composited over the white
+      paper (`_blend_toward_white`, the rule this module's Mesh3d surfaces
+      use) by its share ``alpha / max_alpha`` of it. Over white the result
+      is exactly the requested colour; what it cannot express is a
+      lower-alpha part showing ANOTHER trace through it at its own lower
+      opacity -- the price of drawing the right hue.
 
     Only active components participate: an unused marker colour must not
-    prevent correcting a line. Nonuniform per-vertex alpha is retained;
-    replacing it by one trace opacity would change the requested data.
-    This operation is idempotent and also accepts partial frame traces.
+    prevent correcting a line. This operation is idempotent and also
+    accepts partial frame traces.
     """
     if trace.type != 'scatter3d':
         return
@@ -97,13 +114,32 @@ def _normalize_scatter3d_alpha(trace, inherited_mode=None, *, frame=False):
         if alphas:
             components.append((obj, converted[0] if scalar else converted, alphas))
     alphas = [a for _, _, values in components for a in values]
-    if not alphas or min(alphas) != max(alphas):
+    if not alphas:
         return
-    if alphas[0] == 1 and not frame:
+    top = max(alphas)
+    if min(alphas) == top:
+        if top == 1 and not frame:
+            return
+        for obj, color, _ in components:
+            obj.color = color
+        trace.opacity = (1 if trace.opacity is None else trace.opacity) * top
         return
-    for obj, color, _ in components:
-        obj.color = color
-    trace.opacity = (1 if trace.opacity is None else trace.opacity) * alphas[0]
+    # nonuniform: opacity = the largest alpha, each colour pre-blended
+    # toward white by its own share of it
+    for obj, color, values in components:
+        scalar = isinstance(color, str)
+        colors = [color] if scalar else list(color)
+        blended = []
+        for value, alpha in zip(colors, values):
+            rgb = _rgb_triplet(value) if isinstance(value, str) else None
+            if not isinstance(rgb, tuple) or alpha == top:
+                blended.append(value)
+                continue
+            share = alpha / top if top > 0 else 0.0
+            mixed = _blend_toward_white(np.asarray(rgb) / 255.0, share)
+            blended.append(_rgb_string(mixed))
+        obj.color = blended[0] if scalar else blended
+    trace.opacity = (1 if trace.opacity is None else trace.opacity) * top
 
 
 VALID_BACKENDS = ('auto', 'matplotlib', 'plotly')
@@ -530,6 +566,134 @@ def _aa_resample_colors(colors, n_orig, n_dense):
     return [colors[j] for j in np.round(grid).astype(int)]
 
 
+def _observation_vertices(dense, raw, n_rows, aa_step):
+    """Indices, into a dataset's drawn (dense) curve, of its TRUE
+    observations.
+
+    `dense` is the curve plotly draws: the `n_rows`-row array `plot()` hands
+    over, subdivided `aa_step` times per row by `_build_aa_curves`. Those
+    rows are the observations themselves unless `plot()` resampled them
+    first -- static antialiasing (`plot._interp_static_line`) and the
+    animation frame grid (`plot._interp_anim_line`) both do -- and `raw`
+    (`plot()`'s pre-resampling ``raw_xform`` rows, in the same display
+    space) says where the observations are. Matched from that relationship,
+    not from any one grid's arithmetic:
+
+    * EXACT: when every observation is a vertex of the curve (static
+      antialiasing keeps each sample as an exact vertex, as does any frame
+      grid that contains the samples), those vertices, found in order.
+    * NEAREST: otherwise (a frame grid whose rows need not contain the
+      samples), the vertex nearest each observation's position along the
+      shared uniform parameter, at most half a grid row away -- the rule
+      the matplotlib backend's animated markers follow.
+
+    `raw` None (or with as many rows as `n_rows`) means the rows are the
+    observations: every `aa_step`-th vertex.
+    """
+    aa_step = max(int(aa_step), 1)
+    n_obs = None if raw is None else np.asarray(raw).shape[0]
+    if n_obs is None or n_obs == n_rows or n_obs < 2 or n_rows < 2:
+        return np.arange(n_rows) * aa_step
+    dense = np.asarray(dense, dtype=np.float64).reshape(len(dense), -1)
+    raw = np.asarray(raw, dtype=np.float64).reshape(n_obs, -1)
+    if raw.shape[1] == dense.shape[1]:
+        # EXACT: walk the curve once, taking each observation's first exact
+        # match at or after the previous one's (a doubling search window
+        # keeps this linear for any spacing)
+        span = float(np.nanmax(np.abs(dense))) if dense.size else 1.0
+        tol = 1e-9 * max(span, 1.0)
+        found, j = [], 0
+        for row in raw:
+            hit, width = None, 16
+            while j < len(dense):
+                window = dense[j:j + width]
+                close = np.flatnonzero(np.abs(window - row).max(axis=1)
+                                       <= tol)
+                if close.size:
+                    hit = j + int(close[0])
+                    break
+                if j + width >= len(dense):
+                    break
+                width *= 2
+            if hit is None:
+                found = None
+                break
+            found.append(hit)
+            j = hit + 1
+        if found is not None:
+            return np.asarray(found, dtype=int)
+    # NEAREST: plot()'s resampling grids are uniform in the parameter, so
+    # observation k sits at row k * (n_rows - 1) / (n_obs - 1)
+    pos = np.arange(n_obs) * ((n_rows - 1) / (n_obs - 1)) * aa_step
+    return np.unique(np.rint(pos).astype(int))
+
+
+def _observation_marker(marker, n_vertices, vertices, ndims):
+    """A trace's ``marker=`` dict with a marker at every TRUE OBSERVATION of
+    a smoothed line and none at the vertices the smoothing added.
+
+    `plot`'s ``antialias=`` promises that markers render at the true sample
+    points; a ``'o-'`` trace drawn as ONE ``lines+markers`` trace over the
+    dense curve would otherwise put a marker on every one of its ~900
+    vertices, which draws the line as a thick tube of overlapping dots
+    (1.1 release review). So the size becomes a per-vertex array: the
+    marker's size at `vertices` (`_observation_vertices`, or a plain step
+    for a curve whose every `step`-th vertex is a sample) and 0 elsewhere.
+    Keeping ONE trace keeps the legend key (line AND marker) and every
+    trace index an animation addresses unchanged; an animation frame sends
+    the matching slice of this array (`_aa_window_sizes`).
+
+    A per-point size array is what plotly calls a "bubble" trace, which
+    changes two of its defaults: markers become 70% opaque and (in 2-D) gain
+    a 1 px white outline. Both are pinned back to the scalar-size look here
+    (``opacity=1``; ``line.width=0``), so an observation marker is drawn
+    exactly as a marker-only trace draws it. The legend key is unaffected:
+    `plotly_draw` sets ``legend.itemsizing='constant'``.
+
+    `vertices` may also be an int step (every `step`-th vertex). `marker`
+    is returned unchanged when every vertex is an observation (nothing was
+    interpolated).
+    """
+    if marker is None:
+        return marker
+    if np.isscalar(vertices):
+        vertices = np.arange(0, int(n_vertices), max(int(vertices), 1))
+    vertices = np.asarray(vertices, dtype=int)
+    vertices = vertices[(vertices >= 0) & (vertices < int(n_vertices))]
+    if len(vertices) >= int(n_vertices):
+        return marker
+    marker = _bubble_safe_marker(marker, ndims)
+    sizes = np.zeros(int(n_vertices))
+    sizes[vertices] = marker.get('size') or 0
+    marker['size'] = sizes
+    return marker
+
+
+def _aa_window_sizes(sizes, step, a, b):
+    """The slice of a full-curve per-vertex marker-size array that goes with
+    `_aa_window`'s drawn window for ORIGINAL rows ``[a, b)`` -- the same
+    index arithmetic, so an animation frame's sizes line up with its
+    vertices."""
+    step = max(int(step), 1)
+    if step == 1:
+        return sizes[a:b]
+    if b <= a:
+        return sizes[0:0]
+    return sizes[a * step:(b - 1) * step + 1]
+
+
+def _bubble_safe_marker(marker, ndims):
+    """A copy of `marker` that looks the same once its `size` becomes a
+    per-point array: plotly's "bubble" defaults (70% opacity and, in 2-D, a
+    white outline) pinned back to an ordinary marker's. Also used for the
+    base of an animated trace whose FRAMES send such an array."""
+    marker = dict(marker)
+    marker.setdefault('opacity', 1)
+    if ndims < 3:
+        marker['line'] = dict(width=0)
+    return marker
+
+
 def _run_window(frame_windows, idx, n_rows, num, total_frames,
                 window_frames):
     """This trace's `RunWindow` at one frame.
@@ -806,7 +970,7 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 axis_scale='unit', xlim=None, ylim=None, x_date=False,
                 truths=None, forecast_labels=None,
                 forecast_datasets=None, datasets_drawn=None,
-                legend_explicit=False):
+                legend_explicit=False, raw_data=None):
     """Render grouped datasets with plotly, mirroring _draw's contract and
     the matplotlib renderer's appearance.
 
@@ -841,6 +1005,17 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         fully-opaque, marked trace per dataset, tagged
         ``meta['hyp_forecast_role'] = 'truth'`` -- the plotly half of
         `plot._draw_truth_overlays`.
+    raw_data : list of numpy.ndarray or None
+        The PRE-resampling observations, one per entry of `data`, in the
+        same display space (`plot()`'s ``raw_xform`` -- the matplotlib
+        backend's ``raw_data=``). `plot()` densifies a static line
+        (`antialias=`) and resamples an animated one onto its frame grid
+        before either backend sees it, so only this says where the true
+        observations are: a marker+line fmt (``'o-'``) marks exactly those
+        (the nearest frame-grid vertex, in an animation) and never the
+        interpolated vertices; a continuous `hue=` line in 1-D/2-D draws its
+        markers at these rows. `None` treats the rows of `data` as the
+        observations.
     legend_explicit : bool
         Whether `legend_entries` came from a caller's
         ``legend_colors=[(label, color), ...]`` -- an explicit legend that
@@ -1064,6 +1239,9 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     only the drawn coordinate arrays change. Marker-only styles (e.g. 'o',
     '.') are never touched, so their markers stay on the true samples, and
     `animate='morph'` (traveling point CLOUDS, not lines) is excluded too.
+    A marker+line style ('o-') keeps its markers on the true samples as
+    well: its one trace gets a per-vertex marker size that is zero at every
+    interpolated vertex (`_observation_marker`, located via `raw_data`).
     `antialias=False` reproduces the pre-antialias figure exactly (same
     traces, same frames, same coordinate arrays).
 
@@ -1248,6 +1426,18 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     # via `_aa_window`, so a dataset is never interpolated twice and the
     # smoothing is identical across the static figure and its frames.
     aa_curves = _build_aa_curves(data, fmt, antialias, morph_tags=morph_tags)
+    # where each dataset's TRUE observations are (see `raw_data` above); a
+    # list that does not pair up with `data` is ignored rather than guessed
+    if raw_data is not None and len(raw_data) != len(data):
+        raw_data = None
+    observations = [
+        (raw_data[i] if raw_data is not None and raw_data[i] is not None
+         and np.asarray(raw_data[i]).ndim > 0 else None)
+        for i in range(len(data))]
+    # full-curve per-vertex marker sizes for each observation-marked data
+    # (and trail) trace, which every animation frame slices to its window
+    # (`_aa_window_sizes`); None where the marker size is a plain scalar
+    obs_marker_sizes = [None] * len(data)
 
     # density= (GH #108/#191), 2-D case: subtle KDE density layers must
     # render BELOW everything else (including surface= fills). Plotly's 2D
@@ -1305,33 +1495,31 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
 
         # multicolored lines: per-point colors along each trajectory.
         #
-        # TWO serializations, because the two backends treat this trace's
-        # `alpha=` differently and parity is stated against matplotlib, not
-        # against internal consistency:
-        #  * LINES carry it. `plot._apply_multicolor_lines` replaces the line
-        #    artist with a collection whose segment colours gain a 4th
-        #    channel from `tkwargs['alpha']` -- an alpha left on the
-        #    discarded artist is simply lost -- so the per-point colours are
-        #    the only place the alpha can live here either. Serializing them
-        #    through `_rgb_string` (which drops the 4th channel) with no
-        #    trace `opacity` is why a hierarchy's 0.7 leaves, and a plain
-        #    `hue=` + `alpha=`, rendered fully opaque on plotly alone.
-        #  * MARKERS do not. `plot._apply_multicolor_markers` scatters
-        #    `c=ci` -- the raw hue colours, with no alpha folded in
-        #    (measured: every facecolor's 4th channel is 1.0 under
-        #    `alpha=0.7`). Baking it in here would make plotly the ONLY
-        #    backend dimming a hue-coloured marker.
+        # The trace's `alpha=` lives in these per-point colours -- for the
+        # LINE and the MARKERS alike, exactly as a single-coloured trace's
+        # `alpha=` dims both its line and its markers (the reference every
+        # hue path is held to). On matplotlib, `plot._apply_multicolor_lines`
+        # gives the segment colours a 4th channel from `tkwargs['alpha']`
+        # and `plot._apply_multicolor_markers` scatters with the same alpha;
+        # serializing the colours through `_rgb_string` (which drops the 4th
+        # channel) with no trace `opacity` is why a hierarchy's 0.7 leaves,
+        # and a plain `hue=` + `alpha=`, once rendered fully opaque on plotly
+        # alone. (Until the 1.1 release review the markers deliberately
+        # kept opaque hue colours, copying a matplotlib path that dropped
+        # the alpha; both backends now honour it.) In 3-D the uniform alpha
+        # is then moved to the trace's native `opacity` by
+        # `_normalize_scatter3d_alpha`, which keeps Scatter3d's hue intact.
         trace_point_colors = None
         trace_line_colors = None
         if point_colors is not None and i < len(point_colors) \
                 and point_colors[i] is not None:
-            trace_point_colors = [
-                _rgb_string(c) for c in np.asarray(point_colors[i])]
             _pt_alpha = tkwargs.get('alpha')
-            trace_line_colors = (
-                trace_point_colors if _pt_alpha is None else
+            trace_point_colors = (
+                [_rgb_string(c) for c in np.asarray(point_colors[i])]
+                if _pt_alpha is None else
                 [_to_plotly_color(c, _pt_alpha)
                  for c in np.asarray(point_colors[i])])
+            trace_line_colors = trace_point_colors
 
         # surface= (GH #109) keep_points=False: hide this dataset's own
         # line/marker trace so only its surface shows.
@@ -1392,18 +1580,10 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 draw_arr = draw_arr.copy()
                 grid = np.linspace(0, arr.shape[0] - 1, draw_arr.shape[0])
                 draw_arr[enclosed_mask[np.round(grid).astype(int)]] = np.nan
-            # both serializations follow the SAME resampling, so the line
-            # and marker colour arrays stay index-aligned with each other
-            # and with the drawn vertices
-            _n_orig, _n_dense = arr.shape[0], draw_arr.shape[0]
-            if trace_line_colors is trace_point_colors:
-                trace_point_colors = trace_line_colors = _aa_resample_colors(
-                    trace_point_colors, _n_orig, _n_dense)
-            else:
-                trace_point_colors = _aa_resample_colors(
-                    trace_point_colors, _n_orig, _n_dense)
-                trace_line_colors = _aa_resample_colors(
-                    trace_line_colors, _n_orig, _n_dense)
+            # the line and marker colours follow the SAME resampling, so
+            # they stay index-aligned with the drawn vertices
+            trace_point_colors = trace_line_colors = _aa_resample_colors(
+                trace_point_colors, arr.shape[0], draw_arr.shape[0])
 
         common = dict(
             mode=mode,
@@ -1428,48 +1608,65 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
             # positively so a decoration added later cannot leak in.
             meta=dict(hyp_trace_index=i),
         )
+        if trace_point_colors is not None:
+            # per-point marker colours, in every dimensionality: the 1-D
+            # branch used to fall through to the single `color`, so a
+            # marker-only continuous hue drew all 60 points in ONE palette
+            # colour there while matplotlib's `_apply_multicolor_markers`
+            # scattered them per point
+            common['marker'] = dict(color=trace_point_colors,
+                                    size=msize, symbol=symbol)
+        obs_vertices = _observation_vertices(
+            arr if aa_step == 1 else aa_curves[i][0], observations[i],
+            arr.shape[0], aa_step)
+        if 'markers' in mode:
+            # a marker on each OBSERVATION of a smoothed line, none on the
+            # vertices antialiasing (or the animation frame grid) added --
+            # `plot`'s `antialias=` contract
+            common['marker'] = _observation_marker(
+                common['marker'], draw_arr.shape[0], obs_vertices, ndims)
+            if not np.isscalar(common['marker']['size']):
+                obs_marker_sizes[i] = common['marker']['size']
         if ndims >= 3:
             if trace_point_colors is not None:
                 # Scatter3d supports per-point line colors natively
                 common['line'] = dict(color=trace_line_colors, width=width,
                                       dash=dash)
-                common['marker'] = dict(color=trace_point_colors,
-                                        size=msize, symbol=symbol)
             traces.append(go.Scatter3d(
                 x=draw_arr[:, 0], y=draw_arr[:, 1], z=draw_arr[:, 2],
                 **common))
-        elif ndims == 2:
-            if trace_point_colors is not None and 'lines' in mode:
-                # 2D Scatter has no per-point line colors; draw short
-                # segment traces instead (grouped under one legend entry)
-                traces.extend(_segment_traces_2d(
-                    go, draw_arr, trace_line_colors, width, dash, name,
-                    trace_index=i))
-                continue
-            if trace_point_colors is not None:
-                common['marker'] = dict(color=trace_point_colors,
-                                        size=msize, symbol=symbol)
-            traces.append(go.Scatter(x=draw_arr[:, 0], y=draw_arr[:, 1],
-                                     **common))
-        else:
-            xs = _aa_x(aa_step, 0, draw_arr.shape[0])
-            if trace_point_colors is not None and 'lines' in mode:
-                pts = np.column_stack([xs, draw_arr[:, 0]])
-                traces.extend(_segment_traces_2d(
-                    go, pts, trace_line_colors, width, dash, name,
-                    trace_index=i))
-                continue
-            if trace_point_colors is not None:
-                # the 1-D marker branch used to fall through to the single
-                # `color`, so a marker-only continuous hue drew all 60 points
-                # in ONE palette colour here while matplotlib's
-                # `_apply_multicolor_markers` scattered them per point
-                # (`ax.scatter(np.arange(n), xi[:, 0], c=ci, ...)`) -- the
-                # same per-point colours the 2-D and 3-D branches above
-                # already pass on.
-                common['marker'] = dict(color=trace_point_colors,
-                                        size=msize, symbol=symbol)
-            traces.append(go.Scatter(x=xs, y=draw_arr[:, 0], **common))
+            continue
+        xs = (draw_arr[:, 0] if ndims == 2
+              else _aa_x(aa_step, 0, draw_arr.shape[0]))
+        ys = draw_arr[:, 1] if ndims == 2 else draw_arr[:, 0]
+        if trace_point_colors is not None and 'lines' in mode:
+            # 2D Scatter has no per-point line colors; draw short segment
+            # traces instead (grouped under one legend entry) ...
+            traces.extend(_segment_traces_2d(
+                go, np.column_stack([xs, ys]), trace_line_colors, width,
+                dash, name, trace_index=i))
+            if 'markers' in mode:
+                # ... and, for a marker+line fmt ('o-'), the markers as ONE
+                # marker-only trace on the observations themselves, each in
+                # its own hue colour -- matplotlib's
+                # `_apply_multicolor_markers` scatter beside its
+                # LineCollection. The segments carry only the line, so
+                # without this the markers were silently dropped.
+                # (the observation vertices of the drawn curve: exactly the
+                # samples for a static plot, whose densified rows keep every
+                # one; their colours are the hue's own at those rows)
+                _ov = obs_vertices[obs_vertices < len(xs)]
+                obs_x, obs_y = xs[_ov], ys[_ov]
+                obs_point_colors = [trace_point_colors[j] for j in _ov]
+                traces.append(go.Scatter(
+                    x=obs_x, y=obs_y, mode='markers', name=name,
+                    showlegend=False, visible=not hide_points,
+                    legendgroup=name or 'multicolor',
+                    marker=dict(color=obs_point_colors, size=msize,
+                                symbol=symbol),
+                    meta=dict(hyp_trace_index=i)))
+            continue
+        traces.append(go.Scatter(x=xs, y=ys, **common))
 
     n_data_traces = len(traces) - n_surface_traces_2d - n_density_traces_2d
 
@@ -1560,6 +1757,12 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
             # prepended first point and the final point stay exact, so it
             # still joins the trajectory.
             fc_draw, fc_step = (antialias_line(fc) if antialias else (fc, 1))
+            if fc_marker is not None:
+                # `forecast_fmt='ro:'` marks the forecast's STEPS (and its
+                # seam), not every vertex of the smoothed curve -- which drew
+                # the dotted forecast as a solid tube of dots
+                fc_common['marker'] = _observation_marker(
+                    fc_marker, fc_draw.shape[0], fc_step, ndims)
             if ndims >= 3:
                 traces.append(go.Scatter3d(
                     x=fc_draw[:, 0], y=fc_draw[:, 1], z=fc_draw[:, 2],
@@ -1635,7 +1838,13 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 fc_common = dict(
                     mode=fc_mode, showlegend=False, hoverinfo='skip',
                     line=fc_line,
-                    **({} if fc_marker is None else dict(marker=fc_marker)),
+                    # each smoothed frame sends a per-vertex size array
+                    # marking only the forecast's steps
+                    # (`_forecast_frame_data`), so the base marker is made
+                    # to look the same under one
+                    **({} if fc_marker is None else dict(
+                        marker=(_bubble_safe_marker(fc_marker, ndims)
+                                if antialias else fc_marker))),
                     meta=dict(
                         hyp_forecast_role='live' if age == 0 else 'trail',
                         hyp_dataset=(forecast_datasets[i]
@@ -1731,9 +1940,13 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
             # (the same convention `_aa_x` builds the 1-D x from), so the
             # marker size is a per-vertex array that is 0 everywhere else
             # -- one trace, so a truth stays one trace per dataset.
-            marker_size = np.zeros(tr_draw.shape[0])
-            marker_size[::max(int(tr_step), 1)] = _marker_size_px(
-                TRUTH_STYLE['markersize'], TRUTH_STYLE['marker'], ndims)
+            # (`_observation_marker` also keeps plotly's bubble defaults --
+            # 70% opacity, a white outline in 2-D -- off these markers)
+            tr_marker = _observation_marker(
+                dict(size=_marker_size_px(TRUTH_STYLE['markersize'],
+                                          TRUTH_STYLE['marker'], ndims),
+                     color=tr_line.get('color')),
+                tr_draw.shape[0], tr_step, ndims)
             tr_common = dict(
                 mode='lines+markers',
                 showlegend=bool(i == 0
@@ -1741,7 +1954,7 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                                 and not legend_explicit
                                 and not _truth_already_listed),
                 name='truth', hoverinfo='skip', line=tr_line,
-                marker=dict(size=marker_size, color=tr_line.get('color')),
+                marker=tr_marker,
                 # listed AFTER the forecast entries (which are appended as
                 # the last traces), the order the matplotlib legend uses:
                 # data, forecasts, truth
@@ -1807,9 +2020,18 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         msize = _marker_size_px(
             tkwargs.get('markersize') or DEFAULT_MARKERSIZE_PT, marker_char,
             ndims=ndims)
+        trail_marker = dict(color=color, size=msize)
+        if 'markers' in mode:
+            # the observations of the dataset's whole smoothed curve; every
+            # frame sends its trail window's slice of these sizes
+            _n_rows = np.atleast_2d(np.asarray(data[i])).shape[0]
+            trail_marker = _observation_marker(
+                trail_marker, aa_curves[i][0].shape[0],
+                _observation_vertices(aa_curves[i][0], observations[i],
+                                      _n_rows, aa_curves[i][1]), ndims)
         trail = dict(mode=mode, showlegend=False, hoverinfo='skip',
                      line=dict(color=color, width=width, dash=dash),
-                     marker=dict(color=color, size=msize))
+                     marker=trail_marker)
         if ndims >= 3:
             traces.append(go.Scatter3d(x=[], y=[], z=[], **trail))
         else:
@@ -2192,6 +2414,11 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 marker = (tr.marker.to_plotly_json()
                           if tr.marker is not None and tr.marker.symbol
                           else None)
+                if marker is not None and not np.isscalar(
+                        marker.get('size', 0)):
+                    # an observation-marked (per-vertex size) forecast: its
+                    # legend key takes the marker's one real size
+                    marker['size'] = float(np.max(marker['size']))
                 forecast_legend_specs.append(
                     (tr.name, tr.line.to_plotly_json(),
                      meta.get('hyp_forecast_alpha'), tr.mode or 'lines',
@@ -4618,6 +4845,28 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
     frames = []
     trace_indices = list(range(data_trace_start, data_trace_start + n_data_traces))
     trail_dataset_indices = trail_dataset_indices or []
+
+    # observation markers (`_observation_marker`): a data or trail trace
+    # whose marker size is a per-vertex array over the dataset's whole
+    # smoothed curve gets, in every frame, the slice of it that matches the
+    # frame's window -- the markers stay on the observations that window
+    # holds instead of sliding with the window's start
+    _full_sizes = {}
+    for _k in range(len(fig.data)):
+        _m = fig.data[_k].marker if hasattr(fig.data[_k], 'marker') else None
+        _s = None if _m is None else _m.size
+        if _s is not None and not np.isscalar(_s):
+            _full_sizes[_k] = np.asarray(_s, dtype=float)
+
+    def _marker_window(trace_index, idx, a, b):
+        """``{'marker': {'size': ...}}`` for trace `trace_index` (drawing
+        dataset `idx`) over ORIGINAL rows ``[a, b)``, or ``{}`` when that
+        trace's marker size is a plain scalar."""
+        sizes = _full_sizes.get(trace_index)
+        if sizes is None or aa_curves is None:
+            return {}
+        return dict(marker=dict(size=_aa_window_sizes(
+            sizes, aa_curves[idx][1], a, b)))
     chemtrails = chemtrails if chemtrails is not None else [False] * len(data)
     precog = precog if precog is not None else [False] * len(data)
     bullettime = bullettime if bullettime is not None else [False] * len(data)
@@ -4731,6 +4980,14 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
             draw, step = (antialias_line(pts) if forecast_antialias
                           else (pts, 1))
             _extra = {} if _line is None else dict(line=_line)
+            _base = fig.data[forecast_trace_indices[_spec]]
+            if step != 1 and _base.mode and 'markers' in _base.mode:
+                # a `forecast_fmt='o:'` marker on each forecast STEP, not on
+                # every vertex of this frame's smoothed curve (the static
+                # overlay's rule, `_observation_marker`)
+                _sizes = np.zeros(draw.shape[0])
+                _sizes[::int(step)] = float(_base.marker.size)
+                _extra['marker'] = dict(size=_sizes)
             if ndims >= 3:
                 out.append(go.Scatter3d(x=draw[:, 0], y=draw[:, 1],
                                         z=draw[:, 2], **_extra))
@@ -5078,31 +5335,38 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                     window_colors_by_index[idx] = cols
 
                 draw_seg = _aa_window(aa_curves, idx, *head_bounds)
+                _mk = (_marker_window(trace_indices[idx], idx, *head_bounds)
+                       if idx < len(trace_indices) else {})
                 if ndims >= 3:
                     frame_traces.append(go.Scatter3d(
-                        x=draw_seg[:, 0], y=draw_seg[:, 1], z=draw_seg[:, 2]))
+                        x=draw_seg[:, 0], y=draw_seg[:, 1], z=draw_seg[:, 2],
+                        **_mk))
                 elif ndims == 2:
                     frame_traces.append(go.Scatter(x=draw_seg[:, 0],
-                                                   y=draw_seg[:, 1]))
+                                                   y=draw_seg[:, 1], **_mk))
                 else:
                     frame_traces.append(go.Scatter(
                         x=_aa_x(aa_curves[idx][1], head_bounds[0],
                                 draw_seg.shape[0]),
-                        y=draw_seg[:, 0]))
+                        y=draw_seg[:, 0], **_mk))
 
                 if has_trail:
                     t0, t1 = trail_bounds if trail_bounds is not None else (0, 0)
                     trail = _aa_window(aa_curves, idx, t0, t1)
+                    _tmk = (_marker_window(
+                        trail_trace_start + trail_dataset_indices.index(idx),
+                        idx, t0, t1) if idx in trail_dataset_indices else {})
                     if ndims >= 3:
                         trail_traces.append(go.Scatter3d(
-                            x=trail[:, 0], y=trail[:, 1], z=trail[:, 2]))
+                            x=trail[:, 0], y=trail[:, 1], z=trail[:, 2],
+                            **_tmk))
                     elif ndims == 2:
                         trail_traces.append(go.Scatter(x=trail[:, 0],
-                                                       y=trail[:, 1]))
+                                                       y=trail[:, 1], **_tmk))
                     else:
                         trail_traces.append(go.Scatter(
                             x=_aa_x(aa_curves[idx][1], t0, trail.shape[0]),
-                            y=trail[:, 0]))
+                            y=trail[:, 0], **_tmk))
                 elif has_trails and idx in trail_dataset_indices:
                     # this dataset has a trail TRACE but no trail THIS frame
                     empty = np.zeros((0, max(2, min(3, ndims))))
@@ -5253,16 +5517,19 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                 # antialias=: `seg` (ORIGINAL rows) still drives the surface
                 # mesh/hue windows above; only the DRAWN vertices are smoothed
                 draw_seg = _aa_window(aa_curves, idx, start, end)
+                _mk = (_marker_window(trace_indices[idx], idx, start, end)
+                       if idx < len(trace_indices) else {})
                 if ndims >= 3:
                     frame_traces.append(go.Scatter3d(
-                        x=draw_seg[:, 0], y=draw_seg[:, 1], z=draw_seg[:, 2]))
+                        x=draw_seg[:, 0], y=draw_seg[:, 1], z=draw_seg[:, 2],
+                        **_mk))
                 elif ndims == 2:
                     frame_traces.append(go.Scatter(x=draw_seg[:, 0],
-                                                   y=draw_seg[:, 1]))
+                                                   y=draw_seg[:, 1], **_mk))
                 else:
                     frame_traces.append(go.Scatter(
                         x=_aa_x(aa_curves[idx][1], start, draw_seg.shape[0]),
-                        y=draw_seg[:, 0]))
+                        y=draw_seg[:, 0], **_mk))
 
             # GH #127: trail traces exist (and are updated here) only for
             # datasets in `trail_dataset_indices`, in that SAME ascending
@@ -5302,16 +5569,20 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                     # antialias=: trail bounds stay ORIGINAL-row indices; the
                     # smooth curve spanning exactly those rows is drawn
                     trail = _aa_window(aa_curves, idx, t0, t1)
+                    _tmk = _marker_window(
+                        trail_trace_start + trail_dataset_indices.index(idx),
+                        idx, t0, t1)
                     if ndims >= 3:
                         trail_traces.append(go.Scatter3d(
-                            x=trail[:, 0], y=trail[:, 1], z=trail[:, 2]))
+                            x=trail[:, 0], y=trail[:, 1], z=trail[:, 2],
+                            **_tmk))
                     elif ndims == 2:
                         trail_traces.append(go.Scatter(
-                            x=trail[:, 0], y=trail[:, 1]))
+                            x=trail[:, 0], y=trail[:, 1], **_tmk))
                     else:
                         trail_traces.append(go.Scatter(
                             x=_aa_x(aa_curves[idx][1], t0, trail.shape[0]),
-                            y=trail[:, 0]))
+                            y=trail[:, 0], **_tmk))
             frame_traces.extend(trail_traces)
             frame_kwargs = dict(name=str(k), data=frame_traces,
                                 traces=list(trace_indices))
