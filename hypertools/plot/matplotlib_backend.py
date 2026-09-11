@@ -1025,7 +1025,10 @@ def _draw(
             # 'o-' datasets rendered with identical color pairs.
             marker_kwargs.setdefault('color', line_artist.get_color())
             marker_coords = raw_coords if raw_data is not None else coords
-            ax.plot(*marker_coords, **marker_kwargs)
+            # tagged so run-indexed consumers (the forecast/truth overlays
+            # in plot.py) skip it: it is the SAME run's markers, not a run
+            ax.plot(*marker_coords, **marker_kwargs)[0] \
+                ._hyp_marker_companion = True
         elif _process_plot_format is not None:
             plot_kwargs = dict(ikwargs)
             if fmt_ls is not None:

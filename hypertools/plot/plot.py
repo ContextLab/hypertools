@@ -392,6 +392,22 @@ def _forecast_style_from(src_line, alpha_scale=FORECAST_ALPHA_SCALE,
         override)
 
 
+def _observed_run_lines(lines):
+    """The drawn observed RUNS among `lines`, one artist per run, in order.
+
+    A marker-plus-line fmt (``'o-'``, ``'s--'``) draws each run as TWO
+    artists -- the smoothed line and a markers-only companion at the true
+    observations (`matplotlib_backend._plot_possibly_split`, which tags the
+    companion ``_hyp_marker_companion``). Every consumer that looks a run up
+    by index (the forecast and truth overlays' style source, the animated
+    head-run colour) must skip the companions, or run ``i`` reads run
+    ``i // 2``'s artists: three ``'o-'`` datasets gave forecasts red, red,
+    green instead of red, green, blue (1.1 release review, F1).
+    """
+    return [ln for ln in lines
+            if not getattr(ln, '_hyp_marker_companion', False)]
+
+
 def _draw_forecast_overlays(ax, raw_forecasts, antialias=True,
                             owner=None, overrides=None, labels=None,
                             dataset_index=None, src_lines=None):
@@ -434,8 +450,10 @@ def _draw_forecast_overlays(ax, raw_forecasts, antialias=True,
     # below survives an `ax.plot` call returning more than one artist
     _artist_dataset = []
     # `src_lines`: the observed lines the forecasts continue, run by run --
-    # THIS call's, when the axes already held an earlier call's
-    src_lines = list(ax.lines) if src_lines is None else list(src_lines)
+    # THIS call's, when the axes already held an earlier call's -- one
+    # artist per run (a split 'o-' run's markers companion is skipped)
+    src_lines = _observed_run_lines(
+        list(ax.lines) if src_lines is None else list(src_lines))
     for i, fc in enumerate(raw_forecasts):
         # antialias (see `plot`'s `antialias=`): smooth the forecast the SAME
         # way as any other line, so a short forecast (e.g. t+1 = 5 vertices)
@@ -633,7 +651,8 @@ def _draw_truth_overlays(ax, raw_truths, antialias=True, owner=None,
     animation's reveal advances, so it stays put while the forecast moves.
     """
     artists = []
-    src_lines = list(ax.lines) if src_lines is None else list(src_lines)
+    src_lines = _observed_run_lines(
+        list(ax.lines) if src_lines is None else list(src_lines))
     for i, tr in enumerate(raw_truths):
         tr = np.asarray(tr, dtype=float)
         _rows = tr.shape[0]
@@ -11637,7 +11656,8 @@ def plot(
                 # its colour from forecast i-1. (Same guard
                 # `_draw_forecast_overlays` opens with.)
                 from .forecast import trail_alpha, trail_frames
-                _src_lines = list(ax.lines)[_n_lines_before:]
+                _src_lines = _observed_run_lines(
+                    list(ax.lines)[_n_lines_before:])
                 _live_forecast_artists = []
                 # [dataset][age-1] -> artist. Preallocated: allocating
                 # artists mid-animation is what makes matplotlib animations
