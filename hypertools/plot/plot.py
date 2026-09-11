@@ -8957,6 +8957,10 @@ def plot(
     # data by category -- names= (one name per INPUT dataset) cannot apply
     # after that regrouping (F02-009).
     _hue_regrouped_counts = None
+    #: True once a MARKER-only `hue=`/`cluster=` grouping ran through
+    #: `reshape_data`, which groups GLOBALLY by category: its drawn traces
+    #: are categories, never datasets, however the counts happen to fall
+    _global_regrouped = False
     # unfitted Clusterer built from the SAME resolved spec the figure's
     # cluster stage used (set in the cluster branch below), so the
     # return_model bundle's pipeline encodes the parameters the figure
@@ -9559,6 +9563,7 @@ def plot(
                 blended = mat2colors(cluster_labels, palette=palette)
                 group_ids, group_colors = colors2groups(blended)
                 xform, labels = reshape_data(xform, group_ids, labels)
+                _global_regrouped = True
                 mpl_kwargs["color"] = [
                     group_colors[gid]
                     for gid in sorted(set(group_ids), key=group_ids.index)
@@ -9593,6 +9598,7 @@ def plot(
             hue_category_names = [str(c) for c in _cats_sorted]
         else:
             xform, labels = reshape_data(xform, cluster_labels, labels)
+            _global_regrouped = True
             # reshape_data returns groups in first-appearance order;
             # reorder the drawn groups (and their legend/colorbar
             # labels) into sorted label order so a legend reads
@@ -9967,6 +9973,7 @@ def plot(
                 # boolean hue is grouped in first-appearance order then
                 # reordered into sorted numeric order (F13-005).
                 xform, labels = reshape_data(xform, hue, labels)
+                _global_regrouped = True
                 if _hue_sort_numeric:
                     _appear = list(sorted(set(hue), key=list(hue).index))
                     _order = sorted(range(len(_appear)),
@@ -10629,6 +10636,11 @@ def plot(
             _forecast_owner = list(_model_forecast_owner)
     elif raw_forecasts is not None and (
             len(raw_forecasts) != len(xform)
+            # ...or MARKER-only categorical regrouping, whose traces are
+            # CATEGORIES, never datasets -- even when the counts coincide
+            # (2 datasets under 2 categories silently drew dataset 1's
+            # forecast in category 1's colour; 1.1 release review)
+            or _global_regrouped
             # ...or a COLLECTION under hue=/cluster= regrouping: one
             # dataset split into two runs under two models gives two
             # forecasts for two runs, so the counts coincide by accident
@@ -10657,7 +10669,7 @@ def plot(
                 _owner[_ds] = _run           # last write wins = final run
             if set(_owner) >= set(_fc_dataset):
                 _forecast_owner = [_owner[_ds] for _ds in _fc_dataset]
-        elif _model_forecast_owner is not None:
+        elif _model_forecast_owner is not None and not _global_regrouped:
             # no regrouping: a collection's only "mismatch" is that there
             # are n_models forecasts per drawn trace, which the model/
             # dataset map already resolves

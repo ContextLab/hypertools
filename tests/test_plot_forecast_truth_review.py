@@ -257,6 +257,45 @@ def test_two_column_animated_forecast_draws_on_a_2d_axes(extra):
     plt.close(anim.figure)
 
 
+# --- marker-only categorical regrouping never anchors a forecast ------------
+
+def _equal_count_categories():
+    rng = np.random.default_rng(3)
+    a, b = (np.cumsum(rng.standard_normal((30, 3)), 0) for _ in range(2))
+    # both datasets END in 'x', and 2 categories == 2 datasets
+    hue = [['x'] * 10 + ['y'] * 10 + ['x'] * 10, ['y'] * 15 + ['x'] * 15]
+    return [a, b], hue
+
+
+@pytest.mark.parametrize('backend', ['matplotlib', 'plotly'])
+@pytest.mark.parametrize('animate', [False, True])
+@pytest.mark.parametrize('predict', ['Kalman', ['Kalman', 'AutoRegressor']])
+def test_marker_only_categorical_regrouping_refuses_even_at_equal_counts(
+        backend, animate, predict):
+    """Marker-only categorical regrouping groups GLOBALLY by category, so
+    its traces are categories, not datasets. With 2 categories x 2
+    datasets the count check passed and dataset 1's forecast was drawn in
+    category 'y's colour (though it ends in 'x'), with no warning and
+    ``drawn=True``. It must refuse and say so, as it does at 3 x 2."""
+    data, hue = _equal_count_categories()
+    kw = dict(animate=True, duration=1, frame_rate=4) if animate else {}
+    with pytest.warns(UserWarning, match='could not be matched'):
+        bundle = hyp.plot(data, hue=hue, fmt='o', predict=predict, t=4,
+                          return_model=True, backend=backend, show=False,
+                          **kw)
+    fig = bundle['fig']
+    assert bundle['predict']['drawn'] is False
+    assert 'regrouped' in bundle['predict']['draw_reason']
+    if backend == 'plotly':
+        assert not [tr for tr in fig.data
+                    if (tr.meta or {}).get('hyp_forecast_role')]
+    else:
+        f = fig.figure if hasattr(fig, 'figure') else fig
+        assert not [ln for ln in f.axes[0].lines
+                    if getattr(ln, '_hyp_forecast_role', None)]
+    plt.close('all')
+
+
 # --- forecast_fmt markers sit on the forecast STEPS, not on every vertex -----
 
 def _marked_points(art):
