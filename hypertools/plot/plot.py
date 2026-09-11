@@ -5429,7 +5429,11 @@ def plot(
         overrides them; `legend=True` shows them). ``reduce=`` still
         applies first, to ONE component -- ``ndims=1, reduce='PCA'`` draws
         the first principal component over the index. An animation reveals
-        each line left to right along x. Before 1.1 this path drew a single
+        each line left to right along x. An index that is not in ascending
+        order is drawn in index order, as `predict=` forecasts it, with a
+        ``UserWarning`` -- unless `hue=`/`labels=`/`cluster=` are given per
+        observation in the input order, which keeps that order (and warns
+        that the line doubles back). Before 1.1 this path drew a single
         column against ``0..n-1`` with the values rescaled to ``[-1, 1]``,
         no visible axes, and refused 2+ columns -- so this is a deliberate
         behaviour change: what a 1-D figure draws is now the data's own
@@ -7518,6 +7522,10 @@ def plot(
     # pattern is resolved per frame, so it is split off BEFORE the
     # per-segment check below -- which only ever sees the static forms it
     # already understood.
+    # kept so ndims=1 series mode can re-point a `{index}` pattern at the
+    # rows it reorders into time order (see `_resorted` below)
+    _title_pattern = (title if isinstance(title, str)
+                      and _title_is_pattern(title) else None)
     title, _dynamic_title = _validate_dynamic_title(title, animate,
                                                     _row_indices)
     _segment_titles = _validate_title(title, style=animate, order=order)
@@ -8685,11 +8693,33 @@ def plot(
         _series_columns = []
         _date_flags, _index_labels = [], []
         _series_named = []            # per drawn trace: named after a column?
+        # datasets whose index is not in ascending order: drawn in time
+        # order (`_resorted`), or -- where a per-observation argument is
+        # tied to the INPUT row order -- left as given (`_unsorted`)
+        _resorted, _unsorted = [], []
+        _row_order_bound = any(_v is not None and _v is not False
+                               for _v in (hue, labels, cluster))
         for _i, _xi in enumerate(xform):
             _idx = (_row_indices[_i] if _row_indices is not None
                     and _i < len(_row_indices) else None)
             _xs, _step, _is_date, _idx_label = _series_x_axis(
                 _idx, _xi.shape[0], epoch_ms=_series_epoch_ms)
+            if len(_xs) > 1 and np.any(np.diff(_xs) < 0):
+                # a shuffled index drew the rows in INPUT order against
+                # their x -- a scribble -- while `predict=` sorts timed
+                # observations and continues from the LATEST one, so the
+                # forecast did not join the drawn line (1.1 review, F14).
+                # Draw in time order, reordering the index with the rows so
+                # an `{index}` title still names each frame's own row.
+                if _row_order_bound:
+                    _unsorted.append(_i)
+                else:
+                    _order = np.argsort(_xs, kind='stable')
+                    _xs, _xi = _xs[_order], np.asarray(_xi)[_order]
+                    if _row_indices is not None and _i < len(_row_indices):
+                        _row_indices = list(_row_indices)
+                        _row_indices[_i] = _idx[_order]
+                    _resorted.append(_i)
             _date_flags.append(_is_date)
             _index_labels.append(_idx_label)
             _cols = (_column_names[_i] if _column_names is not None
@@ -8712,6 +8742,26 @@ def plot(
                         else f"dataset {_i + 1} column {_j + 1}")
                 else:
                     _series_names.append(f"dataset {_i + 1}")
+        if _resorted:
+            if _title_pattern is not None:
+                # the resolver read the index in its INPUT order; the rows
+                # (and so each frame's head row) are now in time order
+                _dynamic_title = _make_title_pattern_resolver(
+                    _title_pattern, _row_indices)
+            warnings.warn(
+                f"ndims=1: the index of dataset(s) {_resorted} is not in "
+                "ascending order, so its rows are drawn in time order (as "
+                "predict= forecasts them). Sort the data first "
+                "(df.sort_index()) to silence this.",
+                UserWarning, stacklevel=external_stacklevel())
+        if _unsorted:
+            warnings.warn(
+                f"ndims=1: the index of dataset(s) {_unsorted} is not in "
+                "ascending order, and hue=/labels=/cluster= are given per "
+                "observation in INPUT order, so the line is drawn in that "
+                "order and doubles back along x. Sort the data (and those "
+                "arguments) by time first (df.sort_index()).",
+                UserWarning, stacklevel=external_stacklevel())
         if any(_date_flags) and not all(_date_flags):
             raise ValueError(
                 "ndims=1 series mode draws every dataset against ONE x "

@@ -7,6 +7,8 @@ properties), on both backends where the path is shared.
 import matplotlib
 matplotlib.use('Agg')
 
+import warnings                                           # noqa: E402
+
 import matplotlib.pyplot as plt                           # noqa: E402
 import numpy as np                                        # noqa: E402
 import pandas as pd                                       # noqa: E402
@@ -428,6 +430,81 @@ def test_plotly_date_figure_renders_identically_in_every_time_zone(tmp_path):
         pixels.append(np.asarray(Image.open(out).convert('RGB')))
     assert pixels[0].shape == pixels[1].shape
     assert int((pixels[0] != pixels[1]).any(axis=2).sum()) == 0
+
+
+# --- a shuffled time index in ndims=1 series mode ----------------------------
+
+def _shuffled_series():
+    idx = pd.date_range('2020-01-01', periods=30)
+    df = pd.DataFrame({'v': np.sin(np.arange(30) / 3)}, index=idx)
+    return df, df.sample(frac=1, random_state=1)
+
+
+@pytest.mark.parametrize('backend', ['matplotlib', 'plotly'])
+def test_shuffled_time_index_is_drawn_in_time_order_and_forecast_joins(
+        backend):
+    """Series mode drew rows in INPUT order against their dates -- a
+    scribble -- while predict= (which sorts timed observations) continued
+    from the LATEST date, so the forecast did not join the drawn line's
+    end. The line is drawn in time order, exactly as the sorted frame."""
+    df, shuffled = _shuffled_series()
+    with pytest.warns(UserWarning, match='time order'):
+        out = hyp.plot(shuffled, ndims=1, reduce=None, predict='Kalman', t=5,
+                       antialias=False, backend=backend, show=False)
+    ref = hyp.plot(df, ndims=1, reduce=None, predict='Kalman', t=5,
+                   antialias=False, backend=backend, show=False)
+
+    def _xy(fig):
+        if backend == 'matplotlib':
+            ax = fig.axes[0]
+            (line,) = [ln for ln in ax.lines
+                       if getattr(ln, '_hyp_forecast_role', None) is None]
+            (fc,) = _role(ax, 'static')
+            return (np.asarray(line.get_xydata(), float),
+                    np.asarray(fc.get_xydata(), float))
+        (line,) = [tr for tr in fig.data
+                   if (tr.meta or {}).get('hyp_trace_index') == 0]
+        (fc,) = _ply_role(fig, 'static')
+        conv = lambda tr: np.column_stack(  # noqa: E731
+            [pd.to_datetime(list(tr.x)).asi8 / 1e6, np.asarray(tr.y, float)])
+        return conv(line), conv(fc)
+
+    line, fc = _xy(out)
+    ref_line, ref_fc = _xy(ref)
+    assert np.all(np.diff(line[:, 0]) > 0)
+    assert np.allclose(line, ref_line)
+    assert np.allclose(fc[0], line[-1])          # the forecast joins the end
+    assert np.allclose(fc, ref_fc, atol=1e-6)
+    plt.close('all')
+
+
+def test_shuffled_time_index_index_title_follows_the_time_order():
+    df, shuffled = _shuffled_series()
+    titles = {}
+    for key, frame in (('sorted', df), ('shuffled', shuffled)):
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')
+            anim = hyp.plot(frame, ndims=1, reduce=None, animate=True,
+                            duration=1, frame_rate=10, title='{index:%b %d}',
+                            show=False)
+        got = []
+        for k in range(10):
+            anim.draw_frame(k)
+            got.append(anim.figure.axes[0].get_title())
+        titles[key] = got
+        plt.close(anim.figure)
+    assert titles['shuffled'] == titles['sorted']
+    assert titles['sorted'][0] == 'Jan 01' and titles['sorted'][-1] == 'Jan 30'
+
+
+def test_shuffled_time_index_with_per_observation_hue_keeps_input_order():
+    """hue= is given per observation in INPUT order, so the rows cannot be
+    reordered under it; the call says so instead of drawing silently."""
+    _, shuffled = _shuffled_series()
+    with pytest.warns(UserWarning, match='not in ascending order'):
+        fig = hyp.plot(shuffled, ndims=1, reduce=None,
+                       hue=np.linspace(0, 1, 30), show=False)
+    plt.close(fig)
 
 
 # --- the 'truth' legend key --------------------------------------------------
