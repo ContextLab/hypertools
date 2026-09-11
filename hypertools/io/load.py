@@ -375,8 +375,8 @@ def load(
         `mushrooms` is a pandas DataFrame of categorical features
         (columns) describing 8,124 mushroom samples (rows).
 
-        `sotus` is a list of 29 State of the Union addresses (1989-2018),
-        as strings.
+        `sotus` is a list of 29 State of the Union addresses (1989-2017),
+        as strings, grouped by president rather than in date order.
 
         `wiki` is a list of 3,136 wikipedia page texts (strings), used to
         fit `wiki_model`.

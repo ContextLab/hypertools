@@ -253,9 +253,10 @@ def drawn_extent(anim, frames):
 def construct_artifact(data):
     """`data.descriptions` / `data.colors` / `data.images` in, the animation
     out. Returns the HyperAnimation wrapper, never the unpacked pair."""
-    # labels= annotates per OBSERVATION, not per dataset: one sub-list per
-    # cloud, carrying the painting's name on its MIDDLE window (roughly the
-    # centre of a text trajectory) and None everywhere else.
+    # labels= in its per-OBSERVATION form: one sub-list per cloud, carrying
+    # the painting's name on its MIDDLE window (roughly the centre of a text
+    # trajectory) and None everywhere else. (1.1 also takes one label per
+    # dataset, placed by label_anchor=; this form names the window itself.)
     labels = [[name if i == len(cloud) // 2 else None
                for i in range(len(cloud))]
               for name, cloud in zip(data.names, data.descriptions)]
@@ -265,8 +266,10 @@ def construct_artifact(data):
     # puts every window into one shared UMAP space so the clouds are
     # directly comparable. n_neighbors=12 keeps one description's windows
     # together, min_dist=0.25 lets a clump pack closely, random_state=42
-    # fixes the stochastic layout. 15 fps: the side panels' antialiased
-    # text compresses badly in a GIF, and 240 frames at 20 fps was 7 MB.
+    # fixes the stochastic layout. 15 fps dates from when this clip was a
+    # GIF (240 frames at 20 fps was 7 MB); the mp4 keeps it. backend= is
+    # pinned: everything after the call annotates a matplotlib figure, and
+    # on Colab the default backend would be plotly.
     anim = hyp.plot(
         data.descriptions, '.',
         vectorizer=data.vectorizer, semantic=None, corpus=None,
@@ -275,7 +278,8 @@ def construct_artifact(data):
         ndims=3, color=data.colors, markersize=5, labels=labels,
         animate='spin', rotations=2,
         title='Descriptions of five famous paintings',
-        duration=12, frame_rate=15, size=SIZE, zoom=BOX_ZOOM, show=False)
+        duration=12, frame_rate=15, size=SIZE, zoom=BOX_ZOOM,
+        backend='matplotlib', show=False)
     fig, ax = anim.figure, anim.figure.axes[0]
     ax.set_position([0.15, 0.0, 0.6, 1.0])  # roomy: nothing clipped while measuring
     ax.title.set_visible(False)
