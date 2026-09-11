@@ -77,14 +77,22 @@ def _label_callout_kwargs(label_alpha, arrowstyle='-', facecolor='white'):
     )
 
 
-def _apply_title(ax, text, font=None, title_kwargs=None):
+def _apply_title(ax, text, font=None, title_kwargs=None, family=None):
     """Set `ax`'s title, honoring the resolved `font=` and `title_kwargs=`
     (GH #285).
 
-    With `title_kwargs=None` this makes EXACTLY the call hypertools has
-    always made (`ax.set_title(text)`, or `ax.set_title(text,
+    With `title_kwargs=None` and `family=None` this makes EXACTLY the call
+    hypertools has always made (`ax.set_title(text)`, or `ax.set_title(text,
     fontproperties=font)` when a `font=` was resolved), so an un-styled
     title's Text artist is byte-identical to before.
+
+    `family` (a font-family list: hypertools' fallback stack) is given
+    EXPLICITLY when no `font=` is: an axes created outside hypertools'
+    ``rc_context`` -- a caller's ``ax=``, every `panels=` cell -- holds a
+    title Text whose family is the bare ``'sans-serif'`` alias, resolved at
+    DRAW time against the caller's rcParams, so those titles rendered in
+    DejaVu Sans while a figure of hypertools' own used Noto Sans (1.1
+    release review, figure QA). A family named in `title_kwargs` wins.
 
     `fontproperties` is inserted BEFORE the individual font properties,
     because `set_title` applies its kwargs in dict order and a
@@ -99,14 +107,21 @@ def _apply_title(ax, text, font=None, title_kwargs=None):
     between them is exactly the bug GH #285 reports (a resolved `font=`
     reached the static title and never a per-segment one).
     """
+    _family_keys = ('fontproperties', 'font_properties', 'family',
+                    'fontfamily', 'fontname', 'name', 'font')
     if title_kwargs:
         kwargs = {}
         if font is not None and 'fontproperties' not in title_kwargs:
             kwargs['fontproperties'] = font
+        elif family is not None and not any(k in title_kwargs
+                                            for k in _family_keys):
+            kwargs['fontfamily'] = family
         kwargs.update(title_kwargs)
         return ax.set_title(text, **kwargs)
     if font is not None:
         return ax.set_title(text, fontproperties=font)
+    if family is not None:
+        return ax.set_title(text, fontfamily=family)
     return ax.set_title(text)
 
 
@@ -3213,14 +3228,22 @@ def _draw(
     # point is that the drawn coordinates ARE the data's own, so its ticks
     # and spines stay on (matplotlib's defaults) and only the top/right
     # spines are dropped, the way a plain time-series panel is drawn.
+    # the font stack in force NOW (`plot()` draws inside the rc_context
+    # that sets it), given explicitly to the axis labels and title below:
+    # a caller's `ax=` (every `panels=` cell) created its label and title
+    # Text artists outside that context, with the bare 'sans-serif' alias,
+    # which resolves at DRAW time to the caller's rcParams -- DejaVu Sans
+    # beside hypertools' own Noto Sans figures (1.1 release review). On
+    # hypertools' own axes this is the family they were created with.
+    _text_family = list(plt.rcParams['font.family'])
     if axis_scale == 'data':
         for _side in ('top', 'right'):
             if _side in ax.spines:
                 ax.spines[_side].set_visible(False)
         if xlabel is not None:
-            ax.set_xlabel(xlabel)
+            ax.set_xlabel(xlabel, fontfamily=_text_family)
         if ylabel is not None:
-            ax.set_ylabel(ylabel)
+            ax.set_ylabel(ylabel, fontfamily=_text_family)
         if x_date:
             # the x column holds `date2num` day numbers (see `plot()`'s
             # ndims=1 series mode); without a date converter they would tick
@@ -3251,11 +3274,11 @@ def _draw(
             _axis.set_ticks([])
         ax.patch.set_visible(False)
         if xlabel is not None:
-            ax.set_xlabel(xlabel)
+            ax.set_xlabel(xlabel, fontfamily=_text_family)
         if ylabel is not None:
-            ax.set_ylabel(ylabel)
+            ax.set_ylabel(ylabel, fontfamily=_text_family)
         if zlabel is not None:
-            ax.set_zlabel(zlabel)
+            ax.set_zlabel(zlabel, fontfamily=_text_family)
         # `Axes3D.get_tightbbox` measures its axes "for layout only", which
         # drops the axis LABELS (matplotlib's `_get_tightbbox_for_layout_
         # only`), so a `bbox_inches='tight'` save -- every notebook's inline
@@ -3276,9 +3299,9 @@ def _draw(
         ax.grid(False)
         ax.patch.set_visible(False)
         if xlabel is not None:
-            ax.set_xlabel(xlabel)
+            ax.set_xlabel(xlabel, fontfamily=_text_family)
         if ylabel is not None:
-            ax.set_ylabel(ylabel)
+            ax.set_ylabel(ylabel, fontfamily=_text_family)
         # zlabel on a 2-D/1-D plot is rejected upstream in plot.py
         # (ValueError, before the pipeline even runs) -- zlabel is
         # guaranteed None here.
@@ -3288,7 +3311,8 @@ def _draw(
 
     # add title
     if title is not None:
-        _apply_title(ax, title, font=font, title_kwargs=title_kwargs)
+        _apply_title(ax, title, font=font, title_kwargs=title_kwargs,
+                     family=_text_family)
 
     # add legend: to the RIGHT of the plot, vertically centered on the
     # box (never overlapping the data). `prop=font` (GH #205) applies the

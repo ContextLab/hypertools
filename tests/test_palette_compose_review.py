@@ -570,3 +570,36 @@ def test_label_connectors_and_boxes_are_dark_like_plotly(ndims):
              else pfig.layout.annotations)
     assert {(a.arrowcolor, a.bordercolor) for a in panns} == {
         ('rgba(0,0,0,0.6)', 'rgba(0,0,0,0.4)')}
+
+
+# --- L4: titles and axis labels on caller axes use hypertools' font --------
+
+def _font_file(text):
+    import os
+    from matplotlib.font_manager import findfont
+    return os.path.basename(findfont(text.get_fontproperties()))
+
+
+@pytest.mark.parametrize('ndims', [2, 3])
+def test_caller_axes_titles_and_labels_use_the_hypertools_font(ndims):
+    import matplotlib.pyplot as plt_
+    a, b = _walks(2, rows=20)
+    kw = dict(xlabel='X label', ylabel='Y label', ndims=ndims, show=False)
+    own = hyp.plot(a, title='Own figure', **kw).axes[0]
+    ref_title, ref_label = _font_file(own.title), _font_file(own.xaxis.label)
+    cells = hyp.plot([a, b], panels=True, title=['A', 'B'], **kw).axes[:2]
+    fig, axes = hyp.subplots(1, 1, ndims=ndims)
+    hyp.plot(a, ax=axes[0], title='Via ax=', **kw)
+    plain = plt_.figure().add_subplot(
+        projection='3d' if ndims == 3 else None)
+    hyp.plot(a, ax=plain, title='Plain matplotlib axes', **kw)
+    for ax in [*cells, axes[0], plain]:
+        ax.figure.canvas.draw()
+        assert _font_file(ax.title) == ref_title
+        assert _font_file(ax.xaxis.label) == ref_label
+        assert _font_file(ax.yaxis.label) == ref_label
+    # an explicit family in title_kwargs= still wins
+    fig, axes = hyp.subplots(1, 1, ndims=ndims)
+    hyp.plot(a, ax=axes[0], title='Serif', title_kwargs={
+        'family': 'DejaVu Serif'}, **kw)
+    assert _font_file(axes[0].title) == 'DejaVuSerif.ttf'
