@@ -4879,7 +4879,8 @@ def plot(
         Distinct from `labels` (per-POINT text call-outs) and `hue` (per-
         observation coloring): each name labels its dataset's trace and turns
         the legend on, so `hyp.plot([raw, a, b], names=['raw', 'a', 'b'])`
-        shows a legend naming the three datasets. Must have exactly one entry
+        shows a legend naming the three datasets; an explicit
+        ``legend=False`` still suppresses it. Must have exactly one entry
         per dataset; mutually exclusive with passing a `legend=` list (use one
         or the other). Rendered on both the matplotlib and plotly backends.
         Incompatible with a CATEGORICAL `hue` (which regroups the data by
@@ -10302,7 +10303,11 @@ def plot(
             # calls that only ever passed names=.
             raise ValueError(
                 "pass dataset names via names= OR a legend= list, not both")
-        legend = names
+        if legend is not False:
+            # names= turns the legend ON by default, but an explicit
+            # legend=False still wins (1.1 review: it used to be
+            # overwritten here, so the legend was drawn anyway)
+            legend = names
 
     # handle legend
     if legend is not None:
