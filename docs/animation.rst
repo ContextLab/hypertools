@@ -480,8 +480,10 @@ An observed line with no ``alpha=`` set is matplotlib's *opaque*, i.e. 1.0, so
 the default forecast alpha is 0.5. Per-dataset styling carries through
 dataset by dataset: ``alpha=[1.0, 0.4]`` gives forecasts at ``[0.5, 0.2]``, and
 a dotted dataset gets a dotted forecast. Both backends apply the identical
-rule (on plotly, colour/width/dash with the alpha baked into the ``rgba(...)``
-line colour and echoed in ``meta['hyp_forecast_alpha']``).
+rule. On plotly the forecast trace copies the colour, width and dash, and
+carries the alpha in the ``rgba(...)`` line colour of a 2-D trace or in the
+trace ``opacity`` of a 3-D one; either way the value is echoed in
+``meta['hyp_forecast_alpha']``.
 
 .. versionchanged:: 1.1.0
    Before 1.1.0 every forecast was drawn ``linestyle='--'`` at a hard-coded
