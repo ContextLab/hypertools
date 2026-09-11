@@ -229,6 +229,20 @@ CUBE_LINEWIDTH_PT = 1.5      # hypertools' frame linewidth, matching the
 # the kaleido/Chrome renderer (which also produces every exported image and the
 # docs gallery); the exact factor is not critical -- 1.3-1.7 all land on 2px.
 _CUBE_GL_WIDTH_BOOST = 1.5
+# DATA lines in 3-D (every Scatter3d line hypertools draws but the cube:
+# trajectories, trails, forecasts, truth) are asked for at their true width
+# times this. Measured 2026-09-11 in kaleido (ink area / stroke length, a
+# straight line, device scale 1 and 2): Scatter3d draws EXACTLY 0.50x the
+# requested width from 1.4 to 12 px -- 2.08 px asked, 1.00 drawn -- while
+# the SVG 2-D line draws what it is asked for. 1.1 release review (L1): a
+# 3-D data line was half as thick as the same line in 2-D and matplotlib.
+# The legend key is unaffected (`legend.itemsizing='constant'` draws every
+# key line at plotly's fixed width).
+_GL_LINE_WIDTH_BOOST = 2.0
+#: `plot()`'s documented default `linewidth` for ANIMATIONS (points) --
+#: what the matplotlib backend's animators pop (`linewidths = [... .pop(
+#: "linewidth", 1)]`); static plots use `DEFAULT_LINEWIDTH_PT`
+DEFAULT_ANIM_LINEWIDTH_PT = 1.0
 
 # matplotlib's '.' and ',' marker glyphs are defined with HALF the path
 # scale of every other marker character (verified via
@@ -1515,6 +1529,14 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
 
     fmt = fmt if fmt is not None else ['-'] * len(data)
     kwargs_list = kwargs_list if kwargs_list is not None else [{}] * len(data)
+    if animate:
+        # an animation's default width is 1 pt (`plot()`'s `linewidth`
+        # docstring, and what matplotlib's animators draw), not the static
+        # 1.5 -- set per dataset so the head, its trail and its forecast
+        # all inherit it; an explicit `linewidth=` still wins
+        kwargs_list = [
+            dict(kw or {}, linewidth=(kw or {}).get('linewidth')
+                 or DEFAULT_ANIM_LINEWIDTH_PT) for kw in kwargs_list]
 
     # chemtrails/precog/bullettime (GH #127): normalize to one bool per
     # dataset. `plot.py` already broadcasts/validates against the FINAL
@@ -2507,6 +2529,13 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                                                density_colors))
 
     if ndims >= 3:
+        # every 3-D DATA line so far (trajectories, forecasts, truth,
+        # trails): Scatter3d draws half the width it is asked for (see
+        # `_GL_LINE_WIDTH_BOOST`); the cube below carries its own boost
+        for _tr in traces:
+            if _tr.type == 'scatter3d' and _tr.line is not None \
+                    and _tr.line.width is not None:
+                _tr.line.width = _tr.line.width * _GL_LINE_WIDTH_BOOST
         traces.append(_cube_trace(
             go, scale=cube_scale, linewidth_pt=_frame['width_pt'],
             color=_frame['color'], dash=_frame['dash']))
