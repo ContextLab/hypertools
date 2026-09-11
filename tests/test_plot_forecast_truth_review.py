@@ -507,6 +507,30 @@ def test_shuffled_time_index_with_per_observation_hue_keeps_input_order():
     plt.close(fig)
 
 
+# --- ndims=1 date tick labels do not collide ---------------------------------
+
+@pytest.mark.parametrize('periods, freq', [(30, 'D'), (400, 'D'),
+                                           (48, 'h')])
+@pytest.mark.parametrize('predict', [None, 'Kalman'])
+def test_ndims1_date_tick_labels_do_not_overlap(periods, freq, predict):
+    """Every tick was a full 'YYYY-MM-DD' and, at the default figure size,
+    each adjacent pair overlapped. Measured against the labels' own drawn
+    extents on the same canvas (no absolute font metrics)."""
+    idx = pd.date_range('2020-01-01', periods=periods, freq=freq)
+    df = pd.DataFrame({'v': np.sin(np.arange(periods) / 3)}, index=idx)
+    fig = hyp.plot(df, ndims=1, reduce=None, show=False,
+                   **({'predict': predict, 't': 5} if predict else {}))
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    labels = [t for t in fig.axes[0].get_xticklabels()
+              if t.get_visible() and t.get_text()]
+    assert len(labels) >= 3
+    boxes = sorted((t.get_window_extent(renderer) for t in labels),
+                   key=lambda b: b.x0)
+    assert all(a.x1 <= b.x0 for a, b in zip(boxes, boxes[1:]))
+    plt.close(fig)
+
+
 # --- the 'truth' legend key --------------------------------------------------
 
 def _mpl_key(fig, label):

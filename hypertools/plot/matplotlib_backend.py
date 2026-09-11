@@ -3157,6 +3157,17 @@ def _draw(
             # ndims=1 series mode); without a date converter they would tick
             # as five-digit floats
             ax.xaxis_date()
+            # ...and matplotlib's default date formatter writes every tick
+            # as a full 'YYYY-MM-DD', which collide at the default figure
+            # size (7 of 7 adjacent pairs overlapped for a 30-day index;
+            # 1.1 release review, F13). The concise formatter writes only
+            # what changes between ticks, with the rest once as an offset,
+            # which is also what plotly's date axis draws.
+            import matplotlib.dates as mdates
+            _locator = mdates.AutoDateLocator()
+            ax.xaxis.set_major_locator(_locator)
+            ax.xaxis.set_major_formatter(
+                mdates.ConciseDateFormatter(_locator))
     elif xlabel is None and ylabel is None and zlabel is None:
         ax.set_axis_off()
     elif hasattr(ax, "get_proj"):
