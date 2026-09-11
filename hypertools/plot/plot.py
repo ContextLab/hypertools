@@ -3046,6 +3046,9 @@ _PANEL_PER_FORECAST_KWARGS = ('forecast_hue', 'forecast_fmt',
 _PANEL_PROBE_DROPPED_KWARGS = (
     'predict', 'truth', 'forecast_hue', 'forecast_cluster',
     'forecast_n_clusters', 'forecast_palette', 'forecast_fmt',
+    # validated against predict= -- kept alone it refused itself ("requires
+    # predict=") in a probe that had dropped predict= (1.1 review, F5)
+    'forecast_trail',
 )
 
 #: ...and the one that carries a value per OBSERVATION (flat), a

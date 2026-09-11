@@ -430,6 +430,21 @@ def test_plotly_date_figure_renders_identically_in_every_time_zone(tmp_path):
     assert int((pixels[0] != pixels[1]).any(axis=2).sum()) == 0
 
 
+# --- panels= with forecast_trail= ---------------------------------------------
+
+@pytest.mark.parametrize('panel_fit', ['shared', 'independent'])
+def test_panels_accept_forecast_trail_beside_predict(panel_fit):
+    """The panel layout's probe call drops predict= (it only measures the
+    fitted rows), but kept forecast_trail=, which then refused itself with
+    'forecast_trail= requires predict=' although predict= was passed."""
+    data = _walks(n=2)
+    fig = hyp.plot(data, predict='Kalman', t=4, forecast_trail=3,
+                   panels=True, panel_fit=panel_fit, show=False)
+    for ax in fig.axes[:2]:
+        assert len(_role(ax, 'static')) == 1
+    plt.close(fig)
+
+
 # --- xlim=(None, date) on a date axis -----------------------------------------
 
 @pytest.mark.parametrize('backend', ['matplotlib', 'plotly'])
