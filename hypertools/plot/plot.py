@@ -11689,6 +11689,13 @@ def plot(
                 from .forecast import trail_alpha, trail_frames
                 _src_lines = _observed_run_lines(
                     list(ax.lines)[_n_lines_before:])
+                # the dimensionality the AXES draws, not the requested cap
+                # `_display_ndims`: 2-column data under the default ndims=3
+                # is drawn on a 2-D axes, where `ax.plot([], [], [])` makes
+                # TWO artists and the unpack below crashed (1.1 release
+                # review: 31 of 140 random option combinations)
+                _fc_ndims = (3 if getattr(ax, 'name', None) == '3d'
+                             else min(2, xform[0].shape[1]))
                 _live_forecast_artists = []
                 # [dataset][age-1] -> artist. Preallocated: allocating
                 # artists mid-animation is what makes matplotlib animations
@@ -11742,10 +11749,10 @@ def plot(
                     # own fan rather than under it
                     _row = []
                     for _age in range(1, _n_forecast_trail + 1):
-                        if _display_ndims >= 3:
+                        if _fc_ndims >= 3:
                             _t, = ax.plot([], [], [], label='_nolegend_',
                                           **_fc_style)
-                        elif _display_ndims == 2:
+                        elif _fc_ndims == 2:
                             _t, = ax.plot([], [], label='_nolegend_',
                                           **_fc_style)
                         else:
@@ -11771,11 +11778,11 @@ def plot(
                     _trail_forecast_artists.append(_row)
                     # the SAME three-way split and label
                     # `_draw_forecast_overlays` uses. 1-D is a real branch:
-                    # `_display_ndims` can be 1.
-                    if _display_ndims >= 3:
+                    # `_fc_ndims` can be 1.
+                    if _fc_ndims >= 3:
                         _art, = ax.plot([], [], [], label='_nolegend_',
                                         **_fc_style)
-                    elif _display_ndims == 2:
+                    elif _fc_ndims == 2:
                         _art, = ax.plot([], [], label='_nolegend_',
                                         **_fc_style)
                     else:
@@ -11846,7 +11853,7 @@ def plot(
                                       _trails=_trail_forecast_artists,
                                       _retained=_n_forecast_trail,
                                       _antialias=antialias,
-                                      _ndims=_display_ndims,
+                                      _ndims=_fc_ndims,
                                       _reveal_sched=_reveal,
                                       _lines=_src_lines,
                                       _pinned=_override_colour,

@@ -227,3 +227,31 @@ def test_1d_axis_scale_data_puts_the_value_range_on_y_not_x(backend):
     assert ylo <= y.min() and yhi >= y.max()
     assert yhi - ylo < 2 * (y.max() - y.min())
     plt.close('all')
+
+
+# --- two-column data, animated, without ndims=2 ------------------------------
+
+@pytest.mark.parametrize('extra', [{}, {'forecast_trail': 2},
+                                   {'animate': 'window'}])
+def test_two_column_animated_forecast_draws_on_a_2d_axes(extra):
+    """2-column data under the default ndims draws a 2-D axes, but the live
+    forecast artists were built for the REQUESTED 3 dims: ``ax.plot([], [],
+    [])`` on a 2-D axes returns two artists and the call crashed with 'too
+    many values to unpack'."""
+    rng = np.random.default_rng(0)
+    data = [np.cumsum(rng.standard_normal((30, 2)), 0) for _ in range(2)]
+    kw = dict(animate=True, duration=1, frame_rate=8)
+    kw.update(extra)
+    anim = hyp.plot(data, predict='Kalman', t=4, show=False, **kw)
+    ax = anim.figure.axes[0]
+    assert getattr(ax, 'name', None) != '3d'
+    anim.draw_frame(7)
+    live = _role(ax, 'live')
+    assert len(live) == 2
+    for art in live:
+        assert art.get_visible()
+        xy = np.asarray(art.get_xydata())
+        assert xy.shape[1] == 2 and len(xy) >= 2 and np.isfinite(xy).all()
+    if extra.get('forecast_trail'):
+        assert len(_role(ax, 'trail')) == 2 * extra['forecast_trail']
+    plt.close(anim.figure)
