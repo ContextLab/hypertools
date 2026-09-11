@@ -266,8 +266,11 @@ def build_hierarchy_styles(traces, palette='hls', linestyle=None,
     Returns
     -------
     style : dict
-        ``{'colors', 'linewidths', 'alphas', 'labels', 'linestyles',
-        'n_top', 'unique_top'}``, one entry per trace (aligned by position).
+        ``{'colors', 'linewidths', 'alphas', 'labels', 'group_labels',
+        'linestyles', 'n_top', 'unique_top'}``, one entry per trace (aligned
+        by position). ``group_labels`` is every trace's top-level group
+        label (the legend text of the group it is coloured as, never the
+        ``'_nolegend_'`` sentinel) -- the plotly backend's hover name.
     """
     n_levels = traces.meta['n_levels']
 
@@ -324,6 +327,11 @@ def build_hierarchy_styles(traces, palette='hls', linestyle=None,
             )
 
     colors, linewidths, alphas, labels = [], [], [], []
+    # every trace's TOP-level group label (never the sentinel): what the
+    # legend entry it shares a colour with says -- the plotly backend's
+    # hover name for leaves and intermediate means, which carry no legend
+    # label of their own
+    group_labels = []
     linestyles_out = [] if per_top_linestyle is not None else None
 
     for key, level, mean in zip(traces.keys, traces.level_idx, traces.is_mean):
@@ -337,6 +345,8 @@ def build_hierarchy_styles(traces, palette='hls', linestyle=None,
         # top-level group. Without that exception a (Group, Feature) column
         # hierarchy drew several completely unlabelled traces (F11).
         top_level = (level == 0) and (mean or n_levels == 1)
+        group_labels.append(str(top_val) if per_top_label is None
+                            else str(per_top_label[top_i]))
         if not top_level:
             labels.append('_nolegend_')
         elif per_top_label is None:
@@ -351,6 +361,7 @@ def build_hierarchy_styles(traces, palette='hls', linestyle=None,
         'linewidths': linewidths,
         'alphas': alphas,
         'labels': labels,
+        'group_labels': group_labels,
         'linestyles': linestyles_out,
         'n_top': n_top,
         'unique_top': unique_top,

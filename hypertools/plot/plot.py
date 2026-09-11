@@ -81,6 +81,72 @@ def _is_plotly_cell(obj):
     return isinstance(obj, PlotlyCell)
 
 
+def _plotly_hover_names(n_traces, legend, category_names=None,
+                        group_labels=None, user_labels=None,
+                        series_names=None, hue=None, hue_group_labels=None):
+    """The name each drawn trace shows in a plotly hover label (1.1 release
+    review, maintainer finding: hovering showed plotly's "trace 0",
+    "trace 1", ...).
+
+    A trace is named by the label the legend shows -- or WOULD show under
+    ``legend=True`` -- for it, whether or not a legend is drawn (plotly's
+    `showlegend` stays governed by `legend=`): its hue/cluster CATEGORY
+    (every run of a category, not just the one carrying the legend entry),
+    its hierarchy's top-level GROUP (leaves and intermediate means too),
+    its label in a `legend=`/`names=` list (kept even when a continuous hue
+    drops the drawn legend), its `ndims=1` series COLUMN, else its 1-based
+    dataset number -- exactly `legend=True`'s own numbering. A lone trace
+    with none of those gets None, which the backend draws with no name box
+    at all rather than a meaningless "1".
+    """
+    def _usable(seq):
+        return seq is not None and len(seq) == n_traces
+
+    legend = legend if isinstance(legend, (list, tuple)) \
+        and _usable(legend) else None
+    # what `legend=True` labels a categorical hue's groups with (the same
+    # rule `plot()`'s legend block applies)
+    hue_labels = None
+    if hue is not None:
+        try:
+            hue_labels = (list(hue_group_labels)
+                          if hue_group_labels is not None
+                          else sorted(set(hue), key=list(hue).index))
+        except TypeError:          # per-observation arrays: no group list
+            hue_labels = None
+    if category_names is None and _usable(hue_labels):
+        category_names = ['the unlabeled group' if str(c) == '_nolegend_'
+                          else c for c in hue_labels]
+
+    def _labelled(i):
+        return legend is not None and not str(legend[i]).startswith('_')
+
+    # a category's LEGEND text (a legend list may rename categories): the
+    # repeat runs of a category, which carry the sentinel, take it too
+    renamed = {}
+    if _usable(category_names) and legend is not None:
+        for i in range(n_traces):
+            if _labelled(i):
+                renamed.setdefault(category_names[i], legend[i])
+    names = []
+    for i in range(n_traces):
+        name = None
+        if _usable(group_labels):
+            name = group_labels[i]
+        elif _labelled(i):
+            name = legend[i]
+        elif _usable(category_names):
+            name = renamed.get(category_names[i], category_names[i])
+        elif _usable(user_labels):
+            name = user_labels[i]
+        elif _usable(series_names):
+            name = series_names[i]
+        elif n_traces > 1:
+            name = i + 1
+        names.append(None if name is None else str(name))
+    return names
+
+
 _PLOTLY_MAPPED_KWARGS = frozenset(
     {'color', 'alpha', 'linewidth', 'markersize', 'marker', 'linestyle',
      'label'})
@@ -4657,6 +4723,15 @@ def plot(
         count raises a ``ValueError`` naming fmt and both counts. A fmt tuple
         is accepted and treated exactly like the equivalent list.
 
+        Under ``backend='plotly'`` a 3-D plot can only draw plotly's
+        `Scatter3d` marker set (circle, square, diamond, cross, x and the
+        open circle/square/diamond), so other markers take the nearest of
+        those: triangles (``'^'``, ``'v'``, ``'<'``, ``'>'``) and ``'d'``
+        draw as diamonds, ``'*'`` as an open diamond, ``'+'``, ``'|'``,
+        ``'_'`` and ``'1'``-``'4'`` as crosses, ``'x'`` as an x, and
+        ``'p'``, ``'h'``, ``'H'`` and ``'8'`` as circles. 1-D/2-D plotly
+        plots and every matplotlib plot draw the marker asked for.
+
         Static line rendering is DATA-FAITHFUL: line styles are smoothed
         by PCHIP interpolation, which only ever ADDS points between
         samples -- every original sample (including the final one) is
@@ -6456,8 +6531,9 @@ def plot(
         `labels=` annotations, and its own legend and colorbar beside the
         cell), the same composition loop as the matplotlib
         ``fig, axes = hyp.subplots(...); hyp.plot(d, ax=axes[i])`` form.
-        A matplotlib Axes under plotly raises `ValueError`; a plotly Figure
-        or cell under matplotlib raises `TypeError`.
+        A plotly Figure or cell with the default ``backend='auto'`` draws
+        with plotly; with an explicit ``backend='matplotlib'`` it raises
+        `TypeError`. A matplotlib Axes under plotly raises `ValueError`.
 
         The datasets are drawn in the `palette` exactly as on a figure of
         their own (a caller's Axes used to keep the colour cycle of the
@@ -6902,6 +6978,10 @@ def plot(
         ``'o-'``). MARKER-ONLY styles (e.g. ``'o'``, ``'.'``) are never
         touched: markers always render at the true sample points. Forecast
         overlays drawn by `predict=` are smoothed the same way.
+        A marker+line style (``'o-'``, or a ``forecast_fmt='o:'``) marks
+        only the true samples, never the vertices smoothing adds; in an
+        animation, whose lines are resampled onto the frame grid, each
+        marker sits on the grid vertex nearest its sample.
 
         Pass ``antialias=False`` to draw raw straight segments between
         consecutive samples (the pre-1.1.0 behavior).
@@ -7235,6 +7315,11 @@ def plot(
                 "instance, a plotly Figure to draw into with the plotly "
                 "backend, or one cell of a hyp.subplots(..., "
                 f"backend='plotly') grid; got {type(ax).__name__!r}.")
+        if _is_plotly_fig and isinstance(backend, str) \
+                and backend.lower() == 'auto':
+            # a plotly Figure/cell names the backend to draw with: 'auto'
+            # (the default) follows it instead of raising below
+            backend = 'plotly'
         if resolve_backend(backend) == "plotly":
             if _is_mpl_axes:
                 raise ValueError(
@@ -7329,6 +7414,9 @@ def plot(
     # call that never mentioned legend=.
     # (every accepted container was normalised to a list just above)
     _legend_user_list = isinstance(legend, (list, tuple))
+    # ...and the entries themselves, for the plotly hover names of a path
+    # that drops the drawn legend (a continuous hue; `_plotly_hover_names`)
+    _legend_user_labels = list(legend) if _legend_user_list else None
 
     # animate= dict form (GH #154 resolution): unpacked into the flat
     # animation kwargs HERE, at the very top of the function, before
@@ -11627,6 +11715,18 @@ def plot(
             legend_kwargs=_legend_kwargs,
             legend_entries=_final_legend_entries,
             legend_explicit=_legend_entries is not None,
+            # the pre-resampling observations, so an 'o-' marks only them
+            # (the matplotlib `_draw` call's `raw_data=`)
+            raw_data=raw_xform,
+            frame_kwargs=frame_kwargs,
+            # every hoverable data trace's name (`_plotly_hover_names`)
+            trace_names=_plotly_hover_names(
+                len(xform), legend, category_names=_run_cat_names,
+                group_labels=(_mi_style.get('group_labels')
+                              if _multiindex_meta is not None else None),
+                user_labels=_legend_user_labels,
+                series_names=_series_names, hue=hue,
+                hue_group_labels=hue_group_labels),
             axis_scale=_axis_scale,
             xlim=_data_xlim,
             ylim=_data_ylim,
