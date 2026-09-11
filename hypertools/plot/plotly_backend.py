@@ -1451,6 +1451,16 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
             "animate='morph' is only supported for 2-D or 3-D plots; got "
             f"{ndims}-D data."
         )
+    # every other style: a single-column trajectory has nothing to reveal
+    # a path through -- the matplotlib backend's `_draw` refuses it with
+    # this exact message, and plotly used to animate it silently, drawing
+    # frame-grid row numbers as the x axis (1.1 release review). `ndims=1`
+    # SERIES mode is unaffected: `plot()` hands it over as (index, value)
+    # columns, a 2-D plot.
+    if animate and ndims not in (2, 3):
+        raise ValueError(
+            "Animations are only supported for 2-D or 3-D plots (got "
+            f"{ndims}-D data); pass ndims=2 or ndims=3 (the default).")
 
     # round17 #9 (GH #123): 'spin' rotates the 3-D camera and has no
     # meaning for 2-D data (2-D animations use a fixed, non-rotating
@@ -5497,7 +5507,15 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                     datasets=tuple(data), style='serial', order='serial',
                     current_index=_serial_idx, current_fraction=_serial_frac,
                     revealed_counts=tuple(_shown),
-                    window_bounds=tuple((0, c) for c in _shown))
+                    # the DRAWN head window -- a trailed dataset's comet
+                    # head starts after its trail, not at row 0 (the
+                    # matplotlib serial updater reports the same; the
+                    # FrameContext contract says every field but the
+                    # figure/axes/artists agrees across backends)
+                    window_bounds=tuple(
+                        tuple(int(v) for v in head_bounds_by_index.get(
+                            i, (0, c)))
+                        for i, c in enumerate(_shown)))
                 frame_hooks.dispatch(fig, None)
                 if dynamic_title is not None and 'text' in dynamic_title:
                     # GH #285: a callable / `{index...}` title=, computed
