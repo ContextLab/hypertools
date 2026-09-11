@@ -142,6 +142,10 @@ evidence/CI for the new head.
 - CI 34639769259 at e684d7cd: 15/16 success (incl. docs-clean, all Windows/macOS), ubuntu-3.12 coverage step still running at 21:18Z.
 - Review packet (untracked, like the previous one): notes/final_review_2026-09-11/START_HERE.md (9 decisions for Jeremy).
 - Worktrees from this session removed (branches kept, all merged).
+- Pushed e9db5204 (tour tooling: single viewer, no IFrame warning; DOC_GATE_OVERRIDE recorded). Headless tour at exact e9db5204:
+  241/3/0. FRESH COLAB at e9db5204 (https://colab.research.google.com/drive/1bmQ-UMgWOmT_576hpkpbnL4S-dw2nyNq): 241 PASS / 3 SKIP, commit seen.
+- CI 34639769259 at e684d7cd: COMPLETED SUCCESS 16/16 (+ release-gate skipped); per-job totals in notes/final_review_2026-09-11/ci_status.md.
+- CI 34648813020 at e9db5204: running at 21:38Z.
 
 ### Visual expectation writer extra (code-vs-doc)
 - mpl fmt='-o' overrides marker=['o','s'] (backends disagree); markers= with '-' marks all smoothed pts (antialias docstring says true samples);
