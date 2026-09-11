@@ -135,6 +135,13 @@ evidence/CI for the new head.
   sphinx html -W 0 warnings (51 gallery examples); doctest 323/0; thumbs regenerated; example smoke 6/6.
 - Then: warning attribution + step text fix (merge 25da7cc0, 461d2e33), stock_forecasting prose, projectile/stock re-exec,
   tutorials+thumbs commit b1f857cc. ruff clean. Next: push, CI, tour REVIEW_COMMIT=HEAD headless run, Colab run, evidence packet.
+- Pushed e684d7cd. Local full suite there: 6551 passed/21 skipped/0 failed. Headless tour 241/3/0. FRESH COLAB (Pro, via Playwright,
+  https://colab.research.google.com/drive/1sFcFvxMUzNSjFnYFBjHlq6T8Twqqi-GD): 241 PASS / 3 SKIP / 0 FAIL, SHA confirmed; frontend checks:
+  early previews survive, viewer open/switch/close(0 graph divs)/reopen, playback + stable legend, hover names = legend (gd._fullData),
+  PLOT-style-plotly swatches match, date axis TZ-correct. Found: viewer displayed twice + IPython IFrame warning -> fixed e9db5204.
+- CI 34639769259 at e684d7cd: 15/16 success (incl. docs-clean, all Windows/macOS), ubuntu-3.12 coverage step still running at 21:18Z.
+- Review packet (untracked, like the previous one): notes/final_review_2026-09-11/START_HERE.md (9 decisions for Jeremy).
+- Worktrees from this session removed (branches kept, all merged).
 
 ### Visual expectation writer extra (code-vs-doc)
 - mpl fmt='-o' overrides marker=['o','s'] (backends disagree); markers= with '-' marks all smoothed pts (antialias docstring says true samples);
