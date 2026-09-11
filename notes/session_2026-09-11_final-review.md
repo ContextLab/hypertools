@@ -129,7 +129,12 @@ evidence/CI for the new head.
 - Remaining: W9 (animation core) + W3 batch 2 (animated hue, L1, L2, play/pause) -> then CHANGELOG bullets for them, animation_context.py
   window_bounds doc (L14), then scratchpad/verify_pipeline.sh (tutorial re-exec, pytest, sphinx -W html+doctest, thumbs, smoke),
   commit notebooks, set tour REVIEW_COMMIT, headless tour, push, CI, Colab re-run, refresh evidence packet.
-- NIT to sweep: predict/plot warnings attributed to library lines (e.g. plot.py:9383 'dataset index is not sorted').
+- NIT to sweep: predict/plot warnings attributed to library lines (e.g. plot.py:9383 'dataset index is not sorted'). -> FIXED 53c7673a/461d2e33.
+- W3 batch 2 merged 0ed1e8f3; W9 merged db017681; CHANGELOG b6308028.
+- VERIFY PIPELINE at b6308028 (18:17-19:32Z): 25/25 tutorials re-executed, no failures; pytest 6546 passed/21 skipped/0 failed;
+  sphinx html -W 0 warnings (51 gallery examples); doctest 323/0; thumbs regenerated; example smoke 6/6.
+- Then: warning attribution + step text fix (merge 25da7cc0, 461d2e33), stock_forecasting prose, projectile/stock re-exec,
+  tutorials+thumbs commit b1f857cc. ruff clean. Next: push, CI, tour REVIEW_COMMIT=HEAD headless run, Colab run, evidence packet.
 
 ### Visual expectation writer extra (code-vs-doc)
 - mpl fmt='-o' overrides marker=['o','s'] (backends disagree); markers= with '-' marks all smoothed pts (antialias docstring says true samples);
