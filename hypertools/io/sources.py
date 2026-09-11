@@ -1190,8 +1190,11 @@ def yahoo_source(name, start=None, end=None, interval='1d', timeout=30):
     Returns
     -------
     pandas.DataFrame
-        Indexed by a ``DatetimeIndex`` named ``'date'`` (bar timestamps
-        normalized to midnight), with float columns ``open``, ``high``,
+        Indexed by a ``DatetimeIndex`` named ``'date'``. Daily and longer
+        bars are dated by the exchange-local trading day (naive, midnight);
+        intraday bars (``'1h'``, ``'15m'``, ...) keep their time, as a
+        tz-aware index in the exchange's timezone (e.g.
+        ``America/New_York``). Float columns ``open``, ``high``,
         ``low``, ``close``, ``volume`` and, when Yahoo provides it,
         ``adj_close`` (split/dividend-adjusted). Rows are in time order;
         gaps Yahoo reports as nulls stay NaN rather than being dropped.
@@ -1223,6 +1226,27 @@ def yahoo_source(name, start=None, end=None, interval='1d', timeout=30):
         status_code=resp.status_code)
 
 
+_YAHOO_INTRADAY_RE = re.compile(r'\d+[mh]')     # '1m', '90m', '1h'; not '1mo'
+
+
+def _yahoo_is_intraday(interval):
+    """True for a Yahoo bar size measured in minutes or hours."""
+    return bool(_YAHOO_INTRADAY_RE.fullmatch(str(interval).strip()))
+
+
+def _yahoo_exchange_tz(name, gmtoffset):
+    """The exchange's timezone: the IANA ``name`` Yahoo reports when it is a
+    real zone, else a fixed-offset zone from ``gmtoffset`` (seconds)."""
+    import datetime
+    import zoneinfo
+    if isinstance(name, str) and name:
+        try:
+            return zoneinfo.ZoneInfo(name)
+        except (zoneinfo.ZoneInfoNotFoundError, ValueError):
+            pass
+    return datetime.timezone(datetime.timedelta(seconds=int(gmtoffset)))
+
+
 def _parse_yahoo_chart(payload, *, ticker, interval='1d', window='',
                        status_code=200):
     """Turn one decoded Yahoo v8 chart payload into the DataFrame
@@ -1236,6 +1260,13 @@ def _parse_yahoo_chart(payload, *, ticker, interval='1d', window='',
     one day early (BHP.AX 2025-01-06..10 came back as 2025-01-05..09; 1.1
     release review, I2), so the offset is applied first: the resulting
     ``date`` is the exchange-local trading day.
+
+    Intraday bars (a granularity in minutes or hours, e.g. ``'1h'``,
+    ``'15m'``) are NOT normalized -- doing so gave every bar of a session
+    the same midnight stamp, so the index was full of duplicates and
+    ``hyp.predict`` refused it. They keep their time as a tz-aware index in
+    the exchange's timezone (``meta.exchangeTimezoneName``, or a fixed
+    ``gmtoffset`` zone when the name is missing or unknown).
     """
     chart = payload.get('chart') or {}
     error = chart.get('error')
@@ -1259,9 +1290,21 @@ def _parse_yahoo_chart(payload, *, ticker, interval='1d', window='',
             'for recent windows.')
     quote = (result.get('indicators') or {}).get('quote') or [{}]
     quote = quote[0]
-    gmtoffset = int((result.get('meta') or {}).get('gmtoffset') or 0)
-    index = pd.to_datetime(np.asarray(stamps, dtype='int64') + gmtoffset,
-                           unit='s').normalize()
+    meta = result.get('meta') or {}
+    gmtoffset = int(meta.get('gmtoffset') or 0)
+    stamps = np.asarray(stamps, dtype='int64')
+    if _yahoo_is_intraday(meta.get('dataGranularity') or interval):
+        # an intraday bar is an instant, not a trading day: keep its time,
+        # expressed in the exchange's own timezone so the wall-clock reads
+        # like the daily path's exchange-local dates. The zone NAME is used
+        # when Yahoo gives one, because gmtoffset is only the offset in
+        # force NOW -- applying it to a window that spans a DST change
+        # would shift every bar on the far side by an hour. The index stays
+        # tz-aware, so a repeated fall-back hour cannot collide either.
+        index = pd.to_datetime(stamps, unit='s', utc=True).tz_convert(
+            _yahoo_exchange_tz(meta.get('exchangeTimezoneName'), gmtoffset))
+    else:
+        index = pd.to_datetime(stamps + gmtoffset, unit='s').normalize()
     index.name = 'date'
     frame = {}
     for col in ('open', 'high', 'low', 'close', 'volume'):
