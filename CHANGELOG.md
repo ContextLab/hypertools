@@ -1449,6 +1449,40 @@ Because 1.1.0 had not been published, they ship in it.
   spellings are no longer hidden inside the library.
 - **`[density3d]` needs `scikit-image>=0.25.0`**, the first release with
   Python 3.13 wheels.
+- **Animated lines keep every observation.** Lines were resampled onto one
+  row per frame, so a dataset with more rows than frames was drawn through
+  only some of its points (a 36-row helix in a 9-frame animation became a
+  zig-zag star at 46% of its radius, and labels were dropped). Every
+  observation is now a vertex of the animated line, `animate='spin'` draws
+  the rows unchanged, and reveal timing and frame counts are unchanged.
+- **Every morph transition frame moves.** Transitions sampled their own
+  endpoints, so a 2-frame transition only repeated the hold clouds.
+  Transition frames now fall strictly between the clouds in position, colour
+  and `alpha=`. The default morph dot is 4 pt on both backends (it was 1.5
+  pt, sub-pixel on plotly).
+- **Titles set in an `on_frame=` callback are visible on 3-D animations.**
+  With no `title=`, the `plot()` docstring's own example drew its title
+  above the canvas on matplotlib and cut it off on plotly; `on_frame=` now
+  reserves the title margin.
+- **`companion=` panels use the trajectory's colour** instead of
+  matplotlib's default blue; an explicit `color=` still wins.
+- **Short streams warn about clamped samples.** The warning needed 20 post-
+  head samples, so a short stream could draw most of its points on the box
+  surface silently; the clamped fraction is now checked again when streaming
+  stops.
+- **Plotly animations keep a continuous hue on the moving data.** 3-D
+  windows were painted in the trajectory's first colours, and 2-D lines
+  never animated: the whole trajectory stayed on screen while one segment
+  flickered. Heads and trails now carry their own colours in every reveal
+  style.
+- **Plotly 3-D lines are as thick as you ask.** WebGL drew Scatter3d lines
+  at half the requested width; they now match the 2-D line and matplotlib,
+  and plotly animations default to the documented 1 pt.
+- **Plotly 3-D density no longer speckles the cube.** The density volume
+  extended past the scene and broke the cube edges into dots; it is now
+  clipped to the cube.
+- **Plotly Play/Pause sit below the axis labels.** On a date or data x axis
+  they covered the tick labels.
 
 ### Documented limitations
 
