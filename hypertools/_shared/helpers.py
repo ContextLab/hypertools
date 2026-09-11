@@ -490,6 +490,20 @@ def antialias_line(arr, target=ANTIALIAS_TARGET_VERTICES):
     return out, step
 
 
+def row_index_x(n_rows, n_drawn):
+    """The ROW-index x of each of `n_drawn` vertices drawn for `n_rows` rows.
+
+    A 1-D plot puts the row index on x. When the drawn curve was densified
+    by `antialias_line` (uniformly, every original row kept), its vertices
+    span the same ``0..n_rows - 1`` as the rows themselves, so vertex ``k``
+    sits at ``k * (n_rows - 1) / (n_drawn - 1)``. With nothing densified
+    (``n_drawn == n_rows``) this is exactly ``np.arange(n_rows)``.
+    """
+    if n_drawn == n_rows or n_drawn < 2 or n_rows < 2:
+        return np.arange(n_drawn, dtype=float)
+    return np.linspace(0.0, n_rows - 1.0, n_drawn)
+
+
 def split_marker_line_fmt(format_str):
     """Split a matplotlib format string into its LINE and MARKER
     components (GH #141), so a combined style like 'o-' can be drawn as
