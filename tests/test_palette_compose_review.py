@@ -424,21 +424,32 @@ def test_markers_on_a_smoothed_line_sit_only_at_the_samples(kw):
     data = _walk48()
     fig = hyp.plot(data, legend=['a', 'b'], show=False, **kw)
     ax = fig.axes[0]
-    marked = [(lbl, n) for lbl, _, n in _marked(ax) if n]
-    # one markers-only artist per dataset, one marker per SAMPLE
-    assert marked == [('_nolegend_', 48), ('_nolegend_', 48)]
-    # ...drawn at the samples themselves: every one is a vertex of the
-    # smoothed line of the same dataset (antialias keeps each sample)
-    lines = [ln for ln in ax.lines if ln.get_label() in ('a', 'b')]
-    dots = [ln for ln in ax.lines if ln.get_label() == '_nolegend_']
-    for line, dot in zip(lines, dots):
-        curve = np.column_stack(line.get_data_3d())
-        pts = np.column_stack(dot.get_data_3d())
-        assert len(curve) > 5 * len(pts)          # the line IS smoothed
-        gap = np.min(np.linalg.norm(curve[:, None] - pts[None], axis=-1),
-                     axis=0)
-        assert gap.max() < 1e-9
-    # the legend glyph still shows the marker with the line
+    # one marker per SAMPLE per dataset -- not one per smoothed vertex
+    assert [n for _, _, n in _marked(ax) if n] == [48, 48]
+    # ...at the samples themselves: the points the static 'o-' figure
+    # marks (its markers-only artists sit on the raw samples)
+    ref = hyp.plot(data, fmt='o-', show=False).axes[0]
+    samples = np.vstack([np.column_stack(ln.get_data_3d())
+                         for ln in ref.lines
+                         if ln.get_label() == '_nolegend_'])
+    marked, curves = [], []
+    for ln in ax.lines:
+        if ln.get_marker() in (None, 'None', '', ' '):
+            continue
+        pts = np.column_stack(ln.get_data_3d())
+        me = ln.get_markevery()
+        if ln.get_linestyle() not in ('None', ''):
+            curves.append(pts)
+        marked.append(pts if me is None
+                      else pts[np.asarray(me, dtype=int).ravel()])
+    marked = np.vstack(marked)
+    assert len(marked) == len(samples) == 96
+    gap = np.min(np.linalg.norm(marked[:, None] - samples[None], axis=-1),
+                 axis=1)
+    assert gap.max() < 1e-9
+    # the line itself is still the smoothed curve
+    assert all(len(c) > 5 * 48 for c in curves)
+    # the legend glyph shows the marker with the line
     assert [h.get_marker() for h in ax.get_legend().legend_handles] == \
         [kw.get('marker', 'o')] * 2
 

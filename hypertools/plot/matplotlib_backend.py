@@ -868,8 +868,10 @@ def _draw(
     (e.g. 'o-') is drawn as two artists -- a smoothed line from `x` (the
     already-interpolated data) plus markers at the raw sample points from
     `raw_data` -- so markers land on the true data regardless of how dense
-    the smoothed line is (an explicit ``marker=`` on a line fmt splits the
-    same way). Ignored (may be None) for pure line/marker-only styles. An
+    the smoothed line is. A LINE fmt given its marker by ``marker=``/
+    ``markers=`` stays one artist, whose ``markevery`` picks out the raw
+    samples among the smoothed vertices. Ignored (may be None) for pure
+    line/marker-only styles. An
     ANIMATED marker+line style keeps ONE artist per dataset (so its legend
     handle shows marker and line), drawn against the smoothed frame-grid
     `x` data; `raw_data` then locates each observation's nearest drawn
@@ -1092,15 +1094,31 @@ def _draw(
         # marker, as the comment above promises and as plotly draws it:
         # the split below used to discard it, so fmt='-o' with
         # marker=['o', 's'] drew two circle datasets (1.1 release review).
-        # A line fmt given a marker= this way is a marker+line combo too,
-        # so it takes the same split: markers only at the TRUE samples,
-        # never at the interpolated vertices (`antialias=`'s promise; the
-        # single artist marked all ~20x-denser smoothed vertices)
+        _fmt_has_marker = marker_char is not None
         _explicit_marker = ikwargs.get('marker')
         if _explicit_marker is not None:
             marker_char = (None if isinstance(_explicit_marker, str)
                            and _explicit_marker.strip().lower() in ('', 'none')
                            else _explicit_marker)
+        if (line_token is not None and marker_char is not None
+                and not _fmt_has_marker):
+            # a LINE fmt given its marker by marker=/markers= ('-' with
+            # markers='o'): one artist, as before, but marked only at the
+            # TRUE samples -- every one an exact vertex of the smoothed line
+            # (`antialias_line`: ``dense[::step]`` IS the data) -- rather
+            # than at all ~20x-denser interpolated vertices, which
+            # contradicted `antialias=`'s promise (1.1 release review)
+            n_dense, n_raw = len(coords[0]), len(raw_coords[0])
+            one_kwargs = dict(ikwargs)
+            one_kwargs.setdefault('linestyle', line_token)
+            if fmt_color is not None:
+                one_kwargs.setdefault('color', fmt_color)
+            if (raw_data is not None and 1 < n_raw < n_dense
+                    and (n_dense - 1) % (n_raw - 1) == 0):
+                one_kwargs.setdefault('markevery', list(range(
+                    0, n_dense, (n_dense - 1) // (n_raw - 1))))
+            ax.plot(*coords, **one_kwargs)
+            return
         if line_token is not None and marker_char is not None:
             line_kwargs = {k: v for k, v in ikwargs.items() if k != 'marker'}
             line_kwargs.setdefault('linestyle', line_token)
