@@ -4770,6 +4770,8 @@ def plot(
         entries, non-numeric, out of range) is also just ignored-with-a-
         warning in this case, not validated against and raised on --
         whether ``alpha=`` will be used is decided before it is checked.
+        A continuous or matrix `hue=` keeps it: the per-point coloured
+        line segments AND markers carry their dataset's alpha.
 
         A `predict=` forecast overlay is drawn at HALF its dataset's alpha
         (``alpha=[1.0, 0.4]`` gives forecasts at ``[0.5, 0.2]``); an unset
@@ -13906,6 +13908,16 @@ def _apply_multicolor_markers(ax, xform, point_colors, kwargs_list,
         ms = float(tkwargs.get('markersize')
                    or plt.rcParams['lines.markersize'])
         s = ms ** 2  # scatter sizes are areas in points^2
+        # the trace's alpha= travels WITH the per-point colours, as on the
+        # line path (`_apply_multicolor_lines`): the scatter replaces the
+        # marker artist the alpha was set on, so hue= + alpha=0.7 markers
+        # drew fully opaque while the same plot without hue= honoured it
+        # (1.1 release review)
+        _alpha = tkwargs.get('alpha')
+        if _alpha is not None:
+            ci = np.asarray(ci, dtype=float)
+            ci = np.column_stack([ci[:, :3],
+                                  np.full(len(ci), float(_alpha))])
         if xi.shape[1] == 1:
             ax.scatter(np.arange(xi.shape[0]), xi[:, 0], c=ci, s=s,
                        marker=marker)

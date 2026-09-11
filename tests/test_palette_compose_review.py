@@ -499,3 +499,28 @@ def test_animated_window_marks_only_the_revealed_samples():
         assert 0 < len(marked) < 48
         assert len(marked) * 5 < n_verts
         assert marked.max() < n_verts
+
+
+# --- B: continuous-hue markers carry alpha= (matplotlib) --------------------
+
+def _marker_alphas(ax):
+    from matplotlib.collections import PathCollection
+    return [np.unique(np.round(c.get_facecolors()[:, 3], 6)).tolist()
+            for c in ax.collections if isinstance(c, PathCollection)]
+
+
+@pytest.mark.parametrize('ndims', [2, 3])
+@pytest.mark.parametrize('fmt', ['o', '-o'])
+def test_continuous_hue_markers_honour_alpha(fmt, ndims):
+    data = _walks(2, rows=30)
+    hue = [np.linspace(0, 1, 30), np.linspace(1, 0, 30)]
+    fig = hyp.plot(data, hue=hue, fmt=fmt, alpha=0.7, ndims=ndims,
+                   show=False)
+    assert _marker_alphas(fig.axes[0]) == [[0.7], [0.7]]
+    # the reference: the same plot without hue= honours alpha= too
+    plain = hyp.plot(data, fmt=fmt, alpha=0.7, ndims=ndims, show=False)
+    assert {ln.get_alpha() for ln in plain.axes[0].lines} == {0.7}
+    # a per-dataset alpha list reaches each dataset's markers
+    fig = hyp.plot(data, hue=hue, fmt=fmt, alpha=[1.0, 0.4], ndims=ndims,
+                   show=False)
+    assert _marker_alphas(fig.axes[0]) == [[1.0], [0.4]]
