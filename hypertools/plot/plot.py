@@ -5257,8 +5257,13 @@ def plot(
         steps take one array at a time, whereas the dispatcher pipelines
         `analyze`/`plot` build take the whole list. A bare fitted stage
         object (a `Reducer`/`Aligner`/... from a dispatcher's
-        `return_model=True`) is accepted as a one-step pipeline.
-        Mutually exclusive with `manip=`/
+        `return_model=True`) is accepted as a one-step pipeline. A
+        pipeline ending in a fitted `'cluster'` step (a clustered figure's
+        bundle, or ``hyp.analyze(..., cluster=..., return_model=True)``)
+        colours the figure by that step's labels for `x`, with the fit
+        figure's cluster colours, unless `hue=` is given; a clusterer with
+        no out-of-sample `predict` that cannot label `x` warns and draws
+        without clusters. Mutually exclusive with `manip=`/
         `normalize=`/`reduce=`/`ndims=`/`align=`/`cluster=` (each must be
         left at its default) -- passing both raises `ValueError` naming the
         conflicting kwarg(s). `resample=` is still applied (as sugar, before
@@ -8245,6 +8250,16 @@ def plot(
                     pipeline.fit(raw)
                 xform, _ = analyze(raw, pipeline=pipeline, internal=True,
                                    impute=impute, return_model=True)
+                # analyze returns DATA; a fitted trailing cluster step
+                # colours the figure through the cluster branch below, as
+                # it coloured the figure it was fit for, unless hue= says
+                # otherwise (it used to be dropped silently; 1.1 release
+                # review, L13)
+                if hue is None:
+                    from ..tools.analyze import pipeline_cluster_labels
+                    _replay = pipeline_cluster_labels(pipeline, xform)
+                    if _replay is not None:
+                        cluster = _PanelClusterLabels(*_replay)
             else:
                 if pipeline.is_fitted:
                     xform = [np.asarray(pipeline.transform(r)) for r in raw]

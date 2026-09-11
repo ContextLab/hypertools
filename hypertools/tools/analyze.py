@@ -26,6 +26,68 @@ def _impute_format(data, impute):
     return formatted[0]
 
 
+def pipeline_cluster_labels(pipeline, data):
+    """Labels a fitted pipeline's trailing `'cluster'` step gives `data`.
+
+    `analyze(x, pipeline=p)` returns the transformed DATA even when `p`
+    ends in a fitted cluster step (see `pipeline=` in `analyze`); the
+    labels are that step applied to the returned data -- the recovery the
+    docstring documents, ``p.named_steps['cluster'].transform(data)``.
+    `hyp.plot(x, pipeline=p)` runs it to colour the figure by the fitted
+    clusters, as the figure `p` was fit for was coloured: skipping it drew
+    one colour with no warning (1.1 release review, 2026-09-11).
+
+    Parameters
+    ----------
+    pipeline : hypertools.Pipeline
+        A fitted pipeline.
+    data : list of arrays
+        `analyze(x, pipeline=pipeline)`'s output for the data to label.
+
+    Returns
+    -------
+    tuple or None
+        `(labels, model, fitted, categories)`: the per-observation labels
+        over the stacked datasets (membership proportions for a mixture
+        model), the fitted clusterer's class (whose name selects hard vs.
+        mixture colouring), the fitted cluster model itself (the step's
+        `Clusterer`), and the label set it was FIT with, sorted (so a
+        dataset missing a cluster keeps the fit figure's colours; None for
+        mixture proportions). `None` when the pipeline is unfitted or does
+        not end in a cluster step, or when the step cannot label `data` --
+        a clusterer with no out-of-sample `predict` (e.g.
+        `AgglomerativeClustering`) given rows it was not fit on -- in which
+        case a `UserWarning` says the figure is drawn without its clusters.
+    """
+    import numpy as np
+    from ..core.model import external_stacklevel
+    from ..core.pipeline import _step_transform
+
+    steps = getattr(pipeline, 'steps', None)
+    if (not steps or steps[-1][0] != 'cluster'
+            or not getattr(pipeline, 'is_fitted', False)):
+        return None
+    step = steps[-1][1]
+    fitted = getattr(step, '_fitted', step)
+    model = getattr(fitted, 'model_', None) or fitted
+    try:
+        labels = _step_transform(step, [np.asarray(d) for d in data],
+                                 name='cluster')
+    except NotImplementedError as err:
+        warnings.warn(
+            f"pipeline='s fitted cluster step ({type(model).__name__}) "
+            f"cannot label this data, so the figure is drawn without its "
+            f"clusters: {err}", UserWarning,
+            stacklevel=external_stacklevel())
+        return None
+    categories = None
+    if np.ndim(labels) == 1:
+        fit_labels = getattr(model, 'labels_', None)
+        seen = labels if fit_labels is None else fit_labels
+        categories = sorted(set(np.asarray(seen).tolist()))
+    return labels, type(model), fitted, categories
+
+
 def analyze(data, manip=None, normalize=None, reduce=None, ndims=None, align=None,
            cluster=None, pipeline=None, return_model=False, internal=False, impute=None,
            random_state=None):
