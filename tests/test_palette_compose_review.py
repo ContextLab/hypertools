@@ -524,3 +524,22 @@ def test_continuous_hue_markers_honour_alpha(fmt, ndims):
     fig = hyp.plot(data, hue=hue, fmt=fmt, alpha=[1.0, 0.4], ndims=ndims,
                    show=False)
     assert _marker_alphas(fig.axes[0]) == [[1.0], [0.4]]
+
+
+# --- C: the non-finite hue warning counts observations, names the caller ---
+
+@pytest.mark.parametrize('backend', ['matplotlib', 'plotly'])
+@pytest.mark.parametrize('fmt', ['-', '-o', 'o'])
+def test_one_nan_hue_value_warns_once_about_one_observation(fmt, backend):
+    import warnings
+    data = _walks(1, rows=30)[0]
+    hue = np.linspace(0, 1, 30)
+    hue[12] = np.nan
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter('always')
+        hyp.plot(data, hue=hue, fmt=fmt, show=False, backend=backend)
+    hits = [w for w in caught if 'non-finite' in str(w.message)]
+    assert len(hits) == 1, [str(w.message) for w in hits]
+    assert str(hits[0].message).startswith('1 observation(s) have')
+    # attributed to the caller's line, not to hypertools' internals
+    assert hits[0].filename == __file__

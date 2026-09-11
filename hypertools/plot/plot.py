@@ -12218,7 +12218,10 @@ def plot(
                                             kwargs_list)
                     _marker_colors = _multicolor_line_colors(
                         multicolor_hue, pre_interp_lengths, raw_xform,
-                        palette, is_rgb=multicolor_hue_is_rgb)
+                        palette, is_rgb=multicolor_hue_is_rgb,
+                        # the line colours above already warned about
+                        # any non-finite hue observation
+                        warn_non_finite=False)
                     _apply_multicolor_markers(ax, raw_xform, _marker_colors,
                                               kwargs_list, fmt=fmt)
                 else:
@@ -13436,8 +13439,14 @@ def _contains_string(el):
     return False
 
 
-def _multicolor_line_colors(hue_src, orig_lengths, xform, palette, is_rgb=False):
+def _multicolor_line_colors(hue_src, orig_lengths, xform, palette, is_rgb=False,
+                            warn_non_finite=True):
     """Per-point RGB colors for multicolored lines.
+
+    Non-finite hue values are drawn gray (`colors.mat2colors`); one
+    ``UserWarning`` counting the non-finite ORIGINAL observations, attributed
+    to the caller, is issued unless `warn_non_finite` is False (a second call
+    for the same hue, e.g. the marker colours of an ``'o-'`` combo).
 
     hue_src holds one value (or one row) per ORIGINAL observation; the
     trajectories in xform have since been interpolated to a higher temporal
@@ -13475,9 +13484,29 @@ def _multicolor_line_colors(hue_src, orig_lengths, xform, palette, is_rgb=False)
     if is_rgb:
         colors = np.clip(stacked, 0.0, 1.0)
     else:
-        colors = mat2colors(
-            stacked.ravel() if stacked.shape[1] == 1 else stacked,
-            palette=palette)
+        # `mat2colors` warns about the non-finite rows it is handed -- here
+        # the INTERPOLATED vertices, every one a NaN observation's
+        # neighbourhood touches (one NaN in 30 rows reported "61
+        # observation(s)"), attributed to this module rather than the
+        # caller. Silence it and say it once, below, about the
+        # observations (1.1 release review).
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                'ignore', message=r'\d+ observation\(s\) have non-finite',
+                category=UserWarning)
+            colors = mat2colors(
+                stacked.ravel() if stacked.shape[1] == 1 else stacked,
+                palette=palette)
+        if warn_non_finite:
+            _n_bad = int(np.count_nonzero(~np.isfinite(hue_src).all(axis=1)))
+            if _n_bad:
+                from .colors import NAN_COLOR
+                warnings.warn(
+                    f"{_n_bad} observation(s) have non-finite (NaN/inf) "
+                    f"hue/color values; they are drawn in a neutral gray "
+                    f"{NAN_COLOR} and excluded from the color mapping (the "
+                    "remaining observations keep their full color range).",
+                    UserWarning, stacklevel=external_stacklevel())
 
     out, start = [], 0
     for xi in xform:
