@@ -111,7 +111,9 @@ def apply_model(data, model, mode='auto', return_model=False,
           optional; 'args' are positional constructor arguments and
           require a name/class 'model'), or the legacy {'model': ...,
           'params': {...}} form (accepted for backward compatibility,
-          emits a DeprecationWarning)
+          emits a DeprecationWarning). Any other top-level key -- e.g. a
+          flat {'model': 'PCA', 'whiten': True} -- raises ValueError
+          naming it rather than being ignored
         - instance: any object exposing fit/transform/fit_transform/
           fit_predict/predict_proba (scikit-learn convention)
         - list: a pipeline; each element is applied in sequence, with each
@@ -199,6 +201,12 @@ def apply_model(data, model, mode='auto', return_model=False,
     # mode='fit_predict' into every stage made reduce->cluster pipelines
     # crash on the first non-predicting stage).
     if isinstance(model, list):
+        # check every stage's dict spec before ANY stage is fit, so a flat
+        # key in a late stage does not surface only after the early
+        # stages have run
+        from .shared import check_spec_keys
+        for stage in model:
+            check_spec_keys(stage, 'apply_model')
         fitted = []
         last = len(model) - 1
         for i, stage in enumerate(model):
@@ -266,7 +274,10 @@ def _resolve_model(model, ndims):
     re-implementing it here; only the string-registry lookup and the
     `ndims=` convenience are specific to `apply_model`.
     """
-    from .shared import unpack_model
+    from .shared import check_spec_keys, unpack_model
+    # a flat key such as {'model': 'PCA', 'whiten': True} used to be
+    # dropped silently (1.1 review)
+    check_spec_keys(model, 'apply_model')
     resolved = unpack_model(model)
 
     args, params = [], {}

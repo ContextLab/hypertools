@@ -15,7 +15,7 @@ from .hyperalign import HyperAlign
 from .procrustes import Procrustes
 from .srm import SharedResponseModel, DeterministicSharedResponseModel, RobustSharedResponseModel
 from .null import NullAlign
-from ..core.shared import unpack_model, as_dataframe
+from ..core.shared import unpack_model, as_dataframe, check_spec_keys
 from .._shared.helpers import is_text_item
 from ..core.model import external_stacklevel
 
@@ -86,10 +86,11 @@ def _resolve_align_spec(model, extra_kwargs):
         The `model=` spec (see `align`'s docstring for the full grammar).
     extra_kwargs : dict
         Leftover `**kwargs` from the `align()` call, forwarded to the
-        resolved class's constructor -- but only when `model` is a bare
-        registry name/class (a dict spec's own `'args'`/`'kwargs'` take
-        precedence over these, and an already-constructed instance ignores
-        them entirely, matching `hyp.reduce`/`hyp.cluster`).
+        resolved class's constructor: for a bare registry name/class
+        directly, and for a dict spec merged into its `'kwargs'` (winning
+        on a conflict, as in `hyp.impute`/`hyp.predict`; they used to be
+        dropped silently). An already-constructed instance cannot take
+        them, so they are ignored with a `UserWarning`.
 
     Returns
     -------
@@ -120,6 +121,10 @@ def _resolve_align_spec(model, extra_kwargs):
                 "value of the 'kwargs' key (the legacy 'params' key is "
                 "also accepted)."
             )
+        # a flat key such as {'model': 'HyperAlign', 'n_iter': 3} used to
+        # be dropped silently, so the aligner ran with its defaults (1.1
+        # review)
+        check_spec_keys(model, 'align')
         if c_model is None or c_model is False:
             return None
         if 'args' in model or 'kwargs' in model:
@@ -136,6 +141,10 @@ def _resolve_align_spec(model, extra_kwargs):
             c_args, c_kwargs = [], dict(model['params'])
         else:
             c_args, c_kwargs = [], {}
+        # the outer **kwargs join the spec's own parameters, winning on a
+        # conflict (hyp.align(data, model={'model': 'HyperAlign'},
+        # n_iter=0) used to drop n_iter silently; 1.1 review)
+        c_kwargs = {**c_kwargs, **extra_kwargs}
         if isinstance(c_model, str):
             _warn_deprecated_alias(c_model)
             c_model = _ALIAS.get(c_model, c_model)
@@ -147,8 +156,17 @@ def _resolve_align_spec(model, extra_kwargs):
             _reject_unknown_aligner(resolved_inner)
         if isinstance(resolved_inner, type):
             return resolved_inner(*c_args, **c_kwargs)
-        # already-constructed (or already-fitted) instance: params ignored,
-        # used as-is
+        # already-constructed (or already-fitted) instance: used as-is, so
+        # its parameters cannot change -- say so instead of dropping them
+        # silently (parity with hyp.reduce's dict-spec instance warning)
+        if c_args or c_kwargs:
+            warnings.warn(
+                f"the align spec's 'model' is an already-constructed "
+                f"{type(resolved_inner).__name__} instance (used as-is), so "
+                "the spec's 'args'/'kwargs' entries (and any extra keyword "
+                "arguments) are ignored; configure the instance directly, "
+                "or pass the class (or its name) to apply constructor "
+                "parameters", UserWarning, stacklevel=external_stacklevel())
         return resolved_inner
 
     resolved = unpack_model(model, valid=ALIGNERS, parent_class=Aligner)
@@ -158,7 +176,16 @@ def _resolve_align_spec(model, extra_kwargs):
         return resolved(**extra_kwargs)
     # an already-constructed (unfitted) or already-fitted instance is
     # passed through unchanged (the caller checks `.is_fitted` to decide
-    # whether to fit_transform or reuse via transform)
+    # whether to fit_transform or reuse via transform) -- so constructor
+    # keyword arguments cannot reach it: warn instead of dropping them
+    # silently (the wording hyp.impute/hyp.predict use; 1.1 review)
+    if extra_kwargs:
+        warnings.warn(
+            f'ignoring keyword argument(s) {sorted(extra_kwargs)}: model= '
+            'is already a constructed instance, so constructor parameters '
+            'cannot be applied. Pass the class (or a name/dict spec) to '
+            'set parameters.', UserWarning,
+            stacklevel=external_stacklevel())
     return resolved
 
 
@@ -399,7 +426,10 @@ def align(data, model='HyperAlign', return_model=False,
         SharedResponseModel, NullAlign`), the canonical dict spec
         `{'model': ..., 'args': [...], 'kwargs': {...}}`, or the LEGACY
         dict spec `{'model': ..., 'params': {...}}` (accepted for backward
-        compatibility, but emits a `DeprecationWarning`). A
+        compatibility, but emits a `DeprecationWarning`). Model parameters
+        always go under `'kwargs'`: any other top-level key -- e.g.
+        `{'model': 'HyperAlign', 'n_iter': 3}` -- raises `ValueError`
+        naming it rather than being ignored. A
         previously-fitted `Aligner` (as returned by `return_model=True`) is
         applied via `.transform` instead of being refit. `False` or `None`
         skips alignment entirely and returns the data unchanged
@@ -449,7 +479,10 @@ def align(data, model='HyperAlign', return_model=False,
     **kwargs
         Extra keyword arguments forwarded to `model`'s constructor when
         `model` is a bare registry name/class (e.g. `n_iter=` for
-        `'HyperAlign'`, `features=` for the SRM family). Keyword arguments
+        `'HyperAlign'`, `features=` for the SRM family), or merged into a
+        dict spec's `'kwargs'` (winning on a conflict); an
+        already-constructed instance cannot take them, so they are ignored
+        with a `UserWarning`. Keyword arguments
         the model does not accept raise a `TypeError` naming them (they
         used to be silently ignored, so a typo'd parameter went unnoticed).
         `align=` is also accepted here as a DEPRECATED alias for `model=`

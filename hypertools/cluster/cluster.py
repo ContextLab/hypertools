@@ -15,6 +15,7 @@ import numpy as np
 
 from .common import Clusterer, CLUSTERERS, MIXTURES
 from ..core.model import external_stacklevel
+from ..core.shared import check_spec_keys
 from ..tools.format_data import format_data as formatter
 
 # backward-compatible aliases: `hypertools.cluster.cluster.models` and
@@ -24,45 +25,23 @@ from ..tools.format_data import format_data as formatter
 models = CLUSTERERS
 mixture_models = MIXTURES
 
-#: The keys a cluster dict spec may carry at its top level: the canonical
-#: 'model'/'args'/'kwargs', the legacy 'params', and the one documented
-#: top-level convenience, 'n_clusters'.
-_CLUSTER_SPEC_KEYS = ('model', 'args', 'kwargs', 'params', 'n_clusters')
+#: The one documented top-level convenience a cluster dict spec accepts
+#: besides the canonical 'model'/'args'/'kwargs' and the legacy 'params'.
+_CLUSTER_SPEC_SHORTCUTS = ('n_clusters',)
 
 
 def _check_cluster_spec_keys(spec):
     """Raise `ValueError` if a cluster dict spec carries top-level keys
-    other than `_CLUSTER_SPEC_KEYS`.
+    other than `core.shared.SPEC_KEYS` and the 'n_clusters' shortcut.
 
-    Model parameters belong under 'kwargs' -- the dict-spec convention every
-    hypertools dispatcher documents. A flat spec such as `{'model':
-    'KMeans', 'n_clusters': 4, 'random_state': 0}` used to drop
-    `random_state` without a word, so its clusters changed from call to
-    call (1.1 review). The message names the offending keys and spells out
+    A flat spec such as `{'model': 'KMeans', 'n_clusters': 4,
+    'random_state': 0}` used to drop `random_state` without a word, so its
+    clusters changed from call to call (1.1 review). The shared
+    `core.shared.check_spec_keys` names the offending keys and spells out
     the corrected spec, with those keys merged into 'kwargs'.
     """
-    extra = sorted((k for k in spec if k not in _CLUSTER_SPEC_KEYS), key=str)
-    if not extra:
-        return
-    model = spec.get('model')
-    model_repr = (repr(model) if isinstance(model, str)
-                  else getattr(model, '__name__', type(model).__name__))
-    # the spec's own parameters, from whichever key the resolver reads
-    # them from ('params' only counts when there is no 'args'/'kwargs')
-    own = (spec.get('kwargs') if ('args' in spec or 'kwargs' in spec)
-           else spec.get('params'))
-    suggested_kwargs = {**dict(own or {}), **{k: spec[k] for k in extra}}
-    suggestion = f"{{'model': {model_repr}"
-    if 'n_clusters' in spec:
-        suggestion += f", 'n_clusters': {spec['n_clusters']!r}"
-    if spec.get('args'):
-        suggestion += f", 'args': {list(spec['args'])!r}"
-    suggestion += f", 'kwargs': {suggested_kwargs!r}}}"
-    raise ValueError(
-        f"the cluster spec has unrecognized top-level key(s) {extra!r}. "
-        "Model parameters go under 'kwargs' (only 'model', 'args', "
-        "'kwargs' and the 'n_clusters' shortcut are accepted at the top "
-        f"level), e.g. cluster={suggestion}.")
+    check_spec_keys(spec, 'cluster', shortcuts=_CLUSTER_SPEC_SHORTCUTS,
+                    param='cluster')
 
 
 def _resolve_cluster_spec(cluster, n_clusters, random_state=None,

@@ -219,6 +219,106 @@ class RobustDict(dict):
         return RobustDict(self, __default_value__=self.default_value)
 
 
+#: The keys every dict model spec may carry at its top level: the canonical
+#: 'model'/'args'/'kwargs' and the legacy 'params'. A dispatcher may accept
+#: a documented shortcut on top of these (cluster's 'n_clusters').
+SPEC_KEYS = ('model', 'args', 'kwargs', 'params')
+
+
+def check_spec_keys(spec, stage, shortcuts=(), param=None):
+    """Raise `ValueError` if the dict model spec `spec` carries a top-level
+    key other than `SPEC_KEYS` and the dispatcher's documented `shortcuts`.
+
+    Model parameters belong under 'kwargs' -- the dict-spec convention
+    every hypertools dispatcher documents. A flat spec such as
+    ``{'model': 'PCA', 'whiten': True}`` used to lose ``whiten`` without a
+    word, so the model silently ran with its defaults (1.1 review; first
+    fixed for `hyp.cluster`, where ``{'model': 'KMeans', 'n_clusters': 4,
+    'random_state': 0}`` changed its clusters from call to call). The
+    message names the offending keys and spells out the corrected spec,
+    with those keys merged into 'kwargs'.
+
+    `hyp.predict` does not use this check: a predict spec carries flat
+    ``t``/``horizon``/``block`` keys by design.
+
+    A dict with no 'model' key is left to the dispatcher's own "must
+    include a 'model' key" error, which is the right diagnosis for a
+    misspelled 'model' (``{'mode': 'PCA'}``).
+
+    Parameters
+    ----------
+    spec : object
+        The spec to check; anything but a dict with a 'model' key passes
+        unchanged.
+    stage : str
+        What the spec configures, for the message (e.g. ``'reduce'``,
+        ``'Pipeline step'``).
+    shortcuts : tuple of str
+        Documented top-level keys the dispatcher accepts besides
+        `SPEC_KEYS` (e.g. ``('n_clusters',)`` for `hyp.cluster`).
+    param : str or None
+        The keyword the spec is passed as (e.g. ``'cluster'``), so the
+        suggestion reads ``cluster={...}``; None suggests the bare dict.
+    """
+    if not isinstance(spec, dict) or 'model' not in spec:
+        return
+    allowed = SPEC_KEYS + tuple(shortcuts)
+    extra = sorted((k for k in spec if k not in allowed), key=str)
+    if not extra:
+        return
+    model = spec.get('model')
+    model_repr = (repr(model) if isinstance(model, str)
+                  else getattr(model, '__name__', type(model).__name__))
+    # the spec's own parameters, from whichever key the resolver reads
+    # them from ('params' only counts when there is no 'args'/'kwargs')
+    own = (spec.get('kwargs') if ('args' in spec or 'kwargs' in spec)
+           else spec.get('params'))
+    try:
+        own = dict(own or {})
+    except (TypeError, ValueError):
+        own = {}
+    suggested_kwargs = {**own, **{k: spec[k] for k in extra}}
+    suggestion = f"{{'model': {model_repr}"
+    for key in shortcuts:
+        if key in spec:
+            suggestion += f", {key!r}: {spec[key]!r}"
+    if spec.get('args'):
+        suggestion += f", 'args': {list(spec['args'])!r}"
+    suggestion += f", 'kwargs': {suggested_kwargs!r}}}"
+    if shortcuts:
+        accepted = ("'model', 'args', 'kwargs' and the "
+                    + " and ".join(repr(k) for k in shortcuts)
+                    + (" shortcuts" if len(shortcuts) > 1 else " shortcut"))
+    else:
+        accepted = "'model', 'args' and 'kwargs'"
+    example = f"{param}={suggestion}" if param else suggestion
+    raise ValueError(
+        f"the {stage} spec has unrecognized top-level key(s) {extra!r}. "
+        f"Model parameters go under 'kwargs' (only {accepted} are accepted "
+        f"at the top level), e.g. {example}.")
+
+
+def merge_spec_kwargs(spec, kwargs):
+    """Return dict spec `spec` with a dispatcher's outer ``**kwargs`` merged
+    into its parameters (the outer keyword arguments win on a conflict,
+    as in `hyp.impute`/`hyp.predict`).
+
+    `hyp.manip(x, model={'model': 'Smooth'}, kernel_width=25)` used to drop
+    `kernel_width` without a word, because only a bare name/class received
+    the outer keyword arguments (1.1 review). The parameters are merged
+    into whichever key the spec already uses ('kwargs', or the legacy
+    'params', whose `DeprecationWarning` is kept); `spec` itself is never
+    mutated. Anything but a dict with a 'model' key, or empty `kwargs`,
+    comes back unchanged.
+    """
+    if not kwargs or not isinstance(spec, dict) or 'model' not in spec:
+        return spec
+    if 'args' in spec or 'kwargs' in spec or 'params' not in spec:
+        return {**spec, 'kwargs': {**dict(spec.get('kwargs') or {}),
+                                   **kwargs}}
+    return {**spec, 'params': {**dict(spec['params'] or {}), **kwargs}}
+
+
 def unpack_model(m, valid=None, parent_class=None):
     """Resolve a model specification without eval.
 
