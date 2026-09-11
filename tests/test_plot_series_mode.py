@@ -87,12 +87,14 @@ def test_a_datetime_index_gives_real_dates_on_the_axis():
     x = np.asarray(line.get_xdata())
     assert mdates.num2date(x[0]).date() == index[0].date()
     assert mdates.num2date(x[-1]).date() == index[-1].date()
-    # a real date axis: matplotlib's own date locator/formatter pair, so
-    # the ticks read '2024-01-05' rather than '19727.0'
+    # a real date axis: matplotlib's own date locator with its CONCISE
+    # formatter, so the ticks read dates rather than '19727.0' -- and do
+    # not collide, as the default formatter's full 'YYYY-MM-DD' labels did
+    # (1.1 release review, F13)
     assert isinstance(fig.axes[0].xaxis.get_major_locator(),
                       mdates.AutoDateLocator)
     assert isinstance(fig.axes[0].xaxis.get_major_formatter(),
-                      mdates.AutoDateFormatter)
+                      mdates.ConciseDateFormatter)
     plt.close(fig)
 
 
@@ -202,9 +204,12 @@ def test_plotly_datetime_series_uses_a_real_date_axis():
     fig = hyp.plot(df, reduce=None, ndims=1, backend='plotly',
                    antialias=False, show=False)
     assert fig.layout.xaxis.type == 'date'
-    x = np.asarray(fig.data[0].x, dtype=float)
-    assert pd.to_datetime(x[0], unit='ms') == index[0]
-    assert pd.to_datetime(x[-1], unit='ms') == index[-1]
+    # naive date STRINGS, not epoch-ms numbers: plotly.js draws a numeric
+    # date in the viewer's local time zone (1.1 release review)
+    x = fig.data[0].x
+    assert all(isinstance(v, str) for v in x)
+    assert pd.to_datetime(x[0]) == index[0]
+    assert pd.to_datetime(x[-1]) == index[-1]
 
 
 def test_a_timezone_aware_index_reaches_both_backends():
@@ -225,8 +230,10 @@ def test_a_timezone_aware_index_reaches_both_backends():
 
     pfig = hyp.plot(df, reduce=None, ndims=1, backend='plotly',
                     antialias=False, show=False)
-    px = np.asarray(pfig.data[0].x, dtype=float)
-    assert pd.to_datetime(px[0], unit='ms', utc=True) == \
+    # drawn at its UTC instant, as a naive date string (the matplotlib
+    # date numbers above are UTC too)
+    px = pfig.data[0].x
+    assert pd.to_datetime(px[0]).tz_localize('UTC') == \
         index[0].tz_convert('UTC')
 
 

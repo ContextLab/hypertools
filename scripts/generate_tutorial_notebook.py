@@ -36,9 +36,10 @@ TEMPLATE = os.path.join(TUTORIALS, 'cluster.ipynb')
 DRAW_LAST = '_ = anim.draw_frame(anim.n_frames - 1)   # the fully revealed frame\n'
 
 #: notebook stem -> (example module, mp4 dpi, [(heading, prose, first symbol)])
-#: The dpi is the docs artefact's resolution: 70 for the two long clips
-#: (market 1200 frames, weather 2400 frames -- at 100 dpi they were 15 and
-#: 27 MB, too heavy for an autoplaying tutorial page), 100 for the rest.
+#: The dpi is the docs artefact's resolution, 100 for every clip. (The two
+#: long clips -- market 1200 frames, weather 2400 -- were once saved at 70,
+#: when a fixed bitrate made them 15 and 27 MB at 100 dpi; the encoder is
+#: CRF-bound now, so dpi no longer trades against size.)
 #: The first section always starts right after the docstring; its symbol is
 #: therefore ignored and given as None. `__main__` names the guard block.
 SPECS = {
@@ -49,14 +50,18 @@ SPECS = {
          "a sector's common growth does not flatten its path onto one line, "
          'and the colormap that tints the date red or green.', None),
         ('## 2. Prices and share counts, with a synthetic fallback',
-         'Yahoo Finance supplies adjusted AND unadjusted daily closes (an '
-         'explicit date window: `range=max` silently degrades to quarterly '
-         "bars); the SEC's XBRL API supplies reported shares outstanding, "
-         'which are not split-adjusted, so market cap multiplies them by the '
-         'unadjusted close. Both are cached on disk. These are the only '
-         'functions that touch the network; `HYPERTOOLS_OFFLINE` makes them '
-         'refuse rather than degrade, which is how the test-suite proves the '
-         'import path fetches nothing.', 'Market'),
+         'Yahoo Finance supplies daily closes and split events (an explicit '
+         'date window: `range=max` silently degrades to quarterly bars). '
+         'Both of its closes are split-adjusted -- `adjclose` also '
+         "reinvests dividends -- while the SEC's XBRL API reports shares "
+         'outstanding as they stood on the day, so every count is multiplied '
+         'by the splits that came after it before it meets the price (and '
+         'the odd filing slip, a count 100x off its median, is dropped). '
+         'Both sources are cached on disk. These are the only functions '
+         'that touch the network; `HYPERTOOLS_OFFLINE` (an environment '
+         'variable this notebook reads, not a hypertools setting) makes '
+         'them refuse rather than fetch, which is how the test-suite proves '
+         'the import path fetches nothing.', 'Market'),
         ('## 3. Growth curves per sector, market-cap weights, the basket\'s '
          'return',
          'What is plotted is each stock\'s cumulative log return since the '
@@ -68,7 +73,7 @@ SPECS = {
          'assemble'),
         ('## 4. Reduce per sector, hyperalign, draw seven paths',
          'Three library calls: `hyp.reduce` per sector (its own stocks, its '
-         'own space), `hyp.align(..., align=\'HyperAlign\')` into one shared '
+         'own space), `hyp.align(..., model=\'HyperAlign\')` into one shared '
          'space, and `hyp.plot` on the six aligned paths plus their mean, '
          'coloured through the mixture hue. The `on_frame` hook only sets '
          'the title: the date under the head, tinted by the basket\'s '
@@ -104,8 +109,10 @@ SPECS = {
          'Each description is cut into overlapping ten-word windows. The '
          'canvas is downloaded once (the only network access here) and '
          '`image_palette` picks its most salient legible colour; offline, '
-         'the fallback colour and a flat swatch stand in. `fixture_data` '
-         'takes every colour from the one committed thumbnail and embeds '
+         'the fallback colour and a flat swatch stand in. `fixture_data` is '
+         "the test-suite's path: it takes every colour from a thumbnail "
+         'committed next to the example script (`examples/data/`, not '
+         'shipped with this notebook, so it is not called here) and embeds '
          'with TF-IDF, so no test fetches a canvas or a model.', 'Paintings'),
         ('## 3. One call, plus the annotated column',
          'Raw text in, five clouds out, spun by `animate=\'spin\'`. '
@@ -123,11 +130,14 @@ SPECS = {
          'carries the windows, the speakers, the spoken lines (for the '
          'titles) and the vectorizer. `fixture_data` embeds with TF-IDF so '
          'no test downloads a model.', 'Conversation'),
-        ('## 3. The recency fade and the title hooks',
-         '`recency_fade` fades earlier turns on the public `on_frame` hook; '
-         '`speaker_title` tints the title with the current speaker\'s colour '
-         'on every frame; `make_room_for_title` grows the figure so a '
-         'two-line title clears the box.', 'turn_alpha'),
+        ('## 3. The recency fade, on the `on_frame` hook',
+         '`turn_alpha` is the fade\'s formula and `recency_fade` assigns it '
+         'to every head and trail on the public `on_frame` hook. It is the '
+         'hand-written form of `dataset_fade={\'floor\': FLOOR, '
+         '\'decay\': DECAY}`, which gives exactly these alphas in one '
+         'keyword. The title needs no hook: `title_color=` tints each '
+         'turn\'s title with its speaker\'s colour, and the library reserves '
+         'the wrapped title\'s margin.', 'turn_alpha'),
         ('## 4. One call',
          'Raw dialogue in, one disjoint trajectory per turn, coloured by '
          'speaker, revealed one turn at a time over thirty seconds and two '

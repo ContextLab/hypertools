@@ -206,6 +206,49 @@ def test_all_constant_datasets_raise_instead_of_nan(metric):
 
 
 @pytest.mark.parametrize('metric', ['dispersion', 'isc'])
+def test_datasets_each_constant_at_their_own_value_raise(metric):
+    """1.1 release review (2026-09-11): 'dispersion' raised only when EVERY
+    observation of EVERY dataset was the same point. Datasets that are each
+    constant at a DIFFERENT value have a cloud scale, so the score came out
+    as exactly 1.0 -- the same number whatever the alignment -- while 'isc'
+    raised. The docstring promises a raise for "every dataset constant"."""
+    const = [np.zeros((10, 3)), np.ones((10, 3)), np.full((10, 3), 5.0)]
+    with pytest.raises(ValueError, match='constant') as info:
+        alignment_score(const, metric=metric)
+    if metric == 'dispersion':
+        assert 'dataset 0' in str(info.value)
+        assert 'dataset 2' in str(info.value)
+    rng = np.random.default_rng(3)
+    fine = [rng.normal(size=(10, 3)) for _ in range(3)]
+    with pytest.raises(ValueError, match='constant'):
+        alignment_score(fine, aligned=const, metric=metric)
+
+
+def test_dispersion_of_single_observation_datasets_raises_like_isc():
+    """One observation per dataset is the degenerate constant case: the
+    per-observation centroid IS the cloud's mean, so 'dispersion' is 1.0
+    for any input ('isc' already raised: it needs two observations)."""
+    rng = np.random.default_rng(4)
+    single_rows = [rng.normal(size=(1, 3)) for _ in range(3)]
+    for metric in ('dispersion', 'isc'):
+        with pytest.raises(ValueError):
+            alignment_score(single_rows, metric=metric)
+
+
+def test_one_constant_dataset_among_varying_ones_still_scores():
+    """Only the all-constant case is degenerate: a constant dataset beside
+    varying ones has a well-defined dispersion (and 'isc' correlates the
+    varying pairs)."""
+    rng = np.random.default_rng(5)
+    data = [rng.normal(size=(10, 3)), rng.normal(size=(10, 3)),
+            np.ones((10, 3))]
+    for metric in ('dispersion', 'isc'):
+        score = alignment_score(data, metric=metric)['before']
+        assert np.isfinite(score)
+    assert alignment_score(data, metric='dispersion')['before'] != 1.0
+
+
+@pytest.mark.parametrize('metric', ['dispersion', 'isc'])
 def test_nan_input_raises_instead_of_nan_score(metric):
     rng = np.random.default_rng(0)
     x, y = rng.normal(size=(10, 3)), rng.normal(size=(10, 3))

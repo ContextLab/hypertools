@@ -59,7 +59,8 @@ from .density import (
 from .trails import (RunWindow, anim_window_bounds, broadcast_trail_flag,
                      dataset_window_bounds, head_window_frames)
 from .._shared.helpers import (UNIT_FRAME_LIMIT, UNIT_FRAME_SCALE,
-                               antialias_line, has_line_component)
+                               antialias_line, has_line_component,
+                               row_index_x)
 from . import morph as _morph
 
 
@@ -485,10 +486,58 @@ def _data_axis_layout(label, limit=None, date=False):
     if label is not None:
         layout['title'] = dict(text=label)
     if limit is not None:
-        layout['range'] = [limit[0], limit[1]]
+        layout['range'] = ([str(v) for v in _epoch_ms_to_iso(limit)]
+                           if date else [limit[0], limit[1]])
     if date:
         layout['type'] = 'date'
     return layout
+
+
+def _epoch_ms_to_iso(values):
+    """Epoch-millisecond x values as NAIVE ISO-8601 date strings.
+
+    `plot()` carries a date x axis as epoch milliseconds internally (every
+    stage -- antialiasing, bounds, forecasts -- needs numbers), but plotly.js
+    renders a NUMERIC date in the viewer's LOCAL time zone: a series that
+    starts 2026-01-01 00:00 drew at 19:00 Dec 31 in New York (1.1 release
+    review, measured with kaleido under TZ=UTC vs TZ=America/New_York). A
+    naive date STRING is rendered as written, in every time zone -- and the
+    hover label then shows the true date. Non-finite or non-numeric
+    entries (a legend proxy's ``None``) become ``None``.
+    """
+    arr = np.asarray(values)
+    if arr.dtype.kind in 'iuf':
+        num = arr.astype(float).ravel()
+    else:
+        num = np.array([float(v) if isinstance(v, (int, float, np.integer,
+                                                   np.floating))
+                        and not isinstance(v, bool) else np.nan
+                        for v in arr.ravel()], dtype=float)
+    out = np.full(num.shape, None, dtype=object)
+    ok = np.isfinite(num)
+    if ok.any():
+        out[ok] = np.datetime_as_string(
+            np.round(num[ok]).astype('int64').astype('datetime64[ms]'),
+            unit='ms')
+    return out.reshape(arr.shape) if arr.ndim else out
+
+
+def _dates_as_iso(fig):
+    """Rewrite every numeric x of `fig` -- its traces, its animation
+    frames' traces and any x range -- from epoch milliseconds to naive ISO
+    strings (`_epoch_ms_to_iso`), for a date x axis."""
+    def _fix(trace):
+        x = getattr(trace, 'x', None)
+        if x is not None and len(x):
+            trace.x = _epoch_ms_to_iso(x)
+    for trace in fig.data:
+        _fix(trace)
+    for frame in fig.frames:
+        for trace in frame.data:
+            _fix(trace)
+        _xaxis = getattr(frame.layout, 'xaxis', None) if frame.layout else None
+        if _xaxis is not None and _xaxis.range is not None:
+            _xaxis.range = [str(v) for v in _epoch_ms_to_iso(_xaxis.range)]
 
 
 def _build_aa_curves(data, fmt, antialias, morph_tags=None):
@@ -1031,7 +1080,7 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 truths=None, forecast_labels=None,
                 forecast_datasets=None, datasets_drawn=None,
                 legend_explicit=False, raw_data=None, frame_kwargs=None,
-                trace_names=None):
+                trace_names=None, row_counts=None):
     """Render grouped datasets with plotly, mirroring _draw's contract and
     the matplotlib renderer's appearance.
 
@@ -1059,7 +1108,17 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     x_date : bool
         The x values are epoch MILLISECONDS (what `plot()`'s ndims=1 series
         mode emits for a `DatetimeIndex` under the plotly backend); marks
-        the x axis `type='date'` so plotly renders real dates.
+        the x axis `type='date'` so plotly renders real dates, and hands
+        every trace x (frames included) and the x range to plotly as naive
+        date strings (`_dates_as_iso`), so the figure draws the same dates
+        in every viewer's time zone.
+    row_counts : list of int or None
+        The ORIGINAL row count behind each trace of `data` (`plot()`
+        antialiases static lines upstream, so a trace can hold more drawn
+        vertices than rows). A 1-D trace puts the row index on x, so its
+        vertices -- and the forecast/truth that continue it -- are placed
+        in ROW units (`row_index_x`), matching matplotlib's plot1D. `None`
+        treats every vertex as a row (the pre-1.1 x).
     truths : list of numpy.ndarray or None
         GH #285. One seam-prepended ACTUAL continuation per drawn trace
         (`plot`'s `truth=`), already in display space. Drawn as one solid,
@@ -1556,6 +1615,13 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     # (`_aa_window_sizes`); None where the marker size is a plain scalar
     obs_marker_sizes = [None] * len(data)
 
+    def _rows_of(i, arr):
+        """The ORIGINAL row count behind drawn trace `i` (see
+        `row_counts`); `arr` is its drawn array."""
+        if row_counts is not None and i < len(row_counts):
+            return int(row_counts[i])
+        return np.atleast_2d(np.asarray(arr)).shape[0]
+
     # density= (GH #108/#191), 2-D case: subtle KDE density layers must
     # render BELOW everything else (including surface= fills). Plotly's 2D
     # layering follows trace order in `fig.data` (no zorder), so these are
@@ -1759,8 +1825,11 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 x=draw_arr[:, 0], y=draw_arr[:, 1], z=draw_arr[:, 2],
                 **common))
             continue
+        # 1-D: x in ROW units (`row_counts`, `row_index_x`), matching
+        # matplotlib's plot1D -- not the densified vertex index
         xs = (draw_arr[:, 0] if ndims == 2
-              else _aa_x(aa_step, 0, draw_arr.shape[0]))
+              else _aa_x(aa_step, 0, draw_arr.shape[0]) if aa_step != 1
+              else row_index_x(_rows_of(i, arr), draw_arr.shape[0]))
         ys = draw_arr[:, 1] if ndims == 2 else draw_arr[:, 0]
         if trace_point_colors is not None and 'lines' in mode:
             # 2D Scatter has no per-point line colors; draw short segment
@@ -1897,8 +1966,7 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 traces.append(go.Scatter(
                     x=fc_draw[:, 0], y=fc_draw[:, 1], **fc_common))
             else:
-                arr2 = np.atleast_2d(np.asarray(arr, dtype=np.float64))
-                start = arr2.shape[0] - 1
+                start = _rows_of(src, arr) - 1
                 traces.append(go.Scatter(
                     x=_aa_x(fc_step, start, fc_draw.shape[0]),
                     y=fc_draw[:, 0], **fc_common))
@@ -2044,9 +2112,16 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         # composing into a figure/cell that already lists a truth entry:
         # one entry covers every call's truth (Codex round 4)
         _truth_already_listed = any(
-            (tr.meta or {}).get('hyp_forecast_role') == 'truth'
+            ((tr.meta or {}).get('hyp_forecast_role') == 'truth'
+             or (tr.meta or {}).get('hyp_legend_entry') == 'truth')
             and tr.showlegend
             for tr in _compose_scope_traces(into))
+        # the one 'truth' key stands for EVERY dataset's truth: when they
+        # span several colours it is a neutral proxy (added with the
+        # forecast keys below), not the first truth trace, which wore
+        # dataset 0's colour (1.1 release review, F10; matplotlib parity)
+        _truth_key_at = None
+        _truth_rgbs = set()
         for i, tr in enumerate(truths):
             src = (forecast_owner[i]
                    if forecast_owner is not None and i < len(forecast_owner)
@@ -2087,6 +2162,9 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 legendrank=1001,
                 meta=dict(hyp_forecast_role='truth', hyp_dataset=i,
                           hyp_forecast_age=0, hyp_forecast_alpha=1.0))
+            _truth_rgbs.add(_rgb_triplet(tr_line.get('color')))
+            if tr_common['showlegend']:
+                _truth_key_at = (len(traces), tr_line)
             if ndims >= 3:
                 traces.append(go.Scatter3d(x=tr_draw[:, 0], y=tr_draw[:, 1],
                                            z=tr_draw[:, 2], **tr_common))
@@ -2094,11 +2172,14 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 traces.append(go.Scatter(x=tr_draw[:, 0], y=tr_draw[:, 1],
                                          **tr_common))
             else:
-                arr2 = np.atleast_2d(np.asarray(data[src],
-                                                dtype=np.float64))
                 traces.append(go.Scatter(
-                    x=_aa_x(tr_step, arr2.shape[0] - 1, tr_draw.shape[0]),
+                    x=_aa_x(tr_step, _rows_of(src, data[src]) - 1,
+                            tr_draw.shape[0]),
                     y=tr_draw[:, 0], **tr_common))
+        if _truth_key_at is not None and len(_truth_rgbs) > 1:
+            traces[_truth_key_at[0]].showlegend = False
+        else:
+            _truth_key_at = None
 
     # low-opacity trail traces for chemtrails (past) / precog (future) /
     # bullettime (both) on window animations, mirroring the matplotlib
@@ -2578,6 +2659,22 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                      meta.get('hyp_forecast_alpha'), tr.mode or 'lines',
                      marker))
         fig.add_traces(_forecast_legend_traces(forecast_legend_specs, ndims))
+    if truths is not None and _truth_key_at is not None:
+        # the neutral 'truth' key (see the truth block): data-free, after
+        # the forecast keys, so the drawn traces' indices are untouched
+        from .forecast import FORECAST_LEGEND_COLOR
+        from .plot import TRUTH_STYLE
+        _gray = _to_plotly_color(FORECAST_LEGEND_COLOR, 1.0)
+        _key = dict(mode='lines+markers', name='truth', showlegend=True,
+                    hoverinfo='skip', legendrank=1001,
+                    line=dict(_truth_key_at[1], color=_gray),
+                    marker=dict(color=_gray, size=_marker_size_px(
+                        TRUTH_STYLE['markersize'], TRUTH_STYLE['marker'],
+                        ndims)),
+                    meta=dict(hyp_legend_entry='truth'))
+        fig.add_trace(go.Scatter3d(x=[None], y=[None], z=[None], **_key)
+                      if ndims >= 3 else go.Scatter(x=[None], y=[None],
+                                                    **_key))
 
     if labels is not None:
         point_annotations = _build_point_annotations(
@@ -2686,6 +2783,10 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 if fig.data[index].type == 'scatter3d' else None, frame=True)
     for trace in fig.data:
         _normalize_scatter3d_alpha(trace)
+    if x_date:
+        # dates as naive ISO strings, not epoch ms: plotly.js draws numeric
+        # dates in the VIEWER's local time zone (see `_epoch_ms_to_iso`)
+        _dates_as_iso(fig)
 
     if into is not None:
         if animate:

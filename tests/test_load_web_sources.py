@@ -296,3 +296,101 @@ def test_yahoo_live_australian_ticker_dates_match_the_trading_days():
                           end='2025-01-11')
     assert list(df.index.strftime('%Y-%m-%d')) == [
         '2025-01-06', '2025-01-07', '2025-01-08', '2025-01-09', '2025-01-10']
+
+
+# ------------------------------ yahoo: intraday bars keep their timestamps
+
+def _hourly_utc_stamps(first_utc, n):
+    start = int(pd.Timestamp(first_utc, tz='UTC').timestamp())
+    return [start + 3600 * i for i in range(n)]
+
+
+def test_yahoo_intraday_bars_keep_their_exchange_local_times():
+    from hypertools.io.sources import _parse_yahoo_chart
+    # seven 1-hour New York bars on one day, 13:30..19:30 UTC (09:30..15:30
+    # EDT). Before the fix every bar was normalized to midnight, so all
+    # seven shared one timestamp and hyp.predict refused the frame.
+    payload = _yahoo_payload(_hourly_utc_stamps('2025-06-02 13:30', 7),
+                             -14400)
+    payload['chart']['result'][0]['meta']['exchangeTimezoneName'] = \
+        'America/New_York'
+    df = _parse_yahoo_chart(payload, ticker='AAPL', interval='1h')
+    assert not df.index.duplicated().any()
+    assert df.index.is_monotonic_increasing
+    assert df.index.name == 'date'
+    assert str(df.index.tz) == 'America/New_York'
+    assert list(df.index.strftime('%Y-%m-%d %H:%M')) == [
+        f'2025-06-02 {h:02d}:30' for h in range(9, 16)]
+
+
+def test_yahoo_intraday_bars_across_a_dst_change_stay_unique_and_local():
+    from hypertools.io.sources import _parse_yahoo_chart
+    # a 24-hour instrument (ES=F is listed in America/New_York) across the
+    # 2025-11-02 fall-back: 01:00-02:00 local happens twice. The index must
+    # stay unique (tz-aware instants) and show the correct wall time on
+    # both sides of the change -- a single fixed gmtoffset would shift the
+    # pre-change bars by an hour.
+    stamps = _hourly_utc_stamps('2025-11-01 12:00', 48)
+    payload = _yahoo_payload(stamps, -18000)     # the post-change offset
+    payload['chart']['result'][0]['meta']['exchangeTimezoneName'] = \
+        'America/New_York'
+    df = _parse_yahoo_chart(payload, ticker='ES=F', interval='1h')
+    assert len(df) == 48
+    assert not df.index.duplicated().any()
+    assert df.index.is_monotonic_increasing
+    local = df.index.strftime('%Y-%m-%d %H:%M')
+    assert local[0] == '2025-11-01 08:00'                 # 12:00 UTC, EDT
+    assert local[-1] == '2025-11-03 06:00'                # 11:00 UTC, EST
+    assert list(local).count('2025-11-02 01:00') == 2     # the repeated hour
+
+
+def test_yahoo_intraday_with_an_unknown_timezone_name_uses_gmtoffset():
+    from hypertools.io.sources import _parse_yahoo_chart
+    payload = _yahoo_payload(_hourly_utc_stamps('2025-06-02 13:30', 3),
+                             -14400)              # tz name is 'x' here
+    df = _parse_yahoo_chart(payload, ticker='X', interval='30m')
+    assert list(df.index.strftime('%H:%M')) == ['09:30', '10:30', '11:30']
+    assert df.index.tz is not None
+
+
+def test_yahoo_daily_bars_stay_naive_trading_days():
+    from hypertools.io.sources import _parse_yahoo_chart
+    # the daily/weekly/monthly path is unchanged: naive exchange-local dates
+    for interval in ('1d', '1wk', '1mo', '3mo', '5d'):
+        payload = _yahoo_payload(_utc_stamps([6, 7], '14:30'), -18000)
+        df = _parse_yahoo_chart(payload, ticker='X', interval=interval)
+        assert df.index.tz is None, interval
+        assert list(df.index.strftime('%Y-%m-%d %H:%M')) == [
+            '2025-01-06 00:00', '2025-01-07 00:00'], interval
+
+
+def test_yahoo_live_hourly_bars_are_unique_and_forecastable():
+    # the reviewer's repro: hyp.load('yahoo:AAPL', interval='1h') gave 51
+    # bars with 43 duplicated midnight stamps and hyp.predict refused them
+    import time
+    with skip_on_transient_network('loading yahoo:AAPL hourly bars'):
+        df = hyp.load('yahoo:AAPL', interval='1h',
+                      start=time.time() - 10 * 86400)
+    assert len(df) > 10
+    assert not df.index.duplicated().any()
+    assert df.index.is_monotonic_increasing
+    assert str(df.index.tz) == 'America/New_York'
+    assert '09:30' in set(df.index.strftime('%H:%M'))  # the session open
+    # the overnight/weekend gaps make the grid irregular; predict says so
+    # (a real warning about real data, not a failure)
+    with pytest.warns(UserWarning, match='Irregular observation times'):
+        forecast = hyp.predict(df[['close']], t=2)
+    assert len(forecast) == 2
+    assert (forecast.index > df.index[-1]).all()
+
+
+def test_yahoo_live_24h_future_across_the_fall_back_hour_is_unique():
+    # ES=F trades overnight and is listed in America/New_York, so its hourly
+    # bars cross the 2025-11-02 01:00 repeated hour (inside Yahoo's 730-day
+    # intraday window until late 2027)
+    with skip_on_transient_network('loading yahoo:ES=F across DST'):
+        df = yahoo_source('yahoo:ES=F', start='2025-10-31',
+                          end='2025-11-04', interval='1h')
+    assert len(df) > 24
+    assert not df.index.duplicated().any()
+    assert df.index.is_monotonic_increasing

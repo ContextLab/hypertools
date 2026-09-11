@@ -128,6 +128,27 @@ def test_remote_numeric_npz_needs_no_trust(http_dir):
     assert np.asarray(arr).shape == (3, 2)
 
 
+@pytest.mark.parametrize('name', ['objs', 'objs.bin'])
+def test_remote_object_npz_without_a_npz_extension_reports_the_trust_error(
+        http_dir, name):
+    """An .npz holding an object array is sniffed by its zip magic ('PK')
+    when the URL has no (or an unknown) extension. Its HypertoolsTrustError
+    was swallowed by the parquet fallback, so the user saw "ArrowInvalid:
+    ... Parquet magic bytes not found" instead of the trust=True remedy
+    (nothing was unpickled either way). Review 2026-09-11."""
+    tmp_path, base = http_dir
+    with open(tmp_path / 'objs.npz', 'wb') as f:
+        np.savez(f, x=np.array([{'a': 1}, [2, 3]], dtype=object))
+    (tmp_path / name).write_bytes((tmp_path / 'objs.npz').read_bytes())
+    with pytest.raises(HypertoolsTrustError, match='trust=True') as info:
+        hyp.load(f'{base}/{name}')
+    assert 'Parquet' not in str(info.value)
+    # the remedy it names works
+    out = hyp.load(f'{base}/{name}', trust=True)
+    arr = out['x'] if hasattr(out, 'keys') else out
+    assert np.asarray(arr, dtype=object).shape == (2,)
+
+
 def test_builtin_dataset_by_name_needs_no_trust():
     # built-in datasets load by NAME through the integrity-checked cache
     # path and never require trust= (they are not "remote user pickles")

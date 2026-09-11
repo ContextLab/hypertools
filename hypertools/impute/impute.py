@@ -33,6 +33,7 @@ from .common import Imputer
 from .ppca import PPCA
 from .sklearn_imputers import SimpleImputer, KNNImputer, IterativeImputer
 from .kalman import Kalman
+from ..core.model import external_stacklevel
 from ..core.shared import supported_names, unpack_model
 from ..predict.backtest import spec_name
 
@@ -225,7 +226,8 @@ def _wrangled_impute(data, model='PPCA', return_model=False, **kwargs):
         warnings.warn(
             'datasets do not share columns, so they cannot be imputed '
             'jointly; imputing each dataset independently instead. (Shared '
-            'columns are required to pool information across datasets.)')
+            'columns are required to pool information across datasets.)',
+            stacklevel=external_stacklevel())
         results = [_wrangled_impute(d, model=model, return_model=return_model,
                                     **kwargs) for d in data]
         if return_model:
@@ -256,7 +258,8 @@ def _wrangled_impute(data, model='PPCA', return_model=False, **kwargs):
                 'their "imputed" values are not informed by any data '
                 "(Kalman and PPCA fill such columns with 0.0). Drop "
                 'these columns, or treat their filled values as '
-                'placeholders rather than data.', UserWarning)
+                'placeholders rather than data.', UserWarning,
+                stacklevel=external_stacklevel())
 
     if isinstance(model, dict) and 'kwargs' not in model and 'args' not in model:
         # {'model': ..., 'params': {...}} form: unpack before handing the
@@ -273,7 +276,7 @@ def _wrangled_impute(data, model='PPCA', return_model=False, **kwargs):
             warnings.warn(
                 "{'model': ..., 'params': {...}} is deprecated; use "
                 "{'model': ..., 'args': [...], 'kwargs': {...}} instead",
-                DeprecationWarning, stacklevel=2)
+                DeprecationWarning, stacklevel=external_stacklevel())
         kwargs = {**dict(model.get('params', {})), **kwargs}
         model = model['model']
     elif isinstance(model, dict) and 'model' not in model:
@@ -316,7 +319,7 @@ def _wrangled_impute(data, model='PPCA', return_model=False, **kwargs):
             f'ignoring keyword argument(s) {sorted(kwargs)}: model= is '
             'already a constructed instance, so constructor parameters '
             'cannot be applied. Pass the class (or a name/dict spec) to '
-            'set parameters.')
+            'set parameters.', stacklevel=external_stacklevel())
 
     if isinstance(resolved, Imputer) and resolved.is_fitted:
         result = resolved.transform(data)

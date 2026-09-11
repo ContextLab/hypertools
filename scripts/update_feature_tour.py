@@ -117,6 +117,23 @@ else:
 helper = next(c for c in nb["cells"] if "def run_case(" in text(c))
 set_source(helper, Path("scripts/feature_tour_support.py").read_text(encoding="utf-8"))
 
+VISUAL_FIXES = {
+    "COLOR-helpers": "The strip is the data-matrix colormap after gamma=2: continuous between anchors but visibly banded, because a random-walk matrix gives a striped palette (see matrix_palette). The three extracted image colors are checked by assertion only and are not drawn.",
+    "PANEL-models-matplotlib": "Each panel is titled with its reducer (PCA, FactorAnalysis); the subplots alias creates a dataset grid.",
+    "PANEL-models-plotly": "Each panel is titled with its reducer (PCA, FactorAnalysis); the subplots alias creates a dataset grid.",
+    "ANIM-fc-colors-matplotlib": "Each forecast takes the colour of its forecast_hue group from forecast_palette (four values, four viridis colours, no colorbar); clustered forecasts share one colour per endpoint cluster; the observed trajectories keep their own colours.",
+    "ANIM-fc-colors-plotly": "Each forecast takes the colour of its forecast_hue group from forecast_palette (four values, four viridis colours, no colorbar); clustered forecasts share one colour per endpoint cluster; the observed trajectories keep their own colours.",
+    "TEXT-plot-matplotlib": "All eight documents are plotted, but some LDA topic mixtures coincide, so fewer than eight marker positions may be distinguishable; the legend names animals and markets.",
+    "TEXT-plot-plotly": "All eight documents are plotted, but some LDA topic mixtures coincide, so fewer than eight marker positions may be distinguishable; the legend names animals and markets.",
+    "TEXT-transformer": "The eight embedded documents render as points; animal and market documents separate. Compare with the topic model above.",
+    "ANIM-clock": "Each title runs from 0% to 100%; parallel reveals cumulatively, window shows only a sliding 0.5 s segment, and spin rotates the complete path.",
+    "PLOT-hierarchy-metadata": "The displayed trace keys list the two leaves and the derived mean in draw order; all share the single top-level group's colour, so left and right are identified by the keys rather than by colour.",
+}
+for _backend in ("matplotlib", "plotly"):
+    VISUAL_FIXES["COLOR-plot-" + _backend] = (
+        "The image supplies one categorical color per dataset; the matrix palette supplies a continuous but banded scale shown by the colorbar."
+    )
+
 inventory = next(
     c for c in nb["cells"] if text(c).startswith("# Explicit coverage inventory")
 )
@@ -145,6 +162,9 @@ for entry in cases:
         entry["visual"] = entry["visual"].replace(
             "separate feature lines", "one reduced signal"
         )
+    # Figure-QA adjudication 2026-09-11: Inspect text that the figures cannot meet.
+    if entry["id"] in VISUAL_FIXES:
+        entry["visual"] = VISUAL_FIXES[entry["id"]]
     if entry["id"] == "ANIM-companion":
         entry["visual"] = (
             "Both markers and the date advance together. The right curve stays fully visible; black is a trailing three-sample mean."
@@ -348,7 +368,9 @@ add(
         contexts=[]
         # draw_frame/n_frames are the matplotlib HyperAnimation API; Colab
         # would otherwise auto-select plotly.
+        # focused= makes the window a 0.5 s segment; otherwise it spans the clip.
         obj=hyp.plot(a,animate=mode,duration=2,frame_rate=6,show=False,backend='matplotlib',
+                     **({'focused':.5} if mode=='window' else {}),
                      title=lambda ctx:f"{ctx.style}: {ctx.progress:.0%}",on_frame=contexts.append)
         for frame in range(obj.n_frames):
             obj.draw_frame(frame);ctx=contexts[-1]
@@ -359,7 +381,7 @@ add(
                     if len(xyz):np.testing.assert_allclose(xyz[-1],data[end-1])
         show_result(obj)""",
     ["behavior:frame-context", "plot:title", "plot:on_frame"],
-    visual="Each title runs from 0% to 100%; parallel/window reveal and spin rotates.",
+    visual="Each title runs from 0% to 100%; parallel reveals cumulatively, window shows only a sliding 0.5 s segment, and spin rotates the complete path.",
 )
 
 add(
@@ -682,6 +704,26 @@ if "show=True" not in text(red):
 
 run_case('RED-describe', demo)""",
     )
+# Figure-QA adjudication 2026-09-11: make the figures show what the cases claim.
+for case_id, old, new in [
+    *[
+        (f"PANEL-models-{b}", "ndims=2,title='Reducer comparison')",
+         "ndims=2,title=['PCA','FactorAnalysis'])")
+        for b in ("matplotlib", "plotly")
+    ],
+    *[
+        (f"ANIM-fc-colors-{b}", "title='Continuous forecast hue'", "title='Forecast hue groups'")
+        for b in ("matplotlib", "plotly")
+    ],
+    ("ANIM-callback", "frame_rate=6,on_frame=callback,show=False)",
+     "frame_rate=6,on_frame=callback,title=' ',show=False)"),
+    ("TEXT-transformer", "view(TEXTS,'matplotlib',vectorizer='all-MiniLM-L6-v2',ndims=2,",
+     "view(TEXTS,'matplotlib',fmt='o',vectorizer='all-MiniLM-L6-v2',ndims=2,"),
+]:
+    cell = case_cell(case_id)
+    if new not in text(cell):
+        assert old in text(cell), (case_id, old)
+        set_source(cell, text(cell).replace(old, new))
 mds = case_cell("RED-MDS")
 if "inspect.signature(MDS)" not in text(mds):
     set_source(

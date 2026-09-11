@@ -17,21 +17,55 @@ detached tag checkout — the notebook migrator detects the branch via
 
 - [ ] PR #286 CI fully green (matrix, `wheel-smoke`, `docs-clean`,
       `dataset-gate`, `live-source-gate`).
-- [ ] Full suite green locally: `pytest` (5100+ passed, 0 failed — including
-      `tests/test_examples_are_native.py`, the native-usage gate, at 0 failed).
+- [ ] Full suite green locally: `pytest` (about 5,900 passed, 0 failed —
+      including `tests/test_examples_are_native.py`, the native-usage gate,
+      at 0 failed).
 - [ ] Example smoke gate: `HYPERTOOLS_EXAMPLE_SMOKE=1 pytest tests/test_examples_are_native.py`
-      executes every gallery script headless. No CI job runs it, so it is
-      a manual pre-release step.
+      runs the six launch/forecast examples (`STATED_ARTIFACT`:
+      `animate_conversation`, `animate_forecast`, `animate_market_sectors`,
+      `animate_morph_zoo`, `animate_painting_embeddings`,
+      `animate_weather_decades`) end to end with their real loaders. The
+      other gallery scripts run in the sphinx-gallery build below. No CI job
+      runs the smoke gate, so it is a manual pre-release step.
 - [ ] Local release validation, all green in the same tree: `ruff check .`,
       `cd docs && rm -rf auto_examples && MPLBACKEND=Agg ../.venv/bin/python -m sphinx -b html -W -E -a . _build/html`
       (0 warnings; delete `auto_examples/` first or stale pages of removed
-      examples fail `-W`), `pytest tests/test_packaging_artifacts.py`, and the
-      five launch examples headless (`MPLBACKEND=Agg python examples/animate_*.py`).
+      examples fail `-W`; this build executes all 51 gallery scripts),
+      `pytest tests/test_packaging_artifacts.py`, and the five launch
+      examples headless: `for f in animate_market_sectors animate_weather_decades animate_painting_embeddings animate_conversation animate_morph_zoo; do MPLBACKEND=Agg python examples/$f.py || break; done`
+      (the `examples/animate_*.py` glob matches 11 scripts, not these five).
 - [ ] Notebook hygiene: every committed tutorial was executed with
       `scripts/execute_tutorial.py` (which skips the Colab install cell so the
       venv is not overwritten by a stale remote branch — see its docstring)
       and `pip show hypertools` still reports an editable install afterwards.
       Stored outputs carry no `/Users/...` paths (`git grep -n '/Users/' -- docs/tutorials`).
+- [ ] **Candidate feature tour on Colab (before sign-off and merge).** The
+      tour is a maintainer-local review artifact, not part of the repo:
+      `notes/colab/` is gitignored, so a clean checkout does not have it.
+      Its working copy is `notes/colab/hypertools_1.1_feature_tour.ipynb` in
+      the maintainer's checkout (kept in sync by
+      `scripts/update_feature_tour.py`). Set its `REVIEW_COMMIT` to the
+      candidate commit, which must be pushed (the tour installs
+      `hypertools[...] @ git+…@<REVIEW_COMMIT>`), and upload ONE copy to
+      Colab, saved as `notes/colab/hypertools_1.1_candidate_<short-sha>.ipynb`
+      (the last one made was `hypertools_1.1_candidate_fa3e60e5.ipynb`).
+      Run it in a fresh runtime. It tests a Git candidate with comprehensive
+      extras, not a published wheel or missing-extra installation. Run it
+      locally too: `scripts/execute_tutorial.py --out-dir /tmp/tour-check
+      notes/colab/hypertools_1.1_feature_tour.ipynb`. Retain the executed
+      notebook, JSON/CSV reports, source hashes, dependency versions, decoded
+      exports and visual verdicts. Inspect early previews after Run all, then
+      exercise the shared interactive viewer and downloads. Resolve
+      failures, blocked checks, and any explicitly deferred manual checks
+      before release sign-off.
+- [ ] **Missing-extra policy.** In an isolated clean environment, check a
+      friendly error with autoinstall disabled and a real installation with
+      it enabled: `python scripts/verify_optional_install.py --output /tmp/optional-check`
+      installs the current source into a NEW temporary venv and never
+      touches the caller's interpreter. The comprehensive tour's eager
+      extras are not evidence for this behavior. Never remove packages from
+      a working research environment to manufacture the missing-extra
+      condition.
 - [ ] **conda-forge** is no longer a prerequisite: the feedstock
       (`conda-forge/hypertools-feedstock`) exists since 1.0.0 and its bot bumps
       on each PyPI release (step 7).
@@ -53,21 +87,23 @@ detached tag checkout — the notebook migrator detects the branch via
       `docs/conf.py` on each build, which emits the identical PyPI line on a
       `master`/tag build (the migrator only retargets any on-disk copy, and the
       `docs-clean` CI job release-gates the generated gallery).
-- [ ] **README images: commit SHA → `v1.1.0` tag (8 URLs).**
-      `sed -E -i '' 's#(/ContextLab/hypertools/)[^/]+(/images/)#\1v1.1.0\2#g' readme.md`
-      (drop the `''` after `-i` on GNU sed). This retargets WHATEVER ref is
-      pinned (robust to the SHA having drifted). Verify the
-      POSITIVE: `grep -c '/ContextLab/hypertools/v1.1.0/images/' readme.md` → 8
+- [ ] **README images: pinned to the `v1.1.0` tag (8 URLs).** The 1.1.0
+      README already pins `v1.1.0`, so this is a verify-only step: check
+      `grep -c '/ContextLab/hypertools/v1.1.0/images/' readme.md` → 8
       and `grep -Ec '/ContextLab/hypertools/[0-9a-f]{7,40}/images/' readme.md` → 0.
+      Only if a ref has drifted, retarget it:
+      `sed -E -i '' 's#(/ContextLab/hypertools/)[^/]+(/images/)#\1v1.1.0\2#g' readme.md`
+      (drop the `''` after `-i` on GNU sed), then re-run both greps.
 - [ ] **CHANGELOG date.** Edit `CHANGELOG.md`: the `## 1.1.0 (YYYY-MM-DD)`
       heading must carry the date of the FINAL release commit (the draft is
-      dated 2026-09-04; a re-cut on a later day updates it).
+      dated 2026-09-04; a re-cut on a later day updates it). The release
+      gate fails a heading dated earlier than the release commit.
 - [ ] **Verify the file-content gates locally BEFORE committing.** Exclude the
       gallery-resolve gate — it checks the *remote* `docs-notebooks` branch,
       published in the next step, so it cannot pass yet:
       `HYPERTOOLS_REQUIRE_RELEASE=1 pytest -v tests/test_notebook_install_gate.py tests/test_release_readiness_gate.py -k 'not gallery_colab_notebooks_are_published'`
       → all green (no branch installs, no preview note, images on the tag,
-      CHANGELOG dated).
+      CHANGELOG dated no earlier than the release commit).
 - [ ] Commit all of the above on `master` in one release commit.
 - [ ] **Publish the gallery notebooks NOW — before any release gate needs them
       (this is what breaks the publish-order deadlock).** The gallery "Open in
@@ -108,9 +144,11 @@ same artifacts you verify are the ones you publish.
       `dist/hypertools-1.1.0.tar.gz` + `…-py3-none-any.whl`.
 - [ ] `twine check dist/*` → PASSED.
 - [ ] Artifacts bundle the fonts + all license materials (font OFL, Apache-2.0
-      license + third-party notices for the vendored brainiak/ppca, CHANGELOG):
+      license + third-party notices for the vendored brainiak/ppca):
       `tar tzf dist/*.tar.gz | grep -E 'NotoSans|OFL|LICENSE-APACHE|THIRD_PARTY|CHANGELOG'`
-      (5+ hits) and the same on the wheel via `unzip -l dist/*.whl`.
+      (6 hits: the CHANGELOG ships in the sdist only, via `MANIFEST.in`)
+      and `unzip -l dist/*.whl | grep -E 'NotoSans|OFL|LICENSE-APACHE|THIRD_PARTY'`
+      (5 hits).
 - [ ] Fresh-venv smoke: install the wheel in a throwaway venv, `import hypertools`, `hypertools.__version__ == '1.1.0'`.
 - [ ] Record artifact digests: `shasum -a 256 dist/*` (keep with the build
       commit; verify these exact files are the ones uploaded in step 6).
@@ -154,8 +192,14 @@ same artifacts you verify are the ones you publish.
 - [ ] **GitHub Release**: the DRAFT release for `v1.1.0` already exists with
       the draft commit's wheel + sdist attached. Replace both assets with the
       step-3 files (`gh release upload v1.1.0 dist/hypertools-1.1.0.tar.gz dist/hypertools-1.1.0-py3-none-any.whl --clobber`),
-      refresh its notes from `CHANGELOG.md`, confirm it targets the moved tag,
-      then publish it.
+      replace its body with `notes/release_notes_v1.1.0_draft.md` (re-check
+      it against the final `CHANGELOG.md` first, and curl its "Links": the
+      `/en/stable/tutorials/` pages 404 until the Read the Docs tag build
+      below, and the PyPI release exists once
+      `https://pypi.org/pypi/hypertools/1.1.0/json` stops answering 404 (the
+      HTML project page answers 200 for any version number); the draft body
+      attached to the release predates the release review), confirm it
+      targets the moved tag, then publish it.
 - [ ] `pip install hypertools` in a clean env → installs `1.1.0`; run the
       README quick-start snippet.
 - [ ] **Gallery notebooks: confirm still resolved.** They were already
@@ -165,33 +209,34 @@ same artifacts you verify are the ones you publish.
       (Publication is a MANUAL step today — there is no CI job for it; a
       `contents: write` `publish-gallery-notebooks` job on master/tags could
       automate it once token/environment handling is decided.)
-- [ ] **Read the Docs**: trigger/confirm a build of the `v1.1.0` tag (and
-      point the "stable"/default version at it, replacing `v1.0.0`). The released docs' Colab
-      install cells must show `%pip install "hypertools[interactive]"`
-      (no `git+`) — `docs/conf.py` emits this automatically on a tag build.
+- [ ] **Read the Docs: build BOTH `latest` and the `v1.1.0` tag by hand.**
+      Pushes do not reach RTD at the moment: the GitHub → RTD webhook
+      (`https://readthedocs.org/api/v2/webhook/github/hypertools/`) last
+      answered HTTP 400 in GitHub's delivery log, and RTD has built nothing
+      since the 1.0.0 release (`latest`/`stable` at 647ce929, 2026-07-24),
+      although `master` moved on 2026-09-05. Re-sync the GitHub
+      integration in the RTD admin (Admin → Integrations,
+      https://app.readthedocs.org/dashboard/hypertools/integrations/), then
+      trigger builds of `latest` (master) and of the `v1.1.0` tag from
+      https://app.readthedocs.org/projects/hypertools/builds/, and point the
+      "stable"/default version at `v1.1.0`, replacing `v1.0.0`. Verify:
+      `curl -sI https://hypertools.readthedocs.io/en/latest/optional_dependencies.html | head -1`
+      → `HTTP/2 200` (it is 404 until `latest` is rebuilt, and the README
+      and PyPI page link it), and the same page under `/en/stable/`. The
+      released docs' Colab install cells must show
+      `%pip install -q "hypertools[interactive]"` (no `git+`) —
+      `docs/conf.py` emits this automatically on a tag build; the tutorials
+      carry the version-guarded `%pip install -q "hypertools[...]>=1.1.0"`.
 - [ ] PyPI project page renders the README with all 8 images resolving (they
       now point at the `v1.1.0` tag).
-- [ ] **Candidate feature tour on Colab (before publication).** Run
-      `notes/colab/hypertools_1.1_feature_tour.ipynb` in a fresh runtime using
-      its exact `REVIEW_COMMIT`. It installs a Git candidate with comprehensive
-      extras; it does not test a published wheel or missing-extra installation.
-      Run locally with `scripts/execute_tutorial.py --out-dir /tmp/tour-check
-      notes/colab/hypertools_1.1_feature_tour.ipynb`. Retain the executed notebook,
-      JSON/CSV reports, source hashes, dependency versions, decoded exports and
-      visual verdicts. Inspect early previews after Run all, then exercise the
-      shared interactive viewer and downloads. Resolve failures, blocked checks,
-      and any explicitly deferred manual checks before release sign-off.
 - [ ] **Published-wheel smoke (only AFTER approved publication).** In a fresh
       environment, install `hypertools[interactive]==1.1.0` with
       `--only-binary=hypertools --report wheel-install.json`; do not fall back
       to a tag/source checkout. Check the report's wheel URL/hash, installed
       version and import path, then run representative plotting and forecasting
-      examples. Keep this evidence separate from candidate Git verification.
-- [ ] **Missing-extra policy.** Use an isolated clean environment to check a
-      friendly error with autoinstall disabled and a real installation with it
-      enabled. The comprehensive tour's eager extras are not evidence for this
-      behavior. Never remove packages from a working research environment to
-      manufacture the missing-extra condition.
+      examples. Keep this evidence separate from candidate Git verification
+      (the Colab tour and the missing-extra check run in step 0, before any
+      upload).
 
 ## 7. conda-forge bump (the feedstock exists since 1.0.0)
 
@@ -205,9 +250,10 @@ feedstock automatically, usually within hours of the PyPI upload.
       1.0.0 tag and carry any NEW or RAISED floor into `run:` by hand
       (`matplotlib` stays `matplotlib-base`; `noarch: python`; the three
       bundled licenses stay in `license_file`).
-- [ ] The `[predict]` / `[predict-hf]` / `[lsl]` extras stay pip-only
-      (`skaters`, `chronos-forecasting`, `pylsl` are not on conda-forge); the
-      base package is unaffected.
+- [ ] The `[predict]` and `[lsl]` extras stay pip-only: `skaters` and
+      `pylsl` are not on conda-forge (checked 2026-09-11). `chronos-forecasting`
+      is (2.3.2 on 2026-09-11), so `[predict-hf]` could be expressed in the
+      recipe if wanted. The base package is unaffected either way.
 - [ ] Merge; after the feedstock builds, verify in a clean env:
       `conda install -c conda-forge hypertools` installs `1.1.0` and
       `import hypertools` works.
@@ -238,7 +284,7 @@ run with `HYPERTOOLS_REQUIRE_RELEASE=1` by the `release-gate` CI job on
 | notebook install-cell note | no `(… preview)` / "On release this becomes …" |
 | README image URLs | `…/ContextLab/hypertools/v<version>/images/…` — the tag EXACTLY equal to `v` + pyproject version, not any semver or a commit SHA |
 | README branch refs | no `dev-1.0-refactor` / `hypertools.git@dev…` |
-| CHANGELOG heading | `## <version> (YYYY-MM-DD)` — version == pyproject, and a REAL calendar date (not `(unreleased)`, not `2026-99-99`) |
+| CHANGELOG heading | `## <version> (YYYY-MM-DD)` — version == pyproject, a REAL calendar date (not `(unreleased)`, not `2026-99-99`), and not earlier than the release commit's date (a stale draft date fails) |
 | generated gallery (`docs-clean` job) | every built `docs/auto_examples/*.ipynb` carries the PyPI spec (covers every published notebook, at the build layer) |
 | gallery Colab notebooks published | `docs-notebooks/v<version>/manifest.json` present, its `source_commit` == the release HEAD, its inventory == the built gallery, and the branch's actual `.ipynb` set (one GitHub tree request) == the manifest — so stale (old-RC), partial, or mismatched publishes all fail. Requires step 2's publish to have run FROM the release commit, BEFORE the master/tag push — see the deadlock note there. |
 

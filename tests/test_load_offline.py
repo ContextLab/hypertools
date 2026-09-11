@@ -255,6 +255,98 @@ def test_offline_misses_raise_offline_error_without_any_connection(
     assert blackhole.connections == []
 
 
+def test_offline_miss_of_a_bare_id_like_name_reports_the_whole_chain(
+        cache_dir, tmp_path, monkeypatch):
+    """A bare name of 25+ id-like characters is only POSSIBLY a Google
+    Drive file id -- it is at least as likely a missing local file or a
+    mistyped dataset name. Under offline=True its Drive cache miss used to
+    escape at once as "offline=True, but https://drive.google.com/uc?...
+    is not in the hypertools URL cache", hiding the local-file miss. The
+    guess now joins the "tried, in order" digest (still an offline error:
+    nothing could be served)."""
+    monkeypatch.chdir(tmp_path)
+    name = 'my_experiment_results_final_v2'
+    assert len(name) >= 25
+    with pytest.raises(HypertoolsOfflineError) as info:
+        hyp.load(name, offline=True)
+    msg = str(info.value)
+    assert msg.startswith(f"offline=True: could not load {name!r}"), msg
+    assert f'local file: not found at {name}' in msg
+    assert f'Google Drive ({name}): not in the hypertools URL cache' in msg
+    assert not msg.startswith('offline=True, but https://drive.google.com')
+
+
+def test_offline_bare_drive_id_is_still_served_from_the_cache(
+        cache_dir, tmp_path, monkeypatch):
+    # the fall-through must not cost a real cached bare-id hit: put a
+    # payload at the exact path a cache=True download of that id writes
+    from hypertools.io.sources import _read_cached
+    monkeypatch.chdir(tmp_path)
+    drive_id = '1AbCdEfGhIjKlMnOpQrStUvWxYz012345'
+    url = f'https://drive.google.com/uc?export=download&id={drive_id}'
+    path = cached_url_path(url)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(CSV_TEXT)
+    assert _read_cached(path) is not None
+    frame = hyp.load(drive_id, offline=True)
+    assert frame.shape == (2, 2)
+    assert list(frame.iloc[:, 0]) == [1, 3]
+
+
+def test_offline_miss_of_an_explicit_drive_url_still_raises_at_once(
+        cache_dir, tmp_path):
+    # an explicit Drive URL is unambiguous: its miss is the whole answer
+    drive_id = '1AbCdEfGhIjKlMnOpQrStUvWxYz999999'
+    url = f'https://drive.google.com/file/d/{drive_id}/view'
+    with pytest.raises(HypertoolsOfflineError) as info:
+        hyp.load(url, offline=True)
+    msg = str(info.value)
+    assert msg.startswith('offline=True, but https://drive.google.com'), msg
+    expected = cached_url_path(
+        f'https://drive.google.com/uc?export=download&id={drive_id}')
+    assert str(expected) in msg
+
+
+def test_a_cached_url_that_fails_to_parse_is_not_reported_as_a_cache_miss(
+        cache_dir, tmp_path):
+    """offline=True on a URL whose cached copy EXISTS but does not parse
+    used to raise HypertoolsOfflineError ending "(offline=True serves ONLY
+    ... downloads that were cached earlier with cache=True ...)" -- telling
+    the user to cache a file that is already cached. It is a parse failure:
+    a HypertoolsIOError naming the cached file."""
+    from hypertools.core.exceptions import HypertoolsIOError
+    root = tmp_path / 'srv'
+    root.mkdir()
+    (root / 'bad.json').write_text('{not json')
+
+    class Quiet(SimpleHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+
+    handler = functools.partial(Quiet, directory=str(root))
+    httpd = HTTPServer(('127.0.0.1', 0), handler)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    url = f'http://127.0.0.1:{httpd.server_port}/bad.json'
+    try:
+        with pytest.raises(HypertoolsIOError) as online:
+            hyp.load(url, cache=True)                   # real download
+        assert not isinstance(online.value, HypertoolsOfflineError)
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+    cached = cached_url_path(url)
+    assert cached.is_file() and cached.read_text() == '{not json'
+
+    with pytest.raises(HypertoolsIOError) as info:
+        hyp.load(url, offline=True)
+    assert not isinstance(info.value, HypertoolsOfflineError), info.value
+    msg = str(info.value)
+    assert str(cached) in msg
+    assert 'could not be parsed' in msg
+    assert 'cached earlier with cache=True' not in msg
+    assert cached.read_text() == '{not json'        # the file is kept
+
+
 def test_offline_still_serves_local_sources(cache_dir, tmp_path):
     # built-in-by-package, synthetic and local-file sources need no
     # network, so offline=True must not refuse them

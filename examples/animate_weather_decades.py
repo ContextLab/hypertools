@@ -40,14 +40,16 @@ the head of the path, every frame:
   months revealed so far growing over it as a line coloured **segment by
   segment by the mean temperature it is drawn at** (same colormap and
   range again), and a head marker on the current month coloured like the
-  head of the path. The raw monthly mean swings by ~15 \N{DEGREE SIGN}C
+  head of the path. The raw monthly mean swings by ~12 \N{DEGREE SIGN}C
   every year (the coloured line and the marker bounce with it), so a
   trailing 12-month rolling mean is drawn in plain black over the revealed
   months to let the warming drift show through the seasons.
 
-The callback derives the current month from the frame index (a parallel
-animation exposes no reveal count) and assigns every artist's state from it
-on every frame, as the hook contract requires. (Before 1.1 this example
+The callback derives the current month from the frame's position in the
+clip: a parallel reveal does publish ``ctx.revealed_counts``, but it counts
+rows of the path as drawn -- resampled onto the 2400-point frame grid --
+not months. It assigns every artist's state from that month on every frame,
+as the hook contract requires. (Before 1.1 this example
 monkeypatched ``ani._func`` to redraw a second panel every frame; the public
 hook is what replaced that reach, and it now drives three.)
 
@@ -224,13 +226,15 @@ def construct_artifact(data):
     # is also the path's resolution: 20 fps x 120 s = 2400 points, more than
     # the 1645 months, so the 12-month loop keeps every one of its vertices
     # (a 300-frame grid aliased it into chords -- measured 2026-09-03).
+    # backend= is pinned: the panels and the hook below are matplotlib's,
+    # and on Colab the default backend would be plotly.
     anim = hyp.plot(
         data.temps, '-',
         hue=mean, palette='RdBu_r',
         colorbar={'label': 'Average temperature ($^\\circ$C)'},
         manip='Smooth', normalize='across',
         animate=True, chemtrails=True, rotations=1,
-        duration=120, frame_rate=20, size=(14, 7), show=False)
+        duration=120, frame_rate=20, size=(14, 7), backend='matplotlib', show=False)
     fig = anim.figure
 
     # Layout: the library's 3-D axes and colorbar take the left ~55%; the
@@ -290,8 +294,9 @@ def construct_artifact(data):
     line_ax.spines[['top', 'right']].set_visible(False)
 
     def on_frame(ctx):
-        # A parallel reveal exposes no reveal count: the head sits at
-        # fraction frame / (n_frames - 1) of the path, hence of the months.
+        # ctx.revealed_counts counts rows of the frame-grid-resampled path,
+        # not months; the head sits at fraction frame / (n_frames - 1) of
+        # the path, hence of the months.
         i = min(round(ctx.frame / max(ctx.n_frames - 1, 1) * (n_months - 1)),
                 n_months - 1)
         fig.suptitle(f'{MONTHS[data.months[i] - 1]} {data.years[i]}',
