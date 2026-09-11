@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "hypertools"
 # the 1.1 line: this branch's unreleased work now includes the hierarchy
-# features AND four rejections of previously-accepted input (CHANGELOG 1.1.0,
+# features AND seven rejections of previously-accepted input (CHANGELOG 1.1.0,
 # "Changed / validation"), which cannot ship as a patch release. The version
 # and the top CHANGELOG heading are held equal by
 # tests/test_release_readiness_gate.py::test_changelog_top_version_matches_pyproject.
