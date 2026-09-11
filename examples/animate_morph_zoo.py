@@ -80,10 +80,11 @@ CUBE_SCALE = 0.8
 # clear of the axes box: measured over all 600 frames (title bbox bottom vs
 # the highest projected box corner, 2026-09-03), 0.90 collided by 7 px at
 # the box's near-top-corner azimuths and 0.93 clears them everywhere. The
-# family is named explicitly because hypertools' bundled default (Noto Sans)
-# ships only a Regular face, so ``fontweight='bold'`` alone silently falls
-# back to regular (checked with font_manager.findfont, 2026-09-03); DejaVu
-# Sans Bold ships inside matplotlib itself, so it is always available.
+# family is named explicitly so the clip keeps the face it was designed in:
+# DejaVu Sans Bold ships inside matplotlib itself, so it is always
+# available. (hypertools 1.1 also bundles a Noto Sans Bold face, so
+# ``fontweight='bold'`` alone renders bold too; the override is a choice of
+# typeface, not a workaround.)
 TITLE_FONTSIZE = 24
 TITLE_FONTFAMILY = 'DejaVu Sans'
 TITLE_Y = 0.93
@@ -167,10 +168,12 @@ def construct_artifact(data):
     # THE hypertools call: black pixel-sized dots morphing through the zoo.
     # title= names each shape while its hold plays and is left blank by
     # hyp.plot itself during every transition -- no hand-rolled schedule.
+    # backend= is pinned: the hook below restyles a matplotlib title, and on
+    # Colab the default backend would be plotly.
     anim = hyp.plot(data.clouds, fmt='.', color='k', markersize=1.6,
                     animate='morph', rotations=rotations, morph_samples=N,
                     duration=30, frame_rate=20, size=(6, 6), show=False,
-                    title=data.titles)
+                    title=data.titles, backend='matplotlib')
 
     def restyle_title(ctx):
         """Runs AFTER the library's title updater on every frame: re-apply

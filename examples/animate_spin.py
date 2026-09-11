@@ -20,4 +20,6 @@ import hypertools as hyp
 data = hyp.load('weights_sample')
 
 # plot
-fig, ani = hyp.plot(data, fmt='.', animate='spin')
+# backend='matplotlib': unpacking into (fig, ani) is the matplotlib
+# animation's form; on Colab the default backend would be plotly
+fig, ani = hyp.plot(data, fmt='.', animate='spin', backend='matplotlib')
