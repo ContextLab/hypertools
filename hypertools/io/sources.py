@@ -1190,8 +1190,11 @@ def yahoo_source(name, start=None, end=None, interval='1d', timeout=30):
     Returns
     -------
     pandas.DataFrame
-        Indexed by a ``DatetimeIndex`` named ``'date'`` (bar timestamps
-        normalized to midnight), with float columns ``open``, ``high``,
+        Indexed by a ``DatetimeIndex`` named ``'date'``. Daily and longer
+        bars are dated by the exchange-local trading day (naive, midnight);
+        intraday bars (``'1h'``, ``'15m'``, ...) keep their time, as a
+        tz-aware index in the exchange's timezone (e.g.
+        ``America/New_York``). Float columns ``open``, ``high``,
         ``low``, ``close``, ``volume`` and, when Yahoo provides it,
         ``adj_close`` (split/dividend-adjusted). Rows are in time order;
         gaps Yahoo reports as nulls stay NaN rather than being dropped.
@@ -1223,6 +1226,27 @@ def yahoo_source(name, start=None, end=None, interval='1d', timeout=30):
         status_code=resp.status_code)
 
 
+_YAHOO_INTRADAY_RE = re.compile(r'\d+[mh]')     # '1m', '90m', '1h'; not '1mo'
+
+
+def _yahoo_is_intraday(interval):
+    """True for a Yahoo bar size measured in minutes or hours."""
+    return bool(_YAHOO_INTRADAY_RE.fullmatch(str(interval).strip()))
+
+
+def _yahoo_exchange_tz(name, gmtoffset):
+    """The exchange's timezone: the IANA ``name`` Yahoo reports when it is a
+    real zone, else a fixed-offset zone from ``gmtoffset`` (seconds)."""
+    import datetime
+    import zoneinfo
+    if isinstance(name, str) and name:
+        try:
+            return zoneinfo.ZoneInfo(name)
+        except (zoneinfo.ZoneInfoNotFoundError, ValueError):
+            pass
+    return datetime.timezone(datetime.timedelta(seconds=int(gmtoffset)))
+
+
 def _parse_yahoo_chart(payload, *, ticker, interval='1d', window='',
                        status_code=200):
     """Turn one decoded Yahoo v8 chart payload into the DataFrame
@@ -1236,6 +1260,13 @@ def _parse_yahoo_chart(payload, *, ticker, interval='1d', window='',
     one day early (BHP.AX 2025-01-06..10 came back as 2025-01-05..09; 1.1
     release review, I2), so the offset is applied first: the resulting
     ``date`` is the exchange-local trading day.
+
+    Intraday bars (a granularity in minutes or hours, e.g. ``'1h'``,
+    ``'15m'``) are NOT normalized -- doing so gave every bar of a session
+    the same midnight stamp, so the index was full of duplicates and
+    ``hyp.predict`` refused it. They keep their time as a tz-aware index in
+    the exchange's timezone (``meta.exchangeTimezoneName``, or a fixed
+    ``gmtoffset`` zone when the name is missing or unknown).
     """
     chart = payload.get('chart') or {}
     error = chart.get('error')
@@ -1259,9 +1290,21 @@ def _parse_yahoo_chart(payload, *, ticker, interval='1d', window='',
             'for recent windows.')
     quote = (result.get('indicators') or {}).get('quote') or [{}]
     quote = quote[0]
-    gmtoffset = int((result.get('meta') or {}).get('gmtoffset') or 0)
-    index = pd.to_datetime(np.asarray(stamps, dtype='int64') + gmtoffset,
-                           unit='s').normalize()
+    meta = result.get('meta') or {}
+    gmtoffset = int(meta.get('gmtoffset') or 0)
+    stamps = np.asarray(stamps, dtype='int64')
+    if _yahoo_is_intraday(meta.get('dataGranularity') or interval):
+        # an intraday bar is an instant, not a trading day: keep its time,
+        # expressed in the exchange's own timezone so the wall-clock reads
+        # like the daily path's exchange-local dates. The zone NAME is used
+        # when Yahoo gives one, because gmtoffset is only the offset in
+        # force NOW -- applying it to a window that spans a DST change
+        # would shift every bar on the far side by an hour. The index stays
+        # tz-aware, so a repeated fall-back hour cannot collide either.
+        index = pd.to_datetime(stamps, unit='s', utc=True).tz_convert(
+            _yahoo_exchange_tz(meta.get('exchangeTimezoneName'), gmtoffset))
+    else:
+        index = pd.to_datetime(stamps + gmtoffset, unit='s').normalize()
     index.name = 'date'
     frame = {}
     for col in ('open', 'high', 'low', 'close', 'volume'):
@@ -1618,7 +1661,14 @@ def load_source(source, split=None, streaming=False, trust=False,
     ``cache``/``offline`` govern the on-disk URL cache (see
     :func:`url_cache_dir`): ``cache=True`` stores every URL/Drive/Dropbox/
     Sheets download and reuses it next time, ``offline=True`` reads ONLY
-    from that cache and raises rather than touching the network.
+    from that cache and raises rather than touching the network: an
+    explicit URL / Drive / Sheets / Dropbox link that is not cached raises
+    ``HypertoolsOfflineError`` at once, while a string that is only
+    GUESSED to be one (a bare 25+ character name read as a Drive id, a
+    scheme-less ``host.tld/...``) adds its miss to the "tried, in order"
+    digest, raised as ``HypertoolsOfflineError`` when nothing matched. A
+    cached copy that is read but does not parse raises
+    ``HypertoolsIOError`` naming the cached file (it is not a miss).
     ``decode_labels`` is threaded to :func:`_load_hf`. Any remaining
     keyword arguments belong to the synthetic (step 6) and web-prefix
     (step 7) sources and are passed to whichever of those matches; passing
@@ -1704,47 +1754,73 @@ def load_source(source, split=None, streaming=False, trust=False,
             attempts.append(f'Hugging Face dataset: {type(e).__name__}: '
                             f'{str(e).splitlines()[0][:120]}')
 
+    # steps 10-13 download (or, with cache=/offline=, read from the URL
+    # cache) and parse. Two things are tracked for the final error:
+    # - an offline MISS escapes at once only when the source is
+    #   unmistakably that kind of link (is_url_like); for a GUESSED
+    #   interpretation -- a bare 25+ character string read as a Drive id,
+    #   a scheme-less 'host.tld/...' read as a URL, an 's/...' Dropbox
+    #   path -- the miss is one line of the digest, next to the local-file
+    #   miss the user more likely meant (review 2026-09-11)
+    # - a cached copy that was READ but did not parse is a parse failure,
+    #   not a cache miss, so the final error is then a HypertoolsIOError
+    #   naming the cached file rather than the offline "cache it first"
+    #   refusal (review 2026-09-11)
+    unparsed_cached = []
+    miss = object()
+
+    def _fetch_and_parse(url, label, hint):
+        from_cache = (cache or offline) and cached_url_path(url).is_file()
+        try:
+            raw, name_hint = _fetch_bytes(url, cache=cache, offline=offline)
+        except HypertoolsOfflineError:
+            if is_url_like:
+                raise
+            attempts.append(f'{label}: not in the hypertools URL cache '
+                            f'(looked for {cached_url_path(url)})')
+            return miss
+        except HypertoolsTrustError:
+            raise
+        except Exception as e:
+            attempts.append(f'{label}: {type(e).__name__}: {e}')
+            return miss
+        try:
+            return _parse_payload(raw, name_hint or hint, trust=trust,
+                                  remote=True)
+        except (HypertoolsTrustError, HypertoolsOfflineError):
+            raise
+        except Exception as e:
+            if from_cache:
+                path = cached_url_path(url)
+                unparsed_cached.append(path)
+                attempts.append(f'{label}: the cached copy at {path} could '
+                                f'not be parsed: {type(e).__name__}: {e}')
+            else:
+                attempts.append(f'{label}: {type(e).__name__}: {e}')
+            return miss
+
     # 10. Google Sheets URL -> CSV export (checked before generic Drive id
     # extraction, since a Sheets URL also matches the '/d/<id>' pattern)
     sheet_url = _normalize_google_sheet(source)
     if sheet_url is not None:
-        try:
-            raw, name_hint = _fetch_bytes(sheet_url, cache=cache,
-                                          offline=offline)
-            return _parse_payload(raw, name_hint or 'sheet.csv',
-                                  trust=trust, remote=True)
-        except (HypertoolsTrustError, HypertoolsOfflineError):
-            raise
-        except Exception as e:
-            attempts.append(f'Google Sheets: {type(e).__name__}: {e}')
+        data = _fetch_and_parse(sheet_url, 'Google Sheets', 'sheet.csv')
+        if data is not miss:
+            return data
 
     # 11. Google Drive URL or bare ID
     drive_id = _extract_drive_id(source)
     if drive_id is not None:
         url = f'https://drive.google.com/uc?export=download&id={drive_id}'
-        try:
-            raw, name_hint = _fetch_bytes(url, cache=cache,
-                                          offline=offline)
-            return _parse_payload(raw, name_hint or source,
-                                  trust=trust, remote=True)
-        except (HypertoolsTrustError, HypertoolsOfflineError):
-            raise
-        except Exception as e:
-            attempts.append(f'Google Drive ({drive_id}): '
-                            f'{type(e).__name__}: {e}')
+        data = _fetch_and_parse(url, f'Google Drive ({drive_id})', source)
+        if data is not miss:
+            return data
 
     # 12. Dropbox URL or shared-link path
     dropbox_url = _normalize_dropbox(source)
     if dropbox_url is not None:
-        try:
-            raw, name_hint = _fetch_bytes(dropbox_url, cache=cache,
-                                          offline=offline)
-            return _parse_payload(raw, name_hint or source,
-                                  trust=trust, remote=True)
-        except (HypertoolsTrustError, HypertoolsOfflineError):
-            raise
-        except Exception as e:
-            attempts.append(f'Dropbox: {type(e).__name__}: {e}')
+        data = _fetch_and_parse(dropbox_url, 'Dropbox', source)
+        if data is not miss:
+            return data
 
     # 13. any URL, with or without a scheme
     url = None
@@ -1767,15 +1843,9 @@ def load_source(source, split=None, streaming=False, trust=False,
             'address without a scheme; add an explicit http:// or '
             'https:// prefix')
     if url is not None:
-        try:
-            raw, name_hint = _fetch_bytes(url, cache=cache,
-                                          offline=offline)
-            return _parse_payload(raw, name_hint or source,
-                                  trust=trust, remote=True)
-        except (HypertoolsTrustError, HypertoolsOfflineError):
-            raise
-        except Exception as e:
-            attempts.append(f'URL ({url}): {type(e).__name__}: {e}')
+        data = _fetch_and_parse(url, f'URL ({url})', source)
+        if data is not miss:
+            return data
 
     tried = '\n  - '.join(attempts) if attempts else 'no interpretation ' \
         'matched (not a file, URL, Drive/Dropbox link, or dataset id)'
@@ -1783,6 +1853,12 @@ def load_source(source, split=None, streaming=False, trust=False,
     suggestion = _closest_dataset_name(source)
     if suggestion is not None:
         message += f"\nDid you mean {suggestion!r}?"
+    if unparsed_cached:
+        raise HypertoolsIOError(
+            f'{message}\n(the cached download at '
+            f'{", ".join(str(p) for p in unparsed_cached)} was read but '
+            'could not be parsed; it is kept as is -- delete it and load '
+            'again with cache=True while online to download a fresh copy.)')
     if offline:
         raise HypertoolsOfflineError(
             f'offline=True: {message}\n(offline=True serves ONLY Google '
@@ -2173,10 +2249,7 @@ def _parse_payload(raw, name_hint='', trust=False, remote=False):
         if raw[:1] == b'\x80':
             return _unpickle_bytes(raw, trust=trust, remote=remote)
         if raw[:2] == b'PK':
-            try:
-                return _unpack_npz(raw, trust=trust, remote=remote)
-            except Exception:
-                return pd.read_parquet(io.BytesIO(raw))
+            return _unpack_sniffed_zip(raw, trust=trust, remote=remote)
         if _complete_pickle_stream(raw):
             # protocol-0 (ASCII) pickles carry no magic prefix (e.g.
             # hyp.save(..., protocol=0) to an arbitrary extension)
@@ -2194,10 +2267,7 @@ def _parse_payload(raw, name_hint='', trust=False, remote=False):
     if raw[:1] == b'\x80':
         return _unpickle_bytes(raw, trust=trust, remote=remote)
     if raw[:2] == b'PK':
-        try:
-            return _unpack_npz(raw, trust=trust, remote=remote)
-        except Exception:
-            return pd.read_parquet(io.BytesIO(raw))
+        return _unpack_sniffed_zip(raw, trust=trust, remote=remote)
     if _complete_pickle_stream(raw):
         # protocol-0 (ASCII) pickles carry no magic prefix and DO decode
         # as UTF-8, so they must be sniffed BEFORE text parsing or they
@@ -2322,6 +2392,22 @@ def _unpack_npz(raw, trust=False, remote=False):
                 'data from a remote source') from e
         raise
     return arrays[0] if len(arrays) == 1 else arrays
+
+
+def _unpack_sniffed_zip(raw, trust=False, remote=False):
+    """A payload sniffed as a zip (``'PK'`` magic, no or an unknown
+    extension): an ``.npz`` first, parquet as the fallback. The ``.npz``
+    reader's :class:`HypertoolsTrustError` -- a remote object array that
+    needs ``allow_pickle`` -- IS the answer, so it is raised as itself;
+    before, the parquet fallback swallowed it and the user saw "Parquet
+    magic bytes not found" instead of the ``trust=True`` remedy (review
+    2026-09-11)."""
+    try:
+        return _unpack_npz(raw, trust=trust, remote=remote)
+    except HypertoolsTrustError:
+        raise
+    except Exception:
+        return pd.read_parquet(io.BytesIO(raw))
 
 
 def _unpack_mat(raw):
