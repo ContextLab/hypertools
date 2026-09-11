@@ -340,6 +340,121 @@ def test_legend_colors_wrong_count_raises_and_leaves_no_figure_open():
     assert plt.get_fignums() == []
 
 
+# --- plotly date axes are time-zone invariant ---------------------------------
+
+def _hourly(n=24):
+    return pd.DataFrame({'signal': np.sin(np.arange(float(n)) / 4)},
+                        index=pd.date_range('2026-01-01', periods=n,
+                                            freq='h'))
+
+
+def _as_dates(values):
+    return pd.to_datetime([v for v in values if v is not None])
+
+
+def test_plotly_date_x_values_are_the_true_dates_as_naive_strings():
+    """plotly.js draws a NUMERIC date in the viewer's local time zone, so
+    the epoch-ms x hypertools handed it put a series that starts
+    2026-01-01 00:00 at 19:00 Dec 31 in New York. Every date x -- data,
+    forecast, truth, and the axis range -- is a naive date string equal to
+    the input's own dates."""
+    data = _hourly()
+    held = pd.DataFrame({'signal': np.zeros(4)},
+                        index=pd.date_range('2026-01-02', periods=4,
+                                            freq='h'))
+    fig = hyp.plot(data, backend='plotly', ndims=1, reduce=None,
+                   predict='Kalman', t=4, truth=held, antialias=False,
+                   show=False)
+    assert fig.layout.xaxis.type == 'date'
+    (obs,) = [tr for tr in fig.data
+              if (tr.meta or {}).get('hyp_trace_index') == 0]
+    assert all(isinstance(v, str) for v in obs.x)
+    assert list(_as_dates(obs.x)) == list(data.index)
+    (fc,) = _ply_role(fig, 'static')
+    assert list(_as_dates(fc.x)) == list(
+        pd.date_range('2026-01-01 23:00', periods=5, freq='h'))
+    (tr,) = _ply_role(fig, 'truth')
+    assert list(_as_dates(tr.x)) == list(
+        pd.date_range('2026-01-01 23:00', periods=5, freq='h'))
+    lo, hi = _as_dates(fig.layout.xaxis.range)
+    assert lo < data.index[0] and hi > pd.Timestamp('2026-01-02 03:00')
+
+
+def test_plotly_animated_date_frames_carry_true_dates():
+    data = _hourly()
+    fig = hyp.plot(data, backend='plotly', ndims=1, reduce=None,
+                   animate=True, duration=1, frame_rate=6, antialias=False,
+                   show=False)
+    xs = [v for frame in fig.frames for trace in frame.data
+          if trace.x is not None for v in trace.x if v is not None]
+    assert xs and all(isinstance(v, str) for v in xs)
+    stamps = _as_dates(xs)
+    assert stamps.min() >= data.index[0] and stamps.max() <= data.index[-1]
+
+
+_TZ_RENDER = r'''
+import sys, warnings
+import numpy as np, pandas as pd
+import hypertools as hyp
+warnings.simplefilter('ignore')
+data = pd.DataFrame({'signal': np.sin(np.arange(24.0) / 4)},
+                    index=pd.date_range('2026-01-01', periods=24, freq='h'))
+fig = hyp.plot(data, backend='plotly', ndims=1, reduce=None,
+               predict='Kalman', t=4, show=False)
+fig.write_image(sys.argv[1], width=600, height=360)
+'''
+
+
+def test_plotly_date_figure_renders_identically_in_every_time_zone(tmp_path):
+    """The real observable: the same figure rendered by Chrome (kaleido)
+    under TZ=UTC and TZ=America/New_York. With epoch-ms dates the two
+    renders differed by thousands of pixels (the whole trace shifted five
+    hours); with date strings they are pixel-identical."""
+    pytest.importorskip('kaleido')
+    import os
+    import subprocess
+    import sys
+    from PIL import Image
+    from hypertools._shared.lazy_import import ensure_kaleido_chrome
+    ensure_kaleido_chrome()
+    script = tmp_path / 'render.py'
+    script.write_text(_TZ_RENDER)
+    pixels = []
+    for tz in ('UTC', 'America/New_York'):
+        out = tmp_path / f'{tz.replace("/", "_")}.png'
+        env = dict(os.environ, TZ=tz)
+        subprocess.run([sys.executable, str(script), str(out)], check=True,
+                       env=env, timeout=300)
+        pixels.append(np.asarray(Image.open(out).convert('RGB')))
+    assert pixels[0].shape == pixels[1].shape
+    assert int((pixels[0] != pixels[1]).any(axis=2).sum()) == 0
+
+
+# --- xlim=(None, date) on a date axis -----------------------------------------
+
+@pytest.mark.parametrize('backend', ['matplotlib', 'plotly'])
+def test_open_ended_date_xlim_takes_the_data_bound(backend):
+    """``xlim=(None, '2020-01-10')`` crashed 'Axis limits cannot be NaN or
+    Inf' (NaT from the None); the open side now takes the data bound."""
+    rng = np.random.default_rng(0)
+    df = pd.DataFrame(rng.normal(size=(30, 2)).cumsum(0),
+                      index=pd.date_range('2020-01-01', periods=30),
+                      columns=['a', 'b'])
+    out = hyp.plot(df, ndims=1, xlim=(None, '2020-01-10'), backend=backend,
+                   show=False)
+    if backend == 'matplotlib':
+        from matplotlib.dates import num2date
+        lo, hi = out.axes[0].get_xlim()
+        lo = pd.Timestamp(num2date(lo)).tz_localize(None)
+        hi = pd.Timestamp(num2date(hi)).tz_localize(None)
+        plt.close(out)
+    else:
+        lo, hi = _as_dates(out.layout.xaxis.range)
+    assert hi == pd.Timestamp('2020-01-10')
+    assert lo <= pd.Timestamp('2020-01-01')
+    assert lo > pd.Timestamp('2019-12-01')
+
+
 # --- forecast_fmt markers sit on the forecast STEPS, not on every vertex -----
 
 def _marked_points(art):

@@ -2140,7 +2140,10 @@ def _series_x_axis(index, n_rows, epoch_ms=False):
             # A tz-AWARE index cannot be cast to a naive dtype at all
             # ("Cannot use .astype to convert from timezone-aware ..."), so
             # it is converted to UTC first -- epoch milliseconds are an
-            # absolute instant either way, and plotly reads them as UTC.
+            # absolute instant either way. These numbers are INTERNAL:
+            # plotly.js would draw a numeric date in the viewer's LOCAL
+            # time zone, so `plotly_backend._dates_as_iso` hands the figure
+            # naive date strings instead (1.1 release review).
             _idx = (index.tz_convert('UTC').tz_localize(None)
                     if index.tz is not None else index)
             values = np.asarray(
@@ -2187,6 +2190,13 @@ def _resolve_date_xlim(xlim, epoch_ms):
     from matplotlib.dates import date2num, num2date
     out = []
     for value in xlim:
+        if value is None:
+            # an OPEN side (``xlim=(None, '2020-01-10')``): left for the
+            # data bounds to fill, as a numeric axis leaves it to autoscale.
+            # `pd.Timestamp(None)` is NaT, which became a NaN limit and
+            # crashed "Axis limits cannot be NaN or Inf" (1.1 review, F8)
+            out.append(None)
+            continue
         if (isinstance(value, (int, float, np.integer, np.floating))
                 and not isinstance(value, bool)):
             number = float(value)
@@ -11033,12 +11043,22 @@ def plot(
             _lo = _finite.min(axis=0)
             _hi = _finite.max(axis=0)
             _pad = np.where(_hi > _lo, (_hi - _lo) * 0.05, 1.0)
+            _auto_x = (float(_lo[0] - _pad[0]), float(_hi[0] + _pad[0]))
             if _data_xlim is None:
-                _data_xlim = (float(_lo[0] - _pad[0]),
-                              float(_hi[0] + _pad[0]))
-            if _data_ylim is None and _finite.shape[1] > 1:
-                _data_ylim = (float(_lo[1] - _pad[1]),
-                              float(_hi[1] + _pad[1]))
+                _data_xlim = _auto_x
+            elif None in tuple(_data_xlim):
+                # an OPEN side (``xlim=(None, hi)``) takes the data bound:
+                # plotly has no partial range (``[None, hi]`` drew a
+                # year-2000 axis), and matplotlib then agrees with it
+                _data_xlim = tuple(_auto_x[_k] if _v is None else _v
+                                   for _k, _v in enumerate(_data_xlim))
+            if _finite.shape[1] > 1:
+                _auto_y = (float(_lo[1] - _pad[1]), float(_hi[1] + _pad[1]))
+                if _data_ylim is None:
+                    _data_ylim = _auto_y
+                elif None in tuple(_data_ylim):
+                    _data_ylim = tuple(_auto_y[_k] if _v is None else _v
+                                       for _k, _v in enumerate(_data_ylim))
 
     # handle palette with seaborn
     import seaborn as sns

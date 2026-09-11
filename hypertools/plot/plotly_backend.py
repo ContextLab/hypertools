@@ -450,10 +450,58 @@ def _data_axis_layout(label, limit=None, date=False):
     if label is not None:
         layout['title'] = dict(text=label)
     if limit is not None:
-        layout['range'] = [limit[0], limit[1]]
+        layout['range'] = ([str(v) for v in _epoch_ms_to_iso(limit)]
+                           if date else [limit[0], limit[1]])
     if date:
         layout['type'] = 'date'
     return layout
+
+
+def _epoch_ms_to_iso(values):
+    """Epoch-millisecond x values as NAIVE ISO-8601 date strings.
+
+    `plot()` carries a date x axis as epoch milliseconds internally (every
+    stage -- antialiasing, bounds, forecasts -- needs numbers), but plotly.js
+    renders a NUMERIC date in the viewer's LOCAL time zone: a series that
+    starts 2026-01-01 00:00 drew at 19:00 Dec 31 in New York (1.1 release
+    review, measured with kaleido under TZ=UTC vs TZ=America/New_York). A
+    naive date STRING is rendered as written, in every time zone -- and the
+    hover label then shows the true date. Non-finite or non-numeric
+    entries (a legend proxy's ``None``) become ``None``.
+    """
+    arr = np.asarray(values)
+    if arr.dtype.kind in 'iuf':
+        num = arr.astype(float).ravel()
+    else:
+        num = np.array([float(v) if isinstance(v, (int, float, np.integer,
+                                                   np.floating))
+                        and not isinstance(v, bool) else np.nan
+                        for v in arr.ravel()], dtype=float)
+    out = np.full(num.shape, None, dtype=object)
+    ok = np.isfinite(num)
+    if ok.any():
+        out[ok] = np.datetime_as_string(
+            np.round(num[ok]).astype('int64').astype('datetime64[ms]'),
+            unit='ms')
+    return out.reshape(arr.shape) if arr.ndim else out
+
+
+def _dates_as_iso(fig):
+    """Rewrite every numeric x of `fig` -- its traces, its animation
+    frames' traces and any x range -- from epoch milliseconds to naive ISO
+    strings (`_epoch_ms_to_iso`), for a date x axis."""
+    def _fix(trace):
+        x = getattr(trace, 'x', None)
+        if x is not None and len(x):
+            trace.x = _epoch_ms_to_iso(x)
+    for trace in fig.data:
+        _fix(trace)
+    for frame in fig.frames:
+        for trace in frame.data:
+            _fix(trace)
+        _xaxis = getattr(frame.layout, 'xaxis', None) if frame.layout else None
+        if _xaxis is not None and _xaxis.range is not None:
+            _xaxis.range = [str(v) for v in _epoch_ms_to_iso(_xaxis.range)]
 
 
 def _build_aa_curves(data, fmt, antialias, morph_tags=None):
@@ -835,7 +883,10 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     x_date : bool
         The x values are epoch MILLISECONDS (what `plot()`'s ndims=1 series
         mode emits for a `DatetimeIndex` under the plotly backend); marks
-        the x axis `type='date'` so plotly renders real dates.
+        the x axis `type='date'` so plotly renders real dates, and hands
+        every trace x (frames included) and the x range to plotly as naive
+        date strings (`_dates_as_iso`), so the figure draws the same dates
+        in every viewer's time zone.
     row_counts : list of int or None
         The ORIGINAL row count behind each trace of `data` (`plot()`
         antialiases static lines upstream, so a trace can hold more drawn
@@ -2301,6 +2352,11 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                        # the run -> dataset -> rows mapping the reveal
                        # clock is driven from (see `_run_window`)
                        ownership=ownership)
+
+    if x_date:
+        # dates as naive ISO strings, not epoch ms: plotly.js draws numeric
+        # dates in the VIEWER's local time zone (see `_epoch_ms_to_iso`)
+        _dates_as_iso(fig)
 
     if into is not None:
         if animate:
