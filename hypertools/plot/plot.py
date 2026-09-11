@@ -2208,7 +2208,20 @@ def _resolve_truth(truth, datasets, t, series_step=None, forecast_paths=None,
                 f"against; entry {i} has {item.shape[0]}. Pass t="
                 f"{item.shape[0]} to forecast that far instead, or trim the "
                 "held-out data.")
-        if series and item.shape[1] == 1:
+        if series and item.shape[1] != 1:
+            # a series-mode trace is ONE plotted column (its x is the
+            # index), so its truth is one column of values. Without this a
+            # 2-column truth for a 1-column trace matched the trace's
+            # internal (x, value) width and its first column was drawn as
+            # x -- a date axis stretched back to 1970 (1.1 release review,
+            # F3)
+            raise ValueError(
+                f"truth= entry {i} has {item.shape[1]} columns, but with "
+                "ndims=1 each trace is one plotted column (its x is the "
+                "index), so its truth= is one column of values. Pass one "
+                "single-column array per trace (or one array with one "
+                f"column per trace; {n_traces} trace(s) are plotted).")
+        if series:
             idx = indexes[i]
             explicit_times = (isinstance(idx, pd.Index)
                               and not (isinstance(idx, pd.RangeIndex)
@@ -5573,7 +5586,10 @@ def plot(
         Requires `predict=`. One array per input dataset (a bare array for
         a single dataset), each with exactly `t` rows and the same number
         of columns as the plotted data; anything else raises ``ValueError``
-        naming the mismatch. It is read in the PLOTTED space -- with
+        naming the mismatch. With ``ndims=1`` each plotted column is its own
+        trace whose x is the index, so its truth is ONE column of values
+        (or one frame with one column per trace); its x continues the
+        index exactly as the forecast's does. It is read in the PLOTTED space -- with
         ``reduce=None`` (the case these figures use) that is the input
         space, and with a `reduce=` spec it is whatever that spec produced,
         so pass values already in it (hypertools does not re-project

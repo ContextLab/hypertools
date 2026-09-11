@@ -9,9 +9,11 @@ matplotlib.use('Agg')
 
 import matplotlib.pyplot as plt                           # noqa: E402
 import numpy as np                                        # noqa: E402
-import pytest                                            # noqa: E402
+import pandas as pd                                       # noqa: E402
+import pytest                                             # noqa: E402
 import seaborn as sns                                     # noqa: E402
 from matplotlib.colors import to_hex, to_rgb              # noqa: E402
+from matplotlib.dates import date2num                     # noqa: E402
 
 import hypertools as hyp                                  # noqa: E402
 
@@ -104,3 +106,35 @@ def test_split_fmt_forecast_colours_match_on_plotly():
     assert len(got) == 3
     for g, p in zip(got, palette):
         assert np.allclose(g, p, atol=0.01)
+
+
+# --- F3: ndims=1 truth= is one column of VALUES per trace -------------------
+
+@pytest.mark.parametrize('backend', ['matplotlib', 'plotly'])
+def test_series_mode_two_column_truth_for_one_trace_raises(backend):
+    """In series mode a trace is one plotted column (x is the index); a
+    2-column truth= for it matched the trace's internal (x, value) width
+    and its first column was drawn as x -- the date axis ran 1970..2020."""
+    idx = pd.date_range('2020-01-01', periods=40)
+    full = pd.DataFrame(np.sin(np.arange(40) / 4)[:, None] * [[1, 2]],
+                        index=idx, columns=['a', 'b'])
+    train, test = full.iloc[:30], full.iloc[30:]
+    with pytest.raises(ValueError, match='one column of values'):
+        hyp.plot(train, ndims=1, predict='Kalman', t=10, truth=test,
+                 backend=backend, show=False)
+    with pytest.raises(ValueError, match='one column of values'):
+        hyp.plot(train, ndims=1, predict='Kalman', t=10,
+                 truth=test.values, backend=backend, show=False)
+    plt.close('all')
+
+
+def test_series_mode_one_column_truth_still_lands_on_the_index():
+    idx = pd.date_range('2020-01-01', periods=40)
+    full = pd.DataFrame({'a': np.sin(np.arange(40) / 4)}, index=idx)
+    train, test = full.iloc[:30], full.iloc[30:]
+    fig = hyp.plot(train, ndims=1, reduce=None, predict='Kalman', t=10,
+                   truth=test, antialias=False, show=False)
+    (curve, markers) = _role(fig.axes[0], 'truth')
+    want = date2num(pd.date_range('2020-01-30', periods=11).to_pydatetime())
+    assert np.allclose(np.asarray(markers.get_xdata(), float), want)
+    plt.close(fig)
