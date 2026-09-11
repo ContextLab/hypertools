@@ -2,6 +2,7 @@
 
 import inspect
 import json
+import warnings
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -114,10 +115,15 @@ def test_unicode_export_opens_in_the_actual_viewer(tmp_path):
     had_shell = InteractiveShell.initialized()
     InteractiveShell.instance()
     try:
-        with capture_output(display=True) as captured:
+        with capture_output(display=True) as captured, \
+                warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
             ns["verify_export"](path, animated=True)
             viewer = ns["interactive_viewer"]()
             viewer.children[1].children[0].click()
+        # Colab printed IPython's "Consider using IPython.display.IFrame"
+        # above every opened plot (2026-09-11)
+        assert not [w for w in caught if "IFrame" in str(w.message)]
         frames = [
             o.data["text/html"]
             for o in captured.outputs
@@ -130,3 +136,23 @@ def test_unicode_export_opens_in_the_actual_viewer(tmp_path):
     finally:
         if not had_shell:
             InteractiveShell.clear_instance()
+
+
+def test_summary_cell_shows_the_interactive_viewer_once():
+    """interactive_viewer() displays its widget AND returns it; as a cell's
+    bare last expression Jupyter displayed it a second time, so Colab showed
+    two viewers (fresh-Colab review 2026-09-11)."""
+    import ast
+    repo = Path(__file__).resolve().parents[1]
+    source = (repo / "scripts" / "update_feature_tour.py").read_text(encoding="utf-8")
+    templates = [
+        node.value for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.Constant) and isinstance(node.value, str)
+        and node.value.startswith("summary=pd.DataFrame")
+        and "interactive_viewer" in node.value
+    ]
+    assert len(templates) == 1
+    last = ast.parse(templates[0]).body[-1]
+    bare_viewer = (isinstance(last, ast.Expr) and isinstance(last.value, ast.Call)
+                   and getattr(last.value.func, "id", None) == "interactive_viewer")
+    assert not bare_viewer

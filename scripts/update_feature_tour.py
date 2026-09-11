@@ -591,7 +591,7 @@ attention=summary[(summary.status!='PASS') | (summary.visual.isin(['fail','not r
 display(attention[['id','status','visual','detail','visual_notes']])
 save_report()
 print('Use one interactive viewer at a time; Close disposes its browser resources.')
-interactive_viewer()""",
+viewer = interactive_viewer()  # the helper displays it; a bare call showed it twice""",
 )
 comparison = next(c for c in nb["cells"] if text(c).startswith("OTHER_RESULTS ="))
 set_source(

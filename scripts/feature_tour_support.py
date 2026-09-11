@@ -320,9 +320,11 @@ def interactive_viewer():
         source = Path(INTERACTIVE_PLOTS[picker.value]).read_text(encoding="utf-8")
         with output:
             display(
+                # wrapped in a div: IPython warns "Consider using
+                # IPython.display.IFrame" for HTML that starts with <iframe
                 HTML(
-                    '<iframe title="Interactive HyperTools review" style="width:100%;height:750px;border:0" '
-                    'srcdoc="' + html.escape(source, quote=True) + '"></iframe>'
+                    '<div><iframe title="Interactive HyperTools review" style="width:100%;height:750px;border:0" '
+                    'srcdoc="' + html.escape(source, quote=True) + '"></iframe></div>'
                 )
             )
 
