@@ -641,6 +641,18 @@ def test_bare_array_transform_is_one_dataset(backend):
     plt.close('all')
 
 
+def test_panels_draw_each_dataset_from_its_own_transform_rows():
+    rng = np.random.default_rng(0)
+    x = [rng.normal(size=(20, 5)) for _ in range(2)]
+    xf = [rng.normal(size=(20, 3)) for _ in range(2)]
+    bundle = hyp.plot(x, transform=xf, panels=True, show=False,
+                      return_model=True)
+    assert len(bundle['axes']) == 2
+    for got, want in zip(bundle['xform_data'], xf):
+        assert np.allclose(np.asarray(got), want)
+    plt.close('all')
+
+
 # --- panels= with forecast_trail= ---------------------------------------------
 
 @pytest.mark.parametrize('panel_fit', ['shared', 'independent'])

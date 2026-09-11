@@ -87,12 +87,14 @@ def test_a_datetime_index_gives_real_dates_on_the_axis():
     x = np.asarray(line.get_xdata())
     assert mdates.num2date(x[0]).date() == index[0].date()
     assert mdates.num2date(x[-1]).date() == index[-1].date()
-    # a real date axis: matplotlib's own date locator/formatter pair, so
-    # the ticks read '2024-01-05' rather than '19727.0'
+    # a real date axis: matplotlib's own date locator with its CONCISE
+    # formatter, so the ticks read dates rather than '19727.0' -- and do
+    # not collide, as the default formatter's full 'YYYY-MM-DD' labels did
+    # (1.1 release review, F13)
     assert isinstance(fig.axes[0].xaxis.get_major_locator(),
                       mdates.AutoDateLocator)
     assert isinstance(fig.axes[0].xaxis.get_major_formatter(),
-                      mdates.AutoDateFormatter)
+                      mdates.ConciseDateFormatter)
     plt.close(fig)
 
 
