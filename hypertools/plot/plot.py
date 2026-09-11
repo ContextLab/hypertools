@@ -8729,6 +8729,10 @@ def plot(
             return np.asarray(frame, dtype=float)
         idx = frame.index
         original = _forecast_frames[owner].index
+        if isinstance(idx, pd.PeriodIndex):
+            # forecasts of periods are periods; draw them at their start
+            # times, as `_series_x_values` draws the observed periods
+            idx = idx.to_timestamp()
         if isinstance(idx, pd.DatetimeIndex):
             if _series_epoch_ms:
                 xs = np.asarray(idx.as_unit('ms').asi8, dtype=float)

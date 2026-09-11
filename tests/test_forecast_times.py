@@ -210,7 +210,12 @@ def test_duration_and_period_indexes_have_equivalent_time_coordinates(index):
     actual = hyp.predict(data, t=2)
     np.testing.assert_allclose(actual, expected)
     observed = index.to_timestamp() if isinstance(index, pd.PeriodIndex) else index
-    assert actual.index[0] == observed[-1] + (observed[1] - observed[0])
+    first = actual.index[0]
+    if isinstance(index, pd.PeriodIndex):
+        # forecasts of periods are periods (release review 2026-09-11)
+        assert isinstance(actual.index, pd.PeriodIndex)
+        first = first.start_time
+    assert first == observed[-1] + (observed[1] - observed[0])
 
 
 @pytest.mark.parametrize('step', [0, -1, float('inf'), float('nan'), True])

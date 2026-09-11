@@ -83,9 +83,9 @@ def test_native_time_indexes_are_retained_in_backtest_results(kind):
                                       pd.to_timedelta(frame.index * 2, unit='h'), freq='h')
     _, result = hyp.predict(frame, model=['Kalman', 'GaussianProcess'],
                             holdout=3, return_forecasts=True)
+    # Periods are RETAINED too: a PeriodIndex input comes back as periods
+    # (release review 2026-09-11; this used to expect `.to_timestamp()`).
     expected_index = frame.index[-3:]
-    if kind == 'period':
-        expected_index = expected_index.to_timestamp()
     for forecast in result.values():
         pd.testing.assert_index_equal(forecast.index, expected_index)
 
