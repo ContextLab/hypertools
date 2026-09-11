@@ -110,7 +110,9 @@ jobs:
 
     - name: Check repository lint (Ubuntu Python 3.12)
       if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
-      run: python -m ruff check .
+      run: |
+        python -m pip install "ruff==0.15.20"
+        python -m ruff check .
 
     - name: Pre-fetch headless Chrome for kaleido (Plotly image/GIF export)
       # tests/test_animation_export.py exports Plotly figures to GIF/MP4 via
