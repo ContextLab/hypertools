@@ -18,6 +18,8 @@ uneven absolute gaps. Weekday-only data whose sessions skip a few weekdays
 rows the regular grid fills. A ``PeriodIndex`` is handled on its start
 timestamps internally and comes back as periods of the same frequency.
 """
+import contextlib
+import contextvars
 import datetime
 import warnings
 
@@ -32,6 +34,38 @@ from ..core.exceptions import _InsufficientHistoryError
 TIME_STEP_ATTR = '_hypertools_time_step'
 PERIOD_FREQ_ATTR = '_hypertools_period_freq'
 ORDERED_ATTR = '_hypertools_time_ordered'
+
+# Messages already issued inside one `warn_once_per_call()` scope (one
+# hyp.plot call): plot re-checks the same data along several internal paths,
+# and a shuffled index warned twice for one call (2026-09-11 review).
+_WARNED_IN_CALL = contextvars.ContextVar('_hypertools_time_warned',
+                                         default=None)
+
+
+@contextlib.contextmanager
+def warn_once_per_call():
+    """Issue each distinct time-policy warning at most once inside this
+    block (outermost scope wins, so nested calls share one record)."""
+    if _WARNED_IN_CALL.get() is not None:
+        yield
+        return
+    token = _WARNED_IN_CALL.set(set())
+    try:
+        yield
+    finally:
+        _WARNED_IN_CALL.reset(token)
+
+
+def _warn_time(message):
+    """Warn about a time policy at the caller's line, once per message per
+    `warn_once_per_call()` scope."""
+    seen = _WARNED_IN_CALL.get()
+    if seen is not None:
+        if message in seen:
+            return
+        seen.add(message)
+    from ..core.model import external_stacklevel
+    warnings.warn(message, UserWarning, stacklevel=external_stacklevel())
 
 #: the most calendar grid points one coordinate computation may generate
 _MAX_CALENDAR_POINTS = 2_000_000
@@ -50,6 +84,14 @@ def is_calendar_step(step):
     return isinstance(step, pd.offsets.BaseOffset)
 
 
+def _step_text(step):
+    """A step for messages: a calendar offset as its alias (``'B'``,
+    ``'MS'`` -- what ``step=`` accepts), anything else as ``str()``."""
+    if isinstance(step, pd.offsets.BaseOffset):
+        return repr(step.freqstr)
+    return str(step)
+
+
 def order_time_data(data):
     """Sort timed observations together; leave categorical/duplicate IDs alone.
 
@@ -62,8 +104,8 @@ def order_time_data(data):
             and not data.attrs.get(ORDERED_ATTR, False)):
         action = ('observations are sorted before forecasting' if is_time_index(data.index)
                   else 'repeated/categorical row IDs retain their input order')
-        warnings.warn('the dataset index is not sorted in ascending order; '
-                      + action, UserWarning, stacklevel=3)
+        _warn_time('the dataset index is not sorted in ascending order; '
+                   + action)
     if not is_time_index(data.index):
         result = data.copy()
         result.attrs[ORDERED_ATTR] = True
@@ -420,16 +462,19 @@ def prepare_time_data(data, step=None, regular=False):
     fitted.attrs[TIME_STEP_ATTR] = delta
     own = _own_regular_step(observed)
     if step is not None and own is not None:
-        message = (f'Regularly spaced observations (one every {own}) were '
-                   f'linearly interpolated onto a grid with step={delta} '
-                   'before fitting this discrete-time forecaster.')
+        message = (f'Regularly spaced observations (one every '
+                   f'{_step_text(own)}) were linearly interpolated onto a grid '
+                   f'with step={_step_text(delta)} before fitting this '
+                   'discrete-time forecaster.')
     else:
         message = ('Irregular observation times were linearly interpolated onto a '
-                   f'regular grid with step={delta} before fitting this discrete-time '
-                   'forecaster. Pass step= to choose the grid interval; '
-                   'GaussianProcess uses the actual observation times without '
-                   'interpolation.')
-    warnings.warn(message, UserWarning, stacklevel=3)
+                   f'regular grid with step={_step_text(delta)} before fitting '
+                   'this discrete-time forecaster. Pass step= to choose the grid '
+                   'interval; GaussianProcess uses the actual observation times '
+                   'without interpolation.')
+    # attributed to the caller's line, not a hypertools frame: a fixed
+    # stacklevel printed '.../hypertools/predict/common.py:435' in tutorials
+    _warn_time(message)
     return observed, fitted, delta
 
 
