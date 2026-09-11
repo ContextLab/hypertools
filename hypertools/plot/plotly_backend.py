@@ -1030,7 +1030,8 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 axis_scale='unit', xlim=None, ylim=None, x_date=False,
                 truths=None, forecast_labels=None,
                 forecast_datasets=None, datasets_drawn=None,
-                legend_explicit=False, raw_data=None, frame_kwargs=None):
+                legend_explicit=False, raw_data=None, frame_kwargs=None,
+                trace_names=None):
     """Render grouped datasets with plotly, mirroring _draw's contract and
     the matplotlib renderer's appearance.
 
@@ -1065,6 +1066,16 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         fully-opaque, marked trace per dataset, tagged
         ``meta['hyp_forecast_role'] = 'truth'`` -- the plotly half of
         `plot._draw_truth_overlays`.
+    trace_names : list of str or None
+        The name of every entry of `data` -- what its hover label shows --
+        from `plot._plotly_hover_names`: the label its legend entry shows or
+        would show under ``legend=True`` (a category for every run of it, a
+        hierarchy's top-level group for its leaves, a series' column, else
+        the dataset number), or None for a lone unlabelled dataset, which is
+        then drawn with no hover name box at all (`_hover_identity`). A name
+        shared by several traces becomes their `legendgroup`. Whether a
+        legend entry is DRAWN stays decided by `legend`. `None` (a direct
+        caller) keeps the historical naming (legend labels only).
     raw_data : list of numpy.ndarray or None
         The PRE-resampling observations, one per entry of `data`, in the
         same display space (`plot()`'s ``raw_xform`` -- the matplotlib
@@ -1594,7 +1605,12 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         msize = _marker_size_px(
             tkwargs.get('markersize') or DEFAULT_MARKERSIZE_PT, marker_char,
             ndims=ndims)
-        name = _trace_name(legend, tkwargs, i)
+        # `legend_name` decides the legend entry (unchanged rules); `name`
+        # is what the trace is CALLED -- its hover label -- which every
+        # data trace gets, legend or not (`trace_names`)
+        legend_name = _trace_name(legend, tkwargs, i)
+        name = (legend_name if legend_name is not None
+                else _hover_name(trace_names, i))
 
         if ndims >= 3 and symbol not in _SYMBOLS_3D:
             symbol = _SYMBOL_3D_FALLBACK.get(symbol, 'circle')
@@ -1697,9 +1713,10 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
             # explicit `legend_entries` (legend_colors=[(label, color)])
             # define the legend outright, so the data traces stay out of
             # it (matplotlib parity; Codex round 3)
-            showlegend=(legend is not None and name is not None
-                       and not str(name).startswith('_')
+            showlegend=(legend is not None and legend_name is not None
+                       and not str(legend_name).startswith('_')
                        and not hide_points and not legend_entries),
+            **_hover_identity(name, trace_names, ndims),
             visible=not hide_points,
             line=dict(color=color, width=width, dash=dash),
             marker=dict(color=color, size=msize, symbol=symbol),
@@ -1767,6 +1784,9 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 traces.append(go.Scatter(
                     x=obs_x, y=obs_y, mode='markers', name=name,
                     showlegend=False, visible=not hide_points,
+                    **{k: v for k, v in _hover_identity(
+                        name, trace_names, ndims).items()
+                       if k != 'legendgroup'},
                     legendgroup=name or 'multicolor',
                     marker=dict(color=obs_point_colors, size=msize,
                                 symbol=symbol),
@@ -2494,6 +2514,27 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     else:
         layout['xaxis'] = _labeled_axis_layout({}, xlabel)
         layout['yaxis'] = _labeled_axis_layout({}, ylabel)
+
+    # An ANIMATION's legend rides on data-free proxy traces (1.1 release
+    # review, L7): plotly omits the legend item of a trace with no points,
+    # and a data trace is empty until the reveal reaches it (a later
+    # dataset, a later cluster's first run), so its entry appeared and
+    # vanished frame by frame while matplotlib's legend is complete from
+    # frame 0. Each proxy wears its data trace's style and shares its
+    # `legendgroup`, so a legend click still toggles the data; the data
+    # traces keep their `name` for hover.
+    if animate and animate != 'spin':
+        _proxies = []
+        for _k in range(data_trace_start, data_trace_start + n_data_traces):
+            _tr = fig.data[_k]
+            if not _tr.showlegend or _tr.name is None:
+                continue
+            _group = _tr.legendgroup or _tr.name
+            _tr.legendgroup = _group
+            _tr.showlegend = False
+            _proxies.append(_legend_proxy_for(_tr, ndims, _group))
+        if _proxies:
+            fig.add_traces(_proxies)
 
     # labels= (GH #205 F3): point annotations, at parity with matplotlib's
     # annotate_plot -- see _build_point_annotations for the exact mapping
@@ -4867,6 +4908,76 @@ def _hue_anchor_color(point_colors, src):
     if pc is None or len(pc) == 0:
         return None
     return tuple(float(v) for v in np.asarray(pc[-1], dtype=np.float64)[:3])
+
+
+def _legend_proxy_for(trace, ndims, group):
+    """A data-free trace carrying `trace`'s legend entry (name, line and
+    marker style, `legendgroup`) -- how an animation keeps its legend
+    complete while its data traces are still empty (see `plotly_draw`)."""
+    import plotly.graph_objects as go
+
+    def _scalar(value):
+        if value is None or isinstance(value, str) or np.isscalar(value):
+            return value
+        values = [v for v in value if v is not None]
+        if not values:
+            return None
+        return (max(values) if all(np.isscalar(v) and not isinstance(v, str)
+                                   for v in values) else values[0])
+
+    line = trace.line.to_plotly_json() if trace.line is not None else {}
+    line['color'] = _scalar(line.get('color'))
+    common = dict(mode=trace.mode or 'lines', name=trace.name,
+                  showlegend=True, legendgroup=group, hoverinfo='skip',
+                  line=line, meta=dict(hyp_legend_entry=str(trace.name)))
+    if trace.opacity is not None:
+        common['opacity'] = trace.opacity
+    if trace.mode and 'markers' in trace.mode and trace.marker is not None:
+        marker = {k: v for k, v in trace.marker.to_plotly_json().items()
+                  if k in ('color', 'size', 'symbol', 'opacity')}
+        marker['color'] = _scalar(marker.get('color'))
+        marker['size'] = _scalar(marker.get('size'))
+        common['marker'] = marker
+    if ndims >= 3:
+        return go.Scatter3d(x=[None], y=[None], z=[None], **common)
+    return go.Scatter(x=[None], y=[None], **common)
+
+
+def _hover_name(trace_names, i):
+    """Data trace `i`'s name from `plotly_draw`'s `trace_names` (None when
+    it has none, or when no names were given)."""
+    if trace_names is None or i >= len(trace_names):
+        return None
+    name = trace_names[i]
+    return None if name is None else str(name)
+
+
+def _hover_identity(name, trace_names, ndims):
+    """Extra properties that give a data trace its hover identity (1.1
+    release review, maintainer finding: plotly showed "trace 0", "trace 1",
+    ... on hover because unlabelled data traces had no `name`).
+
+    * a name shared by several data traces (the runs of one hue/cluster
+      category, a hierarchy group's leaves and means) becomes their
+      `legendgroup`, so the one legend entry of the group toggles all of
+      them;
+    * a trace with no name at all (a lone, unlabelled dataset) gets a
+      `hovertemplate` with an empty ``<extra></extra>``: plotly would
+      otherwise print "trace 0" in the name box, a label that names
+      nothing -- the coordinates alone are shown.
+
+    Returns ``{}`` when `trace_names` was not given (a direct `plotly_draw`
+    caller), keeping that path exactly as it was.
+    """
+    if trace_names is None:
+        return {}
+    if name is None:
+        coords = ('x: %{x}<br>y: %{y}<br>z: %{z}' if ndims >= 3
+                  else '(%{x}, %{y})')
+        return dict(hovertemplate=coords + '<extra></extra>')
+    if sum(1 for n in trace_names if n is not None and str(n) == name) > 1:
+        return dict(legendgroup=name)
+    return {}
 
 
 def _trace_name(legend, tkwargs, i):
