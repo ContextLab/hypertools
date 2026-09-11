@@ -218,6 +218,31 @@ _PLOTLY_SANS_STACK = _plotly_font_family()
 # Andy). They now hang BELOW the plotting area, laid out horizontally, with the
 # bottom margin opened up so nothing is clipped.
 _ANIM_BUTTON_MARGIN_B = 64   # bottom margin reserved for the controls (px)
+_ANIM_BUTTON_HEIGHT_PX = 30  # rendered height of the Play/Pause row (px)
+_ANIM_BUTTON_GAP_PX = 6      # space above and below that row (px)
+
+
+def _x_axis_band_px(fig, ndims):
+    """Height (px) of what a 2-D figure's x axis draws below the plotting
+    area -- tick marks and labels (two lines on a date axis) and the axis
+    title -- or 0 when it draws nothing there (3-D; a hidden unit-scale
+    axis). The Play/Pause controls go below this band. Generous by a few
+    px: 12 px tick labels at plotly's 1.3 line height, 5 px outside ticks,
+    and a title placed under the labels with plotly's automatic standoff.
+    """
+    if ndims >= 3:
+        return 0
+    axis = fig.layout.xaxis
+    if axis is None or axis.visible is False:
+        return 0
+    band = 0
+    if axis.showticklabels:
+        lines = 2 if axis.type == 'date' else 1
+        band += 5 + 4 + lines * 16
+    title = axis.title.text if axis.title is not None else None
+    if title:
+        band += 30 if band else 22
+    return band
 CUBE_LINEWIDTH_PT = 1.5      # hypertools' frame linewidth, matching the
                              # matplotlib backend's ~2px frame (both the 3D
                              # wireframe cube and the 2D square)
@@ -6394,14 +6419,30 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
     # update_layout merges nested dicts, so l/r/t margins are preserved.
     # Symmetric `pad` centers each label in its button (the default padding
     # made 'Play' sit noticeably off-center).
+    #
+    # A VISIBLE 2-D x axis (`axis_scale='data'`, an `ndims=1` series, a date
+    # axis) draws its tick labels -- two lines on a date axis -- and its
+    # title exactly where y=-0.06 put the controls, which covered them (1.1
+    # release review: the "2020" under the first date tick). The controls
+    # then go below that band, and the margin grows to hold both.
+    _menu_y, _margin_b = -0.06, _ANIM_BUTTON_MARGIN_B
+    _band = _x_axis_band_px(fig, ndims)
+    if _band:
+        _margin_b = max(_ANIM_BUTTON_MARGIN_B,
+                        _band + _ANIM_BUTTON_HEIGHT_PX + 2 * _ANIM_BUTTON_GAP_PX)
+        _height = fig.layout.height or int(DEFAULT_FIGSIZE[1] * 100)
+        _top = (fig.layout.margin.t if fig.layout.margin
+                and fig.layout.margin.t is not None else 10)
+        _plot_h = max(_height - _top - _margin_b, 1)
+        _menu_y = -(_band + _ANIM_BUTTON_GAP_PX) / _plot_h
     fig.update_layout(
-        margin=dict(b=_ANIM_BUTTON_MARGIN_B),
+        margin=dict(b=_margin_b),
         updatemenus=[dict(
             type='buttons',
             direction='right',
             showactive=False,
             x=0, xanchor='left',
-            y=-0.06, yanchor='top',
+            y=_menu_y, yanchor='top',
             pad=dict(l=8, r=8, t=6, b=6),
             bgcolor='rgba(255,255,255,0.95)',
             bordercolor='rgba(0,0,0,0.22)',
