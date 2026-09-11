@@ -100,6 +100,17 @@ def test_o_dash_marks_every_observation_and_nothing_else(ndims):
     assert set(sizes[sizes > 0]) == {_marker_size_px(6.0, 'o', ndims)}
 
 
+@pytest.mark.parametrize('kw', [dict(marker='o'), dict(markers='o')])
+@pytest.mark.parametrize('ndims', [2, 3])
+def test_marker_kwarg_on_a_line_marks_only_the_observations(kw, ndims):
+    """`marker=`/its `markers=` alias on a line style is a marker+line
+    trace like 'o-': the same observation-only markers."""
+    tr, = _marker_traces(hyp.plot(_walk()[:, :ndims], backend='plotly',
+                                  show=False, **kw))
+    assert len(tr.x) > 5 * 60
+    assert len(_marked_vertices(tr)) == 60
+
+
 @pytest.mark.parametrize('ndims', [1, 2])
 def test_observation_markers_keep_scalar_marker_look_in_2d(ndims):
     """A per-point size array is a plotly 'bubble' trace, whose defaults
