@@ -66,6 +66,24 @@ evidence/CI for the new head.
 - Shared marker contract: markers only at true observations on both backends incl. forecast_fmt.
 - After merge: integrate CHANGELOG bullets, full pytest, ruff, docs build, re-run tour headless + Colab at new pushed SHA.
 
+### Docs/claims reviewer (scratchpad/review_docs/FINDINGS.md, 1555 lines)
+- BLOCKER H-B1 5 launch notebooks crash on Colab (plotly auto; anim.on_frame/figure/draw_frame) -> W5
+- BLOCKER E-B1 hyp.plot([a,b], hue=['x','y'], labels=['A','B']) crash (per-dataset labels + hue/cluster) -> W4b
+- BLOCKER H-B2 market_sectors weights: split-adjusted close x as-reported SEC shares -> W5
+- MAJOR A0 Colab video block swallows 6 tutorial cell outputs -> W5; A1 RTD webhook 400, nothing built since 07-24,
+  README latest/optional_dependencies.html 404 -> checklist (W6) + JEREMY must re-sync RTD integration
+- MAJOR A2 release notes stale, A3 checklist order -> W6; C-F1 hue markers ignore alpha -> W4b+W3; E-M1 marker-only regroup fc -> W4a
+- 10 tutorial prose MAJORs + many MINORs -> W5; CHANGELOG/checklist MINOR/NIT -> W6; D-1 plotly window_bounds, D-6 ax=cell -> W3;
+  D-2 aligner fit arrays, D-3 dispersion, D-5 PPCA warnings -> W7; A12 set_autoinstall teardown -> W2
+- Worktree tool sometimes bases on 96ac8b7f (origin default = master)! Prompts now force reset to 09f56b2c/deeb1f93.
+
+### Jeremy report 2026-09-11 ~16:10Z: plotly hover says "trace 0/1" instead of legend names
+- Confirmed: nearly every hoverable plotly data trace is unnamed (no-legend plots, panels, animations, forecasts, series curves);
+  with a legend, only the first segment per hue/cluster/hierarchy group is named (ANIM-dict-cluster, HIER). Continuous hue drops legend names.
+  Animation playback keeps base names (verified in Chromium via gd._fullData after Plotly.animate).
+- Routed to W3 with contract: name every hoverable trace with its legend label (category/dataset/column/model/'truth'),
+  duplicates showlegend=False + same legendgroup; legend display still governed by legend=; single unlabeled dataset hides the extra box.
+
 ### Visual expectation writer extra (code-vs-doc)
 - mpl fmt='-o' overrides marker=['o','s'] (backends disagree); markers= with '-' marks all smoothed pts (antialias docstring says true samples);
   plotly ignores frame_kwargs; static plotly applies zoom (doc: animation only); '^' -> diamond in plotly 3-D; legend_kwargs x/y yanchor;
