@@ -318,6 +318,7 @@ def _palette_continuation(palette, n, offset=0, used=None):
     import seaborn as sns
 
     def sample(m):
+        """The palette's own `m`-colour sampling, as RGB tuples."""
         return [tuple(float(v) for v in c[:3]) for c in sns.color_palette(
             _seaborn_palette_arg(palette, m), m)]
 
