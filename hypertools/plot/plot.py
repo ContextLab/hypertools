@@ -3430,6 +3430,41 @@ def _is_per_dataset_labels(labels, dataset_lengths):
     return all(el is None or isinstance(el, str) for el in labels)
 
 
+def _labels_as_lists(labels, n_datasets):
+    """A nested per-dataset `labels=` whose entries are 1-D ARRAYS or Series
+    (``[np.array([...]), pd.Series([...])]``), as the nested LIST form every
+    consumer reads. Only lists and tuples counted as nested, so arrays were
+    read as two entries for ``n`` observations and rejected on one axes --
+    while `panels=` accepted them (1.1 release review). Anything else,
+    including a per-dataset list of strings, is returned unchanged."""
+    if not isinstance(labels, (list, tuple)) or len(labels) != n_datasets:
+        return labels
+    if not any(is_array_dataset(el) or is_series_like(el) for el in labels):
+        return labels
+    out = []
+    for el in labels:
+        if is_array_dataset(el) or is_series_like(el):
+            arr = np.asarray(el.to_numpy() if hasattr(el, 'to_numpy')
+                             else el, dtype=object)
+            if arr.ndim != 1:
+                # not one label per row; `_validate_labels_length` reports
+                return labels
+            out.append(arr.tolist())
+        else:
+            out.append(el)
+    return out
+
+
+def _flatten_dataset_labels(labels):
+    """A nested per-dataset `labels=` (one sub-list per dataset) as the flat
+    one-entry-per-observation list; a flat one is returned unchanged."""
+    if not isinstance(labels, (list, tuple)) or not any(
+            isinstance(el, (list, tuple)) for el in labels):
+        return labels
+    return [lbl for el in labels
+            for lbl in (el if isinstance(el, (list, tuple)) else [el])]
+
+
 def _expand_dataset_labels(labels, dataset_lengths, label_anchor):
     """Turn a per-DATASET `labels=` list into the per-observation nested
     form the rest of `plot()` (and both backends) already understand: one
@@ -5032,10 +5067,12 @@ def plot(
 
     labels : list
         A list of point labels: exactly one entry per OBSERVATION (row)
-        across all datasets, or a nested list with one sub-list per
-        dataset; a length mismatch raises ``ValueError`` naming labels and
-        both counts. If no label is wanted for a particular point, input
-        None for that entry.
+        across all datasets, or a nested list with one sub-sequence per
+        dataset (a list, tuple, 1-D array or Series each); a length
+        mismatch raises ``ValueError`` naming labels and both counts. If no
+        label is wanted for a particular point, input None for that entry.
+        Every form keeps each label on its own observation when `hue=` or
+        `cluster=` regroups the drawn traces.
 
         `labels` may instead carry one entry PER DATASET -- one string (or
         None) for each of the ``len(x)`` datasets -- which annotates each
@@ -8355,9 +8392,23 @@ def plot(
             # per-DATASET labels= (GH #285) are expanded to the historical
             # per-observation nested form FIRST, so the check below (and
             # every consumer downstream) is unchanged.
+            labels = _labels_as_lists(labels, len(raw))
             labels = _expand_dataset_labels(
                 labels, [ri.shape[0] for ri in raw], label_anchor)
             _validate_labels_length(labels, [ri.shape[0] for ri in raw])
+            if hue is not None or cluster is not None \
+                    or n_clusters is not None:
+                # a hue=/cluster= grouping regroups the observations
+                # across datasets, and every regrouping path
+                # (`reshape_data`, `segment_by_run`) reads labels= as ONE
+                # entry per observation, flat. The nested per-dataset
+                # form -- and the per-dataset strings expanded into it
+                # just above -- reached them as one sub-list per dataset
+                # and crashed both backends (1.1 release review: 'NoneType'
+                # is not iterable, "need at least one array to
+                # concatenate", IndexError). Flatten it; the flat form is
+                # the one those paths always handled.
+                labels = _flatten_dataset_labels(labels)
 
         # a per-dataset fmt LIST must match the dataset count
         # (F01-006/F10-003): fail fast here when no later regrouping

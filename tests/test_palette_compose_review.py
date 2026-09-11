@@ -310,3 +310,73 @@ def test_three_column_data_still_refuses_a_2d_axes():
         hyp.plot(_walks(1, rows=20)[0], ax=ax, show=False)
     # nothing was drawn into the refused axes
     assert not ax.lines
+
+
+# --- 6 / A: labels= forms on one axes, with and without a regrouping ------
+
+_LA = ['a%d' % i for i in range(10)]
+_LB = ['b%d' % i for i in range(10)]
+
+
+def _label_positions(fig, backend):
+    if backend == 'plotly':
+        anns = fig.layout.scene.annotations or fig.layout.annotations
+        return {a.text: tuple(round(float(v), 6) for v in (
+            (a.x, a.y, a.z) if hasattr(a, 'z') else (a.x, a.y)))
+            for a in anns}
+    out = {}
+    for t in fig.axes[0].texts:
+        pos = (t.get_position_3d() if hasattr(t, 'get_position_3d')
+               else t.get_position())
+        out[t.get_text()] = tuple(round(float(v), 6) for v in pos)
+    return out
+
+
+@pytest.mark.parametrize('backend', ['matplotlib', 'plotly'])
+@pytest.mark.parametrize('form', ['arrays', 'series', 'tuples'])
+def test_nested_label_sequences_of_any_type_on_one_axes(backend, form):
+    import pandas as pd
+    wrap = {'arrays': np.array, 'series': pd.Series, 'tuples': tuple}[form]
+    data = _walks(2, rows=10)
+    ref = _label_positions(hyp.plot(data, labels=[_LA, _LB], show=False,
+                                    backend=backend), backend)
+    got = _label_positions(hyp.plot(data, labels=[wrap(_LA), wrap(_LB)],
+                                    show=False, backend=backend), backend)
+    assert len(ref) == 20
+    assert got == ref
+
+
+_HUE_A = np.repeat(['x', 'y'], 5)
+_HUE_B = np.repeat(['y', 'z'], 5)
+
+
+@pytest.mark.parametrize('backend', ['matplotlib', 'plotly'])
+@pytest.mark.parametrize('labels', [
+    pytest.param([_LA, _LB], id='nested'),
+    pytest.param(['A', 'B'], id='per-dataset'),
+    pytest.param([np.array(_LA), np.array(_LB)], id='arrays')])
+@pytest.mark.parametrize('group', [
+    pytest.param(dict(hue=['x', 'y']), id='per-dataset-hue'),
+    pytest.param(dict(hue=[_HUE_A, _HUE_B]), id='nested-hue'),
+    pytest.param(dict(hue=[_HUE_A, _HUE_B], fmt='o'), id='nested-hue-o'),
+    pytest.param(dict(hue=[_HUE_A, _HUE_B], antialias=False),
+                 id='nested-hue-raw'),
+    pytest.param(dict(hue=['x', 'y'], fmt='o'), id='per-dataset-hue-o'),
+    pytest.param(dict(cluster='KMeans', n_clusters=3), id='cluster')])
+def test_per_dataset_labels_survive_a_regrouping(backend, labels, group):
+    data = _walks(2, rows=10)
+    kw = {k: v for k, v in group.items() if k in ('fmt', 'antialias')}
+    ref = _label_positions(hyp.plot(data, labels=labels, show=False,
+                                    backend=backend, **kw), backend)
+    got = _label_positions(hyp.plot(data, labels=labels, show=False,
+                                    backend=backend, **group), backend)
+    assert ref and sorted(got) == sorted(ref)
+    # every label on its own observation: the same layout as the ungrouped
+    # figure's. Compared about the labels' centroid, since plotly centres
+    # a hue-segmented figure on its per-run smoothed geometry (a shift of
+    # the WHOLE figure, traces and labels together, ~0.004 here)
+    def centred(pos):
+        keys = sorted(pos)
+        arr = np.asarray([pos[k] for k in keys], float)
+        return arr - arr.mean(axis=0)
+    np.testing.assert_allclose(centred(got), centred(ref), atol=1e-5)
