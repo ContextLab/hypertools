@@ -21,7 +21,8 @@ import pandas as pd
 # and to a linter, instead of 186 F405 "may be undefined" findings.
 from .._shared.helpers import *
 from .._shared.helpers import (is_array_dataset, is_frame_dataset,
-                               is_series_like, as_pandas_dataframe)
+                               is_series_like, as_pandas_dataframe,
+                               row_index_x)
 from .._shared.params import default_params
 from ..core.model import external_stacklevel
 from ..tools.analyze import analyze
@@ -10937,7 +10938,18 @@ def plot(
         _bounds = np.vstack([np.asarray(r, dtype=float)
                              for r in _bounds_rows])
         _finite = _bounds[np.isfinite(_bounds).all(axis=1)]
-        if len(_finite):
+        if len(_finite) and _finite.shape[1] == 1:
+            # a ONE-column trace outside ndims=1 series mode draws its
+            # values on Y against the row index on x, so its one column
+            # bounds y. x (rows, continued by any forecast) is left to the
+            # backend's autoscale; this used to give the VALUE range to x
+            # as well, so the 40-row trace sat in an x window of (-5.5,
+            # 3.2) (1.1 release review)
+            _lo, _hi = float(_finite.min()), float(_finite.max())
+            _pad = (_hi - _lo) * 0.05 if _hi > _lo else 1.0
+            if _data_ylim is None:
+                _data_ylim = (_lo - _pad, _hi + _pad)
+        elif len(_finite):
             _lo = _finite.min(axis=0)
             _hi = _finite.max(axis=0)
             _pad = np.where(_hi > _lo, (_hi - _lo) * 0.05, 1.0)
@@ -11311,6 +11323,9 @@ def plot(
         fig = plotly_draw(
             xform,
             into=_plotly_into,
+            # rows behind each (antialiased) trace: a 1-D trace's x is the
+            # row index, as matplotlib's plot1D draws it
+            row_counts=[len(r) for r in raw_xform],
             # the same run -> dataset -> rows mapping the matplotlib updaters
             # pace their reveal with, so neither backend re-derives it
             ownership=_ownership,
@@ -11953,7 +11968,9 @@ def plot(
                         frame_hooks=_frame_hooks)
                 elif is_line(fmt):
                     _apply_multicolor_lines(ax, xform, line_colors,
-                                            kwargs_list)
+                                            kwargs_list,
+                                            row_counts=[len(r) for r in
+                                                        raw_xform])
                 elif has_line_component(fmt):
                     # marker+line combo fmt (e.g. 'o-') with continuous/
                     # matrix hue (GH #141 x F02-004): keep BOTH components
@@ -11965,7 +11982,9 @@ def plot(
                     # interpolated point (~45x more "data points" than
                     # exist).
                     _apply_multicolor_lines(ax, xform, line_colors,
-                                            kwargs_list)
+                                            kwargs_list,
+                                            row_counts=[len(r) for r in
+                                                        raw_xform])
                     _marker_colors = _multicolor_line_colors(
                         multicolor_hue, pre_interp_lengths, raw_xform,
                         palette, is_rgb=multicolor_hue_is_rgb)
@@ -13236,9 +13255,14 @@ def _multicolor_line_colors(hue_src, orig_lengths, xform, palette, is_rgb=False)
     return out
 
 
-def _apply_multicolor_lines(ax, xform, line_colors, kwargs_list):
+def _apply_multicolor_lines(ax, xform, line_colors, kwargs_list,
+                            row_counts=None):
     """Replace single-color line artists with per-segment-colored
-    collections (matplotlib backend)."""
+    collections (matplotlib backend).
+
+    `row_counts` (one per trace): the ORIGINAL row count behind each
+    (possibly antialiased) trace, so a 1-D trace's x stays the row index
+    (`row_index_x`) exactly as `matplotlib_backend`'s plot1D draws it."""
     from matplotlib.collections import LineCollection
     from mpl_toolkits.mplot3d.art3d import Line3DCollection
 
@@ -13274,7 +13298,10 @@ def _apply_multicolor_lines(ax, xform, line_colors, kwargs_list):
         tkwargs = kwargs_list[i] if i < len(kwargs_list) else {}
         lw = tkwargs.get('linewidth') or plt.rcParams['lines.linewidth']
         if xi.shape[1] == 1:
-            pts = np.column_stack([np.arange(xi.shape[0]), xi[:, 0]])
+            _rows = (row_counts[i] if row_counts is not None
+                     and i < len(row_counts) else xi.shape[0])
+            pts = np.column_stack([row_index_x(_rows, xi.shape[0]),
+                                   xi[:, 0]])
         else:
             pts = xi[:, :3] if is_3d else xi[:, :2]
         segments = np.stack([pts[:-1], pts[1:]], axis=1)

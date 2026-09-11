@@ -30,6 +30,7 @@ from .animate import HyperFuncAnimation
 import matplotlib.patches as patches
 from .._shared.helpers import *
 from .._shared.helpers import UNIT_FRAME_LIMIT, UNIT_FRAME_SCALE
+from .._shared.helpers import row_index_x
 from ..core.model import external_stacklevel
 from .meshutil import (backface_cull, blinn_phong_colors,
                        vertex_colors_from_points, face_colors_from_vertex_colors)
@@ -1047,7 +1048,16 @@ def _draw(
         n = len(data)
         for i in range(n):
             raw = raw_data[i] if raw_data is not None else data[i]
-            _plot_possibly_split(ax, (data[i][:, 0],), (raw[:, 0],), i)
+            # x is the ROW index: static antialiasing densified `data[i]`
+            # upstream (uniformly, every original row kept), so its vertices
+            # span the same 0..n_rows-1 as the raw rows. Plotting it with no
+            # x put it on the VERTEX index (0..936 for 40 rows) while the
+            # forecast/truth overlays continue in rows -- squashing a
+            # forecast 24x at the far end (1.1 release review)
+            _xs = row_index_x(raw.shape[0], data[i].shape[0])
+            _plot_possibly_split(
+                ax, (_xs, data[i][:, 0]),
+                (np.arange(raw.shape[0], dtype=float), raw[:, 0]), i)
         return fig, ax, data
 
     # plot data in 2D

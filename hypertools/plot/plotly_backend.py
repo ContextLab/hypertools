@@ -59,7 +59,8 @@ from .density import (
 from .trails import (RunWindow, anim_window_bounds, broadcast_trail_flag,
                      dataset_window_bounds, head_window_frames)
 from .._shared.helpers import (UNIT_FRAME_LIMIT, UNIT_FRAME_SCALE,
-                               antialias_line, has_line_component)
+                               antialias_line, has_line_component,
+                               row_index_x)
 from . import morph as _morph
 
 
@@ -806,7 +807,7 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 axis_scale='unit', xlim=None, ylim=None, x_date=False,
                 truths=None, forecast_labels=None,
                 forecast_datasets=None, datasets_drawn=None,
-                legend_explicit=False):
+                legend_explicit=False, row_counts=None):
     """Render grouped datasets with plotly, mirroring _draw's contract and
     the matplotlib renderer's appearance.
 
@@ -835,6 +836,13 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         The x values are epoch MILLISECONDS (what `plot()`'s ndims=1 series
         mode emits for a `DatetimeIndex` under the plotly backend); marks
         the x axis `type='date'` so plotly renders real dates.
+    row_counts : list of int or None
+        The ORIGINAL row count behind each trace of `data` (`plot()`
+        antialiases static lines upstream, so a trace can hold more drawn
+        vertices than rows). A 1-D trace puts the row index on x, so its
+        vertices -- and the forecast/truth that continue it -- are placed
+        in ROW units (`row_index_x`), matching matplotlib's plot1D. `None`
+        treats every vertex as a row (the pre-1.1 x).
     truths : list of numpy.ndarray or None
         GH #285. One seam-prepended ACTUAL continuation per drawn trace
         (`plot`'s `truth=`), already in display space. Drawn as one solid,
@@ -1249,6 +1257,13 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     # smoothing is identical across the static figure and its frames.
     aa_curves = _build_aa_curves(data, fmt, antialias, morph_tags=morph_tags)
 
+    def _rows_of(i, arr):
+        """The ORIGINAL row count behind drawn trace `i` (see
+        `row_counts`); `arr` is its drawn array."""
+        if row_counts is not None and i < len(row_counts):
+            return int(row_counts[i])
+        return np.atleast_2d(np.asarray(arr)).shape[0]
+
     # density= (GH #108/#191), 2-D case: subtle KDE density layers must
     # render BELOW everything else (including surface= fills). Plotly's 2D
     # layering follows trace order in `fig.data` (no zorder), so these are
@@ -1452,7 +1467,8 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
             traces.append(go.Scatter(x=draw_arr[:, 0], y=draw_arr[:, 1],
                                      **common))
         else:
-            xs = _aa_x(aa_step, 0, draw_arr.shape[0])
+            xs = (_aa_x(aa_step, 0, draw_arr.shape[0]) if aa_step != 1
+                  else row_index_x(_rows_of(i, arr), draw_arr.shape[0]))
             if trace_point_colors is not None and 'lines' in mode:
                 pts = np.column_stack([xs, draw_arr[:, 0]])
                 traces.extend(_segment_traces_2d(
@@ -1568,8 +1584,7 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 traces.append(go.Scatter(
                     x=fc_draw[:, 0], y=fc_draw[:, 1], **fc_common))
             else:
-                arr2 = np.atleast_2d(np.asarray(arr, dtype=np.float64))
-                start = arr2.shape[0] - 1
+                start = _rows_of(src, arr) - 1
                 traces.append(go.Scatter(
                     x=_aa_x(fc_step, start, fc_draw.shape[0]),
                     y=fc_draw[:, 0], **fc_common))
@@ -1755,10 +1770,9 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 traces.append(go.Scatter(x=tr_draw[:, 0], y=tr_draw[:, 1],
                                          **tr_common))
             else:
-                arr2 = np.atleast_2d(np.asarray(data[src],
-                                                dtype=np.float64))
                 traces.append(go.Scatter(
-                    x=_aa_x(tr_step, arr2.shape[0] - 1, tr_draw.shape[0]),
+                    x=_aa_x(tr_step, _rows_of(src, data[src]) - 1,
+                            tr_draw.shape[0]),
                     y=tr_draw[:, 0], **tr_common))
 
     # low-opacity trail traces for chemtrails (past) / precog (future) /
