@@ -67,12 +67,13 @@ def _label_callout_kwargs(label_alpha, arrowstyle='-', facecolor='white'):
     `label_alpha`). Both colours are EXPLICIT: seaborn's whitegrid style
     sets ``patch.edgecolor='w'``, so the defaults drew a white connector
     and a white box edge -- an invisible link that cut white notches
-    through the markers (1.1 release review, figure QA)."""
-    from matplotlib.colors import to_rgb
+    through the markers (1.1 release review, figure QA). `label_alpha` stays
+    the box patch's own ``alpha`` (the documented `label_alpha=` contract),
+    which matplotlib applies to its edge too: a dark edge at that opacity
+    (0.5 by default, beside plotly's 0.4)."""
     return dict(
-        bbox=dict(boxstyle="round,pad=0.5",
-                  fc=(*to_rgb(facecolor), label_alpha),
-                  ec=(0, 0, 0, 0.4), lw=0.8),
+        bbox=dict(boxstyle="round,pad=0.5", fc=facecolor, ec='black',
+                  lw=0.8, alpha=label_alpha),
         arrowprops=dict(arrowstyle=arrowstyle, connectionstyle="arc3,rad=0",
                         color=(0, 0, 0, 0.6), lw=0.8),
     )

@@ -572,8 +572,11 @@ def test_label_connectors_and_boxes_are_dark_like_plotly(ndims):
         assert to_rgba(ann.arrow_patch.get_edgecolor()) == \
             pytest.approx((0, 0, 0, 0.6))
         box = ann.get_bbox_patch()
-        assert to_rgba(box.get_edgecolor()) == pytest.approx((0, 0, 0, 0.4))
+        # a dark edge; label_alpha= (0.5) stays the box's own alpha, as its
+        # docstring documents, so the edge carries that opacity
+        assert to_rgba(box.get_edgecolor()) == pytest.approx((0, 0, 0, 0.5))
         assert to_rgba(box.get_facecolor()) == pytest.approx((1, 1, 1, 0.5))
+        assert box.get_alpha() == pytest.approx(0.5)
     # ...the colours plotly's annotations use
     pfig = hyp.plot(data, labels=['first path', 'second path'],
                     ndims=ndims, show=False, backend='plotly')
