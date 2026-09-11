@@ -9927,6 +9927,23 @@ def plot(
                 mpl_kwargs["color"] = [tuple(_named[c])
                                        for c in hue_group_labels]
             elif ("color" not in mpl_kwargs and not _fmt_draws_line(fmt)
+                    and isinstance(palette, (list, tuple))
+                    and len(palette) > 0
+                    and all(isinstance(e, collections.abc.Mapping)
+                            for e in palette)
+                    and hue_group_labels is not None
+                    and len(hue_group_labels) == len(xform)):
+                # ...and a per-dataset LIST of {category: color} dicts
+                # (1.1 release review): the marker path fell through to
+                # the branch below, which samples the DEFAULT palette for
+                # a dict list, so `fmt='o'` drew hls while `fmt='-'`
+                # applied the dicts. The line path's merge (one mapping,
+                # a category named twice must agree) in the same drawn
+                # order the groups were just put in.
+                _cat_color, _ = _categorical_color_label_maps(
+                    hue, palette, None, hue_group_labels, _hue_sort_numeric)
+                mpl_kwargs["color"] = [tuple(c) for c in _cat_color.values()]
+            elif ("color" not in mpl_kwargs and not _fmt_draws_line(fmt)
                     and hue_group_labels is not None
                     and len(hue_group_labels) == len(xform)):
                 # ...and every other palette on the MARKER path (round 9):
