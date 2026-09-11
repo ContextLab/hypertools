@@ -164,25 +164,38 @@ def test_cluster_line_animate_parallel_labels_land_at_correct_frame():
     # the TAIL of the PRECEDING run's frame window instead of the HEAD of
     # its own, once run-bridging (`patch_lines`) was in play. Bridging the
     # labels in lockstep with the data (the same fix as the crash) removes
-    # that leakage too. frame_rate defaults to 30 and duration=1, so each
-    # of the 4 cluster runs gets exactly 30 frames: dataset 0's second run
-    # (starting at its 11th point, "p10") must land at the HEAD of frames
-    # [30, 60), and dataset 1's first point ("p20") at the head of [60, 90).
+    # that leakage too. Dataset 0's second run (starting at its 11th point,
+    # "p10") must land at the HEAD of its own drawn grid -- the first row
+    # after run 0's grid -- and dataset 1's first point ("p20") at the head
+    # of the third run's.
+    #
+    # The run boundaries are READ from the drawn grids (`ctx.datasets`).
+    # This test used to hard-code 30 and 60 because every run was resampled
+    # onto exactly round(frame_rate * duration) = 30 rows; since the 1.1
+    # visual review (L8) each run keeps every observation on a grid that
+    # refines its own rows (run 0: 10 rows + the bridge vertex -> 31), so
+    # the head of run 1 is grid row 31.
     datasets = _clusterable_datasets(n=2, rows=20)
     n_obs = sum(len(d) for d in datasets)
     labels = [f"p{i}" for i in range(n_obs)]
+    seen = []
     result = hyp.plot(datasets, '-', cluster='KMeans', n_clusters=2,
-                      animate=True, duration=1, labels=labels, show=False)
+                      animate=True, duration=1, labels=labels, show=False,
+                      on_frame=seen.append)
+    result.draw_frame(0)
+    grids = [len(d) for d in seen[0].datasets]
+    starts = np.concatenate([[0], np.cumsum(grids)[:-1]])
+    assert len(grids) == 4
     fig = result.figure
     by_text = {t.get_text(): t for ax in fig.axes for t in ax.texts}
     p0_idx = by_text["p0"]._hyp_global_idx
     p10_idx = by_text["p10"]._hyp_global_idx
     p20_idx = by_text["p20"]._hyp_global_idx
     # EXACT, not approx. This was written as `pytest.approx(30, abs=3)` /
-    # `approx(60, abs=3)`, but the pre-fix values were 29 and 59 -- inside that
+    # `approx(60, abs=3)`, but the pre-fix values were one row BEFORE each
+    # run's head (29 and 59 on the old 30-row grids) -- inside that
     # tolerance -- so the test passed with and without the fix and could not
-    # fail on the bug it documents. Measured post-fix: exactly 30 and 60, which
-    # is what "the HEAD of frames [30, 60)" means.
+    # fail on the bug it documents.
     assert p0_idx == 0
-    assert p10_idx == 30
-    assert p20_idx == 60
+    assert p10_idx == starts[1]
+    assert p20_idx == starts[2]

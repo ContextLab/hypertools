@@ -9,8 +9,10 @@ reach into the figure with ``ax.get_lines()[-1].set_alpha(0.25)``.
 The rule (``hypertools.plot.morph.morph_alpha``, shared by both backends):
 a HOLD draws the held dataset's own alpha; a TRANSITION eases (smoothstep,
 on the same schedule as the colour lerp) from the departing dataset's alpha
-to the arriving one's -- so its first frame is the departing dataset's
-alpha and its last is the arriving dataset's. A scalar ``alpha=`` gives
+to the arriving one's -- every transition frame strictly between the two,
+since the holds on either side already draw the endpoints (1.1 visual
+review L9: the first and last transition frames used to repeat the hold
+values exactly, so a short transition never moved). A scalar ``alpha=`` gives
 every dataset the same value, so the cloud is constant. When no alpha was
 asked for at all, the artist is left at matplotlib's default (``None``) --
 nothing about a default morph changes.
@@ -76,16 +78,26 @@ class TestMorphAlphaRule:
         assert morph.morph_alpha([0.2, 0.6, 1.0], 4, 4, 5) == 1.0
 
     def test_transition_eases_departing_to_arriving(self):
+        # L9: the transition samples the INTERIOR of (0, 1) --
+        # t = smoothstep((step + 1) / (n_steps + 1)) -- so its first frame
+        # is just past the departing alpha and its last just short of the
+        # arriving one; the holds on either side draw the endpoints. (This
+        # test used to pin step 0 to exactly 0.2 and step 4 to exactly 0.6,
+        # which is the endpoint repetition the finding measured.)
         alphas = [0.2, 0.6]
-        assert morph.morph_alpha(alphas, 1, 0, 5) == pytest.approx(0.2)
-        assert morph.morph_alpha(alphas, 1, 4, 5) == pytest.approx(0.6)
-        t = float(morph.smoothstep(2 / 4))
-        assert morph.morph_alpha(alphas, 1, 2, 5) == pytest.approx(
-            0.2 + t * 0.4)
+        vals = [morph.morph_alpha(alphas, 1, s, 5) for s in range(5)]
+        assert all(0.2 < v < 0.6 for v in vals)
+        assert vals == sorted(vals)
+        for s, v in enumerate(vals):
+            t = float(morph.smoothstep((s + 1) / 6))
+            assert v == pytest.approx(0.2 + t * 0.4)
+        assert vals[2] == pytest.approx(0.4)             # symmetric midpoint
 
     def test_unset_entry_counts_as_opaque_when_others_are_set(self):
         assert morph.morph_alpha([0.3, None], 2, 0, 5) == 1.0
-        assert morph.morph_alpha([0.3, None], 1, 4, 5) == pytest.approx(1.0)
+        t = float(morph.smoothstep(5 / 6))
+        assert morph.morph_alpha([0.3, None], 1, 4, 5) == pytest.approx(
+            0.3 + t * (1.0 - 0.3))
 
 
 # ---------------------------------------------------------------------------
@@ -125,14 +137,20 @@ class TestMatplotlibMorphAlpha:
         ani._func(h0, *ani._args)
         assert artist.get_alpha() == 0.2          # hold on dataset 0
         ani._func(t_first, *ani._args)
-        assert artist.get_alpha() == pytest.approx(0.2)  # departing
+        # just past the departing alpha (L9: no longer exactly it)
+        first = artist.get_alpha()
+        assert first == pytest.approx(morph.morph_alpha(alphas, 1, 0, fc[1]))
         ani._func(t_mid, *ani._args)
         step = t_mid - fc[0]
         expect = morph.morph_alpha(alphas, 1, step, fc[1])
-        assert 0.2 < expect < 0.6
+        assert 0.2 < first < expect < 0.6
         assert artist.get_alpha() == pytest.approx(expect)
         ani._func(t_last, *ani._args)
-        assert artist.get_alpha() == pytest.approx(0.6)  # arriving
+        # just short of the arriving alpha
+        last = artist.get_alpha()
+        assert last == pytest.approx(
+            morph.morph_alpha(alphas, 1, fc[1] - 1, fc[1]))
+        assert expect < last < 0.6
         ani._func(h1, *ani._args)
         assert artist.get_alpha() == 0.6          # hold on dataset 1
         ani._func(sum(fc) - 1, *ani._args)
@@ -230,11 +248,16 @@ class TestPlotlyMorphAlpha:
         h0, t_first, t_mid, t_last, h1 = _segment_frames(fc)
         col = lambda k: effective_rgba(fig.frames[k].data[0], 'marker')[-1]  # noqa: E731
         assert col(h0) == 0.2
-        assert col(t_first) == pytest.approx(0.2)
+        # L9: the transition's first/last frames sit just inside the
+        # departing/arriving alphas (they used to repeat them exactly)
+        assert col(t_first) == pytest.approx(
+            morph.morph_alpha(alphas, 1, 0, fc[1]), abs=1e-3)
         expect = morph.morph_alpha(alphas, 1, t_mid - fc[0], fc[1])
-        assert 0.2 < expect < 0.6
-        assert col(t_mid) == pytest.approx(expect)
-        assert col(t_last) == pytest.approx(0.6)
+        assert 0.2 < col(t_first) < expect < 0.6
+        assert col(t_mid) == pytest.approx(expect, abs=1e-3)
+        assert col(t_last) == pytest.approx(
+            morph.morph_alpha(alphas, 1, fc[1] - 1, fc[1]), abs=1e-3)
+        assert expect < col(t_last) < 0.6
         assert col(h1) == 0.6
         assert col(sum(fc) - 1) == 1.0
 

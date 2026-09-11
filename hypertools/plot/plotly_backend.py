@@ -288,15 +288,14 @@ _DOT_MARKER_SCALE = 0.5
 
 # matplotlib's animate='morph' traveling point cloud always draws with
 # marker='.' and, when no explicit `markersize=` kwarg is given, a smaller
-# default of 1.5pt -- NOT the general `DEFAULT_MARKERSIZE_PT` (6.0) used
-# everywhere else -- see `matplotlib_backend.animate_plot3D`'s
-# `morph_markersize = _mkw.get("markersize") or 1.5`. Without matching
-# both that smaller default AND the `_DOT_MARKER_SCALE` above, plotly's
-# default morph dots rendered ~8x fatter than matplotlib's (6.0 vs 1.5,
-# doubled again for the missing dot-marker scale) -- this was the more
-# severe half of the R2 bug (see
+# default -- `morph.MORPH_DEFAULT_MARKERSIZE_PT` (4pt), NOT the general
+# `DEFAULT_MARKERSIZE_PT` (6.0) used everywhere else. Both backends read
+# that one constant. Without matching both that smaller default AND the
+# `_DOT_MARKER_SCALE` above, plotly's default morph dots rendered far
+# fatter than matplotlib's -- the more severe half of the R2 bug (see
 # `docs/images/v1.0-seven-features/morph_anim_plotly.png` before the fix).
-MORPH_DEFAULT_MARKERSIZE_PT = 1.5
+# (1.1 visual review, L9: the old shared 1.5pt drew sub-pixel dots here.)
+MORPH_DEFAULT_MARKERSIZE_PT = _morph.MORPH_DEFAULT_MARKERSIZE_PT
 
 # plotly's `go.Scatter3d` (WebGL/gl3d) interprets `marker.size` differently
 # from `go.Scatter`'s (SVG, 2-D) -- empirically verified (see
@@ -2509,7 +2508,7 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         # matplotlib's morph trace always draws marker='.' (see
         # `MORPH_DEFAULT_MARKERSIZE_PT`'s docstring) -- so the plotly
         # counterpart always applies the dot-marker scale, and falls back
-        # to the SAME smaller 1.5pt default (not the general 6.0pt
+        # to the SAME smaller 4pt default (not the general 6.0pt
         # `DEFAULT_MARKERSIZE_PT`) when no explicit `markersize=` is given.
         msize0 = _marker_size_px(
             (kwargs_list[morph_indices_3d[0]] or {}).get('markersize')
@@ -6397,6 +6396,12 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
         _t = getattr(getattr(_frame.layout, 'title', None), 'text', None)
         if _t:
             _frame_titles.append(_t)
+    # ...and a title an `on_frame=` callback set on the figure itself: with
+    # no title= the layout reserved only 10 px, so it rendered cut off at
+    # the top of the canvas (1.1 visual review L11)
+    _layout_title = getattr(getattr(fig.layout, 'title', None), 'text', None)
+    if frame_hooks is not None and _layout_title:
+        _frame_titles.append(_layout_title)
     if _frame_titles:
         _size_px = round(12 * PT_TO_PX)
         if segment_title_style and segment_title_style.get('font'):

@@ -28,6 +28,16 @@ import pandas as pd
 from .._shared.helpers import (is_array_dataset, is_frame_dataset,
                                is_series_like)
 
+#: The clamped-samples warning fires when more than a quarter of the samples
+#: streamed after the head land outside the head-fitted display box. While
+#: streaming it waits for this many post-head samples (so a noisy first
+#: chunk of a long stream cannot trigger it)...
+_CLAMP_WARN_MIN_STREAMING = 20
+#: ...and when the stream stops it is evaluated once more over everything
+#: streamed, from this many post-head samples up, so a SHORT stream is
+#: covered too (1.1 visual review, L13b).
+_CLAMP_WARN_MIN_AT_END = 4
+
 
 def _validate_stream_save_path(save_path):
     """Validate a streaming ``save_path`` BEFORE any samples are consumed,
@@ -280,9 +290,11 @@ def plot_stream(stream, fmt='-', stream_init=10000, stream_chunk=100,
 
     The display box (axis limits and the data->box affine) is FROZEN from
     the head samples; later samples that land outside it are drawn clamped
-    to the box surface, and a ``RuntimeWarning`` is emitted when a large
-    fraction of streamed samples is clamped (their true projected values
-    stay in ``stream_info['xform_data']``). Streamed trajectories are
+    to the box surface, and a ``RuntimeWarning`` is emitted (once) when
+    more than a quarter of the post-head samples are clamped -- checked as
+    samples arrive once 20 have streamed, and again when streaming stops
+    for any stream with at least 4 post-head samples (their true projected
+    values stay in ``stream_info['xform_data']``). Streamed trajectories are
     drawn as raw polylines (one vertex per sample) from the first frame
     on, without the interpolation/smoothing applied to static plots.
 
@@ -516,9 +528,29 @@ def plot_stream(stream, fmt='-', stream_init=10000, stream_chunk=100,
     clamped = post_head = 0
     clamp_warned = False
 
+    def _warn_if_clamped(min_post_head):
+        # the stream has drifted out of the head-fitted display box: the
+        # plot is visibly distorted (QC 2026-07, F22-io-streaming-lsl-002).
+        # Warns at most once per stream.
+        nonlocal clamp_warned
+        if clamp_warned or post_head < min_post_head \
+                or clamped / post_head <= 0.25:
+            return
+        clamp_warned = True
+        warnings.warn(
+            f'{clamped} of {post_head} streamed samples '
+            f'({100.0 * clamped / post_head:.0f}%) fall outside '
+            'the display box fitted on the first stream_init '
+            'samples and are drawn clamped to its surface, so '
+            'their displayed positions are distorted (the true '
+            "projected values are kept in "
+            "fig.stream_info['xform_data']). If the early "
+            'samples are not representative of the whole stream, '
+            'increase stream_init.', RuntimeWarning, stacklevel=3)
+
     def _consume(rows):
         # project + draw one (possibly partial) chunk of samples
-        nonlocal n_seen, clamped, post_head, clamp_warned
+        nonlocal n_seen, clamped, post_head
         if not rows:
             return
         chunk = np.vstack([row_to_vector(r) for r in rows])
@@ -530,22 +562,10 @@ def plot_stream(stream, fmt='-', stream_init=10000, stream_chunk=100,
         n_seen += len(rows)
         clamped += _n_clamped(projected)
         post_head += len(projected)
-        if not clamp_warned and post_head >= 20 \
-                and clamped / post_head > 0.25:
-            # the stream has drifted out of the head-fitted display box:
-            # the plot is visibly distorted (QC 2026-07,
-            # F22-io-streaming-lsl-002)
-            clamp_warned = True
-            warnings.warn(
-                f'{clamped} of {post_head} streamed samples '
-                f'({100.0 * clamped / post_head:.0f}%) fall outside '
-                'the display box fitted on the first stream_init '
-                'samples and are drawn clamped to its surface, so '
-                'their displayed positions are distorted (the true '
-                "projected values are kept in "
-                "fig.stream_info['xform_data']). If the early "
-                'samples are not representative of the whole stream, '
-                'increase stream_init.', RuntimeWarning, stacklevel=2)
+        # while streaming, wait for 20 post-head samples so a noisy first
+        # chunk cannot trigger it; the stream-end check below covers
+        # shorter streams
+        _warn_if_clamped(_CLAMP_WARN_MIN_STREAMING)
         _redraw()
 
     try:
@@ -628,6 +648,12 @@ def plot_stream(stream, fmt='-', stream_init=10000, stream_chunk=100,
             finally:
                 if writer_tmp is not None and os.path.exists(writer_tmp):
                     os.remove(writer_tmp)
+
+    # once more now that streaming has stopped, with a lower floor: a SHORT
+    # stream never reached the 20 post-head samples the in-stream check
+    # waits for, so 9 of its 16 drawn vertices could sit clamped on the
+    # box surface with no warning at all (1.1 visual review, L13b)
+    _warn_if_clamped(_CLAMP_WARN_MIN_AT_END)
 
     fig.stream_info = {
         'data': [np.vstack(raw)],
