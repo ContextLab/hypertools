@@ -117,6 +117,12 @@ evidence/CI for the new head.
   docstrings (plot.py:5586, :6836) say must be equal. Follow-ups: stock_forecasting.ipynb cells 11-12 prose (median gap/weekend interp)
   stale; CHANGELOG 17-21 'one future step is always the median gap' stale.
 
+- W4a merged 69c1ff7d; W7 merged 785dca57 (+ my 2deac692: datatype-gate fix + polars transform= SchemaError fix); W10 merged 83b99d6a.
+- Full suite at ~69c1ff7d (fullsuite1.log): 6115 passed, 12 failed = only the 6 regenerated launch notebooks' execution gates (expected until re-exec).
+- W11 launched (flat spec keys in reduce/manip/align/impute/Pipeline). W3 batch 2 queued: plotly animated continuous hue (3-D colours don't
+  travel with window; 2-D segments static), L1 line width, L2 volume stipple, play/pause over date ticks.
+- CHANGELOG drafts accumulating in scratchpad/changelog_drafts.md (W1, W2, W4a, W7, W10, main).
+
 ### Visual expectation writer extra (code-vs-doc)
 - mpl fmt='-o' overrides marker=['o','s'] (backends disagree); markers= with '-' marks all smoothed pts (antialias docstring says true samples);
   plotly ignores frame_kwargs; static plotly applies zoom (doc: animation only); '^' -> diamond in plotly 3-D; legend_kwargs x/y yanchor;
