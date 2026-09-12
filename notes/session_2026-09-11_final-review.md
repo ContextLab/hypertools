@@ -222,6 +222,12 @@ evidence/CI for the new head.
 - COLAB FRONTEND: viewer opened ANIM-forecast-plotly, played it, and Close released it -- plotly modebar/logomark markers
   went from present to 0. NOTE the 'Interactive HyperTools review' string matches the HELPER CELL'S SOURCE in a snapshot,
   so it is not evidence of a live iframe; the graph markers are.
+- SAME TRAP, THIRD FORM (stderr suppression, 2026-09-12): pulling per-job test totals with
+  `gh api repos/O/R/actions/jobs/<id>/logs 2>/dev/null` reported '(no pytest summary line)' for all 9 completed jobs.
+  The endpoint is fine (HTTP 200, ~1 MB text/plain); `gh api` REFUSES to print a body containing terminal escape
+  sequences and needs --allow-escape-sequences, and 2>/dev/null hid that error. `gh run view --job <id> --log` prints
+  nothing at all for these jobs, so it is not a workaround. Lesson: never suppress stderr on a probe whose EMPTY result
+  you intend to interpret.
 - TOOLING TRAP, fired TWICE today (existing note n410812797x266): `pytest ... > log 2>&1; tail log` and
   `pytest ...; echo "exit: $?"` both exit with the LAST command's status, so the harness reports exit 0 over a failed or
   never-run suite. One run had also invented a test filename (tests/test_plot_forecast_trail.py does not exist), pytest
