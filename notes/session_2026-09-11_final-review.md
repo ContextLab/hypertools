@@ -191,6 +191,20 @@ evidence/CI for the new head.
   predict=['Kalman','ARIMA'] through MultiModelSchedule's head forwarders, which had none).
   LESSON: when a fix adds a fallback branch "by design", check whether that branch is REACHABLE in a drawn configuration
   before calling the fix complete -- this one was, and shipped the same defect.
+- CANDIDATE c433b8f0 pushed (e9db5204..c433b8f0; the 3 held-back notes commits went up under it, which is fine now that the
+  head itself is the tested candidate). Verify pipeline green end to end: sphinx -W html 0 warnings/51 gallery examples,
+  thumbs regenerated, animate_forecast tutorial re-executed (real cached archive, 3 x (60,6)), doctest 323/0,
+  full pytest 6572 passed/21 skipped/0 failed. Headless tour at c433b8f0 (REVIEW_COMMIT updated + update_feature_tour.py
+  sync, 244 cases, source hash 4c997697): 241 PASS / 3 SKIP / 0 FAIL, Not run: []. Colab candidate notebook built:
+  notes/colab/hypertools_1.1_candidate_c433b8f0.ipynb (518 cells, 239 code cells cleared).
+- SCOPE CHECKS so the fix is neither over- nor under-claimed: animate_forecast is the ONLY example combining predict= with
+  animate=; the feature tour has no animated-forecast case; no Bluesky launch clip covers it; and every polyline() call site
+  is an animation frame path (plot.py 12692/12707, plotly_backend 5744/5747, MultiModelSchedule) -- the static overlay
+  entry point _draw_forecast_overlays is not among them, so the committed static predict images are unaffected.
+- MY OWN MEASUREMENT ERRORS, both caught and redone: (1) a probe filtered 3-D artists with len(get_xdata()), which is EMPTY
+  for Line3D until projection -- it made me report that the weather example drew no forecasts at all; use get_data_3d().
+  (2) the same probe printed 'OK' while checking ZERO forecasts, because the distance threshold was compared without
+  asserting a non-empty sample. Re-run properly: 87 live forecasts across 29 frames, worst distance 0.000000000.
 - TOOLING TRAP, fired TWICE today (existing note n410812797x266): `pytest ... > log 2>&1; tail log` and
   `pytest ...; echo "exit: $?"` both exit with the LAST command's status, so the harness reports exit 0 over a failed or
   never-run suite. One run had also invented a test filename (tests/test_plot_forecast_trail.py does not exist), pytest
