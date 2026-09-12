@@ -205,6 +205,15 @@ evidence/CI for the new head.
   for Line3D until projection -- it made me report that the weather example drew no forecasts at all; use get_data_3d().
   (2) the same probe printed 'OK' while checking ZERO forecasts, because the distance threshold was compared without
   asserting a non-empty sample. Re-run properly: 87 live forecasts across 29 frames, worst distance 0.000000000.
+- FRESH COLAB at c433b8f0 (https://colab.research.google.com/drive/1-j8u-_pQDRDReN48yORA6OOPCeeTsDzi): 241 PASS / 3 SKIP /
+  0 FAIL, Not run: [], 244 rows; SET-01 'Confirm the code being reviewed' PASS and the executed notebook carries c433b8f0,
+  so Colab installed the candidate. Visual counts 170 not applicable / 74 not reviewed (Jeremy's sign-off, as before).
+- ANIM-forecast-plotly LOOKED like it drew no forecast in Colab (two screenshots showed only signal+truth). Resolved by
+  reading the live figure and reproducing locally: the n=1 'signal'/'Kalman'/'GaussianProcess' traces are LEGEND PROXIES;
+  the real forecasts are unnamed slots (live age=0 + trail ages 1-3 per model) carrying 901 points in frames 1-8 (frame 0
+  legitimately has none -- too little history to fit). The horizon is 3 hours on a 24-hour axis, so it is a few pixels wide
+  and overlaps truth. NO DEFECT. Note this case is 24 rows over 9 frames -> grid stride 1 -> every head lands on a raw
+  observation, so it does not exercise the anchor fix at all; tests/test_animated_forecast_anchor.py does.
 - TOOLING TRAP, fired TWICE today (existing note n410812797x266): `pytest ... > log 2>&1; tail log` and
   `pytest ...; echo "exit: $?"` both exit with the LAST command's status, so the harness reports exit 0 over a failed or
   never-run suite. One run had also invented a test filename (tests/test_plot_forecast_trail.py does not exist), pytest
