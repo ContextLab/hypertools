@@ -169,6 +169,75 @@ def test_the_forecast_start_advances_on_every_frame(backend):
         f'whose drawn head had moved')
 
 
+@pytest.mark.parametrize('backend', ['matplotlib', 'plotly'])
+def test_a_model_comparison_anchors_every_models_forecast(backend):
+    """`predict=[...]` draws one forecast per model per dataset behind one
+    flat model-major index, so the head lookups go through
+    `MultiModelSchedule`, which forwards each slot to the sub-schedule that
+    owns it. Every model's forecast must start at the same drawn head."""
+    models = ['Kalman', 'ARIMA']
+    checked = 0
+    if backend == 'matplotlib':
+        anim = hyp.plot(spiral(12), '-', predict=models, t=3, animate=True,
+                        duration=6, frame_rate=15, show=False,
+                        backend='matplotlib', slow_warning_seconds=None)
+        try:
+            ax = anim.figure.axes[0]
+            for frame in range(anim.n_frames):
+                anim.draw_frame(frame)
+                observed = [ln for ln in ax.get_lines()
+                            if getattr(ln, '_hyp_forecast_role', None) is None
+                            and len(ln.get_xdata())]
+                live = [ln for ln in ax.get_lines()
+                        if getattr(ln, '_hyp_forecast_role', None) == 'live'
+                        and len(ln.get_xdata())]
+                if not observed or not live:
+                    continue
+                head = np.array([observed[0].get_xdata()[-1],
+                                 observed[0].get_ydata()[-1]])
+                for line in live:
+                    start = np.array([line.get_xdata()[0],
+                                      line.get_ydata()[0]])
+                    np.testing.assert_allclose(
+                        start, head, atol=1e-9,
+                        err_msg=(f'frame {frame}: one model\'s forecast '
+                                 f'starts at {start}, head is {head}'))
+                    checked += 1
+        finally:
+            plt.close(anim.figure)
+    else:
+        fig = hyp.plot(spiral(12), '-', predict=models, t=3, animate=True,
+                       duration=6, frame_rate=15, show=False,
+                       backend='plotly', slow_warning_seconds=None)
+        meta = [tr.meta if isinstance(tr.meta, dict) else {} for tr in fig.data]
+        data_slot = next(i for i, m in enumerate(meta)
+                         if 'hyp_forecast_role' not in m)
+        live_slots = [i for i, m in enumerate(meta)
+                      if m.get('hyp_forecast_role') == 'live']
+        assert len(live_slots) == len(models), live_slots
+        for frame, payload in enumerate(fig.frames):
+            slots = (list(payload.traces) if payload.traces is not None
+                     else list(range(len(payload.data))))
+            by_slot = dict(zip(slots, payload.data))
+            observed = by_slot.get(data_slot)
+            if observed is None or observed.x is None or not len(observed.x):
+                continue
+            head = np.array([np.asarray(observed.x, float)[-1],
+                             np.asarray(observed.y, float)[-1]])
+            for slot in live_slots:
+                live = by_slot.get(slot)
+                if live is None or live.x is None or not len(live.x):
+                    continue
+                start = np.array([np.asarray(live.x, float)[0],
+                                  np.asarray(live.y, float)[0]])
+                np.testing.assert_allclose(
+                    start, head, atol=1e-9,
+                    err_msg=(f'frame {frame} slot {slot}: forecast starts at '
+                             f'{start}, head is {head}'))
+                checked += 1
+    assert checked > 6, f'{backend}: only {checked} forecast/frame pairs drawn'
+
+
 def test_a_retained_trail_forecast_starts_at_the_head_it_was_fit_from():
     """`forecast_trail=` keeps earlier forecasts on screen so a viewer can
     see how the prediction changed as history accumulated. Each retained
