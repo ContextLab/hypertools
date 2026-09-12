@@ -179,6 +179,18 @@ evidence/CI for the new head.
   archive IS cached -- 3 x (60, 6) real regions -- so re-execution will not silently fall back to synthetic data).
   It is the ONLY example combining predict= with animate=; the feature tour has no animated-forecast case.
   generate_gallery_thumbs.py never listed this stem (fixed 9f26b995), so nothing regenerated that thumb.
+- SECOND, REACHABLE CASE the first fix missed: `hue=`/`cluster=` regrouping builds ForecastSchedule.for_regrouped (one drawn
+  trace per contiguous category run), which I had deliberately left on the raw-row anchor -- so it still lagged, silently
+  (no warning). Measured: 12-row 2-category spiral over 81 frames, gap up to 0.5071, mean 0.2167, on 75/81 frames.
+  Fix 6f2cfd96: DatasetRevealSchedule already locates the run holding each dataset's head to count rows, so it now keeps
+  (run, head_end grid row) + the fractional source parameter from run_head_param, and for_regrouped reads the head vertex
+  out of the same PER-RUN arrays the backends draw (plot.py passes grids=xform there too). _serial_counts returns the same
+  three quantities; in a serial sweep the last run with anything on screen holds the head.
+  Probes after the fix: two datasets x hue= -> 162 live forecasts, worst distance to a drawn tip 0.000000000;
+  cluster= (KMeans, 2 blobs) -> 83 live forecasts, 0.000000000. Coverage commit 9b881ee0 (serial/window styles +
+  predict=['Kalman','ARIMA'] through MultiModelSchedule's head forwarders, which had none).
+  LESSON: when a fix adds a fallback branch "by design", check whether that branch is REACHABLE in a drawn configuration
+  before calling the fix complete -- this one was, and shipped the same defect.
 - TOOLING TRAP, fired TWICE today (existing note n410812797x266): `pytest ... > log 2>&1; tail log` and
   `pytest ...; echo "exit: $?"` both exit with the LAST command's status, so the harness reports exit 0 over a failed or
   never-run suite. One run had also invented a test filename (tests/test_plot_forecast_trail.py does not exist), pytest
