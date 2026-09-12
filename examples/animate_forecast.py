@@ -5,8 +5,8 @@ Forecasting three regions' weather while it is drawn
 =====================================================================
 
 An animated forecast: ``hyp.plot(..., animate=True, predict='Kalman')``
-refits the forecaster on the history revealed so far and re-anchors it on
-the last revealed observation, so the prediction grows and bends with the
+refits the forecaster on the history revealed so far and draws it from the
+endpoint of the current frame, so the prediction grows and bends with the
 animation instead of standing still. ``forecast_trail=True`` keeps the
 earlier forecasts on screen as a fading fan, so you can watch the
 prediction *change* as history accumulates.

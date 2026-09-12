@@ -308,6 +308,41 @@ def revealed_raw_counts(n_raw, n_grid, num, total_frames):
     return min(n_raw, int(np.floor(pos)) + 1)
 
 
+def drawn_head_index(n_grid, num, total_frames):
+    """FRAME-GRID row the reveal ends on at frame `num` (parallel/window).
+
+    `revealed_raw_counts` takes this same `end` and floors it back onto RAW
+    rows -- the last observation at or before the head. This returns the head
+    itself: the vertex the backends actually draw last.
+    """
+    from .trails import anim_window_bounds
+    _, end, _ = anim_window_bounds(num, total_frames, int(n_grid), 0)
+    return max(0, int(end) - 1)
+
+
+def grid_head(grid, n_raw, n_grid, head_index):
+    """``(point, raw position)`` of the grid vertex a frame's reveal ends on.
+
+    The point is read straight out of the animation grid the backends draw
+    from -- not re-derived by interpolating the history a second time, which
+    could drift from the picture. `position` is where that vertex falls in
+    RAW rows (fractional between observations), which is what a 1-D plot puts
+    on x.
+
+    ``(None, None)`` when there is no grid to read, i.e. for a `hue=`/
+    `cluster=` regrouped reveal, whose forecasts keep the raw-row anchor.
+    """
+    if grid is None:
+        return None, None
+    grid = np.asarray(grid, dtype=float)
+    if not len(grid):
+        return None, None
+    j = min(max(int(head_index), 0), len(grid) - 1)
+    n_raw, n_grid = int(n_raw), int(n_grid)
+    pos = (j * (n_raw - 1) / (n_grid - 1)) if n_grid > 1 and n_raw > 1 else 0.0
+    return grid[j], float(pos)
+
+
 class DatasetRevealSchedule:
     """Which ORIGINAL rows of each source dataset are on screen at each frame.
 
@@ -479,7 +514,7 @@ class ForecastSchedule:
     def __init__(self, histories, counts=None, model=None, t=None, rows=None,
                  min_history=DEFAULT_MIN_HISTORY, transform=None,
                  slow_warning_seconds=DEFAULT_SLOW_WARNING_SECONDS,
-                 forecast_function=None):
+                 forecast_function=None, heads=None, head_positions=None):
         if (counts is None) == (rows is None):
             raise ValueError(
                 "pass exactly one of counts= (a revealed ROW COUNT per "
@@ -496,6 +531,20 @@ class ForecastSchedule:
         self.rows = [[tuple(int(i) for i in r) for r in frame]
                      for frame in rows]
         self.counts = [[len(r) for r in frame] for frame in self.rows]
+        # `heads[f][i]` is the VERTEX dataset `i`'s trajectory ends on at
+        # frame `f` -- the drawn endpoint, which an animation's refined frame
+        # grid puts BETWEEN two raw observations. `counts`/`rows` above are
+        # the observations the fit may use; the head is where the result is
+        # drawn from. Absent (None) for a reveal with no grid to read.
+        self.heads = (None if heads is None else
+                      [[None if h is None else np.asarray(h, dtype=float)
+                        for h in frame] for frame in heads])
+        # ...and where each head falls in RAW rows, fractionally (a 1-D plot
+        # draws the row index on x, so its forecast hangs off this).
+        self.head_positions = (
+            None if head_positions is None else
+            [[None if p is None else float(p) for p in frame]
+             for frame in head_positions])
         self.model = model
         self.t = int(t)
         # the caller's floor, raised to the MODEL's own: an ARIMA(1, 1, 1)
@@ -612,47 +661,73 @@ class ForecastSchedule:
     def for_parallel(cls, histories, grid_lengths, model, t, n_frames,
                      min_history=DEFAULT_MIN_HISTORY,
                      slow_warning_seconds=DEFAULT_SLOW_WARNING_SECONDS,
-                     forecast_function=None):
+                     forecast_function=None, grids=None):
         """Schedule for a parallel/`'window'` animation.
 
         Every dataset advances together, so each one's revealed row count
         comes straight from `revealed_raw_counts` -- i.e. from the library's
         own `trails.anim_window_bounds`, not a second copy of the reveal
-        arithmetic.
+        arithmetic. `grids` are the animation-grid arrays the backends draw,
+        read here for each frame's drawn head (see `grid_head`).
         """
-        counts = [[revealed_raw_counts(len(h), g, f, n_frames)
-                   for h, g in zip(histories, grid_lengths)]
-                  for f in range(n_frames)]
+        counts, heads, positions = [], [], []
+        for f in range(n_frames):
+            counts.append([revealed_raw_counts(len(h), g, f, n_frames)
+                           for h, g in zip(histories, grid_lengths)])
+            if grids is None:
+                continue
+            frame_heads, frame_positions = [], []
+            for h, g, grid in zip(histories, grid_lengths, grids):
+                point, pos = grid_head(grid, len(h), g,
+                                       drawn_head_index(g, f, n_frames))
+                frame_heads.append(point)
+                frame_positions.append(pos)
+            heads.append(frame_heads)
+            positions.append(frame_positions)
         return cls(histories, counts=counts, model=model, t=t,
                    min_history=min_history,
                    slow_warning_seconds=slow_warning_seconds,
-                   forecast_function=forecast_function)
+                   forecast_function=forecast_function,
+                   heads=heads or None, head_positions=positions or None)
 
     @classmethod
     def for_serial(cls, histories, grid_lengths, model, t, n_frames,
                    min_history=DEFAULT_MIN_HISTORY,
                    slow_warning_seconds=DEFAULT_SLOW_WARNING_SECONDS,
-                   forecast_function=None):
+                   forecast_function=None, grids=None):
         """Serial reveals one dataset at a time, so its schedule comes from
         the backend's own `serial_reveal_counts` (animation-core Task 7),
-        mapped from frame-grid rows onto raw rows dataset by dataset."""
+        mapped from frame-grid rows onto raw rows dataset by dataset. The
+        drawn head comes off the same `shown` count, one grid row back."""
         from .matplotlib_backend import serial_reveal_counts
-        counts = []
+        counts, heads, positions = [], [], []
         for f in range(n_frames):
             grid_counts = serial_reveal_counts(list(grid_lengths), f, n_frames)
-            row = []
-            for h, g, shown in zip(histories, grid_lengths, grid_counts):
+            row, frame_heads, frame_positions = [], [], []
+            for i, (h, g, shown) in enumerate(
+                    zip(histories, grid_lengths, grid_counts)):
                 n_raw = len(h)
                 if g < 2 or n_raw < 2 or shown <= 0:
                     row.append(min(n_raw, max(0, shown)))
                 else:
                     pos = (min(shown, g) - 1) * (n_raw - 1) / (g - 1)
                     row.append(min(n_raw, int(np.floor(pos)) + 1))
+                if grids is None:
+                    continue
+                point, head_pos = grid_head(
+                    grids[i] if i < len(grids) else None, n_raw, g,
+                    max(0, min(int(shown), int(g)) - 1))
+                frame_heads.append(point)
+                frame_positions.append(head_pos)
             counts.append(row)
+            if grids is not None:
+                heads.append(frame_heads)
+                positions.append(frame_positions)
         return cls(histories, counts=counts, model=model, t=t,
                    min_history=min_history,
                    slow_warning_seconds=slow_warning_seconds,
-                   forecast_function=forecast_function)
+                   forecast_function=forecast_function,
+                   heads=heads or None, head_positions=positions or None)
 
     @classmethod
     def for_regrouped(cls, histories, reveal, model, t, n_frames,
@@ -695,16 +770,57 @@ class ForecastSchedule:
             return None
         return self.histories[dataset][rows[-1]]
 
+    def head(self, dataset, frame):
+        """The vertex the DRAWN trajectory ends on at `frame`, or None.
+
+        An animation is paced on a refined frame grid, so the head usually
+        falls BETWEEN two raw observations; `anchor` is the last observation
+        at or before it. A forecast continues from the head -- the endpoint a
+        viewer can actually see -- rather than hanging back from the line's
+        tip (maintainer report, 2026-09-11). None when no grid was passed (a
+        `hue=`/`cluster=` regrouped reveal), where `anchor` stands in.
+        """
+        if self.heads is None:
+            return None
+        return self.heads[min(frame, self.n_frames - 1)][dataset]
+
+    def head_position(self, dataset, frame):
+        """Where this frame's head falls in RAW rows, fractionally.
+
+        1-D plots draw the row index on x, so their forecast hangs off this
+        rather than off the integer row `anchor` sits on. Falls back to that
+        row when there is no grid.
+        """
+        if self.head_positions is None:
+            rows = self.revealed_rows(dataset, frame)
+            return float(rows[-1]) if rows else None
+        return self.head_positions[min(frame, self.n_frames - 1)][dataset]
+
     def path(self, dataset, frame):
         """Displacement path (t + 1, d) for `dataset` at `frame`, or None."""
         return self._paths[(dataset, self.revealed_rows(dataset, frame))]
 
     def polyline(self, dataset, frame):
-        """The DRAWN forecast: anchor + displacement, or None."""
+        """The DRAWN forecast: this frame's head, then every predicted point.
+
+        Only the vertex the forecast hangs FROM moves with the reveal; rows
+        1.. are the model's own predictions at the absolute positions they
+        were fitted to. So `t=` still counts raw steps on from the last
+        OBSERVATION, `pin_ramp`'s exact x ramp is untouched, and the vertex
+        count is unchanged -- the forecast simply meets the line it
+        continues.
+        """
         path = self.path(dataset, frame)
         if path is None:
             return None
-        return self.anchor(dataset, frame) + path
+        anchor = self.anchor(dataset, frame)
+        if anchor is None:
+            return None
+        drawn = anchor + path
+        head = self.head(dataset, frame)
+        if head is None:
+            return drawn
+        return np.vstack([np.asarray(head, dtype=float), drawn[1:]])
 
     def stacked_paths(self):
         """Every forecast vertex this schedule will ever draw, stacked.
@@ -755,6 +871,13 @@ class ForecastSchedule:
         out.transform = transform
         out.n_frames, out.n_datasets = self.n_frames, self.n_datasets
         out.n_fits = 0            # no refitting: displacements are affine-mapped
+        # a head is a POSITION (a drawn vertex), so it takes the same full
+        # affine the histories take; a head POSITION is a raw row index, not
+        # a coordinate, so it carries through untouched
+        out.heads = (None if self.heads is None else
+                     [[None if h is None else transform(h) for h in frame]
+                      for frame in self.heads])
+        out.head_positions = self.head_positions
         # a displacement is a DIFFERENCE of positions, so the mean cancels and
         # only the scale survives: d_display = 2 * d_analyze / scale
         out._paths = {key: (None if p is None else 2.0 * p / transform.scale)
@@ -809,10 +932,22 @@ class MultiModelSchedule:
         return sched.revealed(i, frame)
 
     def anchor(self, dataset, frame):
-        """The last revealed observation this slot's forecast starts from
-        (see `ForecastSchedule.anchor`)."""
+        """The last observation this slot's forecast was fit through -- the
+        forecast is DRAWN from `head` (see `ForecastSchedule.anchor`)."""
         sched, i = self._locate(dataset)
         return sched.anchor(i, frame)
+
+    def head(self, dataset, frame):
+        """The vertex this slot's drawn trajectory ends on at `frame` (see
+        `ForecastSchedule.head`)."""
+        sched, i = self._locate(dataset)
+        return sched.head(i, frame)
+
+    def head_position(self, dataset, frame):
+        """Where that head falls in raw rows (see
+        `ForecastSchedule.head_position`)."""
+        sched, i = self._locate(dataset)
+        return sched.head_position(i, frame)
 
     def path(self, dataset, frame):
         """This slot's displacement path at `frame`, or None (see

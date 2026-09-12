@@ -416,8 +416,8 @@ Forecasting during an animation
 ``predict=`` works with the time-progressing animation styles
 (``animate=True``, ``'parallel'``, ``'serial'``, ``'window'``) on **both**
 backends. The forecast is recomputed from the history revealed so far and
-re-anchored on the last revealed observation, so the forecast trace grows with
-the animation instead of standing still:
+drawn from the endpoint the current frame draws, so the forecast trace grows
+with the animation instead of standing still:
 
 .. code-block:: python
 
@@ -427,8 +427,16 @@ the animation instead of standing still:
 ``t`` is measured in **raw observations of the analyzed data** -- not in
 animation frames, and not in drawn vertices. ``t=1`` forecasts the next
 observation. Because an animation is paced on a resampled frame grid (see
-``duration``/``frame_rate``), an animated forecast joins the drawn trajectory
-to within one raw observation rather than exactly.
+``duration``/``frame_rate``), a frame's drawn head usually falls *between* two
+observations. The forecast starts exactly there, so it meets the trajectory it
+continues on every frame; the points it predicts stay where the model put
+them, ``t`` observations on from the last one revealed.
+
+.. versionchanged:: 1.1.0
+   The forecast used to hang off the last raw observation at or before the
+   head, so it stood still for as many frames as the head took to reach the
+   next observation and trailed the line's tip by up to a whole step -- most
+   visibly on data with fewer rows than frames.
 
 Everything is computed before the first frame
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

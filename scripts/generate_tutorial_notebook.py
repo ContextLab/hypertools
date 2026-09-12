@@ -173,8 +173,8 @@ SPECS = {
          'fetches anything.', 'Climate'),
         ('## 3. One call: an animated forecast with a fading fan',
          '`predict=\'Kalman\'` with `animate=True` refits on every distinct '
-         'revealed history and re-anchors the forecast on the last revealed '
-         'month; `forecast_trail=True` keeps the earlier fits as a fading '
+         'revealed history and draws the forecast from the current frame\'s '
+         'endpoint; `forecast_trail=True` keeps the earlier fits as a fading '
          'fan. `forecast_hue=`, `forecast_palette=` and `forecast_fmt=` '
          'restyle only the forecasts, and `slow_warning_seconds=None` '
          'silences the long-schedule notice for a wait that is known.',

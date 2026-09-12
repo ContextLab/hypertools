@@ -5945,8 +5945,8 @@ def plot(
         static forecast overlay, so the trace simply rotates with the
         rest of the scene), and for the TIME-PROGRESSING animate modes
         (``True``/``'parallel'``/``'serial'``/``'window'``), where the
-        forecast is recomputed from the history revealed so far and
-        re-anchored on the last revealed observation, so it grows with the
+        forecast is recomputed from the history revealed so far and drawn
+        from the endpoint of the current frame, so it grows with the
         animation. Every one of those forecasts is computed BEFORE the first
         frame is drawn and folded into the plot's centre/scale statistics,
         so the whole fan lands inside the cube and nothing is clipped or
@@ -6049,9 +6049,10 @@ def plot(
         datasets without a ``DatetimeIndex``, a `t` at or before the last
         observation, or a pipeline stage that changed the row count raise
         ``ValueError``. Because an animation is paced on a resampled
-        frame grid (see `duration`/`frame_rate`), an animated forecast joins
-        the drawn trajectory to within one raw observation rather than
-        exactly (default: 10).
+        frame grid (see `duration`/`frame_rate`), a frame's drawn head
+        usually falls between two observations; an animated forecast starts
+        exactly there, while the points it predicts stay `t` observations on
+        from the last one revealed (default: 10).
 
     save_path : str or path-like
         Path to save the image/movie; the format is chosen by the file
@@ -6208,8 +6209,8 @@ def plot(
         camera, so the fixed forecast overlay is drawn once and rotates along
         with everything else) AND with the time-progressing modes
         (`True`/`'parallel'`/`'serial'`/`'window'`), where the forecast is
-        recomputed from the history revealed so far and re-anchored on the
-        last revealed observation, so it grows with the animation. Only
+        recomputed from the history revealed so far and drawn from the
+        endpoint of the current frame, so it grows with the animation. Only
         `'morph'` (including per-dataset morph lists) raises
         `NotImplementedError`: a morph interpolates between point CLOUDS, so
         there is no time axis to forecast along. See `forecast_trail=` to
@@ -11527,6 +11528,12 @@ def plot(
             return _builder(
                 analyze_histories, _grid_lengths, model=model_spec, t=t,
                 n_frames=_n_frames, slow_warning_seconds=_slow_secs,
+                # the animation grid ITSELF, so each frame's forecast starts
+                # at the vertex that frame actually draws last rather than at
+                # the last raw observation behind it (maintainer report,
+                # 2026-09-11). Passed pre-centre/scale, exactly like
+                # `analyze_histories`; `to_display` maps both below.
+                grids=xform,
                 **_time_kwargs)
 
         if _predict_names is None:

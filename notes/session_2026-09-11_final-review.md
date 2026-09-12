@@ -151,3 +151,23 @@ evidence/CI for the new head.
 - mpl fmt='-o' overrides marker=['o','s'] (backends disagree); markers= with '-' marks all smoothed pts (antialias docstring says true samples);
   plotly ignores frame_kwargs; static plotly applies zoom (doc: animation only); '^' -> diamond in plotly 3-D; legend_kwargs x/y yanchor;
   font='Noto Sans' ValueError in fresh process before bundled fonts registered
+
+### After the candidate: animated forecasts hung back from the drawn head (Jeremy's report, 2026-09-11)
+- Report: "for animations with predictions, the predictions should show *from the endpoint in the current frame* not just from
+  the last observation."
+- Confirmed on BOTH backends. An animation is paced on `_interp_anim_line`'s refined grid, so the drawn head usually sits
+  BETWEEN raw observations; `ForecastSchedule.anchor` floors to the last observation at or before it, and `polyline` started
+  there. Measured (2-D spiral, display box [-1, 1]): 20 rows/40 frames max gap 0.21, 24/37 frames affected, 2-frame stalls;
+  12 rows/90 frames 0.51, 71/81, 8-frame stalls; 8 rows/160 frames 0.90 (45% of the box), 130/137, 23-frame stalls.
+  The forecast stood still while the head kept moving, then jumped -- exactly what the report describes.
+- Fix: the schedule now carries the DRAWN head. `for_parallel`/`for_serial` read `grids=` (the animation grid arrays plot.py
+  already has -- not a second interpolation) at the same `end`/`shown` they already compute; `grid_head()` returns the vertex
+  and its fractional raw-row position; `polyline()` replaces vertex 0 with it; `to_display` maps heads with the full affine
+  (head POSITIONS are row indices, carried through untouched). Predicted points are untouched, so `t=`, `pin_ramp`'s exact x
+  ramp and the vertex count are unchanged. Regrouped (hue=/cluster=) reveals pass no grid and keep the raw-row anchor.
+- Covered on 1-D/series, 2-D and 3-D, both backends, plus the `forecast_trail=` fan (each retained forecast starts at the head
+  of the frame it was fit at). New test: tests/test_animated_forecast_anchor.py (fails on the old code at frame 3).
+- Docs: animation.rst's "re-anchored on the last revealed observation" + "joins ... to within one raw observation rather than
+  exactly" were describing the defect as the contract; rewritten, with a versionchanged note. CHANGELOG bullet added.
+- NOTE: this moves the branch head off the verified candidate e9db5204 -- CI, the headless tour and the Colab run all need
+  re-running before sign-off, and notes/final_review_2026-09-11/ needs its evidence table refreshed.

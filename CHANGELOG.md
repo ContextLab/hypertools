@@ -812,6 +812,18 @@ input too.
 Found by the pre-publication review of the 1.1.0 draft against 1.0.0.
 Because 1.1.0 had not been published, they ship in it.
 
+- **An animated forecast now starts where that frame's line ends.**
+  `predict=` with `animate=` drew each frame's forecast from the last raw
+  observation at or before the drawn head. An animation is paced on a
+  refined frame grid, so the head usually sits *between* two observations:
+  the forecast hung back from the line's tip and stood still until the head
+  reached the next observation, then jumped. On an 8-row trajectory over 160
+  frames it lagged by up to 45% of the plot box and stalled for 23
+  consecutive frames. It now starts at the vertex the frame actually draws
+  last, on both backends and for 1-D, 2-D and 3-D plots. The predicted
+  points themselves are unchanged, so `t=` still counts raw steps on from
+  the last observation.
+
 - **No leftover "install the extra first" instructions.** Every optional
   dependency goes through the on-demand installer, and the stale prose
   that told users to install an extra by hand is gone: the `plot()`
@@ -1612,8 +1624,8 @@ the entry below says so.
 
 - **`predict=` now works with the time-progressing animations too**
   (`animate=True`/`'parallel'`/`'serial'`/`'window'`). The forecast is
-  recomputed from the history revealed so far and re-anchored on the last
-  revealed observation, so the forecast trace grows with the animation instead
+  recomputed from the history revealed so far and drawn from the endpoint of
+  the current frame, so the forecast trace grows with the animation instead
   of standing still. Because the data is static -- all of it known before the
   first frame, merely revealed over time -- every forecast the animation will
   ever draw is computed up front. Two things follow: the whole fan is folded
