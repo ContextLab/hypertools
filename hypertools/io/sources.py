@@ -44,6 +44,7 @@ Lists of strings resolve element-wise to a list of datasets.
 """
 
 import io
+import numbers
 import os
 import re
 import tempfile
@@ -192,8 +193,9 @@ class HypertoolsTrustError(ValueError):
 
 
 class HypertoolsOfflineError(HypertoolsIOError):
-    """Raised when ``offline=True`` was passed and the URL has no cached
-    copy to read (GH #285).
+    """Raised when ``offline=True`` was passed and the source -- a URL, or a
+    hosted built-in dataset -- has no hash-valid cached copy to read
+    (GH #285).
 
     Subclasses :class:`~hypertools.core.exceptions.HypertoolsIOError`, so
     existing handlers still catch it; ``load_source`` keys on this
@@ -213,10 +215,60 @@ SKLEARN_DATASETS = {
     'linnerud': 'load_linnerud',
 }
 
-# seaborn.get_dataset_names() is a network call (fetches the seaborn-data
-# GitHub repo's file listing); cache it per-process so repeated hyp.load()
-# calls don't re-hit the network for every unresolved name.
+# The seaborn dataset listing is a network call (seaborn.get_dataset_names()
+# fetches a name list from the seaborn-data GitHub repo with a urlopen that
+# has NO timeout); cache it per-process so repeated hyp.load() calls don't
+# re-hit the network for every unresolved name. A FAILED fetch is
+# remembered too (``_seaborn_names_failed_at``, retried after
+# SEABORN_LISTING_RETRY_AFTER seconds): before 1.1, the cache stayed None
+# on failure, so on a dead network every later hyp.load() of an unresolved
+# name blocked again on the same connect (1.1 release review, I1).
 _seaborn_names_cache = None
+_seaborn_names_failed_at = None
+#: Timeout (seconds) for fetching the seaborn dataset-name listing.
+SEABORN_LISTING_TIMEOUT = 10.0
+#: How long (seconds) a failed listing fetch is remembered before the next
+#: seaborn-name lookup tries the network again.
+SEABORN_LISTING_RETRY_AFTER = 300.0
+# A seaborn dataset name is a plain identifier ('penguins', 'car_crashes');
+# anything with a path separator, scheme, whitespace or dot (URLs, paths,
+# 'wikipedia:' / 'fivethirtyeight/' / Hugging Face ids, filenames) can never
+# be one, so the listing is not consulted for it.
+_SEABORN_NAME_RE = re.compile(r'^[A-Za-z0-9_-]+$')
+
+
+def reset_seaborn_names_cache():
+    """Forget the cached seaborn dataset-name listing AND any remembered
+    fetch failure, so the next seaborn-name lookup hits the network again
+    (e.g. after connectivity is restored, without waiting out
+    :data:`SEABORN_LISTING_RETRY_AFTER`)."""
+    global _seaborn_names_cache, _seaborn_names_failed_at
+    _seaborn_names_cache = None
+    _seaborn_names_failed_at = None
+
+
+def _refuse_offline(source, what):
+    """Raise the :class:`HypertoolsOfflineError` for a source that
+    ``offline=True`` can never serve: only Google-Sheets/Drive/Dropbox/URL
+    downloads (steps 10-13) live in the hypertools URL cache."""
+    raise HypertoolsOfflineError(
+        f'offline=True, but {source!r} is {what}, which hypertools cannot '
+        'serve from its on-disk URL cache (only Google Sheets / Google '
+        'Drive / Dropbox / plain-URL downloads -- steps 10-13 of the '
+        'hypertools.load resolution chain -- are cached; see '
+        'hypertools.io.sources.url_cache_dir()). Drop offline=True to load '
+        'it from the network.')
+
+
+def _refuse_streaming(source, what):
+    """Raise for ``streaming=True`` on a source that is not a Hugging Face
+    dataset: before 1.1 the flag was silently ignored and the full dataset
+    came back (1.1 release review, I8)."""
+    raise ValueError(
+        f'hypertools.load: streaming=True is only supported for Hugging '
+        f"Face dataset ids (step 9 of the resolution chain, e.g. "
+        f"'scikit-learn/iris'), but {source!r} resolved as {what}, which "
+        'is always loaded in full. Drop streaming=True.')
 
 # fivethirtyeight/data folder listings, keyed by slug (e.g. 'bechdel'):
 # GitHub's unauthenticated REST API rate limit is 60 requests/hour, so the
@@ -264,8 +316,16 @@ def sklearn_dataset(name):
 def seaborn_dataset(name):
     """Load a seaborn example dataset by name.
 
-    ``name`` is matched against ``seaborn.get_dataset_names()`` (a network
-    call to the seaborn-data GitHub repo; the result is cached per-process).
+    ``name`` is matched against seaborn's dataset-name listing (the same
+    list ``seaborn.get_dataset_names()`` reads, fetched here with
+    :data:`SEABORN_LISTING_TIMEOUT` because seaborn's own ``urlopen`` has
+    no timeout; the result is cached per-process). A name that cannot be
+    a seaborn dataset (anything but a plain ``[A-Za-z0-9_-]`` identifier
+    -- URLs, paths, prefixed sources) is answered without consulting the
+    listing at all. A failed fetch is remembered for
+    :data:`SEABORN_LISTING_RETRY_AFTER` seconds (call
+    :func:`reset_seaborn_names_cache` to retry sooner), so an unreachable
+    network does not block every later lookup.
 
     Returns
     -------
@@ -275,16 +335,37 @@ def seaborn_dataset(name):
         can't be fetched (network failure) -- either way, callers should
         treat this as "not mine" and continue down the resolution chain.
     """
-    global _seaborn_names_cache
-    import seaborn as sns
+    global _seaborn_names_cache, _seaborn_names_failed_at
+    if not isinstance(name, str) or not _SEABORN_NAME_RE.match(name):
+        return None
     if _seaborn_names_cache is None:
-        try:
-            _seaborn_names_cache = set(sns.get_dataset_names())
-        except Exception:
+        if _seaborn_names_failed_at is not None and \
+                time.monotonic() - _seaborn_names_failed_at \
+                < SEABORN_LISTING_RETRY_AFTER:
             return None
+        try:
+            _seaborn_names_cache = _fetch_seaborn_names()
+        except Exception:
+            _seaborn_names_failed_at = time.monotonic()
+            return None
+        _seaborn_names_failed_at = None
     if name not in _seaborn_names_cache:
         return None
+    import seaborn as sns
     return sns.load_dataset(name)
+
+
+def _fetch_seaborn_names():
+    """The set of seaborn example-dataset names, read from seaborn's own
+    listing URL (``seaborn.utils.DATASET_NAMES_URL``, a newline-separated
+    text file -- parsed exactly as ``seaborn.get_dataset_names()`` parses
+    it) but with a request timeout."""
+    from seaborn.utils import DATASET_NAMES_URL
+    resp = requests.get(DATASET_NAMES_URL, headers=_UA,
+                        timeout=SEABORN_LISTING_TIMEOUT)
+    resp.raise_for_status()
+    return {line.strip() for line in resp.text.split('\n')
+            if line.strip()}
 
 
 def fivethirtyeight_dataset(name):
@@ -535,12 +616,33 @@ def _synthetic_rng(random_state):
     """``numpy.random.Generator`` for a hypertools ``random_state``.
 
     Accepts None (fresh entropy), an int seed, a ``SeedSequence``, an
-    existing ``Generator``, or a legacy ``RandomState`` (whose own bit
-    generator is reused, so a caller threading a ``RandomState`` through
-    still gets a reproducible stream)."""
+    existing ``Generator``, or a legacy ``RandomState``. A ``RandomState``
+    has no ``.bit_generator`` (the pre-1.1 code assumed one and crashed --
+    1.1 release review, I3), so its stream is consumed for 16 bytes of
+    entropy that seed the ``Generator``: deterministic given the
+    ``RandomState``'s state, and advancing it the way any draw would."""
     if isinstance(random_state, np.random.RandomState):
-        return np.random.default_rng(random_state.bit_generator)
+        entropy = int.from_bytes(random_state.bytes(16), 'little')
+        return np.random.default_rng(entropy)
     return np.random.default_rng(random_state)
+
+
+def _sklearn_random_state(random_state):
+    """What to hand ``sklearn.datasets.make_*`` as ``random_state``.
+
+    scikit-learn accepts None, an int or a ``RandomState`` -- not a
+    ``Generator`` or ``SeedSequence`` (1.1 release review, I4: those were
+    passed straight through for ``n_datasets == 1`` and rejected by
+    scikit-learn's parameter validation, while ``n_datasets > 1`` derived
+    ints from them). Every seed type is mapped to an int in
+    ``[0, 2**32)``, deterministically."""
+    if random_state is None or isinstance(random_state,
+                                          np.random.RandomState):
+        return random_state
+    if isinstance(random_state, (int, np.integer)) \
+            and not isinstance(random_state, bool):
+        return int(random_state)
+    return int(_synthetic_rng(random_state).integers(2 ** 32))
 
 
 def _synthetic_frame(x, target=None, target_name='target'):
@@ -689,8 +791,8 @@ def _sklearn_synthetic(maker, target_name):
     manifold positions appended as ``target_name``."""
     def _make(random_state=None, **kwargs):
         from sklearn import datasets as sk_datasets
-        x, y = getattr(sk_datasets, maker)(random_state=random_state,
-                                           **kwargs)
+        x, y = getattr(sk_datasets, maker)(
+            random_state=_sklearn_random_state(random_state), **kwargs)
         return _synthetic_frame(x, y, target_name)
     return _make
 
@@ -804,16 +906,15 @@ def synthetic_dataset(name, n_datasets=1, random_state=None, seed=None,
                 f'random_state={random_state!r}, seed={seed!r})')
         random_state = seed
 
-    try:
-        n_datasets = int(n_datasets)
-    except (TypeError, ValueError) as e:
+    # an integer (Python int or numpy integer, not bool) >= 1; a float such
+    # as 2.7 used to be silently truncated by int() (1.1 release review, I6)
+    if isinstance(n_datasets, bool) \
+            or not isinstance(n_datasets, numbers.Integral) \
+            or n_datasets < 1:
         raise HypertoolsIOError(
             f'{name!r}: n_datasets must be a positive integer; got '
-            f'{n_datasets!r}') from e
-    if n_datasets < 1:
-        raise HypertoolsIOError(
-            f'{name!r}: n_datasets must be a positive integer; got '
-            f'{n_datasets}')
+            f'{n_datasets!r}')
+    n_datasets = int(n_datasets)
 
     if n_datasets == 1:
         return maker(random_state=random_state, **kwargs)
@@ -823,8 +924,16 @@ def synthetic_dataset(name, n_datasets=1, random_state=None, seed=None,
     if random_state is None:
         seeds = [None] * n_datasets
     else:
-        base = random_state if isinstance(random_state, np.random.SeedSequence) \
-            else np.random.SeedSequence(
+        if isinstance(random_state, np.random.SeedSequence):
+            # spawn from a fresh COPY: SeedSequence.spawn() advances the
+            # object's spawn counter, so spawning from the caller's own
+            # object made a second call with the same SeedSequence
+            # produce different data (1.1 release review, I5)
+            base = np.random.SeedSequence(
+                random_state.entropy, spawn_key=random_state.spawn_key,
+                pool_size=random_state.pool_size)
+        else:
+            base = np.random.SeedSequence(
                 _synthetic_rng(random_state).integers(2 ** 63))
         seeds = [int(child.generate_state(1)[0])
                  for child in base.spawn(n_datasets)]
@@ -1081,8 +1190,11 @@ def yahoo_source(name, start=None, end=None, interval='1d', timeout=30):
     Returns
     -------
     pandas.DataFrame
-        Indexed by a ``DatetimeIndex`` named ``'date'`` (bar timestamps
-        normalized to midnight), with float columns ``open``, ``high``,
+        Indexed by a ``DatetimeIndex`` named ``'date'``. Daily and longer
+        bars are dated by the exchange-local trading day (naive, midnight);
+        intraday bars (``'1h'``, ``'15m'``, ...) keep their time, as a
+        tz-aware index in the exchange's timezone (e.g.
+        ``America/New_York``). Float columns ``open``, ``high``,
         ``low``, ``close``, ``volume`` and, when Yahoo provides it,
         ``adj_close`` (split/dividend-adjusted). Rows are in time order;
         gaps Yahoo reports as nulls stay NaN rather than being dropped.
@@ -1108,30 +1220,91 @@ def yahoo_source(name, start=None, end=None, interval='1d', timeout=30):
             f'Yahoo Finance returned a non-JSON response (HTTP '
             f'{resp.status_code}) for {ticker!r}: {type(e).__name__}: {e}'
         ) from e
+    return _parse_yahoo_chart(
+        payload, ticker=ticker, interval=interval,
+        window=f'{params["period1"]}..{params["period2"]}',
+        status_code=resp.status_code)
+
+
+_YAHOO_INTRADAY_RE = re.compile(r'\d+[mh]')     # '1m', '90m', '1h'; not '1mo'
+
+
+def _yahoo_is_intraday(interval):
+    """True for a Yahoo bar size measured in minutes or hours."""
+    return bool(_YAHOO_INTRADAY_RE.fullmatch(str(interval).strip()))
+
+
+def _yahoo_exchange_tz(name, gmtoffset):
+    """The exchange's timezone: the IANA ``name`` Yahoo reports when it is a
+    real zone, else a fixed-offset zone from ``gmtoffset`` (seconds)."""
+    import datetime
+    import zoneinfo
+    if isinstance(name, str) and name:
+        try:
+            return zoneinfo.ZoneInfo(name)
+        except (zoneinfo.ZoneInfoNotFoundError, ValueError):
+            pass
+    return datetime.timezone(datetime.timedelta(seconds=int(gmtoffset)))
+
+
+def _parse_yahoo_chart(payload, *, ticker, interval='1d', window='',
+                       status_code=200):
+    """Turn one decoded Yahoo v8 chart payload into the DataFrame
+    :func:`yahoo_source` returns (split out so the parser is testable on a
+    synthetic payload, without the network).
+
+    Yahoo stamps every bar at the exchange's local session open expressed
+    in UTC (23:00 UTC for a Sydney-listed ticker, 14:30 UTC for New York),
+    and reports the exchange's UTC offset as ``meta.gmtoffset`` (seconds).
+    Normalising the raw UTC stamp to midnight dated every bar east of UTC
+    one day early (BHP.AX 2025-01-06..10 came back as 2025-01-05..09; 1.1
+    release review, I2), so the offset is applied first: the resulting
+    ``date`` is the exchange-local trading day.
+
+    Intraday bars (a granularity in minutes or hours, e.g. ``'1h'``,
+    ``'15m'``) are NOT normalized -- doing so gave every bar of a session
+    the same midnight stamp, so the index was full of duplicates and
+    ``hyp.predict`` refused it. They keep their time as a tz-aware index in
+    the exchange's timezone (``meta.exchangeTimezoneName``, or a fixed
+    ``gmtoffset`` zone when the name is missing or unknown).
+    """
     chart = payload.get('chart') or {}
     error = chart.get('error')
     if error:
         raise HypertoolsIOError(
             f'Yahoo Finance rejected {ticker!r}: '
-            f'{error.get("description", error)} (HTTP {resp.status_code}). '
+            f'{error.get("description", error)} (HTTP {status_code}). '
             'Check the symbol on https://finance.yahoo.com.')
     results = chart.get('result') or []
     if not results:
         raise HypertoolsIOError(
             f'Yahoo Finance returned no result for {ticker!r} (HTTP '
-            f'{resp.status_code}).')
+            f'{status_code}).')
     result = results[0]
     stamps = result.get('timestamp')
     if not stamps:
         raise HypertoolsIOError(
             f'Yahoo Finance returned no {interval} bars for {ticker!r} in '
-            f'the requested window ({params["period1"]}..'
-            f'{params["period2"]}, epoch seconds). Widen start=/end=, or '
-            'note that intraday intervals are only served for recent '
-            'windows.')
+            f'the requested window ({window}, epoch seconds). Widen '
+            'start=/end=, or note that intraday intervals are only served '
+            'for recent windows.')
     quote = (result.get('indicators') or {}).get('quote') or [{}]
     quote = quote[0]
-    index = pd.to_datetime(stamps, unit='s').normalize()
+    meta = result.get('meta') or {}
+    gmtoffset = int(meta.get('gmtoffset') or 0)
+    stamps = np.asarray(stamps, dtype='int64')
+    if _yahoo_is_intraday(meta.get('dataGranularity') or interval):
+        # an intraday bar is an instant, not a trading day: keep its time,
+        # expressed in the exchange's own timezone so the wall-clock reads
+        # like the daily path's exchange-local dates. The zone NAME is used
+        # when Yahoo gives one, because gmtoffset is only the offset in
+        # force NOW -- applying it to a window that spans a DST change
+        # would shift every bar on the far side by an hour. The index stays
+        # tz-aware, so a repeated fall-back hour cannot collide either.
+        index = pd.to_datetime(stamps, unit='s', utc=True).tz_convert(
+            _yahoo_exchange_tz(meta.get('exchangeTimezoneName'), gmtoffset))
+    else:
+        index = pd.to_datetime(stamps + gmtoffset, unit='s').normalize()
     index.name = 'date'
     frame = {}
     for col in ('open', 'high', 'low', 'close', 'volume'):
@@ -1352,23 +1525,58 @@ def cached_url_path(url):
     return url_cache_dir() / f'{digest}{suffix}'
 
 
+def _replace_retrying(src, dst, attempts=50, delay=0.02):
+    """``os.replace`` that tolerates Windows' transient access-denied.
+
+    On Windows a rename onto a file another thread is reading or renaming
+    raises ``PermissionError`` (WinError 5) for the instant the handle is
+    held; POSIX renames succeed regardless. Twelve concurrent writers of
+    one cache entry hit it on every Windows CI job (2026-09-06). Retry
+    briefly; if every attempt fails but the destination exists, a
+    concurrent writer of the SAME URL (the cache key) won the race with
+    identical bytes, so the file on disk is the file we wanted.
+    """
+    import time
+    for attempt in range(attempts):
+        try:
+            os.replace(src, dst)
+            return
+        except PermissionError:
+            if attempt == attempts - 1:
+                if Path(dst).exists():
+                    return
+                raise
+            time.sleep(delay)
+
+
 def _write_cached(path, raw, name_hint):
-    """Write ``raw`` into the cache atomically: a per-process ``.part``
+    """Write ``raw`` into the cache atomically: a unique ``.part``
     file, then ``os.replace``, so an interrupted download can never leave a
     truncated file that later runs would trust. The download's filename
     hint is stored beside it so a cache hit parses the payload exactly the
     way the live download did."""
     import json
     path.parent.mkdir(parents=True, exist_ok=True)
-    part = path.with_name(f'{path.name}.{os.getpid()}.part')
-    part.write_bytes(raw)
-    os.replace(part, path)
+
+    def write_atomic(destination, payload):
+        """Replace one cache file using a private temporary file."""
+        # GH #285 release review: PID-only names collide when threads
+        # cache the same URL concurrently, causing missing-file errors.
+        stream = tempfile.NamedTemporaryFile(
+                dir=destination.parent, prefix=destination.name + '.',
+                suffix='.part', delete=False)
+        part = Path(stream.name)
+        try:
+            with stream:
+                stream.write(payload)
+            _replace_retrying(part, destination)
+        finally:
+            part.unlink(missing_ok=True)
+
+    write_atomic(path, raw)
     if name_hint:
         meta = path.with_name(f'{path.name}.meta.json')
-        meta_part = meta.with_name(f'{meta.name}.{os.getpid()}.part')
-        meta_part.write_text(json.dumps({'url_name_hint': name_hint}),
-                             encoding='utf-8')
-        os.replace(meta_part, meta)
+        write_atomic(meta, json.dumps({'url_name_hint': name_hint}).encode('utf-8'))
 
 
 def _read_cached(path):
@@ -1453,7 +1661,14 @@ def load_source(source, split=None, streaming=False, trust=False,
     ``cache``/``offline`` govern the on-disk URL cache (see
     :func:`url_cache_dir`): ``cache=True`` stores every URL/Drive/Dropbox/
     Sheets download and reuses it next time, ``offline=True`` reads ONLY
-    from that cache and raises rather than touching the network.
+    from that cache and raises rather than touching the network: an
+    explicit URL / Drive / Sheets / Dropbox link that is not cached raises
+    ``HypertoolsOfflineError`` at once, while a string that is only
+    GUESSED to be one (a bare 25+ character name read as a Drive id, a
+    scheme-less ``host.tld/...``) adds its miss to the "tried, in order"
+    digest, raised as ``HypertoolsOfflineError`` when nothing matched. A
+    cached copy that is read but does not parse raises
+    ``HypertoolsIOError`` naming the cached file (it is not a miss).
     ``decode_labels`` is threaded to :func:`_load_hf`. Any remaining
     keyword arguments belong to the synthetic (step 6) and web-prefix
     (step 7) sources and are passed to whichever of those matches; passing
@@ -1466,10 +1681,10 @@ def load_source(source, split=None, streaming=False, trust=False,
     # before local-file resolution, so the same shadowing rule as the
     # scikit-learn/seaborn names applies (pass './helix' or a path with an
     # extension to load a local file of that name instead).
-    synthetic = synthetic_dataset(source, **source_kwargs) \
-        if source in SYNTHETIC_DATASETS else None
-    if synthetic is not None:
-        return synthetic
+    if source in SYNTHETIC_DATASETS:
+        if streaming:
+            _refuse_streaming(source, 'a built-in synthetic dataset')
+        return synthetic_dataset(source, **source_kwargs)
     attempts.append('synthetic dataset: not one of '
                     f'{sorted(SYNTHETIC_DATASETS)}')
 
@@ -1477,7 +1692,19 @@ def load_source(source, split=None, streaming=False, trust=False,
     # 'sec:'): unambiguous, so a failure raises rather than falling
     # through the rest of the chain
     if isinstance(source, str) and source.startswith(WEB_SOURCE_PREFIXES):
+        if offline:
+            _refuse_offline(source, 'a wikipedia:/yahoo:/sec: web source')
+        if streaming:
+            _refuse_streaming(source, 'a wikipedia:/yahoo:/sec: web source')
         return web_source(source, **source_kwargs)
+
+    if streaming and (_is_url_like(source) or
+                      not _HF_ID_RE.match(source)):
+        # every remaining resolver but Hugging Face (step 9) loads in full;
+        # refuse before any download or file read (1.1 release review, I8)
+        _refuse_streaming(
+            source, 'a local file / Google Sheets / Google Drive / '
+            'Dropbox / URL source (not a Hugging Face dataset id)')
 
     if source_kwargs:
         raise TypeError(
@@ -1487,9 +1714,7 @@ def load_source(source, split=None, streaming=False, trust=False,
             f'({sorted(SYNTHETIC_DATASETS)}) and the web sources '
             f'({list(WEB_SOURCE_PREFIXES)}).')
 
-    is_url_like = source.startswith(('http://', 'https://')) \
-        or 'drive.google.com' in source or 'docs.google.com' in source \
-        or 'dropbox.com' in source
+    is_url_like = _is_url_like(source)
 
     # 8. local file (skipped for explicit URLs, which are never local
     # paths -- the digest used to list a slash-collapsed 'https:/...'
@@ -1502,6 +1727,8 @@ def load_source(source, split=None, streaming=False, trust=False,
         except OSError:
             is_file = is_dir = False
         if is_file:
+            if streaming:
+                _refuse_streaming(source, 'a local file')
             return load_local_file(path)
         if is_dir:
             attempts.append(
@@ -1509,8 +1736,15 @@ def load_source(source, split=None, streaming=False, trust=False,
         else:
             attempts.append(f'local file: not found at {path}')
 
-    # 9. Hugging Face dataset (skip for obvious URLs)
-    if not is_url_like and _HF_ID_RE.match(source):
+    # 9. Hugging Face dataset (skip for obvious URLs; and under
+    # offline=True, which never opens a connection -- Hugging Face
+    # datasets are not in the hypertools URL cache, so the source either
+    # resolves as a cached URL below or raises HypertoolsOfflineError)
+    if offline and not is_url_like and _HF_ID_RE.match(source):
+        attempts.append('Hugging Face dataset: not attempted (offline=True; '
+                        'Hugging Face datasets are not served from the '
+                        'hypertools URL cache)')
+    elif not is_url_like and _HF_ID_RE.match(source):
         try:
             return _load_hf(source, split=split, streaming=streaming,
                             decode_labels=decode_labels)
@@ -1520,47 +1754,73 @@ def load_source(source, split=None, streaming=False, trust=False,
             attempts.append(f'Hugging Face dataset: {type(e).__name__}: '
                             f'{str(e).splitlines()[0][:120]}')
 
+    # steps 10-13 download (or, with cache=/offline=, read from the URL
+    # cache) and parse. Two things are tracked for the final error:
+    # - an offline MISS escapes at once only when the source is
+    #   unmistakably that kind of link (is_url_like); for a GUESSED
+    #   interpretation -- a bare 25+ character string read as a Drive id,
+    #   a scheme-less 'host.tld/...' read as a URL, an 's/...' Dropbox
+    #   path -- the miss is one line of the digest, next to the local-file
+    #   miss the user more likely meant (review 2026-09-11)
+    # - a cached copy that was READ but did not parse is a parse failure,
+    #   not a cache miss, so the final error is then a HypertoolsIOError
+    #   naming the cached file rather than the offline "cache it first"
+    #   refusal (review 2026-09-11)
+    unparsed_cached = []
+    miss = object()
+
+    def _fetch_and_parse(url, label, hint):
+        from_cache = (cache or offline) and cached_url_path(url).is_file()
+        try:
+            raw, name_hint = _fetch_bytes(url, cache=cache, offline=offline)
+        except HypertoolsOfflineError:
+            if is_url_like:
+                raise
+            attempts.append(f'{label}: not in the hypertools URL cache '
+                            f'(looked for {cached_url_path(url)})')
+            return miss
+        except HypertoolsTrustError:
+            raise
+        except Exception as e:
+            attempts.append(f'{label}: {type(e).__name__}: {e}')
+            return miss
+        try:
+            return _parse_payload(raw, name_hint or hint, trust=trust,
+                                  remote=True)
+        except (HypertoolsTrustError, HypertoolsOfflineError):
+            raise
+        except Exception as e:
+            if from_cache:
+                path = cached_url_path(url)
+                unparsed_cached.append(path)
+                attempts.append(f'{label}: the cached copy at {path} could '
+                                f'not be parsed: {type(e).__name__}: {e}')
+            else:
+                attempts.append(f'{label}: {type(e).__name__}: {e}')
+            return miss
+
     # 10. Google Sheets URL -> CSV export (checked before generic Drive id
     # extraction, since a Sheets URL also matches the '/d/<id>' pattern)
     sheet_url = _normalize_google_sheet(source)
     if sheet_url is not None:
-        try:
-            raw, name_hint = _fetch_bytes(sheet_url, cache=cache,
-                                          offline=offline)
-            return _parse_payload(raw, name_hint or 'sheet.csv',
-                                  trust=trust, remote=True)
-        except (HypertoolsTrustError, HypertoolsOfflineError):
-            raise
-        except Exception as e:
-            attempts.append(f'Google Sheets: {type(e).__name__}: {e}')
+        data = _fetch_and_parse(sheet_url, 'Google Sheets', 'sheet.csv')
+        if data is not miss:
+            return data
 
     # 11. Google Drive URL or bare ID
     drive_id = _extract_drive_id(source)
     if drive_id is not None:
         url = f'https://drive.google.com/uc?export=download&id={drive_id}'
-        try:
-            raw, name_hint = _fetch_bytes(url, cache=cache,
-                                          offline=offline)
-            return _parse_payload(raw, name_hint or source,
-                                  trust=trust, remote=True)
-        except (HypertoolsTrustError, HypertoolsOfflineError):
-            raise
-        except Exception as e:
-            attempts.append(f'Google Drive ({drive_id}): '
-                            f'{type(e).__name__}: {e}')
+        data = _fetch_and_parse(url, f'Google Drive ({drive_id})', source)
+        if data is not miss:
+            return data
 
     # 12. Dropbox URL or shared-link path
     dropbox_url = _normalize_dropbox(source)
     if dropbox_url is not None:
-        try:
-            raw, name_hint = _fetch_bytes(dropbox_url, cache=cache,
-                                          offline=offline)
-            return _parse_payload(raw, name_hint or source,
-                                  trust=trust, remote=True)
-        except (HypertoolsTrustError, HypertoolsOfflineError):
-            raise
-        except Exception as e:
-            attempts.append(f'Dropbox: {type(e).__name__}: {e}')
+        data = _fetch_and_parse(dropbox_url, 'Dropbox', source)
+        if data is not miss:
+            return data
 
     # 13. any URL, with or without a scheme
     url = None
@@ -1583,15 +1843,9 @@ def load_source(source, split=None, streaming=False, trust=False,
             'address without a scheme; add an explicit http:// or '
             'https:// prefix')
     if url is not None:
-        try:
-            raw, name_hint = _fetch_bytes(url, cache=cache,
-                                          offline=offline)
-            return _parse_payload(raw, name_hint or source,
-                                  trust=trust, remote=True)
-        except (HypertoolsTrustError, HypertoolsOfflineError):
-            raise
-        except Exception as e:
-            attempts.append(f'URL ({url}): {type(e).__name__}: {e}')
+        data = _fetch_and_parse(url, f'URL ({url})', source)
+        if data is not miss:
+            return data
 
     tried = '\n  - '.join(attempts) if attempts else 'no interpretation ' \
         'matched (not a file, URL, Drive/Dropbox link, or dataset id)'
@@ -1599,7 +1853,28 @@ def load_source(source, split=None, streaming=False, trust=False,
     suggestion = _closest_dataset_name(source)
     if suggestion is not None:
         message += f"\nDid you mean {suggestion!r}?"
+    if unparsed_cached:
+        raise HypertoolsIOError(
+            f'{message}\n(the cached download at '
+            f'{", ".join(str(p) for p in unparsed_cached)} was read but '
+            'could not be parsed; it is kept as is -- delete it and load '
+            'again with cache=True while online to download a fresh copy.)')
+    if offline:
+        raise HypertoolsOfflineError(
+            f'offline=True: {message}\n(offline=True serves ONLY Google '
+            'Sheets / Google Drive / Dropbox / plain-URL downloads that '
+            'were cached earlier with cache=True; every network resolver '
+            'was skipped.)')
     raise HypertoolsIOError(message)
+
+
+def _is_url_like(source):
+    """True for a string that is unmistakably a URL (explicit scheme, or a
+    Google Drive / Google Sheets / Dropbox link), which is never a local
+    path, a dataset name or a Hugging Face id."""
+    return source.startswith(('http://', 'https://')) \
+        or 'drive.google.com' in source or 'docs.google.com' in source \
+        or 'dropbox.com' in source
 
 
 def _closest_dataset_name(source):
@@ -1974,10 +2249,7 @@ def _parse_payload(raw, name_hint='', trust=False, remote=False):
         if raw[:1] == b'\x80':
             return _unpickle_bytes(raw, trust=trust, remote=remote)
         if raw[:2] == b'PK':
-            try:
-                return _unpack_npz(raw, trust=trust, remote=remote)
-            except Exception:
-                return pd.read_parquet(io.BytesIO(raw))
+            return _unpack_sniffed_zip(raw, trust=trust, remote=remote)
         if _complete_pickle_stream(raw):
             # protocol-0 (ASCII) pickles carry no magic prefix (e.g.
             # hyp.save(..., protocol=0) to an arbitrary extension)
@@ -1995,10 +2267,7 @@ def _parse_payload(raw, name_hint='', trust=False, remote=False):
     if raw[:1] == b'\x80':
         return _unpickle_bytes(raw, trust=trust, remote=remote)
     if raw[:2] == b'PK':
-        try:
-            return _unpack_npz(raw, trust=trust, remote=remote)
-        except Exception:
-            return pd.read_parquet(io.BytesIO(raw))
+        return _unpack_sniffed_zip(raw, trust=trust, remote=remote)
     if _complete_pickle_stream(raw):
         # protocol-0 (ASCII) pickles carry no magic prefix and DO decode
         # as UTF-8, so they must be sniffed BEFORE text parsing or they
@@ -2123,6 +2392,22 @@ def _unpack_npz(raw, trust=False, remote=False):
                 'data from a remote source') from e
         raise
     return arrays[0] if len(arrays) == 1 else arrays
+
+
+def _unpack_sniffed_zip(raw, trust=False, remote=False):
+    """A payload sniffed as a zip (``'PK'`` magic, no or an unknown
+    extension): an ``.npz`` first, parquet as the fallback. The ``.npz``
+    reader's :class:`HypertoolsTrustError` -- a remote object array that
+    needs ``allow_pickle`` -- IS the answer, so it is raised as itself;
+    before, the parquet fallback swallowed it and the user saw "Parquet
+    magic bytes not found" instead of the ``trust=True`` remedy (review
+    2026-09-11)."""
+    try:
+        return _unpack_npz(raw, trust=trust, remote=remote)
+    except HypertoolsTrustError:
+        raise
+    except Exception:
+        return pd.read_parquet(io.BytesIO(raw))
 
 
 def _unpack_mat(raw):

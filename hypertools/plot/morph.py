@@ -11,7 +11,8 @@ Hungarian algorithm (``scipy.optimize.linear_sum_assignment`` on
 distance to its partner in the next cloud, then ease between clouds with
 smoothstep interpolation on a hold/morph/hold/... frame schedule ([hold_1,
 morph_1->2, hold_2, ..., hold_N] -- ``2*N - 1`` segments for ``N``
-datasets). Both ``hypertools.plot.matplotlib_backend`` and
+datasets). Holds draw the exact clouds; every morph frame draws a cloud
+strictly between them (:func:`transition_t`). Both ``hypertools.plot.matplotlib_backend`` and
 ``hypertools.plot.plotly_backend`` build their ``animate='morph'`` frames
 from these same helpers, so the two backends stay in lockstep.
 
@@ -50,6 +51,7 @@ __all__ = [
     "morph_visible_mask",
     "segment_frame_counts",
     "frame_to_segment",
+    "transition_t",
     "morph_positions",
     "interpolate_color",
     "morph_color",
@@ -59,7 +61,17 @@ __all__ = [
     "morph_schedule",
     "ZERO_ROTATION_FLOOR",
     "MORPH_SURFACE_SIZING_MARGIN",
+    "MORPH_DEFAULT_MARKERSIZE_PT",
 ]
+
+#: Default size, in points, of the traveling morph cloud's ``'.'`` markers
+#: when no ``markersize=`` is given -- ONE value both backends read
+#: (`matplotlib_backend.animate_plot3D`/`animate_plot2D` and
+#: `plotly_backend.MORPH_DEFAULT_MARKERSIZE_PT`), smaller than the general
+#: 6 pt marker default because a cloud has many points. 1.1 visual review
+#: (L9): the historical 1.5 pt drew about 3 px dots on matplotlib and
+#: sub-pixel ones on plotly (30 dots covered 24 px in total).
+MORPH_DEFAULT_MARKERSIZE_PT = 4.0
 
 #: Constant-rotation-speed fix (maintainer request, 2026-07-06): when a
 #: LIST of per-segment `rotations` is given to ``animate='morph'``, each
@@ -364,6 +376,23 @@ def frame_to_segment(frame_counts, frame):
     return last, frame_counts[last] - 1, frame_counts[last]
 
 
+def transition_t(step, n_steps):
+    """The eased interpolation parameter of transition frame `step` (of
+    `n_steps`): ``smoothstep((step + 1) / (n_steps + 1))``.
+
+    Always strictly inside ``(0, 1)``: the ENDPOINTS of a transition are the
+    two hold clouds, which the neighbouring HOLD segments already draw, so a
+    transition frame that sampled them would only repeat a hold. The
+    samples are the ``n_steps`` interior points of an ``n_steps + 1``-way
+    split, which keeps them symmetric about the midpoint and evenly spaced
+    before easing. (1.1 visual review, L9: sampling ``step / (n_steps - 1)``
+    put ``t = 0`` and ``t = 1`` on the first and last transition frames,
+    so a 2-frame transition drew two copies of the hold clouds and never
+    showed an in-between cloud.)
+    """
+    return float(smoothstep((step + 1) / (max(1, n_steps) + 1)))
+
+
 def morph_positions(sampled, seg_idx, step, n_steps):
     """Point positions for segment `seg_idx` at local `step` (of `n_steps`
     total in that segment).
@@ -371,14 +400,15 @@ def morph_positions(sampled, seg_idx, step, n_steps):
     Even `seg_idx` (0, 2, 4, ...) are HOLDS: the corresponding dataset
     ``sampled[seg_idx // 2]`` is returned unchanged (matches every frame).
     Odd `seg_idx` are MORPHS: ``sampled[k]`` eases into ``sampled[k + 1]``
-    (``k = seg_idx // 2``) via :func:`smoothstep`, ``t=0`` exactly
-    reproducing ``sampled[k]`` and ``t=1`` exactly reproducing
-    ``sampled[k + 1]``.
+    (``k = seg_idx // 2``) at ``t = transition_t(step, n_steps)``, which
+    is strictly between 0 and 1 on every transition frame -- so every
+    transition frame draws an in-between cloud, and the exact clouds are
+    drawn only by the holds on either side.
     """
     if seg_idx % 2 == 0:
         return sampled[seg_idx // 2]
     k = seg_idx // 2
-    t = float(smoothstep(step / max(1, n_steps - 1)))
+    t = transition_t(step, n_steps)
     return (1.0 - t) * sampled[k] + t * sampled[k + 1]
 
 
@@ -394,13 +424,14 @@ def interpolate_color(color_a, color_b, t):
 def morph_color(colors, seg_idx, step, n_steps):
     """Drawn color for segment `seg_idx` at local `step` (of `n_steps`),
     on the SAME schedule as :func:`morph_positions`: holds are the
-    corresponding dataset's own solid color; morphs RGB-lerp (smoothstep-
-    eased, matching the position easing) between the two datasets'
-    colors."""
+    corresponding dataset's own solid color; morphs RGB-lerp between the
+    two datasets' colors at the same eased :func:`transition_t` as the
+    positions (strictly between the two colors on every transition
+    frame)."""
     if seg_idx % 2 == 0:
         return tuple(colors[seg_idx // 2])
     k = seg_idx // 2
-    t = float(smoothstep(step / max(1, n_steps - 1)))
+    t = transition_t(step, n_steps)
     return interpolate_color(colors[k], colors[k + 1], t)
 
 
@@ -414,12 +445,12 @@ def morph_alpha(alphas, seg_idx, step, n_steps):
     was given. Returns ``None`` -- "leave the artist at its default" --
     when every entry is ``None``, so an animation that never asked for an
     alpha is drawn exactly as before. Otherwise a HOLD (even `seg_idx`)
-    is the held dataset's own alpha, and a MORPH (odd) eases (smoothstep,
-    matching the position/color easing) from the departing dataset's
-    alpha to the arriving one's, an unset entry counting as opaque
-    (``1.0``) -- the same rule every other animation style applies to a
-    per-dataset ``alpha=`` list, restated for one artist that stands in
-    for several datasets in turn.
+    is the held dataset's own alpha, and a MORPH (odd) eases (at the same
+    :func:`transition_t` as the position/color) from the departing
+    dataset's alpha to the arriving one's, an unset entry counting as
+    opaque (``1.0``) -- the same rule every other animation style applies
+    to a per-dataset ``alpha=`` list, restated for one artist that stands
+    in for several datasets in turn.
     """
     if alphas is None or all(a is None for a in alphas):
         return None
@@ -427,16 +458,23 @@ def morph_alpha(alphas, seg_idx, step, n_steps):
     if seg_idx % 2 == 0:
         return vals[seg_idx // 2]
     k = seg_idx // 2
-    t = float(smoothstep(step / max(1, n_steps - 1)))
+    t = transition_t(step, n_steps)
     # `a + t * (b - a)` (not `(1 - t) * a + t * b`) so a scalar `alpha=`
     # (every entry equal) stays EXACTLY that value on every transition
     # frame instead of drifting by a float ulp.
     return vals[k] + t * (vals[k + 1] - vals[k])
 
 
-def resolve_morph_rotations(rotations, n_datasets):
+def resolve_morph_rotations(rotations, n_datasets, loop=False):
     """Validate `rotations` for ``animate='morph'`` with `n_datasets`
     morphing datasets.
+
+    `n_datasets` counts the CLOSING repeat of the first cloud that
+    ``loop=True`` appends (`plot`'s `loop=` docstring: `n` clouds give
+    ``2(n + 1) - 1`` segments), so a looped 3-cloud morph is validated
+    against 4 datasets / 7 segments. Pass ``loop=True`` so the error
+    message can say so, rather than reporting a dataset count one larger
+    than the caller passed with no explanation.
 
     A scalar is returned unchanged (a single float): the TOTAL number of
     camera rotations spread uniformly over the whole animation, exactly
@@ -457,11 +495,17 @@ def resolve_morph_rotations(rotations, n_datasets):
     if isinstance(rotations, (list, tuple)):
         n_segments = 2 * n_datasets - 1
         if len(rotations) != n_segments:
+            looped = (
+                f" (loop=True closes the sequence with a repeat of the "
+                f"first cloud, so {n_datasets - 1} clouds count as "
+                f"{n_datasets}: 2 * ({n_datasets - 1} + 1) - 1 = "
+                f"{n_segments} segments, the last two being the closing "
+                "morph back to cloud 1 and its hold)" if loop else "")
             raise ValueError(
                 f"rotations list has {len(rotations)} entries but "
                 f"animate='morph' with {n_datasets} morphing datasets "
                 f"needs exactly {n_segments} (2 * n_datasets - 1: "
-                "[hold_1, morph_1->2, hold_2, ..., hold_N])"
+                f"[hold_1, morph_1->2, hold_2, ..., hold_N]){looped}"
             )
         return [float(r) for r in rotations]
     return float(rotations)

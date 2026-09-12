@@ -3,7 +3,23 @@ import warnings
 import numpy as np
 import pandas as pd
 
-from .._shared.helpers import get_type
+from .._shared.helpers import (get_type, is_number_item, is_array_dataset,
+                               is_frame_dataset, is_series_like,
+                               as_pandas_dataframe)
+
+
+def _warn(*args, **kwargs):
+    """warnings.warn() attributed to the caller outside hypertools.
+
+    Every warning this module emits is about the USER's data (missing
+    values, mixed text and numbers, ...), so the reported location is the
+    user's call site, not this file -- the same external_stacklevel()
+    convention as the rest of the library. Imported lazily: core.model
+    imports the tools package.
+    """
+    from ..core.model import external_stacklevel
+    kwargs.setdefault('stacklevel', external_stacklevel())
+    warnings.warn(*args, **kwargs)
 
 
 def _contains_text(el):
@@ -15,13 +31,18 @@ def _contains_text(el):
     return False
 
 
+def _is_dataset(el):
+    """True if `el` is ONE dataset object: an array, a DataFrame of any
+    backend datawrangler recognises (pandas, polars DataFrame/LazyFrame,
+    dataframe-likes) or a Series-like (see `hypertools._shared.helpers`)."""
+    return is_array_dataset(el) or is_frame_dataset(el) or is_series_like(el)
+
+
 def _contains_dataset(el):
-    """True if `el` is (or recursively contains) an array/DataFrame/Series."""
-    if isinstance(el, (np.ndarray, pd.DataFrame, pd.Series)):
-        return True
+    """True if `el` is (or recursively contains) a dataset object."""
     if isinstance(el, (list, tuple)):
         return any(_contains_dataset(sub) for sub in el)
-    return False
+    return _is_dataset(el)
 
 
 def _flatten_dataset_groups(x):
@@ -69,7 +90,7 @@ def _prepare_df(df, warn=True):
     if dt_idx:
         if warn:
             _names = [str(df.columns[j]) for j in dt_idx]
-            warnings.warn(
+            _warn(
                 f"DataFrame column(s) {_names} contain datetime values; "
                 'converting to float seconds since the Unix epoch '
                 '(1970-01-01 00:00:00 UTC) so they can be analyzed '
@@ -107,6 +128,12 @@ def format_data(x, vectorizer='CountVectorizer',
 
     - pandas Series (top-level or inside a list) become 1-D datasets;
       tuples are treated like lists.
+    - Input types are classified with datawrangler's predicates
+      (``dw.zoo.is_array`` / ``is_dataframe`` / ``array_like``), so every
+      DataFrame backend datawrangler recognises -- pandas, polars
+      (DataFrame or LazyFrame), modin, dataframe-likes -- is accepted, and
+      non-pandas frames are converted to pandas via
+      ``dw.wrangle(..., backend='pandas')`` (polars nulls become NaN).
     - Nested lists/tuples of arrays/DataFrames (e.g. ``[[arr1, arr2]]``)
       are flattened into a flat list of datasets, matching `hyp.plot()`.
     - Lists of bools are numeric 0/1 datasets, like ``np.array([True, ...])``.
@@ -121,7 +148,7 @@ def format_data(x, vectorizer='CountVectorizer',
     Parameters
     ----------
 
-    x : numpy array, dataframe, series, string or (mixed, possibly nested) list
+    x : numpy array, dataframe (pandas, polars, ...), series, string or (mixed, possibly nested) list
         The data to convert
 
     vectorizer : str, dict, class or class instance
@@ -192,11 +219,10 @@ def format_data(x, vectorizer='CountVectorizer',
     from .df2mat import df2mat
     from .text2mat import text2mat
 
-    # a pandas Series is a single 1-D dataset (QC 2026-07: was rejected as
-    # "unsupported"); a tuple is treated like a list of datasets.
-    import pandas as pd
-    if isinstance(x, pd.Series):
-        x = x.to_numpy()
+    # a Series (pandas, polars, ...) is a single 1-D dataset (QC 2026-07: was
+    # rejected as "unsupported"); a tuple is treated like a list of datasets.
+    if is_series_like(x):
+        x = np.asarray(x)
     elif isinstance(x, tuple):
         x = list(x)
 
@@ -223,9 +249,7 @@ def format_data(x, vectorizer='CountVectorizer',
     # [True, False, True] is the same data as np.array([True, False, True]),
     # which has always been accepted; np.bool_ is listed explicitly because
     # it is neither an np.number subclass nor (numpy >= 2) a python bool.
-    elif len(x) > 0 and all(
-            isinstance(xi, (bool, int, float, np.number, np.bool_))
-            for xi in x):
+    elif len(x) > 0 and all(is_number_item(xi) for xi in x):
         x = [np.asarray(x, dtype=float)]
 
     # nested lists of datasets, e.g. [[arr1, arr2]], are flattened into a
@@ -237,8 +261,12 @@ def format_data(x, vectorizer='CountVectorizer',
     x = _flatten_dataset_groups(x)
 
     # per-dataset conversions (release-1.0 audit):
-    # - a pandas Series inside a list is a 1-D dataset, like a top-level
-    #   Series (converted above)
+    # - a Series inside a list is a 1-D dataset, like a top-level Series
+    #   (converted above)
+    # - a DataFrame of any other backend datawrangler recognises (polars
+    #   DataFrame/LazyFrame, modin, dataframe-likes) becomes a pandas
+    #   DataFrame, hypertools' internal frame type; pandas frames pass
+    #   through untouched (index, columns and dtypes preserved)
     # - a numpy MaskedArray's masked entries are MISSING data
     #   (F08-plot-inputs-009): np.asarray() silently drops the mask, so the
     #   invalid underlying values used to be analyzed/plotted as real data.
@@ -247,12 +275,14 @@ def format_data(x, vectorizer='CountVectorizer',
     #   the NaNs) and warn.
     x_converted = []
     for _i, _el in enumerate(x):
-        if isinstance(_el, pd.Series):
-            _el = _el.to_numpy()
-        if isinstance(_el, np.ma.MaskedArray) and _el.dtype.kind in 'biufc':
+        if is_series_like(_el):
+            _el = np.asarray(_el)
+        elif is_frame_dataset(_el):
+            _el = as_pandas_dataframe(_el)
+        if np.ma.isMaskedArray(_el) and _el.dtype.kind in 'biufc':
             _n_masked = int(np.ma.count_masked(_el))
             if _n_masked:
-                warnings.warn(
+                _warn(
                     f'dataset {_i} is a numpy masked array with {_n_masked} '
                     'masked (invalid) entries; treating them as missing '
                     'data (converted to NaN and, by default, filled via '
@@ -295,8 +325,8 @@ def format_data(x, vectorizer='CountVectorizer',
     # columns are passed: reorder later ones to match the first's column
     # order when the column sets agree, and raise a clear error when they
     # don't. DataFrames with default integer columns (e.g. wrapped arrays)
-    # keep their positional behavior.
-    import pandas as pd
+    # keep their positional behavior. (Every 'df' dataset is a pandas
+    # DataFrame by now -- see the per-dataset conversions above.)
     named_df_idx = [
         i for i, d in enumerate(dtypes)
         if d == 'df'
@@ -311,7 +341,7 @@ def format_data(x, vectorizer='CountVectorizer',
             if cols == canonical:
                 continue
             if set(cols) == set(canonical):
-                warnings.warn(
+                _warn(
                     f'dataset {i} has the same columns as dataset '
                     f'{named_df_idx[0]} but in a different order; reordering '
                     f'{cols} to match {canonical} so features align by name '
@@ -492,7 +522,7 @@ def format_data(x, vectorizer='CountVectorizer',
                 if impute is not None:
                     num_data = fill_missing(num_data, model=impute)
                 else:
-                    warnings.warn('Missing data: filling missing values '
+                    _warn('Missing data: filling missing values '
                                   'with PPCA (observed values are '
                                   'preserved exactly; only the NaN '
                                   'entries are reconstructed). Pass '
@@ -517,7 +547,7 @@ def format_data(x, vectorizer='CountVectorizer',
             from .align import align as aligner
 
             # align the data
-            warnings.warn('Numerical and text data with same number of '
+            _warn('Numerical and text data with same number of '
                           'samples detected.  Aligning data to a common space.')
             processed_x = aligner(processed_x, align=text_align, format_data=False)
         elif len(set(i.shape[1] for i in processed_x)) > 1:
@@ -535,7 +565,7 @@ def format_data(x, vectorizer='CountVectorizer',
                 f"dataset {i}: {'text' if j in ('list_str', 'str', 'arr_str') else 'numeric'}, "
                 f'{arr.shape[0]} sample(s)'
                 for i, (arr, j) in enumerate(zip(processed_x, dtypes))]
-            warnings.warn(
+            _warn(
                 'mixed text and numeric datasets were passed with '
                 f"DIFFERENT sample counts ({'; '.join(_counts)}), so they "
                 'cannot be auto-aligned to a common space (alignment '

@@ -194,3 +194,54 @@ def test_colors_bundle_under_plotly():
     colors = bundle['colors']
     assert colors['kind'] == 'continuous'
     assert (colors['vmin'], colors['vmax']) == (0.0, 4.0)
+
+
+# --- 1.1 release review: C4 NaN-aware range, C6 blend categories are RGB --
+
+def test_nan_in_a_continuous_hue_does_not_poison_the_range():
+    """`np.min` over a NaN is NaN: vmin/vmax came back nan/nan and a
+    colorbar spanned -0.1..0.1. The docstring excludes non-finite hue
+    values from the mapping, so the range is over the finite ones."""
+    rows = 12
+    hue = [float(i) for i in range(rows)]
+    hue[2] = np.nan
+    with pytest.warns(UserWarning):
+        bundle = hyp.plot(_datasets(1, rows=rows), hue=hue, reduce='PCA',
+                          return_model=True, show=False)
+    colors = bundle['colors']
+    assert colors['kind'] == 'continuous'
+    assert colors['vmin'] == 0.0 and colors['vmax'] == float(rows - 1)
+    assert colors['norm'].vmin == 0.0 and colors['norm'].vmax == rows - 1
+    with pytest.warns(UserWarning):
+        fig = hyp.plot(_datasets(1, rows=rows), hue=hue, reduce='PCA',
+                       colorbar={}, show=False)
+    cbar_ax = fig.axes[-1]
+    lo, hi = cbar_ax.get_ylim()
+    assert (lo, hi) == (0.0, float(rows - 1))
+
+
+def test_all_nan_continuous_hue_bundle_does_not_carry_a_nan_range():
+    hue = [np.nan] * 12
+    with pytest.warns(UserWarning):
+        bundle = hyp.plot(_datasets(1, rows=12), hue=hue, reduce='PCA',
+                          return_model=True, show=False)
+    assert bundle['colors']['vmin'] is None
+    assert bundle['colors']['vmax'] is None
+
+
+def test_blend_categories_are_rgb_for_legend_colors():
+    """Documented as ``{label: rgb}``; the blend kind handed back the raw
+    `legend_colors=` specs ('k', 'm', 'y')."""
+    rng = np.random.default_rng(3)
+    weights = rng.random((25, 3))
+    bundle = hyp.plot(_datasets(1), hue=weights / weights.sum(1, keepdims=1),
+                      legend=True, legend_colors=['k', 'm', 'y'],
+                      reduce='PCA', return_model=True, show=False)
+    cats = bundle['colors']['categories']
+    assert bundle['colors']['kind'] == 'blend'
+    assert set(cats) == {'1', '2', '3'}
+    for value in cats.values():
+        assert isinstance(value, tuple) and len(value) == 3
+        assert all(isinstance(v, float) for v in value)
+    assert cats['1'] == (0.0, 0.0, 0.0)
+    assert cats['2'] == (0.75, 0.0, 0.75)

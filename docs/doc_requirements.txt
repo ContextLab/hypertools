@@ -7,11 +7,13 @@ nbsphinx>=0.8.0
 jupyter_client>=6.0.0
 wikipedia
 ipython
-# Main package dependencies
-scikit-learn>=1.4.0
-pandas>=2.2.0
+# Main package dependencies (same floors as pyproject.toml, which is the
+# declaration: the docs image installs the package first, so these only
+# need to agree with it)
+scikit-learn>=1.4.2
+pandas>=2.2.2
 seaborn>=0.13.0
-matplotlib>=3.8.0
+matplotlib>=3.9.0
 scipy>=1.13.0
 numpy>=2.0.0
 umap-learn>=0.5.5
@@ -37,7 +39,7 @@ skaters>=0.11
 # plot(..., density=True) 3-D iso-surfaces ([density3d] extra); gallery
 # examples build with it installed so the docs show the iso-surface path
 # rather than the scatter-fog fallback
-scikit-image>=0.22.0
+scikit-image>=0.25.0
 # hypertools.reduce.autoencoders (GH #162) and hypertools.tools.gensim_models
 # (GH #198) import torch/gensim unconditionally at module level, so both are
 # needed for autodoc/autosummary to import those modules (docs/api.rst's
@@ -45,7 +47,7 @@ scikit-image>=0.22.0
 # examples/plot_autoencoders.py and examples/plot_gensim_text.py in the
 # gallery build
 torch>=2.0
-gensim>=4.3
+gensim>=4.4.0
 # hyp.load('kaggle/<owner>/<dataset>') (GH #116), used by
 # examples/plot_datasets_tour.py
 kagglehub>=0.3

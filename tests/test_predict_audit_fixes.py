@@ -169,7 +169,7 @@ def test_autoregressor_explicit_model_kwargs_accepted():
 # --- F16-predict-008: real ValueErrors, not assert-based --------------------
 
 def test_autoregressor_too_few_observations_raises_valueerror():
-    with pytest.raises(ValueError, match='more than lags'):
+    with pytest.raises(ValueError, match=r'11 observation.*AutoRegressor\(lags=10\)'):
         predict(np.random.RandomState(0).randn(3, 2), model='AutoRegressor', t=2)
 
 

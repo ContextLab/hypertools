@@ -91,8 +91,8 @@ def test_resolve_t_int_on_hourly_datetimeindex():
     assert list(future_index) == list(expected)
 
 
-def test_resolve_t_int_on_irregular_datetimeindex_uses_min_nonzero_diff():
-    # gaps (minutes): 1, 2, 1, 6 -> minimum non-zero diff is 1 minute
+def test_resolve_t_int_on_irregular_datetimeindex_uses_median_positive_gap():
+    # gaps (minutes): 1, 2, 1, 6 -> median positive gap is 1.5 minutes
     base = pd.Timestamp("2026-01-01")
     idx = pd.DatetimeIndex([base, base + pd.Timedelta(minutes=1), base + pd.Timedelta(minutes=3),
                              base + pd.Timedelta(minutes=4), base + pd.Timedelta(minutes=10)])
@@ -101,7 +101,7 @@ def test_resolve_t_int_on_irregular_datetimeindex_uses_min_nonzero_diff():
     n_steps, future_index = resolve_t(df, 2)
 
     assert n_steps == 2
-    expected = pd.DatetimeIndex([idx[-1] + pd.Timedelta(minutes=1), idx[-1] + pd.Timedelta(minutes=2)])
+    expected = pd.DatetimeIndex([idx[-1] + pd.Timedelta(minutes=1.5), idx[-1] + pd.Timedelta(minutes=3)])
     assert list(future_index) == list(expected)
 
 
@@ -161,28 +161,32 @@ def test_resolve_t_keeps_a_duplicated_integer_index():
     assert list(future_index) == [5, 6]
 
 
-def test_all_identical_timestamps_message_comes_from_live_infer_step(monkeypatch):
+def test_all_identical_timestamps_message_comes_from_live_infer_step():
     """The fully-degenerate case (every observation at ONE timestamp) is
     `_infer_step`'s: `tests/test_predict_audit_fixes.py` pins its wording.
     `resolve_t`'s duplicate check runs FIRST, so it must hand this case to
     `_infer_step` rather than raise a copied string -- a copy would leave
-    that branch dead code with a test that only pins the copy."""
+    that branch dead code with a test that only pins the copy.
+
+    Observed from the exception itself, not from a spy on `_infer_step`: the
+    raise site is the shared time helper in the error's own traceback, and
+    the message is byte-identical to what `_infer_step` raises on the same index.
+    A copied string in `resolve_t` would put `resolve_t` in that last frame."""
     from hypertools.predict import common as common_module
 
-    calls = []
-    real_infer_step = common_module._infer_step
-
-    def spy(index):
-        calls.append(index)
-        return real_infer_step(index)
-
-    monkeypatch.setattr(common_module, "_infer_step", spy)
     df = _make_df(n=5, index=pd.DatetimeIndex(["2026-01-01"] * 5))
 
-    with pytest.raises(ValueError, match="share one timestamp"):
+    with pytest.raises(ValueError, match="share one timestamp") as via_resolve_t:
         resolve_t(df, 3)
 
-    assert calls, "the message must come from live _infer_step code, not a copy"
+    with pytest.raises(ValueError) as direct:
+        common_module._infer_step(df.index)
+    assert str(via_resolve_t.value) == str(direct.value)
+    import traceback
+    frames = traceback.extract_tb(via_resolve_t.value.__traceback__)
+    assert frames[-1].name == 'infer_step'
+    from pathlib import Path
+    assert Path(frames[-1].filename).parts[-2:] == ('predict', 'time.py')
 
 
 def test_forecaster_predict_truncates_on_past_datetime_without_calling_forecaster():

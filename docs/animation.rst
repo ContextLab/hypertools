@@ -416,8 +416,8 @@ Forecasting during an animation
 ``predict=`` works with the time-progressing animation styles
 (``animate=True``, ``'parallel'``, ``'serial'``, ``'window'``) on **both**
 backends. The forecast is recomputed from the history revealed so far and
-re-anchored on the last revealed observation, so the forecast trace grows with
-the animation instead of standing still:
+drawn from the endpoint the current frame draws, so the forecast trace grows
+with the animation instead of standing still:
 
 .. code-block:: python
 
@@ -427,8 +427,16 @@ the animation instead of standing still:
 ``t`` is measured in **raw observations of the analyzed data** -- not in
 animation frames, and not in drawn vertices. ``t=1`` forecasts the next
 observation. Because an animation is paced on a resampled frame grid (see
-``duration``/``frame_rate``), an animated forecast joins the drawn trajectory
-to within one raw observation rather than exactly.
+``duration``/``frame_rate``), a frame's drawn head usually falls *between* two
+observations. The forecast starts exactly there, so it meets the trajectory it
+continues on every frame; the points it predicts stay where the model put
+them, ``t`` observations on from the last one revealed.
+
+.. versionchanged:: 1.1.0
+   The forecast used to hang off the last raw observation at or before the
+   head, so it stood still for as many frames as the head took to reach the
+   next observation and trailed the line's tip by up to a whole step -- most
+   visibly on data with fewer rows than frames.
 
 Everything is computed before the first frame
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -480,8 +488,10 @@ An observed line with no ``alpha=`` set is matplotlib's *opaque*, i.e. 1.0, so
 the default forecast alpha is 0.5. Per-dataset styling carries through
 dataset by dataset: ``alpha=[1.0, 0.4]`` gives forecasts at ``[0.5, 0.2]``, and
 a dotted dataset gets a dotted forecast. Both backends apply the identical
-rule (on plotly, colour/width/dash with the alpha baked into the ``rgba(...)``
-line colour and echoed in ``meta['hyp_forecast_alpha']``).
+rule. On plotly the forecast trace copies the colour, width and dash, and
+carries the alpha in the ``rgba(...)`` line colour of a 2-D trace or in the
+trace ``opacity`` of a 3-D one; either way the value is echoed in
+``meta['hyp_forecast_alpha']``.
 
 .. versionchanged:: 1.1.0
    Before 1.1.0 every forecast was drawn ``linestyle='--'`` at a hard-coded
@@ -492,6 +502,27 @@ line colour and echoed in ``meta['hyp_forecast_alpha']``).
 ``forecast_trail=`` fades from **that** dataset's live forecast alpha, down to
 a floor proportional to it -- so a retained forecast is never more opaque than
 the live forecast it decays from, however faint the dataset.
+
+A forecast given its **own colour** -- by ``forecast_palette=``,
+``forecast_hue=``, ``forecast_cluster=``, or a colour letter in
+``forecast_fmt=`` -- keeps its trace's alpha instead of halving it: the colour
+is then what tells it apart, and fading it as well hid it among translucent
+traces.
+
+A **collection of models** (``predict=['Kalman', 'ARIMA', ...]``) draws one
+overlay per model on every trace. Each keeps its dataset's colour (which series
+it continues) and takes a linestyle per model -- solid, dashed, dotted,
+dash-dot, in model order -- so the two questions are answered by two
+encodings; ``forecast_palette=`` colours by model instead, and
+``forecast_fmt=`` (one entry per model) replaces the cycle.
+
+Every ``predict=`` form lists its forecast **once in the legend**, static or
+animated, under the model's name (the same name ``hyp.predict(x, model=[...])``
+gives it), after the data entries and before ``truth``. The key wears the
+forecasts' linestyle and their colour when they share one; when one model's
+forecasts of several datasets wear several colours the key is a neutral gray,
+and it is never drawn below 0.8 alpha, so it stays legible however faint the
+forecasts are.
 
 Animated forecasts under ``hue=``/``cluster=``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -563,7 +594,8 @@ Everything they do not name stays inherited.
    * - *(nothing)*
      - the identity of the observed trace it continues
    * - ``forecast_palette=``
-     - the same, in a palette of its own
+     - one colour per forecast from a palette of its own (one per *model*
+       for a collection), drawn at the trace's own alpha
    * - ``forecast_hue=``
      - a grouping you supply, one value per forecast (see below)
    * - ``forecast_cluster=``
@@ -575,7 +607,8 @@ regroups the data: ``plot()`` forecasts every final trace, so a hierarchy
 wants one value per leaf group **plus** one per derived mean.
 
 ``forecast_fmt=`` sets the line/marker style, in the same format-string
-grammar as ``fmt``, and changes nothing else:
+grammar as ``fmt``, and changes nothing else -- unless the string carries a
+colour letter (``'r:'``), which recolours the forecast too, on both backends:
 
 .. code-block:: python
 

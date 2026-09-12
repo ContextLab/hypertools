@@ -18,10 +18,13 @@ rows, the model x ticker pivot and the best-vs-naive verdict of
 occluded-cells-only per-axis error tables of
 ``docs/tutorials/projectile_kalman.ipynb`` cells 9 and 13.
 """
+import copy
 import warnings
 
 import numpy as np
 import pandas as pd
+
+from .common import Forecaster
 
 
 #: metric keys accepted by ``metrics=``, in the default order. The FIRST
@@ -106,6 +109,15 @@ def resolve_metrics(metrics):
             raise ValueError(
                 f'unknown metric {m!r}; supported: '
                 f'{", ".join(METRIC_FUNCS)}.')
+        # a repeated metric (case-insensitively: 'mae' and 'MAE' are the
+        # same column) would give the scores frame two columns with one
+        # label, and `build_scores` then reads a 2-column frame where it
+        # expects a scalar (TypeError deep in the verdict). Name the
+        # repeat here instead.
+        if m.lower() in resolved:
+            raise ValueError(
+                f'metric {m!r} is listed more than once in '
+                f'metrics={metrics!r}; each metric may appear only once.')
         resolved.append(m.lower())
     return tuple(resolved)
 
@@ -253,6 +265,9 @@ def build_scores(records, metrics, per_column=False, baseline=None,
     wide = grouped[labels].mean()
     wide['n'] = grouped['n'].sum()
     wide['unscored'] = grouped['unscored'].sum()
+    # local import (as in `Forecaster.fit_predict`) keeps the numeric core
+    # of this module free of hypertools imports at module load
+    from ..core.model import external_stacklevel
     for name, unscored in wide['unscored'].items():
         # a model that failed to produce some values is scored on FEWER
         # entries than the others, so its row is not directly comparable;
@@ -263,7 +278,7 @@ def build_scores(records, metrics, per_column=False, baseline=None,
                 f'{int(unscored + wide.loc[name, "n"])} scored {kind}(s) '
                 'missing (NaN); its scores cover only the ones it produced, '
                 'so they are not directly comparable to models that '
-                'produced every value.')
+                'produced every value.', stacklevel=external_stacklevel())
     for key, value in extra.items():
         wide[key] = value
 
@@ -327,6 +342,11 @@ def resolve_holdout(holdout, n, t, caller='predict'):
             f'holdout must be an int (rows), a float in (0, 1) (fraction), '
             f'or True (hold out t rows); got {holdout!r}')
     if k < 1:
+        if isinstance(holdout, (bool, np.bool_)):
+            # the offending value is t, not the literal True
+            raise ValueError(
+                f'holdout=True takes its size from t, so t must be >= 1 '
+                f'row; got t={t!r}.')
         raise ValueError(f'holdout must be >= 1 row; got {holdout!r}')
     if n - k < 2:
         raise ValueError(
@@ -349,15 +369,73 @@ def naive_forecast(train, index):
         index=index, columns=train.columns)
 
 
-def backtest_predict(datasets, predict_fn, t, holdout, names, specs,
+def _forecast_at_times(model, index):
+    """Evaluate a single fitted model at strictly future observation times.
+
+    Release review 2026-09-08: held-out rows must be scored at their actual
+    times. GP evaluates those coordinates directly; other models forecast
+    a covering grid and linearly interpolate its predictions. The last
+    observed training row anchors times before the first complete step.
+    Only the training data determine the model and its step; held-out
+    values are never passed to this helper.
+    """
+    from .time import resolve_step, time_coordinates
+
+    data = model.data
+    params = model.models_[0]
+    step = resolve_step(data.index, params.get('_time_step', model.step))
+    x = time_coordinates(index, data.index[-1], step)
+    if not np.isfinite(x).all() or np.any(x <= 0):
+        raise ValueError('held-out observation times must be finite and '
+                         'strictly after the training history')
+    if getattr(model, '_uses_observation_times', False):
+        return model.forecaster(params.get('_time_data', data), len(index),
+                                index, **{**params, **model.kwargs})
+
+    # Snap round-off at integer grid positions, preserving exact-grid
+    # forecasts and preventing a spurious extra step for sampled models.
+    nearest = np.rint(x)
+    on_grid = (nearest >= 1) & np.isclose(x, nearest, rtol=0., atol=1e-8)
+    x = np.where(on_grid, nearest, x)
+    if x.max() > 1_000_000:
+        raise ValueError('backtesting at these times would require more than '
+                         '1,000,000 forecast steps; use a larger step')
+    n_steps = int(np.ceil(x.max()))
+    forecast = model.predict(n_steps)
+    if np.shape(forecast) != (n_steps, data.shape[1]):
+        raise ValueError(f'{type(model).__name__} returned forecast shape '
+                         f'{np.shape(forecast)}; expected '
+                         f'{(n_steps, data.shape[1])} for the forecast grid')
+    if on_grid.all():
+        result = forecast.iloc[nearest.astype(int) - 1].copy()
+        result.index = index
+        return result
+
+    values = np.vstack([data.iloc[-1:].to_numpy(dtype=float),
+                         np.asarray(forecast, dtype=float)])
+    grid = np.arange(n_steps + 1)
+    result = pd.DataFrame(
+        np.column_stack([np.interp(x, grid, col) for col in values.T]),
+        index=index, columns=data.columns)
+    from ..core.model import external_stacklevel
+    warnings.warn(
+        f'{type(model).__name__} forecasts were linearly interpolated to '
+        'the held-out observation times before scoring. The last observed '
+        'training value anchors times before the first forecast step; '
+        'held-out values are never used for interpolation.',
+        UserWarning, stacklevel=external_stacklevel())
+    return result
+
+
+def backtest_predict(datasets, make_forecaster, t, holdout, names, specs,
                      metrics=None, per_column=False, return_forecasts=False,
                      kwargs=None):
     """Hold-out backtest for `hypertools.predict.predict` (see its docs).
 
     `datasets` is a list of wrangled DataFrames (a single dataset is a
-    one-element list, flagged by `single` in the caller); `predict_fn` is
-    the public `predict`, injected to keep this module import-free of the
-    dispatcher.
+    one-element list). The shared `make_forecaster` factory keeps model
+    construction identical to ordinary forecasting without generating an
+    unused forecast before the evaluation times are known.
     """
     metrics = resolve_metrics(metrics)
     kwargs = dict(kwargs or {})
@@ -370,16 +448,46 @@ def backtest_predict(datasets, predict_fn, t, holdout, names, specs,
             "row; rename the model with the mapping form, e.g. "
             "model={'my naive model': <spec>}.")
 
-    splits, horizons = [], []
+    from .common import resolve_t
+    from .time import finalize_forecast, is_time_index, order_time_data
+    splits, horizons, timed, ordered = [], [], [], []
     for d in datasets:
         k = resolve_holdout(holdout, len(d), t)
+        d = order_time_data(d)
+        ordered.append(d)
+        # Validate the complete time index: a duplicate may straddle the
+        # split while appearing unique in both halves separately.
+        use_times = is_time_index(d.index)
+        if use_times:
+            resolve_t(d, 1)
+        timed.append(use_times)
         splits.append((d.iloc[:-k], d.iloc[-k:]))
         horizons.append(k)
 
     forecasts = {}
     for name, spec in zip(names, specs):
-        per_dataset = [predict_fn(train, model=spec, t=k, **kwargs)
-                       for (train, _), k in zip(splits, horizons)]
+        # GH #285 release review: an instance fitted on dataset 1 must
+        # never enter predict_new on dataset 2. A fitted input may already
+        # have seen the holdout, so it cannot provide a clean backtest.
+        candidate = spec.get('model') if isinstance(spec, dict) else spec
+        if isinstance(candidate, Forecaster) and candidate.is_fitted:
+            raise ValueError(
+                'holdout= requires an unfitted model so held-out rows cannot '
+                'leak into training; pass a model name, class, or unfitted '
+                'instance instead.')
+        per_dataset = []
+        for (train, held), k, use_times in zip(splits, horizons, timed):
+            fitted = make_forecaster(copy.deepcopy(spec), copy.deepcopy(kwargs))
+            # Repeated numeric IDs and categorical labels are positional.
+            # Splitting can make formerly repeated IDs unique;
+            # explicitly retain their positional meaning during fitting.
+            fitted.fit(train if use_times else train.reset_index(drop=True))
+            if use_times:
+                forecast = _forecast_at_times(fitted, held.index)
+            else:
+                forecast = fitted.predict(k)
+                forecast.index = held.index
+            per_dataset.append(forecast)
         forecasts[name] = per_dataset
     forecasts[baseline] = [naive_forecast(train, held.index)
                            for (train, held) in splits]
@@ -410,6 +518,11 @@ def backtest_predict(datasets, predict_fn, t, holdout, names, specs,
                           kind='forecast value')
     if not return_forecasts:
         return scores
-    out = {name: (f[0] if single else f) for name, f in forecasts.items()}
-    out['truth'] = splits[0][1] if single else [held for _, held in splits]
-    return scores, out
+    # a PeriodIndex input was split on its start timestamps; hand every
+    # returned frame (forecasts, baseline, truth) back as periods
+    forecasts['truth'] = [held for _, held in splits]
+    forecasts = {name: [finalize_forecast(f, observed)
+                        for f, observed in zip(frames, ordered)]
+                 for name, frames in forecasts.items()}
+    return scores, {name: (f[0] if single else f)
+                    for name, f in forecasts.items()}

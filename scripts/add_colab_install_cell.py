@@ -2,13 +2,18 @@
 cell that installs hypertools, so it runs standalone when opened in Google
 Colab.
 
-The install line is branch-aware:
+Gallery install lines are branch-aware:
 
 * on ``master`` OR a ``vX.Y.Z`` release tag it installs the RELEASED package
   (``%pip install -q "hypertools[interactive]"``);
 * on any other branch it installs THAT branch from GitHub, so the dev-1.0
   preview notebooks install the matching dev build rather than the older
   PyPI release.
+
+Tutorials use a separate version-aware guard: a current local installation is
+retained, an old checkout is refused with guidance, and a missing/old installed
+package resolves to >=1.1.0 on master/tags or the selected development branch.
+Optional extras remain available through on-demand installation.
 
 The script is idempotent AND self-correcting: a notebook that already has a
 hypertools install cell is not skipped -- its install target is RE-TARGETED to
@@ -26,9 +31,8 @@ Run after (re)generating notebooks, then commit:
 
 RELEASE NOTE: run this on the ``master`` BRANCH when cutting the release and
 commit the migrated notebooks BEFORE master/tag CI and the PyPI upload (see
-RELEASE_CHECKLIST.md for the full order). Until the upload the notebooks
-briefly resolve the previous PyPI release, which is harmless -- they are static
-source content. The ``release-gate`` CI job enforces that no ``git+``/``@dev``
+RELEASE_CHECKLIST.md for the full order). Before the upload, validate candidates with an explicit Git installation;
+the published tutorial requirement cannot resolve until 1.1 is available. The ``release-gate`` CI job enforces that no ``git+``/``@dev``
 install survives on a release build.
 """
 
@@ -93,6 +97,28 @@ def hyp_spec(extras, branch):
     if _is_release_ref(branch):
         return f'hypertools[{extras}]'
     return f'hypertools[{extras}] @ {_GIT_URL}@{branch}'
+
+
+def guarded_install_source(extras="interactive", branch="master"):
+    """Version-aware tutorial setup; local source checkouts are preserved."""
+    spec = (f"hypertools[{extras}]>=1.1.0" if _is_release_ref(branch)
+            else hyp_spec(extras, branch))
+    return '# HyperTools setup: use 1.1 or newer; retain a current local checkout.\nimport importlib.util\nfrom importlib.metadata import version, PackageNotFoundError\nfrom packaging.version import Version\nfrom pathlib import Path\ntry:\n    _hypertools_version = Version(version(\'hypertools\'))\nexcept PackageNotFoundError:\n    _hypertools_version = Version(\'0\')\nif _hypertools_version < Version(\'1.1.0\'):\n    _spec = importlib.util.find_spec(\'hypertools\')\n    if _spec and _spec.origin and (Path(_spec.origin).resolve().parents[1] / \'.git\').exists():\n        raise RuntimeError(\'Select a HyperTools 1.1 checkout/kernel before running this tutorial; the installer will not replace your checkout.\')\n    %pip install -q "{spec}"\nelse:\n    print(\'Keeping HyperTools\', _hypertools_version, \'in this kernel. Optional extras are loaded when requested.\')\n'.format(spec=spec)
+
+
+def portable_video_source(filename):
+    """Frontend-specific playback; local docs retain their relative asset.
+
+    The block ENDS its cell (tests/test_examples_are_native.py compares the
+    cell from its first line to the end with this template), so it is the
+    cell's last statement and IPython displays nothing after it: a figure or
+    tuple left as a bare expression just above it is evaluated and never
+    shown. Anything the cell should show goes through ``display(...)`` or
+    ``print(...)`` before the block (2026-09-11 review: io, manip, plot,
+    lsl_streaming and streaming_data lost their outputs that way;
+    ``test_no_colab_video_block_swallows_a_displayed_value`` guards it).
+    """
+    return '# Colab serves output frames separately from kernel files; embed movie bytes.\ntry:\n    from google import colab as colab\nexcept ImportError:\n    pass  # Local Jupyter/Sphinx uses the relative video below.\nelse:\n    from IPython.display import Video, display\n    display(Video({filename!r}, embed=True))\n'.format(filename=filename)
 
 
 def install_lines(branch):
@@ -162,12 +188,28 @@ def main():
     note, pip = install_lines(branch)
     retargeted = added = 0
     for path in sorted(NOTEBOOKS):
-        with open(path) as f:
+        with open(path, encoding='utf-8') as f:
             nb = json.load(f)
+        guarded = [c for c in nb.get('cells', [])
+                   if 'hypertools-install' in c.get('metadata', {}).get('tags', [])]
+        if guarded and os.path.basename(os.path.dirname(path)) == 'tutorials':
+            cell = guarded[0]
+            source = ''.join(cell['source'])
+            extras = re.search(r'hypertools\[([^]]+)\]', source).group(1)
+            desired = guarded_install_source(extras, branch)
+            if source != desired:
+                cell['source'] = desired.splitlines(keepends=True)
+                cell['outputs'] = []
+                cell['execution_count'] = None
+                with open(path, 'w', encoding='utf-8') as f:
+                    json.dump(nb, f, indent=1, ensure_ascii=False)
+                    f.write('\n')
+                retargeted += 1
+            continue
         if has_install(nb):
             # already has an install cell -> re-target it to this branch
             if retarget_notebook(nb, branch):
-                with open(path, 'w') as f:
+                with open(path, 'w', encoding='utf-8') as f:
                     # ensure_ascii=False keeps literal UTF-8 (matching nbformat)
                     # so re-targeting doesn't churn every non-ASCII glyph into a
                     # \\uXXXX escape and bloat the diff.
@@ -187,7 +229,7 @@ def main():
                 keepends=True)
         else:
             cells.insert(0, new_code_cell(f'{note}\n{pip}'))
-        with open(path, 'w') as f:
+        with open(path, 'w', encoding='utf-8') as f:
             json.dump(nb, f, indent=1, ensure_ascii=False)
             f.write('\n')
         added += 1

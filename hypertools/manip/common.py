@@ -5,8 +5,69 @@ runs the fitter and stores the returned dict as attributes; `transform` runs
 the transformer with those params. Child classes (Normalize, ZScore, Smooth,
 Resample, Delay) supply the three pieces plus their defaults.
 """
+from numbers import Number
+
+import numpy as np
+import pandas as pd
 from sklearn.base import BaseEstimator
 from sklearn.exceptions import NotFittedError
+
+
+def as_manip_frames(data):
+    """Normalize numerical manipulator inputs without changing dataset boundaries.
+
+    A 1-D array or flat numeric sequence is one column of observations;
+    a list/tuple of datasets stays a list of datasets. Frame/Series metadata
+    survives conversion. Text still reaches the dispatcher's wrangler.
+    Shared by dispatch, direct classes, fitted reuse and Pipeline steps
+    (release review 2026-09-08, finding 1).
+    """
+    from .._shared.helpers import (is_array_dataset, is_frame_dataset,
+                                   is_series_like)
+    from ..core.shared import as_dataframe
+
+    if isinstance(data, (list, tuple)):
+        if data and all(isinstance(value, Number) for value in data):
+            return as_dataframe(np.asarray(data).reshape(-1, 1))
+        return [as_manip_frames(dataset) for dataset in data]
+    if (is_array_dataset(data) or is_frame_dataset(data)
+            or is_series_like(data)):
+        return as_dataframe(data)
+    return data
+
+
+def fit_rowwise_list(datasets, fitter, statistics, **kwargs):
+    """Collect per-row statistics without pooling features between datasets."""
+    fitted = [fitter(frame.reset_index(drop=True).T, axis=0, **kwargs)
+              for frame in datasets]
+    params = dict(fitted[0])
+    for key in statistics:
+        params[key] = pd.concat([p[key] for p in fitted], ignore_index=True)
+    params['transpose'] = True
+    return params
+
+
+def transform_rowwise_list(datasets, transformer, statistics, **kwargs):
+    """Apply each dataset's slice of the fitted per-row statistics.
+
+    Column-wise statistics are shared; row-wise ones belong to the original
+    rows (release review 2026-09-08, finding 3).
+    """
+    start = 0
+    outputs = []
+    for frame in datasets:
+        stop = start + len(frame)
+        params = dict(kwargs)
+        for key in statistics:
+            params[key] = np.asarray(kwargs[key])[start:stop]
+        # Row labels need not be unique; the statistics are positional.
+        output = transformer(frame.reset_index(drop=True), **params)
+        output.index = frame.index
+        outputs.append(output)
+        start = stop
+    if any(len(kwargs[key]) != start for key in statistics):
+        raise ValueError('row-wise transform needs the same rows used during fit')
+    return outputs
 
 
 class Manipulator(BaseEstimator):
@@ -44,6 +105,12 @@ class Manipulator(BaseEstimator):
         """Fit this manipulator's parameters on `data`; stores them as
         attributes (named by `self.required`).
 
+        Returns
+        -------
+        self
+            The fitted manipulator, so calls chain the sklearn way:
+            ``Smooth().fit(x).transform(y)``.
+
         Raises
         ------
         ValueError
@@ -60,8 +127,8 @@ class Manipulator(BaseEstimator):
                 no_observations_message('manipulate', 'data is None'))
         self.data = data
         if self.fitter is None:
-            return
-        params = self.fitter(data, **self.kwargs)
+            return self
+        params = self.fitter(as_manip_frames(data), **self.kwargs)
         if not isinstance(params, dict):
             raise ValueError(
                 f'{type(self).__name__} fit function must return a '
@@ -74,6 +141,7 @@ class Manipulator(BaseEstimator):
                 f"required field(s): {', '.join(missing)}")
         for k, v in params.items():
             setattr(self, k, v)
+        return self
 
     def transform(self, new_data=None):
         """Apply the fitted parameters to `new_data`.
@@ -129,7 +197,7 @@ class Manipulator(BaseEstimator):
             return data_to_use
         required_params = {r: getattr(self, r) for r in self.required}
         merged = {**required_params, **self.kwargs}
-        return self.transformer(data_to_use, **merged)
+        return self.transformer(as_manip_frames(data_to_use), **merged)
 
     def inverse_transform(self, data):
         """Undo this manipulator's transform on `data`, when it is invertible.
@@ -171,3 +239,33 @@ class Manipulator(BaseEstimator):
         followed by `transform(data)`)."""
         self.fit(data)
         return self.transform(data)
+
+
+def stack_for_shared_fit(datasets, name):
+    """Concatenate the frames of a LIST row-wise for a manipulator that
+    fits ONE shared set of statistics across every dataset (`ZScore`,
+    `Normalize`).
+
+    Frames with identical column labels are concatenated as they are.
+    When the labels differ -- an unnamed array (positional labels) beside
+    a named frame, or two frames named differently -- the columns are
+    matched by POSITION, as `plot`, `reduce` and `align` match datasets
+    (`format_data`); the fitted statistics are applied positionally
+    anyway. Datasets of different widths cannot share statistics and
+    raise. Nothing here touches the datasets themselves, so every frame
+    keeps its own labels and index through the transform (Codex round
+    12, R12-3: relabelling the inputs in the dispatcher renamed a named
+    frame's features for the independent manipulators too).
+    """
+    frames = list(datasets)
+    widths = {f.shape[1] for f in frames}
+    if len(widths) != 1:
+        raise ValueError(
+            f'{name} fits one shared set of statistics across the datasets '
+            'in a list, so every dataset needs the same number of columns; '
+            f'got widths {sorted(widths)}')
+    columns = frames[0].columns
+    if all(f.columns.equals(columns) for f in frames):
+        return pd.concat(frames, axis=0, ignore_index=True)
+    return pd.concat([f.set_axis(range(f.shape[1]), axis=1) for f in frames],
+                     axis=0, ignore_index=True)

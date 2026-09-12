@@ -152,9 +152,11 @@ def test_plotly_forecast_trail_traces_carry_decreasing_opacity():
     assert min(alphas) < max(alphas), 'the trail must actually fade'
     live_alpha = _fc_role(fig, 'live')[0].meta['hyp_forecast_alpha']
     assert all(live_alpha > a for a in alphas)
-    # the declared alpha is the one actually baked into the rgba colour
+    # Compare effective opacity after RGB/native-opacity serialization.
     for tr, a in zip(by_age, alphas):
-        assert f'{a}' in tr.line.color or str(round(a, 3)) in tr.line.color
+        color_alpha = (float(tr.line.color.rsplit(',',1)[1].rstrip(')'))
+                       if tr.line.color.startswith('rgba(') else 1.)
+        assert color_alpha * (tr.opacity if tr.opacity is not None else 1.) == pytest.approx(a)
 
 
 def test_plotly_trail_is_populated_by_the_late_frames():

@@ -52,8 +52,14 @@ def main(argv):
     if all(os.path.exists(t) for t in targets):
         return
 
-    # one shared headless-Chrome session for every frame (fast); if it wedges,
-    # the parent kills this whole process, so no in-process recovery is needed
+    # This process provisions kaleido and its Chrome itself (nothing in the
+    # parent has imported kaleido before the launch). Whether that may install
+    # anything is the parent's effective set_autoinstall() setting, which the
+    # parent hands over as HYPERTOOLS_AUTO_INSTALL in this process's
+    # environment (lazy_import.subprocess_env); with it off, this raises the
+    # ImportError naming the manual command and no pip runs here.
+    # One shared headless-Chrome session for every frame (fast); if it wedges,
+    # the parent kills this whole process, so no in-process recovery is needed.
     from .._shared.lazy_import import ensure_kaleido_chrome
     ensure_kaleido_chrome()
     with _shared_kaleido_session():
@@ -69,5 +75,27 @@ def main(argv):
             os.replace(part, targets[i])
 
 
+#: name of the file, in the frames directory, that carries the worker's
+#: exception type and message for the parent (`plotly_backend` re-raises an
+#: ImportError / HypertoolsIOError as that type; anything else is reported as
+#: a RuntimeError with the stderr tail)
+ERROR_FILE = '.worker-error.json'
+
+
+def _report_and_reraise(argv, exc):
+    try:
+        out_dir = argv[1]
+        os.makedirs(out_dir, exist_ok=True)
+        with open(os.path.join(out_dir, ERROR_FILE), 'w',
+                  encoding='utf-8') as fh:
+            json.dump({'type': type(exc).__name__, 'message': str(exc)}, fh)
+    except Exception:       # the traceback on stderr is the fallback report
+        pass
+    raise exc
+
+
 if __name__ == '__main__':
-    main(sys.argv[1:])
+    try:
+        main(sys.argv[1:])
+    except Exception as exc:
+        _report_and_reraise(sys.argv[1:], exc)

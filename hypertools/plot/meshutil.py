@@ -23,8 +23,7 @@ it is a leaf geometry module that those higher-level modules import from.
 import warnings
 
 import numpy as np
-from scipy.spatial import ConvexHull, Delaunay, QhullError
-from scipy.spatial.distance import cdist
+from scipy.spatial import ConvexHull, Delaunay, QhullError, cKDTree
 
 __all__ = [
     "smooth_hull_3d",
@@ -847,17 +846,23 @@ def blinn_phong_vertex_colors(
     )
 
 
-def vertex_colors_from_points(verts, points, point_colors, power=2.0, eps=1e-9):
+def vertex_colors_from_points(verts, points, point_colors, power=2.0, eps=1e-9,
+                              k=8):
     """Per-vertex base colors as an inverse-distance-weighted average of the
-    data points' colors (Shepard's method / IDW).
+    colors of each vertex's ``k`` nearest data points (local Shepard/IDW).
 
-    For each mesh vertex, its color is a weighted blend of the data
-    coordinates' colors, with weight ``1 / distance**power`` -- so the
-    NEAREST coordinates dominate a vertex's color and distant ones fall off
-    smoothly (with the default ``power=2``). A vertex that coincides with a
-    data point takes that point's color exactly. This is what colors a
-    ``surface=`` hull to match the hue of the points it encloses, per-vertex,
-    instead of painting the whole hull one flat (mean) color.
+    For each mesh vertex, its color is a weighted blend of its ``k`` nearest
+    data coordinates' colors, with weight ``1 / distance**power``. A vertex
+    that coincides with a data point takes that point's color exactly. This
+    is what colors a ``surface=`` hull to match the hue of the points it
+    encloses, per-vertex, instead of painting the whole hull one flat (mean)
+    color.
+
+    The blend is LOCAL on purpose: over ALL points, ``1/d**2`` weights in
+    3-D let the many distant points outweigh the few near ones (each shell
+    of radius ``r`` holds ~``r**2`` points), so every vertex drifted toward
+    the dataset's mean colour -- washed out and locally wrong under a
+    ``hue=`` gradient (maintainer report, 2026-09-11).
 
     Parameters
     ----------
@@ -873,6 +878,9 @@ def vertex_colors_from_points(verts, points, point_colors, power=2.0, eps=1e-9):
         Added to ``distance**power`` before inverting so a zero distance
         (a vertex exactly on a point) yields a large-but-finite weight
         rather than a divide-by-zero. Default 1e-9.
+    k : int, optional
+        Number of nearest data points blended per vertex (default 8; capped
+        at the number of points).
 
     Returns
     -------
@@ -884,10 +892,12 @@ def vertex_colors_from_points(verts, points, point_colors, power=2.0, eps=1e-9):
     colors = np.asarray(point_colors, dtype=float)[:, :3]
     if len(points) == 0 or len(colors) == 0:
         raise ValueError('need at least one data point/color to color a surface')
-    d = cdist(verts, points)                       # (V, P) euclidean distances
+    k = max(1, min(int(k), len(points)))
+    d, idx = cKDTree(points).query(verts, k=k)      # (V, k) nearest points
+    d, idx = d.reshape(len(verts), k), idx.reshape(len(verts), k)
     w = 1.0 / (d ** power + eps)                    # inverse-distance weights
     w /= w.sum(axis=1, keepdims=True)               # normalize per vertex
-    return np.clip(w @ colors, 0.0, 1.0)
+    return np.clip(np.einsum('vk,vkc->vc', w, colors[idx]), 0.0, 1.0)
 
 
 def face_colors_from_vertex_colors(vertex_colors, faces):

@@ -13,10 +13,14 @@ What it replaces: the hand-rolled masked per-axis RMSE of
 ``docs/tutorials/projectile_kalman.ipynb`` cell 9 and the
 scattered-vs-occluded imputer comparison of its cell 13.
 """
+import copy
+
 import numpy as np
 import pandas as pd
 
+from .._shared.helpers import as_pandas_dataframe, is_frame_dataset
 from ..predict.backtest import build_scores, resolve_metrics, score_pair
+from .common import Imputer
 
 
 #: the always-present imputation baseline: fill each column with the mean of
@@ -27,8 +31,8 @@ BASELINE = 'mean'
 
 def _as_frame(x, like, what):
     """Coerce `truth`/`mask`-shaped input to a DataFrame matching `like`."""
-    if isinstance(x, pd.DataFrame):
-        frame = x
+    if is_frame_dataset(x):
+        frame = as_pandas_dataframe(x)     # any backend datawrangler knows
     else:
         values = np.asarray(x)
         if values.ndim == 1:
@@ -134,8 +138,16 @@ def score_imputations(datasets, impute_fn, names, specs, truth, mask=None,
 
     imputed = {}
     for name, spec in zip(names, specs):
+        # GH #285 release review: score a fresh fit on damaged data, never
+        # learned state that may already contain the hidden truth.
+        candidate = spec.get('model') if isinstance(spec, dict) else spec
+        if isinstance(candidate, Imputer) and candidate.is_fitted:
+            raise ValueError(
+                'truth= scoring requires an unfitted model so hidden values '
+                'cannot leak into training; pass a model name, class, or '
+                'unfitted instance instead.')
         results = impute_fn(datasets if not single else datasets[0],
-                            model=spec, **kwargs)
+                            model=copy.deepcopy(spec), **copy.deepcopy(kwargs))
         imputed[name] = results if isinstance(results, list) else [results]
     imputed[BASELINE] = [_mean_fill(d) for d in datasets]
 

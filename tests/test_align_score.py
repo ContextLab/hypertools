@@ -146,3 +146,123 @@ def test_hyp_align_return_score_via_public_api():
     aligned, score = hyp.align(datasets, model='HyperAlign', n_iter=10,
                                return_score=True)
     assert score['after'] <= score['before']
+
+
+# -- 1.1 release review: ragged input scores what the aligner consumed ------
+
+def test_return_score_works_on_ragged_input_that_align_trims():
+    # hyp.align([a, b]) trims to the 40 common rows and succeeds, so
+    # return_score=True must succeed too: the "before" score is taken on
+    # the same row-trimmed data the aligner consumed.
+    rng = np.random.default_rng(11)
+    base = rng.standard_normal((50, 4))
+    rot, _ = np.linalg.qr(rng.standard_normal((4, 4)))
+    a = base + 0.05 * rng.standard_normal((50, 4))
+    b = (base @ rot + 0.05 * rng.standard_normal((50, 4)))[:40]
+    with pytest.warns(UserWarning, match='common to all datasets'):
+        aligned, score = hyp.align([a, b], model='HyperAlign', n_iter=10,
+                                   return_score=True)
+    assert [x.shape for x in aligned] == [(40, 4), (40, 4)]
+    assert set(score) == {'before', 'after', 'metric'}
+    assert score['metric'] == 'dispersion'
+    assert score['after'] < score['before']
+    # 'before' is exactly alignment_score of the manually trimmed arrays
+    # (common rows in the FIRST dataset's order: a's first 40 rows)
+    expected = alignment_score([a[:40], b], metric='dispersion')['before']
+    assert score['before'] == pytest.approx(expected)
+    assert score['after'] == pytest.approx(
+        alignment_score([a[:40], b], aligned=aligned, metric='dispersion')['after'])
+
+    # the plain (un-trimmed) originals are still rejected by the scorer
+    # itself, so the trim is align's doing rather than a relaxed check
+    with pytest.raises(ValueError, match='same shape'):
+        alignment_score([a, b], metric='dispersion')
+
+
+def test_return_score_ragged_input_isc_metric():
+    rng = np.random.default_rng(12)
+    base = rng.standard_normal((50, 4))
+    rot, _ = np.linalg.qr(rng.standard_normal((4, 4)))
+    a = base + 0.05 * rng.standard_normal((50, 4))
+    b = (base @ rot + 0.05 * rng.standard_normal((50, 4)))[:40]
+    with pytest.warns(UserWarning, match='common to all datasets'):
+        aligned, score = hyp.align([a, b], model='HyperAlign', n_iter=10,
+                                   return_score=True, score_metric='isc')
+    assert score['metric'] == 'isc'
+    assert score['after'] > score['before']
+    expected = alignment_score([a[:40], b], metric='isc')['before']
+    assert score['before'] == pytest.approx(expected)
+
+
+# --- degenerate and malformed input (release review 2026-09-07) -------------
+
+@pytest.mark.parametrize('metric', ['dispersion', 'isc'])
+def test_all_constant_datasets_raise_instead_of_nan(metric):
+    """Two constant datasets have no cloud scale ('dispersion' divided 0 by 0
+    and returned NaN with a RuntimeWarning) and no feature to correlate."""
+    const = [np.ones((10, 3)), np.ones((10, 3))]
+    with pytest.raises(ValueError, match='constant'):
+        alignment_score(const, metric=metric)
+
+
+@pytest.mark.parametrize('metric', ['dispersion', 'isc'])
+def test_datasets_each_constant_at_their_own_value_raise(metric):
+    """1.1 release review (2026-09-11): 'dispersion' raised only when EVERY
+    observation of EVERY dataset was the same point. Datasets that are each
+    constant at a DIFFERENT value have a cloud scale, so the score came out
+    as exactly 1.0 -- the same number whatever the alignment -- while 'isc'
+    raised. The docstring promises a raise for "every dataset constant"."""
+    const = [np.zeros((10, 3)), np.ones((10, 3)), np.full((10, 3), 5.0)]
+    with pytest.raises(ValueError, match='constant') as info:
+        alignment_score(const, metric=metric)
+    if metric == 'dispersion':
+        assert 'dataset 0' in str(info.value)
+        assert 'dataset 2' in str(info.value)
+    rng = np.random.default_rng(3)
+    fine = [rng.normal(size=(10, 3)) for _ in range(3)]
+    with pytest.raises(ValueError, match='constant'):
+        alignment_score(fine, aligned=const, metric=metric)
+
+
+def test_dispersion_of_single_observation_datasets_raises_like_isc():
+    """One observation per dataset is the degenerate constant case: the
+    per-observation centroid IS the cloud's mean, so 'dispersion' is 1.0
+    for any input ('isc' already raised: it needs two observations)."""
+    rng = np.random.default_rng(4)
+    single_rows = [rng.normal(size=(1, 3)) for _ in range(3)]
+    for metric in ('dispersion', 'isc'):
+        with pytest.raises(ValueError):
+            alignment_score(single_rows, metric=metric)
+
+
+def test_one_constant_dataset_among_varying_ones_still_scores():
+    """Only the all-constant case is degenerate: a constant dataset beside
+    varying ones has a well-defined dispersion (and 'isc' correlates the
+    varying pairs)."""
+    rng = np.random.default_rng(5)
+    data = [rng.normal(size=(10, 3)), rng.normal(size=(10, 3)),
+            np.ones((10, 3))]
+    for metric in ('dispersion', 'isc'):
+        score = alignment_score(data, metric=metric)['before']
+        assert np.isfinite(score)
+    assert alignment_score(data, metric='dispersion')['before'] != 1.0
+
+
+@pytest.mark.parametrize('metric', ['dispersion', 'isc'])
+def test_nan_input_raises_instead_of_nan_score(metric):
+    rng = np.random.default_rng(0)
+    x, y = rng.normal(size=(10, 3)), rng.normal(size=(10, 3))
+    y[2, 1] = np.nan
+    with pytest.raises(ValueError, match=r'finite values; dataset 1 has 1 NaN'):
+        alignment_score([x, y], metric=metric)
+    with pytest.raises(ValueError, match='finite values'):
+        alignment_score([x, x], aligned=[x, y], metric=metric)
+
+
+@pytest.mark.parametrize('metric', ['dispersion', 'isc'])
+def test_one_dimensional_input_raises_a_clear_error(metric):
+    """1-D series raised numpy's own AxisError / unpack ValueError."""
+    with pytest.raises(ValueError, match=r'2-D datasets .* dataset 0 has shape \(10,\)'):
+        alignment_score([np.arange(10.0), np.arange(10.0)], metric=metric)
+    with pytest.raises(ValueError, match='numeric'):
+        alignment_score([np.array([['a', 'b']] * 3)] * 2, metric=metric)

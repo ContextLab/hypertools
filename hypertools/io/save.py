@@ -32,6 +32,7 @@ import numpy as np
 import pandas as pd
 
 from ..core.exceptions import HypertoolsIOError
+from .._shared.helpers import is_frame_dataset, as_pandas_dataframe
 
 # extensions written as real (non-pickle) formats; everything else --
 # including .pkl/.pickle/.p/.geo, unknown extensions, and extensionless
@@ -216,22 +217,22 @@ def _write_payload(obj, tmp_name, ext, protocol, target):
     messages only)."""
     try:
         if ext in ('.csv', '.txt'):
-            _as_frame(obj, ext, target).to_csv(
-                tmp_name, index=_include_index(obj))
+            frame = _as_frame(obj, ext, target)
+            frame.to_csv(tmp_name, index=_include_index(frame))
         elif ext == '.tsv':
-            _as_frame(obj, ext, target).to_csv(
-                tmp_name, sep='\t', index=_include_index(obj))
+            frame = _as_frame(obj, ext, target)
+            frame.to_csv(tmp_name, sep='\t', index=_include_index(frame))
         elif ext == '.npy':
             with open(tmp_name, 'wb') as f:
-                np.save(f, np.asarray(obj))
+                np.save(f, _as_array(obj))
         elif ext == '.npz':
             if isinstance(obj, (list, tuple)):
-                arrays = {f'arr_{i}': np.asarray(a)
+                arrays = {f'arr_{i}': _as_array(a)
                           for i, a in enumerate(obj)}
             elif isinstance(obj, dict):
-                arrays = {str(k): np.asarray(v) for k, v in obj.items()}
+                arrays = {str(k): _as_array(v) for k, v in obj.items()}
             else:
-                arrays = {'arr_0': np.asarray(obj)}
+                arrays = {'arr_0': _as_array(obj)}
             with open(tmp_name, 'wb') as f:
                 np.savez(f, **arrays)
         elif ext == '.json':
@@ -244,9 +245,9 @@ def _write_payload(obj, tmp_name, ext, protocol, target):
         elif ext == '.mat':
             from scipy.io import savemat
             if isinstance(obj, dict):
-                payload = {str(k): np.asarray(v) for k, v in obj.items()}
+                payload = {str(k): _as_array(v) for k, v in obj.items()}
             else:
-                payload = {'data': np.asarray(obj)}
+                payload = {'data': _as_array(obj)}
             with open(tmp_name, 'wb') as f:
                 savemat(f, payload)
         elif ext == '.xlsx':
@@ -257,8 +258,9 @@ def _write_payload(obj, tmp_name, ext, protocol, target):
             from .._shared.lazy_import import lazy_import
             lazy_import('openpyxl', purpose='.xlsx files')     # installs [io] on demand
             buffer = _io.BytesIO()
-            _as_frame(obj, ext, target).to_excel(
-                buffer, index=_include_index(obj), engine='openpyxl')
+            frame = _as_frame(obj, ext, target)
+            frame.to_excel(buffer, index=_include_index(frame),
+                           engine='openpyxl')
             with open(tmp_name, 'wb') as f:
                 f.write(buffer.getvalue())
         else:
@@ -273,11 +275,22 @@ def _write_payload(obj, tmp_name, ext, protocol, target):
             'data to an array/DataFrame first.') from e
 
 
+def _as_array(obj):
+    """``obj`` as a numpy array for the array writers: a DataFrame of any
+    backend datawrangler recognises (pandas as-is, polars/LazyFrame/...
+    converted) by its values, anything else by ``np.asarray``."""
+    if is_frame_dataset(obj):
+        return np.asarray(as_pandas_dataframe(obj))
+    return np.asarray(obj)
+
+
 def _as_frame(obj, ext, target):
     """DataFrame view of ``obj`` for the tabular writers, with a clear
-    error when the object has no faithful 2-d tabular form."""
-    if isinstance(obj, pd.DataFrame):
-        return obj
+    error when the object has no faithful 2-d tabular form. A frame of any
+    backend datawrangler recognises is written as a pandas frame (datatype
+    audit, 2026-09-08)."""
+    if is_frame_dataset(obj):
+        return as_pandas_dataframe(obj)
     try:
         arr = np.asarray(obj)
     except Exception:
@@ -292,12 +305,12 @@ def _as_frame(obj, ext, target):
     return pd.DataFrame(arr)
 
 
-def _include_index(obj):
-    """Write the index for DataFrames whose index carries information
-    (anything but a fresh 0..n-1 RangeIndex)."""
-    if not isinstance(obj, pd.DataFrame):
-        return False
-    index = obj.index
+def _include_index(frame):
+    """Write the index for frames whose index carries information
+    (anything but a fresh 0..n-1 RangeIndex). `frame` is the pandas frame
+    `_as_frame` built, so an array/list input (wrapped with a fresh
+    RangeIndex) never writes one."""
+    index = frame.index
     return not (isinstance(index, pd.RangeIndex) and index.start == 0
                 and index.step == 1)
 

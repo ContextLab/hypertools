@@ -212,3 +212,26 @@ def test_an_animated_3d_truth_overlay_is_unclipped():
     truth = _by_role(fig, 'truth')[0]
     assert truth.get_clip_on() is False
     plt.close(fig)
+
+
+def test_the_truth_legend_handle_carries_its_markers(stock):
+    """The truth is drawn as a solid line PLUS markers on the observations,
+    so its legend glyph must show the markers too -- otherwise the 'truth'
+    entry is a solid line in the trace's own colour, identical to the
+    observed trace's entry (feature tour 9.11, 2026-09-06)."""
+    train, held = stock
+    fig = hyp.plot(train, reduce=None, ndims=2, axis_scale='data',
+                   predict='Kalman', t=T, truth=held, legend=True,
+                   names=['observed'], show=False)
+    legend = fig.axes[0].get_legend()
+    by_label = {text.get_text(): handle
+                for handle, text in zip(legend.legend_handles,
+                                        legend.get_texts())}
+    assert by_label['truth'].get_marker() == 'o'
+    assert by_label['observed'].get_marker() in (None, 'None', '')
+    # ...and the markers still land only on the observations: the smoothed
+    # curve draws none of its ~900 vertices as a marker
+    curve = _by_role(fig, 'truth')[0]
+    assert curve.get_marker() == 'o'
+    assert list(curve.get_markevery()) == []
+    plt.close(fig)

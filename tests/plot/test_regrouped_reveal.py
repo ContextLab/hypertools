@@ -92,10 +92,17 @@ def test_the_final_frame_still_draws_EVERYTHING():
 def test_an_UNREGROUPED_animation_is_unchanged_row_for_row():
     """The control. Task 2's projection is the identity without regrouping,
     so this must match the pre-change behaviour exactly -- if it drifts, the
-    fix leaked into every animation rather than only the regrouped ones."""
+    fix leaked into every animation rather than only the regrouped ones.
+
+    The 30-row walk keeps its 30 rows in a 12-frame animation (1.1 visual
+    review L8; it used to be resampled onto 12 rows, and these counts were
+    ``1 + 82 * frame``): frame k's head is row floor(k * 29 / 11), drawn
+    antialiased at 31 vertices per row, so ``31 * row + 1``."""
     fig, ani = _animate([_walk()])
     assert [_run_lengths(fig, ani, f)[0] for f in range(12)] == [
-        1, 83, 165, 247, 329, 411, 493, 575, 657, 739, 821, 903]
+        31 * (f * 29 // 11) + 1 for f in range(12)]
+    assert [_run_lengths(fig, ani, f)[0] for f in range(12)] == [
+        1, 63, 156, 218, 311, 404, 466, 559, 652, 714, 807, 900]
 
 
 def test_two_datasets_still_advance_together():

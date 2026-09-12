@@ -200,7 +200,7 @@ A quarter century of the market: six sectors, one space
 
 Three library calls: ``hyp.reduce`` takes each sector (a months-by-stocks
 matrix of growth curves, four or five stocks each) to three dimensions on
-its own, ``hyp.align(..., align='HyperAlign')`` hyperaligns the six paths into
+its own, ``hyp.align(..., model='HyperAlign')`` hyperaligns the six paths into
 one shared space, and ``hyp.plot`` draws them with a seventh, heavier path
 -- the market, their mean -- coloured through the mixture hue by each
 sector's share of the basket's capitalisation. The title is the current
@@ -286,6 +286,36 @@ was embedded, and a thumbnail of the canvas.
   :maxdepth: 2
 
   tutorials/painting_embeddings.ipynb
+
+Palette order, and a data matrix as a palette
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``image_palette`` lists a canvas's clusters most salient first, and that is
+still the colour a dataset leads with when a painting stands for it in a
+per-dataset list. Used as the palette of one plot, though, the same colours
+are put in a deterministic order -- by value, dark to bright, so a continuous
+``hue=`` reads as a gradient -- and ``palette_sort=`` (or ``?sort=`` inside
+the spec) picks ``'value'``, ``'hue'``, ``'lightness'``, ``'columns'`` or
+``'original'`` instead. A t x k data matrix is a palette too: ``hyp.plot``
+reduces it to three dimensions (``palette_reduce=``, default ``'PCA'``, with
+``palette_manip=``/``palette_normalize=``/``palette_align=`` passed through),
+scales each component to an RGB channel, sorts the rows along the first
+component and resamples the result to however many colours the plot needs. A
+2-D array with three or four columns and every value in [0, 1] is still read
+as a list of colours::
+
+    import numpy as np
+    import hypertools as hyp
+
+    rng = np.random.default_rng(0)
+    walk = np.cumsum(rng.normal(size=(200, 3)), axis=0)          # a 3-D random walk
+    weights = walk @ rng.normal(size=(3, 12)) + 0.5 * rng.normal(size=(200, 12))
+
+    hyp.plot(walk, hue=np.arange(len(walk)), palette=weights)    # PCA, sorted along PC1
+    hyp.plot(walk, hue=np.arange(len(walk)), palette=weights,
+             palette_reduce='FastICA', palette_sort='hue')
+    # an image's colours, ordered by hue rather than by value:
+    # hyp.plot(walk, hue=np.arange(len(walk)), palette='image:starry_night.jpg?sort=hue')
 
 Morphing through the shapes zoo
 -------------------------------

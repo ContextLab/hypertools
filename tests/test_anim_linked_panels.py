@@ -292,3 +292,81 @@ class TestValidation:
             assert len(anim.figure.axes) == 1
         finally:
             plt.close(anim.figure)
+
+
+# --- 1.1 release review: A3 the serial head is cumulative; A5 raw errors --
+
+class TestSerialHeadIsCumulative:
+
+    def _heads(self, anim):
+        heads = []
+        for i in range(anim.n_frames):
+            anim.draw_frame(i)
+            marker = panel_axes(anim).lines[-1]
+            heads.append(int(marker.get_xdata()[0]))
+        return heads
+
+    def test_companion_head_never_runs_backwards_over_several_datasets(self):
+        """Rescaling only the CURRENT dataset's reveal made the head run
+        0 -> 20 -> 10 -> 0 -> 39 over a three-dataset serial reveal."""
+        data = [trajectory(s) for s in (0, 3, 5)]
+        anim = hyp.plot(data, animate='serial', duration=3, frame_rate=8,
+                        show=False, companion={'data': series()})
+        try:
+            heads = self._heads(anim)
+            assert heads == sorted(heads)
+            assert heads[0] == 0 and heads[-1] == N_ROWS - 1
+            assert len(set(heads)) > 3
+        finally:
+            plt.close(anim.figure)
+
+    def test_index_title_is_monotone_under_serial_with_several_datasets(self):
+        idx = pd.date_range('2020-01-31', periods=N_ROWS, freq='ME')
+        data = [pd.DataFrame(trajectory(s), index=idx) for s in (0, 3, 5)]
+        anim = hyp.plot(data, animate='serial', duration=3, frame_rate=8,
+                        show=False, title='{index:%Y-%m}',
+                        companion={'data': series()})
+        try:
+            titles = []
+            heads = self._heads(anim)
+            for i in range(anim.n_frames):
+                anim.draw_frame(i)
+                titles.append(anim.figure.axes[0].get_title())
+            assert titles == sorted(titles)
+            assert titles == [idx[h].strftime('%Y-%m') for h in heads]
+        finally:
+            plt.close(anim.figure)
+
+    def test_serial_panel_counts_are_strictly_sorted(self):
+        anim = hyp.plot([trajectory(), trajectory(3)], animate='serial',
+                        duration=2, frame_rate=8, show=False,
+                        companion={'data': series()})
+        try:
+            counts = []
+            for i in range(anim.n_frames):
+                anim.draw_frame(i)
+                counts.append(
+                    len(panel_axes(anim).collections[0].get_segments()))
+            assert counts == sorted(counts)
+            assert counts[0] == 0 and counts[-1] == N_ROWS - 1
+        finally:
+            plt.close(anim.figure)
+
+
+class TestCompanionValidationNamesTheKwarg:
+
+    def test_a_callable_companion_is_a_typeerror_naming_companion(self):
+        with pytest.raises(TypeError, match='companion= takes a dict'):
+            animate(lambda ctx: 1)
+
+    def test_a_non_int_smooth_names_smooth(self):
+        with pytest.raises(TypeError, match='smooth= is a rolling-mean'):
+            animate({'data': series(), 'smooth': 'a'})
+
+    def test_a_non_numeric_size_names_size(self):
+        with pytest.raises(TypeError, match='size= and pad= are figure'):
+            animate({'data': series(), 'size': 'big'})
+
+    def test_non_numeric_data_names_data(self):
+        with pytest.raises(TypeError, match='data must be numeric'):
+            animate({'data': ['a', 'b', 'c']})

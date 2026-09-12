@@ -31,16 +31,20 @@ def anim_window_bounds(num, total_frames, n_points, window_frames):
 
     Animations are paced by the FRAME grid (``total_frames ==
     round(frame_rate * duration)``), not by any single dataset's row count:
-    line datasets are pre-interpolated onto that exact grid by ``plot.py``
-    (identity mapping), while marker-only and 1-point datasets keep their
-    raw rows and are paced here instead (release-1.0 audit: F04-003
-    multi-dataset truncation, F04-005/F05-010 marker-only pacing, F05-012
-    single-point datasets). The identity holds for every frame count but
-    ONE: a request so short that ``round(frame_rate * duration)`` falls
-    below 2 still resamples lines to 2 rows, because PCHIP needs two
-    samples to interpolate between. Such a dataset takes the rescale branch
-    below like any other off-grid one, and both backends still agree,
-    because both consume the same resampled array.
+    every dataset is paced here onto the frames from its own row count
+    (release-1.0 audit: F04-003 multi-dataset truncation, F04-005/F05-010
+    marker-only pacing, F05-012 single-point datasets). A line dataset
+    reaches this function on ``plot._interp_anim_line``'s grid -- at least
+    `total_frames` rows and a uniform refinement of its observations, so
+    no observation is ever dropped (1.1 visual review, L8) -- and any
+    dataset with at least one row per frame is revealed from its first row
+    on frame 0 to its last on the final frame, which is exactly the
+    identity when the grid equals the frame count (the only grid lines had
+    before L8), so a line's reveal timing is unchanged. Marker-only and
+    1-point datasets keep their raw rows; one with fewer rows than frames
+    shows each row for an equal share of the frames. Both backends agree
+    whatever the row count, because both consume the same array through
+    this one function.
 
     BOTH backends call this one function, per dataset, per frame -- that is
     the point of it living here rather than inside either backend. The
@@ -73,9 +77,11 @@ def anim_window_bounds(num, total_frames, n_points, window_frames):
         frozen at the trajectory's end once the dataset is fully revealed --
         a shorter dataset never vanishes mid-animation. Its length tops out
         at ``w + 1`` rows, where ``w`` is ``window_frames`` for a dataset
-        already on the frame grid and the RESCALED
-        ``round(window_frames * n_points / total_frames)`` for one that is
-        not: a 5-row dataset in a 15-frame animation with
+        with exactly one row per frame, the RESCALED
+        ``round(window_frames * (n_points - 1) / (total_frames - 1))`` for
+        a longer one (the same span of the trajectory), and
+        ``round(window_frames * n_points / total_frames)`` for a shorter
+        one: a 5-row dataset in a 15-frame animation with
         ``window_frames=2`` gets ``w = 1``, so its head maxes out at 2 rows,
         not 3. A chemtrails trail is
         ``data[0:trail_stop]`` -- 0 rows until the head window actually
@@ -86,13 +92,27 @@ def anim_window_bounds(num, total_frames, n_points, window_frames):
         last vertex, so there is no one-segment gap -- F05-008).
     """
     total = max(1, int(total_frames))
-    end = int(np.ceil((num + 1) * n_points / total))
-    end = max(1, min(n_points, end))
-    if n_points == total:
-        w = int(window_frames)
+    n_points = int(n_points)
+    if n_points >= total and total > 1:
+        # at least one row per frame -- every animated LINE, whose grid
+        # `plot._interp_anim_line` never makes shorter than the frame count:
+        # frame 0 draws the FIRST row and the last frame the whole dataset,
+        # the head at row floor(num * (n - 1) / (total - 1)). With exactly
+        # one row per frame that is the identity (row `num`); on a longer
+        # grid it is the same timing, so a line's reveal did not change
+        # when its grid stopped being DOWNsampled to the frame count (1.1
+        # visual review, L8). Exact integer arithmetic, so the identity
+        # holds at every frame.
+        end = int(num) * (n_points - 1) // (total - 1) + 1
+        w = (int(window_frames) if n_points == total
+             else int(round(window_frames * (n_points - 1) / (total - 1))))
     else:
+        # fewer rows than frames (a marker-only or 1-point dataset): each
+        # row is on screen for an equal share of the frames
+        end = int(np.ceil((num + 1) * n_points / total))
         # rescale the window (given in frames) onto this dataset's rows
         w = int(round(window_frames * n_points / total))
+    end = max(1, min(n_points, end))
     start = max(0, end - 1 - w)
     trail_stop = max(0, end - w)
     return start, end, trail_stop

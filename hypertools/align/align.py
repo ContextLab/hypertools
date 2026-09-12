@@ -8,15 +8,15 @@ stack-and-fit-once recipe is wrong for aligning a *list* to a shared template.
 import warnings
 
 import numpy as np
-import pandas as pd
 import datawrangler as dw
 
-from .common import Aligner
+from .common import Aligner, trim_and_pad
 from .hyperalign import HyperAlign
 from .procrustes import Procrustes
 from .srm import SharedResponseModel, DeterministicSharedResponseModel, RobustSharedResponseModel
 from .null import NullAlign
-from ..core.shared import unpack_model
+from ..core.shared import unpack_model, as_dataframe, check_spec_keys
+from .._shared.helpers import is_text_item
 from ..core.model import external_stacklevel
 
 
@@ -86,10 +86,11 @@ def _resolve_align_spec(model, extra_kwargs):
         The `model=` spec (see `align`'s docstring for the full grammar).
     extra_kwargs : dict
         Leftover `**kwargs` from the `align()` call, forwarded to the
-        resolved class's constructor -- but only when `model` is a bare
-        registry name/class (a dict spec's own `'args'`/`'kwargs'` take
-        precedence over these, and an already-constructed instance ignores
-        them entirely, matching `hyp.reduce`/`hyp.cluster`).
+        resolved class's constructor: for a bare registry name/class
+        directly, and for a dict spec merged into its `'kwargs'` (winning
+        on a conflict, as in `hyp.impute`/`hyp.predict`; they used to be
+        dropped silently). An already-constructed instance cannot take
+        them, so they are ignored with a `UserWarning`.
 
     Returns
     -------
@@ -120,6 +121,10 @@ def _resolve_align_spec(model, extra_kwargs):
                 "value of the 'kwargs' key (the legacy 'params' key is "
                 "also accepted)."
             )
+        # a flat key such as {'model': 'HyperAlign', 'n_iter': 3} used to
+        # be dropped silently, so the aligner ran with its defaults (1.1
+        # review)
+        check_spec_keys(model, 'align')
         if c_model is None or c_model is False:
             return None
         if 'args' in model or 'kwargs' in model:
@@ -136,6 +141,10 @@ def _resolve_align_spec(model, extra_kwargs):
             c_args, c_kwargs = [], dict(model['params'])
         else:
             c_args, c_kwargs = [], {}
+        # the outer **kwargs join the spec's own parameters, winning on a
+        # conflict (hyp.align(data, model={'model': 'HyperAlign'},
+        # n_iter=0) used to drop n_iter silently; 1.1 review)
+        c_kwargs = {**c_kwargs, **extra_kwargs}
         if isinstance(c_model, str):
             _warn_deprecated_alias(c_model)
             c_model = _ALIAS.get(c_model, c_model)
@@ -147,8 +156,17 @@ def _resolve_align_spec(model, extra_kwargs):
             _reject_unknown_aligner(resolved_inner)
         if isinstance(resolved_inner, type):
             return resolved_inner(*c_args, **c_kwargs)
-        # already-constructed (or already-fitted) instance: params ignored,
-        # used as-is
+        # already-constructed (or already-fitted) instance: used as-is, so
+        # its parameters cannot change -- say so instead of dropping them
+        # silently (parity with hyp.reduce's dict-spec instance warning)
+        if c_args or c_kwargs:
+            warnings.warn(
+                f"the align spec's 'model' is an already-constructed "
+                f"{type(resolved_inner).__name__} instance (used as-is), so "
+                "the spec's 'args'/'kwargs' entries (and any extra keyword "
+                "arguments) are ignored; configure the instance directly, "
+                "or pass the class (or its name) to apply constructor "
+                "parameters", UserWarning, stacklevel=external_stacklevel())
         return resolved_inner
 
     resolved = unpack_model(model, valid=ALIGNERS, parent_class=Aligner)
@@ -158,7 +176,16 @@ def _resolve_align_spec(model, extra_kwargs):
         return resolved(**extra_kwargs)
     # an already-constructed (unfitted) or already-fitted instance is
     # passed through unchanged (the caller checks `.is_fitted` to decide
-    # whether to fit_transform or reuse via transform)
+    # whether to fit_transform or reuse via transform) -- so constructor
+    # keyword arguments cannot reach it: warn instead of dropping them
+    # silently (the wording hyp.impute/hyp.predict use; 1.1 review)
+    if extra_kwargs:
+        warnings.warn(
+            f'ignoring keyword argument(s) {sorted(extra_kwargs)}: model= '
+            'is already a constructed instance, so constructor parameters '
+            'cannot be applied. Pass the class (or a name/dict spec) to '
+            'set parameters.', UserWarning,
+            stacklevel=external_stacklevel())
     return resolved
 
 
@@ -175,14 +202,15 @@ def _apply_format_data(data):
     was_list = isinstance(data, list)
     items = data if was_list else [data]
     formatted = formatter(items, ppca=True)
-    rewrapped = [
-        pd.DataFrame(np.asarray(arr), index=getattr(orig, 'index', None))
-        for arr, orig in zip(formatted, items)
-    ]
+    # every item is a pandas frame here (the funnel ran with
+    # backend='pandas'), so its index is carried over as-is
+    rewrapped = [as_dataframe(arr).set_index(orig.index)
+                 for arr, orig in zip(formatted, items)]
     return rewrapped if was_list else rewrapped[0]
 
 
-def _compute_score(return_score, score_metric, before_data, after_data):
+def _compute_score(return_score, score_metric, before_data, after_data,
+                   trim=False):
     """Build the `{'before', 'after', 'metric'}` score dict for `align`'s
     `return_score=True` (GH #285), or `None` when `return_score` is False.
 
@@ -191,12 +219,23 @@ def _compute_score(return_score, score_metric, before_data, after_data):
     are normalized to list form before delegating to
     `hypertools.align.score.alignment_score`, which raises a clear
     `ValueError` for ragged (unequal-shape) input.
+
+    `trim=True` (the Aligner paths) first runs `before_data` through the
+    same `trim_and_pad` the aligner itself applies (common rows, padded
+    columns, no second data-loss warning), so the "before" score is taken
+    on exactly the equal-shape data the aligner consumed. Without it,
+    ragged input (say 50 and 40 rows) aligned fine but `return_score=True`
+    raised from `alignment_score` on the untrimmed originals (1.1 release
+    review).
     """
     if not return_score:
         return None
     from .score import alignment_score
     before_list = before_data if isinstance(before_data, list) else [before_data]
     after_list = after_data if isinstance(after_data, list) else [after_data]
+    if trim:
+        before_list = trim_and_pad([as_dataframe(d) for d in before_list],
+                                   warn=False)
     return alignment_score(before_list, aligned=after_list, metric=score_metric)
 
 
@@ -250,7 +289,7 @@ def _align(data, model='HyperAlign', return_model=False,
             "align= is deprecated as a model-spec kwarg name on "
             "hypertools.align.align.align; use model= instead (e.g. "
             "hyp.align(data, model='hyper')).",
-            DeprecationWarning, stacklevel=2,
+            DeprecationWarning, stacklevel=external_stacklevel(),
         )
         model = legacy_model
 
@@ -320,12 +359,13 @@ def _align(data, model='HyperAlign', return_model=False,
     if isinstance(resolved, Aligner) and resolved.is_fitted:
         raw = _to_arrays(resolved.transform(data))
         result = _match_input_shape(raw, was_list)
-        score = _compute_score(return_score, score_metric, data, raw)
+        score = _compute_score(return_score, score_metric, data, raw,
+                               trim=True)
         return _build_return(result, return_model, resolved, return_score, score)
 
     raw = _to_arrays(resolved.fit_transform(data))
     result = _match_input_shape(raw, was_list)
-    score = _compute_score(return_score, score_metric, data, raw)
+    score = _compute_score(return_score, score_metric, data, raw, trim=True)
     return _build_return(result, return_model, resolved, return_score, score)
 
 
@@ -386,7 +426,10 @@ def align(data, model='HyperAlign', return_model=False,
         SharedResponseModel, NullAlign`), the canonical dict spec
         `{'model': ..., 'args': [...], 'kwargs': {...}}`, or the LEGACY
         dict spec `{'model': ..., 'params': {...}}` (accepted for backward
-        compatibility, but emits a `DeprecationWarning`). A
+        compatibility, but emits a `DeprecationWarning`). Model parameters
+        always go under `'kwargs'`: any other top-level key -- e.g.
+        `{'model': 'HyperAlign', 'n_iter': 3}` -- raises `ValueError`
+        naming it rather than being ignored. A
         previously-fitted `Aligner` (as returned by `return_model=True`) is
         applied via `.transform` instead of being refit. `False` or `None`
         skips alignment entirely and returns the data unchanged
@@ -404,6 +447,10 @@ def align(data, model='HyperAlign', return_model=False,
         data before vs. after alignment (GH #285): see
         `hypertools.align.score.alignment_score` for the two supported
         `score_metric=` values (`'dispersion'`, the default, and `'isc'`).
+        The "before" score is computed on the row-trimmed (and
+        column-padded) input -- the equal-shape data the aligner actually
+        consumed -- so ragged datasets that `align` trims to their common
+        rows score without error; the "after" score is the aligned output.
         Only supported for the plain align stage -- raises `ValueError` if
         combined with `manip=`/`normalize=`/`reduce=`/`cluster=`, since the
         before/after pairing is undefined inside a multi-stage pipeline
@@ -432,7 +479,10 @@ def align(data, model='HyperAlign', return_model=False,
     **kwargs
         Extra keyword arguments forwarded to `model`'s constructor when
         `model` is a bare registry name/class (e.g. `n_iter=` for
-        `'HyperAlign'`, `features=` for the SRM family). Keyword arguments
+        `'HyperAlign'`, `features=` for the SRM family), or merged into a
+        dict spec's `'kwargs'` (winning on a conflict); an
+        already-constructed instance cannot take them, so they are ignored
+        with a `UserWarning`. Keyword arguments
         the model does not accept raise a `TypeError` naming them (they
         used to be silently ignored, so a typo'd parameter went unnoticed).
         `align=` is also accepted here as a DEPRECATED alias for `model=`
@@ -511,7 +561,7 @@ def align(data, model='HyperAlign', return_model=False,
     _datasets = data if isinstance(data, list) else [data]
     for _i, _d in enumerate(_datasets):
         _ndim = getattr(_d, 'ndim', None)
-        if _ndim is None and not isinstance(_d, (str, bytes)):
+        if _ndim is None and not is_text_item(_d):
             try:
                 _ndim = np.ndim(_d)
             except Exception:
@@ -525,8 +575,12 @@ def align(data, model='HyperAlign', return_model=False,
                 'arrays/DataFrames (e.g. one per subject) instead of a '
                 'higher-dimensional stack -- e.g. list(x) for a 3-D '
                 'array x.')
+    # backend='pandas': datawrangler's funnel otherwise PRESERVES a polars
+    # input's backend, and the Aligners (datawrangler's unstack/stack,
+    # trim_and_pad) are written against pandas, hypertools' internal frame
+    # type (datatype audit, 2026-09-08)
     return _align(data, model=model, return_model=return_model,
                   return_score=return_score, score_metric=score_metric,
                   manip=manip, normalize=normalize, reduce=reduce,
                   ndims=ndims, cluster=cluster, format_data=format_data,
-                  **kwargs)
+                  backend='pandas', **kwargs)

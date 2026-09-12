@@ -24,9 +24,12 @@ data = hyp.load('weights_avg')
 
 # %%
 # Animate with the default reducer (PCA); `legend` names the two groups.
-fig, ani = hyp.plot(data, animate=True, legend=['first', 'second'])
+# backend='matplotlib': unpacking into (fig, ani) is the matplotlib
+# animation's form; on Colab the default backend would be plotly
+fig, ani = hyp.plot(data, animate=True, legend=['first', 'second'],
+                    backend='matplotlib')
 
 # %%
 # Any reducer can be combined with animation -- here multidimensional
 # scaling (MDS) replaces PCA.
-fig, ani_mds = hyp.plot(data, animate=True, reduce='MDS')
+fig, ani_mds = hyp.plot(data, animate=True, reduce='MDS', backend='matplotlib')

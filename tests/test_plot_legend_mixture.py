@@ -259,3 +259,22 @@ def test_plain_legend_colors_are_refused_under_plotly():
         hyp.plot(data, names=['a', 'b', 'c'], legend=True, reduce='PCA',
                  backend='plotly', show=False,
                  legend_colors=['#ff0000', '#00ff00', '#0000ff'])
+
+
+# --- 1.1 release review: C5 legend_kwargs fontsize survives font= --------
+
+def test_legend_kwargs_fontsize_wins_over_font():
+    """matplotlib ignores `fontsize=` whenever `prop=` is given, so with a
+    `font=` the documented "legend_kwargs wins" was silently false."""
+    data = _datasets(2)
+    hue = ['a'] * 30 + ['b'] * 30
+    fig = hyp.plot(data, hue=hue, legend=True, font='DejaVu Sans',
+                   legend_kwargs={'fontsize': 23}, reduce='PCA',
+                   show=False)
+    sizes = [t.get_fontsize() for t in _legend(fig).get_texts()]
+    assert sizes == [23.0, 23.0]
+    assert all(t.get_fontname() == 'DejaVu Sans'
+               for t in _legend(fig).get_texts())
+    plain = hyp.plot(data, hue=hue, legend=True, font='DejaVu Sans',
+                     reduce='PCA', show=False)
+    assert [t.get_fontsize() for t in _legend(plain).get_texts()] != sizes

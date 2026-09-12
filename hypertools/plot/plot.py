@@ -11,6 +11,7 @@ import collections.abc
 import copy
 import inspect
 import os
+import sys
 import warnings
 import matplotlib.pyplot as plt
 import numpy as np
@@ -19,6 +20,9 @@ import pandas as pd
 # what makes every `np.` reference in this file resolvable to a reader
 # and to a linter, instead of 186 F405 "may be undefined" findings.
 from .._shared.helpers import *
+from .._shared.helpers import (is_array_dataset, is_frame_dataset,
+                               is_series_like, as_pandas_dataframe,
+                               row_index_x)
 from .._shared.params import default_params
 from ..core.model import external_stacklevel
 from ..tools.analyze import analyze
@@ -27,7 +31,8 @@ from ..cluster.cluster import cluster as clusterer, mixture_models, \
 from .colors import (mat2colors, colors2groups, get_palette_colors,
                      continuous_colormap, NAN_COLOR, is_missing_label,
                      resolve_category_colors, dataset_palettes,
-                     palette_lead_color, dataset_colors)
+                     palette_lead_color, dataset_colors,
+                     _looks_like_dataset_palettes)
 from ..reduce.reduce import reduce as reducer
 from ..tools.format_data import format_data
 from .matplotlib_backend import _draw, _apply_title
@@ -68,6 +73,78 @@ def _is_plotly_figure(obj):
     except ImportError:
         return False
     return isinstance(obj, BaseFigure)
+
+
+def _is_plotly_cell(obj):
+    """True for one cell of a ``hyp.subplots(..., backend='plotly')`` grid."""
+    from .plotly_backend import PlotlyCell
+    return isinstance(obj, PlotlyCell)
+
+
+def _plotly_hover_names(n_traces, legend, category_names=None,
+                        group_labels=None, user_labels=None,
+                        series_names=None, hue=None, hue_group_labels=None):
+    """The name each drawn trace shows in a plotly hover label (1.1 release
+    review, maintainer finding: hovering showed plotly's "trace 0",
+    "trace 1", ...).
+
+    A trace is named by the label the legend shows -- or WOULD show under
+    ``legend=True`` -- for it, whether or not a legend is drawn (plotly's
+    `showlegend` stays governed by `legend=`): its hue/cluster CATEGORY
+    (every run of a category, not just the one carrying the legend entry),
+    its hierarchy's top-level GROUP (leaves and intermediate means too),
+    its label in a `legend=`/`names=` list (kept even when a continuous hue
+    drops the drawn legend), its `ndims=1` series COLUMN, else its 1-based
+    dataset number -- exactly `legend=True`'s own numbering. A lone trace
+    with none of those gets None, which the backend draws with no name box
+    at all rather than a meaningless "1".
+    """
+    def _usable(seq):
+        return seq is not None and len(seq) == n_traces
+
+    legend = legend if isinstance(legend, (list, tuple)) \
+        and _usable(legend) else None
+    # what `legend=True` labels a categorical hue's groups with (the same
+    # rule `plot()`'s legend block applies)
+    hue_labels = None
+    if hue is not None:
+        try:
+            hue_labels = (list(hue_group_labels)
+                          if hue_group_labels is not None
+                          else sorted(set(hue), key=list(hue).index))
+        except TypeError:          # per-observation arrays: no group list
+            hue_labels = None
+    if category_names is None and _usable(hue_labels):
+        category_names = ['the unlabeled group' if str(c) == '_nolegend_'
+                          else c for c in hue_labels]
+
+    def _labelled(i):
+        return legend is not None and not str(legend[i]).startswith('_')
+
+    # a category's LEGEND text (a legend list may rename categories): the
+    # repeat runs of a category, which carry the sentinel, take it too
+    renamed = {}
+    if _usable(category_names) and legend is not None:
+        for i in range(n_traces):
+            if _labelled(i):
+                renamed.setdefault(category_names[i], legend[i])
+    names = []
+    for i in range(n_traces):
+        name = None
+        if _usable(group_labels):
+            name = group_labels[i]
+        elif _labelled(i):
+            name = legend[i]
+        elif _usable(category_names):
+            name = renamed.get(category_names[i], category_names[i])
+        elif _usable(user_labels):
+            name = user_labels[i]
+        elif _usable(series_names):
+            name = series_names[i]
+        elif n_traces > 1:
+            name = i + 1
+        names.append(None if name is None else str(name))
+    return names
 
 
 _PLOTLY_MAPPED_KWARGS = frozenset(
@@ -179,12 +256,40 @@ def _seaborn_palette_arg(palette, n_colors):
     from matplotlib.colors import Colormap
 
     from .colors import DEFAULT_PALETTE, IMAGE_PALETTE_PREFIX
-    if isinstance(palette, collections.abc.Mapping):
+    if (isinstance(palette, (list, tuple, np.ndarray))
+            and len(palette) == 0):
+        # seaborn cycles a colour list with `itertools.cycle`, so an EMPTY
+        # list escaped as a bare StopIteration from inside
+        # `sns.color_palette`; say what the no-hue path already says.
+        raise ValueError("palette= was given as an empty list; supply at "
+                         "least one color")
+    if isinstance(palette, collections.abc.Mapping) or (
+            isinstance(palette, (list, tuple))
+            and all(isinstance(e, collections.abc.Mapping) for e in palette)):
+        # one dict, or a list of {category: color} dicts (one per dataset,
+        # each naming its own categories): both name CATEGORIES, and the
+        # ambient cycle runs over the drawn groups (hue runs, not datasets,
+        # after regrouping), so counting the dicts against `n_colors` is
+        # meaningless -- the categorical paths resolve them by name
         return [tuple(c) for c in get_palette_colors(DEFAULT_PALETTE,
                                                      n_colors)]
     _specs = dataset_palettes(palette, n_colors)
     if _specs is not None:
-        return [tuple(palette_lead_color(spec)) for spec in _specs]
+        # a {category: color} dict ENTRY has no lead colour (it names
+        # categories, like a whole-plot dict); the ambient cycle gets the
+        # default palette's colour at that position, and the categorical
+        # paths resolve the dicts by name (`_categorical_color_label_maps`
+        # merges a per-dataset list of dicts into one mapping).
+        _default = None
+        out = []
+        for i, spec in enumerate(_specs):
+            if isinstance(spec, collections.abc.Mapping):
+                if _default is None:
+                    _default = get_palette_colors(DEFAULT_PALETTE, n_colors)
+                out.append(tuple(_default[i]))
+            else:
+                out.append(tuple(palette_lead_color(spec)))
+        return out
     if isinstance(palette, Colormap) or (
             isinstance(palette, str)
             and palette.startswith(IMAGE_PALETTE_PREFIX)):
@@ -200,6 +305,195 @@ def _fmt_draws_line(fmt):
     if isinstance(fmt, (list, tuple, np.ndarray)):
         return any(has_line_component(f) for f in fmt)
     return has_line_component(fmt)
+
+
+def _fmt_color_letter(fmt):
+    """The colour a matplotlib format string names (``'r-'`` -> ``'r'``),
+    or None when it names none, is not a string, or does not parse. The
+    plot.py twin of `plotly_backend._fmt_color_letter`: the plotly backend
+    has no colour cycle, so the palette is handed to it as explicit
+    per-dataset ``color=`` entries, and this is how a colour letter in
+    ``fmt=`` keeps its matplotlib precedence over that palette (1.1 release
+    review, round 6: ``fmt='r-'`` drew the palette colour on plotly)."""
+    if not isinstance(fmt, str) or not fmt or _process_plot_format is None:
+        return None
+    try:
+        return _process_plot_format(fmt)[2]
+    except Exception:  # noqa: BLE001 - an unparseable fmt names no colour
+        return None
+
+
+def _palette_slots_consumed(n_drawn, mpl_kwargs, line_colors, draw_fmt,
+                            category_colored=False):
+    """How many colour-cycle slots one call's `n_drawn` drawn datasets take
+    up: what a later ``ax=`` call into the same axes, figure or grid cell
+    continues the palette from, on BOTH backends.
+
+    Only a dataset coloured FROM the cycle consumes a slot. An explicit
+    ``color=`` (or a palette mapping resolved into one), a ``hue=``
+    colouring, and a colour letter in ``fmt=`` (``'r-'``) colour their
+    datasets without touching the cycle -- exactly as a matplotlib axes
+    treats them -- so ``hyp.plot(a, fmt='r-')`` followed by
+    ``hyp.plot(b, ax=...)`` gives ``b`` the FIRST palette colour, the one
+    the single call ``fmt=['r-', '-']`` gives it (1.1 release review, round
+    7: the count was every drawn dataset, so that second call drew the
+    SECOND palette colour on plotly, and in an initially empty
+    `hyp.subplots` cell on both backends).
+
+    `category_colored` says so EXPLICITLY when a ``hue=``/``cluster=``
+    grouping coloured the drawn groups by category: such a call consumes
+    no slot whatever its fmt. Inferring that from the resolved kwargs
+    alone missed the marker-only categorical grouping (``hue=...,
+    fmt='o'``), whose groups used to be drawn straight from the ambient
+    cycle -- so ordinary -> ``hue=`` with ``fmt='o'`` -> ordinary ended on
+    the THIRD palette colour instead of the second (round 9)."""
+    if category_colored or "color" in mpl_kwargs or line_colors is not None:
+        return 0
+    return sum(
+        1 for i in range(n_drawn)
+        if _fmt_color_letter(draw_fmt[i] if i < len(draw_fmt) else None)
+        is None)
+
+
+def _palette_continuation(palette, n, offset=0, used=None):
+    """The `n` colours a call draws from `palette` into an axes, figure or
+    grid cell where earlier hypertools calls already took `offset` slots --
+    `used` being those slots' colours, in order (None when unknown).
+
+    With no earlier slots this is the palette's own `n`-colour sampling,
+    exactly what a fresh call draws. With earlier slots the palette is
+    CONTINUED, never restarted and never repeated:
+
+    - a fixed-sequence palette (a colour list, 'deep', 'Set2', ...) gives
+      the next colours in its sequence -- the `offset`-th onward of its
+      ``offset + n`` sampling, what one call with every dataset would draw;
+    - an evenly RE-SAMPLED palette ('hls', 'husl', a colormap such as
+      'viridis') places its colours by count, so the ``offset + n``
+      sampling is not an extension of the ``offset`` one: 'hls' at 2 is
+      0 and 180 degrees, at 4 it is 0/90/180/270, so taking its last two
+      repeated 180 (1.1 release review: two datasets then two more drew
+      a2 == b1). Instead take the smallest sampling of ``m >= offset + n``
+      colours that CONTAINS every colour already used and fill its free
+      slots in palette order -- 'hls' 2 + 2 draws exactly the 4-colour
+      'hls' set, and 1 + 1 still draws what one call with both draws.
+
+    When no such sampling exists (the earlier colours came from another
+    palette, or a short colour list has no free slot left to fill), it
+    falls back to the ``offset``-th onward of the ``offset + n`` sampling.
+    """
+    import seaborn as sns
+
+    def sample(m):
+        """The palette's own `m`-colour sampling, as RGB tuples."""
+        return [tuple(float(v) for v in c[:3]) for c in sns.color_palette(
+            _seaborn_palette_arg(palette, m), m)]
+
+    if n <= 0:
+        return []
+    if offset <= 0:
+        return sample(n)
+    fallback = sample(offset + n)[offset:]
+    if used is None or len(used) != offset:
+        return fallback
+    used_arr = np.asarray([tuple(c)[:3] for c in used], dtype=float)
+    # every sampling that could hold `used` plus `n` free slots; the upper
+    # bound covers the nested refinements repeated composition produces
+    # (each at most doubles the grid the used colours sit on)
+    for m in range(offset + n, 4 * (offset + n) + 9):
+        cand = np.asarray(sample(m), dtype=float)
+        dist = np.abs(cand[:, None, :] - used_arr[None, :, :]).max(axis=-1)
+        taken = dist < 1e-6
+        if not taken.any(axis=0).all():
+            continue
+        free = [i for i in range(m) if not taken[i].any()]
+        if len(free) >= n:
+            return [tuple(cand[i]) for i in free[:n]]
+    return fallback
+
+
+def _extend_palette_used(offset, used, taken):
+    """The palette-slot colours an axes/figure/cell holds after a call that
+    took `taken` past `offset` earlier slots whose colours were `used`, or
+    None when the earlier colours are unknown (then the next call falls back
+    to the count alone; see `_palette_continuation`)."""
+    if offset <= 0:
+        return [tuple(float(v) for v in c[:3]) for c in taken]
+    if used is None or len(used) != offset:
+        return None
+    return ([tuple(float(v) for v in c[:3]) for c in used]
+            + [tuple(float(v) for v in c[:3]) for c in taken])
+
+
+def _record_palette_used(fig, into, offset, used, taken):
+    """Record the palette-slot colours on a plotly figure's ``layout.meta``,
+    beside the slot count the plotly backend records there: per figure as
+    ``'hyp_palette_used'``, per `PlotlyCell` as
+    ``'hyp_cell_palette_used'[str(index)]``."""
+    layout = getattr(fig, 'layout', None)
+    if layout is None:
+        return
+    new = _extend_palette_used(offset, used, taken)
+    new = None if new is None else [list(c) for c in new]
+    meta = layout.meta if isinstance(layout.meta, dict) else {}
+    if into is not None and _is_plotly_cell(into):
+        cells = dict(meta.get('hyp_cell_palette_used') or {})
+        cells[str(into.index)] = new
+        layout.meta = {**meta, 'hyp_cell_palette_used': cells}
+    else:
+        layout.meta = {**meta, 'hyp_palette_used': new}
+
+
+def _rank_plotly_legend(fig, first_trace, order):
+    """The plotly form of `_draw`'s ``legend_order=``: list this call's
+    legend entries (the traces from `first_trace` on) with the ones named
+    in `order` sorted into that order among their own positions, via
+    ``legendrank``. Every earlier trace keeps its place ahead of them."""
+    data = getattr(fig, 'data', None)
+    if not data:
+        return
+    own = [tr for tr in data[first_trace:]
+           if tr.showlegend is not False and tr.name is not None]
+    rank = {str(lbl): k for k, lbl in enumerate(order)}
+    slots = [j for j, tr in enumerate(own) if str(tr.name) in rank]
+    wanted = sorted(slots, key=lambda j: rank[str(own[j].name)])
+    if wanted == slots:
+        return
+    perm = list(range(len(own)))
+    for slot, src in zip(slots, wanted):
+        perm[slot] = src
+    # plotly lists entries by (legendrank, trace order); the default rank
+    # is 1000, so this call's entries start there -- after any earlier
+    # trace of equal rank -- and count up in the wanted order
+    base = max([1000] + [tr.legendrank for tr in data[:first_trace]
+                         if tr.legendrank is not None])
+    for position, j in enumerate(perm):
+        own[j].legendrank = base + position
+
+
+def _sync_color_scales(drawn, *infos):
+    """Rewrite each discrete colour scale in `infos` (the return_model
+    bundle's ``'colors'``, a discrete colorbar's info) in place to the
+    per-dataset colours `drawn` -- the colours the datasets were actually
+    drawn in -- when it has one colour per dataset. Only for datasets
+    coloured from the palette cycle (see `_color_scales_from_cycle` in
+    `plot`), whose scale was resolved from the palette's fresh sampling."""
+    from matplotlib.colors import BoundaryNorm, ListedColormap, to_rgb
+    rgb = np.asarray([to_rgb(c) for c in drawn], dtype=float)
+    for info in infos:
+        if (not isinstance(info, dict) or info.get('kind') != 'discrete'
+                or info.get('colors') is None
+                or len(info['colors']) != len(rgb) or not len(rgb)):
+            continue
+        info['colors'] = rgb.copy()
+        if 'cmap' in info:
+            info['cmap'] = ListedColormap(info['colors'])
+        if info.get('norm') is not None:
+            info['norm'] = BoundaryNorm(np.arange(len(rgb) + 1) - 0.5,
+                                        len(rgb))
+        if info.get('categories'):
+            info['categories'] = {
+                str(label): tuple(color)
+                for label, color in zip(info['labels'], info['colors'])}
 
 
 def _apply_forecast_override(style, override):
@@ -275,6 +569,14 @@ def _forecast_style_from(src_line, alpha_scale=FORECAST_ALPHA_SCALE,
         ``color``/``linestyle``/``linewidth``/``alpha`` kwargs for `ax.plot`
         (plus ``marker`` when `forecast_fmt=` asked for one).
     """
+    # an explicit forecast COLOUR (`forecast_hue=`/`forecast_cluster=`/
+    # `forecast_palette=`, or a colour letter in `forecast_fmt=`) is what
+    # tells the forecast from its trace, so it is drawn at the trace's own
+    # alpha rather than faded on top of being recoloured (1.1 release
+    # review, feature-tour 9.10: Set1 forecasts at 0.35 over 0.7 leaves
+    # were invisible). `forecast_alpha_scale_for` is the one rule.
+    from .forecast import forecast_alpha_scale_for
+    alpha_scale = forecast_alpha_scale_for(override, alpha_scale)
     if src_line is None:
         return _apply_forecast_override(
             dict(color=anchor_color, linestyle='-',
@@ -298,9 +600,25 @@ def _forecast_style_from(src_line, alpha_scale=FORECAST_ALPHA_SCALE,
         override)
 
 
+def _observed_run_lines(lines):
+    """The drawn observed RUNS among `lines`, one artist per run, in order.
+
+    A marker-plus-line fmt (``'o-'``, ``'s--'``) draws each run as TWO
+    artists -- the smoothed line and a markers-only companion at the true
+    observations (`matplotlib_backend._plot_possibly_split`, which tags the
+    companion ``_hyp_marker_companion``). Every consumer that looks a run up
+    by index (the forecast and truth overlays' style source, the animated
+    head-run colour) must skip the companions, or run ``i`` reads run
+    ``i // 2``'s artists: three ``'o-'`` datasets gave forecasts red, red,
+    green instead of red, green, blue (1.1 release review, F1).
+    """
+    return [ln for ln in lines
+            if not getattr(ln, '_hyp_marker_companion', False)]
+
+
 def _draw_forecast_overlays(ax, raw_forecasts, antialias=True,
                             owner=None, overrides=None, labels=None,
-                            dataset_index=None):
+                            dataset_index=None, src_lines=None):
     """Overlay one forecast trace per input dataset (GH #169), styled to
     match its source line (`_forecast_style_from`): same colour, linestyle
     and linewidth, at half its alpha.
@@ -318,12 +636,16 @@ def _draw_forecast_overlays(ax, raw_forecasts, antialias=True,
     to dataset i"; the multi-model form passes a real map, since it draws
     one forecast per (model, dataset) pair.
 
-    `labels` (GH #285): one legend label per forecast, or None. Only the
-    MULTI-MODEL form (`predict=['Kalman', 'ARIMA', ...]`) passes them --
-    with several overlays on one trace, "which model is this?" cannot be
-    read off the figure otherwise. Every other call keeps the historical
-    `'_nolegend_'`, and `plot()` rebuilds the legend after this returns only
-    when a label was actually set.
+    `labels` (GH #285): one legend label per forecast, or None -- the
+    model's name, for every `predict=` form (1.1: a collection labels each
+    model; the single-model form labels its one model too). The label is
+    NOT put on the artist (every artist stays ``'_nolegend_'``): a model's
+    forecasts over several datasets are drawn in several colours, and a
+    legend built from the first of them would show dataset 0's colour as if
+    it were the model's. Each artist is tagged ``_hyp_forecast_label``
+    instead, and `_forecast_legend_handles` builds one proxy glyph per
+    distinct label from those tags -- which `plot()` adds to the legend
+    after this returns.
 
     Returns
     -------
@@ -335,7 +657,11 @@ def _draw_forecast_overlays(ax, raw_forecasts, antialias=True,
     # (dataset index, artist) for every artist created, so the identity tag
     # below survives an `ax.plot` call returning more than one artist
     _artist_dataset = []
-    src_lines = list(ax.lines)
+    # `src_lines`: the observed lines the forecasts continue, run by run --
+    # THIS call's, when the axes already held an earlier call's -- one
+    # artist per run (a split 'o-' run's markers companion is skipped)
+    src_lines = _observed_run_lines(
+        list(ax.lines) if src_lines is None else list(src_lines))
     for i, fc in enumerate(raw_forecasts):
         # antialias (see `plot`'s `antialias=`): smooth the forecast the SAME
         # way as any other line, so a short forecast (e.g. t+1 = 5 vertices)
@@ -347,23 +673,25 @@ def _draw_forecast_overlays(ax, raw_forecasts, antialias=True,
         # forecast spans `n_rows - 1` row units no matter how many vertices
         # it is drawn with (see the 1-D branch below).
         _fc_rows = fc.shape[0]
+        _fc_step = 1
         if antialias:
-            fc = _interp_static_line(fc)
+            fc, _fc_step = _antialias_static_line(fc)
         # `owner` maps forecast -> the RUN it continues, when hue=/cluster=
         # regrouped the traces. Without it, forecast i continues trace i.
         _src = owner[i] if owner is not None and i < len(owner) else i
         _src_line = src_lines[_src] if _src < len(src_lines) else None
         style = _forecast_style_from(
             _src_line, override=overrides[i] if overrides is not None else None)
+        # a `forecast_fmt=` marker ('ro:') belongs on the forecast's own
+        # STEPS -- the seam row and each forecast observation -- never on
+        # the ~900 antialiased vertices between them, which drew a dotted
+        # forecast as a solid tube of markers (1.1 release review; the
+        # marker contract of `plot`'s `antialias=`). One artist, so its
+        # legend glyph keeps the marker.
+        style['markevery'] = _step_markevery(_fc_step)
         d = fc.shape[1] if fc.ndim > 1 else 1
         _before = len(artists)
-        # one legend entry per MODEL (not per model x dataset): the second
-        # and later datasets of the same model repeat a label the legend
-        # already carries, and matplotlib would list it again.
         _label = '_nolegend_'
-        if labels is not None and labels[i] is not None:
-            _label = (labels[i] if labels[i] not in labels[:i]
-                      else '_nolegend_')
         if d >= 3:
             artists.extend(ax.plot(
                 fc[:, 0], fc[:, 1], fc[:, 2], label=_label, **style))
@@ -408,7 +736,150 @@ def _draw_forecast_overlays(ax, raw_forecasts, antialias=True,
         _a._hyp_forecast_role = 'static'
         _a._hyp_forecast_dataset = (dataset_index[_ds]
                                     if dataset_index is not None else _ds)
+        _a._hyp_forecast_label = (labels[_ds] if labels is not None
+                                  and _ds < len(labels) else None)
     return artists
+
+
+def _add_overlay_legend_entries(ax, forecast_artists=None, truth_artists=None,
+                                **legend_call):
+    """Rebuild `ax`'s legend with the overlay entries `_draw` could not
+    know about -- it built the legend from the data lines before any
+    overlay existed. One proxy per forecast label
+    (`_forecast_legend_handles`) goes in after the data entries, and a
+    labelled `truth=` artist after those; entries already present are
+    kept, in place, so calling this once for the forecasts and once for
+    the truth overlay lists ``data..., forecasts..., truth`` either way.
+    No legend on the axes means the call asked for none: nothing is added.
+    """
+    legend = ax.get_legend()
+    if legend is None:
+        return
+    # EVERY tagged overlay on the axes, this call's and earlier calls'
+    # into the same `ax=`: the legend is rebuilt by role -- the data
+    # entries `_draw` listed, then one entry per forecast label (its
+    # glyph decided over every forecast wearing that label, however many
+    # calls drew them), then one 'truth' (Codex round 4: three calls into
+    # one axes listed 'truth' three times and lost the earlier forecast
+    # keys)
+    from matplotlib.colors import to_rgba
+    from matplotlib.lines import Line2D
+    from .forecast import FORECAST_LEGEND_COLOR
+    fc_lines = [ln for ln in ax.lines
+                if getattr(ln, '_hyp_forecast_label', None) is not None
+                and getattr(ln, '_hyp_forecast_role', None)
+                in ('static', 'live')]
+    truth_lines = [ln for ln in ax.lines
+                   if getattr(ln, '_hyp_truth_label', None)]
+    if not fc_lines and not truth_lines:
+        return
+    fc_handles = _forecast_legend_handles(fc_lines)
+    overlay_labels = {h.get_label() for h in fc_handles}
+    truth_label = truth_lines[0]._hyp_truth_label if truth_lines else None
+    if truth_label is not None:
+        overlay_labels.add(truth_label)
+    kept = [(h, lab) for h, lab in zip(legend.legend_handles,
+                                       [t.get_text() for t in
+                                        legend.get_texts()])
+            if lab not in overlay_labels]
+    handles = [h for h, _ in kept] + fc_handles
+    labels = [lab for _, lab in kept] + [h.get_label() for h in fc_handles]
+    if truth_lines:
+        first = truth_lines[0]
+        # the colour decided over EVERY truth artist, not only the tagged
+        # first one: the key stands for all datasets' truths, and wore
+        # dataset 0's colour whatever the others were (1.1 review, F10)
+        colors = {to_rgba(ln.get_color()) for ln in ax.lines
+                  if getattr(ln, '_hyp_forecast_role', None) == 'truth'}
+        handles.append(Line2D(
+            [], [], color=(first.get_color() if len(colors) == 1
+                           else FORECAST_LEGEND_COLOR),
+            linestyle=first.get_linestyle(), linewidth=first.get_linewidth(),
+            marker=first.get_marker(), markersize=first.get_markersize(),
+            markevery=None, label=truth_label))
+        labels.append(truth_label)
+    ax.legend(handles, labels, **legend_call)
+
+
+def _recolor_overlay_legend(ax, colors, close_fig=None):
+    """Apply `legend_colors=`'s plain colour list to a legend that also
+    lists `predict=`/`truth=` overlay entries (data entries first, then the
+    overlays -- `_add_overlay_legend_entries`' order).
+
+    One colour per legend entry recolours them all. One colour per DATA
+    entry -- what the list meant before a forecast had a legend entry of
+    its own, and still what it means on a legend without overlays --
+    recolours the data entries and leaves the forecast/truth glyphs as
+    drawn (1.1 release review: ``legend_colors=['r', 'b']`` with
+    ``predict=`` raised 'the legend has 3'). Any other count raises
+    ``ValueError`` -- after closing `close_fig` (the figure this call
+    created), so a refused call leaves no stray figure open.
+    """
+    from .matplotlib_backend import _recolor_legend_handles
+    legend = ax.get_legend()
+    handles = list(legend.legend_handles)
+    texts = [t.get_text() for t in legend.get_texts()]
+    overlay = {getattr(ln, '_hyp_forecast_label', None) for ln in ax.lines
+               if getattr(ln, '_hyp_forecast_role', None)
+               in ('static', 'live')}
+    overlay |= {getattr(ln, '_hyp_truth_label', None) for ln in ax.lines}
+    overlay.discard(None)
+    n_data = sum(1 for t in texts if t not in overlay)
+    colors = list(colors)
+    if len(colors) not in (len(handles), n_data):
+        if close_fig is not None:
+            plt.close(close_fig)
+        raise ValueError(
+            f"legend_colors has {len(colors)} entries but the legend has "
+            f"{len(handles)} ({n_data} data entr"
+            f"{'y' if n_data == 1 else 'ies'} plus "
+            f"{len(handles) - n_data} forecast/truth entr"
+            f"{'y' if len(handles) - n_data == 1 else 'ies'}); pass one "
+            "color per data entry, one per legend entry, or (label, color) "
+            "pairs to define the entries outright.")
+    if len(colors) < len(handles):
+        colors += [h.get_color() for h in handles[len(colors):]]
+    _recolor_legend_handles(legend, colors)
+
+
+def _forecast_legend_handles(artists):
+    """One proxy `Line2D` legend handle per distinct forecast label, from
+    the ``_hyp_forecast_label`` tags `_draw_forecast_overlays` (and the
+    animated live-forecast setup) put on the forecast artists.
+
+    Each handle wears its forecasts' linestyle, linewidth, marker and alpha
+    -- so the key looks like the faded, dashed lines it names -- and their
+    colour when every forecast under that label shares one (a single
+    dataset, or a `forecast_palette=` that colours by model). When the
+    label spans several colours (one model continuing several datasets,
+    each in its own colour) the glyph is `forecast.FORECAST_LEGEND_COLOR`,
+    a neutral gray: the entry then stands for the model, not for any one
+    dataset. `plotly_backend._forecast_legend_traces` is its twin, so both
+    backends list the same entries with the same glyphs.
+    """
+    from matplotlib.colors import to_rgba
+    from matplotlib.lines import Line2D
+    from .forecast import (FORECAST_LEGEND_COLOR, FORECAST_LEGEND_MIN_ALPHA,
+                           group_forecast_labels)
+    tags = [getattr(_a, '_hyp_forecast_label', None) for _a in artists]
+    handles = []
+    for label, members in group_forecast_labels(tags):
+        lines = [artists[_k] for _k in members]
+        first = lines[0]
+        colors = {to_rgba(_l.get_color()) for _l in lines}
+        color = first.get_color() if len(colors) == 1 \
+            else FORECAST_LEGEND_COLOR
+        # legible whatever the forecasts' own alpha: the floor keeps a key
+        # for translucent forecasts from vanishing (see the constant)
+        alphas = [_l.get_alpha() for _l in lines if _l.get_alpha() is not None]
+        alpha = max([FORECAST_LEGEND_MIN_ALPHA] + alphas) \
+            if alphas else None
+        handles.append(Line2D(
+            [], [], color=color, linestyle=first.get_linestyle(),
+            linewidth=max(_l.get_linewidth() for _l in lines), alpha=alpha,
+            marker=first.get_marker(), markersize=first.get_markersize(),
+            markevery=None, label=str(label)))
+    return handles
 
 
 #: How a `truth=` overlay is drawn, next to the forecast it is compared
@@ -420,7 +891,7 @@ TRUTH_STYLE = dict(linestyle='-', marker='o', markersize=4, alpha=1.0)
 
 
 def _draw_truth_overlays(ax, raw_truths, antialias=True, owner=None,
-                         label=None):
+                         label=None, src_lines=None):
     """Overlay each trace's ACTUAL continuation (`truth=`, GH #285).
 
     Styled from the trace it continues (same colour and linewidth, via
@@ -441,7 +912,8 @@ def _draw_truth_overlays(ax, raw_truths, antialias=True, owner=None,
     animation's reveal advances, so it stays put while the forecast moves.
     """
     artists = []
-    src_lines = list(ax.lines)
+    src_lines = _observed_run_lines(
+        list(ax.lines) if src_lines is None else list(src_lines))
     for i, tr in enumerate(raw_truths):
         tr = np.asarray(tr, dtype=float)
         _rows = tr.shape[0]
@@ -455,9 +927,18 @@ def _draw_truth_overlays(ax, raw_truths, antialias=True, owner=None,
         # vertices between them -- so the smoothed curve and the sample
         # markers are two artists, exactly as `_plot_possibly_split` draws a
         # marker+line fmt for the observed data.
-        line_style = dict(style, marker=None)
+        # The curve KEEPS the marker with `markevery=[]` (draws none) so its
+        # legend glyph shows line + marker -- otherwise the 'truth' entry
+        # is a solid line in the trace's own colour, identical to the
+        # observed trace's entry (feature tour 9.11, 2026-09-06; the same
+        # trick `_plot_possibly_split` uses for a marker+line fmt).
+        line_style = dict(style, markevery=[])
         marker_style = dict(style, linestyle='None')
-        _label = '_nolegend_' if label is None else label
+        # never labelled: the legend entry is a proxy glyph built by
+        # `_add_overlay_legend_entries` from the `_hyp_truth_label` tag,
+        # so a reused axes lists ONE 'truth' however many calls drew one
+        # (Codex round 4)
+        _label = '_nolegend_'
         _before = len(artists)
         d = drawn.shape[1] if drawn.ndim > 1 else 1
         if d >= 3:
@@ -488,6 +969,8 @@ def _draw_truth_overlays(ax, raw_truths, antialias=True, owner=None,
         for _a in artists[_before:]:
             _a._hyp_forecast_role = 'truth'
             _a._hyp_forecast_dataset = i
+        if label is not None and artists[_before:]:
+            artists[_before]._hyp_truth_label = str(label)
         # one 'truth' legend entry for the whole figure: every trace's
         # truth means the same thing, so repeating the label per dataset
         # would list it once per series
@@ -535,6 +1018,48 @@ def _categorical_color_label_maps(hue, palette, explicit_colors,
                   else [str(c) for c in drawn])
         _by_name = resolve_category_colors(palette, _names)
         cat_color = {c: _by_name[_names[i]] for i, c in enumerate(drawn)}
+    elif _looks_like_dataset_palettes(palette):
+        # a PER-DATASET palette list (GH #285) meeting a CATEGORICAL
+        # grouping. The groups drawn here are categories, not datasets, so
+        # handing the list to `_seaborn_palette_arg(palette, len(drawn))`
+        # made `dataset_palettes` count the CATEGORIES as datasets and
+        # report "lists 3 per-dataset palettes but 2 dataset(s) were
+        # passed" for a three-dataset call. Two readings are meaningful:
+        # every entry a {category: color} dict -- each dataset naming its
+        # own categories' colours -- merges into one mapping resolved by
+        # name; anything else has no category to colour and is rejected
+        # with the real counts.
+        _names = (list(group_labels)
+                  if isinstance(group_labels, (list, tuple))
+                  and len(group_labels) == len(drawn)
+                  else [str(c) for c in drawn])
+        entries = list(palette)
+        if all(isinstance(e, collections.abc.Mapping) for e in entries):
+            merged = {}
+            for entry in entries:
+                for name, colour in entry.items():
+                    if name in merged and merged[name] != colour:
+                        raise ValueError(
+                            f"palette= names category {name!r} in more "
+                            f"than one per-dataset dict with different "
+                            f"colors ({merged[name]!r} and {colour!r}); "
+                            "a category has one color, so name it once "
+                            "or give every dict the same color for it.")
+                    merged[name] = colour
+            _by_name = resolve_category_colors(merged, _names)
+            cat_color = {c: _by_name[_names[i]] for i, c in enumerate(drawn)}
+        else:
+            n_cat = len(drawn)
+            raise ValueError(
+                f"palette= lists {len(entries)} per-dataset palettes, but "
+                f"this plot colors by CATEGORY ({n_cat} categor"
+                f"{'y' if n_cat == 1 else 'ies'} from hue=/cluster=/"
+                "n_clusters=), so there is no dataset for each palette to "
+                "color. Pass ONE palette for the categories -- a palette "
+                f"name, a list of at least {n_cat} colors, a Colormap, or "
+                "a {category: color} dict -- or a list of {category: "
+                "color} dicts (one per dataset, each naming its own "
+                "categories).")
     else:
         pal = sns.color_palette(
             _seaborn_palette_arg(palette, len(drawn)), len(drawn))
@@ -651,35 +1176,82 @@ def _interp_static_line(arr):
     `_STATIC_LINE_TARGET_VERTICES` vertices and contains every original sample
     exactly. This is the STATIC half of `plot`'s ``antialias=``.
     """
-    return antialias_line(arr, _STATIC_LINE_TARGET_VERTICES)[0]
+    return _antialias_static_line(arr)[0]
+
+
+def _antialias_static_line(arr):
+    """`_interp_static_line`, also returning the subdivision ``step``: the
+    densified ``dense[::step]`` is exactly `arr`, so ``step`` is what places
+    a marker on the ORIGINAL rows (`_step_markevery`)."""
+    return antialias_line(arr, _STATIC_LINE_TARGET_VERTICES)
+
+
+def _step_markevery(step):
+    """The matplotlib ``markevery`` that marks only the original rows of a
+    line densified with subdivision `step` (every vertex when ``step`` is
+    1, i.e. nothing was densified)."""
+    return None if step <= 1 else slice(0, None, int(step))
+
+
+def _anim_grid_stride(n_rows, n_frames):
+    """Grid rows per source row of an animated line: observation ``i`` of an
+    `n_rows`-row dataset is row ``i * stride`` of its animation grid.
+
+    The grid is the smallest UNIFORM refinement of the source rows with at
+    least `n_frames` rows: ``stride = ceil((n_frames - 1) / (n_rows - 1))``
+    (at least 1), giving ``(n_rows - 1) * stride + 1`` rows. Returns 1 for a
+    dataset with fewer than 2 rows (nothing to interpolate).
+    """
+    n = int(n_rows)
+    if n < 2:
+        return 1
+    f = max(2, int(n_frames))
+    return max(1, -(-(f - 1) // (n - 1)))
 
 
 def _interp_anim_line(arr, n_frames):
-    """Resample one trajectory onto the animation's exact frame grid.
+    """Put one line trajectory on its animation grid, never DOWNsampling.
 
-    PCHIP-interpolates (the same monotone interpolant the static path uses)
-    onto ``np.linspace(0, n - 1, n_frames)``: exactly `n_frames` rows -- one
-    per animation frame -- for EVERY dataset (release-1.0 audit: the
-    historical ``np.arange``-step grid was computed from the FIRST dataset
-    only, so later datasets of a different length were silently truncated or
-    ran out mid-animation, F04-003, and floating-point step error produced
-    901/41 frames where the docstring promises exactly
-    ``frame_rate * duration``, F04-004). Endpoints are exact, so the
-    animation provably reaches the final sample.
+    The grid is ``np.linspace(0, n - 1, (n - 1) * stride + 1)`` with
+    ``stride = _anim_grid_stride(n, n_frames)``: a uniform refinement of the
+    source rows, so observation ``i`` is EXACTLY grid row ``i * stride`` and
+    the grid has at least `n_frames` rows. A dataset with at least as many
+    rows as frames keeps its rows as-is (``stride == 1``); a shorter one is
+    PCHIP-interpolated (the same monotone interpolant the static path uses)
+    between its observations. The backends pace any grid length onto the
+    ``round(frame_rate * duration)`` frames through
+    `trails.anim_window_bounds`, and every grid consumer (the forecast reveal
+    schedule, `trails.dataset_window_bounds`, per-point labels) maps grid
+    row ``j`` back to source parameter ``j * (n - 1) / (grid - 1)``, which
+    this grid keeps exact.
+
+    1.1 visual review (L8): the grid used to be exactly ``n_frames`` rows,
+    which DOWNsampled any dataset longer than the frame count -- a 36-sample
+    helix in a 9-frame animation was drawn through 9 of its points, a
+    zig-zag star with a drawn radius as low as 0.23 against a true 0.5.
+    Earlier history (release-1.0 audit): per-dataset gridding replaced a
+    grid computed from the FIRST dataset only (F04-003), and exact
+    endpoints replaced an ``np.arange`` step that missed the final sample
+    (F04-004).
     """
     from scipy.interpolate import PchipInterpolator as pchip
     arr = np.asarray(arr)
     n = arr.shape[0]
     if n < 2:
         return arr
-    grid = np.linspace(0.0, n - 1.0, max(2, int(n_frames)))
+    stride = _anim_grid_stride(n, n_frames)
+    if stride == 1:
+        return arr.copy()
+    grid = np.linspace(0.0, n - 1.0, (n - 1) * stride + 1)
     out = pchip(np.arange(n), arr)(grid)
-    out[0] = arr[0]
-    out[-1] = arr[-1]
+    # PCHIP passes through its knots only up to floating error: pin every
+    # observation so it is provably an exact vertex of the drawn line
+    out[::stride] = arr
     return out
 
 
-def _require_finite_for_line(xi, dataset_index):
+def _require_finite_for_line(xi, dataset_index, input_finite=None,
+                             manip=None):
     """Fail fast, with a hypertools-level message, when a line-styled
     trajectory still contains non-finite values after preprocessing.
 
@@ -689,16 +1261,45 @@ def _require_finite_for_line(xi, dataset_index):
     PPCA imputation cannot reconstruct them (it already warned), and the
     raw scipy traceback named neither the problem nor the fix
     (release-1.0 audit, F05-011).
+
+    `input_finite` says whether the dataset was finite BEFORE the analysis
+    pipeline ran (``None`` when unknown, e.g. under ``transform=``). When it
+    was, the missing rows are the pipeline's doing, not the input's, and the
+    message says so -- naming the `manip=` stage when there is one, since a
+    trailing ``Smooth(center=False)`` leaves its first ``kernel_width - 1``
+    rows NaN under pandas' rolling semantics unless ``min_periods=1`` is
+    passed (1.1 review, X2).
     """
-    if not np.isfinite(np.asarray(xi, dtype=float)).all():
+    if np.isfinite(np.asarray(xi, dtype=float)).all():
+        return
+    if input_finite:
+        if manip is not None:
+            hint = (
+                f"The manip= stage ({manip!r}) introduced them: a trailing "
+                "(center=False) Smooth leaves its first kernel_width - 1 "
+                "rows NaN under pandas' rolling-window semantics. Pass "
+                "min_periods=1 to smooth those rows over the observations "
+                "available so far (e.g. Smooth(kernel='boxcar', "
+                "kernel_width=12, center=False, min_periods=1)), or drop "
+                "them from the result.")
+        else:
+            hint = (
+                "One of the normalize=/reduce=/align= stages introduced "
+                "them (a constant column z-scores to NaN, for example); "
+                "check the stages' output on this dataset with "
+                "hyp.analyze(...).")
         raise ValueError(
-            f"dataset {dataset_index} still contains non-finite values "
-            "(NaN/inf) after preprocessing, so its line cannot be smoothed/"
-            "animated. This usually means some rows had ALL features "
-            "missing -- the default PPCA imputation cannot fill those. "
-            "Drop those rows, impute them first (e.g. hyp.impute(data, "
-            "model='Kalman')), or plot markers only (fmt='.')."
-        )
+            f"dataset {dataset_index} was finite on input but contains "
+            "non-finite values (NaN/inf) after the analysis pipeline ran, "
+            f"so its line cannot be smoothed/animated. {hint}")
+    raise ValueError(
+        f"dataset {dataset_index} still contains non-finite values "
+        "(NaN/inf) after preprocessing, so its line cannot be smoothed/"
+        "animated. This usually means some rows had ALL features "
+        "missing -- the default PPCA imputation cannot fill those. "
+        "Drop those rows, impute them first (e.g. hyp.impute(data, "
+        "model='Kalman')), or plot markers only (fmt='.')."
+    )
 
 
 def _normalize_save_path(save_path):
@@ -846,8 +1447,8 @@ def _validate_title(title, style=None, order=None, n_datasets=None):
     if not serial_style or not isinstance(title, (list, tuple)):
         if _style_cannot_go_serial and isinstance(title, (list, tuple)):
             raise TypeError(
-                f"title must be a string (or None), not "
-                f"{type(title).__name__}. animate={_style!r} has no serial "
+                f"title must be a string, a callable (ctx -> str), or None, "
+                f"not {type(title).__name__}. animate={_style!r} has no serial "
                 "ordering (it does not reveal datasets one at a time), so "
                 "order='serial' is ignored and per-dataset title lists are "
                 "not meaningful for it -- pass a single string title "
@@ -855,13 +1456,21 @@ def _validate_title(title, style=None, order=None, n_datasets=None):
                 "for a style that supports per-dataset titles."
             )
         raise TypeError(
-            f"title must be a string (or None), not {type(title).__name__}. "
+            f"title must be a string, a callable (ctx -> str), or None, not "
+            f"{type(title).__name__}. "
             "Per-dataset titles are only meaningful for serial-style "
             "animations (order='serial' or animate='morph'), and must be a "
             "list/tuple there. For a per-dataset legend entry use names=; "
             "for a per-observation annotation use labels=."
         )
-    titles = [str(t) for t in title]
+    _bad = [(i, t) for i, t in enumerate(title) if not isinstance(t, str)]
+    if _bad:
+        i, t = _bad[0]
+        raise TypeError(
+            f"title= list entries must all be strings (one per dataset); "
+            f"entry {i} is {type(t).__name__}: {t!r}. Use '' for a dataset "
+            "that should show no title.")
+    titles = list(title)
     if n_datasets is not None and len(titles) != n_datasets:
         raise ValueError(
             f"title has {len(titles)} entries but there are {n_datasets} "
@@ -1183,6 +1792,58 @@ def _validate_forecast_trail(forecast_trail, predict):
     return forecast_trail
 
 
+def _prepare_palettes(palette, forecast_palette, sort=None, reduce=None,
+                      manip=None, normalize=None, align=None):
+    """Resolve the palette forms that need the ``palette_*`` options.
+
+    A t x k data matrix (`colors.is_palette_matrix`) becomes a colormap
+    through `colors.matrix_palette` (reduced with ``palette_reduce`` --
+    default 'PCA' -- under ``palette_manip``/``palette_normalize``/
+    ``palette_align``, sorted by ``palette_sort``, default 'columns'). An
+    ``'image:<path>'`` spec gets ``?sort=<palette_sort>`` appended when the
+    call asks for a sort and the spec does not already carry one (images
+    default to 'value' inside `colors._image_palette_list`). Every other
+    form -- names, color lists, dicts, colormaps -- is returned as is, and a
+    per-dataset list is handled entry by entry. Idempotent, so the panels
+    branch can forward the result through a second plot() call."""
+    from .colors import (IMAGE_PALETTE_PREFIX, PALETTE_SORT_KEYS,
+                         _parse_image_spec, is_palette_matrix,
+                         matrix_palette)
+
+    if sort is not None and sort not in PALETTE_SORT_KEYS:
+        raise ValueError(
+            f"palette_sort= must be one of {PALETTE_SORT_KEYS} or None; "
+            f"got {sort!r}")
+
+    def one(spec):
+        """One palette spec, prepared."""
+        if is_palette_matrix(spec):
+            return matrix_palette(
+                spec, reduce=reduce if reduce is not None else 'PCA',
+                sort=sort if sort is not None else 'columns',
+                normalize=normalize, manip=manip, align=align)
+        if sort is not None and isinstance(spec, str) \
+                and spec.startswith(IMAGE_PALETTE_PREFIX):
+            source = spec[len(IMAGE_PALETTE_PREFIX):].strip()
+            path, options = _parse_image_spec(source)
+            if 'sort' in options:
+                return spec
+            joiner = '&' if options else '?'
+            return f'{IMAGE_PALETTE_PREFIX}{source}{joiner}sort={sort}'
+        return spec
+
+    def many(value):
+        """A whole-plot palette, or a per-dataset list entry by entry."""
+        if isinstance(value, (list, tuple)) and not is_palette_matrix(value) \
+                and any(is_palette_matrix(e) or (
+                    isinstance(e, str) and e.startswith(IMAGE_PALETTE_PREFIX))
+                        for e in value):
+            return [one(e) for e in value]
+        return one(value)
+
+    return many(palette), many(forecast_palette)
+
+
 def _validate_extra_plot_kwargs(extra_kwargs):
     """Fail fast, BEFORE the analyze/reduce pipeline runs, on extra kwargs
     that no backend can use (release-1.0 audit, F01-012/F03-005):
@@ -1466,16 +2127,23 @@ def _is_single_color(value):
     return False
 
 
-def _validate_title_color(title_color, segment_titles):
+def _validate_title_color(title_color, segment_titles, title_kwargs=None):
     """Split `title_color=` into (scalar color, per-segment sequence).
 
     A single color (string or RGB(A) tuple) styles whatever title is drawn.
     A SEQUENCE of colors -- or a callable ``ctx -> color`` -- tints each
     segment of a serial/morph `title=` LIST, so it is only meaningful
-    alongside one.
+    alongside one. Naming a colour BOTH here and as
+    ``title_kwargs={'color': ...}`` is a conflict (one of them silently
+    lost), so it raises.
     """
     if title_color is None:
         return None, None
+    if title_kwargs and 'color' in title_kwargs:
+        raise ValueError(
+            f"title_color={title_color!r} and title_kwargs['color']="
+            f"{title_kwargs['color']!r} were both given; they set the same "
+            "title colour, so pass only one of them.")
     if callable(title_color) or (
             not _is_single_color(title_color)
             and isinstance(title_color, (list, tuple, np.ndarray))):
@@ -1516,7 +2184,13 @@ def _wrap_title_text(title, width, newline='\n'):
     import textwrap
     if isinstance(title, (list, tuple)):
         return [_wrap_title_text(t, width, newline) for t in title]
-    return newline.join(textwrap.wrap(str(title), width) or [''])
+    # each EXISTING line is wrapped on its own and the author's line breaks
+    # are kept: `textwrap.wrap` alone (its default `replace_whitespace`)
+    # turned 'first line\nsecond line' into one 'first line second line'.
+    lines = []
+    for line in str(title).split('\n'):
+        lines.extend(textwrap.wrap(line, width) or [''])
+    return newline.join(lines)
 
 
 def _validate_title_wrap(title_wrap):
@@ -1553,6 +2227,29 @@ def _title_is_pattern(title):
     return isinstance(title, str) and _TITLE_INDEX_FIELD in title
 
 
+def _dataset_values(item):
+    """The values of ONE user dataset as a numpy array: a DataFrame dataset
+    (`is_frame_dataset`: pandas, polars, whatever datawrangler recognises)
+    through its pandas form, a series-like (`is_series_like`) through its
+    ``to_numpy``, anything else through `np.asarray`."""
+    if is_frame_dataset(item):
+        return as_pandas_dataframe(item).to_numpy()
+    if is_series_like(item) and hasattr(item, 'to_numpy'):
+        return item.to_numpy()
+    return np.asarray(item)
+
+
+def _series_values_list(item):
+    """The values of ONE series-like (`is_series_like`) as a python list:
+    pandas objects through ``tolist`` (Series, Index, Categorical), polars
+    through ``to_list``, anything else by iteration."""
+    if hasattr(item, 'tolist'):
+        return item.tolist()
+    if hasattr(item, 'to_list'):
+        return item.to_list()
+    return list(item)
+
+
 def _capture_row_indices(x):
     """The row index of each input dataset, or None where there isn't one.
 
@@ -1564,16 +2261,23 @@ def _capture_row_indices(x):
     all, so the common case allocates nothing and stores nothing.
     """
     def _index_of(item):
-        if isinstance(item, (pd.DataFrame, pd.Series)):
-            idx = item.index
-            # a plain 0..n-1 RangeIndex carries no information a row number
-            # does not already carry; treat it as "no index" so the error
-            # message for a pattern title names the real problem.
-            if isinstance(idx, pd.RangeIndex) and idx.start == 0 \
-                    and idx.step == 1:
-                return None
-            return idx
-        return None
+        if is_frame_dataset(item):
+            # every dataframe backend datawrangler recognises, read through
+            # its pandas form; a backend with no row index (polars) comes
+            # back with the default RangeIndex, i.e. "no index" below
+            item = as_pandas_dataframe(item)
+        elif not is_series_like(item):
+            return None
+        idx = getattr(item, 'index', None)
+        if not isinstance(idx, pd.Index):
+            return None
+        # a plain 0..n-1 RangeIndex carries no information a row number
+        # does not already carry; treat it as "no index" so the error
+        # message for a pattern title names the real problem.
+        if isinstance(idx, pd.RangeIndex) and idx.start == 0 \
+                and idx.step == 1:
+            return None
+        return idx
 
     items = x if isinstance(x, (list, tuple)) else [x]
     indices = []
@@ -1596,11 +2300,14 @@ def _capture_column_names(x):
     list of strings or ``None``.
     """
     def _columns_of(item):
-        if isinstance(item, pd.Series):
-            return None if item.name is None else [str(item.name)]
-        if not isinstance(item, pd.DataFrame):
+        if is_series_like(item):
+            # a labelled vector's one column is its name (pandas: None when
+            # unnamed; polars: '' when unnamed)
+            name = getattr(item, 'name', None)
+            return None if name is None or name == '' else [str(name)]
+        if not is_frame_dataset(item):
             return None
-        cols = item.columns
+        cols = as_pandas_dataframe(item).columns
         # a bare 0..k-1 RangeIndex names nothing a column number does not
         # already say (the same rule `_capture_row_indices` applies to a
         # default row index)
@@ -1621,6 +2328,20 @@ def _capture_column_names(x):
     return names if any(n is not None for n in names) else None
 
 
+def _timedelta_unit(seconds):
+    """``(name, divisor)`` of the unit a `TimedeltaIndex` is drawn in: the
+    largest of days/hours/minutes/seconds in which the typical step between
+    observations is still at least one unit (S4)."""
+    seconds = np.asarray(seconds, dtype=float)
+    step = (float(np.median(np.abs(np.diff(seconds)))) if len(seconds) > 1
+            else float(abs(seconds[0])) if len(seconds) else 0.0)
+    for name, divisor in (('days', 86400.0), ('hours', 3600.0),
+                          ('minutes', 60.0)):
+        if step >= divisor:
+            return name, divisor
+    return 'seconds', 1.0
+
+
 def _series_x_axis(index, n_rows, epoch_ms=False):
     """The x values one dataset is drawn against in `ndims=1` series mode.
 
@@ -1631,13 +2352,16 @@ def _series_x_axis(index, n_rows, epoch_ms=False):
         matplotlib date numbers (`matplotlib.dates.date2num`), or epoch
         MILLISECONDS when `epoch_ms` is set, because that is what each
         backend's date axis reads.
-    step : float -- the spacing one observation advances x by (the MEDIAN
-        difference, so an irregular index still projects a sensible
-        forecast horizon). Used to place `predict=`/`truth=` overlays on the
-        x axis, since a forecast's own x values are an extrapolation the
-        plotting code, not the model, is entitled to decide.
+    step : float -- the median spacing, used as a fallback for truth rows
+        without an index. Forecast overlays use their model's future index;
+        this helper only converts those times to display coordinates.
     is_date : bool -- whether `values` are date numbers.
-    label : str or None -- the index's name, for the default `xlabel=`.
+    label : str or None -- the index's name, for the default `xlabel=`. A
+        `TimedeltaIndex` is drawn as elapsed time in the largest of
+        days/hours/minutes/seconds its typical step fills
+        (`_timedelta_unit`; it used to be drawn in raw nanoseconds), and
+        its label names that unit: ``'<name> (hours)'``, or ``'time
+        (hours)'`` for an unnamed index.
 
     An index of the wrong LENGTH is ignored (a `manip=`/`resample=` stage
     can change the row count long after the index was captured), as is a
@@ -1648,6 +2372,8 @@ def _series_x_axis(index, n_rows, epoch_ms=False):
     fallback = (np.arange(float(n_rows)), 1.0, False, label)
     if index is None or len(index) != n_rows or n_rows == 0:
         return fallback
+    if isinstance(index, pd.PeriodIndex):
+        index = index.to_timestamp()
     if isinstance(index, pd.DatetimeIndex):
         if epoch_ms:
             # ...via an explicit millisecond cast, NOT `view('int64') / 1e6`:
@@ -1658,7 +2384,10 @@ def _series_x_axis(index, n_rows, epoch_ms=False):
             # A tz-AWARE index cannot be cast to a naive dtype at all
             # ("Cannot use .astype to convert from timezone-aware ..."), so
             # it is converted to UTC first -- epoch milliseconds are an
-            # absolute instant either way, and plotly reads them as UTC.
+            # absolute instant either way. These numbers are INTERNAL:
+            # plotly.js would draw a numeric date in the viewer's LOCAL
+            # time zone, so `plotly_backend._dates_as_iso` hands the figure
+            # naive date strings instead (1.1 release review).
             _idx = (index.tz_convert('UTC').tz_localize(None)
                     if index.tz is not None else index)
             values = np.asarray(
@@ -1667,6 +2396,12 @@ def _series_x_axis(index, n_rows, epoch_ms=False):
             from matplotlib.dates import date2num
             values = np.asarray(date2num(index.to_pydatetime()), dtype=float)
         is_date = True
+    elif isinstance(index, pd.TimedeltaIndex):
+        seconds = np.asarray(index.total_seconds(), dtype=float)
+        unit, divisor = _timedelta_unit(seconds)
+        values = seconds / divisor
+        label = f"{label} ({unit})" if label else f"time ({unit})"
+        is_date = False
     else:
         try:
             values = np.asarray(index, dtype=float)
@@ -1683,7 +2418,58 @@ def _series_x_axis(index, n_rows, epoch_ms=False):
     return values, step, is_date, label
 
 
-def _resolve_truth(truth, datasets, t, series_step=None):
+def _resolve_date_xlim(xlim, epoch_ms):
+    """`xlim=` on a DATE x axis (`ndims=1` series mode over a
+    `DatetimeIndex`), in the unit the backend reads (S2).
+
+    A datetime-like value (a ``Timestamp``, ``datetime``, ``np.datetime64``
+    or a date string such as ``'2020-01-05'``) is converted to matplotlib
+    date numbers, or to epoch milliseconds when `epoch_ms` is set (the
+    plotly date axis). A NUMBER is a matplotlib day number on BOTH backends
+    -- the unit `matplotlib.dates.date2num` produces and the one the
+    matplotlib axis has always read -- and is converted for plotly, which
+    used to read it as milliseconds and draw a 1970 range. A tz-aware value
+    is read as its UTC instant, as the data's index is.
+    """
+    from matplotlib.dates import date2num, num2date
+    out = []
+    for value in xlim:
+        if value is None:
+            # an OPEN side (``xlim=(None, '2020-01-10')``): left for the
+            # data bounds to fill, as a numeric axis leaves it to autoscale.
+            # `pd.Timestamp(None)` is NaT, which became a NaN limit and
+            # crashed "Axis limits cannot be NaN or Inf" (1.1 review, F8)
+            out.append(None)
+            continue
+        if (isinstance(value, (int, float, np.integer, np.floating))
+                and not isinstance(value, bool)):
+            number = float(value)
+            if epoch_ms:
+                stamp = pd.Timestamp(num2date(number))
+                number = float((stamp - pd.Timestamp(0, tz='UTC'))
+                               // pd.Timedelta('1ms'))
+            out.append(number)
+            continue
+        try:
+            stamp = pd.Timestamp(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                "xlim= on a date axis takes datetime-like values (a "
+                "Timestamp, datetime, numpy datetime64 or a date string "
+                "such as '2020-01-05') or matplotlib day numbers; got "
+                f"{value!r}.") from exc
+        if stamp.tz is not None:
+            stamp = stamp.tz_convert('UTC').tz_localize(None)
+        if epoch_ms:
+            out.append(float((stamp - pd.Timestamp(0))
+                             // pd.Timedelta('1ms')))
+        else:
+            out.append(float(date2num(stamp.to_pydatetime())))
+    return tuple(out)
+
+
+def _resolve_truth(truth, datasets, t, series_step=None, forecast_paths=None,
+                   time_coordinates=None):
     """One seam-prepended ``(t + 1, d)`` truth array per DRAWN TRACE (GH #285).
 
     `truth=` is the ACTUAL continuation of each plotted trace, so it is
@@ -1707,13 +2493,12 @@ def _resolve_truth(truth, datasets, t, series_step=None):
     series = series_step is not None
 
     def _as_2d(item):
-        arr = np.asarray(
-            item.values if isinstance(item, (pd.DataFrame, pd.Series))
-            else item, dtype=float)
+        arr = np.asarray(_dataset_values(item), dtype=float)
         return arr.reshape(-1, 1) if arr.ndim == 1 else arr
 
     if isinstance(truth, (list, tuple)):
         items = [_as_2d(item) for item in truth]
+        indexes = [getattr(item, 'index', None) for item in truth]
     else:
         arr = _as_2d(truth)
         if n_traces > 1 and arr.shape[1] == n_traces and (
@@ -1723,6 +2508,7 @@ def _resolve_truth(truth, datasets, t, series_step=None):
             items = [arr[:, [j]] for j in range(n_traces)]
         else:
             items = [arr]
+        indexes = [getattr(truth, 'index', None)] * len(items)
     if len(items) != n_traces:
         raise ValueError(
             f"truth= must give the actual continuation of every drawn "
@@ -1732,16 +2518,39 @@ def _resolve_truth(truth, datasets, t, series_step=None):
 
     out = []
     for i, (item, data) in enumerate(zip(items, datasets)):
-        if item.shape[0] != t:
+        horizon = len(forecast_paths[i]) - 1 if forecast_paths is not None else t
+        if item.shape[0] != horizon:
             raise ValueError(
-                f"truth= must have exactly t={t} rows (the forecast "
+                f"truth= must have exactly t={horizon} rows (the forecast "
                 f"horizon), so it lines up with the forecast it is compared "
                 f"against; entry {i} has {item.shape[0]}. Pass t="
                 f"{item.shape[0]} to forecast that far instead, or trim the "
                 "held-out data.")
-        if series and item.shape[1] == 1:
-            xs = (float(data[-1, 0])
-                  + series_step[i] * np.arange(1, t + 1, dtype=float))
+        if series and item.shape[1] != 1:
+            # a series-mode trace is ONE plotted column (its x is the
+            # index), so its truth is one column of values. Without this a
+            # 2-column truth for a 1-column trace matched the trace's
+            # internal (x, value) width and its first column was drawn as
+            # x -- a date axis stretched back to 1970 (1.1 release review,
+            # F3)
+            raise ValueError(
+                f"truth= entry {i} has {item.shape[1]} columns, but with "
+                "ndims=1 each trace is one plotted column (its x is the "
+                "index), so its truth= is one column of values. Pass one "
+                "single-column array per trace (or one array with one "
+                f"column per trace; {n_traces} trace(s) are plotted).")
+        if series:
+            idx = indexes[i]
+            explicit_times = (isinstance(idx, pd.Index)
+                              and not (isinstance(idx, pd.RangeIndex)
+                                       and idx.start == 0 and idx.step == 1))
+            if explicit_times and time_coordinates is not None:
+                xs = time_coordinates(idx, i)
+            elif forecast_paths is not None:
+                xs = forecast_paths[i][1:, 0]
+            else:
+                xs = (float(data[-1, 0])
+                      + series_step[i] * np.arange(1, horizon + 1, dtype=float))
             item = np.column_stack([xs, item[:, 0]])
         if item.shape[1] != data.shape[1]:
             raise ValueError(
@@ -1749,8 +2558,68 @@ def _resolve_truth(truth, datasets, t, series_step=None):
                 f"trace it continues has {data.shape[1]}; truth= is read in "
                 "the PLOTTED space (with reduce=None, the input space), so "
                 "it must carry the same features as the plotted data.")
-        out.append(np.vstack([np.asarray(data[-1:], dtype=float), item]))
+        seam = forecast_paths[i][:1] if forecast_paths is not None else data[-1:]
+        out.append(np.vstack([np.asarray(seam, dtype=float), item]))
     return out
+
+
+def _is_int_horizon(t):
+    """True for the integer form of `t=` (a bool is not a horizon)."""
+    return isinstance(t, (int, np.integer)) and not isinstance(t, bool)
+
+
+def _resolve_datetime_horizon(t, row_indices, lengths):
+    """Turn a datetime-like `t=` into the integer step count `plot()` works
+    in, against each input dataset's captured row index (1.1 review, F2).
+
+    `plot()` hands the forecaster bare analyze-space arrays -- their pandas
+    index was captured up front (`_capture_row_indices`) and dropped by
+    `format_data` -- so `hyp.predict`'s own datetime rule (`resolve_t`) is
+    applied HERE, to the captured `DatetimeIndex` of every dataset, and the
+    resulting step count is what the forecaster, the `truth=` check and the
+    animated schedule all see. Every dataset must resolve to the SAME count
+    (one `t=` describes one figure); a `t` at or before a dataset's last
+    observation is refused, because a plot draws forecasts and has nothing to
+    truncate to.
+    """
+    from ..predict.common import resolve_t
+    steps = []
+    for i, n_rows in enumerate(lengths):
+        idx = (row_indices[i] if row_indices is not None
+               and i < len(row_indices) else None)
+        if not isinstance(idx, pd.DatetimeIndex):
+            have = ('a plain 0..n-1 row index' if idx is None
+                    else f'a {type(idx).__name__}')
+            raise ValueError(
+                f"t={t!r} is datetime-like, so every dataset needs a "
+                f"DatetimeIndex to measure it against; dataset {i} has "
+                f"{have}. Pass a DataFrame indexed by time, or an integer "
+                "t (a number of steps).")
+        if len(idx) != n_rows:
+            raise ValueError(
+                f"t={t!r} is datetime-like and is measured against the row "
+                f"index, but the analysis pipeline changed dataset {i}'s "
+                f"row count ({len(idx)} indexed rows, {n_rows} plotted), so "
+                "the index no longer describes the plotted observations. "
+                "Pass an integer t (a number of steps), or drop the "
+                "row-count-changing stage (manip='Resample', an edge-"
+                "trimming smoother).")
+        n_steps, _ = resolve_t(pd.DataFrame(index=idx), t)
+        if n_steps <= 0:
+            raise ValueError(
+                f"t={t!r} is at or before dataset {i}'s last observation "
+                f"({idx[-1]}), so there is nothing to forecast: plot() draws "
+                "forecasts and does not truncate. Pass a t after the last "
+                "observation, or slice the data yourself.")
+        steps.append(int(n_steps))
+    if len(set(steps)) > 1:
+        raise ValueError(
+            f"t={t!r} resolves to a different number of steps for different "
+            f"datasets ({steps}; their indexes end at different times or "
+            "have different spacings), but one figure has one forecast "
+            "horizon. Pass an integer t (a number of steps), or datasets "
+            "whose indexes end at the same time with the same spacing.")
+    return steps[0]
 
 
 def _series_expand_list(value, owner, n_input, key=None):
@@ -1796,11 +2665,10 @@ def _validate_dynamic_title(title, animate, row_indices):
         return None, title
     if not _title_is_pattern(title):
         return title, None
-    if not animate:
-        # a static plot has one row-index value that means anything: the
-        # last one. Resolved right here, so nothing per-frame is installed.
-        return None, _make_title_pattern_resolver(title, row_indices)
     if row_indices is None:
+        # animated or not: a pattern with nothing to read is an error the
+        # docstring promises BEFORE the pipeline runs, not a title drawn
+        # as its own literal braces.
         raise ValueError(
             f"title={title!r} is a per-frame format pattern (it contains "
             f"'{_TITLE_INDEX_FIELD}'), but the data passed to plot() has no "
@@ -1818,10 +2686,16 @@ def _title_head_row(ctx, n_rows):
     ONE rule, deliberately, because a per-style rule would make the same
     pattern mean different things on the same data:
 
-    * **serial** reveals (``order='serial'``, ``animate='morph'``): the
-      last revealed row of the dataset being revealed right now, rescaled
-      onto the input's own row count (`plot` interpolates line data onto
-      the frame grid, so a drawn row is not an input row).
+    * **serial** reveals (``order='serial'``): the rows revealed SO FAR
+      across every dataset -- those already complete plus the revealed
+      part of the one being drawn now -- as a fraction of all rows,
+      rescaled onto the input's own row count (`plot` interpolates line
+      data onto the frame grid, so a drawn row is not an input row). It
+      is cumulative on purpose: rescaling only the CURRENT dataset's
+      reveal made the head jump back to row 0 every time the next dataset
+      started, so a companion panel (and a ``{index}`` title) ran
+      0 -> 20 -> 10 -> 0 -> 39 over a three-dataset reveal instead of
+      advancing in lockstep.
     * **every other animated style** (``True``/``'parallel'``/
       ``'window'``/``'spin'``): ``round(ctx.progress * (n_rows - 1))`` --
       all datasets advance together, so the head fraction IS the
@@ -1840,11 +2714,12 @@ def _title_head_row(ctx, n_rows):
     frac = 1.0 if ctx.progress is None else float(ctx.progress)
     if ctx.order == 'serial' and ctx.current_index is not None \
             and ctx.revealed_counts is not None:
-        i = ctx.current_index
-        if i < len(ctx.revealed_counts) and i < len(ctx.datasets):
-            drawn = len(ctx.datasets[i])
-            if drawn > 1:
-                frac = (ctx.revealed_counts[i] - 1) / (drawn - 1)
+        lengths = [len(d) for d in ctx.datasets]
+        counts = list(ctx.revealed_counts)[:len(lengths)]
+        total = sum(lengths)
+        revealed = sum(min(int(c), n) for c, n in zip(counts, lengths))
+        if total > 1:
+            frac = (revealed - 1) / (total - 1)
     return int(min(n_rows - 1, max(0, round(frac * (n_rows - 1)))))
 
 
@@ -1865,8 +2740,32 @@ def _make_title_pattern_resolver(pattern, row_indices):
         if index is None:
             return pattern
         value = index[_title_head_row(ctx, len(index))]
-        return pattern.format(index=value)
+        try:
+            return pattern.format(index=value)
+        except (KeyError, IndexError, ValueError, TypeError,
+                AttributeError) as exc:
+            # str.format's own errors are bare ('other', 'Invalid format
+            # specifier'), and they surface AFTER the pipeline has run;
+            # say which kwarg, which pattern, and which value.
+            raise ValueError(
+                f"title={pattern!r} could not be formatted with "
+                f"index={value!r} ({type(exc).__name__}: {exc}). The only "
+                "field a pattern title can reference is {index}, with an "
+                "optional format spec the index value supports (e.g. "
+                "'{index:%B %Y}' for a DatetimeIndex).") from exc
     return _resolve
+
+
+def _resolve_dynamic_title_text(fn, ctx):
+    """Call a dynamic `title=` (callable or pattern resolver) for `ctx`
+    and insist on a string (1.1 release review T8): a callable returning
+    None or 42 was drawn as the literal 'None'/'42'."""
+    value = fn(ctx)
+    if not isinstance(value, str):
+        raise TypeError(
+            f"title= callable must return a str for every frame; got "
+            f"{type(value).__name__}: {value!r}.")
+    return value
 
 
 def _validate_loop(loop, style):
@@ -1919,7 +2818,14 @@ def _validate_dataset_fade(dataset_fade, style, order):
             "dataset_fade= must be a dict {'floor': ..., 'decay': ...} or a "
             f"(floor, decay) pair; got {type(dataset_fade).__name__}: "
             f"{dataset_fade!r}.")
-    floor, decay = float(floor), float(decay)
+    try:
+        floor, decay = float(floor), float(decay)
+    except (TypeError, ValueError) as exc:
+        raise TypeError(
+            "dataset_fade='s floor and decay must be numbers (floor: the "
+            "alpha an old dataset fades to, 0-1; decay: the per-dataset "
+            f"falloff, 0-1); got floor={floor!r}, decay={decay!r} "
+            f"({exc}).") from exc
     if not 0.0 <= floor <= 1.0:
         raise ValueError(
             f"dataset_fade='s floor must be between 0 and 1 (it is an "
@@ -2018,8 +2924,15 @@ def _validate_companion(companion, animate, backend_name):
     """
     if companion is None:
         return None
-    specs = ([companion] if isinstance(companion, dict)
-             else list(companion))
+    if isinstance(companion, dict):
+        specs = [companion]
+    elif isinstance(companion, (list, tuple)):
+        specs = list(companion)
+    else:
+        raise TypeError(
+            "companion= takes a dict describing one extra panel (or a list "
+            f"of such dicts); got {type(companion).__name__}: "
+            f"{companion!r}. See the companion= docstring for the keys.")
     if not animate:
         raise ValueError(
             "companion= panels are revealed in lockstep with an animation; "
@@ -2059,7 +2972,13 @@ def _validate_companion(companion, animate, backend_name):
                 f"companion= entry {i} has no data=; pass the series to "
                 "draw, as (n_rows,), (n_rows, 1) or (n_rows, 2) -- two "
                 "columns are read as (x, y).")
-        data = np.asarray(spec['data'], dtype=float)
+        try:
+            data = np.asarray(spec['data'], dtype=float)
+        except (TypeError, ValueError) as exc:
+            raise TypeError(
+                f"companion= entry {i}: data must be numeric, as "
+                "(n_rows,), (n_rows, 1) or (n_rows, 2); could not read "
+                f"{spec['data']!r} as numbers ({exc}).") from exc
         if data.ndim == 1:
             data = data[:, None]
         if data.ndim != 2 or data.shape[1] not in (1, 2):
@@ -2077,6 +2996,12 @@ def _validate_companion(companion, animate, backend_name):
                 f"'right'; got {position!r}.")
         smooth = spec.get('smooth')
         if smooth is not None:
+            if (isinstance(smooth, bool)
+                    or not isinstance(smooth, (int, np.integer))):
+                raise TypeError(
+                    f"companion= entry {i}: smooth= is a rolling-mean "
+                    "window in rows and must be an int of at least 2; got "
+                    f"{type(smooth).__name__}: {smooth!r}.")
             smooth = int(smooth)
             if smooth < 2:
                 raise ValueError(
@@ -2084,12 +3009,25 @@ def _validate_companion(companion, animate, backend_name):
                     f"window in rows and must be at least 2; got {smooth}.")
         hue = spec.get('hue')
         if hue is not None:
-            hue = np.asarray(hue, dtype=float).ravel()
+            try:
+                hue = np.asarray(hue, dtype=float).ravel()
+            except (TypeError, ValueError) as exc:
+                raise TypeError(
+                    f"companion= entry {i}: hue= must be one number per "
+                    f"row; could not read {spec['hue']!r} as numbers "
+                    f"({exc}).") from exc
             if hue.shape[0] != data.shape[0]:
                 raise ValueError(
                     f"companion= entry {i}: hue= has {hue.shape[0]} values "
                     f"but data has {data.shape[0]} rows.")
-        size = float(spec.get('size', 0.35))
+        try:
+            size = float(spec.get('size', 0.35))
+            pad = float(spec.get('pad', 0.10))
+        except (TypeError, ValueError) as exc:
+            raise TypeError(
+                f"companion= entry {i}: size= and pad= are figure "
+                f"fractions (numbers); got size={spec.get('size', 0.35)!r}, "
+                f"pad={spec.get('pad', 0.10)!r} ({exc}).") from exc
         if not 0.05 <= size <= 0.8:
             raise ValueError(
                 f"companion= entry {i}: size= is the panel's share of the "
@@ -2098,8 +3036,7 @@ def _validate_companion(companion, animate, backend_name):
             'reveal', True)), smooth=smooth, marker=bool(spec.get(
                 'marker', True)), position=position, size=size,
             xlabel=spec.get('xlabel'), ylabel=spec.get('ylabel'),
-            color=spec.get('color'), hue=hue,
-            pad=float(spec.get('pad', 0.10))))
+            color=spec.get('color'), hue=hue, pad=pad))
     return out
 
 
@@ -2149,7 +3086,8 @@ def _normalize_legend_colors(legend_colors):
     return items, None
 
 
-def subplots(nrows=1, ncols=1, ndims=3, size=None, **fig_kw):
+def subplots(nrows=1, ncols=1, ndims=3, size=None, backend='auto',
+             **fig_kw):
     """Create a figure and a FLAT array of hypertools-ready axes (GH #285).
 
     A thin wrapper over `matplotlib.pyplot.subplots` that sets the 3-D
@@ -2167,10 +3105,24 @@ def subplots(nrows=1, ncols=1, ndims=3, size=None, **fig_kw):
     pass ``panels=`` to `hyp.plot` instead; this helper is for grids you
     want to fill yourself (mixing hypertools panels with your own).
 
+    The same loop works on the plotly backend: ``backend='plotly'`` (or
+    ``'auto'`` while `hyp.set_interactive_backend('plotly')` is active)
+    returns a `plotly.subplots.make_subplots` figure and a flat array of
+    grid CELLS that `hyp.plot(..., ax=cell)` draws into -- each call moves
+    its whole panel (traces, axes and frame, `title=`, `labels=`, and its
+    own legend/colorbar beside the cell) into that cell, and returns the
+    grid figure. The grid is laid out as tightly as `panels=` draws it;
+    the first cell that receives a legend or colorbar makes the grid grow
+    room for one beside every cell (the cells already drawn move with it).
+
     Parameters
     ----------
     nrows, ncols : int
         Grid shape (default 1x1).
+    backend : {'auto', 'matplotlib', 'plotly'}
+        Which backend's grid to build (default ``'auto'``: the active
+        one, matplotlib unless `hyp.set_interactive_backend` says
+        otherwise).
     ndims : int
         3 (default) gives every panel a 3-D projection; 1 or 2 gives
         ordinary 2-D axes. Matches `hyp.plot`'s `ndims=`.
@@ -2178,20 +3130,53 @@ def subplots(nrows=1, ncols=1, ndims=3, size=None, **fig_kw):
         Figure size in inches (`figsize`); `None` keeps matplotlib's.
     **fig_kw
         Forwarded to `matplotlib.pyplot.subplots` (`sharex=`, `dpi=`,
-        `gridspec_kw=`, an explicit `subplot_kw=`, ...).
+        `gridspec_kw=`, an explicit `subplot_kw=`, ...) or, under plotly,
+        to `plotly.subplots.make_subplots` (`vertical_spacing=`,
+        `subplot_titles=`, `shared_xaxes=`, ...).
 
     Returns
     -------
-    fig : matplotlib.figure.Figure
+    fig : matplotlib.figure.Figure or plotly.graph_objects.Figure
     axes : numpy.ndarray
-        A FLAT (1-D) array of ``nrows * ncols`` axes, row-major -- no
-        ``.ravel()`` needed, and a 1x1 grid still returns a length-1 array
-        rather than a bare Axes, so the same loop works for any grid.
+        A FLAT (1-D) array of ``nrows * ncols`` axes (matplotlib) or grid
+        cells (plotly), row-major -- no ``.ravel()`` needed, and a 1x1 grid
+        still returns a length-1 array rather than a bare Axes, so the
+        same loop works for any grid.
     """
     if ndims not in (1, 2, 3):
         raise ValueError(
             f"ndims must be 1, 2 or 3 (the plot dimensionality each panel "
             f"is drawn in); got {ndims!r}.")
+    if resolve_backend(backend) == 'plotly':
+        from .plotly_backend import (PANEL_TITLE_PX, PlotlyCell,
+                                     _hyper_figure_class, make_panel_grid)
+        # room beside every cell for the legend/colorbar a cell's own
+        # `hyp.plot(..., ax=cell, legend=True)` call may add (`panels=`
+        # sizes this from the panels it has already drawn; a grid filled
+        # later cannot, so it reserves one legend's width up front)
+        # ...and above every row for the one-line title such a call may
+        # set, so a titled cell does not have to shift the grid down. No
+        # gutter yet: the grid grows one beside every cell the first time
+        # a cell actually receives a legend or colorbar
+        # (`plotly_backend.ensure_panel_gutter`), so a grid whose cells
+        # never ask for one stays as tight as `panels=` draws it.
+        grid = make_panel_grid(nrows, ncols, ndims, size=size,
+                               gutter_px=0, title_px=PANEL_TITLE_PX,
+                               **fig_kw)
+        grid.layout.meta = {**(dict(grid.layout.meta)
+                               if isinstance(grid.layout.meta, dict) else {}),
+                            'hyp_grid': dict(
+                                nrows=int(nrows), ncols=int(ncols),
+                                ndims=int(ndims),
+                                size=(None if size is None
+                                      else [float(v) for v in size]),
+                                gutter_px=0, title_px=PANEL_TITLE_PX,
+                                make_subplots_kw=dict(fig_kw))}
+        fig = _hyper_figure_class()(grid)
+        cells = np.empty(nrows * ncols, dtype=object)
+        cells[:] = [PlotlyCell(fig, i // ncols + 1, i % ncols + 1, i, ndims)
+                    for i in range(nrows * ncols)]
+        return fig, cells
     subplot_kw = dict(fig_kw.pop('subplot_kw', None) or {})
     if ndims >= 3:
         subplot_kw.setdefault('projection', '3d')
@@ -2203,18 +3188,52 @@ def subplots(nrows=1, ncols=1, ndims=3, size=None, **fig_kw):
     return fig, flat
 
 
-def _resolve_panel_grid(panels, n_panels, _name='panels'):
+def _auto_panel_grid(n_panels, size=None):
+    """The ``(nrows, ncols)`` grid ``panels=True`` uses for `n_panels`
+    panels in a figure of `size` (inches; matplotlib's default figure size
+    when None).
+
+    Every panel is a square-ish box (a 3-D axes keeps its box aspect), so
+    the useful measure of a candidate grid is the side of the square that
+    fits its cell: ``min(width / ncols, height / nrows)``. The grid with
+    the largest side wins, except that a grid with NO spare cell is
+    preferred whenever its side is at least three quarters of the best
+    one -- three panels in a wide or default-sized figure form a row
+    rather than a 2x2 with a hole, five panels still take 2x3 because
+    a single row would shrink them to less than that.
+    """
+    if size is None:
+        size = plt.rcParams['figure.figsize']
+    width, height = float(size[0]), float(size[1])
+    candidates = []
+    for ncols in range(1, n_panels + 1):
+        nrows = int(np.ceil(n_panels / ncols))
+        side = min(width / ncols, height / nrows)
+        candidates.append((side, nrows * ncols - n_panels, nrows, ncols))
+    best_side = max(c[0] for c in candidates)
+    exact = [c for c in candidates if c[1] == 0]
+    if exact:
+        side, _holes, nrows, ncols = max(exact, key=lambda c: (c[0], -c[2]))
+        if side >= 0.75 * best_side:
+            return nrows, ncols
+    _side, _holes, nrows, ncols = max(
+        candidates, key=lambda c: (c[0], -c[1], -c[2]))
+    return nrows, ncols
+
+
+def _resolve_panel_grid(panels, n_panels, size=None, _name='panels'):
     """Resolve `panels=` into an ``(nrows, ncols)`` grid holding at least
     `n_panels` cells.
 
-    ``True``/``'auto'`` picks a near-square grid (at most ``ceil(sqrt(n))``
-    columns, so 3 datasets -> 2x2 with one spare hidden, 6 -> 3x2); an
-    ``int`` is the number of COLUMNS; an ``(nrows, ncols)`` pair is used
-    verbatim (and must have room for every panel).
+    ``True``/``'auto'`` picks the grid from the figure's aspect ratio
+    (`size`, inches), preferring one without a spare cell -- see
+    `_auto_panel_grid` (3 panels -> a row in a default or wide figure, a
+    column in a tall one; 4 -> 2x2; 6 -> 2x3); an ``int`` is the number of
+    COLUMNS; an ``(nrows, ncols)`` pair is used verbatim (and must have
+    room for every panel).
     """
     if panels is True or (isinstance(panels, str) and panels == 'auto'):
-        ncols = int(np.ceil(np.sqrt(n_panels)))
-        return int(np.ceil(n_panels / ncols)), ncols
+        return _auto_panel_grid(n_panels, size)
     if isinstance(panels, (tuple, list)) and len(panels) == 2 \
             and all(isinstance(v, (int, np.integer))
                     and not isinstance(v, bool) for v in panels):
@@ -2243,11 +3262,37 @@ def _resolve_panel_grid(panels, n_panels, _name='panels'):
 
 #: `plot()` keywords that carry ONE entry per DATASET when passed as a
 #: list, and are therefore narrowed to the panel's own dataset by
-#: `_plot_panels`. Anything not listed here is forwarded unchanged.
+#: `_panel_narrow_kwargs`. Anything not listed here (and not handled by
+#: one of the dedicated slicers below) is forwarded unchanged.
+#: `tests/test_plot_panels_audit.py` checks this roster against the
+#: `plot()` docstring's "per dataset" arguments, so a new one cannot be
+#: forgotten silently.
 _PANEL_PER_DATASET_KWARGS = (
-    'fmt', 'color', 'colors', 'alpha', 'markers', 'markersize', 'linewidth',
-    'linestyles', 'names', 'chemtrails', 'precog', 'bullettime', 'surface',
-    'density',
+    'fmt', 'marker', 'markers', 'linestyle', 'linestyles', 'color',
+    'colors', 'alpha', 'markersize', 'linewidth', 'names', 'chemtrails',
+    'precog', 'bullettime', 'surface', 'density',
+    # `truth=` is one held-out continuation per dataset (1.1 review, P1)
+    'truth',
+)
+
+#: ...the ones whose list form is one entry per FORECAST -- one per
+#: dataset for a single `predict=` model, and for a COLLECTION either one
+#: per MODEL (forwarded unchanged: every panel draws every model) or one per
+#: forecast in model-major order (release audit 2026-09-07, finding 4).
+#: `forecast_palette=` is per forecast only when nothing groups them.
+_PANEL_PER_FORECAST_KWARGS = ('forecast_hue', 'forecast_fmt',
+                              'forecast_palette')
+
+#: kwargs the SHARED-fit probe must not see: it runs the analysis pipeline
+#: with `predict=None`, and each of these either requires `predict=`
+#: (`plot()` raises otherwise) or styles the per-panel overlays that the
+#: probe never draws.
+_PANEL_PROBE_DROPPED_KWARGS = (
+    'predict', 'truth', 'forecast_hue', 'forecast_cluster',
+    'forecast_n_clusters', 'forecast_palette', 'forecast_fmt',
+    # validated against predict= -- kept alone it refused itself ("requires
+    # predict=") in a probe that had dropped predict= (1.1 review, F5)
+    'forecast_trail',
 )
 
 #: ...and the one that carries a value per OBSERVATION (flat), a
@@ -2257,13 +3302,249 @@ _PANEL_PER_DATASET_KWARGS = (
 #: own slicer below rather than sharing this one.
 _PANEL_PER_OBSERVATION_KWARGS = ('hue',)
 
+#: per-dataset arguments with a slicer of their own (a shape or a meaning
+#: the plain per-dataset rule does not cover); listed so the roster test
+#: can account for every documented per-dataset argument.
+_PANEL_SPECIAL_KWARGS = ('hue', 'labels', 'palette', 'legend', 'predict',
+                         'title')
 
-def _panel_slice_per_dataset(value, index, n_datasets):
+#: colour kwargs whose 3/4-number tuple is ONE colour, not one entry per
+#: dataset (`_is_single_color`). Every other per-dataset list -- notably
+#: ``alpha=[0.3, 0.6, 0.9]`` for three datasets -- is sliced as a list.
+_PANEL_COLOR_KWARGS = ('color', 'colors')
+
+
+def _panel_slice_per_dataset(value, index, n_datasets, single_color=False):
     """Narrow a per-dataset list down to panel `index`'s single dataset."""
     if isinstance(value, (list, tuple)) and len(value) == n_datasets \
-            and not _is_single_color(value):
+            and not (single_color and _is_single_color(value)):
         return [value[index]]
     return value
+
+
+def _panel_slice_palette(palette, index, n_datasets):
+    """Narrow a PER-DATASET `palette=` list (``['viridis', 'magma']``, a
+    list of colour lists, a list of ``{category: color}`` dicts -- see
+    `palette=`) to panel `index`'s own entry, as a one-entry per-dataset
+    list (which `plot()` broadcasts to the panel's single dataset). A list
+    that is one palette of explicit colours is a single palette and is
+    forwarded whole, exactly as the single-axes call reads it."""
+    if (_looks_like_dataset_palettes(palette)
+            and len(palette) == n_datasets):
+        return [palette[index]]
+    return palette
+
+
+def _panel_slice_legend(legend, index, n_datasets, kw):
+    """Narrow a `legend=` LIST to panel `index` when its entries name the
+    DATASETS -- i.e. nothing regroups the drawn traces (`hue=`, `cluster=`
+    or `n_clusters=`), so "one entry per drawn dataset/group" is one per
+    dataset. Under a grouping the entries name the groups, which every
+    panel resolves for itself, and the list is forwarded unchanged."""
+    if not isinstance(legend, (list, tuple)) or len(legend) != n_datasets:
+        return legend
+    if (kw.get('hue') is not None or kw.get('cluster')
+            or kw.get('n_clusters') is not None):
+        return legend
+    return [legend[index]]
+
+
+def _panel_slice_legend_colors(legend_colors, index, n_datasets, kw):
+    """Narrow a plain `legend_colors=` colour LIST to panel `index`.
+
+    On one axes a plain list recolours the legend's entries in order: one
+    per dataset first, then the entries every dataset shares (the forecast
+    model(s), ``truth``). Each panel's legend lists ITS dataset and those
+    shared entries, so it gets its dataset's colour followed by the shared
+    colours -- forwarding the whole list made every panel refuse it ("has 2
+    entries but the legend has 1", 1.1 release review), though the same
+    call works on one axes. Only when the entries name the DATASETS
+    (nothing regroups the traces, as in `_panel_slice_legend`); a
+    ``(label, color)`` pair list defines a whole legend and is forwarded to
+    every panel unchanged, as is anything `plot()` must report itself."""
+    try:
+        recolor, _ = _normalize_legend_colors(legend_colors)
+    except (TypeError, ValueError):
+        return legend_colors
+    if recolor is None or len(recolor) < n_datasets:
+        return legend_colors
+    if (kw.get('hue') is not None or kw.get('cluster')
+            or kw.get('n_clusters') is not None):
+        return legend_colors
+    return [recolor[index]] + list(recolor[n_datasets:])
+
+
+def _panel_forecast_models(predict):
+    """How many forecasts each dataset gets from `predict=`: one for a
+    single spec, one per model for a collection -- split with the SAME
+    splitter `plot()` and `hyp.predict` use, so the counts agree."""
+    if predict is None:
+        return 0
+    from ..predict.backtest import model_collection as _model_collection
+    from ..predict.predict import _FORECASTER_ALIASES, FORECASTERS
+    from ..core.shared import supported_names as _supported_names
+    _collection = _model_collection(
+        predict, _supported_names(FORECASTERS), _FORECASTER_ALIASES,
+        caller='hyp.plot')
+    return 1 if _collection is None else len(_collection[0])
+
+
+def _panel_forecast_labels(hue, n_datasets, n_models):
+    """`forecast_hue=` as one label per forecast in MODEL-MAJOR order, the
+    order `plot()` keeps a collection's forecasts in (forecast ``k *
+    n_datasets + d`` is model ``k``'s forecast of dataset ``d``): a
+    per-DATASET list is broadcast over every model's forecast of that
+    dataset, a model-major list is taken as is. None for any other shape
+    (`plot()` reports it) and for a bare string (`plot()` rejects it)."""
+    if hue is None or isinstance(hue, (str, bytes)):
+        return None
+    if is_series_like(hue):
+        # a pandas / polars Series or Index (any series-like datawrangler
+        # recognises) is a label vector like a list (Codex round 11)
+        hue = np.asarray(hue).ravel()
+    if not isinstance(hue, (list, tuple, np.ndarray)):
+        return None
+    labels = list(hue)
+    if len(labels) == n_datasets:
+        return [labels[d] for _ in range(n_models) for d in range(n_datasets)]
+    if len(labels) == n_datasets * n_models:
+        return labels
+    return None
+
+
+def _panel_pick_model_major(seq, index, n_datasets, n_models):
+    """Panel `index`'s own entries of a model-major per-forecast list."""
+    return [seq[k * n_datasets + index] for k in range(n_models)]
+
+
+def _panel_slice_forecast_kwargs(kw, index, n_datasets):
+    """Narrow the per-FORECAST kwargs (`_PANEL_PER_FORECAST_KWARGS`) to
+    panel `index`, reproducing the single-axes figure's assignment:
+
+    - `forecast_hue=`: one value per dataset, or one per forecast
+      model-major -> the panel's own value(s), model-major.
+    - `forecast_fmt=`: one per forecast (per dataset for a single model,
+      model-major for a collection) -> the panel's own; one per MODEL is
+      forwarded unchanged (every panel draws every model).
+    - `forecast_palette=`: with a list-valued `forecast_hue=` the grid's
+      label -> colour map is resolved ONCE (with the palette the single-
+      axes call would use) and each panel receives its own labels' colours
+      in its own first-appearance order, so a label keeps one colour
+      across panels; with nothing to group by and a single model it is
+      spent one colour per forecast, so the panel receives its forecast's
+      colour. A collection's per-MODEL palette is forwarded unchanged.
+    """
+    predict = kw.get('predict')
+    if predict is None:
+        return
+    n_models = _panel_forecast_models(predict)
+    n_forecasts = n_datasets * n_models
+    fc_hue, fc_fmt = kw.get('forecast_hue'), kw.get('forecast_fmt')
+    fc_palette, fc_cluster = kw.get('forecast_palette'), kw.get('forecast_cluster')
+
+    labels = _panel_forecast_labels(fc_hue, n_datasets, n_models)
+    if labels is not None:
+        kw['forecast_hue'] = _panel_pick_model_major(
+            labels, index, n_datasets, n_models)
+        # the palette is resolved against the WHOLE grid's labels, in
+        # the single-axes call's own order (`_forecast_label_colors`),
+        # and the panel gets the colours of its own labels in the order
+        # it will first see them -- an unlabeled forecast takes no slot
+        # (`is_missing_label`), exactly as `resolve_forecast_overrides`
+        # reads it
+        from .colors import is_missing_label
+        from .forecast import _forecast_label_colors
+        _labels = [None if is_missing_label(v) else v for v in labels]
+        _colours = _forecast_label_colors(
+            _labels, 'hls' if fc_palette is None else fc_palette)
+        _own = _panel_pick_model_major(_labels, index, n_datasets, n_models)
+        _own_colours = _panel_pick_model_major(
+            _colours, index, n_datasets, n_models)
+        # one slot per DISTINCT LABEL, not per distinct colour: the
+        # panel's `resolve_forecast_overrides` spends the palette one
+        # colour per label it sees, so two labels that share a colour on
+        # purpose (``forecast_palette=['red', 'red']``, a palette name
+        # that cycles) must keep two entries (Codex round 6)
+        _seen, _ordered = [], []
+        for _label, _colour in zip(_own, _own_colours):
+            if _label is not None and _label not in _seen:
+                _seen.append(_label)
+                _ordered.append(_colour)
+        if _ordered:
+            kw['forecast_palette'] = _ordered
+    elif (fc_palette is not None and fc_hue is None and fc_cluster is None
+            and n_models == 1):
+        from .forecast import _forecast_label_colors
+        kw['forecast_palette'] = [_forecast_label_colors(
+            list(range(n_datasets)), fc_palette)[index]]
+
+    if (isinstance(fc_fmt, (list, tuple)) and len(fc_fmt) == n_forecasts
+            and n_forecasts != n_models):
+        kw['forecast_fmt'] = _panel_pick_model_major(
+            list(fc_fmt), index, n_datasets, n_models)
+
+
+def _panel_bind_forecaster(predict, index, n_datasets):
+    """`predict=` for panel `index`: a forecaster already FITTED on several
+    datasets (``hyp.predict([a, b], return_model=True)``) is bound to this
+    panel's dataset with `Forecaster.for_dataset`, so `predict_new` reuses
+    that dataset's learned parameters instead of refusing a dataset-count
+    mismatch -- the binding the ordinary path gets from pairing new
+    datasets with fitted models by position, and the animated schedule
+    from `hypertools.plot.forecast.forecast_displacements`. Applied inside
+    a collection (list/tuple or ``{name: spec}`` mapping) too. A forecaster
+    fitted on ONE dataset is reused for every panel, as it is for every
+    dataset of a single-axes call."""
+    if isinstance(predict, (list, tuple)):
+        bound = [_panel_bind_forecaster(p, index, n_datasets)
+                 for p in predict]
+        return bound if isinstance(predict, list) else tuple(bound)
+    if isinstance(predict, dict) and predict and not (
+            predict.keys() & {'model', 'args', 'kwargs', 'params'}):
+        return {k: _panel_bind_forecaster(v, index, n_datasets)
+                for k, v in predict.items()}
+    n_fitted = len(getattr(predict, 'models_', ()))
+    if hasattr(predict, 'for_dataset') and n_fitted > 1:
+        if n_fitted != n_datasets:
+            raise ValueError(
+                f"predict= is a forecaster fitted on {n_fitted} dataset(s), "
+                f"but panels= draws {n_datasets}; a forecaster fitted on "
+                "several datasets is applied dataset by dataset (panel i "
+                "reuses fitted model i), so fit it on the same datasets, "
+                "or pass one fitted on a single dataset to reuse it for "
+                "every panel.")
+        return predict.for_dataset(index)
+    return predict
+
+
+def _panel_narrow_kwargs(kw, index, n_datasets, lengths):
+    """Narrow every per-dataset / per-observation / per-forecast argument in
+    `kw` (one panel's `plot()` kwargs, modified in place) to panel `index`:
+    the ONE rule both `panel_fit=` modes apply, so the docstring's "one per
+    dataset" forms describe the whole grid either way (P3)."""
+    for key in _PANEL_PER_DATASET_KWARGS:
+        if key in kw:
+            kw[key] = _panel_slice_per_dataset(
+                kw[key], index, n_datasets,
+                single_color=key in _PANEL_COLOR_KWARGS)
+    for key in _PANEL_PER_OBSERVATION_KWARGS:
+        if kw.get(key) is not None:
+            kw[key] = _panel_slice_per_observation(kw[key], index, lengths)
+    if kw.get('labels') is not None:
+        kw['labels'] = _panel_slice_labels(kw['labels'], index, lengths)
+    if kw.get('palette') is not None:
+        kw['palette'] = _panel_slice_palette(kw['palette'], index,
+                                             n_datasets)
+    if kw.get('legend_colors') is not None:
+        kw['legend_colors'] = _panel_slice_legend_colors(
+            kw['legend_colors'], index, n_datasets, kw)
+    if kw.get('legend') is not None:
+        kw['legend'] = _panel_slice_legend(kw['legend'], index, n_datasets,
+                                           kw)
+    if kw.get('predict') is not None:
+        _panel_slice_forecast_kwargs(kw, index, n_datasets)
+        kw['predict'] = _panel_bind_forecaster(kw['predict'], index,
+                                               n_datasets)
 
 
 def _panel_slice_per_observation(value, index, lengths):
@@ -2276,12 +3557,16 @@ def _panel_slice_per_observation(value, index, lengths):
     forwarded unchanged so `plot()`'s own validation reports it.
     """
     n_datasets = len(lengths)
-    if not isinstance(value, (list, tuple, np.ndarray, pd.Series, pd.Index)):
+    if not (isinstance(value, (list, tuple)) or is_array_dataset(value)
+            or is_series_like(value)):
         return value
     seq = list(value)
     if len(seq) == n_datasets and all(
             np.ndim(el) >= 1 and len(el) == n for el, n in zip(seq, lengths)):
-        return [seq[index]]
+        # the panel plots ONE dataset, whose hue is the flat per-observation
+        # sequence itself: wrapped in a list it was read as a single entry
+        # ("hue has 1 entry but the data has 30 observations"; P3)
+        return seq[index]
     if len(seq) == n_datasets and all(np.ndim(el) == 0 for el in seq):
         # per-DATASET scalar broadcast (GH #285): one value per dataset
         return [seq[index]] * lengths[index]
@@ -2351,6 +3636,20 @@ def _resolve_label_anchor(label_anchor, length):
         f"row index; got {label_anchor!r}.")
 
 
+def _validate_label_anchor_value(label_anchor):
+    """`label_anchor=` must be a recognised anchor name or an int; checked
+    up front, independent of `labels=` (1.1 release review T8)."""
+    if label_anchor is None or label_anchor in ('first', 'center',
+                                                'middle', 'last'):
+        return
+    if isinstance(label_anchor, (int, np.integer)) \
+            and not isinstance(label_anchor, bool):
+        return
+    raise ValueError(
+        f"label_anchor= must be 'first', 'center', 'last', or an integer "
+        f"row index; got {label_anchor!r}.")
+
+
 def _is_per_dataset_labels(labels, dataset_lengths):
     """Whether `labels=` carries one entry per DATASET rather than one per
     OBSERVATION (GH #285).
@@ -2369,6 +3668,40 @@ def _is_per_dataset_labels(labels, dataset_lengths):
     if sum(dataset_lengths) == len(labels):
         return False
     return all(el is None or isinstance(el, str) for el in labels)
+
+
+def _labels_as_lists(labels, n_datasets):
+    """A nested per-dataset `labels=` whose entries are 1-D ARRAYS or Series
+    (``[np.array([...]), pd.Series([...])]``), as the nested LIST form every
+    consumer reads. Only lists and tuples counted as nested, so arrays were
+    read as two entries for ``n`` observations and rejected on one axes --
+    while `panels=` accepted them (1.1 release review). Anything else,
+    including a per-dataset list of strings, is returned unchanged."""
+    if not isinstance(labels, (list, tuple)) or len(labels) != n_datasets:
+        return labels
+    if not any(is_array_dataset(el) or is_series_like(el) for el in labels):
+        return labels
+    out = []
+    for el in labels:
+        if is_array_dataset(el) or is_series_like(el):
+            arr = np.asarray(el, dtype=object)
+            if arr.ndim != 1:
+                # not one label per row; `_validate_labels_length` reports
+                return labels
+            out.append(arr.tolist())
+        else:
+            out.append(el)
+    return out
+
+
+def _flatten_dataset_labels(labels):
+    """A nested per-dataset `labels=` (one sub-list per dataset) as the flat
+    one-entry-per-observation list; a flat one is returned unchanged."""
+    if not isinstance(labels, (list, tuple)) or not any(
+            isinstance(el, (list, tuple)) for el in labels):
+        return labels
+    return [lbl for el in labels
+            for lbl in (el if isinstance(el, (list, tuple)) else [el])]
 
 
 def _expand_dataset_labels(labels, dataset_lengths, label_anchor):
@@ -2409,18 +3742,139 @@ def _panel_slice_labels(value, index, lengths):
     per-dataset hue is broadcast would label every observation.
     """
     n_datasets = len(lengths)
-    if not isinstance(value, (list, tuple, np.ndarray)):
+    if not (isinstance(value, (list, tuple)) or is_array_dataset(value)):
         return value
     seq = list(value)
     if len(seq) == n_datasets and any(
-            isinstance(el, (list, tuple, np.ndarray)) for el in seq):
-        return [seq[index]]                       # nested per-dataset form
+            isinstance(el, (list, tuple)) or is_array_dataset(el)
+            for el in seq):
+        # nested per-dataset form: the panel's single dataset takes its own
+        # per-observation sequence, flat (a one-entry list would be read as
+        # one label for n observations; P3)
+        return seq[index]
     if _is_per_dataset_labels(seq, lengths):
         return [seq[index]]                       # per-dataset strings
     if len(seq) == int(sum(lengths)):             # flat, per observation
         start = int(sum(lengths[:index]))
         return seq[start:start + lengths[index]]
     return value
+
+
+class _PanelLift:
+    """How one NARROW panel's analyzed rows are placed in a 3-D grid cell
+    (a 1- or 2-column dataset beside 3-column ones, `panel_fit=
+    'independent'`): 2-wide rows on the cell's floor (``z=0``); a
+    1-column series as ``(x, value, 0)`` where x is what `ndims=1` series
+    mode draws the series against -- the source frame's own numeric row
+    index when it has one (`_series_x_axis`), otherwise the row position
+    (a date index is drawn by position: a 3-D scene has no date axis).
+
+    The lift is a PLACEMENT, applied by the panel's own `plot()` call at
+    draw time, not a change of the data: the panel forecasts, resolves
+    `truth=` and reports its bundle in the analyzed (narrow) space, the
+    same numbers the individual ``hyp.plot(dataset)`` call produces, and
+    only the drawn rows, forecasts and truths are lifted. Round 8 padded
+    the rows BEFORE the panel call and handed the padded ``(index, value,
+    0)`` rows to the forecaster: a one-column panel's Kalman forecast then
+    differed from its individual call by 1.5, a forecaster fitted on the
+    one-column data refused the three padded features, and a one-column
+    `truth=` was rejected against a three-column trace (round 9)."""
+
+    __slots__ = ('width', 'x_values', 'step')
+
+    def __init__(self, width, x_values=None, step=1.0):
+        self.width = int(width)
+        self.x_values = (None if x_values is None
+                         else np.asarray(x_values, dtype=float))
+        self.step = float(step)
+
+    def __repr__(self):
+        return f"_PanelLift(width={self.width}, step={self.step})"
+
+    def _x(self, n_rows):
+        if self.x_values is not None and len(self.x_values) == n_rows:
+            return self.x_values
+        return np.arange(float(n_rows))
+
+    def rows(self, arr):
+        """The analyzed rows `arr` as the 3-column rows the cell draws."""
+        arr = np.asarray(arr, dtype=float)
+        if arr.ndim == 1:
+            arr = arr.reshape(-1, 1)
+        if arr.ndim != 2 or arr.shape[1] >= 3:
+            return arr
+        n_rows = arr.shape[0]
+        if arr.shape[1] == 2:
+            return np.column_stack([arr, np.zeros(n_rows)])
+        return np.column_stack([self._x(n_rows), arr[:, 0],
+                                np.zeros(n_rows)])
+
+    def continuation(self, arr):
+        """A forecast/truth overlay `arr` -- its trace's last observed row
+        followed by the `t` rows continuing it (`_compute_forecasts`,
+        `_resolve_truth`) -- lifted the way the rows it continues are: a
+        series continues the row index by one `step` per row."""
+        arr = np.asarray(arr, dtype=float)
+        if arr.ndim == 1:
+            arr = arr.reshape(-1, 1)
+        if arr.ndim != 2 or arr.shape[1] >= 3:
+            return arr
+        n_rows = arr.shape[0]
+        if arr.shape[1] == 2:
+            return np.column_stack([arr, np.zeros(n_rows)])
+        x_last = float(self.x_values[-1]) if (
+            self.x_values is not None and len(self.x_values)) else 0.0
+        x = x_last + self.step * np.arange(n_rows, dtype=float)
+        return np.column_stack([x, arr[:, 0], np.zeros(n_rows)])
+
+
+def _panel_lift_for(xi, source):
+    """The `_PanelLift` that places one panel's analyzed rows `xi` in a
+    3-D grid cell, or None when they are 3-wide already (drawn as they
+    are). `source` is the panel's input dataset, whose row index is the
+    x axis a 1-column series is drawn against."""
+    xi = np.asarray(xi)
+    if xi.ndim == 1:
+        xi = xi.reshape(-1, 1)
+    if xi.ndim != 2 or xi.shape[1] >= 3:
+        return None
+    n_rows = xi.shape[0]
+    if xi.shape[1] == 2:
+        return _PanelLift(2)
+    index = None
+    if is_frame_dataset(source):
+        index = as_pandas_dataframe(source).index
+    elif is_series_like(source):
+        index = getattr(source, 'index', None)
+    if not isinstance(index, pd.Index) or isinstance(index, pd.MultiIndex):
+        index = None
+    x_values, step, is_date, _ = _series_x_axis(index, n_rows)
+    if is_date:
+        x_values, step = np.arange(float(n_rows)), 1.0
+    return _PanelLift(1, x_values=x_values, step=step)
+
+
+def _panel_frame(source, xi):
+    """The analyzed rows `xi` of one shared-fit panel, re-labelled with the
+    source dataset's row index (and, when the width survived the pipeline,
+    its column names) so `plot()` captures them exactly as it would for the
+    raw frame: `ndims=1` series mode then draws dates on x and names y after
+    the column (P2). The values are `xi`'s -- the panel is drawn through
+    ``transform=`` and never re-analyzes them."""
+    arr = np.asarray(xi)
+    if is_series_like(source) and hasattr(source, 'to_frame'):
+        source = source.to_frame()
+    if not is_frame_dataset(source) or arr.ndim != 2:
+        return arr
+    source = as_pandas_dataframe(source)
+    if (source.shape[0] != arr.shape[0]
+            or isinstance(source.index, pd.MultiIndex)):
+        return arr
+    columns = None
+    if (source.shape[1] == arr.shape[1]
+            and not isinstance(source.columns, pd.MultiIndex)):
+        columns = source.columns
+    return pd.DataFrame(arr, index=source.index, columns=columns)
 
 
 def _panel_titles(title, n_panels):
@@ -2456,11 +3910,11 @@ def _dataframe_axis_labels(x):
     same 13 single-axes calls kept them.
     """
     lbl_df = None
-    if isinstance(x, pd.DataFrame):
-        lbl_df = x
+    if is_frame_dataset(x):
+        lbl_df = as_pandas_dataframe(x)
     elif (isinstance(x, (list, tuple)) and len(x) == 1
-          and isinstance(x[0], pd.DataFrame)):
-        lbl_df = x[0]
+          and is_frame_dataset(x[0])):
+        lbl_df = as_pandas_dataframe(x[0])
     if (lbl_df is None or lbl_df.shape[1] > 3
             or lbl_df.index.nlevels != 1
             or isinstance(lbl_df.columns, (pd.RangeIndex, pd.MultiIndex))
@@ -2473,6 +3927,228 @@ def _dataframe_axis_labels(x):
                        return_labels=True)[1]
     except Exception:            # noqa: BLE001 - label sugar never breaks a plot
         return None
+
+def _panel_data_width(dataset):
+    """The column count of one ANALYZED dataset (a 1-D array counts as one
+    column), or None when it is not a numeric array."""
+    try:
+        arr = np.asarray(dataset)
+    except Exception:  # noqa: BLE001 - not array-like: width unknown
+        return None
+    if arr.dtype.kind not in 'biuf' or arr.ndim not in (1, 2):
+        return None
+    return 1 if arr.ndim == 1 else int(arr.shape[1])
+
+
+def _panel_cell_ndims(requested, datasets):
+    """The dimensionality of a panel grid's cells: `requested` (1, 2 or 3),
+    lowered to 2 when every ANALYZED dataset is narrower than three columns
+    -- exactly the axes the single-axes call gives that data (2-column data
+    on 2-D axes, 1-column data as an index-vs-value series). A requested
+    ``1`` (series mode) is always kept, and a dataset whose width cannot be
+    read (`_panel_data_width` -> None) keeps the requested cells.
+
+    `datasets` must be the rows the panels DRAW, i.e. the pipeline's
+    output: the raw column count says nothing about it (1.1 release
+    review, round 7: two raw columns through ``manip='Delay'`` come out
+    three wide, and cells lowered from the raw width refused or flattened
+    the 3-D result on both backends)."""
+    if requested <= 2 or not datasets:
+        return requested
+    widths = [_panel_data_width(d) for d in datasets]
+    if any(w is None for w in widths):
+        return requested
+    return requested if max(widths) >= 3 else 2
+
+
+class _PanelClusterLabels:
+    """The clustering a `panels=` probe fitted, replayed into the cell
+    that draws its rows (round 8). `labels` are the probe's per-observation
+    labels for exactly the rows the cell draws (a mixture model's
+    proportions included), `model` the resolved model name/class the probe
+    clustered with, and `spec` the caller's own `cluster=` value, which the
+    panel's bundle reports under ``models['cluster']``. Passed as the
+    panel call's ``cluster=``, `plot()` uses the labels as they are and
+    fits nothing -- before this, every panel re-clustered its analyzed
+    rows without the caller's `random_state` and drew clusters the seeded
+    single-axes call never drew.
+
+    `categories` is the probe's COMPLETE cluster label set, in the order
+    the single-axes call colours it (sorted, as `plot()`'s cluster branch
+    sorts hard labels): the label-to-colour mapping every cell of the grid
+    shares. A shared fit's per-dataset slice can miss a cluster entirely,
+    and colouring the slice from ITS OWN label set drew global clusters 1
+    and 0 in the same first palette colour in adjacent panels (round 9);
+    None for soft (mixture) labels, whose blends carry their own colours.
+    """
+
+    __slots__ = ('labels', 'model', 'spec', 'categories')
+
+    def __init__(self, labels, model, spec, categories=None):
+        self.labels = labels
+        self.model = model
+        self.spec = spec
+        self.categories = categories
+
+    def __repr__(self):
+        return (f"_PanelClusterLabels(model={self.model!r}, "
+                f"n={len(self.labels)})")
+
+
+def _hard_cluster_categories(labels):
+    """The sorted label set `plot()`'s cluster branch draws HARD cluster
+    `labels` in (first-appearance order when they do not sort), or None
+    for a soft (2-D, mixture-proportion) labelling."""
+    if labels is None:
+        return None
+    arr = np.asarray(labels)
+    if arr.ndim != 1:
+        return None
+    seen = list(dict.fromkeys(arr.tolist()))
+    try:
+        return sorted(seen)
+    except TypeError:
+        return seen
+
+
+def _replayed_cluster_colors(present, categories, palette):
+    """The colours of the cluster labels `present` (in drawn order) under
+    the SHARED mapping a `panels=` probe fitted: label ``categories[k]``
+    takes the k-th of the palette's ``len(categories)`` colours -- the
+    colour the single-axes call, which draws every category, gives it.
+    None when there is no shared mapping to apply: no `categories`, a
+    label the probe never produced, or a ``{category: color}`` palette,
+    which every path already resolves by NAME."""
+    if categories is None or isinstance(palette, collections.abc.Mapping):
+        return None
+    if any(c not in categories for c in present):
+        return None
+    import seaborn as sns
+    n = len(categories)
+    base = list(sns.color_palette(_seaborn_palette_arg(palette, n), n))
+    return [tuple(base[categories.index(c)]) for c in present]
+
+
+def _panel_cluster_labels(probe_labels, model, spec, rows=None,
+                          categories=None):
+    """`probe_labels` (a probe's ``models['cluster_labels']``) as the
+    `_PanelClusterLabels` one panel replays, sliced to `rows` (a
+    ``(start, stop)`` pair, for a shared fit's per-dataset slice) or taken
+    whole; None when the probe did not cluster. `categories` is the
+    probe's complete label set (see `_PanelClusterLabels`)."""
+    if probe_labels is None:
+        return None
+    if spec is None:
+        # `n_clusters=` alone: the single-axes call clusters with (and
+        # reports) KMeans
+        spec = 'KMeans'
+    labels = probe_labels
+    if rows is not None:
+        start, stop = rows
+        labels = labels[start:stop]
+    if isinstance(labels, np.ndarray) and labels.ndim == 1:
+        labels = labels.tolist()
+    return _PanelClusterLabels(labels, model, spec, categories=categories)
+
+
+def _panel_probe(data, kw, ndims, caught_warnings):
+    """Fit one panel grid's pipeline exactly as the equivalent single-axes
+    call fits it -- by MAKING that call (``return_model=True``, figure
+    thrown away) -- and hand back ``(xform, pipeline, clustering)``: the analyzed rows
+    (one array per input dataset; for ``ndims`` > 3 the 3-D display
+    projection the single-axes call drew, since a reduce=None panel cannot
+    draw wider rows, P4), the fitted pipeline, and the clustering the
+    call fitted -- ``(labels, model)``, the per-observation labels the
+    probe's figure was grouped by and the resolved model, or ``None``
+    without `cluster=`/`n_clusters=` -- which every panel replays instead
+    of clustering again (round 8). Every `panels=` mode goes through here,
+    and every panel is then DRAWN from these rows through ``transform=``,
+    so the cells' projection can be read off the data the pipeline
+    actually produced (round 7) and no panel ever fits twice.
+    Going through `plot()` itself -- rather than re-deriving
+    format_data/analyze here -- is what makes "a panel is analyzed exactly
+    as the single-axes call analyzes it" true by construction. The
+    warnings the call raises are appended to `caught_warnings` (see
+    `_reemit_panel_warnings`)."""
+    probe_kwargs = dict(kw)
+    probe_kwargs.update(return_model=True, show=False, save_path=None,
+                        colorbar=None, legend=None, labels=None,
+                        names=None, surface=None, density=None, title=None)
+    for key in _PANEL_PROBE_DROPPED_KWARGS:
+        probe_kwargs[key] = None
+    with warnings.catch_warnings(record=True) as caught:
+        # the fit's own warnings (a reducer's "connected components",
+        # a manip's resampling note) are emitted ONCE for the grid -- by
+        # `_reemit_panel_warnings`, after the panels are drawn, minus the
+        # draw-time ones every panel call repeats from the user's own
+        # kwargs (warning those twice is noise)
+        warnings.simplefilter('always')
+        probe = plot(data, **probe_kwargs)
+    caught_warnings.extend(caught)
+    probe_fig = probe.get('fig')
+    if isinstance(probe_fig, plt.Figure):
+        plt.close(probe_fig)
+    xform = [np.asarray(xi) for xi in probe['xform_data']]
+    # rows wider than a static axes can draw -- `ndims` > 3, or a
+    # `pipeline=` whose reduce stage kept more (round 7) -- were drawn by
+    # the single-axes call through ONE display projection to 3-D
+    # (`trace_data`, one entry per FINAL trace); the panels draw that
+    wide = any(xi.ndim == 2 and xi.shape[1] > 3 for xi in xform)
+    if (ndims is not None and ndims > 3) or wide:
+        trace = [np.asarray(xi) for xi in probe['trace_data']]
+        if len(trace) == len(xform):
+            xform = trace
+    clustering = None
+    models = probe.get('models') or {}
+    if models.get('cluster_labels') is not None:
+        clustering = (models['cluster_labels'], _panel_cluster_model(kw),
+                      _hard_cluster_categories(models['cluster_labels']))
+    return xform, probe.get('pipeline'), clustering
+
+
+def _panel_cluster_model(kw):
+    """The model name/class a panel call's `cluster=`/`n_clusters=`
+    resolves to, exactly as `plot()`'s cluster branch resolves it (a
+    string name, a dict spec's ``'model'``, a class, or an instance's
+    class; `n_clusters=` alone means KMeans) -- what the replayed
+    clustering reports as its model."""
+    spec = kw.get('cluster')
+    if spec is None:
+        return 'KMeans'
+    if isinstance(spec, bytes):
+        spec = spec.decode('utf-8')
+    if isinstance(spec, dict):
+        spec = spec.get('model', spec)
+    if isinstance(spec, (str, type)):
+        return spec
+    return type(spec)
+
+
+def _reemit_panel_warnings(probe_caught, draw_caught):
+    """Re-issue the warnings a panel grid's calls raised, each from its
+    original location: every draw-time warning (the panel calls warn from
+    the user's own kwargs, one per panel, as they always have), preceded
+    by the fit-time ones only the probes saw -- each of those ONCE, and
+    not at all when a panel call repeated it (round 7: the panels are
+    drawn through ``transform=``, so a reducer's own warning would
+    otherwise be lost with the probe's figure)."""
+    seen = {(w.category, str(w.message)) for w in draw_caught}
+    to_emit = [w for w in probe_caught
+               if (w.category, str(w.message)) not in seen]
+    emitted = set()
+    for w in list(to_emit) + list(draw_caught):
+        key = (w.category, str(w.message), w.filename, w.lineno)
+        if w in to_emit and key in emitted:
+            continue
+        emitted.add(key)
+        registry = None
+        for mod in list(sys.modules.values()):
+            if getattr(mod, '__file__', None) == w.filename:
+                registry = mod.__dict__.setdefault('__warningregistry__', {})
+                break
+        warnings.warn_explicit(w.message, w.category, w.filename, w.lineno,
+                               registry=registry)
+
 
 def _plot_panels(x, panels, call_kwargs, _name='panels'):
     """Draw one STATIC panel per dataset (or per `reduce=` entry) in a
@@ -2529,11 +4205,22 @@ def _plot_panels(x, panels, call_kwargs, _name='panels'):
                    else "") + ".")
         n_panels = len(datasets)
 
-    nrows, ncols = _resolve_panel_grid(panels, n_panels, _name=_name)
+    nrows, ncols = _resolve_panel_grid(panels, n_panels,
+                                       size=call_kwargs.get('size'), _name=_name)
     titles = _panel_titles(call_kwargs.get('title'), n_panels)
     ndims = call_kwargs.get('ndims', 3)
+    # ndims > 3 is analyzed at that dimensionality and DRAWN in 3-D, as the
+    # single-axes path does (P4): the grid's cells are at most 3-D...
+    panel_ndims = 3 if (ndims is None or ndims > 3) else ndims
+    # ...and are lowered to what the ANALYZED data needs below, once every
+    # panel's pipeline has run (`_panel_cell_ndims`)
     show = call_kwargs.get('show', True)
+    # validated and normalized (``~``, path-likes, a missing directory) up
+    # front, before any panel is analyzed or drawn -- the same rule the
+    # single-axes path applies (P5)
     save_path = call_kwargs.get('save_path')
+    if save_path is not None:
+        save_path = _normalize_save_path(save_path)
     return_model = call_kwargs.get('return_model', False)
     backend = resolve_backend(call_kwargs.get('backend', 'auto'))
 
@@ -2565,102 +4252,205 @@ def _plot_panels(x, panels, call_kwargs, _name='panels'):
             "of those panels already runs its own full pipeline over every "
             "dataset.")
 
+    # Every mode fits its pipeline(s) ONCE, through `plot()` itself
+    # (`_panel_probe`), and then draws each panel from the analyzed rows
+    # through `transform=`. The cells' projection is decided from those
+    # rows (round 7: two raw columns through a feature-expanding manip=/
+    # pipeline= are three wide after the analysis -- read from the raw
+    # input, the cells were 2-D, and the 3-D result was refused, flattened
+    # or rejected by plotly's 'xy' cell).
+    #: the shared fit's pipeline (panel_fit='shared' only); each panel's
+    #: own bundle carries its own fit in the other modes
+    shared_pipeline = None
+    #: the warnings the probes raised, re-issued once the grid is drawn
+    probe_warnings = []
+    #: per panel: the input datasets it draws (for their index/column
+    #: labels), its analyzed rows (one array per dataset), its fitted
+    #: pipeline, and its narrowed kwargs
     if per_panel_reduce:
-        panel_data = [x] * n_panels
+        # one panel per REDUCER, each a full pipeline over every dataset
+        sources = datasets if datasets is not None else [x]
+        panel_sources = [sources] * n_panels
         panel_kwargs = []
         for spec in reduce_spec:
             kw = dict(shared)
             kw['reduce'] = spec
             panel_kwargs.append(kw)
+        probes = [_panel_probe(x, kw, ndims, probe_warnings)
+                  for kw in panel_kwargs]
+        panel_xforms = [xf for xf, _, _ in probes]
+        panel_pipelines = [pipe for _, pipe, _ in probes]
+        # each reducer panel draws EVERY dataset: its probe's labels whole
+        panel_clusters = [
+            None if clus is None else _panel_cluster_labels(
+                clus[0], clus[1], kw.get('cluster'), categories=clus[2])
+            for (_, _, clus), kw in zip(probes, panel_kwargs)]
     elif panel_fit == 'independent':
-        # one FULL pipeline per panel: each panel call is byte-for-byte the
-        # ``hyp.plot(datasets[i], ax=axes[i], ...)`` the caller would have
-        # written, so nothing here fixes or slices the analysis. The raw
-        # dataset is handed over untouched, which also means `plot()`
-        # derives that panel's DataFrame-column axis labels itself.
-        panel_data = [[d] for d in datasets]
+        # one FULL pipeline per panel: each panel's fit is byte-for-byte
+        # the ``hyp.plot(datasets[i], ...)`` the caller would have written,
+        # so nothing here fixes or slices the analysis
+        panel_sources = [[d] for d in datasets]
+        lengths = [int(np.asarray(d).shape[0]) for d in datasets]
         panel_kwargs = []
         for i in range(n_panels):
             kw = dict(shared)
-            for key in _PANEL_PER_DATASET_KWARGS:
-                if key in kw:
-                    kw[key] = _panel_slice_per_dataset(kw[key], i, n_panels)
+            # per-dataset, per-observation and per-forecast kwargs narrow
+            # here too (P3): the docstring's "one per dataset / one per
+            # forecast" forms describe the whole grid in either panel_fit
+            # mode
+            _panel_narrow_kwargs(kw, i, n_panels, lengths)
             panel_kwargs.append(kw)
+        probes = [_panel_probe(panel_sources[i], panel_kwargs[i], ndims,
+                               probe_warnings)
+                  for i in range(n_panels)]
+        panel_xforms = [xf for xf, _, _ in probes]
+        panel_pipelines = [pipe for _, pipe, _ in probes]
+        # each probe clustered its own panel's rows: replayed whole
+        panel_clusters = [
+            None if clus is None else _panel_cluster_labels(
+                clus[0], clus[1], kw.get('cluster'), categories=clus[2])
+            for (_, _, clus), kw in zip(probes, panel_kwargs)]
     else:
         # ONE shared fit across every dataset: run the very call the user
         # would have made without panels=, take its analyzed (pre-display-
-        # rescale) data, and throw its figure away. Going through plot()
-        # itself -- rather than re-deriving format_data/analyze here -- is
-        # what makes "the panels share the pipeline exactly as the
-        # single-axes call does" true by construction rather than by
-        # transcription.
-        probe_kwargs = dict(shared)
-        probe_kwargs.update(return_model=True, show=False, save_path=None,
-                            colorbar=None, legend=None, labels=None,
-                            names=None, predict=None, surface=None,
-                            density=None, title=None)
-        with warnings.catch_warnings():
-            # whatever this call would warn about, the per-panel calls
-            # below warn about again -- from the user's own kwargs, with
-            # the user's own stacklevel. Warning twice is noise.
-            warnings.simplefilter('ignore')
-            probe = plot(x, **probe_kwargs)
-        probe_fig = probe.get('fig')
-        if isinstance(probe_fig, plt.Figure):
-            plt.close(probe_fig)
-        xform = probe['xform_data']
-        lengths = [int(np.asarray(xi).shape[0]) for xi in xform]
-        panel_data = [[np.asarray(xi)] for xi in xform]
+        # rescale) data, and give each panel its own dataset's rows
+        xform, shared_pipeline, shared_clustering = _panel_probe(
+            x, shared, ndims, probe_warnings)
+        lengths = [int(xi.shape[0]) for xi in xform]
+        panel_sources = [[datasets[i]] for i in range(n_panels)]
+        panel_xforms = [[xform[i]] for i in range(n_panels)]
+        panel_pipelines = [shared_pipeline] * n_panels
         panel_kwargs = []
+        # the ONE clustering fit across every dataset, each panel
+        # replaying its own dataset's slice of the labels (the same rows
+        # `_panel_narrow_kwargs` slices a flat hue= by) under the ONE
+        # label-to-colour mapping (`categories=`: a slice missing a
+        # cluster must not shift the others' colours, round 9)
+        panel_clusters = []
+        offsets = np.cumsum([0] + lengths)
         for i in range(n_panels):
             kw = dict(shared)
-            # the analysis already ran (above); each panel DRAWS its slice
-            kw.update(transform=[np.asarray(xform[i])], reduce=None,
-                      normalize=None, align=None, manip=None, pipeline=None,
-                      impute=None, resample=None, random_state=None)
-            for key in _PANEL_PER_DATASET_KWARGS:
-                if key in kw:
-                    kw[key] = _panel_slice_per_dataset(kw[key], i, n_panels)
-            for key in _PANEL_PER_OBSERVATION_KWARGS:
-                if kw.get(key) is not None:
-                    kw[key] = _panel_slice_per_observation(
-                        kw[key], i, lengths)
-            if kw.get('labels') is not None:
-                kw['labels'] = _panel_slice_labels(kw['labels'], i, lengths)
-            # DataFrame-column axis labels (GH #285): a shared-fit panel is
-            # drawn through `transform=`, which is exactly the case
-            # `plot()` refuses to infer labels for -- so derive them here,
-            # from the panel's OWN input dataset, under the same rule
-            # (2-D/3-D, one drawn axis per named column). An explicit
-            # xlabel=/ylabel=/zlabel= still wins.
-            _labels = _dataframe_axis_labels(datasets[i])
-            if (_labels is not None
-                    and len(_labels) == int(np.asarray(xform[i]).shape[1])
-                    and len(_labels) in (2, 3)):
-                for _key, _value in zip(('xlabel', 'ylabel', 'zlabel'),
-                                        _labels):
-                    if kw.get(_key) is None:
-                        kw[_key] = str(_value)
+            _panel_narrow_kwargs(kw, i, n_panels, lengths)
             panel_kwargs.append(kw)
+            panel_clusters.append(
+                None if shared_clustering is None
+                else _panel_cluster_labels(
+                    shared_clustering[0], shared_clustering[1],
+                    shared.get('cluster'),
+                    rows=(int(offsets[i]), int(offsets[i + 1])),
+                    categories=shared_clustering[2]))
+
+    # the analyzed data's own width decides the cells (a text or DataFrame
+    # input's drawn width, and a manip=/pipeline= stage's, are only known
+    # after the pipeline)
+    panel_ndims = _panel_cell_ndims(
+        panel_ndims, [xi for xf in panel_xforms for xi in xf])
+    panel_data = []
+    for i in range(n_panels):
+        kw = panel_kwargs[i]
+        xf = panel_xforms[i]
+        if panel_ndims == 3:
+            # a 2-wide panel in a grid whose other panels came out 3-wide
+            # (independent fits of unequal inputs): draw it flat in the
+            # 3-D cell on BOTH backends, the way a matplotlib 3-D axes
+            # draws 2-column rows -- plotly's 'scene' cell refuses a 2-D
+            # trace outright. A ONE-column series in such a grid is drawn
+            # as the series it is -- the row index on x, its values on y
+            # -- flat on the cell's floor (round 8: it reached the 3-D
+            # cell as one column and crashed both backends). The panel
+            # call itself places the rows (`_PanelLift`), AFTER it has
+            # forecast and resolved `truth=` on the analyzed rows (round
+            # 9: padding them here changed the forecasting input)
+            lifts = [_panel_lift_for(xi, src)
+                     for xi, src in zip(xf, panel_sources[i])]
+            if any(lift is not None for lift in lifts):
+                kw['_panel_lift'] = lifts
+        # the analysis already ran (above); each panel DRAWS its rows
+        kw.update(transform=list(xf), reduce=None, normalize=None,
+                  align=None, manip=None, pipeline=None, impute=None,
+                  resample=None, random_state=None)
+        if panel_clusters[i] is not None:
+            # ...and its probe's clustering, replayed (no second fit)
+            kw.update(cluster=panel_clusters[i], n_clusters=None)
+        # each panel's rows, labelled with its source frame's index and
+        # column names so series mode keeps dates on x and the column on y
+        # exactly as the raw frame would (P2)
+        panel_data.append([_panel_frame(src, xi)
+                           for src, xi in zip(panel_sources[i], xf)])
+        # DataFrame-column axis labels (GH #285): a panel is drawn through
+        # `transform=`, which is exactly the case `plot()` refuses to infer
+        # labels for -- so derive them here, from the panel's OWN input
+        # dataset, under the same rule (2-D/3-D, one drawn axis per named
+        # column). An explicit xlabel=/ylabel=/zlabel= still wins.
+        # ...but not in `ndims=1` series mode, whose drawn axes are the
+        # row index and the values -- there a 3-column frame's labels
+        # were assigned to x/y/z and zlabel= then refused (P2)
+        _labels = (None if panel_ndims == 1 or len(xf) != 1
+                   else _dataframe_axis_labels(panel_sources[i]))
+        if (_labels is not None
+                and len(_labels) == int(xf[0].shape[1])
+                and len(_labels) in (2, 3)):
+            for _key, _value in zip(('xlabel', 'ylabel', 'zlabel'),
+                                    _labels):
+                if kw.get(_key) is None:
+                    kw[_key] = str(_value)
 
     if backend == 'plotly':
-        return _plot_panels_plotly(panel_data, panel_kwargs, titles,
-                                   nrows, ncols, ndims, call_kwargs)
+        plotly_kwargs = dict(call_kwargs)
+        plotly_kwargs['save_path'] = save_path
+        with warnings.catch_warnings(record=True) as draw_warnings:
+            warnings.simplefilter('always')
+            grid = _plot_panels_plotly(
+                panel_data, panel_kwargs, titles, nrows, ncols, panel_ndims,
+                plotly_kwargs, shared_pipeline=shared_pipeline,
+                panel_pipelines=panel_pipelines)
+        _reemit_panel_warnings(probe_warnings, draw_warnings)
+        return grid
 
-    fig, axes = subplots(nrows, ncols, ndims=ndims,
-                         size=call_kwargs.get('size'))
+    fig, axes = subplots(nrows, ncols, ndims=panel_ndims,
+                         size=call_kwargs.get('size'), backend='matplotlib')
     panel_axes = []
     panel_models = []
-    for i in range(n_panels):
-        kw = dict(panel_kwargs[i])
-        kw.update(ax=axes[i], title=titles[i], show=False, save_path=None,
-                  return_model=return_model, size=None)
-        result = plot(panel_data[i], **kw)
-        if return_model:
-            panel_models.append(result)
-        panel_axes.append(axes[i])
+    with warnings.catch_warnings(record=True) as draw_warnings:
+        warnings.simplefilter('always')
+        for i in range(n_panels):
+            kw = dict(panel_kwargs[i])
+            kw.update(ax=axes[i], title=titles[i], show=False,
+                      save_path=None, return_model=return_model, size=None)
+            if panel_ndims < (3 if ndims is None else min(ndims, 3)):
+                # cells lowered to the data's width (`_panel_cell_ndims`):
+                # the panel call's `ax=` projection check reads ndims=,
+                # not the data, so tell it the dimensionality its axes
+                # actually has (the drawing is the same: the rows are
+                # already analyzed)
+                kw['ndims'] = panel_ndims
+            result = plot(panel_data[i], **kw)
+            if return_model:
+                # the fit this panel was drawn from: the panel itself is
+                # drawn through `transform=`, whose bundles carry
+                # `pipeline=None` (release audit 2026-09-07, 3)
+                result['pipeline'] = panel_pipelines[i]
+                panel_models.append(result)
+            panel_axes.append(axes[i])
+    _reemit_panel_warnings(probe_warnings, draw_warnings)
     for spare in axes[n_panels:]:
         spare.set_visible(False)
+    if call_kwargs.get('size') is None:
+        # room beside every column for the legends/colorbars the panels
+        # drew -- what the plotly grid reserves as its gutter (110 px per
+        # legend or colorbar) -- so `tight_layout` does not shrink the
+        # panels to fit them (1.1 release review, feature-tour 9.8: three
+        # 10-entry legends left three 1.3 in cubes). An explicit `size=`
+        # is honoured verbatim.
+        _cols = ncols if n_panels > 1 else 1
+        _extra = 0.0
+        if any(a.get_legend() is not None for a in panel_axes):
+            _extra += 1.1 * _cols
+        if len(fig.axes) > len(axes):  # colorbar axes beside the panels
+            _extra += 1.1 * _cols
+        if _extra:
+            _w, _h = fig.get_size_inches()
+            fig.set_size_inches(_w + _extra, _h)
     fig.tight_layout()
 
     if save_path is not None:
@@ -2692,13 +4482,15 @@ def _plot_panels(x, panels, call_kwargs, _name='panels'):
             'xform_data': [m['xform_data'][0] if len(m['xform_data']) == 1
                            else m['xform_data'] for m in panel_models],
             'colors': panel_models[0].get('colors') if panel_models else None,
+            'pipeline': shared_pipeline,
         }
         return bundle
     return fig
 
 
 def _plot_panels_plotly(panel_data, panel_kwargs, titles, nrows, ncols,
-                        ndims, call_kwargs):
+                        ndims, call_kwargs, shared_pipeline=None,
+                        panel_pipelines=None):
     """`panels=` under the plotly backend: the same grid, built with
     `plotly.subplots.make_subplots` (3-D panels get ``type='scene'``
     cells). Each panel is drawn by an ordinary `plot()` call and its traces
@@ -2714,42 +4506,71 @@ def _plot_panels_plotly(panel_data, panel_kwargs, titles, nrows, ncols,
     reported as a plotly internals error. ``axes`` here holds the layout
     objects the panels were transplanted into (one ``layout.scene*`` per
     panel for 3-D, one ``(xaxis, yaxis)`` pair for 2-D), which is plotly's
-    equivalent of the matplotlib bundle's ``Axes`` list.
+    equivalent of the matplotlib bundle's ``Axes`` list. `shared_pipeline`
+    is the shared fit's pipeline (``panel_fit='shared'``) and
+    `panel_pipelines` each panel's own fit (the panels are drawn through
+    ``transform=``), both recorded in the bundle exactly as the matplotlib
+    grid records them.
     """
-    from plotly.subplots import make_subplots
-    cell = {'type': 'scene'} if ndims >= 3 else {'type': 'xy'}
-    fig = make_subplots(rows=nrows, cols=ncols,
-                        specs=[[dict(cell) for _ in range(ncols)]
-                               for _ in range(nrows)],
-                        subplot_titles=[t if t is not None else ''
-                                        for t in titles])
+    from .plotly_backend import (make_panel_grid, panel_gutter_px,
+                                 transplant_panel)
     return_model = bool(call_kwargs.get('return_model', False))
+    # draw every panel FIRST (each an ordinary single-axes plotly call), so
+    # the grid can reserve room beside each cell for the legend/colorbar
+    # the panels actually carry
     panel_models = []
-    panel_axes = []
-    for i, (data, kw) in enumerate(zip(panel_data, panel_kwargs)):
-        row, col = i // ncols + 1, i % ncols + 1
+    panel_figs = []
+    for data, kw, title in zip(panel_data, panel_kwargs, titles):
         kw = dict(kw)
+        # each panel's title goes through the ordinary single-axes title
+        # path (newlines, `title_wrap=`, `title_kwargs=`, validation) and
+        # `transplant_panel` turns the result into the cell's title -- the
+        # matplotlib grid formats its titles the same way (round 2)
         kw.update(show=False, save_path=None, return_model=return_model,
-                  title=None, size=None, backend='plotly')
+                  title=title, size=None, backend='plotly')
         result = plot(data, **kw)
-        panel = result['fig'] if return_model else result
+        panel_figs.append(result['fig'] if return_model else result)
         if return_model:
+            if panel_pipelines is not None:
+                result['pipeline'] = panel_pipelines[len(panel_models)]
+            elif shared_pipeline is not None:
+                result['pipeline'] = shared_pipeline
             panel_models.append(result)
-        for trace in panel.data:
-            fig.add_trace(trace, row=row, col=col)
-        if ndims >= 3:
-            key = 'scene' if i == 0 else f'scene{i + 1}'
-            if panel.layout.scene is not None:
-                fig.layout[key].update(panel.layout.scene.to_plotly_json())
-            panel_axes.append(fig.layout[key])
-        else:
-            xkey = 'xaxis' if i == 0 else f'xaxis{i + 1}'
-            ykey = 'yaxis' if i == 0 else f'yaxis{i + 1}'
-            panel_axes.append((fig.layout[xkey], fig.layout[ykey]))
+    legend_present = call_kwargs.get('legend') is not None
+    colorbar_present = any(
+        getattr(getattr(trace, 'marker', None), 'showscale', None)
+        for panel in panel_figs for trace in panel.data)
+    # room above every row for its panels' titles: what the single-axes
+    # path reserved for the tallest one (per line and per font size), so
+    # a two-line title keeps both lines (the base margin is the untitled
+    # single figure's 10 px)
+    title_px = max([0] + [max(0, int(panel.layout.margin.t or 0) - 10)
+                          for panel, title in zip(panel_figs, titles)
+                          if title])
+    fig = make_panel_grid(nrows, ncols, ndims,
+                          size=call_kwargs.get('size'),
+                          gutter_px=panel_gutter_px(legend_present,
+                                                    colorbar_present),
+                          title_px=title_px)
+    panel_axes = []
+    for i, panel in enumerate(panel_figs):
+        keys = transplant_panel(fig, panel, i // ncols + 1, i % ncols + 1,
+                                i, ndims)
+        panel_axes.append(keys['scene'] if ndims >= 3
+                          else (keys['xaxis'], keys['yaxis']))
     fig.update_layout(showlegend=bool(call_kwargs.get('legend')))
-    if call_kwargs.get('size') is not None:
-        width, height = call_kwargs['size']
-        fig.update_layout(width=width * 100, height=height * 100)
+    # the SAME figure class the single-axes plotly path returns, displayed
+    # through the same one-shot end-of-cell queue: a bare `go.Figure` shown
+    # with `fig.show()` here was displayed a second time by the notebook's
+    # rich-display hook when the call was the cell's last expression (P6)
+    from .plotly_backend import _hyper_figure_class, show_figure
+    fig = _hyper_figure_class()(fig)
+    # the bundle's `axes` are the layout objects of the figure RETURNED
+    # (the wrapper copies the layout, so they are looked up after wrapping)
+    panel_axes = [fig.layout[key] if isinstance(key, str)
+                  else (fig.layout[key[0]], fig.layout[key[1]])
+                  for key in panel_axes]
+    # already normalized by `_plot_panels` (P5)
     save_path = call_kwargs.get('save_path')
     if save_path is not None:
         if save_path.lower().rsplit('.', 1)[-1] == 'html':
@@ -2759,7 +4580,7 @@ def _plot_panels_plotly(panel_data, panel_kwargs, titles, nrows, ncols,
             ensure_kaleido_chrome()
             fig.write_image(save_path)
     if call_kwargs.get('show', True):
-        fig.show()
+        show_figure(fig)
     if return_model:
         # the SAME keys, in the same meaning, as the matplotlib panel
         # bundle below -- a caller must not have to branch on backend to
@@ -2772,6 +4593,7 @@ def _plot_panels_plotly(panel_data, panel_kwargs, titles, nrows, ncols,
             'xform_data': [m['xform_data'][0] if len(m['xform_data']) == 1
                            else m['xform_data'] for m in panel_models],
             'colors': panel_models[0].get('colors') if panel_models else None,
+            'pipeline': shared_pipeline,
         }
     return fig
 
@@ -2834,6 +4656,11 @@ def plot(
     forecast_n_clusters=None,
     forecast_palette=None,
     forecast_fmt=None,
+    palette_sort=None,
+    palette_reduce=None,
+    palette_manip=None,
+    palette_normalize=None,
+    palette_align=None,
     slow_warning_seconds=_UNSET_SLOW_WARNING,
     frame_rate=30,
     focused=None,
@@ -3132,6 +4959,15 @@ def plot(
         count raises a ``ValueError`` naming fmt and both counts. A fmt tuple
         is accepted and treated exactly like the equivalent list.
 
+        Under ``backend='plotly'`` a 3-D plot can only draw plotly's
+        `Scatter3d` marker set (circle, square, diamond, cross, x and the
+        open circle/square/diamond), so other markers take the nearest of
+        those: triangles (``'^'``, ``'v'``, ``'<'``, ``'>'``) and ``'d'``
+        draw as diamonds, ``'*'`` as an open diamond, ``'+'``, ``'|'``,
+        ``'_'`` and ``'1'``-``'4'`` as crosses, ``'x'`` as an x, and
+        ``'p'``, ``'h'``, ``'H'`` and ``'8'`` as circles. 1-D/2-D plotly
+        plots and every matplotlib plot draw the marker asked for.
+
         Static line rendering is DATA-FAITHFUL: line styles are smoothed
         by PCHIP interpolation, which only ever ADDS points between
         samples -- every original sample (including the final one) is
@@ -3182,6 +5018,8 @@ def plot(
         entries, non-numeric, out of range) is also just ignored-with-a-
         warning in this case, not validated against and raised on --
         whether ``alpha=`` will be used is decided before it is checked.
+        A continuous or matrix `hue=` keeps it: the per-point coloured
+        line segments AND markers carry their dataset's alpha.
 
         A `predict=` forecast overlay is drawn at HALF its dataset's alpha
         (``alpha=[1.0, 0.4]`` gives forecasts at ``[0.5, 0.2]``); an unset
@@ -3260,8 +5098,10 @@ def plot(
         categorical palettes are used as-is.
         A palette string of the form ``'image:<path>'`` extracts colors from
         a LOCAL image file instead (``palette='image:starry_night.jpg'``):
-        six anchor colors, ordered most visually salient first, so a
-        painting's vivid subject leads and its muted background follows.
+        six anchor colors, sorted by value (dark to bright) so the palette
+        reads as a gradient (``palette_sort=`` or ``?sort=`` in the spec
+        picks another order; the most visually salient color is what a
+        per-dataset image entry stands for).
         For a continuous ``hue`` those anchors are blended into a gradient
         exactly as any short color list is. See
         ``hypertools.plot.colors.image_palette`` for the extraction itself
@@ -3307,8 +5147,57 @@ def plot(
         of colors -- is per-dataset. A ONE-entry list is broadcast to every
         dataset. A per-dataset list must have 1 or ``len(x)`` entries, and
         cannot be combined with a continuous `hue=` (there is no single
-        ramp to map values through -- ``ValueError``).
+        ramp to map values through -- ``ValueError``). With a CATEGORICAL
+        `hue=` (or `cluster=`/`n_clusters=`) the drawn groups are
+        categories rather than datasets, so only a list of ``{category:
+        color}`` dicts is meaningful there -- each dataset's dict names
+        its own categories' colours, and they are merged into one mapping
+        resolved by name (naming one category with two different colours
+        raises); any other per-dataset list with a categorical grouping
+        raises ``ValueError`` stating both counts. A plain colour list
+        shorter than the number of datasets is CYCLED when there is no
+        hue (``['red', 'blue']`` over three datasets draws red, blue,
+        red), as it always was.
 
+        A t x k DATA MATRIX is a palette too. It is reduced to three
+        dimensions with `hypertools.reduce` (``palette_reduce=``, default
+        'PCA', under ``palette_manip=``/``palette_normalize=``/
+        ``palette_align=``), each reduced column is scaled to [0, 1] as an
+        RGB channel, the rows are ordered by ``palette_sort=`` (default
+        ``'columns'``: along the first component) and the result is a
+        colormap that is resampled by interpolation to however many colors
+        the plot needs -- one per dataset, one per category, or a gradient
+        along a continuous `hue=`::
+
+            hyp.plot(x, hue=np.arange(len(x)), palette=weights)   # (t, k)
+
+        A 2-D array with 3 or 4 columns and every value in [0, 1] stays a
+        list of colors; pass a DataFrame (or values outside [0, 1]) for a
+        three-column matrix that is data. One with 3 or 4 columns of whole
+        numbers in 0..255 reads as 0-255 colors and raises ``ValueError``
+        (divide by 255 for the colors; a DataFrame for data). The palette is as smooth as the
+        matrix: the rows are ordered along the first component, so a
+        matrix whose other components follow the first (a trend with
+        oscillations) gives a clean gradient and an unstructured one a
+        striped palette. In a per-dataset list a matrix stands for its
+        most saturated color. Palettes extracted from an image
+        are sorted by value (dark to bright) so they read as a gradient;
+        ``palette_sort=`` (or ``?sort=`` in the spec) changes that, and the
+        most salient color still leads when an image stands for one
+        dataset in a per-dataset list.
+    palette_sort : {'value', 'hue', 'lightness', 'columns', 'original'} or None
+        How the colors of an image or matrix palette are ordered (see
+        `hypertools.plot.colors.sort_colors`). None (default) means
+        ``'value'`` for an image and ``'columns'`` for a matrix; a key given
+        here applies to `palette=` and `forecast_palette=` alike, including
+        every entry of a per-dataset list. A spec's own ``?sort=`` wins.
+    palette_reduce : reducer spec or None
+        The reducer `hypertools.reduce` applies to a matrix palette (default
+        'PCA'); any form `reduce=` accepts.
+    palette_manip, palette_normalize, palette_align : same forms as \
+            `manip=`, `normalize=`, `align=`, or None
+        Handed to `hypertools.reduce` when a matrix palette is reduced,
+        exactly as the same-named arguments would be for the data.
     hue : list, numpy array, pandas Series/Index/Categorical, or 2D matrix
         Values used to color the plot, one per observation, matched to the
         observations POSITIONALLY (a pandas Series' index is ignored).
@@ -3416,7 +5305,8 @@ def plot(
         Distinct from `labels` (per-POINT text call-outs) and `hue` (per-
         observation coloring): each name labels its dataset's trace and turns
         the legend on, so `hyp.plot([raw, a, b], names=['raw', 'a', 'b'])`
-        shows a legend naming the three datasets. Must have exactly one entry
+        shows a legend naming the three datasets; an explicit
+        ``legend=False`` still suppresses it. Must have exactly one entry
         per dataset; mutually exclusive with passing a `legend=` list (use one
         or the other). Rendered on both the matplotlib and plotly backends.
         Incompatible with a CATEGORICAL `hue` (which regroups the data by
@@ -3430,10 +5320,12 @@ def plot(
 
     labels : list
         A list of point labels: exactly one entry per OBSERVATION (row)
-        across all datasets, or a nested list with one sub-list per
-        dataset; a length mismatch raises ``ValueError`` naming labels and
-        both counts. If no label is wanted for a particular point, input
-        None for that entry.
+        across all datasets, or a nested list with one sub-sequence per
+        dataset (a list, tuple, 1-D array or Series each); a length
+        mismatch raises ``ValueError`` naming labels and both counts. If no
+        label is wanted for a particular point, input None for that entry.
+        Every form keeps each label on its own observation when `hue=` or
+        `cluster=` regroups the drawn traces.
 
         `labels` may instead carry one entry PER DATASET -- one string (or
         None) for each of the ``len(x)`` datasets -- which annotates each
@@ -3448,9 +5340,10 @@ def plot(
         count, in which case the two readings annotate the same points
         anyway and the per-observation one is kept.
 
-        In an ANIMATION whose frame grid is coarser than the data (fewer
-        than one frame per sample), each label is attached to the nearest
-        drawn frame point, so labels are never silently dropped.
+        In an ANIMATION every observation stays a vertex of the animated
+        line (the frame grid only ever adds points between observations),
+        so each label is attached to its own observation and none is
+        dropped.
 
         Supported on BOTH backends (GH #205/#F3): matplotlib draws these as
         `ax.annotate` call-outs; plotly draws the same points as
@@ -3497,6 +5390,12 @@ def plot(
         with a ``UserWarning`` (that path colors by value, so there are
         no discrete groups to name).
 
+        A NESTED-list `x` (``[[a, b], [c, d]]``) colours every leaf by its
+        outer group, and its legend follows the same rule: one entry per
+        outer group (``1..n`` for ``True``, or a list with one name per
+        group), drawn on the group's shallowest leaf; a list with one entry
+        per LEAF still labels every leaf.
+
         Under a matrix-valued (mixture) `hue=` the blended per-observation
         colours have no discrete traces to label, so hypertools used to
         drop the legend with a warning. It now builds one proxy swatch per
@@ -3518,14 +5417,20 @@ def plot(
     legend_colors : list of colors, or list of (label, color) pairs
         An explicit override of the legend's swatches. A plain list of
         colors -- one per legend entry, in order -- RECOLORS the entries
-        hypertools would draw anyway (matplotlib only; the plotly legend
+        hypertools would draw anyway; when `predict=`/`truth=` add their
+        own entries after the data's, one color per DATA entry is accepted
+        too and leaves those overlay glyphs as drawn (matplotlib only; the plotly legend
         takes its swatches from the traces themselves, so this form raises
         ``NotImplementedError`` there). A list of ``(label, color)`` pairs
         REPLACES the legend outright with exactly those entries, on both
         backends -- which is how a figure adds a key entry no trace
         corresponds to (e.g. a grey "Market" line alongside per-sector
-        swatches). Mixing the two forms raises ``ValueError``. Default
-        None.
+        swatches). Mixing the two forms raises ``ValueError``. Under
+        `panels=`, a plain list naming the datasets (one colour per
+        dataset, then one per shared entry such as a forecast model or
+        ``truth``) is split so each panel's legend gets its own dataset's
+        colour followed by the shared ones; a pair list is drawn whole in
+        every panel. Default None.
 
     colorbar : bool or dict
         If True, draws a colorbar reflecting the color mapping in use
@@ -3553,9 +5458,10 @@ def plot(
         ``animate='morph'``) you may pass one string per dataset: each is
         shown while its dataset is the one being revealed, and morph
         TRANSITIONS show a blank title so only fully-formed clouds are
-        named (a hold and a transition both progress 0 -> 1, so the
-        distinction is the segment itself, not how far through it you
-        are). Anywhere else a non-string raises ``TypeError``: use
+        named: every transition frame draws a cloud strictly between the
+        two datasets, and only a hold draws a dataset's own cloud (a hold
+        and a transition both progress 0 -> 1, so the distinction is the
+        segment itself, not how far through it you are). Anywhere else a non-string raises ``TypeError``: use
         ``names=`` for per-dataset legend entries, or ``labels=`` for
         per-observation annotations. Rendered identically on the
         matplotlib and plotly backends.
@@ -3578,7 +5484,10 @@ def plot(
 
         **Where the reveal head is.** One rule, so the same pattern means
         the same thing on the same data: for a serial reveal it is the
-        last revealed row of the dataset being revealed right now; for
+        rows revealed so far across ALL datasets (finished ones plus the
+        revealed part of the current one) as a fraction of every row,
+        mapped onto the input's rows -- cumulative, so it never runs
+        backwards when the next dataset starts; for
         every other animated style (``True``/``'parallel'``/``'window'``/
         ``'spin'``/``'morph'``) it is
         ``round(ctx.progress * (n_rows - 1))``, since those advance every
@@ -3603,9 +5512,10 @@ def plot(
         ``variant``, ``stretch``, and the already-real names ``color``,
         ``alpha``, ``y``, ``pad``, ``loc``, ``rotation``, ``linespacing``,
         ``backgroundcolor``. An unknown key raises ``ValueError`` naming
-        the supported set. A ``size`` given here also sizes the top-margin
-        probe that reserves room for an animated 3-D title, so a larger
-        title still fits on the canvas.
+        the supported set. A ``size`` given here also sizes the room
+        reserved above an animated 3-D title (matplotlib's top-margin
+        probe; plotly's ``layout.margin.t``), so a larger title still fits
+        on the canvas.
 
         On `backend='plotly'` the size/family/weight/style/colour/y keys
         map onto ``layout.title``; anything plotly's title cannot express
@@ -3630,8 +5540,13 @@ def plot(
         Applied after per-segment resolution, so a scalar title and every
         entry of a per-segment list wrap identically; the line break is the
         backend's own (a newline for matplotlib, ``'<br>'`` for plotly).
-        Note that an animated 3-D title still reserves top margin for ONE
-        line, so a very tall wrap can overflow there. Default None.
+        A dynamic (callable / ``{index``) title is wrapped afresh every
+        frame. An animated 3-D title reserves top margin per line on both
+        backends: for a per-segment list, the tallest entry; for a
+        dynamic title, plotly measures every frame (all frames are built
+        up front) while matplotlib measures FRAME 0's text, so a callable
+        whose title grows lines on later frames can clip there -- give
+        frame 0 the same number of lines. Default None.
 
     font : None, str, or matplotlib.font_manager.FontProperties
         Controls the font used for every text surface hypertools draws,
@@ -3674,6 +5589,15 @@ def plot(
           relative or absolute). Raises ``ValueError`` if the string is
           neither a resolvable family name nor an existing file.
         - `matplotlib.font_manager.FontProperties`: used as-is.
+
+        Weights: the package bundles a Bold face beside Noto Sans Regular
+        (``NotoSans-Bold.ttf``, same licence and provenance), so a bold
+        request under the default font -- ``title_kwargs={'fontweight':
+        'bold'}``, ``legend_kwargs={'prop': {'weight': 'bold'}}`` and the
+        like -- resolves to that real bold face on the matplotlib backend
+        rather than to a synthetic or Regular substitute; any other weight
+        (light, medium, semibold, black, ...) falls back to the nearest
+        bundled face, i.e. Regular or Bold.
 
         Backend semantics differ because matplotlib and plotly resolve
         fonts differently: matplotlib accepts a font FILE and sets a
@@ -3778,8 +5702,13 @@ def plot(
         steps take one array at a time, whereas the dispatcher pipelines
         `analyze`/`plot` build take the whole list. A bare fitted stage
         object (a `Reducer`/`Aligner`/... from a dispatcher's
-        `return_model=True`) is accepted as a one-step pipeline.
-        Mutually exclusive with `manip=`/
+        `return_model=True`) is accepted as a one-step pipeline. A
+        pipeline ending in a fitted `'cluster'` step (a clustered figure's
+        bundle, or ``hyp.analyze(..., cluster=..., return_model=True)``)
+        colours the figure by that step's labels for `x`, with the fit
+        figure's cluster colours, unless `hue=` is given; a clusterer with
+        no out-of-sample `predict` that cannot label `x` warns and draws
+        without clusters. Mutually exclusive with `manip=`/
         `normalize=`/`reduce=`/`ndims=`/`align=`/`cluster=` (each must be
         left at its default) -- passing both raises `ValueError` naming the
         conflicting kwarg(s). `resample=` is still applied (as sugar, before
@@ -3801,7 +5730,8 @@ def plot(
         membership proportions, GH #174); and the torch-backed autoencoders
         Autoencoder, DeepAutoencoder, SparseAutoencoder,
         ConvolutionalAutoencoder, SequenceAutoencoder and
-        VariationalAutoencoder (GH #162, `pip install "hypertools[torch]"`).
+        VariationalAutoencoder (GH #162; the `[torch]` extra, installed on
+        demand).
         Can be passed as a string, or for finer control of the model
         parameters as a dictionary, e.g.
         reduce={'model': 'PCA', 'kwargs': {'whiten': True}}. See scikit-learn
@@ -3823,7 +5753,7 @@ def plot(
         higher-dimensional analyzed data. Default is 3 (plot in 3
         dimensions).
 
-        ``ndims=1`` (1.2, GH #285) is a real TIME-SERIES mode, not a
+        ``ndims=1`` (1.1, GH #285) is a real TIME-SERIES mode, not a
         one-column scatter: every column of every dataset is drawn as its
         own line against the dataset's ROW INDEX (a DataFrame's index --
         including a `DatetimeIndex`, which ticks as real dates -- or
@@ -3834,25 +5764,31 @@ def plot(
         overrides them; `legend=True` shows them). ``reduce=`` still
         applies first, to ONE component -- ``ndims=1, reduce='PCA'`` draws
         the first principal component over the index. An animation reveals
-        each line left to right along x. Before 1.2 this path drew a single
+        each line left to right along x. An index that is not in ascending
+        order is drawn in index order, as `predict=` forecasts it, with a
+        ``UserWarning`` -- unless `hue=`/`labels=`/`cluster=` are given per
+        observation in the input order, which keeps that order (and warns
+        that the line doubles back). Before 1.1 this path drew a single
         column against ``0..n-1`` with the values rescaled to ``[-1, 1]``,
         no visible axes, and refused 2+ columns -- so this is a deliberate
         behaviour change: what a 1-D figure draws is now the data's own
         coordinates. ``axis_scale='unit'`` puts the (index, value) traces
         back inside the ``[-1, 1]`` frame square like any other 2-D plot,
-        which rescales BOTH axes and so does not restore the pre-1.2
+        which rescales BOTH axes and so does not restore the pre-1.1
         geometry either.
 
     axis_scale : {'unit', 'data'} or None
-        Which coordinates the figure is drawn in (1.2, GH #285).
+        Which coordinates the figure is drawn in (1.1, GH #285).
 
         ``'unit'`` is what hypertools has always done, and remains the
         default for 2-D and 3-D plots: the (possibly reduced/aligned)
         coordinates are mean-centred and rescaled into ``[-1, 1]`` by a
         single shared affine transform across all datasets (and, with
-        `predict=`, across every forecast vertex), the axes are pinned to
-        ``(-1.1, 1.1)``, and hypertools' own frame square/cube is drawn in
-        place of matplotlib's ticks and spines. Coordinates read off the
+        `predict=`, across every forecast vertex), the axes are pinned
+        around hypertools' own frame (2-D: ``(-1.2375, 1.2375)`` around a
+        frame square of half-width 1.125; 3-D: the ``[-1, 1]`` cube, grown
+        to fit a `surface=`), and that frame square/cube is drawn in place
+        of matplotlib's ticks and spines. Coordinates read off the
         returned Figure are therefore an affine IMAGE of the analyzed data,
         not the raw values, and are not comparable across figures.
 
@@ -3875,12 +5811,17 @@ def plot(
         and ``'unit'`` everywhere else.
 
     xlim, ylim : (low, high) or None
-        Explicit axis limits, in the DRAWN coordinates (1.2, GH #285). Only
+        Explicit axis limits, in the DRAWN coordinates (1.1, GH #285). Only
         meaningful under ``axis_scale='data'`` (under ``'unit'`` the axes
         are pinned to the frame box); passing either with
         ``axis_scale='unit'`` raises ``ValueError`` rather than silently
         doing nothing. ``None`` (the default) computes the limits from the
-        data. Both backends, static and animated.
+        data. Both backends, static and animated. On a DATE x axis
+        (``ndims=1`` over a ``DatetimeIndex``) `xlim` accepts datetime-like
+        values and date strings (``xlim=('2020-01-05', '2020-01-10')``) on
+        both backends; a number there is a matplotlib day number (the unit
+        ``matplotlib.dates.date2num`` produces) on both backends, and is
+        converted for plotly.
 
     align : str, dict, False, or None
         Alignment model to bring a list of datasets into a shared space.
@@ -3902,7 +5843,10 @@ def plot(
         BayesianGaussianMixture, LatentDirichletAllocation and NMF. Can be
         passed as a string, or for finer control of the model parameters as a
         dictionary, e.g. cluster={'model': 'KMeans', 'kwargs': {'max_iter':
-        100}}. See scikit-learn specific model docs for details on parameters
+        100}} (as in `hyp.cluster`, a top-level key other than 'model',
+        'args', 'kwargs' and the 'n_clusters' shortcut raises
+        ``ValueError``). See scikit-learn specific model docs for details
+        on parameters
         supported for each model. If no parameters are specified a default set
         of parameters will be used: 3 clusters/components for most models
         (the same default as `hyp.cluster`), 20 components for
@@ -3973,12 +5917,22 @@ def plot(
         post normalize/reduce/align space) using the specified
         `hypertools.predict` model, e.g. 'Kalman', 'ARIMA', 'GaussianProcess'
         (see `hypertools.predict.predict` for accepted forms), and overlays
-        one forecast trace per dataset (no separate legend entry). A forecast
+        one forecast trace per dataset, listed ONCE in the legend (when
+        there is one) under the model's name -- the same name
+        ``hyp.predict(x, model=[spec])`` would give it -- with a glyph in
+        the forecasts' own style: their colour when every forecast shares
+        one, else a neutral gray, since the entry then names the model
+        rather than any one dataset. (Before the 1.1.0 release review only
+        a collection of models was listed.) A forecast
         is the SAME series projected forward, so it INHERITS the style of the
         observed trace it continues -- same color, same linestyle, same
         linewidth -- and differs only in transparency: ``forecast_alpha =
         observed_alpha * 0.5`` (an unset `alpha` is matplotlib's opaque 1.0,
-        so the default is 0.5). Per-dataset styling carries through dataset
+        so the default is 0.5). A forecast given its OWN colour
+        (`forecast_hue=`, `forecast_cluster=`, `forecast_palette=`, or a
+        colour letter in `forecast_fmt=`) keeps its trace's alpha instead:
+        the colour is then what tells it apart, and fading it as well hid
+        it among translucent traces. Per-dataset styling carries through dataset
         by dataset, e.g. ``alpha=[1.0, 0.4]`` gives forecasts at
         ``[0.5, 0.2]``, and a dotted dataset gets a dotted forecast. Both
         backends apply the identical rule. (Before 1.1.0 every forecast was
@@ -3991,8 +5945,8 @@ def plot(
         static forecast overlay, so the trace simply rotates with the
         rest of the scene), and for the TIME-PROGRESSING animate modes
         (``True``/``'parallel'``/``'serial'``/``'window'``), where the
-        forecast is recomputed from the history revealed so far and
-        re-anchored on the last revealed observation, so it grows with the
+        forecast is recomputed from the history revealed so far and drawn
+        from the endpoint of the current frame, so it grows with the
         animation. Every one of those forecasts is computed BEFORE the first
         frame is drawn and folded into the plot's centre/scale statistics,
         so the whole fan lands inside the cube and nothing is clipped or
@@ -4022,31 +5976,47 @@ def plot(
         short trace means the input itself has fewer than 2 observations and
         only more data helps. See docs/hierarchy.rst (default: None).
 
-        A **collection of models** (1.2, GH #285) draws one overlay per
+        A **collection of models** (1.1, GH #285) draws one overlay per
         model on every trace: ``predict=['Kalman', 'ARIMA', 'GP']``, or the
         mapping form ``predict={'my kalman': {'model': 'Kalman', 'kwargs':
         {...}}, 'arima': 'ARIMA'}`` when you want to name them yourself.
         The specs are handed to ``hyp.predict(x, model=[...])``, whose
         ``{name: forecast}`` contract this reuses verbatim, so the two
-        agree by construction. Each model's overlays take a colour from
-        `forecast_palette` (a seaborn palette name or an explicit colour
-        list; default ``'husl'``) -- one colour per MODEL, shared across
-        datasets -- and are labelled in the legend by the model's name (the
-        auto-name from the spec, or the mapping key). `forecast_fmt=` may
-        be a list, one entry per model. Works with `truth=`, static and
-        animated, on both backends. The ``return_model=True`` bundle's
+        agree by construction. Two things need telling apart -- which
+        series a forecast continues and which model made it -- so each
+        overlay keeps its dataset's COLOUR (as the single-model form does)
+        and takes a linestyle per MODEL, cycling solid, dashed, dotted,
+        dash-dot in model order (the first model is solid, so
+        ``predict=['Kalman']`` draws what ``predict='Kalman'`` draws). The
+        legend lists each model by name (the auto-name from the spec, or
+        the mapping key) with a glyph in its linestyle -- neutral gray when
+        the model's forecasts span several colours. `forecast_fmt=` may be
+        a list, one entry per model, replacing the cycle; `forecast_palette`
+        (a seaborn palette name or an explicit colour list) colours by
+        MODEL instead, one colour per model shared across datasets.
+        (Until the 1.1.0 release review a per-model ``'husl'`` palette was
+        the default, and its first colour was the first dataset's own.)
+        Works with `truth=`, static and animated, on both backends. The
+        ``return_model=True`` bundle's
         ``predict['forecasts']`` becomes a ``{name: [forecast per dataset]}``
-        dict for this form, mirroring `hyp.predict`.
+        dict for this form, mirroring `hyp.predict` -- for a hierarchical
+        `x` too, where each list holds one forecast per FINAL trace.
+        `forecast_hue=` keeps its one-value-per-DATASET meaning: a value is
+        shared by every model's forecast of that dataset (a list sized to
+        the overlays themselves, model-major, is also accepted).
 
     truth : array, DataFrame, or list of these, or None
         The ACTUAL continuation of each dataset, drawn beside the forecast
-        in the same space (1.2, GH #285) -- so a train/held-out/forecast
+        in the same space (1.1, GH #285) -- so a train/held-out/forecast
         figure is one call rather than three hand-built datasets:
         ``hyp.plot(train, predict='Chronos', t=30, truth=held_out)``.
         Requires `predict=`. One array per input dataset (a bare array for
         a single dataset), each with exactly `t` rows and the same number
         of columns as the plotted data; anything else raises ``ValueError``
-        naming the mismatch. It is read in the PLOTTED space -- with
+        naming the mismatch. With ``ndims=1`` each plotted column is its own
+        trace whose x is the index, so its truth is ONE column of values
+        (or one frame with one column per trace); its x continues the
+        index exactly as the forecast's does. It is read in the PLOTTED space -- with
         ``reduce=None`` (the case these figures use) that is the input
         space, and with a `reduce=` spec it is whatever that spec produced,
         so pass values already in it (hypertools does not re-project
@@ -4072,10 +6042,17 @@ def plot(
         `hypertools.predict.common.resolve_t`); ignored unless `predict` is
         set. Measured in RAW observations of the analyzed data -- NOT in
         animation frames and NOT in drawn vertices. ``t=1`` forecasts only
-        the next observation. Because an animation is paced on a resampled
-        frame grid (see `duration`/`frame_rate`), an animated forecast joins
-        the drawn trajectory to within one raw observation rather than
-        exactly (default: 10).
+        the next observation. A datetime-like `t` (a ``Timestamp``, a
+        ``datetime`` or a date string) is measured against each dataset's
+        own ``DatetimeIndex``, exactly as `hyp.predict` measures it, and
+        must resolve to the same number of steps for every dataset;
+        datasets without a ``DatetimeIndex``, a `t` at or before the last
+        observation, or a pipeline stage that changed the row count raise
+        ``ValueError``. Because an animation is paced on a resampled
+        frame grid (see `duration`/`frame_rate`), a frame's drawn head
+        usually falls between two observations; an animated forecast starts
+        exactly there, while the points it predicts stay `t` observations on
+        from the last one revealed (default: 10).
 
     save_path : str or path-like
         Path to save the image/movie; the format is chosen by the file
@@ -4232,8 +6209,8 @@ def plot(
         camera, so the fixed forecast overlay is drawn once and rotates along
         with everything else) AND with the time-progressing modes
         (`True`/`'parallel'`/`'serial'`/`'window'`), where the forecast is
-        recomputed from the history revealed so far and re-anchored on the
-        last revealed observation, so it grows with the animation. Only
+        recomputed from the history revealed so far and drawn from the
+        endpoint of the current frame, so it grows with the animation. Only
         `'morph'` (including per-dataset morph lists) raises
         `NotImplementedError`: a morph interpolates between point CLOUDS, so
         there is no time axis to forecast along. See `forecast_trail=` to
@@ -4439,7 +6416,9 @@ def plot(
         With `forecast_hue=` or `forecast_cluster=`, one colour per group.
         With NEITHER, there is no forecast grouping to colour by, so it is
         spent one colour per forecast (see `forecast_hue=` on what counts as
-        one for a hierarchical `x=`).
+        one for a hierarchical `x=`) -- except for a COLLECTION of models
+        (``predict=[...]``), where it is spent one colour per MODEL, shared
+        by that model's forecast of every dataset (see `predict=`).
 
     forecast_fmt : str, sequence of str, or None
         Line/marker style for the forecast overlays, in the same format-string
@@ -4453,7 +6432,10 @@ def plot(
         red, unless a colour is also given (via `forecast_palette=`,
         `forecast_hue=`, `forecast_cluster=`, or a colour letter in the
         format string itself -- an explicit colour beats the format string's,
-        matching matplotlib's own rule).
+        matching matplotlib's own rule). A marker in the format string
+        (``'ro:'``) is drawn at the forecast's own steps -- the seam
+        observation and each of the `t` forecast rows -- never at the
+        antialiased vertices between them (see `antialias`).
 
         Note that these four kwargs are independent, so observed and
         forecast data may differ in style, in grouping, in palette, or in
@@ -4473,8 +6455,9 @@ def plot(
         more distinct histories AND a costlier fit each. Nothing is skipped
         to make that faster -- sampling the reveal would change what is
         plotted -- so the notice exists to make a long wait expected rather
-        than mysterious. It is emitted as soon as one real fit has been
-        timed, not after the wait.
+        than mysterious. It is emitted once fits at two or more history
+        lengths (one of at least 10 rows, or the longest available) have
+        been timed, not after the wait.
 
     frame_rate (animation only) : int or float
         Frame rate for animation in frames per second (default: 30).
@@ -4596,7 +6579,8 @@ def plot(
             so a panel and a date title can never disagree.
         ``reveal``
             ``True`` (default) reveals the series up to the head; ``False``
-            draws it whole on every frame.
+            draws it whole on every frame (including its smoothed trend).
+            The head marker still follows the current input row in both modes.
         ``smooth``
             An int rolling-mean window (>= 2) drawn as a black trend line
             over the revealed part, NaN until the window fills -- the same
@@ -4619,8 +6603,12 @@ def plot(
         ``pad``
             How much of `size` is left for the panel's own ticks and label
             (default 0.10, in figure fractions).
-        ``color``, ``xlabel``, ``ylabel``
-            Line colour and axis labels.
+        ``color``
+            Line and head-marker colour. Default: the colour the first
+            dataset's trajectory is drawn in (its ``fmt=`` colour letter,
+            ``color=``, or its palette colour).
+        ``xlabel``, ``ylabel``
+            Axis labels.
 
         What this deliberately does NOT do: no 3-D companion panels, no
         panel with its own animation schedule (it always follows the main
@@ -4661,7 +6649,11 @@ def plot(
         state.**
 
         Mutating what the context hands you is the point of the hook and is
-        fully supported -- the example below sets a title every frame.
+        fully supported -- the example below sets a title every frame. (A
+        3-D matplotlib animation passed ``on_frame=`` reserves the same top
+        margin a ``title=`` gets, so a title set by the callback is drawn
+        on the canvas; one attached later with ``HyperAnimation.on_frame()``
+        should pass ``title=' '`` to reserve it.)
         What is unsupported is accumulation (``count += 1``,
         ``alpha *= 0.9``), because a repeated frame would change the
         result. Precompute running quantities and index them by
@@ -4743,9 +6735,14 @@ def plot(
         ``plt.show()`` -- call ``plt.show()`` yourself to open a window.
         Default: True.
 
-    transform : list of numpy arrays or None
+    transform : array, DataFrame, list of these, or None
         The transformed data, bypasses transformations if this is set
-        (default : None).
+        (default : None). One entry per dataset of `x`, row for row; a bare
+        array or DataFrame is one dataset. A DataFrame's rows are matched
+        to `x`'s by position; with `predict=`, whose observation times come
+        from `x`'s index, a DataFrame index that is neither a plain
+        ``0..n-1`` one nor `x`'s own raises ``ValueError`` rather than
+        guessing which observation each row is.
 
     vectorizer : str, dict, class or class instance
         The vectorizer to use. Built-in options are 'CountVectorizer' or
@@ -4788,13 +6785,32 @@ def plot(
         (never loaded or embedded) when the vectorizer is a pretrained
         Hugging Face embedding model and there is no semantic stage.
 
-    ax : matplotlib.Axes or plotly.graph_objects.Figure
+    ax : matplotlib.Axes, plotly.graph_objects.Figure, or plotly grid cell
         The surface to draw into: a matplotlib Axes for the matplotlib
-        backend, or, with the plotly backend, the plotly Figure an earlier
-        `hyp.plot` returned -- this call's traces are appended to it and it
-        is returned (its layout is left alone). A matplotlib Axes under
-        plotly raises `ValueError`; a plotly Figure under matplotlib raises
-        `TypeError`.
+        backend, or, with the plotly backend, either the plotly Figure an
+        earlier `hyp.plot` returned -- this call's traces are appended to
+        it and it is returned (its layout is left alone) -- or one cell of
+        a ``hyp.subplots(nrows, ncols, backend='plotly')`` grid, into
+        which the whole drawn panel moves (traces, axes/frame, `title=`,
+        `labels=` annotations, and its own legend and colorbar beside the
+        cell), the same composition loop as the matplotlib
+        ``fig, axes = hyp.subplots(...); hyp.plot(d, ax=axes[i])`` form.
+        A plotly Figure or cell with the default ``backend='auto'`` draws
+        with plotly; with an explicit ``backend='matplotlib'`` it raises
+        `TypeError`. A matplotlib Axes under plotly raises `ValueError`.
+
+        The datasets are drawn in the `palette` exactly as on a figure of
+        their own (a caller's Axes used to keep the colour cycle of the
+        figure it came from), and a second call into the SAME Axes or
+        plotly Figure continues the palette past the datasets the earlier
+        call drew, on both backends -- so composing two calls does not
+        draw both in the first colour. A fixed-sequence palette (a colour
+        list, 'deep', 'Set2') gives its next colours; an evenly re-sampled
+        one ('hls', 'husl', a colormap) fills the gaps between the colours
+        already drawn rather than repeating one ('hls' drawn as 2 datasets
+        and then 2 more gives the four 4-colour 'hls' hues). The
+        return_model bundle's ``'colors'`` (and a colorbar) report the
+        colours drawn. Pass `color=` to choose instead.
 
         STATIC PLOTS ONLY. An animated plot (any truthy ``animate=``) owns
         its own figure: it creates one, draws there, and returns it, so an
@@ -4816,10 +6832,30 @@ def plot(
         ``fig, axes = plt.subplots(nrows, ncols,
         subplot_kw={'projection': '3d'}); for ax, d in zip(axes.ravel(),
         data): hyp.plot(d, ax=ax, show=False); plt.tight_layout()`` grid.
-        ``True`` (or ``'auto'``) sizes a near-square grid; an ``int`` is
+        ``True`` (or ``'auto'``) picks the grid from the figure's aspect
+        ratio (`size=`), preferring a grid with no spare cell: three
+        panels form a row in a default or wide figure and a column in a
+        tall one, four form 2x2, six form 2x3; an ``int`` is
         the number of COLUMNS; an ``(nrows, ncols)`` pair is used verbatim
         and must have room for every panel. Spare cells are hidden, the
-        layout is tightened, and the one `Figure` is returned.
+        layout is tightened, and the one `Figure` is returned. Every cell
+        has ONE projection, decided from the ANALYZED data (the rows the
+        pipeline hands each panel to draw, not the raw column count: two
+        raw columns through a feature-expanding ``manip='Delay'`` come out
+        three wide and get 3-D cells): 3-D by default; 2-D axes for
+        ``ndims=2`` or ``ndims=1``, and when every panel's analyzed rows
+        are 1 or 2 columns wide (the single-axes call draws such data on
+        2-D axes whatever ``ndims=`` says). Panels of UNEQUAL analyzed
+        width (independent fits of a 2-column and a 3-column dataset,
+        say) share the wider grid: 2-column rows are drawn flat on the
+        3-D cell's floor, and a 1-column series as row index vs value on
+        that floor (its own numeric index on x when the frame has one,
+        positions otherwise). That placement is a matter of DRAWING only:
+        such a panel forecasts (`predict=`), reads `truth=` and reports
+        its bundle in its own analyzed space -- the numbers the individual
+        call for that dataset produces -- and its forecast and truth
+        overlays are placed the way its rows are (a series continues its
+        index one row per step).
         ``subplots=`` is an accepted alias (passing both raises).
 
         The analysis pipeline (`manip`/`normalize`/`reduce`/`align`) is fit
@@ -4844,9 +6880,27 @@ def plot(
 
         `title=` takes one string per panel (or one string for all of
         them). Per-dataset arguments given as lists (`hue=`, `labels=`,
-        `names=`, `color=`, `fmt=`, `alpha=`, `markers=`, `linestyles=`,
-        `surface=`, `density=`, ...) are narrowed to each panel's own
-        dataset; `legend=`/`colorbar=` are drawn per panel.
+        `names=`, `color=`, `fmt=`, `alpha=`, `marker(s)=`,
+        `linestyle(s)=`, `surface=`, `density=`, `truth=`, a per-dataset
+        `palette=` list such as ``['viridis', 'magma']``, ...) are
+        narrowed to each panel's own dataset, in either `panel_fit=` mode;
+        `legend=`/`colorbar=` are drawn per panel, and a `legend=` LIST
+        naming the datasets (no `hue=`/`cluster=` grouping) gives each
+        panel its own entry. Forecast arguments partition the same way:
+        `forecast_fmt=` and `forecast_hue=` given per forecast (per
+        dataset for one `predict=` model, model-major for a collection --
+        see `predict=`) reach each panel as its own forecasts' entries (a
+        collection's one-per-MODEL `forecast_fmt=` is forwarded whole,
+        since every panel draws every model), `forecast_palette=` is
+        resolved against the whole grid so a dataset or a `forecast_hue=`
+        label keeps the colour the single-axes figure gives it, and a
+        forecaster already FITTED on every dataset
+        (``hyp.predict(x, return_model=True)``) is bound to each panel's
+        dataset (`Forecaster.for_dataset`) so its learned parameters are
+        reused rather than refit -- a forecaster fitted on a different
+        number of datasets than there are panels raises ``ValueError``.
+        `forecast_cluster=` groups each panel's own forecast endpoints
+        (with a single model, one per panel -- it then warns and inherits).
 
         STATIC ONLY: combining `panels=` with any truthy `animate=` raises
         ``ValueError`` (an animation owns its whole figure -- see `ax=`), as
@@ -4855,10 +6909,19 @@ def plot(
         `plotly.subplots.make_subplots` (3-D panels as ``type='scene'``
         cells), and `return_model=True` returns the SAME bundle keys there
         as on matplotlib (``fig``, ``axes``, ``panels``, ``panel_models``,
-        ``xform_data``, ``colors``) -- ``axes`` holding the layout objects
-        the panels were transplanted into (one ``layout.scene*`` per 3-D
-        panel, an ``(xaxis, yaxis)`` pair per 2-D one). Default None (one
-        axes, as before).
+        ``xform_data``, ``colors``, ``pipeline``) -- ``axes`` holding the
+        layout objects the panels were transplanted into (one
+        ``layout.scene*`` per 3-D panel, an ``(xaxis, yaxis)`` pair per
+        2-D one). ``pipeline`` is the ONE fitted `hypertools.Pipeline` the
+        shared fit produced (``panel_fit='shared'``; ``None`` under
+        ``'independent'`` and a list-valued `reduce=`), and every
+        ``panel_models[i]['pipeline']`` is that same object -- so
+        ``bundle['panel_models'][i]['pipeline'].transform(new_data)``
+        projects held-out data into the panels' common space without
+        refitting, exactly as the single-axes bundle's pipeline does;
+        under ``panel_fit='independent'`` (and per-reducer grids) each
+        panel bundle's ``pipeline`` is that panel's own fit instead.
+        Default None (one axes, as before).
 
         See also `hypertools.plot.plot.subplots`, a thin
         ``(fig, flat_axes)`` helper for grids you want to fill yourself.
@@ -4876,9 +6939,13 @@ def plot(
         gives each panel its slice of the result, so the panels share one
         set of components and are directly comparable.
 
-        ``'independent'`` fits the pipeline per panel: each panel call is
-        exactly the ``hyp.plot(x[i], ax=axes[i], ...)`` you would have
-        written by hand, down to the coordinates. Use it when the datasets
+        ``'independent'`` fits the pipeline per panel: each panel is
+        analyzed exactly as the ``hyp.plot(x[i], ax=axes[i], ...)`` you
+        would have written by hand, down to the coordinates and the
+        seeded clustering (`cluster=`/`n_clusters=` with `random_state=`
+        groups a panel exactly as that call does; the grid's cells are
+        the exception described under `panels=`, one projection shared
+        by every panel). Use it when the datasets
         differ enough in scale or shape that one shared fit is dominated by
         the largest of them -- ``examples/plot_shapes_zoo.py``'s seven
         shapes reduced separately is the case that motivated it.
@@ -5181,6 +7248,10 @@ def plot(
         ``'o-'``). MARKER-ONLY styles (e.g. ``'o'``, ``'.'``) are never
         touched: markers always render at the true sample points. Forecast
         overlays drawn by `predict=` are smoothed the same way.
+        A marker+line style (``'o-'``, or a ``forecast_fmt='o:'``) marks
+        only the true samples, never the vertices smoothing adds; in an
+        animation, whose lines are resampled onto the frame grid, each
+        marker sits on the grid vertex nearest its sample.
 
         Pass ``antialias=False`` to draw raw straight segments between
         consecutive samples (the pre-1.1.0 behavior).
@@ -5240,7 +7311,11 @@ def plot(
         the frame's innermost column labels are matched to the ones the
         pipeline was fit on, so reordering them is harmless and naming
         different measurements raises. ``models`` holds the
-        reduce/align/cluster/impute specs, and ``predict`` is ``None`` unless
+        reduce/align/cluster/impute specs plus ``'cluster_labels'``: the
+        per-observation labels the figure was clustered by (every input
+        dataset's rows, in order; a mixture model's component proportions;
+        ``None`` without `cluster=`/`n_clusters=`). ``predict`` is ``None``
+        unless
         `predict` was set, in which case it is
         ``{'model': ..., 'params': {'t': t}, 'forecasts': [...]}`` (one
         forecast array per input dataset -- or, for a HIERARCHICAL input, one
@@ -5251,9 +7326,14 @@ def plot(
         a ``{name: [one forecast per dataset]}`` dict instead, exactly as
         ``hyp.predict(x, model=[...])`` returns. Each bundled forecast has
         exactly `t` rows, matching what ``hyp.predict(xform_data,
-        model=..., t=t)`` returns. A hierarchy additionally requires at least
-        2 rows in EVERY final trace, on either axis, and raises otherwise;
-        see `predict`.
+        model=..., t=t)`` returns -- in ``ndims=1`` series mode too, where
+        it is one ``(t, n_columns)`` array of VALUES per input dataset
+        (the x positions the overlay is drawn at are the row index's own
+        continuation, one `step` per row, and are not part of the bundle);
+        a hierarchy under ``ndims=1`` keeps one ``(t, 2)`` ``[x, value]``
+        array per final trace, its documented unit. A hierarchy
+        additionally requires at least 2 rows in EVERY final trace, on
+        either axis, and raises otherwise; see `predict`.
 
         ``xform_data`` vs ``trace_data``. ``xform_data`` is the analysed
         pipeline output, one entry per analysed INPUT dataset.
@@ -5328,7 +7408,11 @@ def plot(
         above. For animated matplotlib plots a ``HyperAnimation`` is
         returned instead: a ``(fig, animation)`` tuple subclass (so
         ``fig, anim = hyp.plot(...)`` unpacking works) that also exposes
-        ``.figure``/``.to_html5_video()``/``.to_jshtml()``/``.save()`` and
+        ``.figure``/``.to_html5_video()``/``.to_jshtml()``/``.save()``,
+        ``.draw_frame(i)``, ``.on_frame(callback)``, ``.colors`` and
+        ``.drawn_extent(frames=None, threshold=5)`` (the union bounding box
+        of everything the animation draws, measured from rendered pixels
+        in figure fractions -- see `HyperAnimation.drawn_extent`) and
         auto-plays inline in notebooks -- keep a reference to it so the
         underlying ``matplotlib.animation.FuncAnimation`` stays alive.
         When ``return_model=True``, a dict
@@ -5366,11 +7450,24 @@ def plot(
 
     """
 
+    # a `panels=` grid's own instruction for placing one narrow panel's
+    # rows in its 3-D cell (`_PanelLift`, one entry per dataset of the
+    # panel, None for 3-wide ones): internal, never a user kwarg
+    _panel_lift = kwargs.pop('_panel_lift', None)
+
     # early kwarg validation (release-1.0 audit): catch renamed/misspelled/
     # unknown keyword arguments HERE, with a clear TypeError naming the
     # kwarg (plus a did-you-mean hint), BEFORE the expensive analyze/
     # reduce/align pipeline runs.
     _validate_extra_plot_kwargs(kwargs)
+
+    # palettes given as data MATRICES become colormaps here (reduced with
+    # hyp.reduce under the palette_* options), and image palettes carry the
+    # requested sort; done before the panels branch so every panel call
+    # receives plain palettes (see `_prepare_palettes`)
+    palette, forecast_palette = _prepare_palettes(
+        palette, forecast_palette, sort=palette_sort, reduce=palette_reduce,
+        manip=palette_manip, normalize=palette_normalize, align=palette_align)
 
     # panels=/subplots= (GH #285): compose several STATIC panels in one
     # figure. Handled by re-entering plot() once per panel, so this branch
@@ -5385,7 +7482,8 @@ def plot(
         _panels_name = 'panels' if panels is not None else 'subplots'
         _panel_call = {k: v for k, v in locals().items()
                        if k not in ('x', 'kwargs', 'panels', 'subplots',
-                                    '_panels_spec', '_panels_name')}
+                                    '_panels_spec', '_panels_name',
+                                    '_panel_lift')}
         _panel_call.update(kwargs)
         return _plot_panels(x, _panels_spec, _panel_call, _name=_panels_name)
 
@@ -5434,7 +7532,8 @@ def plot(
         _xf_items = transform if isinstance(transform, (list, tuple)) \
             else [transform]
         for _xf in _xf_items:
-            if not (hasattr(_xf, 'shape') or hasattr(_xf, '__array__')):
+            if not (is_array_dataset(_xf) or is_frame_dataset(_xf)
+                    or is_series_like(_xf) or hasattr(_xf, '__array__')):
                 raise TypeError(
                     f"transform= must be already-transformed data (a numpy "
                     f"array/DataFrame, or a list of them), or None; got "
@@ -5479,27 +7578,35 @@ def plot(
     if ax is not None:
         import matplotlib.axes as _mpl_axes
         _is_mpl_axes = isinstance(ax, _mpl_axes.Axes)
-        _is_plotly_fig = _is_plotly_figure(ax)
+        _is_plotly_fig = _is_plotly_figure(ax) or _is_plotly_cell(ax)
         if not _is_mpl_axes and not _is_plotly_fig:
             raise TypeError(
                 "ax= must be a matplotlib Axes (2-D) or Axes3D (3-D) "
-                "instance, or a plotly Figure to draw into with the plotly "
-                f"backend; got {type(ax).__name__!r}.")
+                "instance, a plotly Figure to draw into with the plotly "
+                "backend, or one cell of a hyp.subplots(..., "
+                f"backend='plotly') grid; got {type(ax).__name__!r}.")
+        if _is_plotly_fig and isinstance(backend, str) \
+                and backend.lower() == 'auto':
+            # a plotly Figure/cell names the backend to draw with: 'auto'
+            # (the default) follows it instead of raising below
+            backend = 'plotly'
         if resolve_backend(backend) == "plotly":
             if _is_mpl_axes:
                 raise ValueError(
                     "ax= is a matplotlib Axes, and the plotly backend cannot "
                     "draw into it. Pass a plotly Figure instead (the one an "
-                    "earlier hyp.plot returned) to draw into it, drop ax= to "
-                    "get a new Figure, or draw this call with matplotlib: "
-                    "hyp.plot(..., backend='matplotlib') or "
+                    "earlier hyp.plot returned) or a cell from "
+                    "hyp.subplots(..., backend='plotly') to draw into it, "
+                    "drop ax= to get a new Figure, or draw this call with "
+                    "matplotlib: hyp.plot(..., backend='matplotlib') or "
                     "`with hyp.set_interactive_backend('matplotlib'):`.")
             _plotly_into = ax
             ax = None
         elif _is_plotly_fig:
             raise TypeError(
-                "ax= is a plotly Figure, but this call draws with matplotlib; "
-                "pass backend='plotly' (or a matplotlib Axes).")
+                "ax= is a plotly Figure (or hyp.subplots plotly cell), but "
+                "this call draws with matplotlib; pass backend='plotly' "
+                "(or a matplotlib Axes).")
 
     # a bare scalar is plotted as a single 1-D point -- warn rather than
     # doing so silently (D11-014).
@@ -5529,9 +7636,12 @@ def plot(
     # legend= must be a bool, a label string, or a list of labels: any
     # other scalar (e.g. legend=7) was silently treated as truthy
     # (release-1.0 audit, X2-error-quality-016).
-    if legend is not None and not isinstance(
-            legend, (bool, np.bool_, list, tuple, np.ndarray, pd.Series,
-                     pd.Index)):
+    # (the container question is asked through the datawrangler-based
+    # predicates, so a polars Series of labels is accepted like a pandas
+    # one -- Codex round 12, R12-5)
+    if legend is not None and not (
+            isinstance(legend, (bool, np.bool_, list, tuple))
+            or is_array_dataset(legend) or is_series_like(legend)):
         raise TypeError(
             f"legend= must be True/False, a label string, or a list of "
             f"labels (one per drawn trace/group); got "
@@ -5555,9 +7665,9 @@ def plot(
     # ONE-label list -- the same thing the `isinstance(legend, str)` wrap
     # above does with `legend='a'`, which then reports the length mismatch
     # instead of silently broadcasting that one label over every trace.
-    if isinstance(legend, (tuple, np.ndarray, pd.Series, pd.Index)):
-        legend = ([legend.item()]
-                  if isinstance(legend, np.ndarray) and legend.ndim == 0
+    if (isinstance(legend, tuple) or is_array_dataset(legend)
+            or is_series_like(legend)):
+        legend = ([legend.item()] if np.ndim(legend) == 0
                   else list(legend))
 
     # Did the CALLER pass legend= as an explicit list of labels? Recorded
@@ -5572,8 +7682,11 @@ def plot(
     # kwarg the hierarchy overrides warns), and `names=` ALONE raised
     # "pass dataset names via names= OR a legend= list, not both" on a
     # call that never mentioned legend=.
-    _legend_user_list = isinstance(
-        legend, (list, tuple, np.ndarray, pd.Series, pd.Index))
+    # (every accepted container was normalised to a list just above)
+    _legend_user_list = isinstance(legend, (list, tuple))
+    # ...and the entries themselves, for the plotly hover names of a path
+    # that drops the drawn legend (a continuous hue; `_plotly_hover_names`)
+    _legend_user_labels = list(legend) if _legend_user_list else None
 
     # animate= dict form (GH #154 resolution): unpacked into the flat
     # animation kwargs HERE, at the very top of the function, before
@@ -5739,7 +7852,8 @@ def plot(
         raise ValueError(
             f"{'xlim' if xlim is not None else 'ylim'}= sets limits in the "
             "DRAWN coordinates, but axis_scale='unit' pins both axes to the "
-            "[-1.1, 1.1] frame box, so the limits would be overwritten. "
+            "frame box (+/-1.2375 around the unit data square), so the "
+            "limits would be overwritten. "
             "Pass axis_scale='data' to draw in the data's own units.")
     for _lim_name, _lim in (('xlim', xlim), ('ylim', ylim)):
         if _lim is None:
@@ -5778,6 +7892,10 @@ def plot(
     # pattern is resolved per frame, so it is split off BEFORE the
     # per-segment check below -- which only ever sees the static forms it
     # already understood.
+    # kept so ndims=1 series mode can re-point a `{index}` pattern at the
+    # rows it reorders into time order (see `_resorted` below)
+    _title_pattern = (title if isinstance(title, str)
+                      and _title_is_pattern(title) else None)
     title, _dynamic_title = _validate_dynamic_title(title, animate,
                                                     _row_indices)
     _segment_titles = _validate_title(title, style=animate, order=order)
@@ -5793,7 +7911,19 @@ def plot(
     _title_kwargs = _normalize_title_kwargs(title_kwargs)
     _title_wrap = _validate_title_wrap(title_wrap)
     _title_color, _title_segment_colors = _validate_title_color(
-        title_color, _segment_titles)
+        title_color, _segment_titles, _title_kwargs)
+    # `label_anchor=` is checked here whether or not `labels=` is set (an
+    # unrecognised anchor used to pass silently when there was nothing to
+    # anchor), and a BARE STRING `labels=` is rejected outright rather than
+    # counted character by character ("labels has 4 entries" for 'only').
+    _validate_label_anchor_value(label_anchor)
+    if isinstance(labels, str):
+        raise TypeError(
+            f"labels= must be a list of per-observation labels (or one per "
+            f"dataset, positioned by label_anchor=), not the single string "
+            f"{labels!r}. Wrap it in a list: labels=[{labels!r}] labels the "
+            "first observation; for one label per dataset pass a list with "
+            "one entry per dataset.")
     if _title_color is not None:
         _title_kwargs = dict(_title_kwargs or {})
         _title_kwargs.setdefault('color', _title_color)
@@ -6041,8 +8171,10 @@ def plot(
     # by the text-flattening helper. Resolving once up front means every
     # text surface `_draw`/`_add_colorbar` touches later shares the exact
     # same FontProperties, rather than each independently re-scanning
-    # installed fonts.
-    _font_texts = [labels, legend, title, hue]
+    # installed fonts. xlabel/ylabel/zlabel are drawn text too (fresh-Colab
+    # review 2026-09-11: an axis label alone in a script outside the stack
+    # rendered as tofu).
+    _font_texts = [labels, legend, title, hue, xlabel, ylabel, zlabel]
     if colorbar is not None:
         _font_texts.append(colorbar.get('label'))
         _font_texts.append(colorbar.get('ticks'))
@@ -6231,6 +8363,7 @@ def plot(
     # remember whether the USER supplied an axis before `_draw` reassigns the
     # local `ax` to the axis it created (used by the GH #148 close below).
     _user_supplied_ax = ax is not None
+    _ax_needs_3d = False
 
     if ax is not None:
         # An animated plot BUILDS ITS OWN FIGURE. Measured across every mode
@@ -6256,10 +8389,23 @@ def plot(
                 "panels out in the data and make a single plot call."
             )
         if ndims > 2:
-            if ax.name != "3d":
-                raise ValueError(
-                    "If passing ax and the plot is 3D, ax must " "also be 3d"
-                )
+            # a 2-D axes under the default (3-D) ndims: whether the plot IS
+            # 3-D is the ANALYZED data's width, known only after the
+            # pipeline -- two columns draw a 2-D plot, exactly as on a
+            # figure of their own -- so the refusal is made there
+            # (`_ax_needs_3d`; 1.1 release review: two-column data into a
+            # 2-D ax= raised "the plot is 3D" up front)
+            _ax_needs_3d = getattr(ax, "name", None) != "3d"
+        elif getattr(ax, "name", None) == "3d":
+            # the mirror image: a 2-D (or series-mode) plot drawn into a
+            # 3-D axes silently became a Line3D at z=0, viewed from the
+            # default camera (S4)
+            raise ValueError(
+                f"ax= is a 3-D axes but ndims={ndims} draws a "
+                f"{'time-series' if ndims == 1 else '2-D'} plot; pass a "
+                "2-D axes (hyp.subplots(..., ndims=2), or "
+                "fig.add_subplot() without projection='3d'), or ndims=3 to "
+                "draw into this one.")
 
     text_args = {"vectorizer": vectorizer, "semantic": semantic, "corpus": corpus}
 
@@ -6279,6 +8425,9 @@ def plot(
     # depth; these drive multilevel styling below (color by outer group,
     # thinner/fainter lines per deeper level)
     nested_groups = nested_depths = None
+    # set when the nested-list branch below colours every leaf by its outer
+    # group -- the legend then names the GROUPS (see "handle legend")
+    _nested_group_colored = False
     if isinstance(x, list) and any(isinstance(el, list) for el in x) \
             and not all(isinstance(el, str) for el in x) \
             and not all(isinstance(el, (list, tuple)) and len(el) > 0
@@ -6309,7 +8458,8 @@ def plot(
     # unless we warn here.
     if isinstance(x, list):
         for _i, _el in enumerate(x):
-            if isinstance(_el, pd.DataFrame) and _el.index.nlevels >= 2:
+            if (is_frame_dataset(_el)
+                    and as_pandas_dataframe(_el).index.nlevels >= 2):
                 warnings.warn(
                     "MultiIndex grouping is only applied when a single "
                     "DataFrame is passed; the MultiIndex on dataset "
@@ -6333,7 +8483,12 @@ def plot(
     # innermost-level (feature) labels of a COLUMN hierarchy's leaves, kept
     # for the return_model bundle's pipeline; None on every other input.
     _mi_feature_labels = None
-    if isinstance(x, pd.DataFrame) and x.index.nlevels >= 2:
+    if is_frame_dataset(x):
+        # every dataframe backend datawrangler recognises, as hypertools'
+        # own pandas frame (the same object when it already is one): the
+        # row/column-hierarchy checks below read pandas indexes
+        x = as_pandas_dataframe(x)
+    if is_frame_dataset(x) and x.index.nlevels >= 2:
         if cluster is not None or n_clusters is not None:
             raise ValueError(
                 "cluster=/n_clusters= is not compatible with a row-"
@@ -6357,7 +8512,7 @@ def plot(
             , stacklevel=external_stacklevel())
             hue = None
         x, _multiindex_meta = expand_multiindex(x)
-    elif isinstance(x, pd.DataFrame) and x.columns.nlevels >= 2:
+    elif is_frame_dataset(x) and x.columns.nlevels >= 2:
         # COLUMN hierarchy (1.1): the innermost column level is the FEATURE
         # axis and every level above it groups, so (Market, Sector, Ticker)
         # becomes one leaf per sector plus a market mean. Unlike the row
@@ -6380,6 +8535,14 @@ def plot(
         # by the time the arrays are handed on, and a within-group column
         # permutation cannot move a trajectory.
         x, _multiindex_meta = group_columns(x)
+        # Every leaf keeps ALL of the frame's rows, so every leaf keeps the
+        # frame's row index. The capture above saw ONE frame (one entry),
+        # and `ndims=1` series mode read it for leaf 0 only -- so a dated
+        # column hierarchy drew leaf 0 against dates and every other leaf
+        # against 0..n-1, then refused the mix ("some datasets carry a
+        # DatetimeIndex and others do not"; 1.1 review, F4).
+        if _row_indices is not None and len(_row_indices) == 1:
+            _row_indices = [_row_indices[0]] * len(x)
         if hue is not None:
             # Classify hue HERE, before the MultiIndex branch below wins the
             # cluster/hue/nested_groups chain outright. A CONTINUOUS hue is
@@ -6475,6 +8638,7 @@ def plot(
 
     # analyze the data
     raw = None
+    _bundle_fitted_pipeline = None   # analyze()'s fitted pipeline, when asked for
     if transform is None:
         raw = format_data(x, impute=impute, **text_args)
 
@@ -6506,6 +8670,13 @@ def plot(
         # to die deep inside numpy ("all the input array dimensions ...
         # must match exactly") with no dataset info or fix hint. Fail fast
         # with a clear message BEFORE the pipeline runs.
+        # whether each dataset is finite BEFORE the pipeline runs, so a
+        # NaN that appears afterwards is reported as the pipeline's (X2)
+        try:
+            _input_finite = [bool(np.isfinite(np.asarray(ri, dtype=float))
+                                  .all()) for ri in raw]
+        except (TypeError, ValueError):
+            _input_finite = None
         _widths = [ri.shape[1] for ri in raw]
         if len(set(_widths)) > 1:
             # when the ORIGINAL input mixed text and numeric datasets, the
@@ -6540,17 +8711,34 @@ def plot(
             # per-DATASET labels= (GH #285) are expanded to the historical
             # per-observation nested form FIRST, so the check below (and
             # every consumer downstream) is unchanged.
+            labels = _labels_as_lists(labels, len(raw))
             labels = _expand_dataset_labels(
                 labels, [ri.shape[0] for ri in raw], label_anchor)
             _validate_labels_length(labels, [ri.shape[0] for ri in raw])
+            if hue is not None or cluster is not None \
+                    or n_clusters is not None:
+                # a hue=/cluster= grouping regroups the observations
+                # across datasets, and every regrouping path
+                # (`reshape_data`, `segment_by_run`) reads labels= as ONE
+                # entry per observation, flat. The nested per-dataset
+                # form -- and the per-dataset strings expanded into it
+                # just above -- reached them as one sub-list per dataset
+                # and crashed both backends (1.1 release review: 'NoneType'
+                # is not iterable, "need at least one array to
+                # concatenate", IndexError). Flatten it; the flat form is
+                # the one those paths always handled.
+                labels = _flatten_dataset_labels(labels)
 
         # a per-dataset fmt LIST must match the dataset count
         # (F01-006/F10-003): fail fast here when no later regrouping
         # (hue=/cluster=/MultiIndex) can change the drawn-trace count; the
         # regrouped case is re-checked against the FINAL count below.
+        # ...and not in `ndims=1` series mode either, where fmt= is one
+        # entry per DRAWN LINE (a column) and the line count is only known
+        # after reduce= has run (S1)
         if (isinstance(fmt, list) and hue is None and cluster is None
                 and n_clusters is None and _multiindex_meta is None
-                and len(fmt) != len(raw)):
+                and not _series_mode and len(fmt) != len(raw)):
             raise ValueError(
                 f"fmt was given as a list of length {len(fmt)}, but there "
                 f"are {len(raw)} dataset(s) to plot; pass one format "
@@ -6582,6 +8770,16 @@ def plot(
                     pipeline.fit(raw)
                 xform, _ = analyze(raw, pipeline=pipeline, internal=True,
                                    impute=impute, return_model=True)
+                # analyze returns DATA; a fitted trailing cluster step
+                # colours the figure through the cluster branch below, as
+                # it coloured the figure it was fit for, unless hue= says
+                # otherwise (it used to be dropped silently; 1.1 release
+                # review, L13)
+                if hue is None:
+                    from ..tools.analyze import pipeline_cluster_labels
+                    _replay = pipeline_cluster_labels(pipeline, xform)
+                    if _replay is not None:
+                        cluster = _PanelClusterLabels(*_replay)
             else:
                 if pipeline.is_fitted:
                     xform = [np.asarray(pipeline.transform(r)) for r in raw]
@@ -6600,7 +8798,7 @@ def plot(
                             "clusterer yields labels -- pass those as "
                             "hue= instead, and plot the step before it.")
         else:
-            xform = analyze(
+            _analyzed = analyze(
                 raw,
                 # plot()'s ndims defaults to 3 (unlike analyze's None), so
                 # forwarding it alongside reduce=None would trip analyze's
@@ -6617,9 +8815,38 @@ def plot(
                 internal=True,
                 impute=impute,
                 random_state=random_state,
+                # the FITTED pipeline is what the return_model bundle hands
+                # back as bundle['pipeline'] -- asking for it here means the
+                # bundle no longer refits every stage a second time (a UMAP
+                # or Isomap panel grid used to fit, and warn, twice; 1.1
+                # feature-tour report, section 9.8)
+                return_model=bool(return_model),
             )
+            if return_model:
+                xform, _bundle_fitted_pipeline = _analyzed
+            else:
+                xform = _analyzed
     else:
-        xform = transform
+        # one entry per dataset. A BARE array/frame is ONE dataset (a 3-D
+        # array is a stack of them): iterated as-is it was a list of ROWS,
+        # and passed validation only to crash with an IndexError (1.1
+        # release review, F15)
+        if isinstance(transform, (list, tuple)):
+            xform = list(transform)
+        elif getattr(transform, 'ndim', None) == 3:
+            xform = list(transform)
+        else:
+            xform = [transform]
+        xform = [np.asarray(xi).reshape(-1, 1)
+                 if is_array_dataset(xi) and np.ndim(xi) == 1 else xi
+                 for xi in xform]
+        # polars (and other datawrangler) frames -> pandas, whose arithmetic
+        # the display scaling below relies on; a pandas frame keeps its own
+        # index for the forecast alignment check (2026-09-11 review: a
+        # polars transform= raised SchemaError in the unit scaling)
+        xform = [as_pandas_dataframe(xi) if is_frame_dataset(xi) else xi
+                 for xi in xform]
+        _input_finite = None
         if labels is not None:
             # transform= skips the pipeline (and the per-observation check
             # above), but a per-DATASET labels= list still expands here
@@ -6724,7 +8951,7 @@ def plot(
     # `ndims=1` series mode (GH #285) draws one LINE PER COLUMN against the
     # row index, so extra columns are extra lines rather than data that
     # cannot be drawn -- the refusal below ("static plots support at most
-    # 1") applies only to the pre-1.2 single-column reading of ndims=1.
+    # 1") applies only to the pre-1.1 single-column reading of ndims=1.
     # With a reduce= spec the reduction to one component has already run in
     # `analyze` above, and ndims=1, reduce='PCA' means exactly what it says:
     # the first principal component over the index.
@@ -6760,6 +8987,46 @@ def plot(
         # output, which is what `pipeline.transform()` reproduces.
         trace_data = xform
 
+    # Keep timestamps attached to VALUES before series mode adds a display
+    # coordinate. These same frames feed static and animated forecasts
+    # (release review 2026-09-08, finding 2).
+    _forecast_frames = []
+    for _i, _xi in enumerate(xform):
+        _idx = (_row_indices[_i] if _row_indices is not None
+                and _i < len(_row_indices) else None)
+        if _idx is not None and len(_idx) != len(_xi):
+            from ..predict.time import is_time_index
+            if predict is not None and is_time_index(_idx):
+                raise ValueError(
+                    'the analysis pipeline changed the row count, so the '
+                    'original observation times no longer identify the rows '
+                    'to forecast. Pass the analyzed data with its updated '
+                    'time index to plot(..., reduce=None, predict=...).')
+            _idx = None
+        if is_frame_dataset(_xi):
+            # polars and other datawrangler frames carry no pandas index
+            _xi = as_pandas_dataframe(_xi)
+        if (is_frame_dataset(_xi) and _idx is not None
+                and not _xi.index.equals(_idx)):
+            # a `transform=` frame with an index of its own: handing it to
+            # `pd.DataFrame(frame, index=...)` RE-INDEXES it, and an index
+            # sharing no labels with x's made every value NaN -- forecast
+            # as silent zeros (1.1 release review, F7). A plain 0..n-1
+            # index carries no rows of its own, so the values are x's rows
+            # position for position; any other index is a real conflict.
+            _own = _xi.index
+            if transform is not None and predict is not None and not (
+                    isinstance(_own, pd.RangeIndex) and _own.start == 0
+                    and _own.step == 1):
+                raise ValueError(
+                    f"transform= entry {_i} is a DataFrame whose index does "
+                    "not match the rows of x it replaces (first labels "
+                    f"{list(_own[:2])} vs {list(_idx[:2])}), so there is no "
+                    "telling which observation each row is. Pass its values "
+                    "(frame.to_numpy()) or give it x's index.")
+            _xi = _xi.to_numpy()
+        _forecast_frames.append(pd.DataFrame(_xi, index=_idx))
+
     # ndims=1 series mode (GH #285) ---------------------------------------
     # Turn each dataset's k columns into k two-column ``[x, value]`` traces,
     # where x is the dataset's own row index. From here down the figure is
@@ -6769,14 +9036,17 @@ def plot(
     # that machinery rather than a second renderer.
     #
     # Placed AFTER the display-dimensionality reduction (so `reduce=` has
-    # had its say) and BEFORE `predict=` (so the forecast is computed on the
-    # expanded traces and lands in the same space they are drawn in; its x
-    # column is then pinned to the true index continuation rather than
-    # trusted to the model -- see `_series_step`).
+    # had its say). Forecasts use the indexed signal frames saved above,
+    # fitting all columns of each dataset together. Only the resulting
+    # predictions are expanded into display traces.
     _series_owner = None          # drawn trace -> input dataset
+    _series_columns = None
     _series_names = None          # per drawn trace, for legend=True
     _series_step = None           # per drawn trace, x units per observation
     _series_is_date = False
+    # row count per INPUT dataset, before series mode expands columns into
+    # traces -- what a datetime-like `t=` is measured against (F2)
+    _pre_series_lengths = [int(np.asarray(xi).shape[0]) for xi in xform]
     if _series_mode:
         _n_input_datasets = len(xform)
         _widths = [xi.shape[1] for xi in xform]
@@ -6830,12 +9100,36 @@ def plot(
                 "(df.reset_index(drop=True)), or use ndims=2/3.")
         _series_epoch_ms = resolve_backend(backend) == 'plotly'
         _new_xform, _series_owner, _series_names, _series_step = [], [], [], []
+        _series_columns = []
         _date_flags, _index_labels = [], []
+        _series_named = []            # per drawn trace: named after a column?
+        # datasets whose index is not in ascending order: drawn in time
+        # order (`_resorted`), or -- where a per-observation argument is
+        # tied to the INPUT row order -- left as given (`_unsorted`)
+        _resorted, _unsorted = [], []
+        _row_order_bound = any(_v is not None and _v is not False
+                               for _v in (hue, labels, cluster))
         for _i, _xi in enumerate(xform):
             _idx = (_row_indices[_i] if _row_indices is not None
                     and _i < len(_row_indices) else None)
             _xs, _step, _is_date, _idx_label = _series_x_axis(
                 _idx, _xi.shape[0], epoch_ms=_series_epoch_ms)
+            if len(_xs) > 1 and np.any(np.diff(_xs) < 0):
+                # a shuffled index drew the rows in INPUT order against
+                # their x -- a scribble -- while `predict=` sorts timed
+                # observations and continues from the LATEST one, so the
+                # forecast did not join the drawn line (1.1 review, F14).
+                # Draw in time order, reordering the index with the rows so
+                # an `{index}` title still names each frame's own row.
+                if _row_order_bound:
+                    _unsorted.append(_i)
+                else:
+                    _order = np.argsort(_xs, kind='stable')
+                    _xs, _xi = _xs[_order], np.asarray(_xi)[_order]
+                    if _row_indices is not None and _i < len(_row_indices):
+                        _row_indices = list(_row_indices)
+                        _row_indices[_i] = _idx[_order]
+                    _resorted.append(_i)
             _date_flags.append(_is_date)
             _index_labels.append(_idx_label)
             _cols = (_column_names[_i] if _column_names is not None
@@ -6847,7 +9141,9 @@ def plot(
             for _j in range(_xi.shape[1]):
                 _new_xform.append(np.column_stack([_xs, _xi[:, _j]]))
                 _series_owner.append(_i)
+                _series_columns.append(_j)
                 _series_step.append(_step)
+                _series_named.append(_cols is not None)
                 if _cols is not None:
                     _series_names.append(_cols[_j])
                 elif _xi.shape[1] > 1:
@@ -6856,6 +9152,26 @@ def plot(
                         else f"dataset {_i + 1} column {_j + 1}")
                 else:
                     _series_names.append(f"dataset {_i + 1}")
+        if _resorted:
+            if _title_pattern is not None:
+                # the resolver read the index in its INPUT order; the rows
+                # (and so each frame's head row) are now in time order
+                _dynamic_title = _make_title_pattern_resolver(
+                    _title_pattern, _row_indices)
+            warnings.warn(
+                f"ndims=1: the index of dataset(s) {_resorted} is not in "
+                "ascending order, so its rows are drawn in time order (as "
+                "predict= forecasts them). Sort the data first "
+                "(df.sort_index()) to silence this.",
+                UserWarning, stacklevel=external_stacklevel())
+        if _unsorted:
+            warnings.warn(
+                f"ndims=1: the index of dataset(s) {_unsorted} is not in "
+                "ascending order, and hue=/labels=/cluster= are given per "
+                "observation in INPUT order, so the line is drawn in that "
+                "order and doubles back along x. Sort the data (and those "
+                "arguments) by time first (df.sort_index()).",
+                UserWarning, stacklevel=external_stacklevel())
         if any(_date_flags) and not all(_date_flags):
             raise ValueError(
                 "ndims=1 series mode draws every dataset against ONE x "
@@ -6870,9 +9186,17 @@ def plot(
         _named_index = next((lab for lab in _index_labels if lab), None)
         if xlabel is None and _named_index is not None:
             xlabel = _named_index
+        # ...only when that single line IS a named column: a reduce= that
+        # collapsed several named columns into one component has no column
+        # to name the axis after, and the placeholder trace name ('dataset
+        # 1') is a legend label, not a y label (S3)
         if (ylabel is None and len(_series_names) == 1
-                and _column_names is not None):
+                and _column_names is not None and _series_named[0]):
             ylabel = _series_names[0]
+        if _series_is_date and xlim is not None:
+            # xlim= on a date axis: datetime-likes and date strings on both
+            # backends, floats as matplotlib day numbers on both (S2)
+            xlim = _resolve_date_xlim(xlim, _series_epoch_ms)
         _df_axis_labels = None
         # per-input-dataset style lists follow their datasets onto the
         # expanded traces (a list already sized to the drawn lines is left
@@ -6888,6 +9212,38 @@ def plot(
         _display_ndims = 2
 
     # axis_scale='data' (GH #285) keeps the pipeline's own coordinates, but
+    # a narrow panel of a 3-D `panels=` grid: from here on the figure is
+    # the 3-D one its cell draws -- the rows placed in the cell
+    # (`_PanelLift`), and every dimensionality check below reading that
+    # placement -- while `predict=`/`truth=` below read `_lift_source`,
+    # the analyzed rows, so the panel forecasts exactly what the
+    # individual call forecasts and its bundle (`xform_data`,
+    # `trace_data`, the forecasts) stays in that space (round 9)
+    _lift_source = None
+    if _panel_lift is not None:
+        if animate:
+            raise ValueError(
+                "internal error: a panels= cell is never animated, but "
+                "its placement (_panel_lift) reached an animated call.")
+        if len(_panel_lift) != len(xform):
+            raise ValueError(
+                f"internal error: panels= placed {len(_panel_lift)} "
+                f"dataset(s) in a cell drawing {len(xform)}.")
+        _lift_source = [np.asarray(xi, dtype=float) for xi in xform]
+        xform = [xi if lift is None else lift.rows(xi)
+                 for xi, lift in zip(_lift_source, _panel_lift)]
+
+    # a 2-D `ax=` under ndims > 2 (see the `ax=` checks at the top): refused
+    # only now that the drawn width is known, and only when it is 3-D
+    if (_ax_needs_3d and xform and np.ndim(xform[0]) == 2
+            and np.shape(xform[0])[1] >= 3):
+        raise ValueError(
+            "If passing ax and the plot is 3D, ax must also be 3d: ax= is a "
+            f"2-D axes, but the data is drawn in 3-D ({np.shape(xform[0])[1]} "
+            "columns after the pipeline). Pass a 3-D axes (hyp.subplots() "
+            "default, or fig.add_subplot(projection='3d')), or ndims=2 to "
+            "draw into this one.")
+
     # a 3-D plot's frame IS the unit cube -- there is no "raw units" cube to
     # draw the data in, and the camera/zoom geometry is defined against it.
     if _axis_scale == 'data' and xform[0].shape[1] >= 3:
@@ -6970,6 +9326,19 @@ def plot(
     # `hyp.predict(x, model=[...])` returns -- there is one naming rule, not
     # two. `None` for the ordinary single-model form.
     _predict_names = None
+    _forecast_horizon = t
+    if predict is not None and t is not None and not _is_int_horizon(t):
+        # The renderer needs an integer horizon; the forecasters retain the
+        # original target and resolve it against each dataset's own times.
+        if _multiindex_meta is not None:
+            t = _resolve_datetime_horizon(t, _row_indices, _pre_series_lengths)
+        else:
+            from ..predict.common import resolve_t
+            _steps = [resolve_t(frame, t)[0] for frame in _forecast_frames]
+            if any(n <= 0 for n in _steps):
+                raise ValueError('t is at or before a dataset\'s last observation; '
+                                 'plot draws future forecasts and does not truncate.')
+            t = max(_steps)
     if predict is not None:
         from ..predict.backtest import model_collection as _model_collection
         from ..predict.predict import _FORECASTER_ALIASES, FORECASTERS
@@ -6980,29 +9349,38 @@ def plot(
         if _collection is not None:
             _predict_names = list(_collection[0])
 
-    def _pin_series_x(datasets, forecasts):
-        """Give each forecast the row index's OWN continuation on x.
-
-        `ndims=1` series mode materialises the row index as the traces' x
-        column (see the expansion above), so the forecaster is handed a
-        perfectly regular ramp alongside the values and dutifully forecasts
-        it too. What x a future observation sits at is arithmetic the plot
-        knows exactly -- one `_series_step` per step -- so it is written
-        here rather than inherited from a fit.
-        """
-        if _series_step is None:
-            return forecasts
-        pinned = []
-        for _i, (_xi, _fc) in enumerate(zip(datasets, forecasts)):
-            _fc = np.array(_fc, dtype=float, copy=True)
-            _fc[:, 0] = (float(_xi[-1, 0])
-                         + _series_step[_i] * np.arange(1, len(_fc) + 1))
-            pinned.append(_fc)
-        return pinned
+    def _forecast_coordinates(frame, owner, column=None):
+        """Put forecast values on the SAME time axis as their observations."""
+        if column is None:
+            return np.asarray(frame, dtype=float)
+        idx = frame.index
+        original = _forecast_frames[owner].index
+        if isinstance(idx, pd.PeriodIndex):
+            # forecasts of periods are periods; draw them at their start
+            # times, as `_series_x_values` draws the observed periods
+            idx = idx.to_timestamp()
+        if isinstance(idx, pd.DatetimeIndex):
+            if _series_epoch_ms:
+                xs = np.asarray(idx.as_unit('ms').asi8, dtype=float)
+            else:
+                from matplotlib.dates import date2num
+                xs = date2num(idx.to_pydatetime())
+        elif isinstance(idx, pd.TimedeltaIndex):
+            _, divisor = _timedelta_unit(np.asarray(original.total_seconds()))
+            xs = np.asarray(idx.total_seconds()) / divisor
+        else:
+            try:
+                xs = np.asarray(idx, dtype=float)
+            except (TypeError, ValueError):
+                xs = original.get_indexer(idx).astype(float)
+        return np.column_stack([xs, np.asarray(frame)[:, column]])
 
     def _compute_forecasts(datasets):
         from ..predict.predict import predict as _predictor
-        _out = _predictor(datasets, model=predict, t=t)
+        from ..predict.time import order_time_data
+        _inputs = _forecast_frames
+        _out = _predictor(_inputs, model=predict,
+                          t=_forecast_horizon)
         if _predict_names is None:
             _groups = [(None, _out)]
         else:
@@ -7011,10 +9389,16 @@ def plot(
         for _name, _fc in _groups:
             if not isinstance(_fc, list):
                 _fc = [_fc]
-            _fc = _pin_series_x(datasets,
-                                [np.asarray(f, dtype=float) for f in _fc])
-            _bundle[_name] = _fc
-            _flat.extend(_fc)
+            _bundle[_name] = [np.asarray(f, dtype=float) for f in _fc]
+            _owners = (_series_owner if _series_owner is not None
+                       else list(range(len(_inputs))))
+            _columns = (_series_columns if _series_columns is not None
+                        else [None] * len(_inputs))
+            for _owner, _column in zip(_owners, _columns):
+                _observed = order_time_data(_inputs[_owner])
+                _flat.append(np.vstack([
+                    _forecast_coordinates(_observed.iloc[-1:], _owner, _column),
+                    _forecast_coordinates(_fc[_owner], _owner, _column)]))
         return (
             # `bundle_forecasts` mirrors `hyp.predict`'s return shape: a
             # plain list for one model, a {name: [per dataset]} dict for a
@@ -7026,8 +9410,7 @@ def plot(
             # 2, ...) -- the order `MultiModelSchedule` addresses its
             # sub-schedules in, and the order `_forecast_owner` below is
             # built to match.
-            [np.vstack([np.asarray(datasets[_i % len(datasets)][-1:]), _fc])
-             for _i, _fc in enumerate(_flat)],
+            _flat,
             # ANALYZE-space copies for the animated per-frame schedule (see
             # hypertools/plot/forecast.py). Taken HERE, beside raw_forecasts,
             # so they keep the same 1:1 correspondence the regrouping guard
@@ -7045,7 +9428,19 @@ def plot(
     _model_forecast_owner = None
     if predict is not None and _multiindex_meta is None:
         bundle_forecasts, raw_forecasts, analyze_histories = \
-            _compute_forecasts(xform)
+            _compute_forecasts(xform if _lift_source is None
+                               else _lift_source)
+        if _lift_source is not None:
+            # forecast in the analyzed space, drawn where the rows are
+            # (`_PanelLift.continuation`); the overlays are model-major,
+            # one per dataset per model
+            raw_forecasts = [
+                fc if _panel_lift[_i % len(_lift_source)] is None
+                else _panel_lift[_i % len(_lift_source)].continuation(fc)
+                for _i, fc in enumerate(raw_forecasts)]
+            analyze_histories = [
+                h if lift is None else lift.rows(h)
+                for h, lift in zip(analyze_histories, _panel_lift)]
         if _predict_names is not None:
             _model_forecast_owner = [_d for _ in _predict_names
                                      for _d in range(len(xform))]
@@ -7066,7 +9461,17 @@ def plot(
                 "traces, which have no observed continuation of their own. "
                 "Plot the groups separately, or flatten the frame "
                 "(df.reset_index(drop=True)).")
-        raw_truths = _resolve_truth(truth, xform, t, _series_step)
+        raw_truths = _resolve_truth(
+            truth, xform if _lift_source is None else _lift_source, t,
+            _series_step,
+            forecast_paths=raw_forecasts if _lift_source is None else None,
+            time_coordinates=(
+                lambda idx, i: _forecast_coordinates(
+                    pd.DataFrame(np.zeros((len(idx), 1)), index=idx),
+                    _series_owner[i], 0)[:, 0]) if _series_owner is not None else None)
+        if _lift_source is not None:
+            raw_truths = [tr if lift is None else lift.continuation(tr)
+                          for tr, lift in zip(raw_truths, _panel_lift)]
 
     # per-point colors for multicolored lines (set by the hue branch below;
     # computed after interpolation). Dataset lengths are captured now so hue
@@ -7119,15 +9524,32 @@ def plot(
     # set together with `_seg_ds` by `_regroup_categorical_lines`
     _seg_lengths = None
     _seg_bridged = None
+    #: The categorical LINE path's legend labels in CATEGORY order (the
+    #: drawn order `_categorical_color_label_maps` resolved: sorted for
+    #: integer hue / cluster ids, first appearance for strings). Its runs
+    #: are drawn in data order, so the legend would otherwise list the
+    #: categories in the order they first APPEAR ('0, 2, 1') where the
+    #: marker path lists them sorted (1.1 release review, figure QA).
+    _legend_order = None
     # (n_input_datasets, n_hue_groups) when a categorical hue regrouped the
     # data by category -- names= (one name per INPUT dataset) cannot apply
     # after that regrouping (F02-009).
     _hue_regrouped_counts = None
+    #: True once a MARKER-only `hue=`/`cluster=` grouping ran through
+    #: `reshape_data`, which groups GLOBALLY by category: its drawn traces
+    #: are categories, never datasets, however the counts happen to fall
+    _global_regrouped = False
     # unfitted Clusterer built from the SAME resolved spec the figure's
     # cluster stage used (set in the cluster branch below), so the
     # return_model bundle's pipeline encodes the parameters the figure
     # was actually drawn with (F13-004)
     _bundle_cluster_stage = None
+    # the per-observation cluster labels the FIGURE was coloured/grouped
+    # by (over every input dataset's rows, in order; None without
+    # clustering), handed back as ``models['cluster_labels']`` -- and what
+    # a `panels=` grid replays into each panel, so a panel never
+    # re-clusters (round 8)
+    _figure_cluster_labels = None
 
     # alpha= (1.1): a first-class per-dataset style, promoted out of the
     # GH #206 `**kwargs` passthrough (where a list raised matplotlib's bare
@@ -7350,8 +9772,27 @@ def plot(
             # pre-center/pre-scale arrays that become `trace_data` below --
             # so Contract 5's `forecasts[i] == hyp.predict(trace_data[i])`
             # holds by construction rather than by coincidence.
+            # Column-hierarchy leaves and derived means share observation
+            # times. Row-hierarchy traces group by the entire row key, so
+            # their within-trace observations have positional coordinates.
+            _idx = (_row_indices[0] if _row_indices is not None
+                    and _multiindex_meta.get('axis') == 'columns' else None)
+            _forecast_frames = [pd.DataFrame(
+                arr[:, 1:] if _series_owner is not None else arr,
+                index=_idx) for arr in _ft.arrays]
+            if _series_owner is not None:
+                _series_owner = list(range(len(_ft.arrays)))
+                _series_columns = [0] * len(_ft.arrays)
             bundle_forecasts, raw_forecasts, analyze_histories = \
                 _compute_forecasts(_ft.arrays)
+            if _predict_names is not None:
+                # a COLLECTION forecasts every final trace once per model,
+                # model-major -- the same map the flat path builds, which
+                # this branch never set (so the consistency check below
+                # counted n_models x n_traces forecasts against n_traces and
+                # raised its internal-invariant error; 1.1 review, F3)
+                _model_forecast_owner = [_d for _ in _predict_names
+                                         for _d in range(len(_ft.arrays))]
         # legend=[...] under a hierarchy RENAMES the top-level groups
         # rather than being discarded: the labelled traces are exactly the
         # top-level ones, so the caller's entries land on them one-for-one
@@ -7484,12 +9925,32 @@ def plot(
         if isinstance(cluster, bytes):
             cluster = cluster.decode("utf-8")
 
-        from ..cluster.cluster import _resolve_cluster_spec
+        from ..cluster.cluster import (_check_cluster_spec_keys,
+                                       _resolve_cluster_spec)
         _n_clusters_explicit = n_clusters is not None
         _cluster_instance = None
         _spec_kwargs = {}
         _spec_top_n = None
-        if isinstance(cluster, str):
+        _replayed_labels = None
+        _replayed_categories = None
+        if isinstance(cluster, _PanelClusterLabels):
+            # a `panels=` cell drawing rows its probe ALREADY clustered
+            # (round 8): reuse that fit's memberships verbatim -- the
+            # probe is the caller's own seeded single-axes call, and
+            # re-clustering the analyzed rows here, once per panel and
+            # without the caller's random_state, drew different clusters
+            # from the ones the individual call draws. ...and colour them
+            # under the probe's COMPLETE label set (round 9): a shared
+            # fit's slice can lack a cluster, and colouring it from its
+            # own label set drew global cluster 1 in cluster 0's colour.
+            _replayed_labels = cluster.labels
+            _replayed_categories = cluster.categories
+            model = cluster.model
+            cluster = cluster.spec
+            params = {}
+            n_clusters = None
+            _n_clusters_explicit = False
+        elif isinstance(cluster, str):
             model = cluster
             params = default_params(model) or {}
         elif isinstance(cluster, dict):
@@ -7502,6 +9963,9 @@ def plot(
                     "value of the 'model' key and a dictionary of custom "
                     "parameters as the value of the 'kwargs' key (the "
                     "legacy 'params' key is also accepted).")
+            # the spec is rebuilt below from its known keys only, so a
+            # flat 'random_state' would vanish: raise like hyp.cluster
+            _check_cluster_spec_keys(cluster)
             model = cluster["model"]
             model_key = model if isinstance(model, str) \
                 else getattr(model, "__name__", str(model))
@@ -7562,7 +10026,9 @@ def plot(
         # regrouping by its labels silently drew n_features "points"
         # where the data's rows should be, or crashed downstream
         # (F13-001).
-        if _mixture_name(model) == "FeatureAgglomeration":
+        if _replayed_labels is not None:
+            pass
+        elif _mixture_name(model) == "FeatureAgglomeration":
             raise ValueError(
                 "cluster='FeatureAgglomeration' is not supported by "
                 "hyp.plot: FeatureAgglomeration clusters features "
@@ -7583,7 +10049,8 @@ def plot(
                           or mixture_models.get(model))
         elif isinstance(model, type):
             _model_cls = model
-        if (_n_clusters_explicit and _model_cls is not None
+        if (_replayed_labels is None and _n_clusters_explicit
+                and _model_cls is not None
                 and _mixture_name(model) not in mixture_models
                 and "n_clusters"
                 not in inspect.signature(_model_cls).parameters):
@@ -7613,24 +10080,31 @@ def plot(
         # bundle's cluster stage from the IDENTICAL resolved spec so the
         # bundled pipeline encodes the same parameters the figure was
         # drawn with (F13-004).
-        if _cluster_instance is not None:
-            _resolve_spec = _cluster_instance
+        if _replayed_labels is not None:
+            # no fit at all: the labels are the probe's (the bundled
+            # pipeline is the probe's too -- `_plot_panels` installs it)
+            cluster_labels = _replayed_labels
         else:
-            _resolve_spec = {"model": model, "kwargs": params}
-            if _spec_top_n is not None:
-                _resolve_spec["n_clusters"] = _spec_top_n
-        _cluster_stage = _resolve_cluster_spec(
-            _resolve_spec, n_clusters if n_clusters is not None else 3,
-            random_state=random_state,
-            n_clusters_explicit=_n_clusters_explicit)
-        # a second, unfitted resolution of the same spec for the bundle
-        # (n_clusters_explicit=False: any conflict was already warned
-        # about just above -- values resolve identically either way)
-        _bundle_cluster_stage = _resolve_cluster_spec(
-            _resolve_spec, n_clusters if n_clusters is not None else 3,
-            random_state=random_state)
+            if _cluster_instance is not None:
+                _resolve_spec = _cluster_instance
+            else:
+                _resolve_spec = {"model": model, "kwargs": params}
+                if _spec_top_n is not None:
+                    _resolve_spec["n_clusters"] = _spec_top_n
+            _cluster_stage = _resolve_cluster_spec(
+                _resolve_spec, n_clusters if n_clusters is not None else 3,
+                random_state=random_state,
+                n_clusters_explicit=_n_clusters_explicit)
+            # a second, unfitted resolution of the same spec for the
+            # bundle (n_clusters_explicit=False: any conflict was already
+            # warned about just above -- values resolve identically
+            # either way)
+            _bundle_cluster_stage = _resolve_cluster_spec(
+                _resolve_spec, n_clusters if n_clusters is not None else 3,
+                random_state=random_state)
 
-        cluster_labels = clusterer(xform, cluster=_cluster_stage)
+            cluster_labels = clusterer(xform, cluster=_cluster_stage)
+        _figure_cluster_labels = cluster_labels
 
         if _mixture_name(model) in mixture_models:
             # soft assignments: color each observation by the proportion-
@@ -7671,6 +10145,7 @@ def plot(
                 blended = mat2colors(cluster_labels, palette=palette)
                 group_ids, group_colors = colors2groups(blended)
                 xform, labels = reshape_data(xform, group_ids, labels)
+                _global_regrouped = True
                 mpl_kwargs["color"] = [
                     group_colors[gid]
                     for gid in sorted(set(group_ids), key=group_ids.index)
@@ -7682,13 +10157,20 @@ def plot(
             # separate datasets are never bridged (GH #291); each run is
             # coloured + labelled by its cluster id in sorted order, one
             # legend/colorbar entry per cluster.
+            _shared_colors = None
+            if _replayed_categories is not None:
+                _shared_colors = _replayed_cluster_colors(
+                    _hard_cluster_categories(cluster_labels),
+                    _replayed_categories, palette)
             _cat_color, _cat_label = _categorical_color_label_maps(
-                cluster_labels, palette, None, None, sort_numeric=True)
+                cluster_labels, palette, _shared_colors, None,
+                sort_numeric=True)
             _nd = len(xform)
             (xform, labels, _run_colors, hue_group_labels, _seg_ds,
              _run_cat_names, _seg_lengths,
              _seg_bridged) = _regroup_categorical_lines(
                  xform, cluster_labels, labels, _cat_color, _cat_label)
+            _legend_order = [str(v) for v in _cat_label.values()]
             fmt = _expand_styles_to_runs(fmt, mpl_kwargs, _seg_ds, _nd)
             mpl_kwargs["color"] = _run_colors
             hue = cluster_labels
@@ -7699,6 +10181,7 @@ def plot(
             hue_category_names = [str(c) for c in _cats_sorted]
         else:
             xform, labels = reshape_data(xform, cluster_labels, labels)
+            _global_regrouped = True
             # reshape_data returns groups in first-appearance order;
             # reorder the drawn groups (and their legend/colorbar
             # labels) into sorted label order so a legend reads
@@ -7714,6 +10197,14 @@ def plot(
             hue = cluster_labels
             hue_group_labels = [str(_cats[i]) for i in _order]
             hue_category_names = list(hue_group_labels)
+            if _replayed_categories is not None and "color" not in mpl_kwargs:
+                # the shared mapping's colours for the clusters THIS cell
+                # draws (a missing cluster leaves a gap, not a shift)
+                _shared_colors = _replayed_cluster_colors(
+                    [_cats[i] for i in _order], _replayed_categories,
+                    palette)
+                if _shared_colors is not None:
+                    mpl_kwargs["color"] = _shared_colors
 
     # group data if there is a grouping var
     elif hue is not None:
@@ -7731,10 +10222,20 @@ def plot(
         # a matrix hue's own column names are the natural legend labels
         # for its palette swatches (GH #285); captured before hue is
         # turned into a bare array below.
-        _hue_column_names = (list(hue.columns)
-                             if isinstance(hue, pd.DataFrame) else None)
-        if isinstance(hue, (pd.Series, pd.Index, pd.Categorical)):
-            hue = hue.tolist()
+        _hue_column_names = None
+        if is_frame_dataset(hue):
+            hue = as_pandas_dataframe(hue)
+            if (hue.shape[1] == 1
+                    and not pd.api.types.is_numeric_dtype(hue.dtypes.iloc[0])):
+                # a one-column frame of LABELS is that column (previously
+                # it fell through to the matrix path as a (n, 1) object
+                # array and crashed with a bare IndexError); a one-column
+                # NUMERIC frame keeps its matrix-hue reading below
+                hue = _series_values_list(hue.iloc[:, 0])
+            else:
+                _hue_column_names = list(hue.columns)
+        elif is_series_like(hue):
+            hue = _series_values_list(hue)
 
         # NESTED per-dataset hue: when the data is a list of datasets, hue may
         # be given with the SAME nesting -- one hue sub-sequence per dataset,
@@ -7812,6 +10313,27 @@ def plot(
                     if hue_array is not None and hue_array.ndim >= 1
                     else len(hue))
         if _hue_len != n_obs:
+            # a NESTED per-dataset hue whose sub-lists do not all match
+            # their datasets: name the offending sub-list(s) rather than
+            # reporting the count of sub-lists as "3 entries" against the
+            # observation total.
+            if (isinstance(hue, (list, tuple)) and len(xform) > 1
+                    and len(hue) == len(xform)
+                    and all(np.ndim(h) >= 1 for h in hue)):
+                bad = [(i, len(h), len(xi))
+                       for i, (h, xi) in enumerate(zip(hue, xform))
+                       if len(h) != len(xi)]
+                if bad:
+                    detail = '; '.join(
+                        f"hue[{i}] has {got} entr{'y' if got == 1 else 'ies'}"
+                        f" but dataset {i} has {want} row"
+                        f"{'' if want == 1 else 's'}"
+                        for i, got, want in bad)
+                    raise ValueError(
+                        f"hue= is nested per dataset ({len(hue)} sub-lists "
+                        f"for {len(xform)} datasets) but the lengths do "
+                        f"not match: {detail}. Each sub-list must have "
+                        "exactly one value per row of its dataset.")
             raise ValueError(
                 f"hue has {_hue_len} entr{'y' if _hue_len == 1 else 'ies'} but "
                 f"the data has {n_obs} observations; hue must have exactly one "
@@ -8025,6 +10547,7 @@ def plot(
                  _run_cat_names, _seg_lengths,
                  _seg_bridged) = _regroup_categorical_lines(
                      xform, hue, labels, _cat_color, _cat_label)
+                _legend_order = [str(v) for v in _cat_label.values()]
                 fmt = _expand_styles_to_runs(
                     fmt, mpl_kwargs, _seg_ds, _n_datasets_before_hue)
                 mpl_kwargs["color"] = _run_colors
@@ -8034,6 +10557,7 @@ def plot(
                 # boolean hue is grouped in first-appearance order then
                 # reordered into sorted numeric order (F13-005).
                 xform, labels = reshape_data(xform, hue, labels)
+                _global_regrouped = True
                 if _hue_sort_numeric:
                     _appear = list(sorted(set(hue), key=list(hue).index))
                     _order = sorted(range(len(_appear)),
@@ -8054,6 +10578,41 @@ def plot(
                 _named = resolve_category_colors(palette, hue_group_labels)
                 mpl_kwargs["color"] = [tuple(_named[c])
                                        for c in hue_group_labels]
+            elif ("color" not in mpl_kwargs and not _fmt_draws_line(fmt)
+                    and isinstance(palette, (list, tuple))
+                    and len(palette) > 0
+                    and all(isinstance(e, collections.abc.Mapping)
+                            for e in palette)
+                    and hue_group_labels is not None
+                    and len(hue_group_labels) == len(xform)):
+                # ...and a per-dataset LIST of {category: color} dicts
+                # (1.1 release review): the marker path fell through to
+                # the branch below, which samples the DEFAULT palette for
+                # a dict list, so `fmt='o'` drew hls while `fmt='-'`
+                # applied the dicts. The line path's merge (one mapping,
+                # a category named twice must agree) in the same drawn
+                # order the groups were just put in.
+                _cat_color, _ = _categorical_color_label_maps(
+                    hue, palette, None, hue_group_labels, _hue_sort_numeric)
+                mpl_kwargs["color"] = [tuple(c) for c in _cat_color.values()]
+            elif ("color" not in mpl_kwargs and not _fmt_draws_line(fmt)
+                    and hue_group_labels is not None
+                    and len(hue_group_labels) == len(xform)):
+                # ...and every other palette on the MARKER path (round 9):
+                # the category colours are the palette's first
+                # `n_groups` entries, in drawn-group order -- exactly what
+                # the ambient cycle assigns on a fresh axes -- resolved
+                # here so they belong to the CATEGORIES: on a composed
+                # axes the cycle continues past the datasets an earlier
+                # call drew, so the groups' colours shifted with it, and a
+                # colour letter in fmt= (``'ro'``) painted every group
+                # red where the line path (``'r-'``) kept the hue colours.
+                import seaborn as sns
+                _n_groups = len(xform)
+                mpl_kwargs["color"] = [
+                    tuple(c) for c in sns.color_palette(
+                        _seaborn_palette_arg(palette, _n_groups),
+                        _n_groups)]
             _hue_regrouped_counts = (_n_datasets_before_hue, len(xform))
             # a PURE line cannot render a single-observation category -- it
             # draws NOTHING (and crashed animated interpolation, F02-002).
@@ -8090,6 +10649,7 @@ def plot(
         base_colors = sns.color_palette(
             _seaborn_palette_arg(palette, n_outer), n_outer)
         mpl_kwargs["color"] = [base_colors[g] for g in nested_groups]
+        _nested_group_colored = True
         min_depth = min(nested_depths)
         if any(d != min_depth for d in nested_depths):
             mpl_kwargs["linewidth"] = [
@@ -8156,21 +10716,20 @@ def plot(
     # dataset's full row count, and `figure`/`axes` are None because the
     # figure is built FROM the title and so does not exist yet.
     if _dynamic_title is not None and not animate:
-        title = str(_dynamic_title(FrameContext(
+        title = _resolve_dynamic_title_text(_dynamic_title, FrameContext(
             frame=None, n_frames=None, figure=None, axes=None,
             datasets=tuple(xform), style=False, order=order,
             revealed_counts=tuple(len(d) for d in xform),
             window_bounds=tuple((0, len(d)) for d in xform),
-            progress=1.0)))
+            progress=1.0))
         _dynamic_title = None
 
     # title_wrap= (GH #285): hard-wrap every title at N characters, AFTER
     # per-segment resolution so a scalar title and each entry of a
     # per-segment list wrap identically. The line break is the drawing
     # backend's own: '\n' for matplotlib, '<br>' for plotly.
+    _wrap_break = '<br>' if resolve_backend(backend) == 'plotly' else '\n'
     if _title_wrap is not None:
-        _wrap_break = ('<br>' if resolve_backend(backend) == 'plotly'
-                       else '\n')
         title = _wrap_title_text(title, _title_wrap, _wrap_break)
         _segment_titles = _wrap_title_text(_segment_titles, _title_wrap,
                                            _wrap_break)
@@ -8224,9 +10783,16 @@ def plot(
     # not on `n_datasets`. The length check below, in contrast, genuinely
     # cannot happen any earlier: `n_morph_datasets` is the count of FINAL
     # (post cluster/hue-reshape) datasets tagged for morph, which is only
-    # known now that `xform`/`morph_tags` exist.
+    # known now that `xform`/`morph_tags` exist. `loop=True` appends a
+    # closing repeat of the first cloud (the backends schedule
+    # `2(n + 1) - 1` segments, as the `loop=` docstring promises), so the
+    # list is validated against that same count -- this check and the
+    # backends' `morph_schedule` used to disagree by one cloud, and no
+    # list length satisfied both.
     if morph_tags is not None:
-        rotations = resolve_morph_rotations(rotations, sum(morph_tags))
+        rotations = resolve_morph_rotations(
+            rotations, sum(morph_tags) + (1 if _morph_loop else 0),
+            loop=_morph_loop)
 
     # 2-D animations (round17 #9, GH #123): fixed (non-rotating) viewport --
     # `rotations=`/`zoom=` are 3-D camera controls with no 2-D equivalent,
@@ -8393,7 +10959,11 @@ def plot(
             # calls that only ever passed names=.
             raise ValueError(
                 "pass dataset names via names= OR a legend= list, not both")
-        legend = names
+        if legend is not False:
+            # names= turns the legend ON by default, but an explicit
+            # legend=False still wins (1.1 review: it used to be
+            # overwritten here, so the legend was drawn anyway)
+            legend = names
 
     # handle legend
     if legend is not None:
@@ -8409,6 +10979,30 @@ def plot(
             else:
                 legend = [item for item in
                          sorted(set(hue), key=list(hue).index)]
+        elif (_nested_group_colored and hue is None
+                and len(nested_groups) == len(xform)
+                and (legend is True or (
+                    isinstance(legend, (list, tuple))
+                    and len(legend) == len(set(nested_groups))
+                    and len(legend) != len(xform)))):
+            # nested-list input colours every leaf by its OUTER group, so
+            # the legend names the groups, as a hierarchy's does
+            # (docs/hierarchy.rst: one labelled entry per top-level group,
+            # every other trace '_nolegend_'). legend=True numbered the
+            # LEAVES 1..n, so four swatches came in two identical colour
+            # pairs (1.1 release review, figure QA). The entry goes on the
+            # group's SUMMARY leaf (its shallowest, which the depth styling
+            # draws thickest and most opaque); a legend= list with one
+            # entry per outer group names them.
+            _group_names = (list(legend) if isinstance(legend, (list, tuple))
+                            else list(range(1, len(set(nested_groups)) + 1)))
+            _summary = {}
+            for _i, (_g, _d) in enumerate(zip(nested_groups, nested_depths)):
+                if _g not in _summary or _d < nested_depths[_summary[_g]]:
+                    _summary[_g] = _i
+            _owner = {_i: _g for _g, _i in _summary.items()}
+            legend = [_group_names[_owner[_i]] if _i in _owner
+                      else '_nolegend_' for _i in range(len(xform))]
         elif legend is True and hue is None:
             # ndims=1 series mode (GH #285) names each line by the COLUMN it
             # draws (or by its dataset, for one-column inputs) -- a bare
@@ -8469,6 +11063,17 @@ def plot(
         legend, palette, hue_group_labels=hue_group_labels,
         hierarchy_labels=_mi_colorbar_labels,
         legend_entries=_final_legend_entries)
+    # ...which, for datasets coloured from the palette CYCLE (no color=,
+    # hue=, cluster=, palette mapping), reads the palette's fresh sampling;
+    # the colours actually drawn differ when a composed `ax=` continues the
+    # palette or a fmt= colour letter colours a dataset, so each backend
+    # branch below re-syncs both scales to the drawn colours
+    # (`_sync_color_scales`; 1.1 release review)
+    _color_scales_from_cycle = (
+        "color" not in mpl_kwargs and hue is None and cluster is None
+        and n_clusters is None and multicolor_hue is None
+        and not isinstance(palette, collections.abc.Mapping)
+        and not _looks_like_dataset_palettes(palette))
 
     # interpolate if its a line plot. animate='morph' treats every dataset
     # as a POINT CLOUD (Hungarian-matched to its neighbors in `morph.py`),
@@ -8509,9 +11114,21 @@ def plot(
     # only ever ADDS points between samples, keeps every original sample
     # (including the final one) as a drawn vertex, and uses a fixed target
     # density -- so duration=/frame_rate= (animation kwargs) no longer
-    # change static rendering (F01-001/F01-007). ANIMATED plots keep the
-    # historical frame_rate*duration grid: there the interpolated rows ARE
-    # the animation's frame-sampling.
+    # change static rendering (F01-001/F01-007). ANIMATED plots put each
+    # line on a grid of at least frame_rate*duration rows that is a uniform
+    # refinement of its observations (`_interp_anim_line`): every
+    # observation stays an exact vertex, and nothing is ever DOWNsampled
+    # (1.1 visual review, L8). 'spin' reveals no rows at all, so it keeps
+    # the source rows untouched; the backends antialias them at draw time.
+    def _finite_before(trace_index):
+        """Whether the INPUT dataset behind drawn trace `trace_index` was
+        finite before the pipeline ran (None when unknown)."""
+        if _input_finite is None:
+            return None
+        _src = (_series_owner[trace_index] if _series_owner is not None
+                and trace_index < len(_series_owner) else trace_index)
+        return _input_finite[_src] if _src < len(_input_finite) else None
+
     if animate == "morph":
         pass
     elif fmt is None or isinstance(fmt, str):
@@ -8522,22 +11139,30 @@ def plot(
                 # (release-1.0 audit, F05-011)
                 for _i, _xi in enumerate(xform):
                     if _xi.shape[0] > 1:
-                        _require_finite_for_line(_xi, _i)
-                if animate:
-                    # Every multi-row dataset is resampled onto the EXACT
-                    # frame grid (release-1.0 audit): per-dataset
-                    # interpolation (previously the step came from
-                    # xform[0]'s length alone, silently truncating longer
-                    # LATER datasets, F04-003) with exactly
-                    # round(frame_rate * duration) rows (the docstring's
-                    # promised frame count -- the old np.arange step
-                    # produced 901/41 frames for some lengths, F04-004).
-                    # Per-dataset singleton guard (F02-002/F05-012): a
-                    # 1-point dataset (singleton hue category, or a
-                    # reference point plotted beside a trajectory) cannot
-                    # be PCHIP-interpolated (scipy needs >= 2 samples) --
-                    # leave it as-is instead of crashing the whole plot;
-                    # the backend paces it onto the frame grid.
+                        _require_finite_for_line(
+                            _xi, _i, input_finite=_finite_before(_i),
+                            manip=manip)
+                if animate == 'spin':
+                    # 'spin' draws every row on every frame (only the camera
+                    # moves): there is no reveal to pace, so the rows stay
+                    # the observations themselves (L8)
+                    pass
+                elif animate:
+                    # Every multi-row dataset gets its OWN animation grid
+                    # (`_interp_anim_line`): at least
+                    # round(frame_rate * duration) rows, a uniform
+                    # refinement of its observations, never fewer rows than
+                    # it has (1.1 visual review, L8 -- the grid used to be
+                    # exactly the frame count, which downsampled long
+                    # datasets into zig-zags). Release-1.0 history: the
+                    # grid is per-dataset because a grid computed from
+                    # xform[0]'s length alone truncated longer LATER
+                    # datasets (F04-003). Per-dataset singleton guard
+                    # (F02-002/F05-012): a 1-point dataset (singleton hue
+                    # category, or a reference point plotted beside a
+                    # trajectory) cannot be PCHIP-interpolated (scipy needs
+                    # >= 2 samples) -- leave it as-is instead of crashing
+                    # the whole plot; the backend paces it onto the frames.
                     _n_frames = max(2, int(round(frame_rate * duration)))
                     xform = [xi if xi.shape[0] < 2
                              else _interp_anim_line(xi, _n_frames)
@@ -8550,15 +11175,19 @@ def plot(
             if has_line_component(fmt[idx]):
                 if xi.shape[0] > 1:
                     # see the F05-011 note above
-                    _require_finite_for_line(xi, idx)
-                    # per-dataset exact frame grid -- see the F04-003/
-                    # F04-004 note in the single-fmt branch above. (The
-                    # historical interp_array_list call here treated the
-                    # 2D array as a LIST of rows, silently replacing the
-                    # dataset with a list of per-row interpolations --
-                    # latent for years because a bug made is_line() always
-                    # False.)
-                    if animate:
+                    _require_finite_for_line(
+                        xi, idx, input_finite=_finite_before(idx),
+                        manip=manip)
+                    # per-dataset animation grid -- see the L8/F04-003 note
+                    # in the single-fmt branch above ('spin' keeps its
+                    # rows). (The historical interp_array_list call here
+                    # treated the 2D array as a LIST of rows, silently
+                    # replacing the dataset with a list of per-row
+                    # interpolations -- latent for years because a bug made
+                    # is_line() always False.)
+                    if animate == 'spin':
+                        pass
+                    elif animate:
                         xform[idx] = _interp_anim_line(
                             xi, max(2, int(round(frame_rate * duration))))
                     elif antialias:
@@ -8633,10 +11262,44 @@ def plot(
         # bug in this file. Assert rather than drop: the pre-1.1 guard
         # nulled `raw_forecasts` on any mismatch, which is precisely how a
         # missing per-trace forecast would become invisible.
-        _ft.assert_consistent(raw_forecasts=raw_forecasts,
-                              bundle_forecasts=bundle_forecasts)
-    elif (raw_forecasts is not None
-            and len(raw_forecasts) != len(xform)):
+        if _predict_names is None or raw_forecasts is None:
+            _ft.assert_consistent(raw_forecasts=raw_forecasts,
+                                  bundle_forecasts=bundle_forecasts)
+        else:
+            # a collection: n_models blocks of one forecast per trace,
+            # model-major, and a {name: [per trace]} bundle (F3)
+            _n_tr = len(_ft.arrays)
+            if len(raw_forecasts) != _n_tr * len(_predict_names):
+                raise ValueError(
+                    f"hierarchy trace/raw_forecasts mismatch: {_n_tr} "
+                    f"traces x {len(_predict_names)} model(s) but "
+                    f"{len(raw_forecasts)} raw_forecasts. Every per-trace "
+                    "sequence must be built from the same FinalTraces "
+                    "(hypertools/plot/hierarchy.py).")
+            for _k, _name in enumerate(_predict_names):
+                _ft.assert_consistent(**{
+                    f'raw_forecasts[{_name!r}]':
+                        raw_forecasts[_k * _n_tr:(_k + 1) * _n_tr],
+                    f'bundle_forecasts[{_name!r}]':
+                        bundle_forecasts[_name]})
+            # forecast i continues trace `_model_forecast_owner[i]`; the
+            # identity map the single-model hierarchy uses would run off
+            # the end of the trace list
+            _forecast_owner = list(_model_forecast_owner)
+    elif raw_forecasts is not None and (
+            len(raw_forecasts) != len(xform)
+            # ...or MARKER-only categorical regrouping, whose traces are
+            # CATEGORIES, never datasets -- even when the counts coincide
+            # (2 datasets under 2 categories silently drew dataset 1's
+            # forecast in category 1's colour; 1.1 release review)
+            or _global_regrouped
+            # ...or a COLLECTION under hue=/cluster= regrouping: one
+            # dataset split into two runs under two models gives two
+            # forecasts for two runs, so the counts coincide by accident
+            # while forecast i does NOT continue run i (Codex round 3:
+            # Kalman took the earlier run's colour, ARIMA the final run's)
+            or (_model_forecast_owner is not None and _seg_ds is not None
+                and len(_seg_ds) == len(xform))):
         # A forecast belongs to a DATASET and is anchored at that dataset's
         # last observation, so after regrouping it belongs to whichever run
         # holds that observation -- which is also the trace it visually
@@ -8658,7 +11321,7 @@ def plot(
                 _owner[_ds] = _run           # last write wins = final run
             if set(_owner) >= set(_fc_dataset):
                 _forecast_owner = [_owner[_ds] for _ds in _fc_dataset]
-        elif _model_forecast_owner is not None:
+        elif _model_forecast_owner is not None and not _global_regrouped:
             # no regrouping: a collection's only "mismatch" is that there
             # are n_models forecasts per drawn trace, which the model/
             # dataset map already resolves
@@ -8812,16 +11475,69 @@ def plot(
         _slow_secs = (DEFAULT_SLOW_WARNING_SECONDS
                       if slow_warning_seconds is _UNSET_SLOW_WARNING
                       else slow_warning_seconds)
+        _timed_cache = {}
+
+        def _timed_forecast(i, rows, model_spec, horizon, min_history):
+            if len(rows) < min_history:
+                return None
+            from ..predict.predict import predict as _predictor
+            from ..predict.time import order_time_data
+            owner = _series_owner[i] if _series_owner is not None else i
+            column = _series_columns[i] if _series_columns is not None else None
+            key = (id(model_spec), owner, rows)
+            if key not in _timed_cache:
+                history = order_time_data(_forecast_frames[owner].iloc[list(rows)])
+                selected_model = model_spec
+                candidate = (model_spec.get('model') if isinstance(model_spec, dict)
+                             else model_spec)
+                if (not isinstance(candidate, type)
+                        and getattr(candidate, 'is_fitted', False)
+                        and hasattr(candidate, 'for_dataset')):
+                    bound = candidate.for_dataset(owner)
+                    selected_model = ({**model_spec, 'model': bound}
+                                      if isinstance(model_spec, dict) else bound)
+                from ..core.exceptions import _InsufficientHistoryError
+                try:
+                    future = _predictor(history, model=selected_model,
+                                        t=_forecast_horizon)
+                except _InsufficientHistoryError:
+                    # A sparse early prefix may contain too few regular-grid
+                    # rows even when it has enough original observations.
+                    return None
+                _timed_cache[key] = (history.iloc[-1:], future)
+            last, future = _timed_cache[key]
+            absolute = np.vstack([_forecast_coordinates(last, owner, column),
+                                  _forecast_coordinates(future, owner, column)])
+            return absolute - analyze_histories[i][rows[-1]]
+
+        _timed_forecast.fit_key = lambda i, rows: (
+            _series_owner[i] if _series_owner is not None else i, rows)
+
         def _build_schedule(model_spec):
+            # Repeated entries in a model comparison still own independent
+            # fits (and independent samples for stochastic forecasters).
+            _timed_cache.clear()
+            _time_kwargs = {'forecast_function': _timed_forecast}
             if _reveal is not None:
                 # rows from the reveal, not counts from the drawn traces: a
                 # dataset may now be spread over several of them
                 return ForecastSchedule.for_regrouped(
                     analyze_histories, _reveal, model=model_spec, t=t,
-                    n_frames=_n_frames, slow_warning_seconds=_slow_secs)
+                    n_frames=_n_frames, slow_warning_seconds=_slow_secs,
+                    # one array per RUN here (hue=/cluster= regrouped the
+                    # data), which is exactly what the reveal indexes
+                    grids=xform,
+                    **_time_kwargs)
             return _builder(
                 analyze_histories, _grid_lengths, model=model_spec, t=t,
-                n_frames=_n_frames, slow_warning_seconds=_slow_secs)
+                n_frames=_n_frames, slow_warning_seconds=_slow_secs,
+                # the animation grid ITSELF, so each frame's forecast starts
+                # at the vertex that frame actually draws last rather than at
+                # the last raw observation behind it (maintainer report,
+                # 2026-09-11). Passed pre-centre/scale, exactly like
+                # `analyze_histories`; `to_display` maps both below.
+                grids=xform,
+                **_time_kwargs)
 
         if _predict_names is None:
             forecast_schedule = _build_schedule(predict)
@@ -8834,12 +11550,6 @@ def plot(
             forecast_schedule = MultiModelSchedule(
                 [_build_schedule(_spec) for _spec in _specs],
                 names=_predict_names)
-        if _series_step is not None:
-            # ndims=1 series mode: the x column is the row index's own
-            # continuation, not something a fit gets a vote on (see
-            # `_pin_series_x`, which does exactly this for the static
-            # overlay).
-            forecast_schedule.pin_ramp(0, _series_step)
 
     # Display space (GH #285): axis_scale='unit' -- what hypertools has
     # always done -- mean-centres every drawn vertex (data, forecasts, and
@@ -8926,16 +11636,37 @@ def plot(
         _bounds = np.vstack([np.asarray(r, dtype=float)
                              for r in _bounds_rows])
         _finite = _bounds[np.isfinite(_bounds).all(axis=1)]
-        if len(_finite):
+        if len(_finite) and _finite.shape[1] == 1:
+            # a ONE-column trace outside ndims=1 series mode draws its
+            # values on Y against the row index on x, so its one column
+            # bounds y. x (rows, continued by any forecast) is left to the
+            # backend's autoscale; this used to give the VALUE range to x
+            # as well, so the 40-row trace sat in an x window of (-5.5,
+            # 3.2) (1.1 release review)
+            _lo, _hi = float(_finite.min()), float(_finite.max())
+            _pad = (_hi - _lo) * 0.05 if _hi > _lo else 1.0
+            if _data_ylim is None:
+                _data_ylim = (_lo - _pad, _hi + _pad)
+        elif len(_finite):
             _lo = _finite.min(axis=0)
             _hi = _finite.max(axis=0)
             _pad = np.where(_hi > _lo, (_hi - _lo) * 0.05, 1.0)
+            _auto_x = (float(_lo[0] - _pad[0]), float(_hi[0] + _pad[0]))
             if _data_xlim is None:
-                _data_xlim = (float(_lo[0] - _pad[0]),
-                              float(_hi[0] + _pad[0]))
-            if _data_ylim is None and _finite.shape[1] > 1:
-                _data_ylim = (float(_lo[1] - _pad[1]),
-                              float(_hi[1] + _pad[1]))
+                _data_xlim = _auto_x
+            elif None in tuple(_data_xlim):
+                # an OPEN side (``xlim=(None, hi)``) takes the data bound:
+                # plotly has no partial range (``[None, hi]`` drew a
+                # year-2000 axis), and matplotlib then agrees with it
+                _data_xlim = tuple(_auto_x[_k] if _v is None else _v
+                                   for _k, _v in enumerate(_data_xlim))
+            if _finite.shape[1] > 1:
+                _auto_y = (float(_lo[1] - _pad[1]), float(_hi[1] + _pad[1]))
+                if _data_ylim is None:
+                    _data_ylim = _auto_y
+                elif None in tuple(_data_ylim):
+                    _data_ylim = tuple(_auto_y[_k] if _v is None else _v
+                                       for _k, _v in enumerate(_data_ylim))
 
     # handle palette with seaborn
     import seaborn as sns
@@ -9077,13 +11808,44 @@ def plot(
         _n_ds = len(raw_forecasts) // len(_predict_names)
         _forecast_labels = [_name for _name in _predict_names
                             for _ in range(_n_ds)]
-        if _fc_hue is None and forecast_cluster is None:
-            # "one colour per model" is exactly what forecast_hue= already
-            # means -- datasets sharing a hue value share a colour -- so the
-            # model name IS the hue, and forecast_palette= keeps its usual
-            # job of choosing the colours.
+        if _fc_fmt is None:
+            # several models on one series: each forecast keeps its
+            # dataset's colour (which series it continues) and takes a
+            # dash per MODEL (which model made it) -- two encodings for
+            # two questions. An explicit forecast_fmt= replaces the dash.
+            from .forecast import forecast_model_fmts
+            _fc_fmt = forecast_model_fmts(len(_predict_names), _n_ds)
+        if _fc_hue is None and forecast_cluster is None \
+                and _fc_palette is not None:
+            # forecast_palette= on a collection colours by MODEL: "one
+            # colour per model" is exactly what forecast_hue= already
+            # means -- datasets sharing a hue value share a colour -- so
+            # the model name IS the hue. (Without a palette the forecasts
+            # inherit their datasets' colours; a per-model palette used to
+            # be the default, and its first colour was the first dataset's
+            # own, so two datasets x two models were four lines in two
+            # indistinguishable pairs.)
             _fc_hue = _forecast_labels
-            _fc_palette = _fc_palette if _fc_palette is not None else 'husl'
+        elif (_fc_hue is not None and not isinstance(_fc_hue, (str, bytes))
+                and (isinstance(_fc_hue, (list, tuple))
+                     or is_array_dataset(_fc_hue)
+                     or is_series_like(_fc_hue))):
+            # forecast_hue= is documented as ONE VALUE PER DATASET; with a
+            # collection every dataset is forecast once per model, so that
+            # value is broadcast over its n_models forecasts (F5). A list
+            # already sized to the overlays (model-major, like
+            # forecast_fmt=) is left exactly as passed.
+            _hue_list = list(_fc_hue)
+            if len(_hue_list) == _n_ds and _n_ds != len(raw_forecasts):
+                _fc_hue = [_hue_list[_d] for _d in _model_forecast_owner]
+            elif len(_hue_list) != len(raw_forecasts):
+                raise ValueError(
+                    f"forecast_hue= takes one value per DATASET (shared by "
+                    f"every model's forecast of that dataset), or one per "
+                    f"FORECAST in model-major order; got {len(_hue_list)} "
+                    f"value(s) for {_n_ds} dataset(s) x "
+                    f"{len(_predict_names)} model(s) = {len(raw_forecasts)} "
+                    "forecast(s).")
         if isinstance(_fc_fmt, (list, tuple)) \
                 and len(_fc_fmt) == len(_predict_names) \
                 and len(_predict_names) != len(raw_forecasts):
@@ -9091,6 +11853,18 @@ def plot(
             # a collection); a list already sized to the overlays is left
             # exactly as passed
             _fc_fmt = [_f for _f in _fc_fmt for _ in range(_n_ds)]
+    elif raw_forecasts is not None and predict is not None:
+        # the single-model form lists its forecast in the legend under the
+        # model's name too -- the SAME name the collection form and
+        # `hyp.predict(x, model=[...])` use for that spec -- so a figure
+        # with `predict=` always says what its faded continuation is
+        # (before this only a collection was listed).
+        from ..predict.backtest import spec_name as _spec_name
+        from ..predict.predict import _FORECASTER_ALIASES, FORECASTERS
+        from ..core.shared import supported_names as _supported_names
+        _forecast_labels = [_spec_name(predict, _supported_names(FORECASTERS),
+                                       _FORECASTER_ALIASES)
+                            ] * len(raw_forecasts)
 
     _forecast_overrides = None
     if raw_forecasts is not None and (
@@ -9137,12 +11911,25 @@ def plot(
     _dynamic_title_text = {}
     if _dynamic_title is not None:
         def _update_dynamic_title(ctx, _fn=_dynamic_title):
-            text = str(_fn(ctx))
+            # `title_wrap=` applies to the resolved text of EVERY frame,
+            # exactly as it does to a static or per-segment title.
+            text = _wrap_title_text(_resolve_dynamic_title_text(_fn, ctx),
+                                    _title_wrap, _wrap_break)
             _dynamic_title_text['text'] = text
             if ctx.axes is not None:
                 _apply_title(ctx.axes, text, font=_artist_font,
                              title_kwargs=_title_kwargs)
         _frame_hooks.add_internal(_update_dynamic_title)
+
+    # the colour-cycle slots this call's datasets take (what a later `ax=`
+    # call into the same axes/figure/cell continues the palette from):
+    # counted HERE, before the plotly branch below hands the palette to its
+    # backend as explicit per-dataset ``color=`` entries, which would make
+    # every dataset look explicitly coloured (round 7)
+    _palette_slots_taken = _palette_slots_consumed(
+        len(xform), mpl_kwargs, line_colors, draw_fmt,
+        category_colored=hue is not None or cluster is not None
+        or n_clusters is not None)
 
     # interactive (plotly) backend: render with plotly and skip the
     # matplotlib pipeline entirely. backend='auto' resolves to plotly only
@@ -9183,16 +11970,95 @@ def plot(
                 f"kwargs for plotly are: {sorted(_PLOTLY_MAPPED_KWARGS)}."
             , stacklevel=external_stacklevel())
 
+        # composing into an existing figure (`ax=<figure>`) or grid cell
+        # (`ax=<cell>`): the palette slots the calls drawn THERE already
+        # took (a cell keeps its own count, like a matplotlib axes of its
+        # own; Codex round 3). Read for EVERY call -- the count is written
+        # back below for every call -- not only for one that colours from
+        # the cycle: a pinned ``color=`` or categorical ``hue=`` call used
+        # to skip the read and write the count back as its own zero, so
+        # the next ordinary call restarted the palette (round 8; the
+        # matplotlib `ax=` path keeps the axes' count across such calls)
+        _plotly_palette_offset = 0
+        # ...and the COLOURS those slots took (`_palette_continuation`
+        # fills the gaps of an evenly re-sampled palette with them)
+        _plotly_palette_used = None
+        if _plotly_into is not None:
+            if _is_plotly_cell(_plotly_into):
+                _meta = _plotly_into.figure.layout.meta
+                _meta = _meta if isinstance(_meta, dict) else {}
+                _plotly_palette_offset = int((_meta.get(
+                    'hyp_cell_datasets_drawn') or {}).get(
+                        str(_plotly_into.index), 0))
+                _plotly_palette_used = (_meta.get(
+                    'hyp_cell_palette_used') or {}).get(
+                        str(_plotly_into.index))
+            else:
+                _meta = getattr(_plotly_into, 'layout', None)
+                _meta = _meta.meta if _meta is not None else None
+                _meta = _meta if isinstance(_meta, dict) else {}
+                _plotly_palette_offset = int(
+                    _meta.get('hyp_datasets_drawn', 0))
+                _plotly_palette_used = _meta.get('hyp_palette_used')
+        # the palette colours this call's cycle-coloured datasets take,
+        # recorded below for the next `ax=` call into the same figure/cell
+        _palette_taken_colors = []
         if "color" not in mpl_kwargs:
-            import seaborn as sns_local
             mpl_kwargs = dict(mpl_kwargs)
-            mpl_kwargs["color"] = sns_local.color_palette(
-                _seaborn_palette_arg(palette, len(xform)), len(xform))
+            # continue the palette past the datasets an earlier call drew
+            # here, as the matplotlib `ax=` path does (a per-dataset
+            # palette mapping/list is not a cycle to continue)
+            _cycle_offset = 0
+            if (_plotly_into is not None
+                    and not (isinstance(palette, collections.abc.Mapping)
+                             or _looks_like_dataset_palettes(palette))):
+                _cycle_offset = _plotly_palette_offset
+            _palette_colors = _palette_continuation(
+                palette, len(xform), _cycle_offset,
+                _plotly_palette_used if _cycle_offset else None)
+            _palette_taken_colors = _palette_colors[:_palette_slots_taken]
+            # a colour letter in fmt= ('r-', ['g--', 'b:']) colours its
+            # dataset, exactly as on matplotlib, where the letter beats the
+            # axes' colour cycle (an explicit color=/hue= is the other
+            # branch of this `if`, and still wins over the letter on both
+            # backends). A lettered dataset consumes no colour-cycle slot
+            # there either, so here the unlettered datasets take the
+            # palette colours in order, past the ones an earlier call into
+            # the same figure/cell already used (1.1 release review, round
+            # 6: plotly drew every fmt-lettered dataset in the palette
+            # colour, on the single-axes path, animated, and per panel).
+            _fmt_letters = [
+                _fmt_color_letter(draw_fmt[_i]) if _i < len(draw_fmt)
+                else None for _i in range(len(xform))]
+            _palette_iter = iter(_palette_colors)
+            mpl_kwargs["color"] = [
+                _letter if _letter is not None else next(_palette_iter)
+                for _letter in _fmt_letters]
+            if _color_scales_from_cycle:
+                _sync_color_scales(mpl_kwargs["color"], colors_info,
+                                   colorbar_info)
             kwargs_list = parse_kwargs(xform, mpl_kwargs)
             _apply_extra_kwargs(kwargs_list, kwargs)
+        # the traces already in the figure/grid this call draws into (its
+        # own are appended after them; see `_rank_plotly_legend`)
+        _n_traces_before = 0
+        if _plotly_into is not None:
+            _n_traces_before = len(
+                (_plotly_into.figure if _is_plotly_cell(_plotly_into)
+                 else _plotly_into).data)
+        def _plotly_before_show(drawn):
+            _record_palette_used(
+                drawn, _plotly_into, _plotly_palette_offset,
+                _plotly_palette_used, _palette_taken_colors)
+            if _legend_order:
+                _rank_plotly_legend(drawn, _n_traces_before, _legend_order)
+
         fig = plotly_draw(
             xform,
             into=_plotly_into,
+            # rows behind each (antialiased) trace: a 1-D trace's x is the
+            # row index, as matplotlib's plot1D draws it
+            row_counts=[len(r) for r in raw_xform],
             # the same run -> dataset -> rows mapping the matplotlib updaters
             # pace their reveal with, so neither backend re-derives it
             ownership=_ownership,
@@ -9258,6 +12124,19 @@ def plot(
             title_segment_colors=_title_segment_colors,
             legend_kwargs=_legend_kwargs,
             legend_entries=_final_legend_entries,
+            legend_explicit=_legend_entries is not None,
+            # the pre-resampling observations, so an 'o-' marks only them
+            # (the matplotlib `_draw` call's `raw_data=`)
+            raw_data=raw_xform,
+            frame_kwargs=frame_kwargs,
+            # every hoverable data trace's name (`_plotly_hover_names`)
+            trace_names=_plotly_hover_names(
+                len(xform), legend, category_names=_run_cat_names,
+                group_labels=(_mi_style.get('group_labels')
+                              if _multiindex_meta is not None else None),
+                user_labels=_legend_user_labels,
+                series_names=_series_names, hue=hue,
+                hue_group_labels=hue_group_labels),
             axis_scale=_axis_scale,
             xlim=_data_xlim,
             ylim=_data_ylim,
@@ -9265,6 +12144,17 @@ def plot(
             truths=raw_truths,
             forecast_labels=_forecast_labels,
             forecast_datasets=_model_forecast_owner,
+            # what a later `ax=<this figure>` call continues the palette
+            # from (see the colour block above) -- recorded on EVERY
+            # figure, since the first call is the one composed into; only
+            # the datasets coloured from the cycle count
+            # (`_palette_slots_consumed`)
+            datasets_drawn=_plotly_palette_offset + _palette_slots_taken,
+            # ...and, before the figure is saved or shown, the colours of
+            # those slots beside the count (read back by the colour block
+            # above on the next `ax=` call) and the categorical legend's
+            # order (`_rank_plotly_legend`)
+            before_show=_plotly_before_show,
         )
         ax = None
         data = xform
@@ -9281,6 +12171,47 @@ def plot(
                 palette=_seaborn_palette_arg(palette, len(xform)),
                 n_colors=len(xform))
             sns.set_style(style="whitegrid")
+            _palette_offset = 0
+            _palette_used = None
+            # this call's cycle colours: the palette's own sampling on a
+            # fresh axes (what `sns.set_palette` above gives it), continued
+            # past an earlier call's slots on a reused one (below)
+            _cycle = _palette_continuation(palette, len(xform))
+            if ax is not None and hasattr(ax, 'set_prop_cycle'):
+                # a caller's axes (`ax=`, every `panels=` cell) captured
+                # ITS figure's colour cycle when it was created, so the
+                # rc-scoped palette above never reached it and datasets
+                # drew in matplotlib's default C0/C1 cycle while the
+                # returned `colors` and the plotly grid said hls (1.1
+                # release review, feature-tour 4/9.8). Set the axes' own
+                # cycle to the palette -- CONTINUING it past the datasets
+                # an earlier hypertools call drew there, so composing two
+                # calls on one axes does not draw both in the first colour
+                # (the plotly `ax=<figure>` path keeps the same count).
+                # `_palette_continuation` continues it without repeating an
+                # earlier call's colour, from the colours those slots took.
+                if not (isinstance(palette, collections.abc.Mapping)
+                        or _looks_like_dataset_palettes(palette)):
+                    _palette_offset = int(getattr(
+                        ax, '_hyp_palette_offset', 0) or 0)
+                    _palette_used = getattr(ax, '_hyp_palette_used', None)
+                    _cycle = _palette_continuation(
+                        palette, len(xform), _palette_offset, _palette_used)
+                ax.set_prop_cycle(color=_cycle or _palette_continuation(
+                    palette, 1))
+            if _color_scales_from_cycle:
+                # what each dataset is drawn in: its fmt= colour letter
+                # (which takes no cycle slot) or the next cycle colour
+                _cycle_iter = iter(_cycle)
+                _drawn_colors = []
+                for _i in range(len(xform)):
+                    _letter = _fmt_color_letter(
+                        draw_fmt[_i] if _i < len(draw_fmt) else None)
+                    _drawn_colors.append(_letter if _letter is not None
+                                         else next(_cycle_iter, None))
+                if None not in _drawn_colors:
+                    _sync_color_scales(_drawn_colors, colors_info,
+                                       colorbar_info)
             # Font, applied AFTER sns.set_style (which sets its own font
             # rcParams). A LIST gives matplotlib >= 3.6 PER-GLYPH fallback, so
             # text mixing scripts renders fully instead of showing "tofu" for
@@ -9319,6 +12250,17 @@ def plot(
             plt.rcParams['axes.unicode_minus'] = False
 
             # draw the plot
+            # a legend exists when `legend=` asked for one OR a mixture
+            # `hue=` built one from swatches (which clears `legend` on
+            # the way; Codex round 4: those legends lost their forecast
+            # and truth entries)
+            _legend_present = (legend is not None
+                               or _final_legend_entries is not None)
+            # the lines an earlier call left on a reused `ax=`: the
+            # overlays below take their style from THIS call's lines only
+            # (Codex round 4: every forecast on a thrice-drawn axes wore
+            # the first call's colour)
+            _n_lines_before = len(ax.lines) if ax is not None else 0
             fig, ax, data, line_ani = _draw(
                 xform,
                 fmt=draw_fmt,
@@ -9364,13 +12306,35 @@ def plot(
                 title_kwargs=_title_kwargs,
                 legend_kwargs=_legend_kwargs,
                 legend_entries=_final_legend_entries,
+                legend_order=_legend_order,
+                # a plain colour list recolours the FINAL legend, so it is
+                # applied after the forecast/truth entries below when
+                # there are any (Codex round 3: validated too early, it
+                # refused three colours for a legend that would list three)
                 legend_colors=(None if _final_legend_entries is not None
+                               or raw_forecasts is not None
+                               or raw_truths is not None
                                else _legend_recolor),
                 axis_scale=_axis_scale,
                 xlim=_data_xlim,
                 ylim=_data_ylim,
                 x_date=_series_is_date,
             )
+            if ax is not None and hasattr(ax, 'set_prop_cycle'):
+                # what a later `ax=<this axes>` call continues the palette
+                # from (see the prop-cycle block above): the slots THIS
+                # call's datasets took from the cycle, past the ones an
+                # earlier call took (`_palette_slots_consumed`). Recorded
+                # on hypertools' own axes too, as the plotly path records
+                # it on every figure, so composing into `fig.axes[0]` of
+                # a plain `hyp.plot` figure continues the palette exactly
+                # as composing into a `hyp.subplots` cell does (round 7)
+                ax._hyp_palette_offset = (_palette_offset
+                                          + _palette_slots_taken)
+                # ...and the colours of those slots
+                ax._hyp_palette_used = _extend_palette_used(
+                    _palette_offset, _palette_used,
+                    _cycle[:_palette_slots_taken])
 
             # A caller-supplied ax= was created outside this rc context, so
             # its tick labels carry the 'sans-serif' ALIAS, which matplotlib
@@ -9402,9 +12366,11 @@ def plot(
             # (camera-only). Time-progressing modes get the per-frame artist
             # built below instead -- drawing both would put a frozen
             # full-history forecast on screen from frame 0.
+            _forecast_artists = None
             if raw_forecasts is not None and animate in (False, None, 'spin'):
                 _forecast_artists = _draw_forecast_overlays(
                     ax, raw_forecasts, antialias=antialias,
+                    src_lines=list(ax.lines)[_n_lines_before:],
                     owner=_forecast_owner, overrides=_forecast_overrides,
                     labels=_forecast_labels,
                     dataset_index=_model_forecast_owner)
@@ -9436,8 +12402,9 @@ def plot(
                 # too. None means the un-regrouped identity.
                 _truth_artists = _draw_truth_overlays(
                     ax, raw_truths, antialias=antialias,
+                    src_lines=list(ax.lines)[_n_lines_before:],
                     owner=_forecast_owner,
-                    label=('truth' if legend is not None else None))
+                    label=('truth' if _legend_present else None))
                 if animate:
                     # ANIMATED plots only, exactly like the forecast
                     # artists: `animate_plot3D` stretches the axes to the
@@ -9455,17 +12422,33 @@ def plot(
                     for _artist in _truth_artists:
                         _artist.set_clip_on(False)
 
-            # a forecast/truth overlay with a real legend label (the
-            # multi-model form, or truth=) arrives AFTER `_draw` built the
-            # legend from the data lines, so the legend is rebuilt to
-            # include it. Every other call is untouched: without a label
-            # there is nothing new to list.
-            if ((_forecast_labels is not None or raw_truths is not None)
-                    and legend is not None and ax.get_legend() is not None):
+            # a forecast (listed under its model's name) or truth= overlay
+            # arrives AFTER `_draw` built the legend from the data lines,
+            # so the legend is rebuilt to include it -- with the SAME
+            # placement/styling call `_draw` used. The time-progressing
+            # modes add their live forecasts' entries below, once those
+            # artists exist.
+            # ...unless `legend_colors=[(label, color), ...]` defined the
+            # entries outright: an explicit legend is exactly what was
+            # asked for (Codex round 3)
+            if (_legend_present and _legend_entries is None
+                    and (_forecast_artists or _truth_artists)):
                 from .matplotlib_backend import legend_call_kwargs
-                ax.legend(**legend_call_kwargs(
-                    is_3d=hasattr(ax, 'get_proj'), zlabel=zlabel,
-                    font=_artist_font, legend_kwargs=_legend_kwargs))
+                _add_overlay_legend_entries(
+                    ax, _forecast_artists, _truth_artists,
+                    **legend_call_kwargs(
+                        is_3d=hasattr(ax, 'get_proj'), zlabel=zlabel,
+                        font=_artist_font, legend_kwargs=_legend_kwargs))
+            if (_legend_recolor is not None and legend is not None
+                    and _final_legend_entries is None
+                    and (raw_forecasts is not None or raw_truths is not None)
+                    and animate in (False, None, 'spin')
+                    and ax.get_legend() is not None):
+                # the deferred plain-colour-list recolouring (see the
+                # `legend_colors=` argument to `_draw` above)
+                _recolor_overlay_legend(
+                    ax, _legend_recolor,
+                    close_fig=None if _user_supplied_ax else fig)
 
             # ...and the time-progressing modes get one LIVE artist per
             # dataset instead, refilled every frame from the precomputed
@@ -9479,7 +12462,15 @@ def plot(
                 # its colour from forecast i-1. (Same guard
                 # `_draw_forecast_overlays` opens with.)
                 from .forecast import trail_alpha, trail_frames
-                _src_lines = list(ax.lines)
+                _src_lines = _observed_run_lines(
+                    list(ax.lines)[_n_lines_before:])
+                # the dimensionality the AXES draws, not the requested cap
+                # `_display_ndims`: 2-column data under the default ndims=3
+                # is drawn on a 2-D axes, where `ax.plot([], [], [])` makes
+                # TWO artists and the unpack below crashed (1.1 release
+                # review: 31 of 140 random option combinations)
+                _fc_ndims = (3 if getattr(ax, 'name', None) == '3d'
+                             else min(2, xform[0].shape[1]))
                 _live_forecast_artists = []
                 # [dataset][age-1] -> artist. Preallocated: allocating
                 # artists mid-animation is what makes matplotlib animations
@@ -9533,10 +12524,10 @@ def plot(
                     # own fan rather than under it
                     _row = []
                     for _age in range(1, _n_forecast_trail + 1):
-                        if _display_ndims >= 3:
+                        if _fc_ndims >= 3:
                             _t, = ax.plot([], [], [], label='_nolegend_',
                                           **_fc_style)
-                        elif _display_ndims == 2:
+                        elif _fc_ndims == 2:
                             _t, = ax.plot([], [], label='_nolegend_',
                                           **_fc_style)
                         else:
@@ -9562,11 +12553,11 @@ def plot(
                     _trail_forecast_artists.append(_row)
                     # the SAME three-way split and label
                     # `_draw_forecast_overlays` uses. 1-D is a real branch:
-                    # `_display_ndims` can be 1.
-                    if _display_ndims >= 3:
+                    # `_fc_ndims` can be 1.
+                    if _fc_ndims >= 3:
                         _art, = ax.plot([], [], [], label='_nolegend_',
                                         **_fc_style)
-                    elif _display_ndims == 2:
+                    elif _fc_ndims == 2:
                         _art, = ax.plot([], [], label='_nolegend_',
                                         **_fc_style)
                     else:
@@ -9576,7 +12567,29 @@ def plot(
                     _art._hyp_forecast_dataset = (
                         _model_forecast_owner[_i]
                         if _model_forecast_owner is not None else _i)
+                    _art._hyp_forecast_label = (
+                        _forecast_labels[_i] if _forecast_labels is not None
+                        and _i < len(_forecast_labels) else None)
                     _live_forecast_artists.append(_art)
+                if (_legend_present and _legend_entries is None
+                        and _live_forecast_artists):
+                    # the live forecasts' legend entries (static parity:
+                    # one per model name, from the artists' own styles)
+                    from .matplotlib_backend import legend_call_kwargs
+                    _add_overlay_legend_entries(
+                        ax, _live_forecast_artists, None,
+                        **legend_call_kwargs(
+                            is_3d=hasattr(ax, 'get_proj'), zlabel=zlabel,
+                            font=_artist_font, legend_kwargs=_legend_kwargs))
+                if (_legend_recolor is not None and legend is not None
+                        and _final_legend_entries is None
+                        and ax.get_legend() is not None
+                        and _forecast_artists is None):
+                    # the deferred plain-colour-list recolouring for the
+                    # animated modes (the static path does it below)
+                    _recolor_overlay_legend(
+                        ax, _legend_recolor,
+                        close_fig=None if _user_supplied_ax else fig)
 
                 # whether the user pinned this dataset's forecast colour
                 # (`forecast_hue=`/`forecast_cluster=`/`forecast_palette=`);
@@ -9599,11 +12612,15 @@ def plot(
                 # reintroduce the palette repaint; the invariant it rests on
                 # is pinned by `test_a_continuous_hue_animation_is_NEVER_
                 # regrouped_into_runs`.
+                from .forecast import override_has_color as _has_color
+                # a colour letter in forecast_fmt= pins the colour as an
+                # explicit forecast_hue=/palette= does (Codex round 4:
+                # 'ro:' forecasts were repainted in the head run's colour)
                 _override_colour = [
-                    bool((_forecast_overrides is not None
-                          and _i < len(_forecast_overrides)
-                          and isinstance(_forecast_overrides[_i], dict)
-                          and _forecast_overrides[_i].get('color') is not None)
+                    bool(_has_color(_forecast_overrides[_i]
+                                    if _forecast_overrides is not None
+                                    and _i < len(_forecast_overrides)
+                                    else None)
                          or line_colors is not None)
                     for _i in range(len(raw_forecasts))]
 
@@ -9612,10 +12629,11 @@ def plot(
                                       _trails=_trail_forecast_artists,
                                       _retained=_n_forecast_trail,
                                       _antialias=antialias,
-                                      _ndims=_display_ndims,
+                                      _ndims=_fc_ndims,
                                       _reveal_sched=_reveal,
                                       _lines=_src_lines,
-                                      _pinned=_override_colour):
+                                      _pinned=_override_colour,
+                                      _sources=_model_forecast_owner):
                     def _run_colour(dataset, frame):
                         """Decision R3: the colour of the run DRAWING the
                         head at `frame` -- the CURRENT frame for the live
@@ -9625,7 +12643,14 @@ def plot(
                         animation differ from a played one)."""
                         if _reveal_sched is None or _pinned[dataset]:
                             return None
-                        run = _reveal_sched.head_run(dataset, frame)
+                        # `dataset` is the FORECAST's index (model-major
+                        # for a collection); the reveal schedule is per
+                        # SOURCE dataset (Codex round 3: an IndexError
+                        # for two models x hue regrouping)
+                        _src = (_sources[dataset]
+                                if _sources is not None
+                                and dataset < len(_sources) else dataset)
+                        run = _reveal_sched.head_run(_src, frame)
                         if run is None or run >= len(_lines):
                             return None
                         return _lines[run].get_color()
@@ -9639,8 +12664,11 @@ def plot(
 
                     def _fill(art, pts):
                         if _antialias:
-                            # documented parity with the static overlay
-                            pts = _interp_static_line(pts)
+                            # documented parity with the static overlay,
+                            # markers included: a forecast_fmt= marker sits
+                            # on the forecast's steps, not on every vertex
+                            pts, _step = _antialias_static_line(pts)
+                            art.set_markevery(_step_markevery(_step))
                         art.set_visible(True)
                         # the SAME three-way split `_draw_forecast_overlays`
                         # uses. A 3-D forecast artist is a Line3D: set_data
@@ -9722,10 +12750,13 @@ def plot(
                         precog=precog, bullettime=bullettime,
                         antialias=antialias,
                         total_frames=max(1, int(round(frame_rate
-                                                      * duration))))
+                                                      * duration))),
+                        frame_hooks=_frame_hooks)
                 elif is_line(fmt):
                     _apply_multicolor_lines(ax, xform, line_colors,
-                                            kwargs_list)
+                                            kwargs_list,
+                                            row_counts=[len(r) for r in
+                                                        raw_xform])
                 elif has_line_component(fmt):
                     # marker+line combo fmt (e.g. 'o-') with continuous/
                     # matrix hue (GH #141 x F02-004): keep BOTH components
@@ -9737,10 +12768,15 @@ def plot(
                     # interpolated point (~45x more "data points" than
                     # exist).
                     _apply_multicolor_lines(ax, xform, line_colors,
-                                            kwargs_list)
+                                            kwargs_list,
+                                            row_counts=[len(r) for r in
+                                                        raw_xform])
                     _marker_colors = _multicolor_line_colors(
                         multicolor_hue, pre_interp_lengths, raw_xform,
-                        palette, is_rgb=multicolor_hue_is_rgb)
+                        palette, is_rgb=multicolor_hue_is_rgb,
+                        # the line colours above already warned about
+                        # any non-finite hue observation
+                        warn_non_finite=False)
                     _apply_multicolor_markers(ax, raw_xform, _marker_colors,
                                               kwargs_list, fmt=fmt)
                 else:
@@ -9796,15 +12832,19 @@ def plot(
             # leave zero room above the axes box, which IS the figure's own
             # top edge there (see _reserve_animated_3d_title_margin's
             # docstring for the full root-cause evidence). Gated on
-            # "will a title actually be drawn" (scalar OR per-segment, same
-            # condition the plotly fix uses) so a titleless 3-D animation
-            # keeps the exact same maximised canvas as before -- and on
-            # ndims >= 3 so 2-D animations (whose default, non-maximised
-            # axes already leave normal title room) are never touched.
+            # "can a title be drawn" -- scalar, per-segment or dynamic
+            # title=, or an `on_frame=` callback, which may set one every
+            # frame (the plot() docstring's own example does; 1.1 visual
+            # review L11: that title rendered at y=484-500 on a 480 px
+            # canvas) -- so a 3-D animation with neither keeps the exact
+            # same maximised canvas as before; and on ndims >= 3 so 2-D
+            # animations (whose default, non-maximised axes already leave
+            # normal title room) are never touched.
             if (ax is not None and line_ani is not None
                     and xform[0].shape[1] >= 3
                     and (title is not None or _segment_titles is not None
-                         or _dynamic_title is not None)):
+                         or _dynamic_title is not None
+                         or on_frame is not None)):
                 # a dynamic (callable / `{index...}`) title has no text yet:
                 # resolve FRAME 0's, purely to count its lines. That is a
                 # real frame-0 context, not a synthetic one, and the
@@ -9815,12 +12855,33 @@ def plot(
                 # animation runs, instead of inside the first frame.
                 _probe_title = None
                 if _dynamic_title is not None:
-                    _probe_title = str(_dynamic_title(FrameContext(
-                        frame=0, n_frames=int(line_ani._save_count),
-                        figure=fig, axes=ax, datasets=tuple(xform),
-                        style=animate, order=order,
-                        current_index=0 if order == 'serial' else None,
-                        revealed_counts=tuple(1 for _ in xform))))
+                    try:
+                        _probe_title = _wrap_title_text(
+                            _resolve_dynamic_title_text(
+                                _dynamic_title, FrameContext(
+                                    frame=0,
+                                    n_frames=int(line_ani._save_count),
+                                    figure=fig, axes=ax,
+                                    datasets=tuple(xform),
+                                    style=animate, order=order,
+                                    current_index=(0 if order == 'serial'
+                                                   else None),
+                                    revealed_counts=tuple(
+                                        1 for _ in xform))),
+                            _title_wrap, _wrap_break)
+                    except Exception:
+                        # the user's title raised before the animation
+                        # was ever handed back: detach it (no
+                        # HyperAnimation exists to silence it) so gc does
+                        # not later warn "Animation was deleted without
+                        # rendering anything" about THEIR exception, and
+                        # close the abandoned figure as the save path does.
+                        from .hyper_animation import mark_draw_started
+                        mark_draw_started(line_ani)
+                        if (not show and not _user_supplied_ax
+                                and isinstance(fig, plt.Figure)):
+                            plt.close(fig)
+                        raise
                 _reserve_animated_3d_title_margin(
                     fig, ax,
                     fontsize=(_title_kwargs or {}).get('fontsize'),
@@ -9843,7 +12904,8 @@ def plot(
             # an EARLIER legend fit; fitting the legend last, against
             # whatever the current layout actually is, sidesteps that.
             if colorbar_info is not None and ax is not None:
-                _add_colorbar(fig, ax, colorbar_info, font=_artist_font)
+                _add_colorbar(fig, ax, colorbar_info, font=_artist_font,
+                              attached=_user_supplied_ax)
 
             # legend fitting (GH #100/#95 follow-up): a right-side (outside)
             # legend can overflow the figure's right edge. `tight_layout`
@@ -9875,9 +12937,20 @@ def plot(
                 if colorbar_info is not None:
                     _cmap = colorbar_info.get('cmap')
                     _cnorm = colorbar_info.get('norm')
+                # a panel without its own color= takes the colour of the
+                # trajectory it accompanies (the first drawn dataset): an
+                # fmt= colour letter, else the resolved per-dataset colour
+                # (1.1 visual review L12: it fell back to matplotlib's
+                # global 'C0' blue, beside a trajectory in the palette's
+                # red)
+                _companion_color = _fmt_color_letter(
+                    draw_fmt[0] if draw_fmt else None)
+                if _companion_color is None:
+                    _companion_color = _resolve_dataset_colors()[0]
                 _panels_drawn = [
                     add_companion_panel(fig, spec, cmap=_cmap, norm=_cnorm,
-                                        font=_artist_font)
+                                        font=_artist_font,
+                                        default_color=_companion_color)
                     for spec in _companion]
 
                 def _update_companions(ctx, _drawn=_panels_drawn):
@@ -10044,6 +13117,28 @@ def plot(
                 from ..core.pipeline import _validate_input_hierarchy
                 pipeline.input_hierarchy = _validate_input_hierarchy(
                     _bundle_hierarchy)
+        elif _bundle_fitted_pipeline is not None:
+            # the pipeline analyze() fitted for THIS figure, handed back
+            # as-is: no second fit of manip/normalize/reduce/align. The
+            # cluster stage ran on the analyzed data separately (plot()
+            # clusters the reduced scores), so it is appended as one more
+            # fitted step, fit on exactly that data.
+            from ..core.pipeline import (Pipeline as _Pipeline,
+                                         _make_stage_step,
+                                         _validate_input_hierarchy)
+            bundle_pipeline = _bundle_fitted_pipeline
+            if _bundle_cluster_stage is not None:
+                _cluster_step = _make_stage_step(
+                    'cluster', _bundle_cluster_stage, ndims, random_state)
+                _cluster_step.fit_transform(
+                    [np.asarray(_xi) for _xi in xform_data])
+                bundle_pipeline = _Pipeline(
+                    list(bundle_pipeline.steps) + [('cluster', _cluster_step)],
+                    input_hierarchy=bundle_pipeline.input_hierarchy)
+            if (_bundle_hierarchy is not None
+                    and bundle_pipeline.input_hierarchy is None):
+                bundle_pipeline.input_hierarchy = _validate_input_hierarchy(
+                    _bundle_hierarchy)
         elif raw is not None:
             from ..core.pipeline import build_pipeline
             # the cluster stage reuses the EXACT resolved spec the
@@ -10104,6 +13199,7 @@ def plot(
                 "reduce": reduce_dict,
                 "align": align_dict,
                 "cluster": cluster,
+                "cluster_labels": _figure_cluster_labels,
                 "impute": impute,
             },
             "predict": None if predict is None else {
@@ -10175,10 +13271,19 @@ def _build_colorbar_info(colorbar, hue, multicolor_hue, cluster, n_clusters,
 
     if multicolor_hue is not None and multicolor_hue.ndim == 1 and hue is None:
         vals = np.asarray(multicolor_hue, dtype=np.float64)
+        # NaN/inf hue values are drawn in `NAN_COLOR` and EXCLUDED from the
+        # colour mapping (see the hue= docstring), so they must not reach
+        # the range either: `np.min` over a NaN is NaN, and a colorbar (or
+        # bundle['colors']) spanning nan..nan is a colorbar over nothing.
+        finite = vals[np.isfinite(vals)]
+        if finite.size == 0:
+            raise ValueError(
+                "hue= has no finite values (every entry is NaN/inf), so "
+                "there is no value range to put on a colorbar.")
         return {
             'kind': 'continuous',
-            'vmin': float(np.min(vals)),
-            'vmax': float(np.max(vals)),
+            'vmin': float(np.min(finite)),
+            'vmax': float(np.max(finite)),
             'palette': palette,
             'label': label,
             'ticks': ticks,
@@ -10317,10 +13422,15 @@ def _build_colors_info(hue, multicolor_hue, cluster, n_clusters, xform,
 
     if info is None:
         if multicolor_hue is not None:
+            # `categories` is documented as {label: rgb}: the legend
+            # entries carry the user's own colour specs ('k', '#ff00ff'),
+            # so normalise them the way every other path does.
+            from matplotlib.colors import to_rgb
             return {'kind': 'blend', 'palette': palette, 'cmap': None,
                     'norm': None, 'vmin': None, 'vmax': None,
                     'colors': None, 'labels': None,
-                    'categories': dict(legend_entries or [])}
+                    'categories': {str(label): tuple(to_rgb(color))
+                                   for label, color in (legend_entries or [])}}
         # no grouping at all: one dataset, one colour
         colors = np.asarray(dataset_colors(palette, max(len(xform), 1)))
         return {'kind': 'discrete', 'palette': palette,
@@ -10363,11 +13473,13 @@ def _apply_font_to_colorbar(cbar, font):
     cbar.ax.yaxis.label.set_fontproperties(font)
 
 
-def _add_colorbar(fig, ax, colorbar_info, font=None):
+def _add_colorbar(fig, ax, colorbar_info, font=None, attached=False):
     """Attach a matplotlib colorbar built from `_build_colorbar_info`'s
     output to `fig`/`ax` (GH #100): a continuous `ScalarMappable` for
     continuous hue, or a `BoundaryNorm`-segmented one (one block per
-    group, tick labels = group names) for discrete groups."""
+    group, tick labels = group names) for discrete groups. `attached`
+    marks a caller-supplied `ax=` (a panel), whose colorbar must take its
+    room from that axes rather than widen the figure."""
     from matplotlib.cm import ScalarMappable
     from matplotlib.colors import BoundaryNorm, ListedColormap, Normalize
 
@@ -10396,13 +13508,39 @@ def _add_colorbar(fig, ax, colorbar_info, font=None):
                  is not None else [str(lbl) for lbl in default_tick_labels])
     label = colorbar_info['label']
 
-    if colorbar_info['location'] == 'right':
+    if colorbar_info['location'] == 'right' and not attached:
         cbar = _add_right_colorbar(fig, ax, mappable, ticklabels=ticklabels,
                                    label=label, font=font, **tick_kwargs)
     else:
+        # `attached` (a caller-supplied `ax=`, including every `panels=`
+        # cell): the colorbar takes its room from THAT axes, the way
+        # matplotlib's own `fig.colorbar(ax=...)` does, instead of
+        # `_add_right_colorbar`'s figure-widening absolute placement --
+        # which, repeated per panel, stacked every colorbar over the last
+        # panel and left `tight_layout` warning about axes it could not
+        # place (1.1 release review, feature tour 9.8 follow-up).
+        extra = ({'shrink': 0.6, 'pad': 0.04}
+                 if colorbar_info['location'] == 'right' else {})
+        if (colorbar_info['location'] == 'right' and attached
+                and ax.get_legend() is not None):
+            # the panel's legend hangs outside its right edge; pad the
+            # colorbar past it, by the legend's measured overhang in
+            # axes widths (Codex round 3: every panel's legend overlapped
+            # its colorbar by ~10 px)
+            try:
+                fig.canvas.draw()
+                renderer = fig.canvas.get_renderer()
+                legend_box = ax.get_legend().get_window_extent(renderer)
+                axes_box = ax.get_window_extent(renderer)
+                overhang = (legend_box.x1 - axes_box.x1) / max(
+                    axes_box.width, 1.0)
+                if overhang > 0:
+                    extra['pad'] = 0.04 + overhang + 0.02
+            except Exception:  # noqa: BLE001 - a canvas that cannot draw yet
+                pass
         cbar = fig.colorbar(mappable, ax=ax,
                             location=colorbar_info['location'],
-                            **tick_kwargs)
+                            **extra, **tick_kwargs)
         if ticklabels is not None:
             cbar.set_ticklabels(ticklabels)
         if label:
@@ -10871,8 +14009,14 @@ def _contains_string(el):
     return False
 
 
-def _multicolor_line_colors(hue_src, orig_lengths, xform, palette, is_rgb=False):
+def _multicolor_line_colors(hue_src, orig_lengths, xform, palette, is_rgb=False,
+                            warn_non_finite=True):
     """Per-point RGB colors for multicolored lines.
+
+    Non-finite hue values are drawn gray (`colors.mat2colors`); one
+    ``UserWarning`` counting the non-finite ORIGINAL observations, attributed
+    to the caller, is issued unless `warn_non_finite` is False (a second call
+    for the same hue, e.g. the marker colours of an ``'o-'`` combo).
 
     hue_src holds one value (or one row) per ORIGINAL observation; the
     trajectories in xform have since been interpolated to a higher temporal
@@ -10910,9 +14054,29 @@ def _multicolor_line_colors(hue_src, orig_lengths, xform, palette, is_rgb=False)
     if is_rgb:
         colors = np.clip(stacked, 0.0, 1.0)
     else:
-        colors = mat2colors(
-            stacked.ravel() if stacked.shape[1] == 1 else stacked,
-            palette=palette)
+        # `mat2colors` warns about the non-finite rows it is handed -- here
+        # the INTERPOLATED vertices, every one a NaN observation's
+        # neighbourhood touches (one NaN in 30 rows reported "61
+        # observation(s)"), attributed to this module rather than the
+        # caller. Silence it and say it once, below, about the
+        # observations (1.1 release review).
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                'ignore', message=r'\d+ observation\(s\) have non-finite',
+                category=UserWarning)
+            colors = mat2colors(
+                stacked.ravel() if stacked.shape[1] == 1 else stacked,
+                palette=palette)
+        if warn_non_finite:
+            _n_bad = int(np.count_nonzero(~np.isfinite(hue_src).all(axis=1)))
+            if _n_bad:
+                from .colors import NAN_COLOR
+                warnings.warn(
+                    f"{_n_bad} observation(s) have non-finite (NaN/inf) "
+                    f"hue/color values; they are drawn in a neutral gray "
+                    f"{NAN_COLOR} and excluded from the color mapping (the "
+                    "remaining observations keep their full color range).",
+                    UserWarning, stacklevel=external_stacklevel())
 
     out, start = [], 0
     for xi in xform:
@@ -10921,9 +14085,14 @@ def _multicolor_line_colors(hue_src, orig_lengths, xform, palette, is_rgb=False)
     return out
 
 
-def _apply_multicolor_lines(ax, xform, line_colors, kwargs_list):
+def _apply_multicolor_lines(ax, xform, line_colors, kwargs_list,
+                            row_counts=None):
     """Replace single-color line artists with per-segment-colored
-    collections (matplotlib backend)."""
+    collections (matplotlib backend).
+
+    `row_counts` (one per trace): the ORIGINAL row count behind each
+    (possibly antialiased) trace, so a 1-D trace's x stays the row index
+    (`row_index_x`) exactly as `matplotlib_backend`'s plot1D draws it."""
     from matplotlib.collections import LineCollection
     from mpl_toolkits.mplot3d.art3d import Line3DCollection
 
@@ -10959,7 +14128,10 @@ def _apply_multicolor_lines(ax, xform, line_colors, kwargs_list):
         tkwargs = kwargs_list[i] if i < len(kwargs_list) else {}
         lw = tkwargs.get('linewidth') or plt.rcParams['lines.linewidth']
         if xi.shape[1] == 1:
-            pts = np.column_stack([np.arange(xi.shape[0]), xi[:, 0]])
+            _rows = (row_counts[i] if row_counts is not None
+                     and i < len(row_counts) else xi.shape[0])
+            pts = np.column_stack([row_index_x(_rows, xi.shape[0]),
+                                   xi[:, 0]])
         else:
             pts = xi[:, :3] if is_3d else xi[:, :2]
         segments = np.stack([pts[:-1], pts[1:]], axis=1)
@@ -11033,7 +14205,8 @@ def _make_title_updater(titles, axes, font=None, title_kwargs=None,
 
 def _apply_multicolor_animation(ax, xform, line_colors, kwargs_list,
                                 line_ani, style, chemtrails, precog,
-                                bullettime, total_frames, antialias=True):
+                                bullettime, total_frames, antialias=True,
+                                frame_hooks=None):
     """Per-frame multicolored (continuous/matrix hue) line rendering for
     ANIMATED matplotlib plots (release-1.0 audit, F04-001/F05-002).
 
@@ -11055,6 +14228,13 @@ def _apply_multicolor_animation(ax, xform, line_colors, kwargs_list,
     draws the full trajectory every frame (the static swap is already
     correct there), and 'morph' draws its own single traveling artist (the
     static swap would have REMOVED it -- callers skip morph entirely).
+
+    `frame_hooks` is the `FrameHooks` registry the backend's updater just
+    called ``record(artists=...)`` on. Its recorded artists are the HIDDEN
+    single-colour lines, so the collections drawn here are swapped in for
+    them after every frame: `dataset_fade=` and any `on_frame=` mutation
+    then reach what is actually rendered. Without the swap, setting alpha
+    on ``ctx.artists`` changed invisible artists and rendered nothing.
     """
     from matplotlib.collections import LineCollection
     from mpl_toolkits.mplot3d.art3d import Line3DCollection
@@ -11235,7 +14415,18 @@ def _apply_multicolor_animation(ax, xform, line_colors, kwargs_list,
                 else:
                     ts, te = 0, trail_len  # chemtrails/bullettime: from 0
                 _set_segments(trail_colls[i], *_aa_slice(i, ts, te))
+        if frame_hooks is not None and frame_hooks.state:
+            recorded = frame_hooks.state.get('artists')
+            if recorded is not None:
+                frame_hooks.state['artists'] = [
+                    _visible.get(id(artist), artist) for artist in recorded]
         return result
+
+    # hidden head/trail line -> the collection drawn in its place
+    _visible = {id(head_lines[i]): head_colls[i] for i in range(n)
+                if i < len(head_lines)}
+    _visible.update({id(line): trail_colls[i]
+                     for i, line in trail_lines.items()})
 
     line_ani._func = _multicolor_frame
 
@@ -11250,7 +14441,7 @@ def _expand_labels(labels, old_lengths, new_lengths):
     lands on the nearest remaining point. Accepts flat label lists or lists
     nested per dataset; returns a flat list matching sum(new_lengths).
     """
-    if any(isinstance(el, list) for el in labels):
+    if any(isinstance(el, (list, tuple)) for el in labels):
         flat = list(itertools.chain(*labels))
     else:
         flat = list(labels)
@@ -11324,6 +14515,16 @@ def _apply_multicolor_markers(ax, xform, point_colors, kwargs_list,
         ms = float(tkwargs.get('markersize')
                    or plt.rcParams['lines.markersize'])
         s = ms ** 2  # scatter sizes are areas in points^2
+        # the trace's alpha= travels WITH the per-point colours, as on the
+        # line path (`_apply_multicolor_lines`): the scatter replaces the
+        # marker artist the alpha was set on, so hue= + alpha=0.7 markers
+        # drew fully opaque while the same plot without hue= honoured it
+        # (1.1 release review)
+        _alpha = tkwargs.get('alpha')
+        if _alpha is not None:
+            ci = np.asarray(ci, dtype=float)
+            ci = np.column_stack([ci[:, :3],
+                                  np.full(len(ci), float(_alpha))])
         if xi.shape[1] == 1:
             ax.scatter(np.arange(xi.shape[0]), xi[:, 0], c=ci, s=s,
                        marker=marker)
@@ -11337,4 +14538,3 @@ def _mixture_name(model):
     """Registry name for a cluster-model spec (string or class)."""
     return model if isinstance(model, str) \
         else getattr(model, "__name__", str(model))
-

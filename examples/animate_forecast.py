@@ -5,8 +5,8 @@ Forecasting three regions' weather while it is drawn
 =====================================================================
 
 An animated forecast: ``hyp.plot(..., animate=True, predict='Kalman')``
-refits the forecaster on the history revealed so far and re-anchors it on
-the last revealed observation, so the prediction grows and bends with the
+refits the forecaster on the history revealed so far and draws it from the
+endpoint of the current frame, so the prediction grows and bends with the
 animation instead of standing still. ``forecast_trail=True`` keeps the
 earlier forecasts on screen as a fading fan, so you can watch the
 prediction *change* as history accumulates.
@@ -28,7 +28,10 @@ Three keywords restyle the forecasts without touching the observed paths:
 colour, the Americas have their own), ``forecast_palette=`` gives that
 grouping its own colours, and ``forecast_fmt=`` draws every forecast dashed.
 Everything they do not name is inherited from the trace a forecast
-continues, drawn at half its alpha.
+continues. A forecast that inherits its trace's colour is drawn at half
+the trace's alpha; these carry their own colours from
+``forecast_palette=``, so each current forecast is drawn at full opacity,
+and with ``forecast_trail=True`` only the earlier fits fade.
 
 ``slow_warning_seconds=`` is the one keyword here that changes no pixel.
 An animated forecast needs one fit per distinct revealed history length,
@@ -41,9 +44,10 @@ makes it fire sooner.
 **Data & graceful degradation.** The archive is fetched once and cached.
 If the network is unavailable the example says which error it hit and
 synthesizes three seasonal regions (a hemispheric mix in each, a slow
-drift) so it always renders; ``HYPERTOOLS_OFFLINE`` makes the fetch refuse
-rather than degrade, which is how the test-suite proves the import path
-fetches nothing.
+drift) so it always renders. ``HYPERTOOLS_OFFLINE`` -- an environment
+variable this example reads, not a hypertools setting -- makes the fetch
+itself refuse rather than try, which is how the test-suite proves the
+import path fetches nothing; the loader then falls back as above.
 """
 
 # Code source: Contextual Dynamics Laboratory
@@ -54,15 +58,12 @@ fetches nothing.
 # sphinx_gallery_thumbnail_path = '_static/thumbnails/sphx_glr_animate_forecast_thumb.gif'
 
 import os
-import tempfile
-import urllib.request
 from typing import NamedTuple
 
 import numpy as np
 
 import hypertools as hyp
 
-CACHE = os.path.join(tempfile.gettempdir(), 'hypertools_gallery_cache')
 ARCHIVE = ('https://raw.githubusercontent.com/ContextLab/'
            'hypertools-paper-notebooks/master/data/temperatures.csv')
 # three regions, six cities each, every region spanning both hemispheres:
@@ -91,20 +92,11 @@ def fetch_temperatures():
     or ``None`` (announced with the error) when it cannot be fetched."""
     if os.environ.get('HYPERTOOLS_OFFLINE'):
         raise RuntimeError('HYPERTOOLS_OFFLINE is set: refusing to fetch')
-    os.makedirs(CACHE, exist_ok=True)
-    dest = os.path.join(CACHE, 'temperatures.csv')
     try:
-        if not os.path.exists(dest):
-            req = urllib.request.Request(
-                ARCHIVE, headers={'User-Agent': 'hypertools-gallery/1.1'})
-            with urllib.request.urlopen(req, timeout=60) as response:
-                payload = response.read()
-            with open(dest + '.part', 'wb') as handle:
-                handle.write(payload)
-            os.replace(dest + '.part', dest)   # never a truncated cache
         # the archive carries '<City>' (absolute) and '<City>_anomaly'
         # columns; its complete rows end in August 2013
-        recent = hyp.load(dest).dropna().tail(N_MONTHS)
+        # GH #285: the native URL loader owns download and atomic caching.
+        recent = hyp.load(ARCHIVE, cache=True).dropna().tail(N_MONTHS)
         return [recent[cities].to_numpy(float)
                 for cities in REGIONS.values()]
     except Exception as error:
@@ -159,13 +151,15 @@ def construct_artifact(data):
     # all three are dashed, and each still continues the path it belongs
     # to. `slow_warning_seconds=None` silences the long-schedule notice:
     # the 180 fits this clip needs measured about 6 s, a known wait.
+    # backend= is pinned: the frames are drawn and saved through the
+    # matplotlib animation, and on Colab the default would be plotly.
     return hyp.plot(
         data.regions, '-', names=data.names,
         animate=True, duration=DURATION, frame_rate=FRAME_RATE,
         predict='Kalman', t=HORIZON, forecast_trail=True,
         forecast_hue=['New World', 'Old World', 'Old World'],
         forecast_palette=['#d62728', '#1f77b4'], forecast_fmt='--',
-        slow_warning_seconds=None,
+        slow_warning_seconds=None, backend='matplotlib',
         title='Three regions, one year ahead', size=(8, 6), show=False)
 
 

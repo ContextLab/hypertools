@@ -11,8 +11,12 @@ against current numpy/seaborn.
 import collections.abc
 import warnings
 
+import datawrangler as dw
 import numpy as np
 import pandas as pd
+
+from .._shared.helpers import (is_array_dataset, is_frame_dataset,
+                               is_series_like, as_pandas_dataframe)
 
 # neutral color for observations whose hue value is non-finite (NaN/inf):
 # a light gray that reads as "no information" next to any palette, so a
@@ -102,8 +106,14 @@ def mat2colors(m, palette='hls', n_bins=100):
     """
     import seaborn as sns
 
-    if isinstance(m, pd.DataFrame):
-        m = m.values
+    if is_frame_dataset(m):
+        # any dataframe backend datawrangler recognises (pandas, polars, ...)
+        m = as_pandas_dataframe(m).to_numpy()
+    elif is_series_like(m) and not dw.zoo.array_like(m):
+        # a labelled vector that is not numpy-like itself (a polars Series;
+        # a pandas Series is `array_like` and read below as it is): its
+        # values
+        m = np.asarray(m)
     elif isinstance(m, collections.abc.Iterator):
         # generators and other one-shot iterators: materialize so the
         # classification below (which iterates more than once) sees the
@@ -113,7 +123,7 @@ def mat2colors(m, palette='hls', n_bins=100):
         raise ValueError(
             "mat2colors requires a sequence of labels/values (or a 2D "
             f"matrix with one row per sample); got a scalar: {m!r}")
-    if isinstance(m, np.ndarray) and m.ndim == 0:
+    if is_array_dataset(m) and m.ndim == 0:
         raise ValueError(
             "mat2colors requires a sequence of labels/values (or a 2D "
             f"matrix with one row per sample); got a 0-dimensional array: "
@@ -239,7 +249,7 @@ def colors2groups(colors, res=6):
 
 
 def _is_numeric(m):
-    if isinstance(m, np.ndarray):
+    if is_array_dataset(m):
         return np.issubdtype(m.dtype, np.number)
     try:
         flat = _flatten_if_nested(m)
@@ -250,7 +260,7 @@ def _is_numeric(m):
 
 
 def _flatten_if_nested(vals):
-    if any(isinstance(el, (list, np.ndarray)) for el in vals):
+    if any(isinstance(el, list) or is_array_dataset(el) for el in vals):
         return [item for el in vals for item in np.atleast_1d(el)]
     return list(vals)
 
@@ -321,8 +331,290 @@ LUMINANCE_WEIGHTS = (0.2126, 0.7152, 0.0722)
 #: type each is read as. They are exactly the tunable arguments of
 #: `image_palette`, so the declarative string form can reach everything the
 #: function call can.
+#: keys `sort_colors` (and `palette_sort=`, and an image spec's ``?sort=``)
+#: accept; None means "the palette's own order" (`sort_colors` docstring).
+PALETTE_SORT_KEYS = ('value', 'hue', 'lightness', 'columns', 'original')
+
+
+def _parse_sort_option(value):
+    key = str(value).strip().lower()
+    if key in ('', 'none'):
+        return None
+    if key not in PALETTE_SORT_KEYS:
+        raise ValueError(
+            f"sort= must be one of {PALETTE_SORT_KEYS} or None; got {value!r}")
+    return key
+
+
 _IMAGE_SPEC_OPTIONS = {'max_luminance': float, 'min_luminance': float,
-                       'n_colors': int, 'resize': int, 'random_state': int}
+                       'n_colors': int, 'resize': int, 'random_state': int,
+                       'sort': _parse_sort_option}
+
+
+def sort_colors(colors, key='value'):
+    """Put colors in a deterministic order.
+
+    Parameters
+    ----------
+    colors : sequence of RGB triples (values in [0, 1])
+    key : {'value', 'hue', 'lightness', 'columns', 'original'} or None
+        - ``'value'``: HSV value (dark to bright), then hue, then
+          saturation -- the default for a palette extracted from an image,
+          so it reads as a gradient instead of the extraction order.
+        - ``'hue'``: hue (red, yellow, green, cyan, blue, magenta), then
+          value, then saturation.
+        - ``'lightness'``: relative luminance (`luminance`), then hue, then
+          saturation.
+        - ``'columns'``: lexicographic by the color's own columns, first
+          column first -- the default for a palette built from a data
+          matrix, whose first column is its first component, the axis of
+          most variance.
+        - ``'original'`` or None: unchanged.
+
+        Every key is a sequence of tie-breakers in decreasing priority,
+        compared after rounding to six decimals so equal colors never
+        reorder between runs.
+
+    Returns
+    -------
+    numpy.ndarray of shape (n, 3)
+    """
+    arr = np.asarray(colors, dtype=float)
+    if arr.ndim != 2 or arr.shape[1] < 3:
+        raise ValueError(
+            f"sort_colors() expects an (n, 3) array of RGB colors; got shape "
+            f"{arr.shape}")
+    arr = arr[:, :3]
+    if key is None or key == 'original' or len(arr) < 2:
+        return arr
+    if key not in PALETTE_SORT_KEYS:
+        raise ValueError(
+            f"sort_colors() key must be one of {PALETTE_SORT_KEYS} or None; "
+            f"got {key!r}")
+    if key == 'columns':
+        # np.lexsort takes its PRIMARY key last
+        order = np.lexsort(np.round(arr, 6).T[::-1])
+        return arr[order]
+    from matplotlib.colors import rgb_to_hsv
+    h, s, v = rgb_to_hsv(np.clip(arr, 0.0, 1.0)).T
+    if key == 'value':
+        keys = (s, h, v)
+    elif key == 'hue':
+        keys = (s, v, h)
+    else:                                            # 'lightness'
+        keys = (s, h, np.atleast_1d(luminance(arr)))
+    order = np.lexsort(np.round(np.vstack(keys), 6))
+    return arr[order]
+
+
+def is_palette_matrix(obj):
+    """True for a t x k DATA matrix passed as a palette (`matrix_palette`).
+
+    A DataFrame (any backend datawrangler recognises: pandas, polars, ...),
+    or a 2-D numeric array (or nested list) that cannot be a list of colors:
+    a color list has 3 or 4 columns with every value in [0, 1], and keeps
+    meaning exactly that. Anything else 2-D and numeric -- another column
+    count, or values outside [0, 1] -- is data to reduce.
+
+    Raises
+    ------
+    ValueError
+        For an array or nested list (not a DataFrame) with 3 or 4 columns
+        of WHOLE numbers in 0..255, some above 1 -- e.g. ``[[255, 128, 0],
+        [0, 64, 255]]``. That is a list of 0-255 RGB(A) colors, not data;
+        reading it as a data matrix reduced, rescaled and re-sorted it into
+        different colors without a word (review 2026-09-11). Divide it by
+        255 to use the colors, or pass a DataFrame to use it as data.
+    """
+    if is_frame_dataset(obj):
+        obj = as_pandas_dataframe(obj)
+        return obj.shape[0] > 0 and obj.shape[1] > 0 and all(
+            pd.api.types.is_numeric_dtype(dt) for dt in obj.dtypes)
+    if is_array_dataset(obj):
+        arr = obj
+    elif isinstance(obj, (list, tuple)) and obj and all(
+            isinstance(row, (list, tuple)) or is_array_dataset(row)
+            for row in obj):
+        try:
+            arr = np.asarray(obj, dtype=float)
+        except (TypeError, ValueError):
+            return False
+    else:
+        return False
+    if arr.ndim != 2 or arr.size == 0 or not np.issubdtype(arr.dtype, np.number):
+        return False
+    if arr.shape[1] in (3, 4) and np.isfinite(arr).all() \
+            and arr.min() >= 0.0 and arr.max() <= 1.0:
+        return False                                  # a list of colors
+    if arr.shape[1] in (3, 4) and np.isfinite(arr).all() \
+            and arr.min() >= 0.0 and arr.max() <= 255.0 \
+            and np.array_equal(arr, np.round(arr)):
+        # whole numbers 0..255, some above 1: 0-255 colors, which neither
+        # hypertools nor matplotlib reads (RGB is in [0, 1]); never
+        # silently turn them into a data-matrix gradient
+        example = np.asarray(arr[:2], dtype=float).round().astype(int)
+        raise ValueError(
+            f'palette= looks like a list of 0-255 RGB(A) colors '
+            f'({example.tolist()}{", ..." if len(arr) > 2 else ""}), but '
+            'colors are read in [0, 1]. Divide by 255 to use them as '
+            'colors (np.asarray(palette) / 255), or pass the matrix as a '
+            'pandas DataFrame to use it as DATA (a t x k matrix palette, '
+            'reduced to three color channels).')
+    return True
+
+
+from matplotlib.colors import LinearSegmentedColormap  # noqa: E402
+
+
+class MatrixColormap(LinearSegmentedColormap):
+    """A `LinearSegmentedColormap` built from ordered anchor colors that
+    samples by EXACT linear interpolation between them (a plain
+    LinearSegmentedColormap quantizes to its lookup table, so a plot asking
+    for as many colors as there are anchors would not get the anchors back).
+    Everything else -- colorbars, `resampled`, reversed -- is inherited."""
+
+    def __init__(self, name, anchors, N=256):
+        anchors = np.asarray(anchors, dtype=float)[:, :3]
+        if anchors.ndim != 2 or len(anchors) < 2:
+            raise ValueError(
+                'MatrixColormap needs at least two (r, g, b) anchor colors; '
+                f'got shape {anchors.shape}')
+        # the parent's segment data, exactly as `from_list` builds it, so
+        # the inherited lookup table, integer sampling, `resampled()`,
+        # `reversed()`, bad/under/over colors and masked input all work
+        # (Codex round 10: a bare list here broke every one of them)
+        grid = np.linspace(0.0, 1.0, len(anchors))
+        segmentdata = {channel: [(float(x), float(v), float(v))
+                                 for x, v in zip(grid, anchors[:, k])]
+                       for k, channel in enumerate(('red', 'green', 'blue'))}
+        segmentdata['alpha'] = [(0.0, 1.0, 1.0), (1.0, 1.0, 1.0)]
+        super().__init__(name, segmentdata, N=N)
+        self.anchors = anchors
+
+    def __call__(self, X, alpha=None, bytes=False):
+        x = np.asarray(X)
+        if np.ma.isMaskedArray(X) or not np.issubdtype(x.dtype, np.floating):
+            # integers index the lookup table; masked entries take the
+            # 'bad' color: the parent's rules, unchanged
+            return super().__call__(X, alpha=alpha, bytes=bytes)
+        grid = np.linspace(0.0, 1.0, len(self.anchors))
+        flat = x.astype(float).ravel()
+        # the parent's range rules, applied per ELEMENT: below 0 (including
+        # -inf) takes the 'under' color, above 1 (including +inf) the 'over'
+        # color, NaN the 'bad' color -- each with the alpha the extreme was
+        # set with; an `alpha=` override then applies to everything, except
+        # that a fully transparent 'bad' color stays transparent (Codex
+        # round 11: clipping ignored set_under/set_over, and one NaN sent
+        # the whole array through the quantized table; round 12, R12-2: the
+        # extremes lost their alpha, infinities were 'bad', and the override
+        # skipped 'bad')
+        bad = np.isnan(flat)
+        under, over = flat < 0.0, flat > 1.0
+        inside = np.clip(np.where(bad, 0.0, flat), 0.0, 1.0)
+        # set_gamma() is inherited from LinearSegmentedColormap. Apply its
+        # coordinate mapping to exact samples as well as to the parent's LUT
+        # (release review 2026-09-08, finding 4).
+        inside = inside ** self._gamma
+        rgb = np.column_stack([np.interp(inside, grid, self.anchors[:, k])
+                               for k in range(3)])
+        out = np.hstack([rgb, np.ones((len(flat), 1))])
+        if under.any():
+            out[under] = np.asarray(self.get_under(), dtype=float)
+        if over.any():
+            out[over] = np.asarray(self.get_over(), dtype=float)
+        if bad.any():
+            out[bad] = np.asarray(self.get_bad(), dtype=float)
+        if alpha is not None:
+            a = np.clip(np.asarray(alpha, dtype=float), 0, 1)
+            if a.shape not in ((), x.shape):
+                raise ValueError(
+                    f'alpha is array-like but its shape {a.shape} does not '
+                    f'match that of X {x.shape}')
+            out[:, 3] = np.broadcast_to(a, x.shape).ravel()
+            if np.all(np.asarray(self.get_bad(), dtype=float) == 0):
+                out[bad] = 0.0
+        out = out.reshape(x.shape + (4,))
+        if bytes:
+            out = (out * 255).astype(np.uint8)
+        return tuple(out) if x.ndim == 0 else out
+
+
+def matrix_palette(data, reduce='PCA', sort='columns', normalize=None,
+                   manip=None, align=None, random_state=0, n_colors=256,
+                   name='hypertools-matrix'):
+    """Build a palette from a t x k data matrix.
+
+    The rows are reduced to three dimensions with `hypertools.reduce`
+    (``reduce=`` names the reducer, ``normalize=``/``manip=``/``align=`` are
+    handed to it as they would be to any reduce call), each reduced column
+    is scaled to [0, 1] and read as an RGB channel, the rows are put in
+    order with `sort_colors`, and the result is returned as a matplotlib
+    `Colormap`, which every palette path samples by interpolation to
+    however many colors a plot needs (one per dataset, one per category, or
+    a gradient along a continuous `hue=`).
+
+    How smooth the palette looks depends on the matrix: with the default
+    sort the rows are ordered along the first component, so the other two
+    channels vary smoothly only where the matrix's other components are
+    themselves ordered along the first (a trend with oscillations gives a
+    clean gradient; an unstructured random walk gives a striped one).
+
+    Parameters
+    ----------
+    data : array-like or pandas.DataFrame of shape (t, k)
+        At least two rows of finite numbers. A matrix with three or fewer
+        columns is not reduced (its columns are the channels; missing
+        channels are filled with 0.5), but ``normalize``/``manip``/``align``
+        still apply when given.
+    reduce : reducer spec (default 'PCA')
+        Any form `hypertools.reduce` accepts.
+    sort : see `sort_colors` (default 'columns': along the first component)
+    normalize, manip, align : passed to `hypertools.reduce`
+    random_state : int (default 0)
+        Seeds the reducer, so the same matrix always gives the same palette.
+    n_colors : int (default 256)
+        Resolution of the returned colormap.
+    name : str
+        The colormap's name.
+
+    Returns
+    -------
+    MatrixColormap
+        A `LinearSegmentedColormap` subclass that samples the ordered rows
+        by exact linear interpolation.
+    """
+    from ..reduce.reduce import reduce as _reduce
+
+    arr = (as_pandas_dataframe(data).to_numpy(dtype=float)
+           if is_frame_dataset(data) else np.asarray(data, dtype=float))
+    if arr.ndim != 2 or arr.shape[0] < 2 or arr.shape[1] < 1:
+        raise ValueError(
+            "a matrix palette needs a 2-D array with at least two rows "
+            f"(observations) and one column; got shape {arr.shape}")
+    if not np.isfinite(arr).all():
+        raise ValueError(
+            "a matrix palette needs finite values; the matrix has "
+            f"{int((~np.isfinite(arr)).sum())} NaN/inf entries")
+    stage = {'normalize': normalize, 'manip': manip, 'align': align}
+    if arr.shape[1] > 3:
+        rows = np.asarray(_reduce(arr, reduce=reduce, ndims=3,
+                                  random_state=random_state, **stage),
+                          dtype=float)
+    elif any(v is not None for v in stage.values()):
+        rows = np.asarray(_reduce(arr, reduce=None, ndims=None, **stage),
+                          dtype=float)
+    else:
+        rows = arr
+    rows = np.asarray(rows, dtype=float)[:, :3]
+    lo, hi = rows.min(axis=0), rows.max(axis=0)
+    span = hi - lo
+    scaled = np.where(span > 0, (rows - lo) / np.where(span > 0, span, 1.0),
+                      0.5)
+    if scaled.shape[1] < 3:
+        scaled = np.hstack([scaled, np.full((len(scaled), 3 - scaled.shape[1]),
+                                            0.5)])
+    ordered = sort_colors(scaled, sort)
+    return MatrixColormap(name, ordered, N=int(n_colors))
 
 
 def luminance(colors):
@@ -401,8 +693,8 @@ def _image_pixels(image, resize):
 
     from PIL import Image
 
-    if isinstance(image, np.ndarray):
-        arr = image
+    if is_array_dataset(image):
+        arr = np.asarray(image)
         if arr.dtype.kind == 'f':
             arr = np.clip(arr, 0.0, 1.0) * 255.0
         im = Image.fromarray(arr.astype(np.uint8)).convert('RGB')
@@ -423,8 +715,9 @@ def _image_pixels(image, resize):
 
 def image_palette(image, n_colors=IMAGE_PALETTE_N, resize=200,
                   random_state=0, max_luminance=None,
-                  min_luminance=None):
-    """Extract a color palette from an image, most VISUALLY SALIENT first.
+                  min_luminance=None, sort=None):
+    """Extract a color palette from an image, most VISUALLY SALIENT first
+    (or in the order ``sort=`` asks for).
 
     Parameters
     ----------
@@ -437,6 +730,12 @@ def image_palette(image, n_colors=IMAGE_PALETTE_N, resize=200,
         UPPER bound on how many colors to return (default 6). Fewer come
         back when the image has fewer distinct colors, or when two cluster
         centers coincide to 3 decimal places.
+    sort : see `sort_colors`, or None (default)
+        None keeps the salience order (most visually salient first: the
+        color the image is ABOUT, used as a dataset's lead color). A key
+        reorders the extracted colors; ``palette='image:...'`` uses
+        ``'value'`` unless the spec says otherwise (``?sort=hue``,
+        ``?sort=original``), so an image palette reads as a gradient.
     resize : int
         Longest edge the image is thumbnailed to before clustering
         (default 200). Clustering cost is linear in pixel count.
@@ -536,7 +835,7 @@ def image_palette(image, n_colors=IMAGE_PALETTE_N, resize=200,
                 "Widen the bound, raise n_colors= so more clusters are "
                 "extracted, or use a different image.")
         out = kept
-    return np.asarray(out, dtype=float)
+    return sort_colors(np.asarray(out, dtype=float), sort)
 
 
 def _luminance_bounds(min_luminance, max_luminance):
@@ -590,6 +889,23 @@ def _continuous_palette(palette, n_colors, sns):
     return _get_palette(palette, n_colors, sns, continuous=True)
 
 
+def interpolate_colors(anchors, n_colors):
+    """``n_colors`` colors spaced evenly along the ``anchors`` sequence, by
+    exact linear interpolation per channel. seaborn's ``blend_palette``
+    samples a 256-entry table, so above 256 colors it REPEATS entries; this
+    keeps every color distinct at any count (Codex round 11)."""
+    a = np.asarray([tuple(c)[:3] for c in anchors], dtype=float)
+    n_colors = int(n_colors)
+    if len(a) == 0 or n_colors <= 0:
+        return []
+    if len(a) == 1:
+        return [tuple(a[0])] * n_colors
+    grid = np.linspace(0.0, 1.0, len(a))
+    xs = np.linspace(0.0, 1.0, n_colors)
+    rows = np.column_stack([np.interp(xs, grid, a[:, k]) for k in range(3)])
+    return [tuple(float(v) for v in row) for row in rows]
+
+
 def _image_palette_list(source, n_colors, sns, continuous):
     """Colors for a `palette='image:<path>'` string, as a list `_get_palette`
     can then handle exactly like any other color list.
@@ -607,9 +923,10 @@ def _image_palette_list(source, n_colors, sns, continuous):
     two-tone image, nine groups). Unlike a user-supplied short list -- which
     raises, because the user can simply pass more colors -- a caller cannot
     add colors to an image, so the anchors are interpolated up to `n_colors`
-    with the same ``blend_palette`` semantics the continuous path already
-    uses (F02-006/F24-017). Interpolating keeps every category a DIFFERENT
-    color and leaves the most salient anchor first; cycling the anchors
+    exactly as the continuous path does (`interpolate_colors`;
+    F02-006/F24-017). Interpolating keeps every category a DIFFERENT color
+    at any count, in the anchors' order (by value unless the spec asks
+    otherwise); cycling the anchors
     would silently give two categories the same color, which is the
     ambiguity the short-list error exists to prevent. A single-color image
     is the one case interpolation cannot serve, and it raises.
@@ -628,6 +945,9 @@ def _image_palette_list(source, n_colors, sns, continuous):
             options.get('min_luminance') is not None:
         wanted = max(wanted, IMAGE_PALETTE_N)
     options.setdefault('n_colors', wanted)
+    # a palette reads as a gradient: sorted by value unless the spec says
+    # otherwise ('?sort=original' keeps the salience order)
+    options.setdefault('sort', 'value')
     colors = [tuple(c) for c in image_palette(path, **options)]
     if continuous or len(colors) >= n_colors:
         return colors
@@ -637,8 +957,7 @@ def _image_palette_list(source, n_colors, sns, continuous):
             f"{n_colors} are required (one per category/component); that "
             "image has a single dominant color, so pass a more colorful "
             "image, an explicit list of colors, or a palette name")
-    return [tuple(np.asarray(c)[:3])
-            for c in sns.blend_palette(colors, n_colors)]
+    return interpolate_colors(colors, n_colors)
 
 
 def _get_palette(palette, n_colors, sns, continuous=False):
@@ -678,6 +997,11 @@ def _get_palette(palette, n_colors, sns, continuous=False):
                 n_colors, sns, continuous)
         else:
             return sns.color_palette(palette, n_colors)
+    if is_palette_matrix(palette):
+        # a t x k data matrix: reduced, scaled, sorted and turned into a
+        # colormap once; `hyp.plot` does this up front with its palette_*
+        # options, so this is the path for a direct get_palette_colors call
+        palette = matrix_palette(palette)
     if isinstance(palette, Colormap):
         if n_colors == 1:
             return [tuple(np.asarray(palette(0.5))[:3])]
@@ -710,8 +1034,7 @@ def _get_palette(palette, n_colors, sns, continuous=False):
             # gradient (seaborn blend_palette semantics)
             if len(colors) == 1:
                 return [colors[0]] * n_colors
-            return [tuple(np.asarray(c)[:3])
-                    for c in sns.blend_palette(colors, n_colors)]
+            return interpolate_colors(colors, n_colors)
         raise ValueError(
             f"palette= supplies {len(colors)} color(s) but {n_colors} are "
             "required (one per category/component); pass at least "
@@ -746,6 +1069,8 @@ def _is_palette_spec(value):
     seaborn/matplotlib palette NAME, a `Colormap`, a `{category: color}`
     dict, or a non-empty sequence of colors.
     """
+    if is_palette_matrix(value):
+        return True
     from matplotlib.colors import Colormap
 
     if isinstance(value, (Colormap, collections.abc.Mapping)):
@@ -953,8 +1278,9 @@ def dataset_palettes(palette, n_datasets):
 def palette_lead_color(spec):
     """The one color that REPRESENTS a palette: its lead color.
 
-    For ``'image:<path>'`` that is the most visually salient color of the
-    image -- `image_palette`'s first entry, from its full default six
+    For a data-matrix palette (`matrix_palette`) it is the most saturated
+    of its anchor colors. For ``'image:<path>'`` that is the most visually
+    salient color of the image -- `image_palette`'s first entry, from its full default six
     anchors, with any ``?max_luminance=``/``?min_luminance=`` bound in the
     spec applied first. (Asking `get_palette_colors` for ONE color from an
     image instead runs k-means with k=1, which returns the image's AVERAGE
@@ -977,9 +1303,19 @@ def palette_lead_color(spec):
         if spec.startswith(IMAGE_PALETTE_PREFIX):
             source, options = _parse_image_spec(
                 spec[len(IMAGE_PALETTE_PREFIX):])
+            options['sort'] = None            # the salient color leads
             return tuple(float(v) for v in image_palette(source, **options)[0])
         if not _names_a_palette(spec) and _is_color(spec):
             return tuple(float(v) for v in to_rgb(spec))
+    if is_palette_matrix(spec):
+        spec = matrix_palette(spec)
+    if isinstance(spec, MatrixColormap):
+        # every matrix palette spans the RGB cube after per-channel scaling,
+        # so its MIDDLE color is near mid-grey for any matrix and two
+        # datasets would look alike; the most saturated anchor (chroma =
+        # max - min, first on ties) is the color the matrix is about
+        chroma = spec.anchors.max(axis=1) - spec.anchors.min(axis=1)
+        return tuple(float(v) for v in spec.anchors[int(np.argmax(chroma))])
     return tuple(float(v) for v in get_palette_colors(spec, 1)[0])
 
 
@@ -991,16 +1327,23 @@ def dataset_colors(palette, n_datasets):
     `palette_lead_color`; otherwise this is exactly
     ``get_palette_colors(palette, n_datasets)``, i.e. today's colors.
 
-    Note for callers that currently hand `palette` to seaborn directly:
-    seaborn CYCLES a color list that is shorter than `n_datasets`, while
-    `get_palette_colors` raises. Where that difference matters, call
-    `dataset_palettes` and fall back to the existing seaborn call when it
-    returns None.
+    A plain color LIST shorter than `n_datasets` is CYCLED
+    (``['red', 'blue']`` over three datasets colors them red, blue, red),
+    exactly as seaborn's ambient cycle -- the palette every dataset trace
+    is actually drawn from -- cycles it. hypertools 1.0.0 drew such a call
+    that way on both backends; raising here (as `get_palette_colors` does,
+    since a CATEGORY/matrix mapping needs a distinct color per group) would
+    turn a working call into an error before anything was drawn.
     """
     specs = dataset_palettes(palette, n_datasets)
-    if specs is None:
-        return get_palette_colors(palette, n_datasets)
-    return np.asarray([palette_lead_color(s) for s in specs], dtype=float)
+    if specs is not None:
+        return np.asarray([palette_lead_color(s) for s in specs], dtype=float)
+    if (isinstance(palette, (list, tuple, np.ndarray))
+            and 0 < len(palette) < n_datasets
+            and all(_is_color(c) for c in palette)):
+        base = get_palette_colors(palette, len(palette))
+        return base[np.arange(n_datasets) % len(base)]
+    return get_palette_colors(palette, n_datasets)
 
 
 # Legacy continuous-color helpers live in _shared.helpers (import *-ed widely);

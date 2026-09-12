@@ -83,8 +83,8 @@ def align(source, target, scaling=True, reflection=True, reduction=False, obliqu
     Parameters
     ----------
     source : numpy.ndarray or pandas.DataFrame
-        Data to be aligned to `target`'s coordinate system. If it has a
-        `.values` attribute (e.g. a DataFrame), that is used.
+        Data to be aligned to `target`'s coordinate system (anything
+        `numpy.asarray` accepts: an array, or a DataFrame of any backend).
     target : numpy.ndarray or pandas.DataFrame
         Data defining the target coordinate system.
     scaling : bool, optional
@@ -114,10 +114,11 @@ def align(source, target, scaling=True, reflection=True, reduction=False, obliqu
         if either dataset is invariant (near-zero variance), or if
         `reduction=False` but `source` has more columns than `target`.
     """
-    if hasattr(source, 'values'):
-        source = getattr(source, 'values')
-    if hasattr(target, 'values'):
-        target = getattr(target, 'values')
+    # `np.asarray` is the whole datatype question here: a pandas frame's
+    # `.values`, a polars frame's `__array__`, an array as-is (datatype
+    # audit, 2026-09-08 -- was a hasattr(x, 'values') pandas duck-check)
+    source = np.asarray(source)
+    target = np.asarray(target)
 
     datas = (source, target)
     sn, sm = source.shape

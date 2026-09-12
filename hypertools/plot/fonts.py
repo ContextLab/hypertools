@@ -23,7 +23,9 @@ import os
 import warnings
 
 import numpy as np
-import pandas as pd
+
+from .._shared.helpers import (is_array_dataset, is_frame_dataset,
+                               is_series_like, as_pandas_dataframe)
 import matplotlib.font_manager as font_manager
 from matplotlib.font_manager import FontProperties
 from matplotlib.ft2font import FT2Font
@@ -114,8 +116,9 @@ def register_bundled_fonts():
     """Make the vendored face(s) visible to matplotlib's font manager.
 
     Idempotent (matplotlib's `addfont` appends unconditionally, so repeated
-    calls would pile up duplicate entries). Additive only -- it registers an
-    extra font, never changes the user's rcParams or removes anything.
+    calls would pile up duplicate entries). Bundled faces take precedence
+    over same-family system fonts; no fonts are removed and rcParams are
+    unchanged.
     """
     global _bundled_registered
     if _bundled_registered:
@@ -124,6 +127,11 @@ def register_bundled_fonts():
     for path in bundled_font_files():
         try:
             font_manager.fontManager.addfont(path)
+            # GH #285 release review: findfont breaks equal-score ties by
+            # registration order. A system Noto Sans (including variable
+            # fonts) must not replace the bundled face on some machines.
+            entries = font_manager.fontManager.ttflist
+            entries.insert(0, entries.pop())
         except Exception:  # noqa: BLE001 - a bad/corrupt bundled file must
             pass           # never break plotting; the stack falls back below
 
@@ -183,7 +191,10 @@ def _iter_texts(obj):
         return
     if isinstance(obj, str):
         yield obj
-    elif isinstance(obj, (np.ndarray, pd.Series, pd.Index, pd.Categorical)):
+    elif is_frame_dataset(obj):
+        for item in as_pandas_dataframe(obj).to_numpy().tolist():
+            yield from _iter_texts(item)
+    elif is_array_dataset(obj) or is_series_like(obj):
         for item in np.asarray(obj).tolist():
             yield from _iter_texts(item)
     elif isinstance(obj, dict):
@@ -390,7 +401,9 @@ def resolve_font(font, texts):
       to the fallback stack (keeping Noto primary), NOT applied as a single
       face to whole text artists (see `hyp.plot`'s handling).
     - a `str`: either an installed font FAMILY NAME (resolved via
-      matplotlib's font lookup; hyphenated and generic names like
+      matplotlib's font lookup, with hypertools' bundled faces -- Noto
+      Sans -- registered first, so the bundled family resolves in any
+      process; hyphenated and generic names like
       'sans-serif' work) or a path to a `.ttf`/`.otf`/`.ttc` FILE
       (detected by `os.path.exists`, so relative and absolute paths both
       work; the file is verified to be a loadable font HERE, not at
@@ -432,6 +445,11 @@ def resolve_font(font, texts):
                 ) from exc
             return FontProperties(fname=font)
 
+        # the bundled faces must be registered BEFORE the lookup: they used
+        # to be registered only as a side effect of an earlier plot, so
+        # font='Noto Sans' (the bundled family) raised "not a recognized
+        # installed font family" in a fresh process (review 2026-09-11)
+        register_bundled_fonts()
         # family passed as a LIST: a bare string family is parsed by
         # matplotlib as a fontconfig PATTERN, so any hyphenated name --
         # including the generic 'sans-serif' -- crashed with an uncaught

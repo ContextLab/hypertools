@@ -86,6 +86,13 @@ class _RealTimePillowWriter(animation.PillowWriter):
         durations (see class docstring) instead of PillowWriter's single
         truncated duration, so total playback time stays within grid_ms/2
         of the requested ``len(frames) / fps`` seconds."""
+        if not self._frames:
+            # nothing was grabbed: the frame callback raised before the
+            # first grab (a user `on_frame=` hook, say). `Animation.save`
+            # calls finish() from the writer's context-manager exit, so an
+            # IndexError here would REPLACE the user's own exception with
+            # "list index out of range"; return and let theirs propagate.
+            return
         per_frame_ms = 1000.0 / self.fps
         grid = self._grid_ms
         durations, prev = [], 0

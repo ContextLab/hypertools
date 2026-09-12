@@ -99,8 +99,10 @@ def _rgb(rgba):
     return tuple(int(v) for v in body.split(',')[:3])
 
 
-def _alpha(rgba):
-    return float(str(rgba).rstrip(')').rsplit(',', 1)[1])
+def _alpha(rgba, trace):
+    color_alpha = (float(str(rgba).rstrip(')').rsplit(',', 1)[1])
+                   if str(rgba).startswith('rgba(') else 1.)
+    return color_alpha * (trace.opacity if trace.opacity is not None else 1.)
 
 
 def _plot(*args, **kwargs):
@@ -164,16 +166,23 @@ def test_three_level_column_hierarchy_exact_trace_count_and_order():
 
 
 def test_plotly_widths_match_the_documented_formula():
+    from hypertools.plot.plotly_backend import _GL_LINE_WIDTH_BOOST
     traces = _data_traces(_plot(market_frame(), '-', show=False))
     # matplotlib draws this hierarchy at 1.0/1.0/2.0 POINTS
-    # (test_column_multiindex.py); plotly's line.width is in pixels.
+    # (test_column_multiindex.py); plotly's line.width is in pixels. A 3-D
+    # (Scatter3d) line is REQUESTED at `_GL_LINE_WIDTH_BOOST` x that, because
+    # plotly's WebGL renderer draws half the width asked for (1.1 release
+    # review L1, kaleido-measured) -- this test used to pin the un-boosted
+    # request, i.e. lines rendered at half the documented width.
+    boost = _GL_LINE_WIDTH_BOOST if traces[0].type == 'scatter3d' else 1.0
     assert [t.line.width for t in traces] == pytest.approx(
-        [1.0 * PT_TO_PX, 1.0 * PT_TO_PX, 2.0 * PT_TO_PX])
+        [1.0 * PT_TO_PX * boost, 1.0 * PT_TO_PX * boost,
+         2.0 * PT_TO_PX * boost])
 
 
 def test_plotly_opacities_match_the_documented_formula():
     traces = _data_traces(_plot(market_frame(), '-', show=False))
-    assert [_alpha(t.line.color) for t in traces] == pytest.approx(
+    assert [_alpha(t.line.color, t) for t in traces] == pytest.approx(
         [0.7, 0.7, 1.0])
 
 
@@ -199,7 +208,7 @@ def test_plotly_hue_opacities_match_matplotlib():
         'the hierarchy alphas themselves regressed, so the parity assertion '
         'below would be comparing two wrong numbers')
     traces = _data_traces(_plot(df, '-', **kw))
-    assert [_alpha(t.line.color[-1]) for t in traces] == pytest.approx(
+    assert [_alpha(t.line.color[-1], t) for t in traces] == pytest.approx(
         mpl_alpha)
 
 
@@ -214,7 +223,7 @@ def test_plotly_hue_honours_a_plain_alpha_kwarg():
                  for c in _mpl_hue_collections(_mpl(x, '-', **kw))]
     assert mpl_alpha == pytest.approx([0.3])
     traces = _data_traces(_plot(x, '-', **kw))
-    assert [_alpha(t.line.color[-1]) for t in traces] == pytest.approx(
+    assert [_alpha(t.line.color[-1], t) for t in traces] == pytest.approx(
         mpl_alpha)
 
 

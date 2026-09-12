@@ -25,6 +25,21 @@ def _stack_equal_shape(datasets, fname):
     arrays = [np.asarray(d) for d in datasets]
     if len(arrays) == 0:
         raise ValueError(f'{fname} requires at least one dataset; got an empty list.')
+    for i, a in enumerate(arrays):
+        if a.ndim != 2:
+            raise ValueError(
+                f'{fname} requires 2-D datasets of shape (n_observations, '
+                f'n_features); dataset {i} has shape {a.shape}. Reshape a '
+                '1-D series to a single column (x[:, None]) first.')
+        if not np.issubdtype(a.dtype, np.number):
+            raise ValueError(
+                f'{fname} requires numeric datasets; dataset {i} has dtype '
+                f'{a.dtype}.')
+        if not np.all(np.isfinite(a)):
+            raise ValueError(
+                f'{fname} requires finite values; dataset {i} has '
+                f'{int((~np.isfinite(a)).sum())} NaN/inf entries. Impute or '
+                'drop them (e.g. hyp.impute) before scoring.')
     shapes = {a.shape for a in arrays}
     if len(shapes) > 1:
         raise ValueError(
@@ -45,8 +60,37 @@ def dispersion(trajectories):
     Reproduces `examples/plot_story_trajectories.py`'s `dispersion()`
     helper EXACTLY (same computation, same result for the same input) --
     kept as the library implementation of that example's inline function.
+
+    Raises `ValueError` when every dataset is constant (each one's
+    observations all at one point, a single observation included), naming
+    the datasets. Then the per-observation centroid is the same point as
+    the cloud's own mean, so the score is exactly 1.0 whatever the datasets
+    are (or, when they all sit at the SAME point, 0/0) -- it measures
+    nothing, matching `metric='isc'`, which has no correlation to compute
+    there either.
     """
     stack = np.stack([np.asarray(t) for t in trajectories])   # (subj, t, d)
+    # a dataset is constant when its observations never move (np.ptp is 0
+    # along the observation axis for every feature)
+    constant = np.all(np.ptp(stack, axis=1) == 0, axis=1)     # (subj,)
+    if constant.all():
+        # release review 2026-09-07 caught the all-at-one-point case (NaN
+        # with a RuntimeWarning); 1.1 release review 2026-09-11 the
+        # each-at-its-own-point case, which returned a meaningless 1.0
+        # while 'isc' raised on the same input
+        n_datasets, n_obs = stack.shape[0], stack.shape[1]
+        which = (f'dataset {n_datasets - 1}' if n_datasets == 1
+                 else f'datasets 0-{n_datasets - 1}' if n_datasets > 3
+                 else ', '.join(f'dataset {i}' for i in range(n_datasets)))
+        single = (' (a dataset with a single observation is constant)'
+                  if n_obs == 1 else '')
+        raise ValueError(
+            "alignment_score(metric='dispersion') is undefined when every "
+            f'dataset is constant: {which} each keep every observation at '
+            f'one point{single}. The per-observation centroid is then the '
+            "cloud's own mean, so the score would be 1.0 (0/0 when the "
+            'datasets share one point) whatever the alignment. Score '
+            'datasets whose observations vary.')
     centroid = stack.mean(axis=0, keepdims=True)
     spread = np.linalg.norm(stack - centroid, axis=2).mean()
     scale = np.linalg.norm(stack - stack.mean(axis=(0, 1)), axis=2).mean()
@@ -133,9 +177,12 @@ def alignment_score(datasets, aligned=None, metric='dispersion'):
     Raises
     ------
     ValueError
-        If `datasets` (or `aligned`) is empty, if the datasets in either
-        list do not all share the same shape (ragged input), or if
-        `metric` is not one of the supported names.
+        If `datasets` (or `aligned`) is empty, if any dataset is not a 2-D
+        numeric array of finite values, if the datasets in either list do
+        not all share the same shape (ragged input), if `metric` is not one
+        of the supported names, or if the input is degenerate for the
+        metric (every dataset constant for `'dispersion'`; no non-constant
+        feature to correlate for `'isc'`).
     """
     if metric not in _METRICS:
         raise ValueError(

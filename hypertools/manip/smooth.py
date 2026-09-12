@@ -8,6 +8,8 @@ from scipy.ndimage import gaussian_filter1d, uniform_filter1d
 import warnings
 
 from .common import Manipulator
+from ..core.model import external_stacklevel
+from ..core.shared import as_dataframe
 
 
 #: valid values for `Smooth`'s `kernel=` kwarg (GH #274/#153, round17 Task 5).
@@ -221,10 +223,12 @@ def _transform(data, **kwargs):
         return dw.stack([_transform(d, **kwargs) for d in dw.unstack(data)])
     if isinstance(data, list):
         return [_transform(d, **kwargs) for d in data]
-    if not isinstance(data, pd.DataFrame):
-        # e.g. a bare array passed between hypertools.Pipeline steps -- the
-        # old apply_stacked decorator wrangled these to DataFrames implicitly
-        data = pd.DataFrame(data)
+    # `hyp.manip` funnels its input to pandas frames, but a fitted
+    # manipulator's `.transform` and hypertools.Pipeline hand this a bare
+    # array (or a frame of another backend) directly: coerce through the
+    # shared datawrangler-based layer rather than re-checking pandas types
+    # here (datatype audit, 2026-09-08)
+    data = as_dataframe(data)
 
     axis = kwargs['axis']
     if axis == 1:
@@ -290,11 +294,15 @@ def transformer(data, **kwargs):
     center = kwargs.get('center', True)
     kw = kwargs.get('kernel_width')
     if kw is not None:
+        # both warnings name the caller's line (1.1 release review): with
+        # no stacklevel they pointed at this module
         if kw != int(np.round(kw)):
-            warnings.warn('Rounding smoothing kernel width to the nearest integer')
+            warnings.warn('Rounding smoothing kernel width to the nearest integer',
+                          stacklevel=external_stacklevel())
         kw = int(np.round(kw))
         if center and kw % 2 != 1:
-            warnings.warn('Increasing smoothing kernel width by 1 (must be odd)')
+            warnings.warn('Increasing smoothing kernel width by 1 (must be odd)',
+                          stacklevel=external_stacklevel())
             kw += 1
         if kw <= 0:
             requirement = 'a positive odd integer' if center else 'a positive integer'

@@ -161,15 +161,26 @@ class Laplace(Forecaster):
     conditioning on the new series, not replaying anything learned from the
     original fit.
 
-    Laplace takes no parameters; see the module docstring for performance
+    See the module docstring for performance
     and signal-suitability caveats. Unknown keyword arguments raise
     `TypeError` (they were previously swallowed silently -- QC 2026-07
     red-team F16-predict-009).
+
+    Parameters
+    ----------
+    step : number, duration string, Timedelta, calendar offset, or None
+        One future step. None uses a datetime index's calendar frequency
+        when it has one (business days, month starts, ...), else the median
+        positive gap between sorted observation times. Irregular
+        observations are linearly interpolated onto this grid before
+        forecasting.
     """
 
-    def __init__(self):
+    _regular_time_grid = True
+
+    def __init__(self, step=None):
         required = ['series']
-        super().__init__(fitter=fitter, forecaster=forecaster, data=None,
+        super().__init__(step=step, fitter=fitter, forecaster=forecaster, data=None,
                           required=required)
 
         self.fitter = fitter

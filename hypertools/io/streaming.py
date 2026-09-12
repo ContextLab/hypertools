@@ -25,6 +25,19 @@ import warnings
 import numpy as np
 import pandas as pd
 
+from .._shared.helpers import (is_array_dataset, is_frame_dataset,
+                               is_series_like)
+
+#: The clamped-samples warning fires when more than a quarter of the samples
+#: streamed after the head land outside the head-fitted display box. While
+#: streaming it waits for this many post-head samples (so a noisy first
+#: chunk of a long stream cannot trigger it)...
+_CLAMP_WARN_MIN_STREAMING = 20
+#: ...and when the stream stops it is evaluated once more over everything
+#: streamed, from this many post-head samples up, so a SHORT stream is
+#: covered too (1.1 visual review, L13b).
+_CLAMP_WARN_MIN_AT_END = 4
+
 
 def _validate_stream_save_path(save_path):
     """Validate a streaming ``save_path`` BEFORE any samples are consumed,
@@ -73,10 +86,13 @@ def _validate_stream_save_path(save_path):
 
 def is_stream(x):
     """True when x is streaming data: a Python iterator/generator, or a
-    Hugging Face ``datasets.IterableDataset``. Materialized containers
-    (lists, tuples, arrays, DataFrames) and strings are not streams."""
-    if isinstance(x, (list, tuple, str, np.ndarray, pd.DataFrame, pd.Series,
-                      dict)):
+    Hugging Face ``datasets.IterableDataset``. Materialized data is not a
+    stream: containers (lists, tuples, dicts), strings, and every dataset
+    type datawrangler recognises -- arrays, DataFrames of any backend
+    (pandas, polars DataFrame/LazyFrame, dataframe-likes) and Series."""
+    if isinstance(x, (list, tuple, dict)) or np.isscalar(x):
+        return False
+    if is_array_dataset(x) or is_frame_dataset(x) or is_series_like(x):
         return False
     # generators and other iterators
     if isinstance(x, collections.abc.Iterator):
@@ -147,6 +163,8 @@ def _fit_stream_models(head, reduce, ndims, normalize):
     fitted reduction estimator (None when no reduction was needed).
     """
     from ..reduce.reduce import _resolve_model
+    from ..core.shared import check_spec_keys
+    from ..core.model import external_stacklevel
 
     # normalization stats are computed ONCE, on the head, and reused for
     # every future sample (the fitted-transform semantics of issue #101).
@@ -175,24 +193,46 @@ def _fit_stream_models(head, reduce, ndims, normalize):
 
     # reduction spec: name / dict / class / instance, mirroring tools.reduce
     if isinstance(reduce, dict):
+        # a flat key such as {'model': 'PCA', 'whiten': True} used to be
+        # dropped silently, exactly as in hyp.reduce (1.1 review)
+        check_spec_keys(reduce, 'reduce', param='reduce')
         model_spec = reduce.get('model')
         # accept the canonical 'kwargs' key (falling back to the legacy 'params')
         # so a streaming reduce spec honors constructor kwargs like every other
         # dispatcher (QC 2026-07: only 'params' was read, so
         # reduce={'model':'PCA','kwargs':{'whiten':True}} silently used defaults).
         params = dict(reduce.get('kwargs', reduce.get('params', {})))
+        # positional constructor arguments were dropped the same way
+        # ({'model': 'PCA', 'args': [2]} fit ndims components; 1.1 review)
+        args = list(reduce.get('args', []))
+        if (args or params) and not isinstance(model_spec, (str, type)) \
+                and model_spec is not None:
+            # an already-constructed instance is used as-is (parity with
+            # hyp.reduce's warning: these used to vanish without a word)
+            warnings.warn(
+                f"the reduce spec's 'model' is an already-constructed "
+                f"{type(model_spec).__name__} instance (used as-is), so the "
+                "spec's 'args'/'kwargs' entries are ignored; configure the "
+                "instance directly, or pass the class (or its name) to "
+                "apply constructor parameters", UserWarning,
+                stacklevel=external_stacklevel())
     else:
         model_spec = reduce
         params = {}
-    params.setdefault('n_components', ndims)
+        args = []
+    if not args:
+        # with positional arguments, the component count may be among
+        # them, so ndims is not injected (as in hyp.apply_model)
+        params.setdefault('n_components', ndims)
 
-    if model_spec is None or head_n.shape[1] <= params['n_components']:
+    if model_spec is None or head_n.shape[1] <= params.get('n_components',
+                                                           ndims):
         return head_n, norm, None
 
     if isinstance(model_spec, str):
-        model = _resolve_model(model_spec)(**params)
+        model = _resolve_model(model_spec)(*args, **params)
     elif isinstance(model_spec, type):
-        model = model_spec(**params)
+        model = model_spec(*args, **params)
     else:
         model = model_spec  # already-instantiated estimator
 
@@ -250,9 +290,11 @@ def plot_stream(stream, fmt='-', stream_init=10000, stream_chunk=100,
 
     The display box (axis limits and the data->box affine) is FROZEN from
     the head samples; later samples that land outside it are drawn clamped
-    to the box surface, and a ``RuntimeWarning`` is emitted when a large
-    fraction of streamed samples is clamped (their true projected values
-    stay in ``stream_info['xform_data']``). Streamed trajectories are
+    to the box surface, and a ``RuntimeWarning`` is emitted (once) when
+    more than a quarter of the post-head samples are clamped -- checked as
+    samples arrive once 20 have streamed, and again when streaming stops
+    for any stream with at least 4 post-head samples (their true projected
+    values stay in ``stream_info['xform_data']``). Streamed trajectories are
     drawn as raw polylines (one vertex per sample) from the first frame
     on, without the interpolation/smoothing applied to static plots.
 
@@ -374,9 +416,13 @@ def plot_stream(stream, fmt='-', stream_init=10000, stream_chunk=100,
             "reduce/ndims so samples are projected to <= 3 dimensions "
             "(e.g. reduce='IncrementalPCA', ndims=3).")
 
-    # initial plot on the head (already normalized/reduced -> disable both)
+    # initial plot on the head (already normalized/reduced -> disable both).
+    # Streams are always drawn with matplotlib: pin the render backend so a
+    # plotly preference (Colab/Kaggle auto-detection, or
+    # set_interactive_backend('plotly')) cannot turn this into a plotly
+    # figure (fresh-Colab feature tour, 2026-09-11).
     fig = hyp_plot(head_red, fmt, reduce=None, normalize=None, ndims=ndims,
-                   show=False, **plot_kwargs)
+                   show=False, backend='matplotlib', **plot_kwargs)
     artist = next(ln for ln in fig.axes[0].lines if len(ln.get_data()[0]))
 
     # the axis limits and the data->box transform are FROZEN from the head:
@@ -482,9 +528,29 @@ def plot_stream(stream, fmt='-', stream_init=10000, stream_chunk=100,
     clamped = post_head = 0
     clamp_warned = False
 
+    def _warn_if_clamped(min_post_head):
+        # the stream has drifted out of the head-fitted display box: the
+        # plot is visibly distorted (QC 2026-07, F22-io-streaming-lsl-002).
+        # Warns at most once per stream.
+        nonlocal clamp_warned
+        if clamp_warned or post_head < min_post_head \
+                or clamped / post_head <= 0.25:
+            return
+        clamp_warned = True
+        warnings.warn(
+            f'{clamped} of {post_head} streamed samples '
+            f'({100.0 * clamped / post_head:.0f}%) fall outside '
+            'the display box fitted on the first stream_init '
+            'samples and are drawn clamped to its surface, so '
+            'their displayed positions are distorted (the true '
+            "projected values are kept in "
+            "fig.stream_info['xform_data']). If the early "
+            'samples are not representative of the whole stream, '
+            'increase stream_init.', RuntimeWarning, stacklevel=3)
+
     def _consume(rows):
         # project + draw one (possibly partial) chunk of samples
-        nonlocal n_seen, clamped, post_head, clamp_warned
+        nonlocal n_seen, clamped, post_head
         if not rows:
             return
         chunk = np.vstack([row_to_vector(r) for r in rows])
@@ -496,22 +562,10 @@ def plot_stream(stream, fmt='-', stream_init=10000, stream_chunk=100,
         n_seen += len(rows)
         clamped += _n_clamped(projected)
         post_head += len(projected)
-        if not clamp_warned and post_head >= 20 \
-                and clamped / post_head > 0.25:
-            # the stream has drifted out of the head-fitted display box:
-            # the plot is visibly distorted (QC 2026-07,
-            # F22-io-streaming-lsl-002)
-            clamp_warned = True
-            warnings.warn(
-                f'{clamped} of {post_head} streamed samples '
-                f'({100.0 * clamped / post_head:.0f}%) fall outside '
-                'the display box fitted on the first stream_init '
-                'samples and are drawn clamped to its surface, so '
-                'their displayed positions are distorted (the true '
-                "projected values are kept in "
-                "fig.stream_info['xform_data']). If the early "
-                'samples are not representative of the whole stream, '
-                'increase stream_init.', RuntimeWarning, stacklevel=2)
+        # while streaming, wait for 20 post-head samples so a noisy first
+        # chunk cannot trigger it; the stream-end check below covers
+        # shorter streams
+        _warn_if_clamped(_CLAMP_WARN_MIN_STREAMING)
         _redraw()
 
     try:
@@ -594,6 +648,12 @@ def plot_stream(stream, fmt='-', stream_init=10000, stream_chunk=100,
             finally:
                 if writer_tmp is not None and os.path.exists(writer_tmp):
                     os.remove(writer_tmp)
+
+    # once more now that streaming has stopped, with a lower floor: a SHORT
+    # stream never reached the 20 post-head samples the in-stream check
+    # waits for, so 9 of its 16 drawn vertices could sit clamped on the
+    # box surface with no warning at all (1.1 visual review, L13b)
+    _warn_if_clamped(_CLAMP_WARN_MIN_AT_END)
 
     fig.stream_info = {
         'data': [np.vstack(raw)],

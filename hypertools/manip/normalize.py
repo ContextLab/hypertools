@@ -2,14 +2,15 @@
 import datawrangler as dw
 import pandas as pd
 
-from .common import Manipulator
+from .common import (Manipulator, stack_for_shared_fit, fit_rowwise_list,
+                     transform_rowwise_list)
+from ..core.pipeline import as_internal_frames
 
 
 MODES = ('minmax', 'isotropic')
 
 
 # noinspection PyShadowingBuiltins
-@dw.decorate.funnel
 def fitter(data, axis=0, min=0, max=1, mode='minmax'):
     """Fit normalization parameters for the `Normalize` manipulator.
 
@@ -53,6 +54,18 @@ def fitter(data, axis=0, min=0, max=1, mode='minmax'):
         If `min >= max`, `axis` is not 0 or 1, `mode` is not one of
         `MODES`, or ``mode='isotropic'`` is combined with ``axis=1``.
     """
+    # the funnel runs with backend='pandas' so a polars/LazyFrame input
+    # (which the funnel would otherwise keep in its own backend) reaches
+    # the pandas-based fit below (datatype audit, 2026-09-08)
+    # (a Series is made a one-column frame FIRST: the funnel would wrangle
+    # it into an empty table -- Codex round 12, R12-4)
+    return _fitter(as_internal_frames(data), axis=axis, min=min, max=max, mode=mode,
+                   backend='pandas')
+
+
+# noinspection PyShadowingBuiltins
+@dw.decorate.funnel
+def _fitter(data, axis=0, min=0, max=1, mode='minmax'):
     # a real ValueError (as documented in Raises), not "assert cond,
     # ValueError(...)" -- the assert idiom raised AssertionError and was
     # silently stripped under `python -O` (audit F14-009)
@@ -67,7 +80,10 @@ def fitter(data, axis=0, min=0, max=1, mode='minmax'):
             f"{', '.join(repr(m) for m in MODES)}")
 
     if isinstance(data, list):
-        data = pd.concat(data, axis=0, ignore_index=True)
+        if axis == 1 and mode == 'minmax':
+            return fit_rowwise_list(data, fitter, ('baseline', 'peak'),
+                                    min=min, max=max)
+        data = stack_for_shared_fit(data, 'Normalize')
 
     if mode == 'isotropic':
         # one shared centre + scale for the whole table (and, for a list,
@@ -169,6 +185,19 @@ def transformer(data, **kwargs):
         If `axis` is missing from `kwargs`, or (after resolving
         `transpose`) is not 0.
     """
+    # a fitted manipulator's `.transform` hands over whatever the caller
+    # passed: frames of any backend become pandas here, once (datatype
+    # audit, 2026-09-08)
+    data = as_internal_frames(data)
+    if isinstance(data, list):
+        if kwargs.get('transpose', False):
+            return transform_rowwise_list(data, transformer,
+                                          ('baseline', 'peak'), **kwargs)
+        # each dataset is transformed on its own (the fitted statistics
+        # are positional), so every frame keeps its own column labels and
+        # index; stacking the list first demanded identical labels
+        # (Codex round 12, R12-3)
+        return [transformer(d, **kwargs) for d in data]
     transpose = kwargs.pop('transpose', False)
     # real raises (not `assert ..., ValueError(...)`, which raised
     # AssertionError and was stripped under `python -O`) -- 2026-07 release
@@ -269,12 +298,14 @@ class Normalize(Manipulator):
 
     Notes
     -----
-    For a LIST of datasets, ONE shared baseline/peak is fit across all of
+    For a LIST of datasets with ``axis=0``, ONE shared baseline/peak is fit across all of
     them (like ``normalize='across'``): in ``'minmax'`` mode the shared
     per-column min/max, in ``'isotropic'`` mode the shared centroid and
     the single scalar scale of the concatenated data, so every dataset in
     the list is moved and rescaled identically. Constant (zero-range)
     columns normalize to `min` rather than NaN in ``'minmax'`` mode.
+    With ``axis=1``, each row is normalized independently, including lists
+    whose datasets have different widths; labels and boundaries are retained.
 
     `inverse_transform` is supported for ``axis=0`` in both modes.
 

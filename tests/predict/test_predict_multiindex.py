@@ -168,54 +168,70 @@ def test_group_forecast_matches_forecasting_that_group_alone():
                        rtol=1e-6, atol=1e-6)
 
 
-def test_grouped_leaves_are_non_hierarchical_so_the_recursion_terminates(
-        monkeypatch):
+def test_grouped_leaves_are_non_hierarchical_so_the_recursion_terminates():
     """The recursion guard, made OBSERVABLE rather than inferred (Revision
     note (v6) D1/D2). `predict()` recurses with `predict(group, ...)`, so a
     leaf still carrying its grouping levels is re-detected by the same
     `nlevels >= 2` predicate and regrouped without bound -- measured on v5's
-    `sub.T` leaves. Both core helpers are WRAPPED here: they still run (this
-    OBSERVES, it does not substitute), recording each leaf's axis index and
-    their own call counts. Patching `hypertools.core.hierarchy` rather than
-    the predict module is deliberate -- `predict()` imports them inside the
-    function, so the name is looked up on the source module at call time.
-    A test that merely 'does not hang' would not be adequate: the counts and
-    the leaf indices are asserted explicitly.
+    `sub.T` leaves.
+
+    Proved from real outputs, with no observer wrapped around the helpers:
+    the SAME helpers `predict()` delegates to are called directly on the same
+    frames, and their leaves must fail the predicate `predict()` re-detects
+    on (`is_hierarchical`). Then `return_model=True` exposes what each group
+    was actually fitted on: a Forecaster keeps its fitted frame as `.data`,
+    which must be frame-equal to the helper's flat leaf (a regrouped or
+    still-hierarchical leaf could not produce that), one model per group, in
+    the helper's key order; each forecast carries the leaf's flat feature
+    axis and continues the leaf's flat time axis; and each forecast equals
+    forecasting that flat leaf on its own. (Unbounded regrouping cannot pass
+    silently either: each level is a real `predict()` call, so it ends in a
+    RecursionError.) A test that merely 'does not hang' would not be
+    adequate: the leaf axes, fitted frames and group order are asserted.
     """
     import hypertools.core.hierarchy as hier
 
-    real_columns, real_rows = hier.group_columns, hier.group_rows_for_forecast
-    col_calls, row_calls, seen_cols, seen_rows = [], [], [], []
+    col, row = col_frame(), row_frame()
+    leaves, meta = hier.group_columns(col)
+    groups, keys = hier.group_rows_for_forecast(row)
 
-    def observing_columns(df):
-        leaves, meta = real_columns(df)
-        col_calls.append(df.columns.nlevels)
-        seen_cols.extend(leaf.columns for leaf in leaves)
-        return leaves, meta
+    assert meta['leaf_keys'] == [('Market', 'Tech'), ('Market', 'Energy')]
+    assert keys == [('Tech',), ('Energy',)]
+    assert all(not hier.is_hierarchical(leaf) for leaf in leaves)
+    assert all(not hier.is_hierarchical(group) for group in groups)
+    assert all(not isinstance(leaf.columns, pd.MultiIndex) for leaf in leaves)
+    assert all(not isinstance(group.index, pd.MultiIndex) for group in groups)
+    assert all(list(leaf.columns) == ['return', 'volatility', 'momentum']
+               and leaf.columns.name == 'Measure' for leaf in leaves)
+    assert all(list(group.index) == list(range(60))
+               and group.index.name == 'day' for group in groups)
 
-    def observing_rows(df):
-        groups, keys = real_rows(df)
-        row_calls.append(df.index.nlevels)
-        seen_rows.extend(group.index for group in groups)
-        return groups, keys
+    col_out, col_models = hyp.predict(col, model='Kalman', t=1,
+                                      return_model=True)
+    row_out, row_models = hyp.predict(row, model='Kalman', t=2,
+                                      return_model=True)
 
-    monkeypatch.setattr(hier, 'group_columns', observing_columns)
-    monkeypatch.setattr(hier, 'group_rows_for_forecast', observing_rows)
-
-    col_out = hyp.predict(col_frame(), model='Kalman', t=1)
-    row_out = hyp.predict(row_frame(), model='Kalman', t=2)
-
-    assert len(col_calls) == 1, \
-        f'group_columns ran {len(col_calls)}x: the leaves were regrouped'
-    assert len(row_calls) == 1, \
-        f'group_rows_for_forecast ran {len(row_calls)}x: leaves regrouped'
-    assert len(seen_cols) == 2 and len(seen_rows) == 2
-    assert all(not isinstance(cols, pd.MultiIndex) for cols in seen_cols)
-    assert all(not isinstance(idx, pd.MultiIndex) for idx in seen_rows)
-    assert len(col_out) == 2
-    assert all(np.asarray(f).shape == (1, 3) for f in col_out)
-    assert len(row_out) == 2
-    assert all(np.asarray(f).shape == (2, 3) for f in row_out)
+    assert len(col_out) == len(col_models) == 2
+    assert len(row_out) == len(row_models) == 2
+    for forecast, model, leaf in zip(col_out, col_models, leaves):
+        pd.testing.assert_frame_equal(model.data, leaf)
+        assert np.asarray(forecast).shape == (1, 3)
+        assert not isinstance(forecast.columns, pd.MultiIndex)
+        assert list(forecast.columns) == list(leaf.columns)
+        assert forecast.columns.name == 'Measure'
+        assert list(forecast.index) == [120]
+        alone = hyp.predict(leaf, model='Kalman', t=1)
+        assert np.allclose(np.asarray(forecast), np.asarray(alone),
+                           rtol=1e-6, atol=1e-6)
+    for forecast, model, group in zip(row_out, row_models, groups):
+        pd.testing.assert_frame_equal(model.data, group)
+        assert np.asarray(forecast).shape == (2, 3)
+        assert not isinstance(forecast.index, pd.MultiIndex)
+        assert list(forecast.index) == [60, 61]
+        assert list(forecast.columns) == list(group.columns)
+        alone = hyp.predict(group, model='Kalman', t=2)
+        assert np.allclose(np.asarray(forecast), np.asarray(alone),
+                           rtol=1e-6, atol=1e-6)
 
 
 def test_duplicate_innermost_names_forecast_by_occurrence():

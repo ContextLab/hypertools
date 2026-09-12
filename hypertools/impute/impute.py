@@ -25,13 +25,16 @@ import warnings
 import numpy as np
 import pandas as pd
 import datawrangler as dw
+from .._shared.helpers import (is_array_dataset, is_frame_dataset,
+                               is_series_like, as_pandas_dataframe)
 
 from .backtest import imputer_collection, score_imputations
 from .common import Imputer
 from .ppca import PPCA
 from .sklearn_imputers import SimpleImputer, KNNImputer, IterativeImputer
 from .kalman import Kalman
-from ..core.shared import supported_names, unpack_model
+from ..core.model import external_stacklevel
+from ..core.shared import check_spec_keys, supported_names, unpack_model
 from ..predict.backtest import spec_name
 
 
@@ -49,14 +52,25 @@ def _spec_help():
 
 def _coerce_dataset(d):
     """Normalize ONE dataset-like object before wrangling: a 1-D array or a
-    pandas Series is a UNIVARIATE series -- n observations of 1 feature,
+    Series is a UNIVARIATE series -- n observations of 1 feature,
     i.e. an (n, 1) column -- matching format_data/plot's convention. (QC
     2026-07 red-team F17-impute-010: the funnel used to wrangle a (4,)
     array into ONE row of 4 features, whose NaN then became an all-missing
-    "column" silently filled with 0.0 instead of the series statistic.)"""
-    if isinstance(d, pd.Series):
-        return d.to_frame()
-    if isinstance(d, np.ndarray) and d.ndim == 1:
+    "column" silently filled with 0.0 instead of the series statistic.)
+
+    Types are classified with datawrangler's predicates (see
+    `hypertools._shared.helpers`): a DataFrame of any backend datawrangler
+    recognises (polars DataFrame/LazyFrame, ...) becomes a pandas
+    DataFrame, hypertools' internal frame type (a pandas frame passes
+    through untouched); a pandas or polars Series becomes its one-column
+    frame (index and name preserved)."""
+    if is_frame_dataset(d):
+        return as_pandas_dataframe(d)
+    if is_series_like(d):
+        if hasattr(d, 'to_frame'):
+            return _coerce_dataset(d.to_frame())
+        return _coerce_dataset(np.asarray(d))
+    if is_array_dataset(d) and d.ndim == 1:
         return d.reshape(-1, 1)
     return d
 
@@ -91,7 +105,7 @@ def _normalize_data(data):
         raise ValueError(
             f'cannot impute a single scalar observation ({data!r}); pass a '
             'dataset with at least 1 row and 1 column.')
-    if isinstance(data, np.ndarray):
+    if is_array_dataset(data):
         if data.ndim == 0:
             raise ValueError(
                 f'cannot impute a single scalar observation ({data!r}); pass '
@@ -103,10 +117,14 @@ def _normalize_data(data):
         data = _coerce_dataset(data)
         _check_finite_observed(data)
         return data
-    if isinstance(data, pd.DataFrame) and (data.shape[0] == 0 or data.shape[1] == 0):
-        raise ValueError(
-            f'input has no observations (got a DataFrame of shape '
-            f'{tuple(data.shape)}); there is nothing to impute.')
+    if is_frame_dataset(data):
+        # to pandas FIRST (a polars LazyFrame has no shape until collected)
+        data = _coerce_dataset(data)
+        if data.shape[0] == 0 or data.shape[1] == 0:
+            raise ValueError(
+                f'input has no observations (got a DataFrame of shape '
+                f'{tuple(data.shape)}); there is nothing to impute.')
+        return data
     if isinstance(data, list):
         if len(data) == 0:
             raise ValueError(
@@ -153,10 +171,10 @@ def _all_missing(data):
 
 def _mismatched_columns(data):
     """Whether `data` is a list of (wrangled) datasets that do NOT share
-    columns -- joint (stacked) imputation is impossible for those."""
+    columns -- joint (stacked) imputation is impossible for those. Called
+    on FUNNELED data only, so every element is a DataFrame already (no
+    per-element re-check)."""
     if not isinstance(data, list) or len(data) < 2:
-        return False
-    if not all(isinstance(d, pd.DataFrame) for d in data):
         return False
     first = list(data[0].columns)
     return any(list(d.columns) != first for d in data[1:])
@@ -208,7 +226,8 @@ def _wrangled_impute(data, model='PPCA', return_model=False, **kwargs):
         warnings.warn(
             'datasets do not share columns, so they cannot be imputed '
             'jointly; imputing each dataset independently instead. (Shared '
-            'columns are required to pool information across datasets.)')
+            'columns are required to pool information across datasets.)',
+            stacklevel=external_stacklevel())
         results = [_wrangled_impute(d, model=model, return_model=return_model,
                                     **kwargs) for d in data]
         if return_model:
@@ -221,25 +240,30 @@ def _wrangled_impute(data, model='PPCA', return_model=False, **kwargs):
     # audit, D09-tutorials-applied-012). Checked on the POOLED view -- for
     # a list sharing columns, a column observed in ANY dataset is informed
     # (the datasets are stacked and imputed jointly).
+    # (`data` is FUNNELED, so every dataset is a DataFrame already -- no
+    # per-element re-check.)
     _datasets = data if isinstance(data, list) else [data]
-    if all(isinstance(d, pd.DataFrame) for d in _datasets):
-        try:
-            _stacked = pd.concat(_datasets, axis=0)
-            _vals = _stacked.to_numpy(dtype=float)
-        except (TypeError, ValueError):
-            _vals = None
-        if _vals is not None and _vals.size:
-            _dead = np.isnan(_vals).all(axis=0)
-            if _dead.any():
-                _names = [str(c) for c, d_ in zip(_stacked.columns, _dead)
-                          if d_]
-                warnings.warn(
-                    f'column(s) {_names} have no observed values at all; '
-                    'their "imputed" values are not informed by any data '
-                    "(Kalman and PPCA fill such columns with 0.0). Drop "
-                    'these columns, or treat their filled values as '
-                    'placeholders rather than data.', UserWarning)
+    try:
+        _stacked = pd.concat(_datasets, axis=0)
+        _vals = _stacked.to_numpy(dtype=float)
+    except (TypeError, ValueError):
+        _vals = None
+    if _vals is not None and _vals.size:
+        _dead = np.isnan(_vals).all(axis=0)
+        if _dead.any():
+            _names = [str(c) for c, d_ in zip(_stacked.columns, _dead)
+                      if d_]
+            warnings.warn(
+                f'column(s) {_names} have no observed values at all; '
+                'their "imputed" values are not informed by any data '
+                "(Kalman and PPCA fill such columns with 0.0). Drop "
+                'these columns, or treat their filled values as '
+                'placeholders rather than data.', UserWarning,
+                stacklevel=external_stacklevel())
 
+    # a flat key such as {'model': 'KNNImputer', 'n_neighbors': 1} used to
+    # be dropped silently, so the imputer ran with its defaults (1.1 review)
+    check_spec_keys(model, 'impute')
     if isinstance(model, dict) and 'kwargs' not in model and 'args' not in model:
         # {'model': ..., 'params': {...}} form: unpack before handing the
         # inner model spec to unpack_model (which only auto-unpacks the
@@ -255,7 +279,7 @@ def _wrangled_impute(data, model='PPCA', return_model=False, **kwargs):
             warnings.warn(
                 "{'model': ..., 'params': {...}} is deprecated; use "
                 "{'model': ..., 'args': [...], 'kwargs': {...}} instead",
-                DeprecationWarning, stacklevel=2)
+                DeprecationWarning, stacklevel=external_stacklevel())
         kwargs = {**dict(model.get('params', {})), **kwargs}
         model = model['model']
     elif isinstance(model, dict) and 'model' not in model:
@@ -298,7 +322,7 @@ def _wrangled_impute(data, model='PPCA', return_model=False, **kwargs):
             f'ignoring keyword argument(s) {sorted(kwargs)}: model= is '
             'already a constructed instance, so constructor parameters '
             'cannot be applied. Pass the class (or a name/dict spec) to '
-            'set parameters.')
+            'set parameters.', stacklevel=external_stacklevel())
 
     if isinstance(resolved, Imputer) and resolved.is_fitted:
         result = resolved.transform(data)
@@ -338,7 +362,7 @@ def impute(data, model='PPCA', return_model=False, truth=None, mask=None,
         Which imputer to use (default: 'PPCA', matching the pre-1.0
         `format_data` default).
 
-        SEVERAL IMPUTERS AT ONCE (1.2). A LIST or TUPLE of specs fills the
+        SEVERAL IMPUTERS AT ONCE (1.1). A LIST or TUPLE of specs fills the
         data with each of them and returns a ``{name: imputed}`` dict in
         the order given. Names come from the specs (a string's registry
         spelling, a dict spec's inner model, a class/instance's
@@ -354,7 +378,10 @@ def impute(data, model='PPCA', return_model=False, truth=None, mask=None,
         SimpleImputer, KNNImputer, IterativeImputer, Kalman); names are
         matched case-insensitively ('ppca' works too). A dict may be
         `{'model': ..., 'params': {...}}` (deprecated) or
-        `{'model': ..., 'args': [...], 'kwargs': {...}}`. A class or an
+        `{'model': ..., 'args': [...], 'kwargs': {...}}`; any other
+        top-level key in a spec that has a `'model'` -- e.g. a flat
+        `{'model': 'KNNImputer', 'n_neighbors': 5}` -- raises `ValueError`
+        naming it rather than being ignored. A class or an
         already-constructed (unfitted) instance is used directly. An
         ALREADY-FITTED Imputer instance (returned from a previous
         `return_model=True` call) is applied to `data` via `transform`
@@ -369,13 +396,16 @@ def impute(data, model='PPCA', return_model=False, truth=None, mask=None,
         model})``; it is not supported with ``truth=``.
 
     truth : DataFrame/array (or list of these), or None
-        SCORE the imputers instead of returning the filled data (1.2). The
+        SCORE the imputers instead of returning the filled data (1.1). The
         COMPLETE version of `data` -- same shape, cell for cell -- from
         which `data`'s NaNs were removed (e.g. by `hyp.tools.damage`).
         Every model in `model` is fit, and each is scored on the DAMAGED
         CELLS ONLY: the entries that are NaN in `data`. Observed cells are
         never scored -- every imputer passes them through untouched, so
         including them would only dilute the comparison.
+        Pass a name, class, or unfitted instance; scoring fits an independent
+        copy and leaves the caller's instance unchanged. Fitted instances
+        are refused because their learned state may contain the hidden truth.
 
     mask : boolean array (or list of these), or None
         RESTRICT scoring to a subset of the damaged cells, e.g. only the

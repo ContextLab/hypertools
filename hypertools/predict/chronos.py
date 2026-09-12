@@ -129,6 +129,14 @@ class Chronos(Forecaster):
 
     Parameters
     ----------
+    step : number, duration string, Timedelta, calendar offset, or None
+        One future step. None infers it per dataset: a datetime index's
+        calendar frequency when it has one (business days, month starts, a
+        ``PeriodIndex``'s periods...), else the median positive gap between
+        sorted observation times. Numerical indexes use their own units;
+        datetime/duration indexes need a duration such as '1h' (datetime
+        indexes also take a calendar frequency such as 'B' or 'MS').
+        See `hypertools.predict` for the interpolation and reuse policies.
     model_name : str
         HuggingFace Hub id of the pretrained Chronos checkpoint
         (default: 'amazon/chronos-t5-tiny').
@@ -145,10 +153,12 @@ class Chronos(Forecaster):
         Nucleus-sampling cutoff (default: None, Chronos's own default).
     """
 
+    _regular_time_grid = True
+
     def __init__(self, model_name='amazon/chronos-t5-tiny', device_map='cpu',
-                 num_samples=None, temperature=None, top_k=None, top_p=None):
+                 num_samples=None, temperature=None, top_k=None, top_p=None, step=None):
         required = ['pipeline', 'series']
-        super().__init__(model_name=model_name, device_map=device_map,
+        super().__init__(step=step, model_name=model_name, device_map=device_map,
                           num_samples=num_samples, temperature=temperature,
                           top_k=top_k, top_p=top_p, fitter=fitter,
                           forecaster=forecaster, data=None, required=required)

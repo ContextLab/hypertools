@@ -741,9 +741,17 @@ unless it already carries one of its own.
    [(40, 3), (40, 3)]
 
 Bundled forecasts always correspond to ``trace_data``, so ``forecasts[i]``
-equals ``hyp.predict(trace_data[i], model=..., t=t)`` for every ``i`` --
+equals ``hyp.predict(trace_data[i], model=..., t=t)`` for positional input --
 including the means, each forecast from its own averaged trajectory rather
-than from an average of its members' forecasts:
+than from an average of its members' forecasts. With a column hierarchy and
+an observation-time index, attach that original index to the trace before
+calling ``hyp.predict`` to reproduce the same fit. In ``ndims=1`` series
+mode, ``trace_data`` contains display pairs ``[time, value]``; forecasts
+contain only predicted signal values. Use the value column and the original
+observation-time index to reproduce those forecasts. See
+:ref:`observation-times` for the sorting and interpolation policy.
+
+For this example's positional input:
 
 .. doctest::
 

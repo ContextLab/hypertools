@@ -272,14 +272,36 @@ def _padded_bounds(points, pad):
     return lo - pad * span, hi + pad * span
 
 
+#: How many kernel standard deviations past the data a 2-D KDE grid
+#: extends: the density at the grid's edge is then at most ``exp(-K^2/2)``
+#: (~3e-4 for 4) of one kernel's peak, invisible under the alpha ramp, so
+#: the glow fades out inside the grid instead of being cut off at its edge.
+KDE_GRID_BANDWIDTHS = 4.0
+
+
 def kde_grid_2d(points, kde, gridsize=200, pad=0.15):
     """Evaluate `kde` on a `gridsize` x `gridsize` grid over `points`' bounds
-    (padded by `pad` on each side). Returns ``(xs, ys, Z, extent)`` where
-    ``Z[iy, ix]`` is the density at ``(xs[ix], ys[iy])`` (matplotlib
-    ``imshow(origin='lower')`` layout) and ``extent`` is
-    ``(xmin, xmax, ymin, ymax)``."""
+    padded by `pad` (a fraction of the span) on each side OR by
+    `KDE_GRID_BANDWIDTHS` kernel standard deviations, whichever is wider
+    per axis. Returns ``(xs, ys, Z, extent)`` where ``Z[iy, ix]`` is the
+    density at ``(xs[ix], ys[iy])`` (matplotlib ``imshow(origin='lower')``
+    layout) and ``extent`` is ``(xmin, xmax, ymin, ymax)``.
+
+    A grid padded by 15% of the span alone stopped where the KDE was
+    still clearly visible (a wide, flat cloud's glow ended in a hard band
+    well inside the frame: feature tour 9.14, 2026-09-06). Padding by the
+    kernel's own width keeps the resolution LOCAL to this cloud -- a grid
+    stretched over a whole scene of much larger clouds sampled a small
+    one so coarsely its density came back all zero (release review,
+    round 2) -- while guaranteeing the edge is where the density has
+    already faded.
+    """
     points = np.asarray(points, dtype=float)
     lo, hi = _padded_bounds(points, pad)
+    reach = KDE_GRID_BANDWIDTHS * np.sqrt(np.diag(np.asarray(kde.covariance,
+                                                              dtype=float)))
+    lo = np.minimum(lo, points.min(axis=0) - reach)
+    hi = np.maximum(hi, points.max(axis=0) + reach)
     xs = np.linspace(lo[0], hi[0], gridsize)
     ys = np.linspace(lo[1], hi[1], gridsize)
     X, Y = np.meshgrid(xs, ys)

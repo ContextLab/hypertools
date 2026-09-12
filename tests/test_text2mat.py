@@ -74,3 +74,61 @@ def test_LDA_class_instance():
 
 def test_corpus():
     assert text2mat(data, corpus=data)[0].shape[1]==20
+
+
+# -------------------------- flat list of strings is ONE dataset (1.1, X1)
+
+import pytest  # noqa: E402
+
+DOCS = ['cats like milk', 'dogs like bones', 'birds like seeds']
+
+
+def test_flat_list_of_strings_is_one_dataset():
+    # before 1.1 a flat list split by each string's CHARACTER length and
+    # returned [(N, d), (0, d), (0, d), ...]
+    out = text2mat(DOCS, vectorizer='CountVectorizer', semantic=None,
+                   corpus=None)
+    assert isinstance(out, list) and len(out) == 1
+    assert out[0].shape == (3, 7)          # 7 distinct words
+    assert out[0].sum() == 9               # 3 words per document
+
+
+def test_nested_list_matches_the_flat_form():
+    flat = text2mat(DOCS, semantic=None, corpus=None)
+    nested = text2mat([DOCS], semantic=None, corpus=None)
+    assert len(nested) == 1
+    np.testing.assert_array_equal(flat[0], nested[0])
+
+
+def test_ragged_list_of_lists_is_one_dataset_per_inner_list():
+    out = text2mat([DOCS, DOCS[:2]], semantic=None, corpus=None)
+    assert [o.shape for o in out] == [(3, 7), (2, 7)]
+    np.testing.assert_array_equal(out[0][:2], out[1])
+    # the same flat/nested rule applies to corpus=
+    with_corpus = text2mat([DOCS, DOCS[:2]], semantic=None,
+                           corpus=[DOCS, DOCS[:2]])
+    assert [o.shape for o in with_corpus] == [(3, 7), (2, 7)]
+    flat_corpus = text2mat([DOCS, DOCS[:2]], semantic=None, corpus=DOCS)
+    assert [o.shape for o in flat_corpus] == [(3, 7), (2, 7)]
+
+
+def test_flat_list_through_the_default_topic_model():
+    out = text2mat(DOCS, corpus=DOCS)     # CountVectorizer -> LDA
+    assert len(out) == 1 and out[0].shape == (3, 20)
+    assert np.allclose(out[0].sum(axis=1), 1.0, atol=1e-6)
+
+
+@pytest.mark.parametrize('argname', ['data', 'corpus'])
+def test_mixed_strings_and_lists_raise(argname):
+    mixed = [DOCS[0], DOCS[1:]]
+    kwargs = {'data': mixed, 'semantic': None, 'corpus': None} \
+        if argname == 'data' else \
+        {'data': DOCS, 'semantic': None, 'corpus': mixed}
+    with pytest.raises(ValueError, match=f'{argname}= mixes strings and '
+                                         'lists'):
+        text2mat(**kwargs)
+
+
+def test_single_string_is_one_dataset_of_one_document():
+    out = text2mat(DOCS[0], semantic=None, corpus=None)
+    assert len(out) == 1 and out[0].shape == (1, 3)

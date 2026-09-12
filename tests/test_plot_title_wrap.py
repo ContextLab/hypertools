@@ -130,3 +130,90 @@ def test_plotly_segment_titles_wrap_too():
              and f.layout.title.text}
     assert texts
     assert any('<br>' in t for t in texts)
+
+
+# --- 1.1 release review: T1 dynamic titles wrap, T2 explicit newlines
+# --- survive, T3 plotly draws newlines, T6/T7 plotly top margin -----------
+
+def test_title_wrap_applies_to_a_callable_title_every_frame():
+    import matplotlib.pyplot as plt
+    anim = hyp.plot(_datasets(1), animate=True, duration=1, frame_rate=5,
+                    title=lambda ctx: LONG, title_wrap=30, reduce='PCA',
+                    show=False)
+    try:
+        for i in range(anim.n_frames):
+            anim.draw_frame(i)
+            got = anim.figure.axes[0].get_title()
+            assert got == textwrap.fill(LONG, 30)
+            assert '\n' in got
+    finally:
+        plt.close(anim.figure)
+
+
+def test_title_wrap_applies_to_a_callable_title_under_plotly():
+    pytest.importorskip('plotly')
+    fig = hyp.plot(_datasets(1), animate=True, duration=1, frame_rate=5,
+                   title=lambda ctx: LONG, title_wrap=30, reduce='PCA',
+                   backend='plotly', show=False)
+    for frame in fig.frames:
+        assert frame.layout.title.text == textwrap.fill(LONG, 30).replace(
+            '\n', '<br>')
+
+
+def test_title_wrap_keeps_explicit_newlines():
+    """`textwrap.wrap` alone flattened 'first line\\nsecond line' into one
+    line; each author line is wrapped on its own."""
+    fig = hyp.plot(_datasets(1), title='first line\nsecond line',
+                   title_wrap=40, reduce='PCA', show=False)
+    assert fig.axes[0].get_title() == 'first line\nsecond line'
+    long_two = LONG + '\n' + LONG
+    fig = hyp.plot(_datasets(1), title=long_two, title_wrap=30,
+                   reduce='PCA', show=False)
+    assert fig.axes[0].get_title() == '\n'.join(
+        textwrap.fill(part, 30) for part in long_two.split('\n'))
+
+
+def test_plotly_draws_a_newline_title_as_a_line_break():
+    pytest.importorskip('plotly')
+    fig = hyp.plot(_datasets(1), title='a\nb', reduce='PCA',
+                   backend='plotly', show=False)
+    assert fig.layout.title.text == 'a<br>b'
+    anim = hyp.plot(_datasets(1), title='a\nb', animate=True, duration=1,
+                    frame_rate=5, reduce='PCA', backend='plotly',
+                    show=False)
+    assert anim.layout.title.text == 'a<br>b'
+    seg = hyp.plot(_datasets(2), title=['a\nb', 'c'], animate='serial',
+                   duration=1, frame_rate=5, reduce='PCA',
+                   backend='plotly', show=False)
+    texts = {f.layout.title.text for f in seg.frames
+             if f.layout.title and f.layout.title.text}
+    assert 'a<br>b' in texts
+
+
+def test_plotly_top_margin_grows_with_title_lines_and_size():
+    pytest.importorskip('plotly')
+    kw = dict(reduce='PCA', backend='plotly', show=False)
+    one = hyp.plot(_datasets(1), title='t', **kw)
+    assert one.layout.margin.t == 40
+    three = hyp.plot(_datasets(1), title='a\nb\nc', **kw)
+    assert three.layout.margin.t > 40
+    wrapped = hyp.plot(_datasets(1), title=LONG, title_wrap=30, **kw)
+    assert wrapped.layout.margin.t > 40
+    big = hyp.plot(_datasets(1), title='t', title_kwargs={'size': 30}, **kw)
+    assert big.layout.margin.t > 40
+    # and the title block never reaches into the plotting area
+    for fig, n_lines, size_px in ((three, 3, 17), (big, 1, 42)):
+        assert fig.layout.margin.t >= 0.03 * fig.layout.height \
+            + n_lines * 1.25 * size_px
+
+
+def test_plotly_top_margin_covers_the_tallest_frame_of_a_dynamic_title():
+    pytest.importorskip('plotly')
+    fig = hyp.plot(_datasets(1), animate=True, duration=1, frame_rate=5,
+                   title=lambda ctx: 'a' if ctx.frame == 0 else 'a\nb\nc',
+                   reduce='PCA', backend='plotly', show=False)
+    assert fig.layout.margin.t >= 0.03 * fig.layout.height + 3 * 1.25 * 17
+    seg = hyp.plot(_datasets(2), title=['one', 'a\nb\nc'], animate='serial',
+                   duration=1, frame_rate=5, reduce='PCA',
+                   backend='plotly', show=False)
+    assert seg.layout.margin.t >= 0.03 * seg.layout.height + 3 * 1.25 * 17

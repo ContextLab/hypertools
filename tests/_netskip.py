@@ -90,6 +90,15 @@ TRANSIENT_TYPES = frozenset({
 # (a moved dataset URL is a REAL regression and must fail, not skip).
 STATUS_DETERMINED_TYPES = frozenset({'HTTPError', 'HTTPStatusError'})
 
+# SSLError says nothing on its own either: requests raises it both for a
+# peer that dropped the TLS connection (`SSLEOFError: UNEXPECTED_EOF_WHILE_
+# READING`, `SSLZeroReturnError`, a reset mid-handshake -- the host's fault;
+# 2026-09-08: Dropbox did this to one ubuntu-3.11 matrix cell while eleven
+# others loaded the same file) and for a certificate that does not verify
+# (ours, or the environment's, and a real failure). The cause phrase on the
+# same line decides.
+PHRASE_DETERMINED_TYPES = frozenset({'SSLError'})
+
 # Carry no verdict either way: the aggregate's own wrapper class, and bases too
 # generic to mean anything. Named so they are not mistaken for defect evidence.
 NEUTRAL_TYPES = frozenset({
@@ -118,6 +127,15 @@ TRANSIENT_PHRASES = (
     'name resolution', 'failed to resolve', 'getaddrinfo',
     'nodename nor servname', 'network is unreachable',
     'failed to establish',
+)
+
+# What decides an `SSLError` line: a peer closing the TLS connection mid-read
+# or mid-handshake (stdlib ssl spells the EOF both ways). 'max retries' is NOT
+# in this list -- requests says it on every pooled failure, certificate ones
+# included -- and 'certificate' anywhere on the line vetoes.
+TLS_DROP_PHRASES = (
+    'unexpected_eof_while_reading', 'eof occurred in violation of protocol',
+    'sslzeroreturnerror', 'connection reset', 'connection aborted',
 )
 
 # "500 Server Error" / "503 Server Error" as requests spells it. Matched with a
@@ -163,11 +181,28 @@ def _type_names(exc):
     return {cls.__name__ for cls in type(exc).__mro__}
 
 
+def _certificate_failure(exc):
+    """True when a TLS CERTIFICATE failure sits anywhere in the chain -- as
+    an exception, as an exception carried in another's ``args`` (requests
+    wraps ``ssl.SSLCertVerificationError`` that way, and its `SSLError`
+    inherits from `ConnectionError`, which alone reads as transient), or as
+    the word 'certificate' in a message. That is our environment's fault or
+    ours, never the host's (Codex round 9)."""
+    for e in _chain(exc):
+        carried = [a for a in getattr(e, 'args', ()) if isinstance(a, BaseException)]
+        for item in (e, *carried):
+            if 'SSLCertVerificationError' in _type_names(item) \
+                    or 'certificate' in str(item).lower():
+                return True
+    return False
+
+
 def _exception_is_transient(exc):
     """Structural verdict on a LIVE exception: type names across the whole
-    ``__cause__``/``__context__`` chain, plus HTTP status. Text is not consulted.
+    ``__cause__``/``__context__`` chain, plus HTTP status. Text is consulted
+    only for the certificate veto.
     """
-    if _type_names(exc) & DEFECT_TYPES:
+    if _type_names(exc) & DEFECT_TYPES or _certificate_failure(exc):
         return False
     for e in _chain(exc):
         names = _type_names(e)
@@ -184,7 +219,7 @@ def _is_exception_token(token):
     """True if `token` names an exception class rather than part of a resolver
     label ('Google Sheets: ...' must not read 'Sheets' as evidence)."""
     if token in TRANSIENT_TYPES or token in STATUS_DETERMINED_TYPES \
-            or token in NEUTRAL_TYPES:
+            or token in PHRASE_DETERMINED_TYPES or token in NEUTRAL_TYPES:
         return True
     # 'Error'/'Exception' alone are words, not type names -- require a prefix.
     return (len(token) > len('Error') and token.endswith('Error')) or \
@@ -207,6 +242,11 @@ def _classify_line(line):
     if any(t in STATUS_DETERMINED_TYPES for t in tokens):
         # 5xx is the host; anything else (404, 403, ...) is a real regression.
         return 'transient' if has_5xx else 'defect'
+    if any(t in PHRASE_DETERMINED_TYPES for t in tokens):
+        # a dropped TLS connection is the host; a certificate failure is not
+        dropped = any(p in lowered for p in TLS_DROP_PHRASES)
+        return ('transient' if dropped and 'certificate' not in lowered
+                else 'defect')
     if any(t not in NEUTRAL_TYPES for t in tokens):
         return 'defect'
     if has_5xx or any(p in lowered for p in TRANSIENT_PHRASES):

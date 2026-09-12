@@ -8,11 +8,40 @@ plus per-level means (the row axis has done this since 1.0); `hyp.predict`
 forecasts a hierarchy one group at a time with explicit model ownership; and
 `predict=` forecasts every plotted trajectory, derived means included.
 
-Five previously-accepted inputs are now **rejected** -- see *Changed /
-validation*. One of them (duplicate timestamps) is not hierarchy-specific
-and reaches flat `hyp.predict` callers.
+Seven previously-accepted inputs are now **rejected** -- see *Changed /
+validation*. Three of them are not hierarchy-specific: duplicate timestamps
+(which reaches flat `hyp.predict` callers), `ax=` combined with `animate=`,
+and a matplotlib Axes passed as `ax=` under the plotly backend.
 
 ### Added
+
+- **Forecasts use observation times.** Timed rows are sorted before fitting.
+  An index with a regular calendar (a stored or inferable frequency, a
+  `PeriodIndex`, month starts/ends, business-day sessions) is stepped on that
+  calendar; otherwise one future step is the median positive timestamp gap
+  (formerly the minimum gap), independently per dataset. Every forecaster
+  accepts a `step=` override, including calendar aliases such as `'B'` and
+  `'MS'`. GaussianProcess fits actual times; discrete-time models linearly
+  interpolate irregular observations onto a regular grid, with a warning.
+  Fitted reuse preserves the learned time scale. Series plots fit their signal
+  columns together using the time index, including animated forecasts, instead
+  of forecasting each `[index, value]` display pair. See the API guide for the
+  interpolation policy and its limitations.
+- **Integer timestamp arithmetic preserves elapsed times.** Signed and
+  unsigned integer indexes use overflow-safe subtraction and addition,
+  including large epoch offsets. Discrete-time forecasting no longer rejects
+  valid unsigned timestamps because their past offsets wrap into the future.
+- **Backtests score matching observation times.** GaussianProcess evaluates
+  held-out timestamps directly; discrete-time forecasts are linearly
+  interpolated to them, with a warning when needed. Training rows alone
+  determine the model and its step. Returned forecasts carry the same index
+  as the truth, and `horizon` reports held-out observations rather than the
+  number of generated grid steps.
+- **Manipulator input and row-wise fixes.** A 1-D array or flat numeric
+  list/tuple consistently means one column in `manip`, direct classes,
+  `Pipeline`, and fitted reuse. Row-wise ZScore/Normalize work on multiple
+  datasets while preserving each dataset's statistics, index and column names.
+  MatrixColormap's exact interpolation now honors `set_gamma()`.
 
 - **A column MultiIndex frame expands into one trace per group.** The
   innermost column level is the feature axis; every level above it groups,
@@ -135,8 +164,12 @@ and reaches flat `hyp.predict` callers.
   row versus column semantics, the plot/predict divergence, hue forms, mean
   construction, limitations, dual-axis and list inputs, return shapes, the
   unfitted/fitted ownership table, backend parity and feature
-  correspondence. All 138 of its examples are executed by the test suite
-  rather than merely read. `docs/pipeline_order.rst` gains hierarchy
+  correspondence. Its worked examples are `.. doctest::` blocks, run by
+  Sphinx's doctest builder (`make doctest` in `docs/`, and the docs CI
+  job), which is what checks the printed outputs and the error messages
+  the guide quotes; the test suite pins the guide's section list, its
+  links from the API reference and the tutorials page, and its comparison
+  table (`tests/test_docs_hierarchy_guide.py`). `docs/pipeline_order.rst` gains hierarchy
   expansion and mean construction as a side branch, in the prose and in the
   regenerated diagram: expansion runs before `format_data`/`analyze`, so
   every leaf gets the identical canonical pipeline, while mean construction
@@ -204,12 +237,15 @@ and reaches flat `hyp.predict` callers.
   pipeline output's own coordinates (for `reduce=None` the raw columns) with
   fixed joint limits for animations, on both backends; `xlim=`/`ylim=` set
   them explicitly. `axis_scale='unit'` (the default) is unchanged and now
-  documented: 2-D plots are mean-centred, rescaled into the unit box and
-  pinned to (-1.1, 1.1) (GH #285).
-- **`ndims=1` is a time-series mode.** Each column becomes one line against
-  the row index (a DatetimeIndex gives real dates; arrays use 0..n-1), 2+
-  columns are allowed and legend-named by column, `axis_scale` defaults to
-  `'data'`, and animations reveal along x. Previously `ndims=1` drew one
+  documented: 2-D plots are mean-centred and rescaled into [-1, 1], inside
+  a frame square of half-width 1.125, with both axes pinned to +/-1.2375
+  (10 % beyond the square) (GH #285).
+- **`ndims=1` is a time-series mode.** With `reduce=None`, each column
+  becomes one line against the row index (a DatetimeIndex gives real
+  dates; arrays use 0..n-1); 2+ columns are allowed, and `legend=True`
+  names each line by its column. With the default `reduce=`, the data are
+  first reduced to one component, drawn as one line. `axis_scale` defaults
+  to `'data'`, and animations reveal along x. Previously `ndims=1` drew one
   column rescaled into [-1, 1] at 0..n-1 and refused 2+ columns (GH #285).
 - **`truth=` beside a forecast.** `hyp.plot(train, predict='Chronos', t=30,
   truth=held_out)` draws the actual continuation in the same space, styled
@@ -249,7 +285,8 @@ and reaches flat `hyp.predict` callers.
   Per-panel axis labels come from DataFrame columns as in the single-axes
   call. On plotly the panels are `make_subplots` scenes and
   `return_model=True` returns the same bundle as matplotlib, which adds
-  `axes`, `panels` and `panel_models` (GH #285).
+  `axes`, `panels`, `panel_models` and, for a shared fit, the one fitted
+  `pipeline` (GH #285).
 - **Title styling on every frame.** `title_kwargs=dict(size=, weight=,
   family=, color=, y=)` is applied by hypertools' own title updater,
   including per-segment `title=` lists; `title_color=` takes one colour per
@@ -271,7 +308,11 @@ and reaches flat `hyp.predict` callers.
   'lorenz' | 'blobs' | 'moons' | 'swiss_roll' | 's_curve', random_state=...,
   n_datasets=...)` generates seeded example data (scikit-learn kwargs pass
   through; `n_datasets > 1` returns a list), replacing the random-walk,
-  helix and blob generators every tutorial wrote by hand (GH #285).
+  helix and blob generators every tutorial wrote by hand. Any keyword
+  `hyp.load` does not use itself is collected into `**source_kwargs` and
+  handed to the synthetic or web resolver that matches the name; with any
+  other kind of source, already-loaded data included, it raises `TypeError`
+  that quotes the keyword instead of dropping it (GH #285).
 - **Web sources.** `hyp.load('wikipedia:<Title>')` (plain-text extract;
   `'A|B'` returns a list), `hyp.load('yahoo:<TICKER>', start=, end=,
   interval=)` (daily OHLCV through explicit epoch bounds) and
@@ -290,13 +331,20 @@ and reaches flat `hyp.predict` callers.
 - **Several forecasters in one call, backtests, and imputer scoring.**
   `hyp.predict(x, model=[...])` returns `{name: forecast}`;
   `hyp.predict(x, model=[...], holdout=k)` fits on the head and scores the
-  held-out tail (MAE / RMSE / MAPE, `per_column=`, `return_forecasts=`) against
-  every model plus an always-present naive last-value baseline, with
-  `scores.attrs['best']` and `['beats_baseline']`; `hyp.impute(x, model=[...],
-  truth=full)` scores imputers on the damaged cells only, with a column-mean
-  baseline and an `unscored` column for rows a model left NaN (GH #285).
-- **`Smooth(center=False, min_periods=)` and a `Delay` manipulator.** A
-  trailing (causal) boxcar identical to `pandas.rolling(...).mean()`, and a
+  held-out tail against every model plus an always-present naive last-value
+  baseline, with `scores.attrs['best']` and `['beats_baseline']`;
+  `metrics=` picks which of MAE / RMSE / MAPE to report (all three by
+  default; the first one ranks `best`), `per_column=True` gives one row per
+  model and column, and `return_forecasts=True` also returns the forecasts
+  that were scored. `hyp.impute(x, model=[...], truth=full)` scores imputers
+  on the damaged cells only, with the same `metrics=` and `per_column=`, a
+  column-mean baseline and an `unscored` column for rows a model left NaN;
+  `return_imputed=True` also returns the scored imputations, the baseline and
+  the truth (GH #285).
+- **`Smooth(kernel='boxcar', center=False, min_periods=)` and a `Delay`
+  manipulator.** A trailing (causal) boxcar identical to
+  `pandas.rolling(...).mean()` (`center=False` needs `kernel='boxcar'`; the
+  default savgol kernel has no trailing form and raises `ValueError`), and a
   Takens time-delay embedding (`hyp.manip(x, model='Delay', tau=, dims=)`)
   (GH #285).
 - **Alignment quality score.** `hyp.align(..., return_score=True)` returns the
@@ -328,6 +376,42 @@ and reaches flat `hyp.predict` callers.
   so one `hyp.load` call can be the entry point over mixed names and
   in-memory data; other types still raise `TypeError`. Previously any
   non-string raised.
+- **Input datatype handling defers to datawrangler.** The shared coercion
+  layer (`format_data`, `get_type`/`get_dtype`, `as_dataframe`, the
+  `predict`/`impute` normalisation, `io.streaming.is_stream`) classifies
+  inputs with `dw.zoo` predicates and converts with `dw.wrangle` instead of
+  its own `isinstance` ladders, so polars DataFrames, LazyFrames and Series
+  are accepted wherever pandas is -- `plot`, `reduce`, `align`, `cluster`,
+  `normalize`, `manip`, `predict`, `impute`, `analyze`, `describe` -- with
+  identical results (polars nulls become missing data), and whatever
+  datawrangler adds later comes for free. The same holds throughout:
+  `plot`'s `hue=`, `labels=`, `truth=`, matrix `palette=`, `panels=` and
+  its axis/legend labels; `manip` (and the Manipulator classes and
+  `Pipeline` steps directly), `align`, `stack`, `damage`, `apply_model`,
+  the fitted `Normalizer`, `save`/`load`, `text2mat` and the impute
+  backtest's `truth=`/`mask=` read any frame backend datawrangler
+  recognises through the shared predicates; a one-column DataFrame of
+  labels as `hue=` no longer raises `IndexError`, and `text2mat` accepts a
+  Series of documents. A static test (`tests/test_datatype_gate.py`) keeps
+  hand-rolled pandas/numpy type checks out of the library, and
+  `tests/test_polars_inputs.py` and `tests/test_polars_inputs_wave1.py`
+  compare the polars results against pandas.
+- **Palettes from images read as gradients, and a data matrix is a
+  palette.** Colors extracted from an image are put in a deterministic
+  order -- by value, dark to bright -- when the image is used as a plot
+  palette (`palette_sort=` or a spec's `?sort=` picks `'value'`, `'hue'`,
+  `'lightness'`, `'columns'` or `'original'`; `image_palette()` itself and
+  a per-dataset image's lead color keep the salience order). A t x k data
+  matrix (array, nested list or DataFrame) passed as `palette=`,
+  `forecast_palette=` or a per-dataset entry is reduced to three dimensions
+  with `hyp.reduce` (`palette_reduce=`, default 'PCA', with
+  `palette_manip=`/`palette_normalize=`/`palette_align=` passed through),
+  each reduced column is scaled to [0, 1] as an RGB channel, the rows are
+  sorted (default along the first component) and the result is a colormap
+  resampled by interpolation to however many colors the plot needs
+  (`hypertools.plot.colors.matrix_palette`, `sort_colors`,
+  `MatrixColormap`). A 2-D array with 3 or 4 columns and every value in
+  [0, 1] stays a list of colors.
 - **Optional extras install themselves on demand.** The first call that
   needs plotly, kaleido, HF text embeddings, skaters (`Laplace`),
   chronos-forecasting (`Chronos`), torch (autoencoder reducers), gensim,
@@ -338,9 +422,13 @@ and reaches flat `hyp.predict` callers.
   `pyproject.toml` stays the single declaration of every extra
   (`hypertools._shared.lazy_import`). Static image export with the plotly
   backend provisions kaleido's Chrome the same way, plus the four system
-  libraries a fresh Colab/Kaggle image lacks. `HYPERTOOLS_AUTO_INSTALL=0`
-  disables installation: a missing extra then raises `ImportError` naming
-  the manual `pip install "hypertools[<extra>]"` command, as before.
+  libraries a fresh Colab/Kaggle image lacks. `hyp.set_autoinstall(False)`
+  turns installation off, for the session or for one block as a context
+  manager (the same two forms as `set_interactive_backend`): a missing
+  extra then raises `ImportError` naming the manual `pip install
+  "hypertools[<extra>]"` command, as before. The environment variable
+  `HYPERTOOLS_AUTO_INSTALL=0` sets the starting value for images built
+  ahead of time.
 
 ### Changed / validation
 
@@ -470,6 +558,32 @@ previously ambiguous or silently lossy.
 
 ### Bug fixes
 
+- **NumPy 2-compatible optional dependency floors.** The `gensim` and
+  `density3d` extras require gensim>=4.4.0 and scikit-image>=0.23.2,
+  respectively; dev/docs requirements match. Earlier advertised minimums
+  predate upstream NumPy 2 support.
+- **Backtest model ownership.** Forecast backtests fit an independent copy
+  of an unfitted model instance for each dataset, instead of reusing the
+  first dataset's learned parameters on subsequent datasets. Forecast and
+  imputation scoring leave caller-owned instances unchanged and reject
+  already fitted instances, which may have seen the held-out truth (GH #285).
+- **Concurrent URL caching.** Threads downloading the same URL use distinct
+  temporary files, preventing `FileNotFoundError` during atomic replacement
+  (GH #285).
+- **Delay column collisions.** `Delay` rejects duplicate column labels and
+  distinct labels with identical string representations, instead of silently
+  overwriting embedded features (GH #285).
+- **Bundled font precedence.** The bundled Noto Sans faces take precedence
+  over same-family system fonts, keeping rendering consistent across machines
+  with an additional Noto Sans installation (GH #285).
+- **Release documentation.** Plotting and scoring features shipped in 1.1
+  are identified as 1.1 in their API documentation, correcting leftover 1.2
+  labels. Installation guidance distinguishes Kalman imputation from
+  Kalman/ARIMA forecasting. The forecast example and its executed tutorial
+  use native URL caching; the browser verifier checks versioned notebook
+  links, rendered install cells, and real Plotly frame transitions without
+  requiring autoplay (GH #284, GH #285).
+
 Each of these was found while building the above, and each affects FLAT
 input too.
 
@@ -511,12 +625,17 @@ input too.
 - **A plotly `save_path=` to a raster/PDF format on a machine without
   Chrome failed with kaleido's bare `RuntimeError`.** kaleido 1.x renders
   through a headless Chrome, which a fresh Colab or Kaggle kernel does not
-  have. The failure is now a `HypertoolsIOError` naming the file, the
-  cause, and the ways out: `import plotly.io as pio; pio.get_chrome()`
-  (about 150 MB) plus, on Colab and Kaggle, the four system libraries the
-  downloaded Chrome needs (`apt-get install -y libatk1.0-0
-  libatk-bridge2.0-0 libatspi2.0-0 libxcomposite1`; measured 2026-09-04),
-  installing Chrome, or saving with `backend='matplotlib'`.
+  have. With installation on (the default), hypertools now fetches a
+  Chrome for kaleido on first use, plus (on Debian/Ubuntu images where it
+  can run `apt-get`) the system libraries that Chrome needs; see *Optional
+  extras install themselves on demand* above. When that fails,
+  or `hyp.set_autoinstall(False)` is in force, the failure is a
+  `HypertoolsIOError` stating the cause and the ways out:
+  `import plotly.io as pio; pio.get_chrome()` (about 150 MB) plus, on
+  Colab and Kaggle, the four system libraries the downloaded Chrome needs
+  (`apt-get install -y libatk1.0-0 libatk-bridge2.0-0 libatspi2.0-0
+  libxcomposite1`; measured 2026-09-04), installing Chrome, or saving with
+  `backend='matplotlib'`.
 - **Under the plotly backend, a figure kept in a variable was not displayed
   in a notebook.** `fig = hyp.plot(x)` drew nothing (on Colab, where
   `backend='auto'` resolves to plotly, 29 of the feature tour's plot cells
@@ -605,10 +724,9 @@ input too.
 - **plotly discarded the per-trace alpha under a continuous `hue=`** for the
   same figures, from the other direction: the colour serializer drops the
   4th channel and nothing set the trace `opacity`, so a hue plot that
-  matplotlib drew at `alpha=0.7` rendered fully opaque on plotly. Line
-  colours now carry the alpha; **marker** colours deliberately do not,
-  because matplotlib's per-point marker colours carry none either, and
-  parity is stated against matplotlib.
+  matplotlib drew at `alpha=0.7` rendered fully opaque on plotly. Line and
+  marker colours now carry the alpha on both backends (hue-coloured markers
+  ignored `alpha=` on matplotlib too until the release review).
 
 - **With `ndims=1`, matplotlib drew the `predict=` overlay at x = 0..t**
   instead of continuing the observed series: the overlay was plotted with no
@@ -689,13 +807,710 @@ input too.
   the passed-in pipeline too (in place, on the same object the bundle
   returns), unless it already carries one of its own.
 
+### Fixed during the release review
+
+Found by the pre-publication review of the 1.1.0 draft against 1.0.0.
+Because 1.1.0 had not been published, they ship in it.
+
+- **An animated forecast now starts where that frame's line ends.**
+  `predict=` with `animate=` drew each frame's forecast from the last raw
+  observation at or before the drawn head. An animation is paced on a
+  refined frame grid, so the head usually sits *between* two observations:
+  the forecast hung back from the line's tip and stood still until the head
+  reached the next observation, then jumped. On an 8-row trajectory over 160
+  frames it lagged by up to 45% of the plot box and stalled for 23
+  consecutive frames. It now starts at the vertex the frame actually draws
+  last, on both backends and for 1-D, 2-D and 3-D plots. The predicted
+  points themselves are unchanged, so `t=` still counts raw steps on from
+  the last observation.
+
+- **No leftover "install the extra first" instructions.** Every optional
+  dependency goes through the on-demand installer, and the stale prose
+  that told users to install an extra by hand is gone: the `plot()`
+  reducer docstring's `pip install "hypertools[torch]"`, the autoencoder
+  and gensim gallery examples' "pre-install it with ...", and the LSL
+  tutorial's inline command; the `reduce()` torch error now says the
+  on-demand install was tried. The API reference gained a *Set
+  autoinstall* entry (`set_autoinstall`, how it works, and a pointer to the
+  guide). The `projectile_kalman` and `streaming_data` tutorials no longer
+  show a pip upgrade notice with a local interpreter path as the output of
+  their Colab install cell.
+- **`hyp.load(..., offline=True)` never downloads and opens no network
+  connection.** The hosted example datasets (`'spiral'`, `'weights'`, the
+  `*_model` pipelines, ...) bypassed `offline`: a cache miss downloaded,
+  and a cached file failing its SHA-256 pin was deleted and re-downloaded.
+  Offline now serves only a hash-valid copy from `~/hypertools_data` and
+  raises `HypertoolsOfflineError` naming the file for a missing or corrupt
+  one, leaving the file in place; any other source that cannot be served
+  from disk raises it too. URLs skip the seaborn dataset-name listing.
+  That listing fetch now has a timeout, and a failed fetch is remembered
+  for 5 minutes (`hypertools.io.sources.reset_seaborn_names_cache()` retries
+  sooner). Also fixed the `hypertools.load` docstring example, which failed
+  under Sphinx's doctest builder (`NameError: hypertools`); the docs CI job
+  now runs that builder.
+- **Plotly animation export honours `hyp.set_autoinstall(False)` and
+  raises the documented exception types.** The frames of a plotly
+  animation's GIF/PNG/video export are rendered in a separate worker
+  process, which now inherits the caller's installation setting: with
+  installation off, a missing kaleido raises the `ImportError` naming the
+  manual command and no pip runs (the worker used to start a fresh
+  interpreter that installed anyway). That `ImportError` reaches the caller
+  as an `ImportError`, and a missing Chrome as `HypertoolsIOError`, instead
+  of a `RuntimeError` wrapping the worker's traceback.
+- **`alignment_score` rejects degenerate input with a clear error.** A
+  1-D series, a non-numeric array, or NaN/inf values raise `ValueError`
+  naming the dataset (they hit numpy's own shape errors or returned a NaN
+  score), and `metric='dispersion'` on all-constant datasets raises like
+  `'isc'` already did instead of returning NaN with a RuntimeWarning.
+- `docs/doc_requirements.txt` carries the same core floors as
+  `pyproject.toml` (scikit-learn 1.4.2, pandas 2.2.2, matplotlib 3.9.0).
+- **A list of `{category: color}` dicts works with a regrouping `hue=`.**
+  Each dataset naming its own categories (the documented per-dataset dict
+  form) was rejected as "2 per-dataset palettes but 4 dataset(s)" once
+  `hue=` split the datasets into more runs than dicts; the dicts name
+  categories and now resolve by name on both backends.
+- **Overlapping `set_autoinstall` blocks keep the newest setting in force,
+  and direct calls are no longer retained.** Two `with
+  hyp.set_autoinstall(False)` blocks open at once (two threads, say) used
+  to switch installation back on inside the later block when the earlier
+  one exited, because exit restored a value saved before either. A block
+  now removes only its own setting; the setting is process-global and
+  documented as such. Every direct call also kept a handle alive until a
+  block's exit removed it, so a long session of direct calls accumulated
+  them; a superseded direct call is now released. A handle made for a
+  `with` block is never collapsed before it is entered, so creating a block
+  in one thread and entering it later is safe.
+- **The plotly backend honours the colour letter of a data `fmt=` string**
+  (`'r-'`, `['g--', 'b:']`) exactly as matplotlib does, including animated
+  plots and `panels=` cells; it drew the palette colour before.
+- **Matrix colormaps, image palettes and mixed `manip` lists.** The
+  matrix colormap honours every inherited Colormap operation (integer
+  sampling, `resampled()`, `reversed()`, `set_under`/`set_over`, bad and
+  NaN entries per element); image palettes interpolate exactly at any
+  count, so more than 256 categories still get distinct colours; a polars
+  `forecast_hue` Series is partitioned under `panels=` like a pandas one;
+  and `manip` lists mixing an unnamed array with named frames keep every
+  frame's index (dated or irregular) while lists of named frames pass
+  through untouched.
+- **Series and mixed lists through the manipulators.** A
+  pandas or polars Series keeps its index and name through the Manipulator
+  classes and `hyp.Pipeline` (a `Pipeline([Smooth, Resample])` on an
+  irregularly sampled Series resampled at positions 0..n-1 instead of the
+  Series' own; `ZScore`/`Normalize`/`Resample` used directly never took a
+  Series at all), and a polars Series beside an array in a `hyp.manip`
+  list works. A mixed list keeps every frame's own feature names for every
+  model: the shared-statistics manipulators (`ZScore`, `Normalize`) match
+  columns by position themselves when labels differ (an unnamed array
+  beside a named frame, or two frames named differently) and reject
+  different widths with a clear message; the independent ones never
+  relabel anything. A 1-D array is one column (n observations of one
+  feature) for `hyp.manip`, as it already was for `hyp.normalize`,
+  `hyp.reduce` and the Manipulator classes; `hyp.manip` used to read it as
+  a single row. `MatrixColormap` follows matplotlib's full extreme-colour
+  rules (under/over/bad keep the alpha they were set with, `-inf`/`+inf`
+  are under/over rather than bad, and an `alpha=` override reaches the
+  extremes but not a transparent bad colour). `legend=` accepts a polars
+  Series (any series-like) of labels, on both backends.
+- **A repeated metric in `metrics=` raises `ValueError` that says which
+  metric is repeated.** `hyp.predict(..., holdout=k, metrics=['mae', 'MAE'])`
+  and the matching `hyp.impute(..., truth=)` call used to fail with a
+  `TypeError` from inside the scoring code.
+- **`holdout=True` with `t=0` reports `t` as the problem.** `holdout=True`
+  takes its size from `t`, so the error now says that `t` must be at least
+  1 row.
+- **The "left N scored value(s) missing" warning is attributed to the
+  caller's line**, like every other warning `hyp.predict` and `hyp.impute`
+  emit, instead of to a line inside the library.
+- **`return_score=True` works on ragged input that `hyp.align` trims.** The
+  "before" score is computed on the row-trimmed datasets, the same ones the
+  aligner sees.
+- **`HypertoolsOfflineError` and `HypertoolsTrustError` are importable from
+  `hypertools`** (`HypertoolsOfflineError` from `hypertools.io` as well),
+  so a caller of `hyp.load(..., offline=True)` can catch the error without
+  reaching into `hypertools.io.sources`. The API reference documents
+  `HypertoolsTrustError` and `io.synthetic_outlet` under these public
+  names; their source-view links pointed at anchors that did not exist.
+- **`panels=` partitions every per-dataset and per-forecast argument.** A
+  per-dataset list of palette names (`palette=['viridis', 'magma']`), a
+  `legend=` list, an `alpha=` list, `forecast_fmt=`, `forecast_palette=`,
+  a model-major `forecast_hue=` and a forecaster fitted on every dataset
+  (`hyp.predict(x, return_model=True)`) now reach each panel as its own
+  entry, in both `panel_fit` modes and on both backends, matching the
+  single-axes figure; previously they raised inside the panel or drew
+  every forecast in the first colour. Shared-fit grids also hand back
+  their one fitted pipeline as `bundle['pipeline']` and in every
+  `panel_models[i]['pipeline']`, so held-out data can be projected without
+  refitting (it was `None`).
+- **`panels=` keeps forecast labels that share a colour.** `forecast_hue=` /
+  `forecast_cluster=` with a `forecast_palette=` that gives two labels the
+  same colour (`['red', 'red']`, or a palette name that cycles) raised
+  `ValueError: palette= supplies N color(s)` inside the panels; each panel
+  now receives one palette slot per label, matching the single-axes figure.
+- **`panels=` on 2-column or 1-column data with the default `ndims=` draws
+  2-D cells** on both backends, instead of raising `Trace type 'scatter' is
+  not compatible with subplot type 'scene'` (plotly) or drawing flat
+  trajectories inside cubes (matplotlib).
+- **`panels=` no longer re-clusters each panel.** Every cell reuses the
+  clustering already fitted for it, so seeded memberships equal the
+  individual call's on both backends in every fit mode and no extra
+  clusterer fits run (each panel used to re-fit its clusterer without the
+  seed the first fit used); `return_model=True` bundles report
+  `models['cluster_labels']`. Plotly composition keeps the palette offset
+  across a `color=` or categorical `hue=` call. Independent panels mixing
+  one- and three-column datasets draw the series as row index against value
+  on the 3-D cell's floor instead of crashing.
+- **`panels=` keeps the joint figure's cluster colours, forecasts narrow
+  panels in their own space, and a marker-only hue no longer advances the
+  palette.** Shared clustered panels keep the joint cluster-to-colour
+  mapping and legend names when a slice lacks a cluster (two panels each
+  drew red); a 1-/2-column panel of a mixed-width independent grid
+  forecasts, reads `truth=` and reports its bundle on its own analyzed
+  rows (the individual call's numbers; the display padding used to feed
+  the forecaster) and only its drawing is lifted into the 3-D cell; a
+  categorical `hue=` with a marker-only fmt consumes no palette slot on a
+  composed axes/figure/cell, and its group colours beat a fmt colour letter
+  on the marker path as on the line path.
+- **`panels=` decides each cell's projection from the analyzed data** (after
+  `manip=`/`pipeline=`/`reduce=`), not the raw column count: a Delay-expanded
+  2-column dataset reduced to 3 components draws 3-D panels again in the
+  shared, independent and reducer-comparison modes on both backends, keeping
+  the requested `ndims` and each panel's fitted pipeline with no second
+  fit. Composing a call into a figure, axes or cell after a `fmt='r-'`,
+  `color=` or `hue=` call continues the palette from the slots actually
+  consumed, identically on both backends.
+- **`panels=` fixes.** Works with `predict=` plus `truth=` in both
+  `panel_fit` modes; shared mode keeps a DataFrame's dates and column names
+  under `ndims=1` and accepts three-column frames; nested `hue=` and
+  `labels=` narrow per panel in both modes; `ndims>3` draws 3-D panels on
+  both backends; `save_path` accepts `~` and `pathlib.Path` and fails
+  before drawing when the directory is missing; plotly panels return the
+  same figure wrapper as a single-axes plot and display once per cell.
+- **`panels=True` picks its grid from the figure's aspect ratio** and
+  prefers a grid with no spare cell: three panels form a row in a
+  default or wide figure (they were a 2x2 with a hole, and in a wide
+  figure each square 3-D axes shrank to the short cell height), four
+  form 2x2, six form 2x3. Explicit `(nrows, ncols)` and column counts
+  are unchanged.
+- **`panels=` on the plotly backend keeps each panel whole.** The plotly
+  grid (`plotly.subplots.make_subplots`) received only each panel's
+  traces, so 2-D panels lost their unit frame, hidden ticks and
+  DataFrame-column axis labels; `legend=True` merged every panel into one
+  legend ('1, 1, 1' for three panels, the digit groups listed twice for a
+  reducer comparison); and two `colorbar=True` panels drew both colorbars
+  on the same spot. Each panel now moves into its cell with its axis
+  layout, frame square and `labels=` annotations re-referenced to that
+  cell, its own legend beside the cell (plotly's multiple legends), its
+  own colorbar (on whichever side `colorbar=` asked for), its `title=` as
+  formatted, styled and positioned by the ordinary title path
+  (`title_wrap=`, `title_kwargs=`, with the multi-line top margin that
+  path computes), and its `font=` materialized on the cell's own text;
+  3-D cells back the camera off so the cube stays
+  inside a narrow cell; room for the legends/colorbars is reserved
+  beside every cell (the default-sized figure is widened by it, an
+  explicit `size=` is honoured verbatim).
+- **`panels=` colorbars on matplotlib take their room from their own
+  panel.** A `colorbar=True` panel grid ran the single-axes
+  figure-widening placement once per panel, stacking every colorbar over
+  the last panel and leaving `tight_layout` warning about axes it could
+  not place; a colorbar drawn into a caller-supplied `ax=` (every panel,
+  every `hyp.subplots` cell) now uses matplotlib's own `ax=`-attached
+  placement, so each panel keeps its colorbar and the figure its size.
+- **`panels=` on plotly is laid out like the matplotlib grid.** The plotly
+  grid used `make_subplots`' default spacing (10-15 % of the figure
+  between cells) and full-height cells, and backed the camera off ~1.5x
+  further than a narrow cell needed (the constant was the cube's width
+  relative to its OWN height rather than the scene's), so three 3-D
+  panels sat far apart with small cubes and titles floating well above
+  them. 3-D cells are now square and centred (an `Axes3D`'s equal box
+  aspect), the gaps are `tight_layout`'s 20 px (40 px between 2-D cells,
+  for tick labels), each row reserves what its titles need, and the cube
+  fills its cell within a few pixels of the matplotlib panel's.
+- **Default-size `panels=` figures make room for their legends and
+  colorbars.** Three 10-entry legends beside three default-size panels
+  shrank the cubes to 1.3 in; the matplotlib figure now widens by the
+  same 1.1 in per column the plotly grid reserves, and an explicit
+  `size=` is honoured verbatim.
+- **`palette=` colour lists behave as in 1.0.0 again.** A list shorter than
+  the dataset count cycles when there is no `hue=`; an empty palette raises
+  `ValueError` instead of `StopIteration`; a per-dataset list whose entries
+  are `{category: color}` dicts merges them by category name; and any other
+  per-dataset form under a categorical `hue=` raises an error carrying the
+  real dataset and category counts.
+- **NaN in a continuous `hue=` no longer poisons the colour range.** The
+  `vmin`/`vmax` of the colour scale and the colorbar are computed over the
+  finite values only.
+- **Legend and colour details.** `legend_kwargs={'fontsize': ...}` is
+  honoured together with `font=`; `bundle['colors']['categories']` contains
+  RGB tuples for the blend kind when `legend_colors=` is passed; and a nested
+  `hue=` whose sub-list does not match its dataset is identified in the
+  error.
+- **`dataset_fade=` and `on_frame=` mutations reach the drawn collections
+  under a continuous `hue=` on matplotlib.** A fade or a per-frame artist
+  change was a silent no-op there.
+- **`loop=True` accepts a per-segment `rotations=` list** of the documented
+  `2(n+1)-1` length.
+- **`companion=` panels and `{index}` titles advance monotonically under
+  `order='serial'`** with several datasets, and the `start` in
+  `FrameContext.window_bounds` reflects the comet-head window on serial
+  reveals.
+- **Animation errors say what went wrong.** A bad `companion=` or
+  `dataset_fade=` value raises an error that quotes the keyword; an
+  `on_frame=` hook that raises during `.save()` propagates its own
+  exception; and a `title=` callable that raises no longer leaves an
+  "Animation was deleted without rendering anything" warning behind it.
+- **`title_wrap=` applies to dynamic titles** (a callable, or a `{index}`
+  format) and preserves explicit newlines. plotly draws a `\n` in a title as
+  a line break and reserves top margin for every title line at the
+  requested size.
+- **Labels and titles validate their input.** A nested tuple `labels=`
+  annotates like a nested list; `labels='str'`, a bad `label_anchor=`, a
+  title list with a non-string entry, a title callable that returns a
+  non-string, `title_color=` alongside `title_kwargs={'color': ...}`, a
+  static `{index}` title with no index to fill it, and a malformed `{index}`
+  format each raise an error saying so.
+- **`yahoo:` bars are dated by the exchange-local trading day.** The
+  exchange's `gmtoffset` is applied to the bar timestamps; Sydney and Tokyo
+  tickers were dated one day early.
+- **Synthetic datasets accept more seed types.** Every synthetic dataset
+  accepts `random_state=np.random.RandomState(...)`, and the scikit-learn
+  backed ones (`blobs`, `moons`, `swiss_roll`, `s_curve`) also accept a
+  `Generator`, a `SeedSequence` or a NumPy integer with `n_datasets=1`;
+  reusing one `SeedSequence` across calls gives the same data each time.
+  `n_datasets=1.5` raises instead of being truncated to 1.
+- **`hyp.load(..., streaming=True)` on a source other than a Hugging Face
+  dataset raises `ValueError`** instead of returning the whole dataset as if
+  the keyword had not been passed.
+- **`hyp.text_windows` accepts NumPy integers** for `size=` and `step=`.
+- **`hypertools.tools.text2mat` reads a flat list of strings as one
+  dataset.** Since 1.0 it returned one `(N, d)` matrix followed by one empty
+  `(0, d)` matrix per string. Ragged nested lists work, mixed inputs raise,
+  and a dict `semantic=` spec with a gensim vectorizer warns and skips the
+  step like the string form does.
+- **Warnings raised while formatting input data are attributed to the
+  caller's line**: the PPCA missing-data fill and the mixed text-and-numbers
+  notice now point at the `hyp.plot`/`hyp.analyze` call that triggered them.
+- **`fit()` returns the fitted model** on the manipulator and aligner
+  bases (the imputer base already did), so sklearn-style chains such as
+  `Smooth().fit(x).transform(y)` and `HyperAlign().fit(xs).transform(ys)`
+  work instead of raising `AttributeError` on `None`.
+- **`predict='ARIMA'` on an animated plot no longer crashes.** The early
+  frames reveal two-row histories, and statsmodels raised an `IndexError`
+  on them. Forecasters now carry a `min_history` (ARIMA derives its own
+  from its order), `fit` raises a clear `ValueError` for a shorter history,
+  and the animated schedule waits until enough rows are revealed. The same
+  fix covers `predict=['Kalman', 'ARIMA']` under `animate=`.
+- **A datetime-like `t=` works inside `hyp.plot`** (static and animated),
+  resolved against each dataset's `DatetimeIndex`, as the docstring said.
+- **`predict=` lists and dicts work on row- and column-MultiIndex frames**
+  (one forecast per trace per model; the bundle is keyed by model name)
+  instead of failing an internal consistency check.
+- **`ndims=1` on a dated column-MultiIndex frame** draws dates for every
+  leaf, not only the first.
+- **`forecast_hue=` with a model collection** is one value per dataset,
+  shared across the models; a model-major list is also accepted, and a
+  mismatch names both counts.
+- **Series-mode `return_model`** returns one `(t, n_columns)` forecast array
+  per input dataset in `predict['forecasts']`, the shape `hyp.predict`
+  returns.
+- **`ndims=1` fixes.** `fmt=` lists are one entry per drawn column; `xlim=`
+  on a date axis accepts date strings and datetimes on both backends
+  (floats are matplotlib day numbers on both); no `'dataset 1'` y label
+  after a reducing `reduce=`; a 3-D `ax=` with `ndims<=2` raises instead
+  of drawing a flat 3-D line; a `TimedeltaIndex` is drawn in a readable
+  unit with a labelled axis.
+- **NaN rows introduced by a trailing `Smooth(center=False)`** are reported
+  as the manip stage's doing, with the `min_periods=1` hint, instead of
+  the all-features-missing message.
+- **Docstrings:** `font=` explains weights (bold resolves to the bundled
+  Bold face); `HyperAnimation.drawn_extent` documents its parameters;
+  `HyperAnimation.save` lists the supported extensions plainly.
+- **A marker-plus-line format string keeps its marker in the legend.** A
+  dataset drawn with `'s--'` (or `'o-'`) is split into a smoothed line and
+  markers at the raw sample points; the legend handle showed only the
+  line. It now shows the marker and the line, on static and animated
+  plots, and the line itself still draws no markers.
+- **`return_model=True` no longer fits the pipeline a second time.** The
+  bundle's `pipeline` is the one the figure was drawn with (the
+  cluster stage, which runs on the reduced scores, is appended as a
+  fitted step), so a UMAP or Isomap plot with `return_model=True`, and
+  every `panels=` grid built with it, fits once and warns once.
+- **Seeded UMAP no longer warns about `n_jobs`.** A `random_state=`
+  hypertools injects made umap-learn override `n_jobs` and say so;
+  hypertools now passes the `n_jobs=1` umap uses anyway, unless the
+  caller chose one.
+- **Isomap fits stay quiet about scipy's sparse-matrix efficiency.** The
+  dozen `SparseEfficiencyWarning`s scikit-learn's graph completion
+  triggers are silenced during the fit; sklearn's own warning about a
+  disconnected neighbour graph (the user's `n_neighbors`) still shows.
+- **A `truth=` overlay's legend glyph shows its markers.** The truth is
+  drawn as a solid line with a marker on every observation, but its
+  `'truth'` legend entry was a bare solid line in the trace's own colour,
+  identical to the observed trace's entry. The curve now keeps the marker
+  (drawing none of its own) so the legend can tell them apart.
+- **2-D `density=` layers fade out inside their own grid.** Each KDE grid
+  stopped 15% past its own dataset's bounding box, where the density is
+  still clearly visible, so a wide, flat cloud's glow was cut off in a
+  hard band well inside the frame. The grid now also reaches four kernel
+  widths past the data on both backends, where the density has faded to
+  nothing, while staying local to its own cloud (so a small cloud beside
+  a huge one keeps its resolution).
+- **`hyp.subplots(..., backend='plotly')` and `ax=<cell>`.** The
+  compose-it-yourself grid (`fig, axes = hyp.subplots(); hyp.plot(d,
+  ax=axes[i])`) had no plotly form: `ax=` took a plotly Figure to append
+  traces to, but could not target a `make_subplots` cell. `hyp.subplots`
+  gained `backend=` and, on plotly, returns the grid figure plus a flat
+  array of cells that `hyp.plot(..., ax=cell)` draws into -- the whole
+  panel, `title=` included -- returning the grid; several cell calls in
+  one notebook cell display the grid once.
+- **The slow-forecast-schedule notice no longer fires from timer noise.**
+  Its projection drew a slope through the first two timed fits, one row
+  apart at 2 and 3 rows -- tens of milliseconds each -- and on a slow CI
+  runner projected 10 s for a 30-row schedule that finished in well under
+  one. It now fits every timed length by least squares and waits for a fit
+  of at least 10 rows before projecting.
+- **A fitted forecaster reuses its parameters on a short context.** The
+  minimum-history check added for fitting (`Forecaster.min_history`) was
+  also applied when an already-fitted model was passed back as `model=`,
+  so a fitted `ARIMA(order=(4, 0, 0))` refused two new rows it can
+  condition on with its learned parameters. Only the refit path is held
+  to the fit floor now.
+- **Every `predict=` forecast is listed in the legend.** Only a collection
+  of models was; `predict='Kalman'` drew its faded continuation with no
+  key, and `truth=` then listed `observed` and `truth` beside an unnamed
+  dotted line. The single-model form now lists its forecast once, under
+  the model's name (the name `hyp.predict(x, model=[spec])` gives it),
+  static and animated, on both backends, in the order data, forecasts,
+  truth. The entry's glyph wears the forecasts' own style, in their colour
+  when they share one and in a neutral gray when one model's forecasts of
+  several datasets are drawn in several colours (the first dataset's
+  colour used to pose as the model's).
+- **A collection of models keeps each dataset's colour and takes a
+  linestyle per model.** `predict=['Kalman', 'ARIMA']` coloured every
+  forecast by model from a `'husl'` palette whose first colour was the
+  first dataset's own, so two datasets under two models were four lines
+  in two indistinguishable pairs, and which series a forecast continued
+  could not be read at all. Forecasts now inherit their dataset's colour
+  (as the single-model form always did) and cycle solid, dashed, dotted,
+  dash-dot by model; `forecast_palette=` opts back into one colour per
+  model, and `forecast_fmt=` still replaces the cycle.
+- **`truth=` on plotly marks every observation, not every vertex.** The
+  antialiased truth curve carried a marker on each of its ~900 drawn
+  vertices, so it rendered as a thick line; markers now sit on the raw
+  rows only, at the size the matplotlib overlay draws them.
+- **A caller's axes draw in the palette, and a second call continues
+  it.** `hyp.plot(x, ax=ax)` and every matplotlib `panels=` cell drew
+  the datasets in the colour cycle their figure was created with
+  (matplotlib's default blue/orange) while `return_model`'s `colors` and
+  the plotly grid reported the hls palette; the axes now take the
+  palette. Drawing a second time into the same axes or plotly figure
+  restarted the palette, so two composed walks were both red; the second
+  call now continues it from where the first stopped, on both backends.
+- **A recoloured forecast keeps its trace's alpha.** `forecast_palette=`,
+  `forecast_hue=` and `forecast_cluster=` recoloured the forecasts and
+  still halved their alpha, so Set1 forecasts at 0.35 over a hierarchy's
+  0.7 leaves could not be found; the colour is what tells them apart, so
+  they are drawn at the trace's own alpha. The forecast legend glyph is
+  never drawn below 0.8 alpha either (it copied its forecasts' 0.35 and
+  vanished).
+- **The 2-D frame square clears the data.** Static 2-D plots rescale the
+  data into the unit box and drew the frame square AT its edge, so the
+  extreme observations sat on the frame line and looked clipped; the
+  square now has a 12.5 % margin (the axes stay 10 % beyond it) on both
+  backends.
+- **A 3-D figure's axis labels are inside its tight bbox.** `Axes3D`
+  measures its axes for layout only, dropping the labels, so a
+  `bbox_inches='tight'` save -- every notebook's inline render -- cut the
+  `zlabel=` off at the right edge; a figure artist now carries the three
+  labels' extents into the bbox.
+- **`legend_kwargs={'loc': ...}` places the legend there.** A `loc=`
+  without a `bbox_to_anchor=` kept hypertools' outside-right anchor, so
+  `'upper left'` hung the legend off the right edge; the anchor is
+  dropped when a location is named.
+- **Plotly legend keys are readable for tiny markers.** A `'.'` marker's
+  legend key reproduced the 2 px dot; legends now use plotly's constant
+  key size, as a matplotlib legend does.
+- **A collection of models under `hue=`/`cluster=` regrouping continues
+  the right run.** One dataset split into two runs under two models gives
+  two forecasts for two runs, so the step that matches each forecast to
+  its run -- which only ran when the counts differed -- was skipped and
+  forecast i continued run i: Kalman took the earlier run's colour, ARIMA
+  the final run's. It runs for every collection under regrouping now. The
+  animated modes also looked the reveal schedule up by forecast index
+  rather than by source dataset, so two models x regrouping x
+  `forecast_trail=` raised `IndexError` on both backends.
+- **A forecaster fitted on several datasets animates.** The animated
+  schedule forecasts each dataset's revealed history on its own, which a
+  `hyp.predict([a, b], return_model=True)` forecaster refused as a
+  dataset-count mismatch; `Forecaster.for_dataset(i)` now binds the view
+  the schedule needs.
+- **Plotly honours a colour letter and markers in `forecast_fmt=`.**
+  `forecast_fmt='ro:'` drew red dotted forecasts with round markers on
+  matplotlib and inherited-colour dotted lines without markers on plotly,
+  static and animated, legend keys included.
+- **Plotly animations keep a recoloured forecast's alpha too.** The
+  animated branch computed the halved alpha before the recolouring rule
+  applied, so `forecast_palette=` forecasts animated at 0.35 while the
+  static figure drew them at 0.7.
+- **A second call into the same plotly grid cell continues the palette**,
+  as a second call into the same matplotlib axes does.
+- **Plotly forecast legend keys compare colour, not opacity.** With
+  `alpha=[1, .4]` and an all-red forecast palette every key turned gray
+  because the RGBA strings differed only in alpha.
+- **`legend_colors=` keeps its contract beside forecasts.** Explicit
+  `(label, color)` pairs define the legend outright, so no forecast or
+  `truth` entry is added to them (and on plotly the data traces stay out
+  of it too); a plain colour list is applied to the FINAL legend, after
+  the forecast/truth entries, instead of being refused against the data
+  entries alone.
+- **Matplotlib panel legends clear their colorbars.** A panel with
+  `legend=True` and `colorbar=True` drew the attached colorbar under the
+  outside-right legend (~10 px overlap); the colorbar is padded past the
+  legend's measured overhang.
+- **Plotly grid cells keep an explicit legend position and multi-line
+  title room.** `legend_kwargs` x/y are translated into the cell instead
+  of being replaced by the default placement beside the cell, and
+  re-laying out the grid keeps the top margin a multi-line title had
+  reserved.
+- **A `forecast_fmt=` colour letter survives a regrouped animation.**
+  Under `hue=`/`cluster=` the animated modes repaint each live forecast
+  in its head run's colour unless the colour is pinned, and only
+  `forecast_hue=`/`forecast_cluster=`/`forecast_palette=` counted as
+  pinning: `forecast_fmt='ro:'` forecasts animated cyan under red legend
+  keys on matplotlib, and plotly's per-frame colours halved the alpha a
+  recoloured forecast keeps.
+- **Mixture-hue legends list forecasts and `truth`.** A matrix `hue=`
+  builds its legend from swatches (clearing `legend=` on the way), and
+  the forecast/truth entries were only added when `legend=` was still
+  set, so those legends read `1, 2` alone on both backends.
+- **Repeated calls into one axes, figure or grid cell compose.** The
+  forecast and `truth=` overlays styled themselves from the FIRST call's
+  lines on a reused matplotlib axes (three walks, three red forecasts),
+  and the legend accumulated one `truth` per call while losing earlier
+  forecast keys; the overlays now take this call's lines and the legend
+  is rebuilt by role -- the data entries, one key per model over every
+  call's forecasts, one `truth` -- on both backends and in plotly cells.
+- **A plotly cell's legend and colorbar from separate calls sit side by
+  side**, and a multi-line title re-lays out the rows at once. A colorbar
+  added after a legend used to land on it, and a three-line title widened
+  the top margin but left the rows 37 px apart; the grid now keeps track
+  of what each cell has drawn beside and above it, and sizes the space
+  beside every cell for the busiest one.
+- **Plotly draws a marker-only `forecast_fmt` as markers**, as matplotlib
+  does, and its animated collection traces tag their source dataset in
+  `trace.meta['hyp_dataset']` rather than the model-major forecast index.
+- **A `hyp.subplots(backend='plotly')` grid grows its legend room only
+  when a cell asks for it.** The grid reserved 118 px beside every cell
+  up front (it cannot know which cells will draw a legend), so a
+  legend-less pair of cells sat left-heavy with cubes three quarters the
+  size of the matplotlib pair's. It is now built as tight as `panels=`
+  draws it, and the first cell that receives a legend or colorbar
+  re-lays out the grid with that room, moving the cells already drawn
+  (their legends, colorbars and titles included).
+- **Streaming plots work when plotly is the render backend.** Colab and
+  Kaggle select plotly by default, and there every streaming `hyp.plot`
+  (a generator, a Hugging Face `IterableDataset`, `hyp.io.lsl_stream()`)
+  raised `AttributeError: 'HyperPlotlyFigure' object has no attribute
+  'axes'`, as did any stream after `hyp.set_interactive_backend('plotly')`.
+  The head plot now always renders with matplotlib, as the streaming
+  docstring states. The `streaming_data`, `lsl_streaming` and `io`
+  tutorials failed at their streaming cells on Colab because of it. Present
+  since 1.0.0.
+- **`xlabel=`, `ylabel=` and `zlabel=` join the font-coverage scan.** The
+  scan that picks an installed font for characters the default font stack
+  lacks read `labels=`, `legend=`, `title=`, `hue=` and the colorbar text,
+  but not the axis labels. An axis label in such a script (Javanese on
+  stock macOS; CJK on a Linux machine whose CJK font is outside the stack)
+  drew as empty boxes, while the same text as a title rendered. Present
+  since 1.0.0.
+- **A `hue=` surface matches the points beneath it.** Each hull vertex
+  blended every point in its dataset with inverse-squared-distance weights;
+  in 3-D the many distant points outweighed the near ones, so the hull took
+  the dataset's washed-out mean colour. Vertices now blend their nearest
+  points, on both backends.
+- **Markers sit on the observations.** `'o-'`, `markers=` and
+  `forecast_fmt='ro:'` put a marker on every antialiased vertex (about 900
+  for a 40-row path), drawing the line as a solid tube; now only the samples
+  are marked, static and animated (in an animation, the frame-grid vertex
+  nearest each sample), on both backends. An explicit `marker=` wins over
+  the fmt marker on matplotlib, and a continuous hue with `'o-'` in 1-D/2-D
+  shows its markers on plotly.
+- **Hue transparency.** Continuous-hue markers honour `alpha=` on both
+  backends, and translucent plotly 3-D lines keep their colour instead of
+  washing out to cyan.
+- **Plotly hover labels name what you point at.** They read "trace 0"; every
+  data trace now carries its legend label (category, dataset, series column,
+  model or 'truth'), a lone unlabelled dataset shows only its coordinates,
+  and animated legends no longer grow entry by entry.
+- **Plotly subplot cells.** Colorbars no longer land on the next cell, an
+  untitled call keeps the cell's title, a dimensionality mismatch raises a
+  clear error, your own traces are left untouched, and a plotly `ax=`
+  implies the plotly backend.
+- **Plotly `frame_kwargs=`, `zoom=` and legend position.** `frame_kwargs=`
+  styles the plotly frame, static figures ignore `zoom=` (animation-only, as
+  documented), and `legend_kwargs={'x': 0, 'y': 1}` anchors the legend at
+  that corner.
+- **Plotly date axes show the same dates in every time zone.** Numeric dates
+  were drawn in the viewer's local time, so a series starting at midnight on
+  1 January began on the evening of 31 December in New York.
+- **Composing into `ax=` no longer repeats a palette colour.** `'hls'` drawn
+  2 + 2 now gives the four-colour `'hls'` set, and the bundle's `colors` and
+  the colorbar show the colours actually drawn.
+- **Dict-list palettes colour marker plots.** `fmt='o'` ignored a per-
+  dataset list of `{category: color}` dicts.
+- **Per-dataset and nested `labels=` survive `hue=`/`cluster=`** instead of
+  crashing on both backends; label arrays and Series are accepted.
+- **Legends.** A nested-list input's legend names its outer groups instead
+  of four leaves in two colours; cluster and integer-hue line legends list
+  categories in order (0, 1, 2), as the marker path did; `legend=False` wins
+  over `names=`; `panels=` splits a plain `legend_colors=` list per panel;
+  and `legend_colors=` accepts one colour per data entry beside forecast and
+  truth entries.
+- **Label connectors and box edges are visible on matplotlib.** Under the
+  seaborn style they were drawn white, so labels floated with no visible
+  link and cut notches through markers.
+- **Caller-axes and panel titles and axis labels use the Noto Sans stack**
+  instead of DejaVu Sans. `font='Noto Sans'` (the bundled face) works in a
+  fresh process.
+- **Two-column data draws into a 2-D `ax=`** instead of raising "the plot is
+  3D".
+- **0-255 colour lists raise `ValueError`.** `palette=[[255, 128, 0], ...]`
+  was silently read as a data matrix, reordering and rescaling the colours;
+  the error says to divide by 255 or pass a DataFrame.
+- **The NaN-hue warning counts observations** (it counted antialiased
+  vertices) and points at the caller's line.
+- **Forecasts and truth keep their own dataset's style with `'o-'`.** Each
+  marker-plus-line dataset was drawn as two artists, so three datasets'
+  forecasts came out red, red, green.
+- **A one-column trace is drawn against its row index.** Antialiasing put a
+  40-row line at x 0..936, squashing its forecast 24x; `axis_scale='data'`
+  also gave the value range to x.
+- **`ndims=1` `truth=` takes one column of values per trace.** A two-column
+  truth used its first column as x, stretching a date axis back to 1970; it
+  now raises `ValueError`.
+- **Marker-only `hue=`/`cluster=` always refuses forecasts and warns**, even
+  when the category count equals the dataset count (the forecasts were
+  silently drawn in the wrong category's colour).
+- **The 'truth' legend key is gray when truths span several colours**,
+  instead of always showing dataset 0's colour.
+- **Animated forecasts on two-column data no longer crash** with "too many
+  values to unpack".
+- **`xlim=(None, date)` works on date axes**; the open side takes the data
+  bound.
+- **`panels=` accepts `forecast_trail=`** alongside `predict=`.
+- **`transform=` fixes.** A bare array is one dataset instead of crashing, a
+  DataFrame with its own index no longer gives all-zero forecasts, and a
+  polars frame no longer raises `SchemaError`.
+- **A shuffled time index is drawn in time order**, so the forecast joins
+  the end of the line (with a warning).
+- **`ndims=1` date ticks no longer collide**; matplotlib uses concise date
+  labels.
+- **Regular calendar data are forecast on their own calendar.** Business-
+  day, month-start, weekly, quarterly and tz-aware daily indexes, and
+  `PeriodIndex` data, are fitted on their own rows and forecast onto the
+  next business days, month starts or periods. Before, business-day bars
+  were interpolated onto calendar days and forecast onto weekends, month
+  starts drifted, a fall DST change duplicated a day, and periods came back
+  as timestamps.
+- **A fitted forecaster works across index kinds again.** A model fitted on
+  an array and reused on dated rows, or the reverse, raised an error about
+  `step`; it now steps in the new data's own units, as 1.0 did.
+- **ARIMA's minimum history includes `seasonal_order`.** A short seasonal
+  fit gets the "needs N observations" message instead of a bare `IndexError`
+  or `LinAlgError`.
+- **Time warnings appear once, and only when they apply.** A stacked panel
+  warns "not sorted" once per call instead of three times, and an explicit
+  `step=` on evenly spaced data no longer calls them irregular.
+- **`yahoo:` intraday bars keep their timestamps.** `interval='1h'` put
+  every bar at midnight, so `hyp.predict` rejected the index; intraday bars
+  are tz-aware in the exchange's time zone.
+- **A dict model spec with a flat parameter raises instead of silently
+  running defaults.** `{'model': 'PCA', 'whiten': True}` or
+  `cluster={'model': 'KMeans', 'n_clusters': 4, 'random_state': 0}` dropped
+  the extra keys; they now raise `ValueError` naming them and showing the
+  `'kwargs'` form, in `reduce` (including streaming), `cluster`, `manip`,
+  `align`, `impute`, `Pipeline`, `apply_model` and `text2mat`. The
+  documented `n_clusters` shortcut still works. Outer `**kwargs` next to a
+  dict spec now reach `manip`/`align` models, and a spec's `'args'` reach
+  streaming and `text2mat` models.
+- **`hyp.plot(x, pipeline=p)` draws the pipeline's clusters.** A fitted
+  trailing cluster step colours the figure with the fit figure's colours; it
+  was dropped silently.
+- **Aligner classes accept arrays.** `HyperAlign().fit(xs).transform(ys)` on
+  a list of NumPy arrays, or a single array, raised "Unsupported datatype";
+  the aligners accept what `hyp.align` does and return each dataset in its
+  input's form.
+- **`alignment_score(metric='dispersion')` rejects all-constant datasets.**
+  Datasets each constant at a different value scored exactly 1.0; they now
+  raise, like `'isc'`.
+- **Rows a `manip=` stage empties stop the pipeline at that stage.** A
+  trailing `Smooth(center=False)` no longer triggers misleading PPCA
+  imputation warnings or sklearn NaN errors; the error names the stage and
+  suggests `min_periods=1`.
+- **A fitted `Normalizer` accepts 1-D data.** A 1-D array, Series or list of
+  numbers is one column in both fit and transform.
+- **Offline errors say what happened.** A missing 25+ character bare name
+  lists the full resolution chain instead of a Google Drive cache miss, a
+  cached copy that fails to parse raises `HypertoolsIOError` naming the
+  file, and an extensionless remote `.npz` reports the `trust=True` error
+  instead of a parquet one.
+- **`load()`'s TypeError names polars frames**, which it accepts.
+- **`set_autoinstall` handles are quiet at exit.** A live handle printed
+  "Exception ignored ... TypeError" at interpreter shutdown; a re-entered
+  handle keeps its creation order.
+- **Align, impute and manip warnings point at your own line**, so deprecated
+  spellings are no longer hidden inside the library.
+- **`[density3d]` needs `scikit-image>=0.25.0`**, the first release with
+  Python 3.13 wheels.
+- **Animated lines keep every observation.** Lines were resampled onto one
+  row per frame, so a dataset with more rows than frames was drawn through
+  only some of its points (a 36-row helix in a 9-frame animation became a
+  zig-zag star at 46% of its radius, and labels were dropped). Every
+  observation is now a vertex of the animated line, `animate='spin'` draws
+  the rows unchanged, and reveal timing and frame counts are unchanged.
+- **Every morph transition frame moves.** Transitions sampled their own
+  endpoints, so a 2-frame transition only repeated the hold clouds.
+  Transition frames now fall strictly between the clouds in position, colour
+  and `alpha=`. The default morph dot is 4 pt on both backends (it was 1.5
+  pt, sub-pixel on plotly).
+- **Titles set in an `on_frame=` callback are visible on 3-D animations.**
+  With no `title=`, the `plot()` docstring's own example drew its title
+  above the canvas on matplotlib and cut it off on plotly; `on_frame=` now
+  reserves the title margin.
+- **`companion=` panels use the trajectory's colour** instead of
+  matplotlib's default blue; an explicit `color=` still wins.
+- **Short streams warn about clamped samples.** The warning needed 20 post-
+  head samples, so a short stream could draw most of its points on the box
+  surface silently; the clamped fraction is now checked again when streaming
+  stops.
+- **Plotly animations keep a continuous hue on the moving data.** 3-D
+  windows were painted in the trajectory's first colours, and 2-D lines
+  never animated: the whole trajectory stayed on screen while one segment
+  flickered. Heads and trails now carry their own colours in every reveal
+  style.
+- **Plotly 3-D lines are as thick as you ask.** WebGL drew Scatter3d lines
+  at half the requested width; they now match the 2-D line and matplotlib,
+  and plotly animations default to the documented 1 pt.
+- **Plotly 3-D density no longer speckles the cube.** The density volume
+  extended past the scene and broke the cube edges into dots; it is now
+  clipped to the cube.
+- **Plotly Play/Pause sit below the axis labels.** On a date or data x axis
+  they covered the tick labels.
+- **Forecast time warnings name your line, once.** The interpolation and
+  "not sorted" warnings pointed at hypertools' own files (tutorials printed
+  `.../hypertools/predict/common.py:435`), a calendar step read
+  `step=<BusinessDay>` and a float step `0.04000000000000001`, and a
+  shuffled index under `hyp.plot` warned twice. They now point at the
+  caller, print `step='B'` or `step=0.04`, and appear once per `plot()`
+  call.
+
 ### Documented limitations
 
 - Ragged groups (unequal feature counts per group) are rejected by both
   entry points, by an error naming the missing and unexpected features. That
   error's escape-hatch remedy is spelled for `hyp.plot`, so a `hyp.predict`
   caller has to translate it: group with `group_columns(df,
-  feature_correspondence='position')` and forecast the leaves
+  feature_correspondence='position')` (`from hypertools.core.hierarchy
+  import group_columns`) and forecast the leaves
   (`hyp.predict([leaf.to_numpy() for leaf in leaves], model, t)`, verified).
 - Unequal-length row groups are averaged over their overlapping prefix, with
   one aggregated warning.
@@ -730,15 +1545,12 @@ input too.
   datasets. Pass `reduce='PCA'` when block order must not matter.
 - Continuous `hue=` over a **row** hierarchy is still warned-and-ignored;
   only column hierarchies honour it in 1.1.
-- A forecast under a continuous `hue=` takes its source trajectory's **final
-  observed hue colour**, in the animated case as well as the static one, on
-  both backends. (Animated forecasts briefly wore the per-dataset palette
-  colour instead -- the colour of the hidden artist driving the reveal,
-  which nothing visible is drawn in, so the forecast appeared to continue a
-  colour its trajectory never had and a paused animation disagreed with the
-  static plot of the same call.) A **categorical** regrouping is unchanged:
-  there the live forecast still takes the colour of the run drawing the
-  head, which is what the viewer actually sees.
+- Under a **categorical** `hue=`/`cluster=` regrouping, an animated live
+  forecast takes the colour of the run drawing the head, which is what the
+  viewer actually sees, so its colour can change as the head crosses a
+  category boundary. Under a continuous `hue=` a forecast instead takes its
+  source trajectory's final observed hue colour, animated and static alike
+  (see *Added*).
 - Duplicate innermost feature names inside one group are **kept** rather
   than rejected or de-duplicated, and matched across groups by
   `(label, occurrence)`: all such columns are plotted and forecast. Rename
@@ -754,16 +1566,20 @@ input too.
 
 ## 1.0.1 (unreleased)
 
-Small, additive plotting features and fixes. Public APIs are unchanged; two
-items under **Changed** below alter how existing figures LOOK.
+Small, additive plotting features and fixes. Public APIs are unchanged;
+three changes alter how existing figures LOOK: smoothed lines
+(`antialias=True`, the new default, under **New features**) and the two
+items under **Changed**. Where 1.1.0 later refined one of these behaviours,
+the entry below says so.
 
 > 1.0.1 was never published on its own. These changes were developed as a
 > patch release and now ship as part of 1.1.0, which is what `pyproject.toml`
 > declares; they are kept in their own section because they are separable
 > from the hierarchy work above. Because 1.0.1 is not a version anyone can
 > install, every guide and docstring that dates one of these behaviours dates
-> it to **1.1.0**; this heading is the only place the shipped package names
-> the patch line.
+> it to **1.1.0**; this section is the only user-facing place that names
+> the patch line. If you are upgrading from 1.0.0, everything from here down
+> to the `## 1.0.0` heading is new to you as well.
 
 ### New features
 
@@ -808,8 +1624,8 @@ items under **Changed** below alter how existing figures LOOK.
 
 - **`predict=` now works with the time-progressing animations too**
   (`animate=True`/`'parallel'`/`'serial'`/`'window'`). The forecast is
-  recomputed from the history revealed so far and re-anchored on the last
-  revealed observation, so the forecast trace grows with the animation instead
+  recomputed from the history revealed so far and drawn from the endpoint of
+  the current frame, so the forecast trace grows with the animation instead
   of standing still. Because the data is static -- all of it known before the
   first frame, merely revealed over time -- every forecast the animation will
   ever draw is computed up front. Two things follow: the whole fan is folded
@@ -852,10 +1668,14 @@ items under **Changed** below alter how existing figures LOOK.
   grows with the DATA, not the frame count: 3 datasets x 60 rows x 900 frames
   is 177 fits (~5 s), while 3 x 500 x 900 is 1497 fits (~330 s) -- a longer
   series has both more distinct histories and a costlier fit each. `plot()`
-  now times the first real fit and warns if the projection exceeds
-  `slow_warning_seconds=` (default 10; pass `None` to silence), so a long
-  wait is expected rather than mysterious. The notice arrives before the
-  wait, not after it.
+  now times the fits as they run and warns if its projection of the total
+  exceeds `slow_warning_seconds=` (default 10; pass `None` to silence), so
+  a long wait is expected rather than mysterious. The notice arrives before
+  the wait, not after it. (As first written the projection came from the
+  first timed fit; 1.1.0 waits for fits at two or more history lengths,
+  one of them at least 10 rows long (or the longest the schedule has), and
+  projects from a least-squares line through their timings -- see *Fixed
+  during the release review*.)
 
   Deliberately NOT solved by sampling the reveal: striding the schedule would
   render a different animation than the one asked for. The outcome is not
@@ -866,7 +1686,11 @@ items under **Changed** below alter how existing figures LOOK.
   the data.** Inheritance stays the default -- a forecast is its observed
   trace projected forward at half its alpha -- and each of these replaces
   exactly one aspect of it, so observed and forecast data may differ in
-  style, grouping, palette, or any combination.
+  style, grouping, palette, or any combination. (1.1.0 refines this: a
+  forecast recoloured by `forecast_palette=`, `forecast_hue=` or
+  `forecast_cluster=` keeps its trace's full alpha, and a collection of
+  models takes one linestyle per model; see *Fixed during the release
+  review*.)
 
   **`forecast_cluster=` clusters the forecast ENDPOINTS**, so a forecast's
   colour answers *which of these series are heading to the same place?* --
@@ -1010,14 +1834,15 @@ items under **Changed** below alter how existing figures LOOK.
 
 - **Per-dataset `alpha=`, alongside the existing per-dataset
   `color=`/`linewidth=`.** Inputs that assign alpha internally (row
-  `MultiIndex` frames, nested lists) keep their own values and now say so
-  with a warning instead of losing silently.
+  `MultiIndex` frames, nested lists of varying depth) keep their own values
+  and now say so with a warning instead of losing silently.
 
 - **Per-segment `title=` for serial-style animations, on both backends.**
   Pass a list of strings (one per dataset) to name each segment of a
   serial-style animation as it is revealed; for `animate='morph'` the holds
   are named and the transitions are left blank automatically. Anywhere else
-  a non-string `title=` raises `TypeError`.
+  a `title=` that is neither a string nor a callable raises `TypeError`
+  (1.1.0 added callable titles; see *Titles that follow the data*).
 
 - **`simplify=` on `plot()` (default `True`).** Today it governs
   `animate='morph'` tractability only: over clouds larger than 2000 points
@@ -1037,7 +1862,11 @@ items under **Changed** below alter how existing figures LOOK.
   `alpha=` is matplotlib's opaque 1.0, so the default forecast alpha is
   `0.5`). Per-dataset styling carries through dataset by dataset --
   `alpha=[1.0, 0.4]` gives forecasts at `[0.5, 0.2]`, and a dotted dataset
-  gets a dotted forecast.
+  gets a dotted forecast. (1.1.0 refines this: a forecast recoloured by
+  `forecast_palette=`, `forecast_hue=` or `forecast_cluster=` is drawn at
+  its trace's own alpha, and a collection of models keeps each dataset's
+  colour and cycles the linestyle per model; see *Fixed during the release
+  review*.)
 
   This is a **visible change to existing forecast figures**, and it
   deliberately replaces the previous rule: every forecast used to be drawn
@@ -1144,8 +1973,9 @@ items under **Changed** below alter how existing figures LOOK.
   style, or a static plot with the default `antialias=True`). Bridged labels
   now grow in lockstep with the bridged data.
 
-- **`title=` no longer stringifies a list onto the axes.** A non-string
-  `title=` now raises `TypeError` instead of drawing the literal
+- **`title=` no longer stringifies a list onto the axes.** A `title=` that
+  is neither a string nor a callable (1.1.0 added callable titles) now
+  raises `TypeError` instead of drawing the literal
   `"['a', 'b', 'c']"` text, and the check runs before the analyze pipeline,
   so streaming plots (`plot_stream`) get it too.
 

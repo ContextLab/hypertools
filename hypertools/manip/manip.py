@@ -18,15 +18,17 @@ no-re-fitting path behind ``return_model=True``).
 """
 import datawrangler as dw
 import numpy as np
-import pandas as pd
 
-from .common import Manipulator
+from .common import Manipulator, as_manip_frames
 from .normalize import Normalize
 from .zscore import ZScore
 from .smooth import Smooth
 from .resample import Resample
 from .delay import Delay
-from ..core.shared import unpack_model, require_data, no_observations_message
+from ..core.shared import (unpack_model, require_data, no_observations_message,
+                           as_dataframe, check_spec_keys, merge_spec_kwargs)
+from .._shared.helpers import (is_series_like, is_frame_dataset,
+                               is_array_dataset, as_pandas_dataframe)
 from ..core.pipeline import Pipeline
 
 
@@ -62,21 +64,50 @@ def _validate_manip_input(data):
     """
     no_observations = no_observations_message('manipulate')
     require_data(data, 'manip')
+    data = as_manip_frames(data)
     if isinstance(data, tuple):
         # a tuple of datasets is accepted exactly like a list (final wave
         # item 15: it used to leak a raw IndexError from the funnel)
         data = list(data)
-    if isinstance(data, pd.Series):
-        return data.to_frame()
-    if isinstance(data, (pd.DataFrame, np.ndarray)) and data.shape[0] == 0:
-        raise ValueError(no_observations)
     if isinstance(data, list):
         if len(data) == 0:
             raise ValueError(no_observations)
-        data = [d.to_frame() if isinstance(d, pd.Series) else d for d in data]
-        for d in data:
-            if isinstance(d, (pd.DataFrame, np.ndarray)) and d.shape[0] == 0:
-                raise ValueError(no_observations)
+        # every dataset keeps its own column labels and index: the
+        # independent manipulators (Smooth, Delay, Resample) never combine
+        # features across datasets, and the shared-statistics ones
+        # (ZScore, Normalize) match columns by position themselves when
+        # the labels differ (Codex rounds 11 and 12: relabelling here
+        # renamed a named frame's features for EVERY model)
+        return [_validate_one(d, no_observations) for d in data]
+    return _validate_one(data, no_observations)
+
+
+def _validate_one(data, no_observations):
+    """`_validate_manip_input` for ONE dataset: a Series-like becomes a
+    single-column frame, a DataFrame of any backend datawrangler knows
+    (pandas, polars, a LazyFrame, ...) becomes hypertools' internal pandas
+    frame, and an empty (0-row) array/frame raises. The datatype questions
+    are asked through datawrangler (the `_shared.helpers` predicates), never
+    by naming pandas/numpy types here (datatype audit, 2026-09-08)."""
+    if is_series_like(data):
+        # pandas and polars Series both expose `.to_frame()` (a polars
+        # frame is then wrangled to pandas like any other frame -- Codex
+        # round 12, R12-1); anything else series-like (an object with
+        # `.to_numpy()`) is wrangled through datawrangler as a single column
+        return (as_pandas_dataframe(data.to_frame())
+                if hasattr(data, 'to_frame')
+                else as_dataframe(np.asarray(data).reshape(-1, 1)))
+    if is_frame_dataset(data):
+        data = as_pandas_dataframe(data)
+    elif is_array_dataset(data) and np.ndim(data) == 1:
+        # a 1-D array is n observations of ONE feature, as `normalize`,
+        # `reduce` and the Manipulator classes already read it (the funnel
+        # would wrangle it into a single ROW: `hyp.manip(np.arange(12.))`
+        # z-scored a 1 x 12 table -- Codex round 12, after R12-1)
+        data = as_dataframe(np.asarray(data).reshape(-1, 1))
+    if (is_array_dataset(data) or is_frame_dataset(data)) \
+            and data.shape[0] == 0:
+        raise ValueError(no_observations)
     return data
 
 
@@ -118,6 +149,16 @@ def _funneled_manip(data, model="ZScore", return_model=False, normalize=None,
     """Funnel-decorated core of `manip` (see `manip`'s docstring); `manip`
     validates raw input first, then delegates here so datawrangler's funnel
     only ever sees inputs it handles sensibly."""
+    if isinstance(model, dict):
+        # a flat key such as {'model': 'Smooth', 'kernel_width': 25} used
+        # to be dropped silently, so the manipulator ran with its defaults
+        # (1.1 review) ...
+        check_spec_keys(model, 'manip')
+        if 'model' in model:
+            # ... and so were the outer **kwargs next to a dict spec
+            # (manip(x, model={'model': 'Smooth'}, kernel_width=25)): they
+            # join the spec's own parameters, winning on a conflict
+            model, kwargs = merge_spec_kwargs(model, kwargs), {}
     # cross-module stage kwargs (#138): manip is the FIRST stage in the
     # canonical order (manip -> normalize -> reduce -> align -> cluster), so a
     # manip call carrying any downstream stage kwarg assembles + runs a Pipeline
@@ -177,6 +218,9 @@ def manip(data, model="ZScore", return_model=False, normalize=None, reduce=None,
         Dataset(s) to manipulate. A pandas `Series` is treated as a
         single-column dataset; a tuple of datasets is treated exactly like
         a list. `None` raises a `TypeError`.
+        A 1-D array or flat numeric list/tuple is ONE column of observations,
+        consistently across this dispatcher, direct Manipulator classes,
+        fitted-model reuse and `Pipeline`.
 
     model : str, dict, class, instance, list, Pipeline, False, or None
         Which manipulator(s) to apply (default: `'ZScore'`). `False` or
@@ -188,7 +232,10 @@ def manip(data, model="ZScore", return_model=False, normalize=None, reduce=None,
         - A dict may be the canonical
           ``{'model': ..., 'args': [...], 'kwargs': {...}}`` or the LEGACY
           ``{'model': ..., 'params': {...}}`` form (accepted for backward
-          compatibility, but emits a `DeprecationWarning`).
+          compatibility, but emits a `DeprecationWarning`). Model
+          parameters always go under ``'kwargs'``: any other top-level
+          key -- e.g. ``{'model': 'Smooth', 'kernel_width': 25}`` --
+          raises `ValueError` naming it rather than being ignored.
         - A bare (uninstantiated) Manipulator subclass, or an
           already-constructed (unfitted) instance, is used directly.
         - A `list` chains its elements into a `hypertools.Pipeline`
@@ -225,8 +272,10 @@ def manip(data, model="ZScore", return_model=False, normalize=None, reduce=None,
 
     **kwargs
         Passed through to the manipulator's constructor when `model`
-        resolves to a class (ignored when `model` is a list, an already
-        -instantiated instance, or a fitted model/Pipeline being reused).
+        resolves to a class; next to a dict spec they join the spec's
+        `'kwargs'`, winning on a conflict (they used to be dropped
+        silently there). Ignored when `model` is a list, an already
+        -instantiated instance, or a fitted model/Pipeline being reused.
 
     Returns
     -------
@@ -240,8 +289,9 @@ def manip(data, model="ZScore", return_model=False, normalize=None, reduce=None,
     while `normalize` returns numpy arrays; `manip` propagates NaNs while
     `normalize` PPCA-imputes them at format time; `manip` z-scores with
     the sample std (``ddof=1``) while `normalize` uses the population std
-    (``ddof=0``); and a 1-D array is treated as a single ROW by `manip`'s
-    data funnel but as a single COLUMN by `normalize`.
+    (``ddof=0``). A 1-D array is n observations of ONE feature (a single
+    column) for both, as it is for a Series (Codex round 12: `manip`'s
+    data funnel used to read it as a single row).
 
     Examples
     --------
@@ -260,6 +310,7 @@ def manip(data, model="ZScore", return_model=False, normalize=None, reduce=None,
     >>> chained.shape
     (50, 2)
     """
+    original_data = data
     data = _validate_manip_input(data)
 
     # False is an explicit "skip this stage", for the model spec and every
@@ -278,7 +329,7 @@ def manip(data, model="ZScore", return_model=False, normalize=None, reduce=None,
         # nothing to do: hand the (validated) input back unchanged,
         # matching reduce(reduce=None)/cluster(cluster=None)/align(
         # model=None)
-        return (data, None) if return_model else data
+        return (original_data, None) if return_model else original_data
 
     import warnings
     with warnings.catch_warnings():
@@ -294,6 +345,10 @@ def manip(data, model="ZScore", return_model=False, normalize=None, reduce=None,
         warnings.filterwarnings(
             'ignore', message='The copy keyword is deprecated',
             category=DeprecationWarning)
+        # backend='pandas': datawrangler's funnel otherwise PRESERVES a
+        # polars input's backend, and the manipulators are written against
+        # pandas (hypertools' internal frame type)
         return _funneled_manip(data, model=model, return_model=return_model,
                                normalize=normalize, reduce=reduce, ndims=ndims,
-                               align=align, cluster=cluster, **kwargs)
+                               align=align, cluster=cluster, backend='pandas',
+                               **kwargs)

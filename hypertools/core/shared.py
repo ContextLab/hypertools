@@ -12,20 +12,38 @@ import warnings
 import numpy as np
 import pandas as pd
 
+from .._shared.helpers import (is_frame_dataset, is_series_like,
+                               as_pandas_dataframe)
+from .model import external_stacklevel
+
 #: sentinel distinguishing "no explicit default passed" in RobustDict.get
 _MISSING = object()
 
 
 def as_dataframe(data):
     """Coerce `data` to a pandas DataFrame (returned as-is if it already
-    is one).
+    is one; a DataFrame of another backend datawrangler recognises --
+    polars DataFrame/LazyFrame, modin, ... -- is converted via
+    ``dw.wrangle(..., backend='pandas')``; a Series (pandas, polars, or
+    anything series-like) becomes ONE column that keeps the Series' index
+    and name, exactly as ``pd.DataFrame(series)`` does; anything else goes
+    through ``pd.DataFrame(np.asarray(data))``, so a 1-D array is one
+    column).
 
-    Shared by `hypertools.predict.common` and `hypertools.impute.common`
-    (2026-07 audit, X7-code-org-rest-019: previously duplicated verbatim
-    in both modules).
+    Shared by `hypertools.predict.common`, `hypertools.impute.common` and
+    the manipulators' direct-class paths (2026-07 audit,
+    X7-code-org-rest-019: previously duplicated verbatim in both modules;
+    Codex round 12, R12-4: the manipulators used to call
+    ``pd.DataFrame(data)``, and routing a pandas Series through
+    ``np.asarray`` here dropped its irregular/dated index, so a
+    ``Pipeline([Smooth, Resample])`` resampled at the wrong positions).
     """
-    if isinstance(data, pd.DataFrame):
-        return data
+    if is_frame_dataset(data):
+        return as_pandas_dataframe(data)
+    if is_series_like(data):
+        if hasattr(data, 'to_frame'):       # pandas and polars Series
+            return as_pandas_dataframe(data.to_frame())
+        return pd.DataFrame(np.asarray(data).reshape(-1, 1))
     return pd.DataFrame(np.asarray(data))
 
 
@@ -149,7 +167,7 @@ def is_reused_pipeline(spec, stage_kwargs, spec_label):
                 f"{spec_label}= is an already-fitted Pipeline that encodes its "
                 f"own stages; ignoring redundant {', '.join(redundant)}= (the "
                 "fitted Pipeline is reused as-is via .transform).",
-                stacklevel=3)
+                stacklevel=external_stacklevel())
         return True
     return False
 
@@ -199,6 +217,106 @@ class RobustDict(dict):
         """Return a shallow copy that is still a RobustDict (dict.copy
         used to silently degrade to a plain dict, dropping the default)."""
         return RobustDict(self, __default_value__=self.default_value)
+
+
+#: The keys every dict model spec may carry at its top level: the canonical
+#: 'model'/'args'/'kwargs' and the legacy 'params'. A dispatcher may accept
+#: a documented shortcut on top of these (cluster's 'n_clusters').
+SPEC_KEYS = ('model', 'args', 'kwargs', 'params')
+
+
+def check_spec_keys(spec, stage, shortcuts=(), param=None):
+    """Raise `ValueError` if the dict model spec `spec` carries a top-level
+    key other than `SPEC_KEYS` and the dispatcher's documented `shortcuts`.
+
+    Model parameters belong under 'kwargs' -- the dict-spec convention
+    every hypertools dispatcher documents. A flat spec such as
+    ``{'model': 'PCA', 'whiten': True}`` used to lose ``whiten`` without a
+    word, so the model silently ran with its defaults (1.1 review; first
+    fixed for `hyp.cluster`, where ``{'model': 'KMeans', 'n_clusters': 4,
+    'random_state': 0}`` changed its clusters from call to call). The
+    message names the offending keys and spells out the corrected spec,
+    with those keys merged into 'kwargs'.
+
+    `hyp.predict` does not use this check: a predict spec carries flat
+    ``t``/``horizon``/``block`` keys by design.
+
+    A dict with no 'model' key is left to the dispatcher's own "must
+    include a 'model' key" error, which is the right diagnosis for a
+    misspelled 'model' (``{'mode': 'PCA'}``).
+
+    Parameters
+    ----------
+    spec : object
+        The spec to check; anything but a dict with a 'model' key passes
+        unchanged.
+    stage : str
+        What the spec configures, for the message (e.g. ``'reduce'``,
+        ``'Pipeline step'``).
+    shortcuts : tuple of str
+        Documented top-level keys the dispatcher accepts besides
+        `SPEC_KEYS` (e.g. ``('n_clusters',)`` for `hyp.cluster`).
+    param : str or None
+        The keyword the spec is passed as (e.g. ``'cluster'``), so the
+        suggestion reads ``cluster={...}``; None suggests the bare dict.
+    """
+    if not isinstance(spec, dict) or 'model' not in spec:
+        return
+    allowed = SPEC_KEYS + tuple(shortcuts)
+    extra = sorted((k for k in spec if k not in allowed), key=str)
+    if not extra:
+        return
+    model = spec.get('model')
+    model_repr = (repr(model) if isinstance(model, str)
+                  else getattr(model, '__name__', type(model).__name__))
+    # the spec's own parameters, from whichever key the resolver reads
+    # them from ('params' only counts when there is no 'args'/'kwargs')
+    own = (spec.get('kwargs') if ('args' in spec or 'kwargs' in spec)
+           else spec.get('params'))
+    try:
+        own = dict(own or {})
+    except (TypeError, ValueError):
+        own = {}
+    suggested_kwargs = {**own, **{k: spec[k] for k in extra}}
+    suggestion = f"{{'model': {model_repr}"
+    for key in shortcuts:
+        if key in spec:
+            suggestion += f", {key!r}: {spec[key]!r}"
+    if spec.get('args'):
+        suggestion += f", 'args': {list(spec['args'])!r}"
+    suggestion += f", 'kwargs': {suggested_kwargs!r}}}"
+    if shortcuts:
+        accepted = ("'model', 'args', 'kwargs' and the "
+                    + " and ".join(repr(k) for k in shortcuts)
+                    + (" shortcuts" if len(shortcuts) > 1 else " shortcut"))
+    else:
+        accepted = "'model', 'args' and 'kwargs'"
+    example = f"{param}={suggestion}" if param else suggestion
+    raise ValueError(
+        f"the {stage} spec has unrecognized top-level key(s) {extra!r}. "
+        f"Model parameters go under 'kwargs' (only {accepted} are accepted "
+        f"at the top level), e.g. {example}.")
+
+
+def merge_spec_kwargs(spec, kwargs):
+    """Return dict spec `spec` with a dispatcher's outer ``**kwargs`` merged
+    into its parameters (the outer keyword arguments win on a conflict,
+    as in `hyp.impute`/`hyp.predict`).
+
+    `hyp.manip(x, model={'model': 'Smooth'}, kernel_width=25)` used to drop
+    `kernel_width` without a word, because only a bare name/class received
+    the outer keyword arguments (1.1 review). The parameters are merged
+    into whichever key the spec already uses ('kwargs', or the legacy
+    'params', whose `DeprecationWarning` is kept); `spec` itself is never
+    mutated. Anything but a dict with a 'model' key, or empty `kwargs`,
+    comes back unchanged.
+    """
+    if not kwargs or not isinstance(spec, dict) or 'model' not in spec:
+        return spec
+    if 'args' in spec or 'kwargs' in spec or 'params' not in spec:
+        return {**spec, 'kwargs': {**dict(spec.get('kwargs') or {}),
+                                   **kwargs}}
+    return {**spec, 'params': {**dict(spec['params'] or {}), **kwargs}}
 
 
 def unpack_model(m, valid=None, parent_class=None):
@@ -252,10 +370,14 @@ def unpack_model(m, valid=None, parent_class=None):
 
     if isinstance(m, dict):
         if "model" in m and "params" in m and "args" not in m and "kwargs" not in m:
+            # external_stacklevel (1.1 release review): a fixed stacklevel=2
+            # named the dispatcher or Pipeline that called unpack_model, so
+            # Python's default filters hid this DeprecationWarning from
+            # every script
             warnings.warn(
                 "{'model': ..., 'params': {...}} is deprecated; use "
                 "{'model': ..., 'args': [...], 'kwargs': {...}} instead",
-                DeprecationWarning, stacklevel=2)
+                DeprecationWarning, stacklevel=external_stacklevel())
             m = {"model": m["model"], "args": [], "kwargs": dict(m["params"])}
 
         # canonical dict spec: a 'model' key with OPTIONAL 'args'/'kwargs'
@@ -274,7 +396,7 @@ def unpack_model(m, valid=None, parent_class=None):
                     f"ignoring the legacy 'params' key ({dropped!r}) because "
                     "'args'/'kwargs' are also present in the model spec; "
                     "merge those values into 'kwargs' instead",
-                    DeprecationWarning, stacklevel=2)
+                    DeprecationWarning, stacklevel=external_stacklevel())
             resolved["model"] = unpack_model(m["model"], valid=valid, parent_class=parent_class)
             resolved.setdefault("args", [])
             resolved.setdefault("kwargs", {})
@@ -335,6 +457,6 @@ def get(value, i):
             f"parameter list of length {n} has no entry for dataset index "
             f"{i}; using the whole list as this dataset's value. Pass a "
             "scalar to share one value across all datasets, or a list with "
-            "one entry per dataset.", stacklevel=2)
+            "one entry per dataset.", stacklevel=external_stacklevel())
         return value
     return value

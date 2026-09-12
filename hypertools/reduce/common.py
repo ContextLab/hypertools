@@ -104,8 +104,9 @@ def resolve_reducer(name):
             from . import autoencoders
         except ImportError as e:
             raise ImportError(
-                f'{name} requires torch, which is not installed; install '
-                'it with pip install "hypertools[torch]"'
+                f'{name} needs torch (the [torch] extra), which is not '
+                'installed and could not be installed on demand (see the '
+                'error above); install it with pip install "hypertools[torch]"'
             ) from e
         return getattr(autoencoders, name)
     return REDUCERS[name]

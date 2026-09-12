@@ -25,6 +25,7 @@ import numpy as np
 import pandas as pd
 
 from .common import Manipulator
+from ..core.shared import as_dataframe
 
 
 def fitter(data, **kwargs):
@@ -68,6 +69,13 @@ def _delay_embed_dataframe(data, tau, dims, drop_edges):
             'instead of dropping them.')
 
     lags = [(dims - 1 - i) * tau for i in range(dims)]
+    # GH #285 release review: 1 and '1' are distinct pandas labels but
+    # produce the same output name; a dict would silently drop a feature.
+    names = [f'{c}_lag{lag}' for c in data.columns for lag in lags]
+    if len(set(names)) != len(names):
+        raise ValueError(
+            'Delay requires column labels with unique string representations; '
+            'rename duplicate or colliding columns before embedding.')
     out_columns = {}
     for c in data.columns:
         values = np.asarray(data[c], dtype=float)
@@ -93,9 +101,12 @@ def _transform(data, **kwargs):
         return dw.stack([_transform(d, **kwargs) for d in dw.unstack(data)])
     if isinstance(data, list):
         return [_transform(d, **kwargs) for d in data]
-    if not isinstance(data, pd.DataFrame):
-        # e.g. a bare array passed between hypertools.Pipeline steps
-        data = pd.DataFrame(data)
+    # `hyp.manip` funnels its input to pandas frames, but a fitted
+    # manipulator's `.transform` and hypertools.Pipeline hand this a bare
+    # array (or a frame of another backend) directly: coerce through the
+    # shared datawrangler-based layer rather than re-checking pandas types
+    # here (datatype audit, 2026-09-08)
+    data = as_dataframe(data)
     return _delay_embed_dataframe(data, kwargs['tau'], kwargs['dims'], kwargs['drop_edges'])
 
 
@@ -169,7 +180,9 @@ class Delay(Manipulator):
     ------
     ValueError
         If `tau`/`dims` are not positive integers, or if `drop_edges=True`
-        and the data has too few rows to produce any output row.
+        and the data has too few rows to produce any output row. Also raised
+        when column labels have duplicate string representations (rename
+        these columns before embedding to avoid ambiguous output names).
 
     Examples
     --------

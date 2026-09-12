@@ -174,3 +174,47 @@ def test_format_data_categorical_dataframe_warning_free():
         warnings.simplefilter('error', DeprecationWarning)
         out = format_data(df)
     assert out[0].shape == (3, 3)
+
+
+# --- datatype audit (2026-09-08): classification defers to datawrangler ----
+
+def test_string_naming_an_existing_file_is_a_document_not_a_path():
+    # format_data classifies text with a plain str/bytes test on purpose:
+    # datawrangler's `dw.zoo.is_text` interprets a string as a file path or
+    # URL first (loading it, or raising 'Unknown datatype: md' on an existing
+    # file with an unknown extension), and a user's document that happens to
+    # name a file must still be embedded as the text it IS. Pinned so the
+    # dw-predicate refactor of the coercion layer can never route documents
+    # through the loader.
+    import os
+    root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    readme = os.path.join(root, 'readme.md')     # lowercase in this repo: macOS
+    # resolves 'README.md' too, the Linux CI runners do not (2026-09-08)
+    pyproject = os.path.join(root, 'pyproject.toml')
+    assert os.path.exists(readme) and os.path.exists(pyproject)
+    out = format_data(readme)
+    assert isinstance(out, list) and out[0].shape == (1, 50)
+    out = format_data([readme, pyproject])
+    assert out[0].shape == (2, 50)
+
+
+def test_series_like_and_nested_inputs_keep_their_1_0_form():
+    # the dw-predicate coercion layer must hand back exactly what the
+    # isinstance ladders did for the pandas/numpy inputs the 1.0 tests
+    # exercise: a Series (top-level or nested) is one 1-D column dataset
+    # with its values untouched, nested groups flatten, a masked array's
+    # masked cells become NaN
+    values = np.arange(6.)
+    s = pd.Series(values, index=list('abcdef'), name='s')
+    out = format_data(s)
+    assert out[0].shape == (6, 1) and np.array_equal(out[0][:, 0], values)
+    out = format_data([s, values])
+    assert len(out) == 2 and all(o.shape == (6, 1) for o in out)
+    arr = np.arange(12.).reshape(6, 2)
+    out = format_data([[arr, (arr * 2,)], s])
+    assert [o.shape for o in out] == [(6, 2), (6, 2), (6, 1)]
+    masked = np.ma.masked_array(arr, mask=arr == 4.)
+    import pytest
+    with pytest.warns(UserWarning, match='masked array with 1 masked'):
+        out = format_data(masked, ppca=False)
+    assert np.isnan(out[0][2, 0]) and np.isnan(out[0]).sum() == 1

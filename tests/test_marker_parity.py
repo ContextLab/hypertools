@@ -93,10 +93,14 @@ class TestMarkerSizeFormulaExact:
         _mode, _symbol, _dash, marker_char = _resolve_fmt('.', {})
         assert marker_char == '.'
 
-    def test_morph_default_markersize_is_1_5_not_6(self):
-        # matches matplotlib_backend's `morph_markersize = _mkw.get(
-        # "markersize") or 1.5` default -- NOT the general 6.0pt default.
-        assert MORPH_DEFAULT_MARKERSIZE_PT == pytest.approx(1.5)
+    def test_morph_default_markersize_is_4_not_6(self):
+        # the ONE default both backends read (`morph.
+        # MORPH_DEFAULT_MARKERSIZE_PT`) -- NOT the general 6.0pt default.
+        # (1.1 visual review L9: this used to pin 1.5pt, which drew
+        # sub-pixel dots on plotly -- 30 morph dots covered 24 px.)
+        from hypertools.plot import morph
+        assert MORPH_DEFAULT_MARKERSIZE_PT == pytest.approx(4.0)
+        assert MORPH_DEFAULT_MARKERSIZE_PT == morph.MORPH_DEFAULT_MARKERSIZE_PT
         assert MORPH_DEFAULT_MARKERSIZE_PT != DEFAULT_MARKERSIZE_PT
 
 

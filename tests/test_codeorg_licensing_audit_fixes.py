@@ -297,10 +297,14 @@ def test_all_names_resolve_and_cover_documented_api():
     documented = {'plot', 'analyze', 'reduce', 'align', 'normalize',
                   'describe', 'cluster', 'manip', 'predict', 'impute',
                   'load', 'save', 'apply_model', 'supported_models',
-                  'Pipeline', 'set_interactive_backend', 'HyperAnimation',
+                  'Pipeline', 'set_interactive_backend', 'set_autoinstall',
+                  'HyperAnimation',
                   'FrameContext',
                   'io', 'HypertoolsError', 'HypertoolsBackendError',
                   'HypertoolsIOError',
+                  # 1.1.0 (GH #285): offline=True's error, importable from
+                  # the top level like the other three exceptions
+                  'HypertoolsOfflineError', 'HypertoolsTrustError',
                   # 1.1.0 (GH #285): the hand-written helpers folded in
                   'text_windows', 'damage', 'stack', 'subplots'}
     assert set(hyp.__all__) == documented

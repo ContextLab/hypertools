@@ -246,12 +246,26 @@ def test_lsl_stream_receives_pushed_samples_by_name(outlet_stream):
 
 
 @requires_pylsl
-def test_lsl_stream_resolves_by_type(outlet_stream):
-    # resolve using type= (the outlet was created with stream_type='EEG'
-    # in _start_outlet) rather than name=
-    stream = hyp.io.lsl_stream(type='EEG', timeout=5.0)
-    sample = next(stream)
-    assert len(sample) == N_CHANNELS
+def test_lsl_stream_resolves_by_type():
+    """type= resolves a stream by its StreamInfo type, so this test's outlet
+    carries a type nothing else on the network advertises. Resolving
+    type='EEG' assumed this outlet was the only EEG stream in reach: on
+    2026-09-07 two other processes on the machine (a notebook kernel with
+    the LSL tutorial's synthetic outlet, and an audit script executing the
+    same notebook) advertised idle 'EEG' outlets, `lsl_stream` used the
+    first match, and the test failed on a source that never pushed. A lab
+    network has real EEG streams for the same reason."""
+    stream_type = f'HypertoolsTestType-{time.time_ns()}'
+    thread, stop = _start_outlet(
+        f'HypertoolsTestStream-bytype-{time.time_ns()}', stream_type=stream_type)
+    try:
+        with hyp.io.lsl_stream(type=stream_type, timeout=5.0) as stream:
+            sample = next(stream)
+        assert len(sample) == N_CHANNELS
+    finally:
+        stop.set()
+        thread.join(timeout=5.0)
+        assert not thread.is_alive()
 
 
 @requires_pylsl
@@ -935,10 +949,16 @@ def test_tutorial_close_under_load_leaves_no_liblsl_error(tmp_path):
     sets the flag BEFORE cancelling, and joins the receiver thread).
     Real outlet, real inlet, real subprocess stderr; no mocks."""
     _require_outlets()
+    # The budget is for a wedged child, not a slow one: the deliberate GIL
+    # load makes the three cycles take anywhere from 38 s to 153 s on the
+    # hosted ubuntu runners (measured over two CI runs, 2026-09-08), and the
+    # ubuntu 3.13 job hit the old 300 s ceiling on a run where the SAME
+    # commit's 3.10 job finished the test in 38 s. Under pytest's 1200 s
+    # per-test ceiling (pyproject), 900 s leaves the wedge detection intact.
     result = subprocess.run(
         [sys.executable, '-c', textwrap.dedent(_TUTORIAL_UNDER_LOAD_SCRIPT),
          str(tmp_path / 'lsl_streaming.mp4'), '3'],
-        capture_output=True, text=True, timeout=300,
+        capture_output=True, text=True, timeout=900,
     )
     assert result.returncode == 0, (
         f"stdout={result.stdout}\nstderr={result.stderr}")

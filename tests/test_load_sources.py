@@ -605,3 +605,62 @@ def test_builtin_example_data_exempt_from_trust_policy():
         warnings.simplefilter('error')
         data = hyp.load('spiral')
     assert isinstance(data, list)
+
+
+def test_transient_classifier_reads_a_dropped_tls_connection_as_transient():
+    """CI 2026-09-08 (run 34234303697, ubuntu 3.11): Dropbox closed the TLS
+    connection mid-read on the direct-download form and the `?dl=0` fallback
+    answered an HTML page; eleven other matrix cells loaded the same file.
+    `load_source`'s aggregate named `SSLError`, which the classifier read as
+    a defect, so `skip_on_transient_network` did not skip. The exact aggregate
+    text, and its certificate-failure counterpart which must still fail."""
+    from tests._netskip import is_transient_network
+    dropped = (
+        "could not load 'https://www.dropbox.com/s/x/bunny.pkl?dl=0'. Tried, in order:\n"
+        "  - built-in example dataset: not one of ['bunny', 'spiral']\n"
+        "  - Dropbox: SSLError: HTTPSConnectionPool(host='www.dropbox.com', port=443): "
+        "Max retries exceeded with url: /s/x/bunny.pkl?dl=1 (Caused by SSLError("
+        "SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation "
+        "of protocol (_ssl.c:1016)')))\n"
+        "  - URL (https://www.dropbox.com/s/x/bunny.pkl?dl=0): HypertoolsIOError: "
+        "https://www.dropbox.com/s/x/bunny.pkl?dl=0 returned an HTML page instead of "
+        "data (rate limit, permission page, or a link that needs a direct-download form)")
+    assert is_transient_network(dropped)
+    certificate = dropped.replace(
+        "SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation "
+        "of protocol (_ssl.c:1016)')",
+        "SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate "
+        "verify failed: unable to get local issuer certificate (_ssl.c:1016)')")
+    assert not is_transient_network(certificate)
+
+
+def test_a_live_certificate_failure_is_never_skipped_while_a_tls_drop_is(monkeypatch):
+    """Codex round 9: requests' `SSLError` inherits from `ConnectionError`, so
+    a LIVE certificate failure took the transient path by ancestry (the
+    equivalent text already failed classification). Both live shapes, as
+    requests raises them (the ssl error carried in args). The drop SKIPS only
+    when live sources are not required: the live-source-gate CI job sets
+    HYPERTOOLS_REQUIRE_LIVE_SOURCES=1, under which the guard re-raises by
+    design (it failed this test there on 2026-09-08), so both modes are
+    pinned explicitly."""
+    import ssl
+    import requests
+    from tests._netskip import is_transient_network, skip_on_transient_network
+    monkeypatch.delenv('HYPERTOOLS_REQUIRE_LIVE_SOURCES', raising=False)
+    drop = requests.exceptions.SSLError(ssl.SSLEOFError(
+        8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol'))
+    cert = requests.exceptions.SSLError(ssl.SSLCertVerificationError(
+        1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed'))
+    assert is_transient_network(drop)
+    assert not is_transient_network(cert)
+    with pytest.raises(pytest.skip.Exception):
+        with skip_on_transient_network('a dropped connection'):
+            raise drop
+    with pytest.raises(requests.exceptions.SSLError):
+        with skip_on_transient_network('a bad certificate'):
+            raise cert
+    # with live sources REQUIRED even the drop is re-raised, never skipped
+    monkeypatch.setenv('HYPERTOOLS_REQUIRE_LIVE_SOURCES', '1')
+    with pytest.raises(requests.exceptions.SSLError):
+        with skip_on_transient_network('a dropped connection, required'):
+            raise drop

@@ -7,7 +7,7 @@ Helper functions
 ##PACKAGES##
 import numpy as np
 import itertools
-import pandas as pd
+import datawrangler as dw
 from matplotlib.lines import Line2D
 
 # NOTE: seaborn and scipy.interpolate are imported lazily inside the functions
@@ -434,6 +434,18 @@ def has_line_component(format_str):
 ANTIALIAS_TARGET_VERTICES = 900
 
 
+#: Half-width of the frame square a static 2-D plot draws round its data,
+#: which `plot()` rescales into ``[-1, 1]``. The square used to sit AT
+#: +-1, so the extreme observations lay on the frame line and looked
+#: clipped (1.1 release review, feature-tour 9.12-9.14, 12.1-12.2: markers
+#: straddling the frame); the 12.5 % margin gives them the room the 3-D
+#: cube's perspective gives its corners. Both backends draw the same
+#: square and pin the axes to `UNIT_FRAME_LIMIT`, 10 % beyond it (the
+#: same limit-to-frame ratio as before).
+UNIT_FRAME_SCALE = 1.125
+UNIT_FRAME_LIMIT = 1.1 * UNIT_FRAME_SCALE
+
+
 def antialias_line(arr, target=ANTIALIAS_TARGET_VERTICES):
     """Upsample a trajectory so it DRAWS as a smooth curve ("antialiasing").
 
@@ -478,6 +490,20 @@ def antialias_line(arr, target=ANTIALIAS_TARGET_VERTICES):
     return out, step
 
 
+def row_index_x(n_rows, n_drawn):
+    """The ROW-index x of each of `n_drawn` vertices drawn for `n_rows` rows.
+
+    A 1-D plot puts the row index on x. When the drawn curve was densified
+    by `antialias_line` (uniformly, every original row kept), its vertices
+    span the same ``0..n_rows - 1`` as the rows themselves, so vertex ``k``
+    sits at ``k * (n_rows - 1) / (n_drawn - 1)``. With nothing densified
+    (``n_drawn == n_rows``) this is exactly ``np.arange(n_rows)``.
+    """
+    if n_drawn == n_rows or n_drawn < 2 or n_rows < 2:
+        return np.arange(n_drawn, dtype=float)
+    return np.linspace(0.0, n_rows - 1.0, n_drawn)
+
+
 def split_marker_line_fmt(format_str):
     """Split a matplotlib format string into its LINE and MARKER
     components (GH #141), so a combined style like 'o-' can be drawn as
@@ -513,6 +539,87 @@ def split_marker_line_fmt(format_str):
     return line_token, marker_char
 
 
+def _is_container_or_scalar(x):
+    """Python containers and scalars (incl. str/bytes): never a dataset
+    object, and never handed to the datawrangler predicates, which try to
+    interpret a string as a file path or URL (loading -- or fetching -- it)
+    and would walk every element of a list."""
+    return isinstance(x, (list, tuple, dict, set)) or np.isscalar(x)
+
+
+def is_text_item(x):
+    """True for ONE text document: a str or bytes.
+
+    ``dw.zoo.is_text`` is deliberately not used here: it interprets a string
+    as a path/URL first (stat-ing, loading, or fetching it) and raises on an
+    existing file with an unknown extension (pydata-wrangler 0.5.1:
+    ``is_text('README.md')`` -> ValueError), so it is not a pure predicate on
+    a user's documents.
+    """
+    return isinstance(x, (str, bytes))
+
+
+def is_number_item(x):
+    """True for ONE numeric scalar (python or numpy, bools included).
+
+    bools count as numbers (release-1.0 audit, F08-plot-inputs-013): a
+    python list of bools is the same data as np.array([True, ...]), which
+    has always been accepted (dtype kind 'b' -> 'arr_num'). np.bool_ is
+    listed explicitly because it is NOT an np.number subclass (and, under
+    numpy >= 2, not a python bool either).
+    """
+    return isinstance(x, (bool, int, float, np.number, np.bool_))
+
+
+def is_array_dataset(x):
+    """True for ONE array dataset: anything datawrangler classifies as an
+    array (``dw.zoo.is_array``: every non-string type from the numpy module
+    -- ndarray, matrix, memmap, ...) plus numpy masked arrays (whose types
+    live in ``numpy.ma``, which ``is_array`` does not admit). Scalars,
+    python lists and tuples are NOT array datasets even though
+    ``dw.zoo.is_array`` admits numbers and lists of numbers: those are the
+    callers' scalar / list-of-numbers cases.
+    """
+    if _is_container_or_scalar(x):
+        return False
+    return np.ma.isMaskedArray(x) or dw.zoo.is_array(x)
+
+
+def is_frame_dataset(x):
+    """True for ONE DataFrame dataset as datawrangler sees it
+    (``dw.zoo.is_dataframe``): a pandas DataFrame, a polars DataFrame or
+    LazyFrame, a modin frame, or a dataframe-like duck type
+    (``dw.zoo.dataframe_like``). Strings are excluded up front: datawrangler
+    would otherwise try to load them as file paths / URLs."""
+    if _is_container_or_scalar(x):
+        return False
+    return dw.zoo.is_dataframe(x)
+
+
+def is_series_like(x):
+    """True for ONE labelled 1-D vector that is neither an array nor a
+    DataFrame dataset: a pandas Series (``dw.zoo.array_like`` admits it,
+    ``dw.zoo.is_array`` does not), a polars Series, or any other object
+    exposing ``to_numpy()``. hypertools treats these as a single 1-D
+    dataset (n observations of one feature)."""
+    if _is_container_or_scalar(x) or is_array_dataset(x) or is_frame_dataset(x):
+        return False
+    return dw.zoo.array_like(x) or hasattr(x, 'to_numpy')
+
+
+def as_pandas_dataframe(x):
+    """A DataFrame dataset (`is_frame_dataset`) as a pandas DataFrame,
+    hypertools' internal frame type. A pandas frame (or anything with the
+    pandas DataFrame API, per ``dw.zoo.dataframe_like``) is returned AS IS
+    -- index, columns and dtypes untouched, no copy; every other backend
+    (polars DataFrame/LazyFrame, modin, ...) is converted by
+    ``dw.wrangle(..., backend='pandas')``, which also turns polars nulls
+    into NaN."""
+    if dw.zoo.dataframe_like(x):
+        return x
+    return dw.wrangle(x, backend='pandas')
+
+
 def get_type(data):
     """
     Checks what the data type is and returns it as a string label
@@ -522,16 +629,11 @@ def get_type(data):
     if isinstance(data, list):
         if len(data) == 0:
             return 'list_num'  # empty list -> empty numeric dataset
-        if isinstance(data[0], (str, bytes)):
+        if is_text_item(data[0]):
             return 'list_str'
-        # bools count as numbers (release-1.0 audit, F08-plot-inputs-013):
-        # a python list of bools is the same data as np.array([True, ...]),
-        # which has always been accepted (dtype kind 'b' -> 'arr_num').
-        # np.bool_ is listed explicitly because it is NOT an np.number
-        # subclass (and, under numpy >= 2, not a python bool either).
-        elif isinstance(data[0], (bool, int, float, np.number, np.bool_)):
+        elif is_number_item(data[0]):
             return 'list_num'
-        elif isinstance(data[0], np.ndarray):
+        elif is_array_dataset(data[0]):
             return 'list_arr'
         else:
             # name the offending element type (release-1.0 audit,
@@ -545,7 +647,7 @@ def get_type(data):
                 "per-dataset types: numpy array, pandas DataFrame, pandas "
                 "Series, str, list of strings, list of numbers, or a "
                 "(possibly nested) list/tuple of arrays/DataFrames.")
-    elif isinstance(data, np.ndarray):
+    elif is_array_dataset(data):
         # classify by dtype rather than indexing data[0][0] -- the latter
         # crashed on 1-D arrays (data[0] is a scalar, so data[0][0] raised
         # "invalid index to scalar variable") and on empty arrays (QC 2026-07).
@@ -554,12 +656,12 @@ def get_type(data):
         if data.dtype.kind in ('U', 'S'):
             return 'arr_str'
         if (data.dtype.kind == 'O' and data.size
-                and isinstance(data.reshape(-1)[0], (str, bytes))):
+                and is_text_item(data.reshape(-1)[0])):
             return 'arr_str'
         return 'arr_num'
-    elif isinstance(data, pd.DataFrame):
+    elif is_frame_dataset(data):
         return 'df'
-    elif isinstance(data, (str, bytes)):
+    elif is_text_item(data):
         return 'str'
     elif isinstance(data, DataGeometry):
         return 'geo'
@@ -604,11 +706,11 @@ def get_dtype(data):
 
     if isinstance(data, list):
         return 'list'
-    elif isinstance(data, np.ndarray):
+    elif is_array_dataset(data):
         return 'arr'
-    elif isinstance(data, pd.DataFrame):
+    elif is_frame_dataset(data):
         return 'df'
-    elif isinstance(data, (str, bytes)):
+    elif is_text_item(data):
         return 'str'
     elif isinstance(data, DataGeometry):
         return 'geo'

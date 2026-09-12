@@ -107,14 +107,16 @@ def test_predict_forecast_drawn_smoothed_not_straight_segments():
     assert np.asarray(bundle['predict']['forecasts'][0]).shape[0] == t
 
 
-def test_predict_legend_unchanged_no_duplicate_entries():
+def test_predict_adds_one_forecast_entry_and_no_duplicates():
     a = _walk(3)
     b = _walk(4, offset=5.0)
     fig = hyp.plot([a, b], predict='Kalman', t=10, legend=['first', 'second'],
                   show=False)
     labels = _legend_labels(fig)
     plt.close(fig)
-    assert labels == ['first', 'second']  # exactly one entry per dataset
+    # exactly one entry per dataset, plus ONE for the forecast under its
+    # model's name (not one per dataset's forecast)
+    assert labels == ['first', 'second', 'Kalman']
 
 
 def test_predict_return_model_bundle():

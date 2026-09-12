@@ -291,28 +291,44 @@ class TestMorphPositionsAndColor:
             pts = morph.morph_positions(self.sampled, 2, step, 10)
             np.testing.assert_array_equal(pts, self.sampled[1])
 
-    def test_morph_segment_endpoints_exact(self):
-        pts0 = morph.morph_positions(self.sampled, 1, 0, 10)
-        np.testing.assert_allclose(pts0, self.sampled[0])
-        pts1 = morph.morph_positions(self.sampled, 1, 9, 10)
-        np.testing.assert_allclose(pts1, self.sampled[1])
+    def test_morph_segment_never_repeats_an_endpoint(self):
+        # 1.1 visual review L9: this test used to require the FIRST and LAST
+        # transition frames to reproduce the two clouds exactly -- which
+        # is what made a 2-frame transition two copies of the hold clouds
+        # (no motion at all). The holds draw the clouds; every transition
+        # frame is strictly between them, symmetric about the midpoint.
+        for n_steps in (1, 2, 10):
+            firsts = [morph.morph_positions(self.sampled, 1, s, n_steps)
+                      for s in range(n_steps)]
+            for pts in firsts:
+                assert np.all(pts > self.sampled[0])
+                assert np.all(pts < self.sampled[1])
+            np.testing.assert_allclose(
+                firsts[0] - self.sampled[0], self.sampled[1] - firsts[-1])
 
-    def test_morph_segment_midpoint_matches_smoothstep_formula(self):
+    def test_morph_segment_matches_the_interior_smoothstep_formula(self):
         step, n_steps = 3, 10
-        t = morph.smoothstep(step / (n_steps - 1))
+        t = morph.smoothstep((step + 1) / (n_steps + 1))
         expected = (1 - t) * self.sampled[0] + t * self.sampled[1]
         pts = morph.morph_positions(self.sampled, 1, step, n_steps)
         np.testing.assert_allclose(pts, expected)
+        assert morph.transition_t(step, n_steps) == pytest.approx(float(t))
 
     def test_color_hold_is_solid_dataset_color(self):
         c = morph.morph_color(self.colors, 2, 5, 10)
         assert c == self.colors[1]
 
-    def test_color_morph_endpoints(self):
-        c0 = morph.morph_color(self.colors, 1, 0, 10)
-        c1 = morph.morph_color(self.colors, 1, 9, 10)
-        np.testing.assert_allclose(c0, self.colors[0])
-        np.testing.assert_allclose(c1, self.colors[1])
+    def test_color_morph_stays_between_the_dataset_colors(self):
+        # L9: the colour follows the positions' interior easing -- it used
+        # to equal the two dataset colours exactly on the first/last frame
+        c0 = np.array(morph.morph_color(self.colors, 1, 0, 10))
+        c1 = np.array(morph.morph_color(self.colors, 1, 9, 10))
+        t0 = float(morph.smoothstep(1 / 11))
+        np.testing.assert_allclose(
+            c0, (1 - t0) * np.array(self.colors[0])
+            + t0 * np.array(self.colors[1]))
+        np.testing.assert_allclose(c0[:2], c1[:2][::-1])
+        assert 0.0 < c0[1] < c1[1] < 1.0
 
     def test_interpolate_color_linear(self):
         c = morph.interpolate_color((0.0, 0.0, 0.0), (1.0, 1.0, 1.0), 0.25)

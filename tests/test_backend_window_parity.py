@@ -314,7 +314,14 @@ def test_window_spans_the_requested_seconds_on_both_backends(frame_rate,
     fig = hyp.plot(data, backend='plotly', **kw)
     n_frames = len(fig.frames)
     mid = n_frames // 2
-    expected = int(frame_rate * seconds) + 1
+    # the rows the head passes in `seconds`: frame_rate * seconds frames at
+    # (n - 1) / (n_frames - 1) rows per frame. (1.1 visual review L8: this
+    # was `frame_rate * seconds` rows because every line used to be
+    # resampled onto one row per frame -- these 200-row walks drew through
+    # 40-120 of their points.)
+    n_rows = data[0].shape[0]
+    expected = int(round(int(frame_rate * seconds) * (n_rows - 1)
+                         / (n_frames - 1))) + 1
     assert len(fig.frames[mid].data[0].x) == expected
     ani = hyp.plot(data, return_model=True, **kw)['animation']
     ani._func(mid, *ani._args)

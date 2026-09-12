@@ -5,6 +5,7 @@ import warnings
 
 import numpy as np
 import pandas as pd
+from tests._plotly_colors import rgba as effective_rgba
 import pytest
 
 import hypertools as hyp
@@ -65,10 +66,8 @@ def test_per_dataset_alpha_reaches_plotly_traces():
         fig = hyp.plot(_datasets(), '-', alpha=[0.1, 0.5, 1.0], show=False)
     finally:
         hyp.set_interactive_backend('matplotlib')
-    alphas = [float(t.line.color.rsplit(',', 1)[1].rstrip(') '))
-              for t in fig.data
-              if t.line is not None and t.line.color is not None
-              and t.line.color.startswith('rgba')]
+    alphas = [effective_rgba(t)[-1] for t in fig.data
+              if isinstance(t.meta,dict) and 'hyp_trace_index' in t.meta]
     assert alphas[:3] == pytest.approx([0.1, 0.5, 1.0])
 
 

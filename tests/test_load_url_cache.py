@@ -40,6 +40,22 @@ CSV_URL = ('https://raw.githubusercontent.com/ContextLab/hypertools/'
 UNREACHABLE_URL = 'https://hypertools-offline-test.invalid/data.csv'
 
 
+def test_concurrent_cache_writes_are_atomic(tmp_path):
+    # GH #285 release review: real concurrent writes, no mocked I/O.
+    from concurrent.futures import ThreadPoolExecutor
+    from hypertools.io.sources import _read_cached
+    path = tmp_path / 'data.csv'
+    payload = b'x,y\n1,2\n' * 1000
+
+    def write(_):
+        _write_cached(path, payload, 'data.csv')
+
+    with ThreadPoolExecutor(max_workers=12) as pool:
+        list(pool.map(write, range(100)))
+    assert _read_cached(path) == (payload, 'data.csv')
+    assert not list(tmp_path.glob('*.part'))
+
+
 @pytest.fixture
 def cache_dir(tmp_path, monkeypatch):
     """Point the URL cache at a temp directory (so tests never write to

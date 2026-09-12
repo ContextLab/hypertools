@@ -11,6 +11,7 @@ import functools
 import itertools
 import warnings
 
+import matplotlib.artist
 import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import proj3d
@@ -28,6 +29,8 @@ except ImportError:  # pragma: no cover
 from .animate import HyperFuncAnimation
 import matplotlib.patches as patches
 from .._shared.helpers import *
+from .._shared.helpers import UNIT_FRAME_LIMIT, UNIT_FRAME_SCALE
+from .._shared.helpers import row_index_x
 from ..core.model import external_stacklevel
 from .meshutil import (backface_cull, blinn_phong_colors,
                        vertex_colors_from_points, face_colors_from_vertex_colors)
@@ -57,14 +60,41 @@ from .density import (
 )
 
 
-def _apply_title(ax, text, font=None, title_kwargs=None):
+def _label_callout_kwargs(label_alpha, arrowstyle='-', facecolor='white'):
+    """`ax.annotate` box and connector styling for an observation label,
+    in the colours plotly's annotations use (`plotly_backend`: connector
+    rgba(0,0,0,0.6), box edge rgba(0,0,0,0.4), a white box at
+    `label_alpha`). Both colours are EXPLICIT: seaborn's whitegrid style
+    sets ``patch.edgecolor='w'``, so the defaults drew a white connector
+    and a white box edge -- an invisible link that cut white notches
+    through the markers (1.1 release review, figure QA). `label_alpha` stays
+    the box patch's own ``alpha`` (the documented `label_alpha=` contract),
+    which matplotlib applies to its edge too: a dark edge at that opacity
+    (0.5 by default, beside plotly's 0.4)."""
+    return dict(
+        bbox=dict(boxstyle="round,pad=0.5", fc=facecolor, ec='black',
+                  lw=0.8, alpha=label_alpha),
+        arrowprops=dict(arrowstyle=arrowstyle, connectionstyle="arc3,rad=0",
+                        color=(0, 0, 0, 0.6), lw=0.8),
+    )
+
+
+def _apply_title(ax, text, font=None, title_kwargs=None, family=None):
     """Set `ax`'s title, honoring the resolved `font=` and `title_kwargs=`
     (GH #285).
 
-    With `title_kwargs=None` this makes EXACTLY the call hypertools has
-    always made (`ax.set_title(text)`, or `ax.set_title(text,
+    With `title_kwargs=None` and `family=None` this makes EXACTLY the call
+    hypertools has always made (`ax.set_title(text)`, or `ax.set_title(text,
     fontproperties=font)` when a `font=` was resolved), so an un-styled
     title's Text artist is byte-identical to before.
+
+    `family` (a font-family list: hypertools' fallback stack) is given
+    EXPLICITLY when no `font=` is: an axes created outside hypertools'
+    ``rc_context`` -- a caller's ``ax=``, every `panels=` cell -- holds a
+    title Text whose family is the bare ``'sans-serif'`` alias, resolved at
+    DRAW time against the caller's rcParams, so those titles rendered in
+    DejaVu Sans while a figure of hypertools' own used Noto Sans (1.1
+    release review, figure QA). A family named in `title_kwargs` wins.
 
     `fontproperties` is inserted BEFORE the individual font properties,
     because `set_title` applies its kwargs in dict order and a
@@ -79,14 +109,21 @@ def _apply_title(ax, text, font=None, title_kwargs=None):
     between them is exactly the bug GH #285 reports (a resolved `font=`
     reached the static title and never a per-segment one).
     """
+    _family_keys = ('fontproperties', 'font_properties', 'family',
+                    'fontfamily', 'fontname', 'name', 'font')
     if title_kwargs:
         kwargs = {}
         if font is not None and 'fontproperties' not in title_kwargs:
             kwargs['fontproperties'] = font
+        elif family is not None and not any(k in title_kwargs
+                                            for k in _family_keys):
+            kwargs['fontfamily'] = family
         kwargs.update(title_kwargs)
         return ax.set_title(text, **kwargs)
     if font is not None:
         return ax.set_title(text, fontproperties=font)
+    if family is not None:
+        return ax.set_title(text, fontfamily=family)
     return ax.set_title(text)
 
 
@@ -177,7 +214,8 @@ def _grow_for_companion(fig, spec):
     return [1.0 - size + pad, 0.15, width, 0.75]
 
 
-def add_companion_panel(fig, spec, cmap=None, norm=None, font=None):
+def add_companion_panel(fig, spec, cmap=None, norm=None, font=None,
+                        default_color=None):
     """Draw one `companion=` panel and return the state its per-frame
     updater needs (GH #285).
 
@@ -185,13 +223,19 @@ def add_companion_panel(fig, spec, cmap=None, norm=None, font=None):
     (or, with ``hue=``, a `LineCollection` coloured through the plot's own
     colour scale) up to the reveal head, an optional trailing rolling mean,
     and an optional marker on the head itself.
+
+    The line and head marker are drawn in ``spec['color']``, else in
+    `default_color` -- `plot()` passes the colour of the trajectory the
+    panel accompanies -- else in matplotlib's ``'C0'`` (only a direct
+    caller that passes neither reaches that last fallback; 1.1 visual
+    review L12).
     """
     from matplotlib.collections import LineCollection
 
     rect = _grow_for_companion(fig, spec)
     pax = fig.add_axes(rect)
     x, y = _companion_xy(spec['data'])
-    color = spec['color'] or 'C0'
+    color = spec['color'] or default_color or 'C0'
 
     pax.plot(x, y, color=COMPANION_GHOST_COLOR, linewidth=0.6)
     points = np.column_stack([x, y])
@@ -253,18 +297,57 @@ def update_companion_panel(panel, i):
     state on screen.
     """
     i = int(min(max(i, 0), panel['n_rows'] - 1))
-    if not panel['reveal']:
-        i = panel['n_rows'] - 1
-    panel['revealed'].set_segments(panel['segments'][:i])
+    # Notebook review 2026-09: full-curve visibility must not freeze the
+    # current-time marker. Keep the curve extent separate from the clock.
+    end = i if panel['reveal'] else panel['n_rows'] - 1
+    panel['revealed'].set_segments(panel['segments'][:end])
     if panel['hue'] is not None:
-        panel['revealed'].set_array(panel['hue'][1:i + 1])
+        panel['revealed'].set_array(panel['hue'][1:end + 1])
     if panel['trend'] is not None:
-        panel['trend'].set_data(panel['x'][:i + 1], panel['rolling'][:i + 1])
+        panel['trend'].set_data(panel['x'][:end + 1], panel['rolling'][:end + 1])
     if panel['head'] is not None:
         panel['head'].set_data([panel['x'][i]], [panel['y'][i]])
         if panel['head_colors'] is not None:
             panel['head'].set_markerfacecolor(panel['head_colors'][i])
     return panel
+
+
+class _AxisLabelExtent(matplotlib.artist.Artist):
+    """A draw-nothing figure artist whose window extent is the union of an
+    `Axes3D`'s axis-label extents, so `Figure.get_tightbbox` (and with it
+    ``savefig(bbox_inches='tight')``) includes the labels that
+    `Axes3D.get_tightbbox` leaves out. See the 3-D label branch of `_draw`.
+    """
+
+    def __init__(self, ax):
+        super().__init__()
+        self.axes_ref = ax
+        self.set_in_layout(True)
+        self.set_clip_on(False)
+
+    def draw(self, renderer):
+        """Draw nothing: the artist exists only for its extent."""
+        return None
+
+    def get_window_extent(self, renderer=None):
+        """The union of the axes' visible, non-empty axis-label extents
+        (display pixels), or a null box when there is none."""
+        from matplotlib.transforms import Bbox
+        ax = self.axes_ref
+        if renderer is None:
+            try:
+                renderer = ax.figure.canvas.get_renderer()
+            except AttributeError:
+                return Bbox.null()
+        boxes = []
+        for axis in getattr(ax, '_axis_map', {}).values():
+            label = axis.label
+            if not (label.get_visible() and label.get_text()):
+                continue
+            box = label.get_window_extent(renderer)
+            if box.width > 0 and box.height > 0:
+                boxes.append(box)
+        return Bbox.union(boxes) if boxes else Bbox.null()
 
 
 def _legend_proxy_handles(entries, fmt=None):
@@ -314,7 +397,22 @@ def legend_call_kwargs(is_3d=False, zlabel=None, font=None,
     # loc=/bbox_to_anchor=/frameon=/fontsize= wins over the defaults
     # above -- which is the whole point of the kwarg.
     if legend_kwargs:
+        if 'loc' in legend_kwargs and 'bbox_to_anchor' not in legend_kwargs:
+            # a caller's `loc=` names a place ON the axes ('upper left');
+            # keeping hypertools' outside-right anchor would hang the
+            # legend off the right edge with its upper-left corner at the
+            # anchor (1.1 release review, feature-tour 9.6)
+            call.pop('bbox_to_anchor', None)
+            call.pop('borderaxespad', None)
         call.update(legend_kwargs)
+        # matplotlib ignores `fontsize=` whenever `prop=` is given, so with
+        # a `font=` the user's size silently lost; fold it into the
+        # FontProperties instead so legend_kwargs still wins.
+        if font is not None and 'fontsize' in call and 'prop' in call \
+                and call['prop'] is font:
+            prop = font.copy()
+            prop.set_size(call.pop('fontsize'))
+            call['prop'] = prop
     return call
 
 
@@ -367,14 +465,17 @@ def _draw_one_density_2d(ax, pts, spec, color, label="", clip_unit=True):
     # D05-gallery-data-text-009). The 2-D paths always rescale data into
     # the [-1, 1] box and draw the frame via plot_square(scale=1), so the
     # frame rectangle is fixed in data coordinates.
-    im.set_clip_path(patches.Rectangle((-1.0, -1.0), 2.0, 2.0,
-                                       transform=ax.transData))
+    im.set_clip_path(patches.Rectangle(
+        (-UNIT_FRAME_SCALE, -UNIT_FRAME_SCALE), 2 * UNIT_FRAME_SCALE,
+        2 * UNIT_FRAME_SCALE, transform=ax.transData))
 
 
 def _draw_density_2d(ax, points_list, density, density_colors,
                      clip_unit=True):
     """Draw each dataset's (or, with ``per_group=False``, one pooled) 2-D
-    KDE density layer (GH #108/#191)."""
+    KDE density layer (GH #108/#191); each grid reaches `KDE_GRID_BANDWIDTHS`
+    kernel widths past its own cloud, so the glow fades out inside it
+    (see `kde_grid_2d`)."""
     if density[0] is not None and not density[0].get("per_group", True):
         all_pts = np.vstack([np.asarray(p)[:, :2] for p in points_list])
         _draw_one_density_2d(ax, all_pts, density[0], POOLED_COLOR,
@@ -766,9 +867,19 @@ def _draw(
     xlim=None,
     ylim=None,
     x_date=False,
+    legend_order=None,
 ):
     """
     Draws the plot
+
+    `legend_order` (1.1 release review): the legend labels in the order
+    their entries should be listed, or None for drawn-artist order. The
+    categorical LINE path draws one artist per contiguous run, so its
+    legend followed the order the categories first APPEAR along the data
+    (clusters ``0, 2, 1``) while the marker path lists them sorted; the
+    entries it names are sorted into this order among their own
+    positions, every other entry (an earlier call's, a forecast's) staying
+    where it was.
 
     `raw_data` (GH #141): the PRE-interpolation per-dataset points, same
     length as `x`/`fmt`. Used only by the STATIC (non-animated) plot1D/2D/
@@ -776,14 +887,16 @@ def _draw(
     (e.g. 'o-') is drawn as two artists -- a smoothed line from `x` (the
     already-interpolated data) plus markers at the raw sample points from
     `raw_data` -- so markers land on the true data regardless of how dense
-    the smoothed line is. Ignored (may be None) for pure line/marker-only
-    styles and for every ANIMATED style, which still draw marker+line
-    combos as a single artist against the (now also smoothed, since the
-    interpolation gate itself was fixed for GH #141) `x` data -- so an
-    animated 'o-' plot's line is correctly smoothed, but its markers
-    currently render at the interpolated points rather than only the
-    original samples; splitting the animated marker/line artists frame-by-
-    frame was judged out of scope for this fix.
+    the smoothed line is. A LINE fmt given its marker by ``marker=``/
+    ``markers=`` stays one artist, whose ``markevery`` picks out the raw
+    samples among the smoothed vertices. Ignored (may be None) for pure
+    line/marker-only styles. An
+    ANIMATED marker+line style keeps ONE artist per dataset (so its legend
+    handle shows marker and line), drawn against the smoothed frame-grid
+    `x` data; `raw_data` then locates each observation's nearest drawn
+    vertex, and each frame's ``markevery`` marks only those
+    (`_mark_observations`) -- before the 1.1 release review every
+    interpolated vertex carried a marker.
 
     `ownership` (a `hypertools.plot.ownership.TraceOwnership`, or None): which
     source dataset each drawn trace came from and which of its rows. When
@@ -797,7 +910,7 @@ def _draw(
     groups globally by category), and those keep `anim_window_bounds` directly.
 
     `axis_scale` (GH #285): ``'unit'`` (the historical behaviour) draws the
-    hypertools frame square and pins the 2-D axes to ``(-1.1, 1.1)`` --
+    hypertools frame square (half-width `UNIT_FRAME_SCALE`) and pins the 2-D axes to ``+-UNIT_FRAME_LIMIT`` --
     `plot()` has already mean-centred and rescaled the data into ``[-1, 1]``
     for it. ``'data'`` draws NO frame square, leaves matplotlib's own ticks
     and spines visible, and takes its limits from `xlim`/`ylim` (which
@@ -884,10 +997,64 @@ def _draw(
             artist._hyp_row_window = (a, b)
         dense, step = _aa_curves[i]
         if step == 1:
-            return dense[a:b]
-        if b <= a:
-            return dense[0:0]
-        return dense[a * step:(b - 1) * step + 1]
+            lo, out = a, dense[a:b]
+        elif b <= a:
+            lo, out = a * step, dense[0:0]
+        else:
+            lo, out = a * step, dense[a * step:(b - 1) * step + 1]
+        if artist is not None:
+            _mark_observations(i, artist, lo, len(out))
+        return out
+
+    # markers at the TRUE observations in an animation (the shared marker
+    # contract; 1.1 release review): an animated line is resampled onto
+    # the frame grid (`plot._interp_anim_line`) and densified again above,
+    # so its vertices are not the observations, and a marker+line style
+    # ('o-', or a line fmt with marker=/markers=) marked every one of them
+    # -- a tube of ~500 markers for 48 samples. Mark, on the SAME artist
+    # (its legend handle keeps the marker), only the drawn vertex nearest
+    # each observation: found by position, in a window around the
+    # observation's proportional place along the curve, so it holds for
+    # whatever observation -> grid mapping the resampling produces.
+    _obs_vertices_cache = {}
+
+    def _observation_vertices(i):
+        if i in _obs_vertices_cache:
+            return _obs_vertices_cache[i]
+        found = None
+        if (animate and raw_data is not None and i < len(raw_data)
+                and raw_data[i] is not None):
+            raw = np.asarray(raw_data[i], dtype=float)
+            dense = np.asarray(_aa_curves[i][0], dtype=float)
+            n, d = raw.shape[0], dense.shape[0]
+            if (raw.ndim == 2 and dense.ndim == 2 and n and d
+                    and raw.shape[1] == dense.shape[1]):
+                if n == 1 or d == 1:
+                    found = np.array([0])
+                else:
+                    est = np.rint(np.arange(n) * (d - 1) / (n - 1)).astype(int)
+                    w = int(np.ceil((d - 1) / (n - 1)))
+                    idx = []
+                    for k in range(n):
+                        lo, hi = max(0, est[k] - w), min(d, est[k] + w + 1)
+                        gap = np.linalg.norm(dense[lo:hi] - raw[k], axis=1)
+                        idx.append(lo + int(np.argmin(gap)))
+                    found = np.unique(idx)
+        _obs_vertices_cache[i] = found
+        return found
+
+    def _mark_observations(i, artist, lo, count):
+        marker = artist.get_marker() if hasattr(artist, 'get_marker') else None
+        if marker in (None, 'None', 'none', '', ' '):
+            return
+        if not has_line_component(_fmt_at(i)) and artist.get_linestyle() in (
+                'None', 'none', '', ' '):
+            return                  # markers only: its vertices ARE the rows
+        verts = _observation_vertices(i)
+        if verts is None:
+            return
+        local = verts[(verts >= lo) & (verts < lo + count)] - lo
+        artist.set_markevery([int(v) for v in local])
 
     # handle static plots
     def dispatch_static(x, ax=None):
@@ -942,11 +1109,48 @@ def _draw(
             fmt_ls, fmt_marker = split_marker_line_fmt(f)
             fmt_color = None
         line_token, marker_char = split_marker_line_fmt(f)
+        # an explicit marker= (or its markers= alias) wins over the fmt's
+        # marker, as the comment above promises and as plotly draws it:
+        # the split below used to discard it, so fmt='-o' with
+        # marker=['o', 's'] drew two circle datasets (1.1 release review).
+        _fmt_has_marker = marker_char is not None
+        _explicit_marker = ikwargs.get('marker')
+        if _explicit_marker is not None:
+            marker_char = (None if isinstance(_explicit_marker, str)
+                           and _explicit_marker.strip().lower() in ('', 'none')
+                           else _explicit_marker)
+        if (line_token is not None and marker_char is not None
+                and not _fmt_has_marker):
+            # a LINE fmt given its marker by marker=/markers= ('-' with
+            # markers='o'): one artist, as before, but marked only at the
+            # TRUE samples -- every one an exact vertex of the smoothed line
+            # (`antialias_line`: ``dense[::step]`` IS the data) -- rather
+            # than at all ~20x-denser interpolated vertices, which
+            # contradicted `antialias=`'s promise (1.1 release review)
+            n_dense, n_raw = len(coords[0]), len(raw_coords[0])
+            one_kwargs = dict(ikwargs)
+            one_kwargs.setdefault('linestyle', line_token)
+            if fmt_color is not None:
+                one_kwargs.setdefault('color', fmt_color)
+            if (raw_data is not None and 1 < n_raw < n_dense
+                    and (n_dense - 1) % (n_raw - 1) == 0):
+                one_kwargs.setdefault('markevery', list(range(
+                    0, n_dense, (n_dense - 1) // (n_raw - 1))))
+            ax.plot(*coords, **one_kwargs)
+            return
         if line_token is not None and marker_char is not None:
             line_kwargs = {k: v for k, v in ikwargs.items() if k != 'marker'}
             line_kwargs.setdefault('linestyle', line_token)
             if fmt_color is not None:
                 line_kwargs.setdefault('color', fmt_color)
+            # the line artist carries the legend label, so it also carries
+            # the MARKER -- with `markevery=[]` it draws none along the
+            # interpolated vertices (the markers-only artist below draws
+            # them at the raw sample points), but its legend handle shows
+            # marker + line, as 's--' promises. Before the 1.1 release
+            # review the handle showed only the dashes.
+            line_kwargs['marker'] = marker_char
+            line_kwargs['markevery'] = []
             line_artist = ax.plot(*coords, **line_kwargs)[0]
             marker_kwargs = {k: v for k, v in ikwargs.items() if k != 'marker'}
             marker_kwargs['label'] = '_nolegend_'
@@ -958,7 +1162,10 @@ def _draw(
             # 'o-' datasets rendered with identical color pairs.
             marker_kwargs.setdefault('color', line_artist.get_color())
             marker_coords = raw_coords if raw_data is not None else coords
-            ax.plot(*marker_coords, **marker_kwargs)
+            # tagged so run-indexed consumers (the forecast/truth overlays
+            # in plot.py) skip it: it is the SAME run's markers, not a run
+            ax.plot(*marker_coords, **marker_kwargs)[0] \
+                ._hyp_marker_companion = True
         elif _process_plot_format is not None:
             plot_kwargs = dict(ikwargs)
             if fmt_ls is not None:
@@ -977,7 +1184,16 @@ def _draw(
         n = len(data)
         for i in range(n):
             raw = raw_data[i] if raw_data is not None else data[i]
-            _plot_possibly_split(ax, (data[i][:, 0],), (raw[:, 0],), i)
+            # x is the ROW index: static antialiasing densified `data[i]`
+            # upstream (uniformly, every original row kept), so its vertices
+            # span the same 0..n_rows-1 as the raw rows. Plotting it with no
+            # x put it on the VERTEX index (0..936 for 40 rows) while the
+            # forecast/truth overlays continue in rows -- squashing a
+            # forecast 24x at the far end (1.1 release review)
+            _xs = row_index_x(raw.shape[0], data[i].shape[0])
+            _plot_possibly_split(
+                ax, (_xs, data[i][:, 0]),
+                (np.arange(raw.shape[0], dtype=float), raw[:, 0]), i)
         return fig, ax, data
 
     # plot data in 2D
@@ -1035,8 +1251,12 @@ def _draw(
 
         if lengths is not None:
             within = [j for L in lengths for j in range(int(L))]
+            # ...and which drawn trace each label belongs to, so an
+            # animation can test it against THAT trace's drawn window
+            run_of = [r for r, L in enumerate(lengths) for _ in range(int(L))]
         else:
             within = list(range(len(data)))
+            run_of = None
 
         if data[0].shape[-1] > 2:
             proj = ax.get_proj()
@@ -1077,12 +1297,13 @@ def _draw(
                         textcoords="offset points",
                         ha="right",
                         va="bottom",
-                        bbox=dict(boxstyle="round,pad=0.5", fc="white", alpha=label_alpha),
-                        arrowprops=dict(arrowstyle="-", connectionstyle="arc3,rad=0"),
+                        **_label_callout_kwargs(label_alpha),
                         **_label_font_kwargs,
                     )
                     label._hyp_point_idx = within[idx]
                     label._hyp_global_idx = idx
+                    label._hyp_run_idx = (run_of[idx] if run_of is not None
+                                          else None)
                     labels_and_points.append((label, x[0], x[1], x[2]))
                 elif data[0].shape[-1] == 2:
                     x2, y2 = x[0], x[1]
@@ -1093,13 +1314,14 @@ def _draw(
                         textcoords="offset points",
                         ha="right",
                         va="bottom",
-                        bbox=dict(boxstyle="round,pad=0.5", fc="white", alpha=label_alpha),
-                        arrowprops=dict(arrowstyle="-", connectionstyle="arc3,rad=0"),
+                        **_label_callout_kwargs(label_alpha),
                         **_label_font_kwargs,
                     )
                     label.draggable()
                     label._hyp_point_idx = within[idx]
                     label._hyp_global_idx = idx
+                    label._hyp_run_idx = (run_of[idx] if run_of is not None
+                                          else None)
                     labels_and_points.append((label, x[0], x[1]))
         fig.canvas.draw()
 
@@ -1142,16 +1364,21 @@ def _draw(
         fig.canvas.draw()
 
     def _sync_anim_labels(num, window_frames, all_visible=False, revealed=None,
-                          hide_all=False):
+                          hide_all=False, windows=None):
         """Per-animation-frame label bookkeeping (QC 2026-07): show each
         per-point label ONLY while its datapoint is currently drawn (previously
         every label was drawn on every frame), and reproject the visible ones
         for the (possibly rotated) camera. The visibility rule depends on the
         animation style:
 
-        * window / parallel: the datapoint is inside the head window
-          ``[num - window_frames, num]`` (matched on ``_hyp_point_idx``, the
-          within-dataset index, so multi-dataset plots window correctly);
+        * window / parallel: the datapoint is inside the head window its
+          trace was JUST drawn over -- ``windows[run]``, the ``(start,
+          end)`` row bounds the updater sliced the artist with (matched on
+          ``_hyp_point_idx``, the within-trace row, and ``_hyp_run_idx``).
+          A trace's rows are not frames (1.1 visual review L8: every line
+          keeps its observations on a grid of at least one row per frame),
+          so the historical ``[num - window_frames, num]`` rule, still the
+          fallback without `windows`, showed labels at the wrong time;
         * serial: the datapoint has been REVEALED, i.e. its global index
           (``_hyp_global_idx``) ``<= revealed`` (serial accumulates points, so
           there is no trailing edge);
@@ -1187,7 +1414,14 @@ def _draw(
                 visible = g is None or g <= revealed
             else:
                 j = getattr(label, "_hyp_point_idx", None)
-                visible = j is None or (lo <= j <= num)
+                r = getattr(label, "_hyp_run_idx", None)
+                if j is None:
+                    visible = True
+                elif windows is not None and r is not None \
+                        and r < len(windows):
+                    visible = windows[r][0] <= j < windows[r][1]
+                else:
+                    visible = lo <= j <= num
             label.set_visible(visible)
             if visible and is_3d:
                 x2, y2, _ = proj3d.proj_transform(entry[1], entry[2], entry[3],
@@ -1219,7 +1453,7 @@ def _draw(
         if explore:
             X = np.vstack(x)
             if labels is not None:
-                if any(isinstance(el, list) for el in labels):
+                if any(isinstance(el, (list, tuple)) for el in labels):
                     labels = list(itertools.chain(*labels))
                 fig.canvas.mpl_connect(
                     "motion_notify_event", lambda event: onMouseMotion(event, X, labels)
@@ -1232,7 +1466,10 @@ def _draw(
         elif labels is not None:
             X = np.vstack(x)
             lengths = [np.atleast_2d(np.asarray(d)).shape[0] for d in x]
-            if any(isinstance(el, list) for el in labels):
+            # a nested per-dataset labels= may be a tuple of tuples as well
+            # as a list of lists (the validator accepts both); flatten
+            # either, or the tuple is drawn as its literal repr.
+            if any(isinstance(el, (list, tuple)) for el in labels):
                 labels = list(itertools.chain(*labels))
             annotate_plot(X, labels, lengths=lengths)
             fig.canvas.mpl_connect("button_press_event", hide_labels)
@@ -1320,8 +1557,7 @@ def _draw(
             textcoords="offset points",
             ha="right",
             va="bottom",
-            bbox=dict(boxstyle="round,pad=0.5", fc="yellow", alpha=0.5),
-            arrowprops=dict(arrowstyle="->", connectionstyle="arc3,rad=0"),
+            **_label_callout_kwargs(0.5, arrowstyle="->", facecolor="yellow"),
             **_explore_font_kwargs,
         )
         fig.canvas.draw()
@@ -1443,9 +1679,9 @@ def _draw(
 
         ax.add_patch(
             patches.Rectangle(
-                scale * [-1, -1],
-                scale * 2,
-                scale * 2,
+                (-scale, -scale),
+                2 * scale,
+                2 * scale,
                 **square_kwargs
             )
         )
@@ -1454,7 +1690,7 @@ def _draw(
         """Draw the 2-D frame and set the 2-D axis limits for `axis_scale`.
 
         ``'unit'`` (the default, and everything drawn before GH #285) draws
-        hypertools' frame square and pins both axes to ``(-1.1, 1.1)``,
+        hypertools' frame square (half-width `UNIT_FRAME_SCALE`) and pins both axes to ``+-UNIT_FRAME_LIMIT``,
         because `plot()` has already rescaled the data into ``[-1, 1]``.
         ``'data'`` draws no square and applies `xlim`/`ylim` when `plot()`
         computed (or the caller passed) them, leaving matplotlib's autoscale
@@ -1462,9 +1698,9 @@ def _draw(
         `animate_plot2D`, so the two cannot drift apart.
         """
         if axis_scale != 'data':
-            plot_square(ax, **frame_kwargs)
-            ax.set_xlim(-1.1, 1.1)
-            ax.set_ylim(-1.1, 1.1)
+            plot_square(ax, scale=UNIT_FRAME_SCALE, **frame_kwargs)
+            ax.set_xlim(-UNIT_FRAME_LIMIT, UNIT_FRAME_LIMIT)
+            ax.set_ylim(-UNIT_FRAME_LIMIT, UNIT_FRAME_LIMIT)
             return
         if xlim is not None:
             ax.set_xlim(*xlim)
@@ -1602,9 +1838,9 @@ def _draw(
                 prior_colls=prior, quiet=True,
                 surface_point_colors=window_spcs)
 
-        # per-point labels track their datapoint's visibility window (the same
-        # [num - tail_duration, num] window the head line uses above)
-        _sync_anim_labels(num, tail_duration)
+        # per-point labels track their datapoint's visibility: the SAME row
+        # window each head line was just sliced with (L8)
+        _sync_anim_labels(num, tail_duration, windows=head_bounds)
         if frame_hooks is not None:
             frame_hooks.record(
                 frame=int(num), n_frames=int(total_frames),
@@ -1731,6 +1967,7 @@ def _draw(
 
         windows = []
         window_spcs = []
+        _head_windows = []                                  # GH #285
         for i, (line, data, trail) in enumerate(itertools.zip_longest(
                 lines, data_lines, trail_lines)):
             n_pts = data.shape[0]
@@ -1778,6 +2015,7 @@ def _draw(
             head = _aa_window(i, *head_bounds, artist=line)
             trail_seg = (data[:0] if trail_bounds is None
                          else _aa_window(i, *trail_bounds, artist=trail))
+            _head_windows.append(tuple(int(b) for b in head_bounds))
             line.set_data(head[:, 0:2].T)
             line.set_3d_properties(head[:, 2])
             if trail is not None:
@@ -1811,9 +2049,11 @@ def _draw(
                 datasets=list(data_lines), style='serial', order='serial',
                 current_index=_idx, current_fraction=_frac,
                 revealed_counts=_counts,
-                # a serial reveal is cumulative: every dataset's window
-                # starts at row 0 (GH #285).
-                window_bounds=tuple((0, c) for c in _counts))
+                # the head window each artist was JUST drawn over: start
+                # is 0 for a plain cumulative reveal and moves past the
+                # dataset's beginning once a trail flag gives the reveal
+                # a comet-head (GH #285; `FrameContext.window_bounds`).
+                window_bounds=tuple(_head_windows))
         return lines
 
     def update_morph(num, morph_state, cube_scale, azimuths, zoom=1, elev=10):
@@ -2208,7 +2448,10 @@ def _draw(
                          else first_pts)
             _mkw = (kwargs_list[mesh_slot]
                    if isinstance(kwargs_list[mesh_slot], dict) else {})
-            morph_markersize = _mkw.get("markersize") or 1.5
+            # the shared default both backends read (L9: 1.5 pt dots were
+            # ~3 px here and sub-pixel on plotly)
+            morph_markersize = (_mkw.get("markersize")
+                                or _morph.MORPH_DEFAULT_MARKERSIZE_PT)
             # GH #284: `alpha=` (scalar, or the per-dataset list) lands in
             # each morph-tagged dataset's kwargs, but those datasets' own
             # `lines` are hidden above -- the ONE visible artist is this
@@ -2538,7 +2781,7 @@ def _draw(
             window = _aa_window(i, start, end, artist=line)
             line.set_data(window[:, 0], window[:, 1])
 
-        _sync_anim_labels(num, tail_duration)
+        _sync_anim_labels(num, tail_duration, windows=head_bounds)
         if frame_hooks is not None:
             frame_hooks.record(
                 frame=int(num), n_frames=int(total_frames),
@@ -2568,6 +2811,7 @@ def _draw(
         revealed = total_points * num / max(1, total_frames - 1)
         _counts = serial_reveal_counts(lengths, num, total_frames)
 
+        _head_windows = []                                  # GH #285
         for i, (line, data, trail) in enumerate(itertools.zip_longest(
                 lines, data_lines, trail_lines)):
             n_pts = data.shape[0]
@@ -2600,6 +2844,7 @@ def _draw(
             head = _aa_window(i, *head_bounds, artist=line)
             trail_seg = (data[:0] if trail_bounds is None
                          else _aa_window(i, *trail_bounds, artist=trail))
+            _head_windows.append(tuple(int(b) for b in head_bounds))
             line.set_data(head[:, 0], head[:, 1])
             if trail is not None:
                 trail.set_data(trail_seg[:, 0], trail_seg[:, 1])
@@ -2613,7 +2858,7 @@ def _draw(
                 datasets=list(data_lines), style='serial', order='serial',
                 current_index=_idx, current_fraction=_frac,
                 revealed_counts=_counts,
-                window_bounds=tuple((0, c) for c in _counts))
+                window_bounds=tuple(_head_windows))
         return lines
 
     def update_morph_2d(num, morph_state):
@@ -2829,7 +3074,8 @@ def _draw(
                          else first_pts)
             _mkw = (kwargs_list[mesh_slot]
                    if isinstance(kwargs_list[mesh_slot], dict) else {})
-            morph_markersize = _mkw.get("markersize") or 1.5
+            morph_markersize = (_mkw.get("markersize")
+                                or _morph.MORPH_DEFAULT_MARKERSIZE_PT)
             # GH #284: see the identical note in `animate_plot3D`.
             ds_alphas = [
                 (kwargs_list[i] if isinstance(kwargs_list[i], dict)
@@ -3055,19 +3301,38 @@ def _draw(
     # point is that the drawn coordinates ARE the data's own, so its ticks
     # and spines stay on (matplotlib's defaults) and only the top/right
     # spines are dropped, the way a plain time-series panel is drawn.
+    # the font stack in force NOW (`plot()` draws inside the rc_context
+    # that sets it), given explicitly to the axis labels and title below:
+    # a caller's `ax=` (every `panels=` cell) created its label and title
+    # Text artists outside that context, with the bare 'sans-serif' alias,
+    # which resolves at DRAW time to the caller's rcParams -- DejaVu Sans
+    # beside hypertools' own Noto Sans figures (1.1 release review). On
+    # hypertools' own axes this is the family they were created with.
+    _text_family = list(plt.rcParams['font.family'])
     if axis_scale == 'data':
         for _side in ('top', 'right'):
             if _side in ax.spines:
                 ax.spines[_side].set_visible(False)
         if xlabel is not None:
-            ax.set_xlabel(xlabel)
+            ax.set_xlabel(xlabel, fontfamily=_text_family)
         if ylabel is not None:
-            ax.set_ylabel(ylabel)
+            ax.set_ylabel(ylabel, fontfamily=_text_family)
         if x_date:
             # the x column holds `date2num` day numbers (see `plot()`'s
             # ndims=1 series mode); without a date converter they would tick
             # as five-digit floats
             ax.xaxis_date()
+            # ...and matplotlib's default date formatter writes every tick
+            # as a full 'YYYY-MM-DD', which collide at the default figure
+            # size (7 of 7 adjacent pairs overlapped for a 30-day index;
+            # 1.1 release review, F13). The concise formatter writes only
+            # what changes between ticks, with the rest once as an offset,
+            # which is also what plotly's date axis draws.
+            import matplotlib.dates as mdates
+            _locator = mdates.AutoDateLocator()
+            ax.xaxis.set_major_locator(_locator)
+            ax.xaxis.set_major_formatter(
+                mdates.ConciseDateFormatter(_locator))
     elif xlabel is None and ylabel is None and zlabel is None:
         ax.set_axis_off()
     elif hasattr(ax, "get_proj"):
@@ -3093,11 +3358,20 @@ def _draw(
             _axis.set_ticks([])
         ax.patch.set_visible(False)
         if xlabel is not None:
-            ax.set_xlabel(xlabel)
+            ax.set_xlabel(xlabel, fontfamily=_text_family)
         if ylabel is not None:
-            ax.set_ylabel(ylabel)
+            ax.set_ylabel(ylabel, fontfamily=_text_family)
         if zlabel is not None:
-            ax.set_zlabel(zlabel)
+            ax.set_zlabel(zlabel, fontfamily=_text_family)
+        # `Axes3D.get_tightbbox` measures its axes "for layout only", which
+        # drops the axis LABELS (matplotlib's `_get_tightbbox_for_layout_
+        # only`), so a `bbox_inches='tight'` save -- every notebook's inline
+        # render -- cut the z-label off at the right edge (1.1 release
+        # review, feature-tour 9.15). A draw-nothing figure artist whose
+        # extent is the labels' puts them back into the figure's tight bbox.
+        if not any(isinstance(a, _AxisLabelExtent) and a.axes_ref is ax
+                   for a in ax.figure.artists):
+            ax.figure.add_artist(_AxisLabelExtent(ax))
     else:
         # 2-D (or 1-D): hide ticks/spines/gridlines individually, leaving
         # `axison` at its default True so the axis label Text artist(s)
@@ -3109,9 +3383,9 @@ def _draw(
         ax.grid(False)
         ax.patch.set_visible(False)
         if xlabel is not None:
-            ax.set_xlabel(xlabel)
+            ax.set_xlabel(xlabel, fontfamily=_text_family)
         if ylabel is not None:
-            ax.set_ylabel(ylabel)
+            ax.set_ylabel(ylabel, fontfamily=_text_family)
         # zlabel on a 2-D/1-D plot is rejected upstream in plot.py
         # (ValueError, before the pipeline even runs) -- zlabel is
         # guaranteed None here.
@@ -3121,7 +3395,8 @@ def _draw(
 
     # add title
     if title is not None:
-        _apply_title(ax, title, font=font, title_kwargs=title_kwargs)
+        _apply_title(ax, title, font=font, title_kwargs=title_kwargs,
+                     family=_text_family)
 
     # add legend: to the RIGHT of the plot, vertically centered on the
     # box (never overlapping the data). `prop=font` (GH #205) applies the
@@ -3140,6 +3415,18 @@ def _draw(
             ax.legend(handles=_legend_proxy_handles(legend_entries, fmt),
                       **_legend_call)
         else:
+            if legend_order:
+                _handles, _labels = ax.get_legend_handles_labels()
+                _rank = {str(lbl): k for k, lbl in enumerate(legend_order)}
+                _slots = [j for j, lbl in enumerate(_labels) if lbl in _rank]
+                _sorted = sorted(_slots, key=lambda j: _rank[_labels[j]])
+                if _sorted != _slots:
+                    _perm = list(range(len(_labels)))
+                    for _slot, _src in zip(_slots, _sorted):
+                        _perm[_slot] = _src
+                    _legend_call = dict(
+                        _legend_call, handles=[_handles[j] for j in _perm],
+                        labels=[_labels[j] for j in _perm])
             _legend_artist = ax.legend(**_legend_call)
             if legend_colors is not None:
                 _recolor_legend_handles(_legend_artist, legend_colors)

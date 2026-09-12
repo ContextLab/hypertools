@@ -250,3 +250,108 @@ def test_load_reports_synthetic_names_when_nothing_resolves():
     with pytest.raises(HypertoolsIOError) as excinfo:
         hyp.load('helixx_not_a_dataset')
     assert 'synthetic dataset' in str(excinfo.value)
+
+
+# ------------------------------------- seed types (1.1 release review I3-I6)
+
+def test_random_state_accepts_a_legacy_randomstate_deterministically():
+    # I3: every docstring lists RandomState, but the numpy-native
+    # generators used `.bit_generator`, which a RandomState does not have
+    for name, kwargs in (('random_walk', {}), ('helix', {'noise': 0.1}),
+                         ('lorenz', {})):
+        first = synthetic_dataset(name, n_samples=20, **kwargs,
+                                  random_state=np.random.RandomState(0))
+        again = synthetic_dataset(name, n_samples=20, **kwargs,
+                                  random_state=np.random.RandomState(0))
+        other = synthetic_dataset(name, n_samples=20, **kwargs,
+                                  random_state=np.random.RandomState(1))
+        assert np.array_equal(first, again)
+        assert not np.array_equal(first, other)   # the seed is actually used
+    # a RandomState is consumed like any draw: two datasets from ONE
+    # RandomState differ, and threading the same seeded object through
+    # twice reproduces both
+    rs = np.random.RandomState(7)
+    a, b = (synthetic_dataset('helix', n_samples=20, noise=0.1,
+                              random_state=rs) for _ in range(2))
+    rs = np.random.RandomState(7)
+    a2, b2 = (synthetic_dataset('helix', n_samples=20, noise=0.1,
+                                random_state=rs) for _ in range(2))
+    assert not np.array_equal(a, b)
+    assert np.array_equal(a, a2) and np.array_equal(b, b2)
+
+
+@pytest.mark.parametrize('name', ['blobs', 'moons', 'swiss_roll', 's_curve'])
+@pytest.mark.parametrize('seed_type', ['Generator', 'SeedSequence',
+                                       'np.integer'])
+def test_sklearn_synthetics_accept_every_seed_type_for_one_dataset(
+        name, seed_type):
+    # I4: for n_datasets == 1 the seed was handed straight to
+    # sklearn.datasets.make_*, which rejects a Generator / SeedSequence
+    def seed(value):
+        return {'Generator': lambda: np.random.default_rng(value),
+                'SeedSequence': lambda: np.random.SeedSequence(value),
+                'np.integer': lambda: np.int64(value)}[seed_type]()
+    first = synthetic_dataset(name, n_samples=30, random_state=seed(0))
+    again = synthetic_dataset(name, n_samples=30, random_state=seed(0))
+    other = synthetic_dataset(name, n_samples=30, random_state=seed(1))
+    assert isinstance(first, pd.DataFrame) and len(first) == 30
+    pd.testing.assert_frame_equal(first, again)
+    assert not first.equals(other)
+
+
+def test_reusing_one_seedsequence_across_calls_is_reproducible():
+    # I5: the list case spawned children from the caller's SeedSequence,
+    # advancing its spawn counter, so the same object gave different data
+    # on the second call
+    ss = np.random.SeedSequence(12345)
+    first = synthetic_dataset('random_walk', n_datasets=3, n_samples=15,
+                              n_features=2, random_state=ss)
+    again = synthetic_dataset('random_walk', n_datasets=3, n_samples=15,
+                              n_features=2, random_state=ss)
+    fresh = synthetic_dataset('random_walk', n_datasets=3, n_samples=15,
+                              n_features=2,
+                              random_state=np.random.SeedSequence(12345))
+    for a, b, c in zip(first, again, fresh):
+        assert np.array_equal(a, b)
+        assert np.array_equal(a, c)
+    assert not np.array_equal(first[0], first[1])
+    assert ss.n_children_spawned == 0           # the caller's object is untouched
+
+
+@pytest.mark.parametrize('bad', [2.7, 2.0, True, np.float64(3)])
+def test_non_integral_n_datasets_is_rejected_not_truncated(bad):
+    # I6: int(2.7) silently gave 2 datasets under a message that said
+    # "must be a positive integer"
+    with pytest.raises(HypertoolsIOError, match='n_datasets must be a '
+                                                'positive integer'):
+        synthetic_dataset('helix', n_datasets=bad)
+
+
+def test_numpy_integer_n_datasets_is_accepted():
+    out = synthetic_dataset('helix', n_samples=10, n_datasets=np.int64(2),
+                            random_state=0)
+    assert isinstance(out, list) and len(out) == 2
+
+
+# ------------------------------------------- streaming= is HF-only (I8)
+
+@pytest.mark.parametrize('source', ['lorenz', 'blobs', 'iris', 'helix'])
+def test_streaming_true_on_a_non_hf_source_raises(source):
+    # I8: streaming= is documented as Hugging Face-only; it used to be
+    # silently ignored, returning the full (2000, 3) lorenz array etc.
+    with pytest.raises(ValueError) as info:
+        hyp.load(source, streaming=True)
+    msg = str(info.value)
+    assert repr(source) in msg
+    assert 'Hugging Face' in msg and 'streaming=True' in msg
+    # the same call without the flag still loads in full
+    assert len(hyp.load(source)) > 0
+
+
+def test_streaming_true_on_already_loaded_data_raises(tmp_path):
+    with pytest.raises(ValueError, match='streaming=True'):
+        hyp.load(pd.DataFrame(np.zeros((3, 2))), streaming=True)
+    local = tmp_path / 'x.csv'
+    local.write_text('a,b\n1,2\n')
+    with pytest.raises(ValueError, match='local file'):
+        hyp.load(str(local), streaming=True)

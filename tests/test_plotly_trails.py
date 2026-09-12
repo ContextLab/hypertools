@@ -79,8 +79,14 @@ def test_plotly_tail_duration_sets_window():
 
 
 def test_plotly_zoom_moves_camera_closer():
-    near = hyp.plot(_walks(), zoom=3, backend='plotly', show=False)
-    far = hyp.plot(_walks(), zoom=1, backend='plotly', show=False)
+    # zoom= is ANIMATION-only (plot()'s docstring; matplotlib's static view
+    # ignores it) -- this test used to exercise it on a STATIC plot, which
+    # pinned plotly's static zoom, the parity gap the 1.1 release review
+    # found; it now checks the animated camera it exists for
+    near = hyp.plot(_walks(), zoom=3, backend='plotly', show=False,
+                    animate='spin', duration=1, frame_rate=2)
+    far = hyp.plot(_walks(), zoom=1, backend='plotly', show=False,
+                   animate='spin', duration=1, frame_rate=2)
 
     def r(fig):
         eye = fig.layout.scene.camera.eye
@@ -143,7 +149,9 @@ def test_plotly_trail_alpha_honors_per_dataset_alpha():
     trail_traces = pfig.data[n:2 * n]
     assert len(trail_traces) == n
     ply_trail_alphas = [
-        float(t.line.color.rsplit(',', 1)[1].rstrip(') '))
+        (t.opacity if t.opacity is not None else 1.) *
+        (float(t.line.color.rsplit(',', 1)[1].rstrip(') '))
+         if t.line.color.startswith('rgba(') else 1.)
         for t in trail_traces]
     assert ply_trail_alphas == pytest.approx(expected), (
         "plotly trail traces must honor per-dataset alpha= (0.3 * alpha), "

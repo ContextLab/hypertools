@@ -34,7 +34,8 @@ import warnings
 from sklearn.base import BaseEstimator
 from sklearn.exceptions import NotFittedError
 
-from .shared import unpack_model
+from .model import external_stacklevel
+from .shared import check_spec_keys, unpack_model
 
 
 #: the single documented pipeline order (#153): impute happens during
@@ -83,6 +84,15 @@ def _resolve_step(spec):
         return spec
 
     if isinstance(spec, dict):
+        if 'model' not in spec:
+            # used to leak a bare KeyError: 'model' (1.1 review)
+            raise ValueError(
+                "a Pipeline step dict spec must include a 'model' key; got "
+                f"keys {sorted(spec, key=str)}. Pass e.g. "
+                "{'model': 'PCA', 'kwargs': {'n_components': 2}}.")
+        # a flat key such as {'model': 'PCA', 'whiten': True} used to be
+        # dropped silently (1.1 review)
+        check_spec_keys(spec, 'Pipeline step')
         resolved = unpack_model(spec, valid=[], parent_class=None)
         if isinstance(resolved, dict):
             inner = _resolve_ref(resolved['model'])
@@ -147,7 +157,7 @@ def _step_transform(model, data, name=None):
             f"{label} has no transform/predict method; falling back to "
             "fit_predict, which RE-FITS the model on the new data (the "
             "returned labels come from a fresh fit, not the original one).",
-            stacklevel=3)
+            stacklevel=external_stacklevel())
         return np.asarray(model.fit_predict(data))
     raise TypeError(
         f"{label} cannot be applied to new data: it has no transform, "
@@ -281,6 +291,31 @@ def _validate_input_hierarchy(spec):
             'feature_labels': labels}
 
 
+def as_internal_frames(data):
+    """`data` with every DataFrame dataset in hypertools' internal pandas
+    form: a frame of any backend datawrangler recognises (polars, a
+    LazyFrame, modin, ...) is converted once here -- pandas frames are
+    returned as-is -- so raw scikit-learn steps and the manipulators, which
+    are written against pandas, never see another backend; a Series (pandas
+    or polars) becomes the one-column frame that keeps its index and name.
+    Arrays, text and everything else pass through untouched, elementwise
+    for a list/tuple (datatype audit, 2026-09-08; Codex round 12, R12-4: a
+    raw Series reached datawrangler's stacking decorator). Shared with the
+    manipulators' transformers, which a fitted Manipulator's `.transform`
+    hands raw input directly."""
+    from .._shared.helpers import is_frame_dataset, is_series_like
+    from .shared import as_dataframe
+
+    def _one(item):
+        return (as_dataframe(item)
+                if is_frame_dataset(item) or is_series_like(item) else item)
+
+    if isinstance(data, (list, tuple)):
+        converted = [_one(item) for item in data]
+        return converted if isinstance(data, list) else tuple(converted)
+    return _one(data)
+
+
 def _dataset_widths(data):
     """Feature counts of `data`, as a list -- one entry per dataset.
 
@@ -288,20 +323,105 @@ def _dataset_widths(data):
     ragged/object list, a 1-D array), so the caller skips the check rather
     than guessing.
     """
-    import numpy as np
-    import pandas as pd
+    from .._shared.helpers import is_frame_dataset, is_array_dataset
+    from .shared import as_dataframe
 
     def _width(item):
         """One dataset's feature count, or `None` if it is not knowable."""
-        if isinstance(item, pd.DataFrame):
-            return item.shape[1]
-        if isinstance(item, np.ndarray) and item.ndim == 2:
+        if is_frame_dataset(item):
+            # a frame of any backend datawrangler recognises (pandas as-is)
+            return as_dataframe(item).shape[1]
+        if is_array_dataset(item) and item.ndim == 2:
             return item.shape[1]
         return None
 
     items = list(data) if isinstance(data, (list, tuple)) else [data]
     widths = [_width(item) for item in items]
     return None if any(w is None for w in widths) else widths
+
+
+def _empty_rows(values):
+    """Boolean mask of the rows of a 2-D numeric dataset with NO finite
+    value, or `None` when `values` is not a 2-D numeric dataset."""
+    import numpy as np
+    try:
+        arr = np.asarray(values, dtype=float)
+    except (TypeError, ValueError):
+        return None
+    if arr.ndim != 2:
+        return None
+    return ~np.isfinite(arr).any(axis=1)
+
+
+def _row_preview(positions):
+    """'rows 0-3' for a contiguous run, else the first few positions."""
+    positions = [int(p) for p in positions]
+    if positions == list(range(positions[0], positions[-1] + 1)):
+        return (f'row {positions[0]}' if len(positions) == 1
+                else f'rows {positions[0]}-{positions[-1]}')
+    shown = ', '.join(str(p) for p in positions[:5])
+    return f"rows {shown}{', ...' if len(positions) > 5 else ''}"
+
+
+def _raise_if_manip_emptied_rows(data, result, spec, downstream):
+    """Stop a pipeline right after its manip stage when that stage left
+    rows with NO finite value that had values going in.
+
+    A trailing ``Smooth(center=False)`` leaves its first
+    ``kernel_width - 1`` rows NaN (pandas' rolling-window semantics) unless
+    ``min_periods=1``. Handed on, those rows reached the next stage's
+    missing-data imputation, which warned "Missing data: filling missing
+    values with PPCA ..." and "PPCA cannot fill N row(s) ... Use
+    model='Kalman'" -- blaming the input and naming the wrong remedy --
+    and then either left them NaN for `hyp.plot` to reject or crashed in
+    scikit-learn ("Input X contains NaN") or numpy ("SVD did not
+    converge") (1.1 release review, 2026-09-11). No later stage can use a
+    row with no observed feature, and no imputation run on the manip
+    output fills one, so the pipeline raises here with the manip-stage
+    diagnosis instead. Rows missing only SOME features (e.g. a
+    ``Delay(drop_edges=False)`` embedding's padded lags) are left for the
+    later stages' imputation, as before.
+
+    `data`/`result` are the manip stage's input and output (one dataset
+    or a list of them); datasets are paired positionally, and a row
+    counts as emptied when the output row is entirely non-finite while
+    the input row (same position; when the stage changed the row count,
+    the whole dataset) had a finite value.
+    """
+    import numpy as np
+    inputs = data if isinstance(data, list) else [data]
+    outputs = result if isinstance(result, list) else [result]
+    if len(inputs) != len(outputs):
+        return
+    for i, (before, after) in enumerate(zip(inputs, outputs)):
+        empty_after = _empty_rows(after)
+        empty_before = _empty_rows(before)
+        if empty_after is None or empty_before is None:
+            continue
+        if empty_after.shape == empty_before.shape:
+            emptied = empty_after & ~empty_before
+        elif not empty_before.any() and np.isfinite(
+                np.asarray(before, dtype=float)).all():
+            emptied = empty_after
+        else:
+            continue
+        if not emptied.any():
+            continue
+        positions = np.flatnonzero(emptied)
+        stages = ', '.join(f'{name}=' for name in downstream)
+        raise ValueError(
+            f"the manip= stage ({spec!r}) left {len(positions)} row(s) of "
+            f"dataset {i} with no finite values at all "
+            f"({_row_preview(positions)}), rows that had values going into "
+            f"it. The later stage(s) ({stages}) cannot use a row with no "
+            "observed feature, and missing-data imputation cannot fill "
+            "one, so the pipeline stops here. A trailing (center=False) "
+            "Smooth leaves its first kernel_width - 1 rows NaN under "
+            "pandas' rolling-window semantics: pass min_periods=1 to "
+            "smooth those rows over the observations available so far "
+            "(e.g. Smooth(kernel='boxcar', kernel_width=12, center=False, "
+            "min_periods=1)), or run hyp.manip on its own and drop those "
+            "rows before the next stage.")
 
 
 class _DispatchStep:
@@ -316,11 +436,16 @@ class _DispatchStep:
     substituted in as the spec -- reusing each dispatcher's own
     already-fitted-instance branch (documented as the payoff of
     `return_model=True` on every one of them) instead of refitting.
+
+    A manip step that `build_pipeline` placed before other stages records
+    their names in `downstream`; its output is then checked for rows it
+    emptied (see `_raise_if_manip_emptied_rows`) before they are handed on.
     """
-    def __init__(self, name, spec, call):
+    def __init__(self, name, spec, call, downstream=()):
         self._name = name
         self._spec = spec
         self._call = call  # (data, spec_or_fitted_model) -> (result, fitted_model)
+        self._downstream = tuple(downstream)
         self._fitted = None
         # A stage can legitimately fit to NO model: a reduce with ndims=None or
         # ndims >= n_features is a no-op pass-through and returns model=None
@@ -365,11 +490,26 @@ class _DispatchStep:
         Returns
         -------
         The dispatcher's transformed output for `data`.
+
+        Raises
+        ------
+        ValueError
+            For a manip step with later stages (`downstream`), when it
+            left rows with no finite value that had values going in (see
+            `_raise_if_manip_emptied_rows`).
         """
         result, fitted = self._call(data, self._spec)
+        self._check_emptied_rows(data, result)
         self._fitted = fitted
         self._is_fit = True
         return result
+
+    def _check_emptied_rows(self, data, result):
+        """See `_raise_if_manip_emptied_rows`; a no-op for every other
+        step (and for a pipeline unpickled from before `downstream`)."""
+        if self._name == 'manip' and getattr(self, '_downstream', ()):
+            _raise_if_manip_emptied_rows(data, result, self._spec,
+                                         self._downstream)
 
     def transform(self, data):
         """Apply the already-fitted dispatcher model to new `data`.
@@ -387,6 +527,9 @@ class _DispatchStep:
         ------
         sklearn.exceptions.NotFittedError
             If `fit`/`fit_transform` has not been called yet.
+        ValueError
+            For a manip step with later stages, when it left rows of the
+            new data with no finite value (as in `fit_transform`).
         """
         if not self._is_fit:
             raise NotFittedError(f'{self._name} stage must be fit before transform')
@@ -394,6 +537,7 @@ class _DispatchStep:
             # a no-op stage (e.g. reduce with ndims >= n_features): pass through
             return data
         result, fitted = self._call(data, self._fitted)
+        self._check_emptied_rows(data, result)
         self._fitted = fitted
         return result
 
@@ -415,7 +559,9 @@ class Pipeline(BaseEstimator):
         spec is anything `unpack_model` accepts: a registry name (string),
         a class, an already-constructed (or already-fitted) instance, a
         dict spec (`{'model': ..., 'args': [...], 'kwargs': {...}}` or the
-        legacy `{'model': ..., 'params': {...}}`), or a nested `Pipeline`.
+        legacy `{'model': ..., 'params': {...}}`; any other top-level key,
+        e.g. a flat `{'model': 'PCA', 'whiten': True}`, raises
+        `ValueError` naming it), or a nested `Pipeline`.
         Raw scikit-learn-API estimators (e.g. ``PCA(n_components=3)``,
         fitted or not) are accepted as-is; see the Notes on what they
         receive.
@@ -625,12 +771,13 @@ class Pipeline(BaseEstimator):
         `pipeline.transform(df)` does. If you want name matching, hand back
         the frame.
         """
+        data = as_internal_frames(data)
         hierarchy = self.input_hierarchy
         if hierarchy is None:
             return data
 
-        import pandas as pd
-        if isinstance(data, pd.DataFrame) and data.columns.nlevels >= 2:
+        from .hierarchy import is_hierarchical
+        if is_hierarchical(data, axes='columns'):
             from .hierarchy import group_columns
             correspondence = hierarchy['feature_correspondence']
             leaves, _meta = group_columns(
@@ -796,16 +943,21 @@ def build_pipeline(manip=None, normalize=None, reduce=None, ndims=None,
     specs = {'manip': manip, 'normalize': normalize, 'reduce': reduce,
              'align': align, 'cluster': cluster}
 
+    # None -> the stage is omitted. normalize=False ALSO means "do not
+    # normalize", so skip it too (QC 2026-07: a normalize=False step's fit
+    # returned (data, None), leaving the step unfitted, so a later
+    # Pipeline.transform on the returned model raised NotFittedError).
+    stages = [stage for stage in order
+              if not (specs.get(stage) is None
+                      or (stage == 'normalize' and specs[stage] is False))]
     steps = []
-    for stage in order:
-        spec = specs.get(stage)
-        # None -> the stage is omitted. normalize=False ALSO means "do not
-        # normalize", so skip it too (QC 2026-07: a normalize=False step's fit
-        # returned (data, None), leaving the step unfitted, so a later
-        # Pipeline.transform on the returned model raised NotFittedError).
-        if spec is None or (stage == 'normalize' and spec is False):
-            continue
-        steps.append((stage, _make_stage_step(stage, spec, ndims, random_state)))
+    for position, stage in enumerate(stages):
+        # a manip stage learns which stages follow it, so rows it empties
+        # are reported as its own doing before they reach them (see
+        # `_raise_if_manip_emptied_rows`)
+        steps.append((stage, _make_stage_step(
+            stage, specs[stage], ndims, random_state,
+            downstream=stages[position + 1:])))
     return Pipeline(steps, input_hierarchy=input_hierarchy)
 
 
@@ -852,8 +1004,9 @@ class _StageCall:
         return f"_StageCall({self.stage!r})"
 
 
-def _make_stage_step(stage, spec, ndims, random_state=None):
+def _make_stage_step(stage, spec, ndims, random_state=None, downstream=()):
     if stage not in CANONICAL_ORDER:
         raise ValueError(f"unknown pipeline stage {stage!r}; expected one of {CANONICAL_ORDER}")
     return _DispatchStep(stage, spec,
-                         _StageCall(stage, ndims=ndims, random_state=random_state))
+                         _StageCall(stage, ndims=ndims, random_state=random_state),
+                         downstream=downstream)

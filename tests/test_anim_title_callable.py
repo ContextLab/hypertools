@@ -199,3 +199,53 @@ class TestAnimated3DTitleMarginCoversDynamicTitles:
             assert box.y1 <= height
         finally:
             plt.close(anim.figure)
+
+
+# --- 1.1 release review: T5 static pattern with no index; T8 non-str
+# --- returns and format errors; A7 a raising title leaves no orphan ------
+
+class TestDynamicTitleErrors:
+
+    def test_static_pattern_title_without_an_index_raises_up_front(self):
+        rng = np.random.default_rng(0)
+        with pytest.raises(ValueError, match='has no row index to read'):
+            hyp.plot(rng.normal(size=(20, 3)), title='{index:%B %Y}',
+                     show=False)
+
+    @pytest.mark.parametrize('value', [None, 42])
+    def test_a_callable_returning_a_non_string_is_a_typeerror(self, value):
+        with pytest.raises(TypeError, match='title= callable must return'):
+            hyp.plot(monthly_frame(), animate=True, duration=1,
+                     frame_rate=4, title=lambda ctx: value, show=False)
+
+    def test_a_static_callable_returning_a_non_string_is_a_typeerror(self):
+        with pytest.raises(TypeError, match='title= callable must return'):
+            hyp.plot(monthly_frame(), title=lambda ctx: 42, show=False)
+
+    def test_a_bad_format_field_is_a_valueerror_naming_title(self):
+        with pytest.raises(ValueError, match="title='{index} {other}'"):
+            hyp.plot(monthly_frame(), animate=True, duration=1,
+                     frame_rate=4, title='{index} {other}', show=False)
+
+    def test_a_bad_format_spec_is_a_valueerror_naming_title(self):
+        with pytest.raises(ValueError, match='could not be formatted'):
+            hyp.plot(monthly_frame(), animate=True, duration=1,
+                     frame_rate=4, title='{index.nope}', show=False)
+
+    def test_a_raising_title_leaves_no_orphaned_animation(self):
+        import gc
+        import warnings
+
+        def bad(ctx):
+            raise RuntimeError('title boom')
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter('always')
+            with pytest.raises(RuntimeError, match='title boom'):
+                hyp.plot(monthly_frame(), animate=True, duration=1,
+                         frame_rate=4, title=bad, show=False)
+            gc.collect()
+        orphaned = [w for w in caught
+                    if 'deleted without rendering' in str(w.message)]
+        assert orphaned == []
+        assert plt.get_fignums() == []

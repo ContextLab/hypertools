@@ -66,7 +66,7 @@ def _tracked_tutorials():
 
 
 def _tracked_published_notebooks():
-    """Every git-tracked published notebook. Today this is the 15 tutorials:
+    """Every git-tracked published notebook. The hand-authored tutorials are tracked:
     docs/auto_examples/*.ipynb are GITIGNORED and regenerated at build time
     from docs/conf.py's branch-aware install cell, so they are not shipped and
     do not exist in a bare checkout (the release-gate CI job runs on a bare
@@ -99,7 +99,8 @@ def _hyp_install_lines(path):
 
 def test_there_are_tracked_published_notebooks():
     # guards against the scan silently passing because it found nothing
-    assert len(_tracked_tutorials()) >= 15
+    expected = set('align analyze animate_forecast cluster conversation_shape conversation_trajectories hierarchy hugging_face_embeddings io lsl_streaming manip market_sectors modern_sklearn_dynamics morph_shapes_zoo normalize painting_embeddings pipelines plot projectile_kalman reduce stock_forecasting streaming_data text weather_decades wikipedia_embeddings'.split())
+    assert {os.path.splitext(os.path.basename(p))[0] for p in _tracked_tutorials()} == expected
     # the published-notebook union is at least the tutorials
     assert len(_tracked_published_notebooks()) >= len(_tracked_tutorials())
 
@@ -166,3 +167,153 @@ def test_release_gate_no_preview_note_in_published_notebooks():
         'RELEASE GATE: published notebooks still carry a preview install note; '
         'run `python scripts/add_colab_install_cell.py` on master: '
         f'{offenders}')
+
+
+# --- an install cell never ships output --------------------------------------
+
+def _install_cells(path):
+    with open(path, encoding='utf-8') as f:
+        nb = json.load(f)
+    return [c for c in nb.get('cells', []) if c.get('cell_type') == 'code'
+            and any(_INSTALL_LINE_RE.match(ln.lstrip())
+                    for ln in ''.join(c.get('source', [])).splitlines())]
+
+
+def test_no_published_install_cell_carries_output():
+    """scripts/execute_tutorial.py skips the Colab install cell, and a skipped
+    cell keeps whatever the file had: projectile_kalman and streaming_data
+    shipped a pip upgrade notice naming a local interpreter path from the
+    1.0.0 run that executed it (found 2026-09-07). The cell did not run in
+    the published execution, so it has nothing to show."""
+    offenders = []
+    for path in _tracked_published_notebooks():
+        for cell in _install_cells(path):
+            if cell.get('outputs') or cell.get('execution_count') is not None:
+                offenders.append(os.path.relpath(path, _REPO))
+    assert not offenders, offenders
+
+
+def test_execute_tutorial_drops_the_outputs_of_the_cell_it_skips(tmp_path):
+    """`skip_install_cells` (the in-memory step `execute()` runs before
+    nbclient) tags the install cell and clears its stored output;
+    `restore_install_cells` removes only the tag it added."""
+    import importlib.util
+    import nbformat
+    spec = importlib.util.spec_from_file_location(
+        'execute_tutorial', os.path.join(_REPO, 'scripts', 'execute_tutorial.py'))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    nb = nbformat.v4.new_notebook()
+    install = nbformat.v4.new_code_cell(
+        '%pip install -q "hypertools[interactive]"', execution_count=1,
+        outputs=[nbformat.v4.new_output('stream', name='stdout',
+                                        text='[notice] A new release of pip')])
+    install.metadata['tags'] = ['keep-me']
+    work = nbformat.v4.new_code_cell('import hypertools', execution_count=2,
+                                     outputs=[nbformat.v4.new_output(
+                                         'stream', name='stdout', text='hi')])
+    nb.cells = [install, work]
+    skipped = mod.skip_install_cells(nb)
+    assert skipped == [install]
+    assert install.metadata['tags'] == ['keep-me', mod.SKIP_TAG]
+    assert install.outputs == [] and install.execution_count is None
+    assert work.outputs and work.execution_count == 2       # untouched
+    mod.restore_install_cells(skipped)
+    assert install.metadata['tags'] == ['keep-me']
+    path = tmp_path / 'nb.ipynb'
+    nbformat.write(nb, path)
+    assert _install_cells(path)[0]['outputs'] == []
+
+
+def test_tutorial_installers_enforce_version_and_preserve_prerequisites():
+    for path in _tracked_tutorials():
+        with open(path, encoding='utf-8') as handle:
+            nb=json.load(handle)
+        installers=[c for c in nb['cells'] if 'hypertools-install' in c.get('metadata',{}).get('tags',[])]
+        assert len(installers)==1, path
+        source=''.join(installers[0]['source'])
+        assert "Version('1.1.0')" in source and '>=1.1.0' in source, path
+        assert 'will not replace your checkout' in source, path
+        assert 'pip install -q convokit' not in source and 'pip install -q py7zr' not in source
+
+
+def test_executor_keeps_setup_and_independent_install_cells():
+    import importlib.util
+    import nbformat
+    spec=importlib.util.spec_from_file_location('execute_tutorial',os.path.join(_REPO,'scripts','execute_tutorial.py'))
+    module=importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    config=nbformat.v4.new_code_cell("SETTINGS = {}\n# Optional: pip install extras")
+    prerequisite=nbformat.v4.new_code_cell('%pip install convokit')
+    install=nbformat.v4.new_code_cell("subprocess.check_call([sys.executable,'-m','pip','install',spec])",metadata={'tags':['hypertools-install']})
+    nb=nbformat.v4.new_notebook(cells=[config,prerequisite,install])
+    skipped=module.skip_install_cells(nb)
+    assert skipped==[install]
+    assert 'skip-execution' not in config.metadata.get('tags',[])
+    assert 'skip-execution' not in prerequisite.metadata.get('tags',[])
+
+
+def _load_executor():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        'execute_tutorial', os.path.join(_REPO, 'scripts', 'execute_tutorial.py'))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_executor_scrubs_the_kernel_cell_path_from_warnings():
+    """A warning raised by a cell names the kernel's per-session temp file
+    (plot.ipynb stored `/var/folders/<id>/T/ipykernel_21956/2889100357.py:14:
+    UserWarning: ...`, found 2026-09-11); the executor rewrites it to
+    `<cell>`, on every platform's spelling, and still rewrites the home dir."""
+    import nbformat
+    module = _load_executor()
+    home = '/Users/someone'
+    texts = [
+        '/var/folders/tp/qtzc39jx5w556wl5w3dj21wr0000gn/T/ipykernel_21956/'
+        '2889100357.py:14: UserWarning: Missing data\n',
+        '/tmp/ipykernel_77/123.py:3: UserWarning: x\n',
+        'C:\\Users\\someone\\AppData\\Local\\Temp\\ipykernel_5\\99.py:1: W\n',
+        '/Users/someone/hypertools/hypertools/predict/common.py:416: UserWarning\n',
+    ]
+    nb = nbformat.v4.new_notebook(cells=[nbformat.v4.new_code_cell(
+        'x', outputs=[nbformat.v4.new_output('stream', name='stderr', text=t)
+                      for t in texts])])
+    assert module.scrub_home(nb, home=home) == len(texts)
+    got = [o['text'] for o in nb.cells[0].outputs]
+    assert got[:3] == ['<cell>:14: UserWarning: Missing data\n',
+                       '<cell>:3: UserWarning: x\n', '<cell>:1: W\n']
+    assert got[3] == '~/hypertools/hypertools/predict/common.py:416: UserWarning\n'
+
+
+def test_executor_quiets_liblsl_info_logging(tmp_path):
+    """liblsl logs `api_config.cpp ... INFO| Loaded default config` to stderr
+    on first load, and lsl_streaming.ipynb stored two such lines (2026-09-10).
+    Measured on the real liblsl in a subprocess: the line appears with no
+    config (the control) and not under the config the executor installs.
+    Only a StreamInfo is built -- nothing is advertised on the network."""
+    import sys
+    pytest.importorskip('pylsl')
+    module = _load_executor()
+    probe = ("import pylsl; pylsl.StreamInfo('hyp-cfg-probe', 'HYPCFGPROBE', 1, "
+             "source_id='hyp-cfg-probe')")
+    env = {k: v for k, v in os.environ.items() if k != 'LSLAPICFG'}
+    control = subprocess.run([sys.executable, '-c', probe], env=env,
+                             capture_output=True, text=True, timeout=120)
+    assert control.returncode == 0, control.stderr
+    assert 'INFO|' in control.stderr, 'control run: liblsl no longer logs INFO'
+    path = module.quiet_liblsl_config(str(tmp_path), environ=env)
+    assert env['LSLAPICFG'] == path and os.path.exists(path)
+    quiet = subprocess.run([sys.executable, '-c', probe], env=env,
+                           capture_output=True, text=True, timeout=120)
+    assert quiet.returncode == 0, quiet.stderr
+    assert 'INFO|' not in quiet.stderr, quiet.stderr
+
+
+def test_executor_keeps_a_callers_liblsl_config(tmp_path):
+    module = _load_executor()
+    env = {'LSLAPICFG': '/somewhere/else.cfg'}
+    assert module.quiet_liblsl_config(str(tmp_path), environ=env) == '/somewhere/else.cfg'
+    assert env == {'LSLAPICFG': '/somewhere/else.cfg'}
+    assert not os.listdir(tmp_path)

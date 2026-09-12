@@ -186,3 +186,36 @@ class TestReservation:
             assert (pos.y0, pos.height) == pytest.approx((0.0, 1.0))
         finally:
             plt.close(anim.figure)
+
+
+# --- 1.1 release review: T8 per-segment entries must be strings; T7 the
+# --- margin covers the tallest per-segment entry --------------------------
+
+class TestSegmentTitleEntries:
+
+    def test_non_string_entries_are_a_typeerror(self):
+        with pytest.raises(TypeError, match='entry 0 is int: 1'):
+            hyp.plot(clouds(), animate='serial', title=[1, None],
+                     duration=1, frame_rate=4, show=False)
+
+    def test_none_entry_is_a_typeerror(self):
+        with pytest.raises(TypeError, match='entry 1 is NoneType'):
+            hyp.plot(clouds(), animate='serial', title=['a', None],
+                     duration=1, frame_rate=4, show=False)
+
+    def test_margin_is_reserved_for_the_tallest_segment_whatever_its_index(
+            self):
+        first = hyp.plot(clouds(), animate='serial', title=['a\nb\nc', 'x'],
+                         duration=1, frame_rate=4, show=False)
+        last = hyp.plot(clouds(), animate='serial', title=['x', 'a\nb\nc'],
+                        duration=1, frame_rate=4, show=False)
+        flat = hyp.plot(clouds(), animate='serial', title=['x', 'y'],
+                        duration=1, frame_rate=4, show=False)
+        try:
+            assert (first.figure.get_size_inches()[1]
+                    == last.figure.get_size_inches()[1])
+            assert (last.figure.get_size_inches()[1]
+                    > flat.figure.get_size_inches()[1])
+        finally:
+            for anim in (first, last, flat):
+                plt.close(anim.figure)

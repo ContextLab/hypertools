@@ -60,6 +60,30 @@ def test_stream_plot_consumes_and_projects():
     plt.close('all')
 
 
+@pytest.mark.parametrize('save', [False, True])
+def test_stream_plot_under_global_plotly_render_backend(tmp_path, save):
+    """Colab and Kaggle auto-select plotly as the render backend. Streams are
+    always drawn with matplotlib, so a plotly render preference -- set here
+    exactly as that auto-detection sets it -- must not reach the internal
+    head plot (fresh-Colab feature tour, 2026-09-11: STREAM-01/02/03 raised
+    "'HyperPlotlyFigure' object has no attribute 'axes'")."""
+    rows = list(walk_gen(40))
+    kwargs = {'save_path': str(tmp_path / 'stream.gif'), 'frame_rate': 4} \
+        if save else {}
+    with hyp.set_interactive_backend('plotly'):
+        fig = hyp.plot(iter(rows), show=False, stream_init=12,
+                       stream_chunk=4, stream_window=16, **kwargs)
+    assert isinstance(fig, matplotlib.figure.Figure)
+    assert fig.stream_info['n_samples'] == 40
+    # the recent window is drawn; every consumed sample stays available
+    assert len(fig.axes[0].lines[0].get_data_3d()[0]) == 16
+    assert fig.stream_info['data'][0].shape == (40, 6)
+    if save:
+        with Image.open(tmp_path / 'stream.gif') as im:
+            assert im.n_frames > 1
+    plt.close('all')
+
+
 def test_stream_models_fitted_on_head_only():
     """The reduction model must be fitted on the first stream_init samples
     and only *applied* afterwards (issue #101's core requirement)."""

@@ -5,24 +5,24 @@ hypertools.FrameContext
 
 .. autoclass:: FrameContext
 
-   
+
    .. automethod:: __init__
 
-   
+
    .. rubric:: Methods
 
    .. autosummary::
-   
-      ~FrameContext.__init__
-   
-   
 
-   
-   
+      ~FrameContext.__init__
+
+
+
+
+
    .. rubric:: Attributes
 
    .. autosummary::
-   
+
       ~FrameContext.artists
       ~FrameContext.current_fraction
       ~FrameContext.current_index
@@ -38,5 +38,4 @@ hypertools.FrameContext
       ~FrameContext.n_frames
       ~FrameContext.figure
       ~FrameContext.axes
-   
-   
+

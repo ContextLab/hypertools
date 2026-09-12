@@ -23,8 +23,9 @@ import numbers
 import warnings
 
 import numpy as np
-import pandas as pd
 import datawrangler as dw
+from .._shared.helpers import (is_array_dataset, is_frame_dataset,
+                               is_series_like, as_pandas_dataframe)
 
 from .backtest import backtest_predict, model_collection, spec_name
 from .common import Forecaster
@@ -54,15 +55,26 @@ def _spec_help():
 
 def _coerce_dataset(d):
     """Normalize ONE dataset-like object before wrangling: a 1-D array or a
-    pandas Series is a UNIVARIATE TIMESERIES -- n observations of 1 feature,
+    Series is a UNIVARIATE TIMESERIES -- n observations of 1 feature,
     i.e. an (n, 1) column -- matching format_data/plot's convention. (QC
     2026-07 red-team F16-predict-002/-003: the funnel used to wrangle a
     (200,) array into ONE row of 200 features -- crashing the default model
     or silently echoing the input as a (t, 200) "forecast" -- and wrangled a
-    Series into an EMPTY (0, 0) DataFrame, silently losing the data.)"""
-    if isinstance(d, pd.Series):
-        return d.to_frame()
-    if isinstance(d, np.ndarray) and d.ndim == 1:
+    Series into an EMPTY (0, 0) DataFrame, silently losing the data.)
+
+    Types are classified with datawrangler's predicates (see
+    `hypertools._shared.helpers`): a DataFrame of any backend datawrangler
+    recognises (polars DataFrame/LazyFrame, ...) becomes a pandas
+    DataFrame, hypertools' internal frame type (a pandas frame passes
+    through untouched); a pandas or polars Series becomes its one-column
+    frame (index and name preserved)."""
+    if is_frame_dataset(d):
+        return as_pandas_dataframe(d)
+    if is_series_like(d):
+        if hasattr(d, 'to_frame'):
+            return _coerce_dataset(d.to_frame())
+        return _coerce_dataset(np.asarray(d))
+    if is_array_dataset(d) and d.ndim == 1:
         return d.reshape(-1, 1)
     return d
 
@@ -84,7 +96,7 @@ def _normalize_data(data):
         raise ValueError(
             f'cannot forecast from a single scalar observation ({data!r}); '
             'pass a timeseries with at least 2 observations (rows).')
-    if isinstance(data, np.ndarray):
+    if is_array_dataset(data):
         if data.ndim == 0:
             raise ValueError(
                 f'cannot forecast from a single scalar observation '
@@ -96,12 +108,15 @@ def _normalize_data(data):
                     'forecast', f'got an array of shape {tuple(data.shape)}')
                 + ' Pass at least 2 observations (rows).')
         return _coerce_dataset(data)
-    if isinstance(data, pd.DataFrame) and (data.shape[0] == 0
-                                           or data.shape[1] == 0):
-        raise ValueError(
-            no_observations_message(
-                'forecast', f'got a DataFrame of shape {tuple(data.shape)}')
-            + ' Pass at least 2 observations (rows).')
+    if is_frame_dataset(data):
+        # to pandas FIRST (a polars LazyFrame has no shape until collected)
+        data = _coerce_dataset(data)
+        if data.shape[0] == 0 or data.shape[1] == 0:
+            raise ValueError(
+                no_observations_message(
+                    'forecast', f'got a DataFrame of shape {tuple(data.shape)}')
+                + ' Pass at least 2 observations (rows).')
+        return data
     if isinstance(data, list):
         if len(data) == 0:
             raise ValueError(
@@ -116,6 +131,13 @@ def _normalize_data(data):
             return np.asarray(data, dtype=float).reshape(-1, 1)
         return [_coerce_dataset(d) for d in data]
     return _coerce_dataset(data)
+
+
+def _is_hierarchical(data):
+    """Whether `data` (already normalized to pandas by `_normalize_data`)
+    is ONE DataFrame with a MultiIndex on its rows or its columns."""
+    return is_frame_dataset(data) and (data.index.nlevels >= 2
+                                       or data.columns.nlevels >= 2)
 
 
 def _validate_horizon(t):
@@ -247,10 +269,8 @@ def _holdout_datasets(data):
     return frames if isinstance(frames, list) else [frames]
 
 
-@dw.decorate.funnel
-def _wrangled_predict(data, model='Kalman', t=10, return_model=False, **kwargs):
-    """Funnel-wrapped core of `predict` (see its docstring)."""
-    t = _validate_horizon(t)
+def _make_forecaster(model, kwargs):
+    """Construct a model with the same spec/keyword policy for both paths."""
     resolved, kwargs = _resolve_forecaster_spec(model, kwargs)
 
     if isinstance(resolved, type):
@@ -271,6 +291,15 @@ def _wrangled_predict(data, model='Kalman', t=10, return_model=False, **kwargs):
             'already a constructed instance, so constructor parameters '
             'cannot be applied. Pass the class (or a name/dict spec) to '
             'set parameters.', stacklevel=external_stacklevel())
+
+    return resolved
+
+
+@dw.decorate.funnel
+def _wrangled_predict(data, model='Kalman', t=10, return_model=False, **kwargs):
+    """Funnel-wrapped core of `predict` (see its docstring)."""
+    t = _validate_horizon(t)
+    resolved = _make_forecaster(model, kwargs)
 
     if isinstance(resolved, Forecaster) and resolved.is_fitted:
         forecasts = resolved.predict_new(data, t)
@@ -352,7 +381,7 @@ def predict(data, model='Kalman', t=10, return_model=False, holdout=None,
     model : str, dict, class, Forecaster instance, or a COLLECTION of these
         Which forecaster to use (default: 'Kalman').
 
-        SEVERAL MODELS AT ONCE (1.2). A LIST or TUPLE of specs forecasts
+        SEVERAL MODELS AT ONCE (1.1). A LIST or TUPLE of specs forecasts
         each of them and returns a ``{name: forecast}`` dict in the order
         given -- the shape ``hyp.plot(..., predict=['Kalman', 'ARIMA'])``
         consumes. Names come from the specs (a string's registry spelling,
@@ -409,6 +438,30 @@ def predict(data, model='Kalman', t=10, return_model=False, holdout=None,
         truncate to and nothing to forecast -- it used to silently return
         an empty frame).
 
+    step : number, duration string, Timedelta, calendar offset, or None, optional
+        Constructor keyword for the selected model: one future step,
+        inferred independently per dataset when omitted. A datetime index
+        with a calendar frequency -- stored in ``index.freq``, inferable with
+        ``pd.infer_freq`` (business days, month starts, weeks, quarters,
+        hours, tz-aware days across DST), or a ``PeriodIndex``'s periods --
+        steps on that calendar, so it is regular: fitted on its own rows and
+        forecast onto the next business days / month starts / periods.
+        Weekday-only sessions that skip a few weekdays (exchange holidays)
+        step in business days. Any other index steps by the median positive
+        gap. Pass e.g. '1h' for datetime/duration indexes, a calendar
+        frequency such as 'B' or 'MS' for datetime indexes, or 0.5 for
+        numerical indexes. Timed observations are sorted before fitting.
+        GaussianProcess uses the actual times; Kalman, ARIMA, AutoRegressor,
+        Laplace and Chronos linearly interpolate irregular observations onto
+        a regular grid ending at the latest observation (with a warning).
+        No training values are extrapolated or missing values imputed.
+        Fitted-model reuse keeps the training interval when the new index
+        is of the same kind (a model fit on an array and reused on dated
+        rows, or the reverse, steps in the new data's own units). Period
+        indexes are fitted on their start timestamps and forecast as periods
+        of the same frequency; duplicate numeric row IDs remain positional.
+        See the API guide's observation-times section for the full policy.
+
     return_model : bool
         If True, also return the fitted (or reused) Forecaster instance, so
         it can be passed back as `model=` on future calls with new data
@@ -419,18 +472,30 @@ def predict(data, model='Kalman', t=10, return_model=False, holdout=None,
         model})``; it is not supported with ``holdout=``.
 
     holdout : int, float, True, or None
-        BACKTEST instead of forecasting (1.2). Fit each model on the HEAD
+        BACKTEST instead of forecasting (1.1). Fit each model on the HEAD
         of the data, forecast the held-out TAIL, and return a scores frame
         comparing every model against the rows that actually happened. An
         int holds out that many rows; a float in (0, 1) holds out that
         FRACTION of them (rounded, at least 1); ``True`` holds out exactly
         `t` rows. The head must keep at least 2 rows.
 
-        **`t` is not consulted** for an int/float `holdout`: the horizon IS
-        the number of held-out rows, or the forecast would not line up
-        one-to-one with the truth. (Use ``holdout=True`` to say "hold out
-        `t` rows".) The horizon used is reported in the frame's ``horizon``
-        column.
+        Pass a name, class, or unfitted instance. Each dataset fits an
+        independent copy; the caller's instance is unchanged. Already fitted
+        instances are refused because they may have seen the held-out rows.
+
+        **`t` is not consulted** for an int/float `holdout`. The number of
+        held-out observations is reported in the frame's ``horizon``
+        column. (Use ``holdout=True`` to say "hold out `t` rows".)
+
+        Timed rows are sorted before splitting. Models and their step sizes
+        are fitted on TRAINING rows only. GaussianProcess evaluates the
+        actual held-out times; regular-grid models forecast a covering grid
+        and linearly interpolate predictions to those times (with a warning
+        when interpolation is needed). Before the first full forecast step,
+        the last observed training value anchors interpolation. Missing
+        endpoints remain missing; no held-out values enter the model or the
+        interpolation. Returned predictions carry the held-out index.
+        Arrays/categorical labels/repeated numeric IDs use row positions.
 
         Not available on HIERARCHICAL input (which group is scored would
         have to become a fourth axis of the frame); slice the groups and
@@ -599,8 +664,7 @@ def predict(data, model='Kalman', t=10, return_model=False, holdout=None,
                 'backtest fits one model per model spec and reports scores. '
                 'Use return_forecasts=True for the scored forecasts, then '
                 'refit on the full data with the winning spec.')
-        if isinstance(data, pd.DataFrame) and (data.index.nlevels >= 2
-                                               or data.columns.nlevels >= 2):
+        if _is_hierarchical(data):
             raise ValueError(
                 'holdout= is not supported on hierarchical (MultiIndex) '
                 'input; slice the groups and backtest them one at a time.')
@@ -611,7 +675,7 @@ def predict(data, model='Kalman', t=10, return_model=False, holdout=None,
                                _FORECASTER_ALIASES)]
             specs = [model]
         return backtest_predict(
-            _holdout_datasets(data), predict, t, holdout, names, specs,
+            _holdout_datasets(data), _make_forecaster, t, holdout, names, specs,
             metrics=metrics, per_column=per_column,
             return_forecasts=return_forecasts, kwargs=kwargs)
     if collection is not None:
@@ -640,8 +704,7 @@ def predict(data, model='Kalman', t=10, return_model=False, holdout=None,
     # or a tuple, so it is indifferent to `_normalize_data`'s tuple->list
     # conversion either way.
     reject_hierarchical_in_list(data, caller='hyp.predict', axes='both')
-    if isinstance(data, pd.DataFrame) and (data.index.nlevels >= 2
-                                           or data.columns.nlevels >= 2):
+    if _is_hierarchical(data):
         reject_dual_axis(data)
         if data.columns.nlevels >= 2:
             # `group_columns` returns (leaves, META); the group LABELS live in

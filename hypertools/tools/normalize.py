@@ -12,6 +12,8 @@ from sklearn.base import BaseEstimator
 from sklearn.exceptions import NotFittedError
 
 from .format_data import format_data as formatter
+from .._shared.helpers import is_frame_dataset, is_number_item, is_series_like
+from ..core.shared import as_dataframe
 
 
 def _as_list_2d(x):
@@ -25,15 +27,38 @@ def _as_list_2d(x):
     DataFrame, or a list of them) to a list of 2-D float arrays so the
     per-column z-scoring below is well-defined.
 
+    A 1-D dataset -- a 1-D array, a pandas/polars Series, or a flat list of
+    numbers -- is ONE COLUMN (``(n, 1)``), exactly as ``format_data`` reads
+    it, so a ``Normalizer`` fit through ``normalize()`` accepts the same
+    data again in ``.transform`` (it used to become a single row and fail
+    the column-count check; review 2026-09-11).
+
     Returns
     -------
     (list of numpy.ndarray, bool)
         The 2-D arrays, and whether the original input was a single array
         (so callers can return single-in -> single-out).
     """
+    def _as_float_2d(a):
+        # a frame of any backend datawrangler recognises (polars, a
+        # LazyFrame, ...) goes through the shared pandas coercion first;
+        # everything else is whatever `np.asarray` makes of it (datatype
+        # audit, 2026-09-08)
+        if is_frame_dataset(a):
+            a = as_dataframe(a)
+        a = np.asarray(a, dtype=np.float64)
+        if a.ndim <= 1:
+            # one column (a scalar is one observation), matching format_data
+            return a.reshape(-1, 1)
+        return a
+
+    if is_series_like(x):
+        return [_as_float_2d(x)], True
     if isinstance(x, (list, tuple)):
-        return [np.atleast_2d(np.asarray(a, dtype=np.float64)) for a in x], False
-    return [np.atleast_2d(np.asarray(x, dtype=np.float64))], True
+        if len(x) > 0 and all(is_number_item(xi) for xi in x):
+            return [_as_float_2d(list(x))], True    # a flat list of numbers
+        return [_as_float_2d(a) for a in x], False
+    return [_as_float_2d(x)], True
 
 
 def _check_column_counts(arrs):
@@ -116,7 +141,9 @@ class Normalizer(BaseEstimator):
         """Compute per-column mean/std across the stacked fit-time data
         (`'across'` mode only; a no-op for `'within'`/`'row'`).
 
-        Accepts either a single 2-D array or a list of them.
+        Accepts either a single dataset or a list of them. A 2-D array or
+        DataFrame is used as is; a 1-D array, a Series or a flat list of
+        numbers is one column.
         """
         if self.normalize == 'across':
             arrs, _ = _as_list_2d(x)
@@ -132,7 +159,9 @@ class Normalizer(BaseEstimator):
         `x` may be a single 2-D array (or DataFrame) or a list of them; the
         result mirrors the input (single array in -> single array out, list
         in -> list out), matching `normalize()`'s own convention so a fitted
-        `Normalizer` can be reused directly on held-out data.
+        `Normalizer` can be reused directly on held-out data. A 1-D array,
+        a Series or a flat list of numbers is one column, as in `fit` and in
+        `normalize()` itself, and comes back as an ``(n, 1)`` array.
         """
         arrs, single = _as_list_2d(x)
         if self.normalize == 'across':

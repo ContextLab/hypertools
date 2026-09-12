@@ -24,25 +24,41 @@ file change and cannot tell an unwanted execution from a wanted edit made in
 the same window. Execution still resolves relative paths against the
 notebook's ORIGINAL directory, so a redirected run reads the same data.
 
-**The Colab install cell is skipped, and this is not optional.** Every launch
-notebook opens with ``%pip install "hypertools[...] @ git+...@dev-1.0"`` for
-Colab. Executed locally, that cell installs the REMOTE branch over this venv's
-editable checkout, mid-run, so every later cell runs against whatever was
-last pushed rather than the code being documented. Measured 2026-09-03: the
-market notebook failed in its own kernel with "48 dimensions ... static plots
-support at most 2" -- the column-MultiIndex support that lands in 1.1 was
-gone -- and ``pip show hypertools`` afterwards reported the git install, not
-the editable one. The committed notebooks carry execution timestamps on that
-cell from 2026-07-30, when local and remote happened to agree, which is why
-nothing noticed. So cells whose source contains ``pip install`` are tagged
-``skip-execution`` in memory for the run (nbclient honours that tag), and the
-tag is stripped before writing, so the committed cell is byte-identical.
-The example gate already exempts install cells from having executed.
+**HyperTools installation cells are skipped during local verification.**
+Current tutorials use a version-aware PyPI installer; candidate verification
+must retain the selected checkout. Only explicitly tagged HyperTools installers
+(or legacy cells containing a live HyperTools pip command) are skipped.
+Configuration and independent prerequisites remain executable. Successful
+setup-only prerequisite cells tagged ``prerequisite-install`` have their pip
+chatter cleared before saving; failures still abort execution. Mixed legacy
+install/work cells must be split before verification; a comment mentioning pip
+is not an installation command. For the feature tour, configuration and its
+Colab-only installer are separate cells. Use --out-dir to preserve source files.
+
+**The executing user's home directory is rewritten to ``~`` in the outputs.**
+Warnings and tracebacks carry absolute paths (``/Users/<name>/hypertools/
+hypertools/tools/format_data.py:495: UserWarning: ...``), so an executed
+notebook committed as-is publishes whoever ran it. After execution, every
+stream output, error traceback and ``text/plain`` result has
+``os.path.expanduser('~')`` replaced by ``~`` (see `scrub_home`). A warning
+raised by a notebook cell names the kernel's per-session temp file for that
+cell (``/var/folders/<id>/T/ipykernel_21956/2889100357.py:14``); that path is
+rewritten to ``<cell>`` (``<cell>:14: UserWarning: ...``). Nothing else in
+an output is touched.
+
+**liblsl's INFO log lines are kept out of the outputs.** liblsl logs
+``api_config.cpp ... INFO| Loaded default config`` and a build line to
+stderr the first time it loads (seen stored in lsl_streaming.ipynb,
+2026-09-10). Unless ``LSLAPICFG`` is already set, the kernel is pointed at a
+config file whose only setting is ``[log] level = -1`` (warnings and
+errors still print; INFO does not) -- see `quiet_liblsl_config`.
 """
 
 import json
 import os
+import re
 import sys
+import tempfile
 
 import nbformat
 from nbclient import NotebookClient
@@ -59,6 +75,97 @@ KERNEL = 'hypertools-venv'
 os.environ.setdefault('HF_HUB_DISABLE_PROGRESS_BARS', '1')
 SKIP_TAG = 'skip-execution'         # what nbclient honours
 TIMEOUT = 1800
+#: a cell's code as the kernel names it in a warning: a per-session temp file
+#: (``.../T/ipykernel_21956/2889100357.py`` on macOS, ``/tmp/ipykernel_...``
+#: on Linux, backslashes on Windows)
+_CELL_FILE_RE = re.compile(r'[^\s"\'<>]*ipykernel_\d+[/\\]\d+\.py')
+#: the liblsl configuration `quiet_liblsl_config` writes: INFO off, warnings on
+LSL_QUIET_CONFIG = '[log]\nlevel = -1\n'
+
+
+def _scrub_text(text, home):
+    return _CELL_FILE_RE.sub('<cell>', text.replace(home, '~'))
+
+
+def scrub_home(nb, home=None):
+    """Rewrite `home` (default: this user's home directory) to ``~``, and a
+    kernel cell's temp-file path to ``<cell>``, in every text output of
+    `nb`, in place: stream text, error tracebacks and ``evalue``, and
+    ``text/plain`` display/execute-result data. Returns the number of
+    outputs changed."""
+    home = home or os.path.expanduser('~')
+    changed = 0
+    for cell in nb.cells:
+        for output in cell.get('outputs', []):
+            before = json.dumps(output, sort_keys=True)
+            kind = output.get('output_type')
+            if kind == 'stream':
+                output['text'] = _scrub_text(output['text'], home)
+            elif kind == 'error':
+                output['traceback'] = [_scrub_text(line, home)
+                                       for line in output['traceback']]
+                output['evalue'] = _scrub_text(output['evalue'], home)
+            elif kind in ('display_data', 'execute_result'):
+                text = output.get('data', {}).get('text/plain')
+                if isinstance(text, str):
+                    output['data']['text/plain'] = _scrub_text(text, home)
+            changed += json.dumps(output, sort_keys=True) != before
+    return changed
+
+
+def quiet_liblsl_config(directory, environ=None):
+    """Point ``LSLAPICFG`` in `environ` (default ``os.environ``, which the
+    kernel inherits) at a config in `directory` that turns liblsl's INFO
+    logging off, unless the caller already set ``LSLAPICFG``. Returns the
+    config path in use."""
+    environ = os.environ if environ is None else environ
+    if environ.get('LSLAPICFG'):
+        return environ['LSLAPICFG']
+    path = os.path.join(directory, 'lsl_api.cfg')
+    with open(path, 'w', encoding='utf-8') as handle:
+        handle.write(LSL_QUIET_CONFIG)
+    environ['LSLAPICFG'] = path
+    return path
+
+
+def skip_install_cells(nb):
+    """Tag HyperTools installation cells of `nb` skip-execution (in memory)
+    and drop the outputs it carried; return those cells for
+    `restore_install_cells`.
+
+    nbclient leaves a skipped cell exactly as the file had it, outputs
+    included: two 1.0.0 tutorials shipped a pip upgrade notice naming a
+    local interpreter path, from a run that DID execute the install cell.
+    A cell that did not run here has no output.
+    """
+    installs = [c for c in nb.cells if c.cell_type == 'code' and (
+        'hypertools-install' in c.metadata.get('tags', []) or
+        re.search(r'^\s*[%!]pip\s+install[^\n]*hypertools', c.source, re.M))]
+    for cell in installs:
+        cell.metadata.setdefault('tags', []).append(SKIP_TAG)
+        cell.outputs = []
+        cell.execution_count = None
+    return installs
+
+
+def restore_install_cells(installs):
+    """Remove the in-memory skip tag `skip_install_cells` added."""
+    for cell in installs:
+        cell.metadata['tags'].remove(SKIP_TAG)
+        if not cell.metadata['tags']:
+            del cell.metadata['tags']
+
+
+def clear_prerequisite_install_outputs(nb):
+    """Execute prerequisites normally, then omit successful pip chatter from docs.
+
+    Called only after NotebookClient succeeds, so installation failures still
+    propagate with their traceback. These tagged cells contain setup only.
+    """
+    for cell in nb.cells:
+        if 'prerequisite-install' in cell.metadata.get('tags', []):
+            cell.outputs = []
+            cell.execution_count = None
 
 
 def execute(path, out=None):
@@ -66,22 +173,27 @@ def execute(path, out=None):
     nb = nbformat.read(path, as_version=4)
     original = json.loads(json.dumps(nb.metadata.get('kernelspec',
                                                      NEUTRAL_KERNELSPEC)))
-    installs = [c for c in nb.cells
-                if c.cell_type == 'code' and 'pip install' in c.source]
-    for cell in installs:
-        cell.metadata.setdefault('tags', []).append(SKIP_TAG)
+    installs = skip_install_cells(nb)
     # the notebook's OWN directory is the cwd it runs in, so its relative
     # data paths resolve -- `or '.'` because a bare filename has no dirname
     # (`'reduce.ipynb'.rsplit('/', 1)[0]` is the filename itself, which would
     # make the kernel's cwd a nonexistent directory)
-    NotebookClient(nb, timeout=TIMEOUT, kernel_name=KERNEL,
-                   resources={'metadata': {'path': os.path.dirname(path)
-                                           or '.'}}).execute()
+    saved_lsl = os.environ.get('LSLAPICFG')
+    with tempfile.TemporaryDirectory() as scratch:
+        quiet_liblsl_config(scratch)       # the kernel inherits os.environ
+        try:
+            NotebookClient(nb, timeout=TIMEOUT, kernel_name=KERNEL,
+                           resources={'metadata': {'path': os.path.dirname(path)
+                                                   or '.'}}).execute()
+        finally:
+            if saved_lsl is None:
+                os.environ.pop('LSLAPICFG', None)
+            else:
+                os.environ['LSLAPICFG'] = saved_lsl
     nb.metadata['kernelspec'] = original
-    for cell in installs:
-        cell.metadata['tags'].remove(SKIP_TAG)
-        if not cell.metadata['tags']:
-            del cell.metadata['tags']
+    scrub_home(nb)
+    restore_install_cells(installs)
+    clear_prerequisite_install_outputs(nb)
     nbformat.write(nb, out or path)
     executed = sum(1 for c in nb.cells
                    if c.cell_type == 'code' and c.get('outputs'))

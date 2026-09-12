@@ -152,7 +152,9 @@ def test_wrong_length_nested_hue_still_errors():
     rng = np.random.default_rng(3)
     data = [rng.standard_normal((300, 10)) for _ in range(3)]
     bad = [[0] * 299 for _ in range(3)]  # 299 != 300 per dataset
-    with pytest.raises(ValueError, match="observations"):
+    # the error names the offending sub-list and both lengths (1.1 release
+    # review): the old message only counted "observations"
+    with pytest.raises(ValueError, match=r"hue\[0\] has 299 entries but dataset 0 has 300 rows"):
         hyp.plot(data, '.', hue=bad, show=False)
 
 

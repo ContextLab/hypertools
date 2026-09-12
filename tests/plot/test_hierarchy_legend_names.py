@@ -241,14 +241,21 @@ def test_plotly_never_names_a_trace_with_matplotlibs_sentinel(frame_fn):
 
 
 def test_plotly_hierarchy_unlabelled_traces_match_a_plain_lists_name():
-    """The baseline the sentinel deviated from: plotly's own "no name"."""
+    """The baseline the sentinel deviated from: what a plain list's traces
+    are called. Until the 1.1 release review that was plotly's own "no
+    name" (None), which this test pinned -- and which made plotly's hover
+    label read "trace 0", "trace 1", ... (maintainer finding). A plain
+    list's traces are now named by the labels `legend=True` would give
+    them, and a hierarchy's unlabelled leaves by their top-level group --
+    still never by the sentinel, and still out of the legend."""
     plain = _plotly([np.random.default_rng(s).standard_normal((8, 3))
                      for s in (0, 1)], '-', show=False)
-    assert {t.name for t in _data_traces(plain)} == {None}
+    assert [t.name for t in _data_traces(plain)] == ['1', '2']
     hier = _plotly(row_frame(), '-', show=False)
     leaves = [t for t in _data_traces(hier) if not t.showlegend]
     assert len(leaves) == 4
-    assert {t.name for t in leaves} == {None}
+    shown = {t.name for t in _data_traces(hier) if t.showlegend}
+    assert {t.name for t in leaves} <= shown
 
 
 def test_plotly_sentinel_does_not_reach_exported_html():

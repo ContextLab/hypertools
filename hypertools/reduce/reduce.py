@@ -6,6 +6,7 @@ import numpy as np
 from .common import (Reducer, models, REDUCERS, AUTOENCODER_NAMES,  # noqa: F401 (re-export; hypertools.core.pipeline imports `models` from here for backward compatibility)
                      resolve_reducer)
 from ..core.model import external_stacklevel
+from ..core.shared import check_spec_keys
 from ..tools.format_data import format_data as formatter
 
 
@@ -83,7 +84,10 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, return_model=False,
         `{'model': ..., 'args': [...], 'kwargs': {...}}` (both `'args'`
         and `'kwargs'` are OPTIONAL, so the minimal `{'model': 'PCA'}`
         works too; passing the legacy `'params'` key alongside them warns
-        and ignores `'params'`), or the LEGACY
+        and ignores `'params'`; model parameters always go under
+        `'kwargs'`, and any other top-level key -- e.g. `{'model': 'PCA',
+        'whiten': True}` -- raises `ValueError` naming it rather than
+        being ignored), or the LEGACY
         dict spec `{'model' : 'PCA', 'params' : {'whiten' : True}}`
         (accepted for backward compatibility, but emits a
         `DeprecationWarning`). A previously-fitted `Reducer` (as returned
@@ -267,6 +271,9 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, return_model=False,
                 "under 'args' (positional) and 'kwargs' (keyword), e.g. "
                 "{'model': 'PCA', 'kwargs': {'whiten': True}} (the "
                 "legacy 'params' key is also accepted).")
+        # a flat key such as {'model': 'PCA', 'whiten': True} used to be
+        # dropped silently, so the model ran with its defaults (1.1 review)
+        check_spec_keys(reduce, 'reduce', param='reduce')
         if 'args' in reduce or 'kwargs' in reduce or 'params' not in reduce:
             # canonical 1.0 dict spec: {'model': ..., 'args': [...],
             # 'kwargs': {...}} -- BOTH 'args' and 'kwargs' are optional, so
@@ -477,6 +484,14 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, return_model=False,
             and 'random_state' not in model_params
             and 'random_state' in inspect.signature(model).parameters):
         model_params['random_state'] = random_state
+        # umap-learn forces n_jobs=1 whenever a random_state is set and
+        # warns that it did ("n_jobs value -1 overridden to 1 ..."), which
+        # would blame the user for a seed hypertools injected. Pass the
+        # n_jobs umap is going to use anyway, unless the user chose one.
+        if (getattr(model, '__name__', '') == 'UMAP'
+                and 'n_jobs' not in model_params
+                and 'n_jobs' in inspect.signature(model).parameters):
+            model_params['n_jobs'] = 1
 
     # sklearn TSNE's default perplexity (30) requires n_samples > 30, so
     # small datasets crashed on a parameter the user never set
@@ -594,7 +609,16 @@ def reduce_list(x, model, reuse=None):
         transformed = np.asarray(fitted.transform(stacked))
     else:
         fitted = Reducer(model)
-        transformed = np.asarray(fitted.fit_transform(stacked))
+        with warnings.catch_warnings():
+            # scikit-learn's Isomap completes a disconnected neighbour graph
+            # by writing into a CSR matrix cell by cell, and scipy warns
+            # about ITS sparsity-structure changes a dozen times per fit.
+            # Nothing the user passed causes or can stop that, so it stays
+            # silent; sklearn's own "connected components" UserWarning
+            # (about the user's data and n_neighbors) still reaches them.
+            from scipy.sparse import SparseEfficiencyWarning
+            warnings.filterwarnings('ignore', category=SparseEfficiencyWarning)
+            transformed = np.asarray(fitted.fit_transform(stacked))
 
     x_r = np.vsplit(transformed, split)
     if len(x) > 1:

@@ -9,6 +9,7 @@ import pandas as pd
 import requests
 
 from ..datageometry import DataGeometry
+from .._shared.helpers import is_frame_dataset, is_array_dataset
 from ..core.exceptions import HypertoolsIOError
 from ..tools.analyze import analyze
 
@@ -198,11 +199,17 @@ def load(
     3. a seaborn dataset name -- any name returned by
        ``seaborn.get_dataset_names()`` (e.g. ``'penguins'``, ``'tips'``,
        ``'titanic'``), loaded via ``seaborn.load_dataset()`` and returned
-       unchanged. This is a network lookup (cached per-process); if it
-       can't reach the seaborn-data repo, this step is skipped. (A
-       registered synthetic dataset name -- step 6 below -- is actually
-       resolved here, ahead of this lookup, so it never pays for the
-       network round trip; no synthetic name collides with a seaborn one)
+       unchanged. The name listing is a network lookup (fetched with a
+       timeout and cached per-process; a failed fetch is remembered for
+       :data:`hypertools.io.sources.SEABORN_LISTING_RETRY_AFTER` seconds
+       -- :func:`hypertools.io.sources.reset_seaborn_names_cache` retries
+       sooner); if it can't reach the seaborn-data repo, this step is
+       skipped. The listing is never consulted for a string that cannot
+       be a seaborn name (a URL, a path, a prefixed source) nor when
+       ``offline=True``. (A registered synthetic dataset name -- step 6
+       below -- is actually resolved here, ahead of this lookup, so it
+       never pays for the network round trip; no synthetic name collides
+       with a seaborn one)
     4. a FiveThirtyEight dataset, explicit prefix
        ``'fivethirtyeight/<slug>'`` (e.g. ``'fivethirtyeight/bechdel'``),
        where ``<slug>`` is the dataset's folder in
@@ -241,7 +248,8 @@ def load(
     7. a web source with an explicit prefix -- ``'wikipedia:<Title>'``
        (kwargs: ``lang``, ``intro``, ``timeout``), ``'yahoo:<TICKER>'``
        (kwargs: ``start``, ``end``, ``interval``, ``timeout``), or
-       ``'sec:<TICKER>'`` (kwargs: ``concept``, ``timeout``) -- see
+       ``'sec:<TICKER>'`` (kwargs: ``concept``, ``taxonomy``, ``unit``,
+       ``dedupe``, ``timeout``) -- see
        :func:`hypertools.io.sources.web_source` for details on each
     8. a path to a local file (.geo/pickle, .npy/.npz, .csv/.tsv/.txt,
        .json, .parquet, .mat, .xlsx/.xls; gzip-compressed variants (.gz)
@@ -329,13 +337,15 @@ def load(
         The name of a built-in example dataset (listed below), a dataset
         name resolvable per the steps above, or a file path / URL.
 
-        Data that is already loaded -- a pandas DataFrame, a numpy array,
+        Data that is already loaded -- a DataFrame (pandas, or a polars
+        DataFrame/LazyFrame), a numpy array,
         or a list/tuple of DataFrames/arrays (one hypertools dataset per
         element, the same shape ``hypertools.load('weights')`` returns) --
         is passed through unchanged, so ``hypertools.load`` can serve as a
         uniform entry point over a mix of names and in-memory data:
 
         >>> import numpy as np
+        >>> import hypertools
         >>> arr = np.zeros((10, 3))
         >>> hypertools.load(arr) is arr
         True
@@ -366,8 +376,8 @@ def load(
         `mushrooms` is a pandas DataFrame of categorical features
         (columns) describing 8,124 mushroom samples (rows).
 
-        `sotus` is a list of 29 State of the Union addresses (1989-2018),
-        as strings.
+        `sotus` is a list of 29 State of the Union addresses (1989-2017),
+        as strings, grouped by president rather than in date order.
 
         `wiki` is a list of 3,136 wikipedia page texts (strings), used to
         fit `wiki_model`.
@@ -441,7 +451,11 @@ def load(
         Hugging Face datasets only: if True, return a streaming
         ``IterableDataset`` instead of materializing the data (see
         https://huggingface.co/docs/datasets/en/stream). The result can be
-        passed directly to :func:`hypertools.plot`.
+        passed directly to :func:`hypertools.plot`. Every other kind of
+        source (built-in, scikit-learn, seaborn, synthetic, web, local
+        file, URL, or already-loaded data) is always loaded in full, so
+        passing ``streaming=True`` with one raises ``ValueError`` naming
+        the source rather than silently returning the whole dataset.
 
     trust : bool
         Remote (non-built-in) sources only. Unpickling a payload fetched
@@ -465,20 +479,34 @@ def load(
         Local files are never subject to this policy.
 
     cache : bool
-        Any URL/Google-Sheets/Drive/Dropbox download (steps 9-13) only:
-        when True, the downloaded bytes are stored on disk (under
+        Any Google-Sheets/Google-Drive/Dropbox/URL download (steps 10-13)
+        only -- Hugging Face datasets (step 9) are NOT cached here: when
+        True, the downloaded bytes are stored on disk (under
         ``hypertools.io.sources.url_cache_dir()``, override with the
         ``HYPERTOOLS_URL_CACHE`` environment variable) and reused on a
         later call instead of re-downloading. Default False -- matching
         ``trust``, hypertools does not write to disk unless asked.
 
     offline : bool
-        Same sources as ``cache``: when True, read ONLY from that on-disk
-        cache and never open a connection, raising
+        When True, never open a connection: the sources ``cache`` covers
+        (steps 10-13) are read ONLY from that on-disk cache, every
+        network-only resolver (the seaborn listing, FiveThirtyEight,
+        Kaggle, Hugging Face, the ``wikipedia:``/``yahoo:``/``sec:`` web
+        sources) is skipped or refused outright, and anything that cannot
+        be served from disk raises
         :class:`~hypertools.io.sources.HypertoolsOfflineError` (a
-        subclass of ``HypertoolsIOError``) naming the cache path when the
-        source was never cached. Load the source once with ``cache=True``
-        while online to populate the cache first.
+        subclass of ``HypertoolsIOError``) -- naming the cache path it
+        looked for when the source is a cacheable URL that was never
+        cached. scikit-learn, synthetic and local-file sources still
+        load. A hosted built-in example dataset (step 1, the ``*_model``
+        pipelines included) is served from its copy in the example-data
+        cache (``~/hypertools_data``) when that copy is present and passes
+        its SHA-256 integrity check; one that was never fetched, or whose
+        cached file fails the check, raises ``HypertoolsOfflineError``
+        naming the file -- nothing is downloaded and the file is left in
+        place (online, a failed check triggers a re-download). Load a
+        URL once with ``cache=True``, and a built-in once with any call,
+        while online to populate the caches first.
 
     decode_labels : bool
         Hugging Face datasets only: by default (True), any top-level
@@ -522,6 +550,12 @@ def load(
                 'a "wikipedia:"/"yahoo:"/"sec:" source), not for '
                 'already-loaded data (a DataFrame/ndarray/list of those '
                 'was passed)')
+        if streaming:
+            from .sources import _refuse_streaming
+            _refuse_streaming(
+                type(dataset).__name__,
+                'already-loaded in-memory data (a DataFrame/ndarray/list '
+                'of those)')
         geo_data = dataset
     elif isinstance(dataset, (list, tuple)):
         # anything else list-shaped resolves element-wise (names, paths,
@@ -536,7 +570,8 @@ def load(
         raise TypeError(
             'hypertools.load: dataset must be a string (a dataset name, '
             'file path, or URL), a path-like object, an already-loaded '
-            'pandas DataFrame or numpy array, or a list/tuple of those; '
+            'DataFrame (pandas, or polars DataFrame/LazyFrame) or numpy '
+            'array, or a list/tuple of those; '
             f'got {type(dataset).__name__}')
     else:
         dataset = os.fspath(dataset)
@@ -582,17 +617,25 @@ def load(
         else geo_data
 
 
-_LOADED_TYPES = (pd.DataFrame, np.ndarray)
+def _is_loaded_one(dataset):
+    """True for ONE already-loaded dataset: an array, or a DataFrame of
+    any backend datawrangler recognises (pandas, polars, a LazyFrame, ...).
+    Strings and path-likes are never datasets here -- they name something
+    to load -- and are excluded BEFORE the datawrangler predicate is asked
+    (``dw.zoo.is_dataframe`` would otherwise try to read a path)."""
+    if isinstance(dataset, (str, bytes, os.PathLike)):
+        return False
+    return is_array_dataset(dataset) or is_frame_dataset(dataset)
 
 
 def _is_loaded(dataset):
     """True when `dataset` is already-loaded data that :func:`load` passes
-    through: a DataFrame, a numpy array, or a non-empty list/tuple made
-    only of those (one hypertools multi-dataset)."""
-    if isinstance(dataset, _LOADED_TYPES):
+    through: a DataFrame (any backend), a numpy array, or a non-empty
+    list/tuple made only of those (one hypertools multi-dataset)."""
+    if _is_loaded_one(dataset):
         return True
     return isinstance(dataset, (list, tuple)) and len(dataset) > 0 and \
-        all(isinstance(d, _LOADED_TYPES) for d in dataset)
+        all(_is_loaded_one(d) for d in dataset)
 
 
 def _resolve(dataset, *, legacy, split, streaming, trust, cache=False,
@@ -610,16 +653,24 @@ def _resolve(dataset, *, legacy, split, streaming, trust, cache=False,
     ``source_kwargs`` is non-empty raises ``TypeError`` naming the
     misspelled/misplaced keyword(s) rather than silently ignoring them.
     """
+    from .sources import _refuse_offline, _refuse_streaming
+
     def _reject_kwargs(resolver_label):
         if source_kwargs:
             raise TypeError(
                 f'hypertools.load: unexpected keyword argument(s) '
                 f'{sorted(source_kwargs)} for {resolver_label} {dataset!r} '
                 '-- it takes no extra keyword arguments')
+        if streaming:
+            # streaming=True is a Hugging Face-only option (step 9); it
+            # used to be silently ignored by every other resolver, which
+            # returned the full dataset (1.1 release review, I8)
+            _refuse_streaming(dataset, f'a {resolver_label}')
 
     if dataset in EXAMPLE_DATA.keys():
         _reject_kwargs('built-in example dataset')
-        geo_data = _load_example_data(dataset)   # *_model -> Pipeline
+        # *_model -> Pipeline; offline=True is honoured inside
+        geo_data = _load_example_data(dataset, offline=offline)
     else:
         # resolution chain, right after built-in names: scikit-learn's
         # small bundled datasets, then seaborn's named datasets (see
@@ -647,20 +698,49 @@ def _resolve(dataset, *, legacy, split, streaming, trust, cache=False,
                 'scikit-learn bundled dataset: not one of '
                 f'{sorted(SKLEARN_DATASETS)}')
             if dataset in SYNTHETIC_DATASETS:
+                if streaming:
+                    _refuse_streaming(dataset,
+                                      'a built-in synthetic dataset')
                 geo_data = synthetic_dataset(dataset, **source_kwargs)
             else:
-                geo_data = seaborn_dataset(dataset)
-                if geo_data is not None:
-                    _reject_kwargs('seaborn dataset')
-                if geo_data is None:
+                # offline=True never opens a connection: the seaborn
+                # listing, fivethirtyeight and Kaggle are all network
+                # resolvers with no hypertools-side cache, so they are
+                # skipped (seaborn) or refused outright (the explicit
+                # prefixes) rather than probed (1.1 release review, I1).
+                # seaborn_dataset() itself answers None without touching
+                # the network for anything that cannot be a seaborn name
+                # (URLs, paths, prefixed sources).
+                if offline:
                     extra_attempts.append(
-                        'seaborn dataset: not found via '
-                        'seaborn.get_dataset_names() (or that lookup '
-                        'failed, e.g. no network access)')
+                        'seaborn dataset: not consulted (offline=True; '
+                        'the seaborn listing is a network call and '
+                        'seaborn datasets are not served from the '
+                        'hypertools URL cache)')
+                    for prefix, label in (
+                            ('fivethirtyeight/', 'a FiveThirtyEight dataset'),
+                            ('kaggle/', 'a Kaggle dataset')):
+                        if dataset.startswith(prefix):
+                            _refuse_offline(dataset, label)
+                else:
+                    geo_data = seaborn_dataset(dataset)
+                    if geo_data is not None:
+                        _reject_kwargs('seaborn dataset')
+                    else:
+                        extra_attempts.append(
+                            'seaborn dataset: not found in the seaborn '
+                            'dataset listing (or that lookup was skipped: '
+                            'not a plain dataset name, or it failed, e.g. '
+                            'no network access)')
+                if geo_data is None:
                     # explicit prefixes -- 'fivethirtyeight/<slug>' and
                     # 'kaggle/<owner>/<dataset>' are unambiguous, so a
                     # matching-but-failing name raises directly instead of
                     # falling through to the attempts digest below
+                    if streaming and dataset.startswith(
+                            ('fivethirtyeight/', 'kaggle/')):
+                        _refuse_streaming(
+                            dataset, 'a FiveThirtyEight/Kaggle dataset')
                     geo_data = fivethirtyeight_dataset(dataset)
                     if geo_data is not None:
                         _reject_kwargs('fivethirtyeight dataset')
@@ -745,15 +825,41 @@ def _load_legacy(dataset_path):
 
     if isinstance(data_dict['data'], dict):
         data_dict['data'] = pd.DataFrame(data_dict['data'])
-    elif isinstance(data_dict['data'], np.ndarray):
+    elif is_array_dataset(data_dict['data']):
         data_dict['data'] = list(data_dict['data'])
     data_dict['xform_data'] = list(data_dict['xform_data'])
     return DataGeometry(**data_dict)
 
 
-def _load_example_data(dataset):
+def _refuse_offline_builtin(dataset, dataset_path, state):
+    """Raise the offline refusal for a hosted built-in dataset whose
+    cached copy cannot be served (absent, or failing its integrity pin)."""
+    from .sources import HypertoolsOfflineError
+    raise HypertoolsOfflineError(
+        f"offline=True, but the built-in dataset '{dataset}' {state} "
+        f"({dataset_path}), and offline=True never downloads. The file "
+        "was left untouched. Drop offline=True to fetch it from the "
+        f"network once (a copy that passes its check is then served from "
+        f"{DATA_DIR} on every later offline load).")
+
+
+def _load_example_data(dataset, offline=False):
+    """Return the raw contents of the hosted built-in ``dataset``, served
+    from its copy in ``DATA_DIR`` when that copy passes its pinned SHA-256
+    check and downloaded (once) otherwise.
+
+    ``offline=True`` never opens a connection: a cached copy that passes
+    the integrity check is served exactly as it is online, and a MISSING
+    or CORRUPT copy raises :class:`~hypertools.io.sources.HypertoolsOfflineError`
+    without downloading, without creating ``DATA_DIR`` and without deleting
+    the user's file (1.1 release audit, finding 1: before this, ``offline``
+    stopped at :func:`_resolve` and this path downloaded on a miss and
+    deleted-and-redownloaded a corrupt file regardless).
+    """
     dataset_path = DATA_DIR.joinpath(dataset)
     if not dataset_path.is_file():
+        if offline:
+            _refuse_offline_builtin(dataset, dataset_path, 'is not cached')
         if not DATA_DIR.is_dir():
             if DATA_DIR.exists():
                 raise HypertoolsIOError(
@@ -774,7 +880,13 @@ def _load_example_data(dataset):
         # matches the pin (corruption, or a poisoned/edited cache) is
         # re-downloaded ONCE from the authoritative host, then re-checked
         # below -- it is never deserialized on the strength of a stale,
-        # unverified cache (2026-07 release review, blocker #1).
+        # unverified cache (2026-07 release review, blocker #1). Offline,
+        # the re-download is impossible, so the refusal comes first and
+        # the file stays on disk for the user to inspect or replace.
+        if offline:
+            _refuse_offline_builtin(
+                dataset, dataset_path,
+                'is cached but fails its SHA-256 integrity check')
         dataset_path.unlink(missing_ok=True)
         _download_example_data(dataset_path)
 

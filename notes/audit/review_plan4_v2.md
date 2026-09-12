@@ -58,7 +58,7 @@ v2 states 2/6, 4/7, 1/6, 2/6, 2/7. Re-measured today: `conversation_shape` **2/6
 The citation sweep declined this as its item 9 ("COULD NOT VERIFY"). Re-measured with the plan's own
 extracted `measure_native_ratio.py`:
 
-| notebook | plan `:64-68` | measured | 
+| notebook | plan `:64-68` | measured |
 |-|-|-|
 | conversation_shape | 186 / 11 / 5.9% | **191 / 12 / 6.3%** |
 | market_forecast | 192 / 11 / 5.7% | **193 / 12 / 6.2%** |

@@ -301,6 +301,14 @@ class Kalman(Forecaster):
 
     Parameters
     ----------
+    step : number, duration string, Timedelta, calendar offset, or None
+        One future step. None infers it per dataset: a datetime index's
+        calendar frequency when it has one (business days, month starts, a
+        ``PeriodIndex``'s periods...), else the median positive gap between
+        sorted observation times. Numerical indexes use their own units;
+        datetime/duration indexes need a duration such as '1h' (datetime
+        indexes also take a calendar frequency such as 'B' or 'MS').
+        See `hypertools.predict` for the interpolation and reuse policies.
     n_iter : int
         Number of EM iterations used to fit the transition/observation
         noise covariances and the initial state (default: 5). The
@@ -315,9 +323,11 @@ class Kalman(Forecaster):
         ``n_observations - 1``).
     """
 
-    def __init__(self, n_iter=5, lags=None):
+    _regular_time_grid = True
+
+    def __init__(self, n_iter=5, lags=None, step=None):
         required = ['kf', 'mean', 'cov', 'n_features']
-        super().__init__(n_iter=n_iter, lags=lags, fitter=fitter, forecaster=forecaster,
+        super().__init__(step=step, n_iter=n_iter, lags=lags, fitter=fitter, forecaster=forecaster,
                           applier=applier, data=None, required=required)
 
         self.n_iter = n_iter

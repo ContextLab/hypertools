@@ -28,7 +28,11 @@ MPL_ANIMS = ['animate', 'animate_spin', 'animate_trails', 'save_movie',
              # the five 1.1 launch examples (Plan 4 Task 8 Step 6)
              'animate_conversation', 'animate_market_sectors',
              'animate_morph_zoo', 'animate_painting_embeddings',
-             'animate_weather_decades']
+             'animate_weather_decades',
+             # ships a thumb and is registered in `post_build.GIF_REPLACEMENTS`,
+             # but was missing here, so nothing regenerated it -- found when the
+             # animated-forecast anchor fix made its clip stale (2026-09-11)
+             'animate_forecast']
 N_FRAMES = 40
 FRAME_MS = 100  # 10 fps thumbs: light files, clearly animated
 

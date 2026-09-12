@@ -44,39 +44,60 @@ def _trail_artists(ax):
 # blink empty mid-animation
 # ---------------------------------------------------------------------------
 
+def _check_chemtrails_never_show_future(r, frames, coords):
+    """The chemtrails trail and the head tile the REVEALED rows with one
+    shared vertex: the trail is empty until the 12-frame head window has
+    filled, then ends exactly where the head begins, and nothing past the
+    head -- the future -- is ever drawn.
+
+    1.1 visual review L8: this used to pin row COUNTS (1 at frame 12, 36 at
+    frame 47) that assumed exactly one drawn row per frame -- the old grid,
+    which resampled every line onto the frame count. The 40-row spiral now
+    keeps its observations on a 79-row grid in this 48-frame animation, so
+    the invariants are stated in rows of whatever grid is drawn."""
+    ax = r.figure.axes[0]
+    grid = r.animation._args[0][0]
+    n_grid, n_frames = grid.shape[0], r.animation._save_count
+    lengths = {}
+    for num in frames:
+        r.animation._draw_frame(num)
+        trail = np.column_stack(coords(_trail_artists(ax)[0]))
+        head = np.column_stack(coords(ax.lines[0]))
+        # the head ends on the row the reveal clock has reached ...
+        head_row = num * (n_grid - 1) // (n_frames - 1)
+        np.testing.assert_allclose(head[-1], grid[head_row, :head.shape[1]])
+        if num <= 11:
+            # ... nothing has left the 12-frame head window yet -- the
+            # historical negative slice drew 37-47 of 48 FUTURE points here
+            assert len(trail) == 0, num
+        if len(trail):
+            # ... and the trail is the past only: it starts at row 0 and
+            # joins the head at the head's first vertex
+            np.testing.assert_allclose(trail[0], grid[0, :trail.shape[1]])
+            np.testing.assert_allclose(trail[-1], head[0])
+            assert len(trail) + len(head) - 1 == head_row + 1
+        lengths[num] = len(trail)
+    return lengths
+
+
 def test_chemtrails_never_shows_future_3d():
     r = hyp.plot([_spiral()], animate=True, chemtrails=True, duration=4,
                  tail_duration=1, frame_rate=12, show=False, antialias=False)
-    ax = r.figure.axes[0]
-    counts = {}
-    for num in (0, 5, 10, 11, 12, 47):
-        r.animation._draw_frame(num)
-        trail = _trail_artists(ax)[0]
-        counts[num] = len(trail.get_data_3d()[0])
-    # nothing has left the 12-frame head window before frame 11 -- the
-    # historical negative slice drew 37-47 of 48 FUTURE points here
-    assert counts[0] == 0
-    assert counts[5] == 0
-    assert counts[10] == 0
-    assert counts[11] == 0
-    assert counts[12] == 1
-    # and the trail is present (no blink to empty) at the final frame
-    assert counts[47] == 36
+    lengths = _check_chemtrails_never_show_future(
+        r, (0, 5, 10, 11, 12, 13, 47), lambda ln: ln.get_data_3d())
+    # the trail appears once rows leave the window, and is present (no
+    # blink to empty) at the final frame
+    assert lengths[13] > 0
+    assert lengths[47] > 0
 
 
 def test_chemtrails_never_shows_future_2d():
     r = hyp.plot([_spiral()], ndims=2, animate=True, chemtrails=True,
                  duration=4, tail_duration=1, frame_rate=12, show=False, antialias=False)
-    ax = r.figure.axes[0]
-    counts = {}
-    for num in (0, 10, 12, 47):
-        r.animation._draw_frame(num)
-        trail = _trail_artists(ax)[0]
-        counts[num] = len(trail.get_xdata())
-    assert counts[0] == 0
-    assert counts[10] == 0
-    assert counts[12] == 1
-    assert counts[47] == 36
+    lengths = _check_chemtrails_never_show_future(
+        r, (0, 10, 12, 13, 47), lambda ln: ln.get_data())
+    assert lengths[13] > 0
+    assert lengths[47] > 0
 
 
 # ---------------------------------------------------------------------------
@@ -106,20 +127,27 @@ def test_continuous_hue_window_animates_3d():
     ha = hyp.plot(c, animate='window', duration=4, frame_rate=10, focused=1,
                   hue=np.arange(200.0), show=False, antialias=False)
     ax = ha.figure.axes[0]
+    # the 1-second window is the rows the head passes in 10 of the 40
+    # frames: round(10 * 199 / 39) = 51 of the 200 rows. (1.1 visual review
+    # L8: this was 10 segments while every line was resampled onto one row
+    # per frame -- 40 of these 200 observations.)
+    n_rows = ha.animation._args[0][0].shape[0]
+    assert n_rows == 200
+    w = int(round(10 * (n_rows - 1) / (ha.animation._save_count - 1)))
     # the head collection is the FIRST collection added (cube wireframe
     # collections have exactly 4 segments each)
     ha.animation._draw_frame(10)
     seg_counts = [len(getattr(co, '_segments3d', []))
                   for co in ax.collections]
-    # no static full-trajectory collection (39 segments) may remain
-    assert max(seg_counts) <= 10
+    # no static full-trajectory collection (199 segments) may remain
+    assert max(seg_counts) <= w
     head = [co for co in ax.collections
-            if len(getattr(co, '_segments3d', [])) == 10][0]
+            if len(getattr(co, '_segments3d', [])) == w][0]
     segs10 = np.array(head._segments3d)
     ha.animation._draw_frame(30)
     segs30 = np.array(head._segments3d)
-    # the 1-second window (10 segments) must SLIDE: same size, new geometry
-    assert segs10.shape == segs30.shape == (10, 2, 3)
+    # the 1-second window must SLIDE: same size, new geometry
+    assert segs10.shape == segs30.shape == (w, 2, 3)
     assert not np.allclose(segs10, segs30)
 
 
@@ -142,9 +170,13 @@ def test_continuous_hue_chemtrails_trail_windows():
     r.animation._draw_frame(20)
     seg_counts = [len(getattr(co, '_segments3d', []))
                   for co in ax.collections]
-    # nothing may hold the full 23-segment trajectory; head window is
-    # 6 frames (0.5 s * 12 fps) -> 6 segments, trail = 20 - 6 = 14 pts
-    assert max(seg_counts) < 23
+    # nothing may hold the full trajectory (one segment fewer than its
+    # drawn rows: 39 for these 40 observations, which it keeps -- 1.1
+    # visual review L8; it was 23 while every line was resampled onto the
+    # 24 frames)
+    n_rows = r.animation._args[0][0].shape[0]
+    assert n_rows == n
+    assert max(seg_counts) < n_rows - 1
 
 
 # ---------------------------------------------------------------------------
@@ -159,7 +191,10 @@ def test_unequal_datasets_all_fully_animated():
         r = hyp.plot(order, animate=True, duration=4, frame_rate=10,
                      show=False)
         interp = r.animation._args[0]
-        assert [d.shape[0] for d in interp] == [40, 40]
+        # each dataset keeps ALL its own rows -- neither is truncated to
+        # the other's length (F04-003) nor, since the 1.1 visual review
+        # (L8), resampled down onto the 40 frames (this was [40, 40])
+        assert [d.shape[0] for d in interp] == [d.shape[0] for d in order]
         assert r.animation._save_count == 40
         # at the final frame every head line reaches its dataset's end
         r.animation._draw_frame(39)

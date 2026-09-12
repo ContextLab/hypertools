@@ -53,6 +53,15 @@ except ImportError:  # pragma: no cover
 #: rough figure rather than a countdown.
 DEFAULT_SLOW_WARNING_SECONDS = 10.0
 
+#: Do not project until a fit at least this many rows long has been timed.
+#: A slope drawn through two fits one row apart at 2 and 3 rows is mostly
+#: timer noise (each takes tens of milliseconds): on a slow CI runner it
+#: projected 10 s for a schedule that finished in well under one, and the
+#: "small schedule stays silent" test failed (release review, 2026-09-07).
+#: A schedule whose longest history is shorter than this projects at its
+#: longest instead.
+PROJECTION_MIN_ROWS = 10
+
 #: Fewest observations we will fit a forecaster to.
 DEFAULT_MIN_HISTORY = 2
 
@@ -71,6 +80,85 @@ DEFAULT_MIN_HISTORY = 2
 #: `hypertools.plot.plotly_backend._forecast_style_from` (plotly) express
 #: the same policy in their own terms, so the two cannot drift.
 FORECAST_ALPHA_SCALE = 0.5
+
+#: Linestyle per MODEL for a `predict=[...]` collection, cycled in model
+#: order (matplotlib fmt vocabulary; the plotly backend maps each through
+#: the same `_resolve_fmt` the observed traces use). A forecast keeps its
+#: dataset's COLOUR -- that is what says which series it continues -- so
+#: with several models on one series the dash is what says which model
+#: made it. The first model is solid, exactly like the single-model form,
+#: so ``predict=['Kalman']`` draws what ``predict='Kalman'`` draws.
+FORECAST_MODEL_LINESTYLES = ('-', '--', ':', '-.')
+
+#: Colour of a forecast's LEGEND glyph when the forecasts sharing that
+#: entry are drawn in more than one colour (one model over several
+#: datasets): the entry then stands for the model's dash, not for any one
+#: dataset's colour, so it is drawn in a neutral dark gray (at the
+#: forecast's own alpha, so it reads as faded like the forecasts do).
+FORECAST_LEGEND_COLOR = '#555555'
+
+#: The least opaque a forecast's legend glyph is drawn. The glyph copies
+#: its forecasts' alpha so it reads as faded like they do, but a legend
+#: key has to stay legible: on a plot whose observed traces are already
+#: translucent (a hierarchy's leaves at 0.7, halved to 0.35 for their
+#: forecasts) a glyph at the forecasts' alpha was a near-invisible
+#: hairline (1.1 release review, feature-tour 9.10).
+FORECAST_LEGEND_MIN_ALPHA = 0.8
+
+
+def override_has_color(override):
+    """Whether a `resolve_forecast_overrides` dict recolours the forecast:
+    a ``'color'`` entry (`forecast_hue=`/`forecast_cluster=`/
+    `forecast_palette=`) or a colour letter in its ``'fmt'``."""
+    if not override:
+        return False
+    if override.get('color') is not None:
+        return True
+    fmt = override.get('fmt')
+    if not fmt:
+        return False
+    try:
+        from matplotlib.axes._base import _process_plot_format
+        return _process_plot_format(fmt)[2] is not None
+    except Exception:  # pragma: no cover - matplotlib moved its parser
+        return False
+
+
+def forecast_alpha_scale_for(override, alpha_scale=FORECAST_ALPHA_SCALE):
+    """The alpha scale a forecast is drawn with: `alpha_scale` (the
+    documented halving) when it inherits its trace's colour, and 1.0 --
+    the trace's own alpha -- when an override recolours it: the colour is
+    then what tells the forecast from its trace, and fading a recoloured
+    forecast on top of that hid it among translucent traces (1.1 release
+    review, feature-tour 9.10). Both backends call this."""
+    return 1.0 if override_has_color(override) else alpha_scale
+
+
+def forecast_model_fmts(n_models, n_datasets):
+    """One `fmt` per forecast, MODEL-MAJOR (the order `plot()` keeps a
+    collection's forecasts in): model k's `n_datasets` forecasts all take
+    `FORECAST_MODEL_LINESTYLES[k]`, cycling past the fourth model."""
+    cycle = FORECAST_MODEL_LINESTYLES
+    return [cycle[k % len(cycle)]
+            for k in range(int(n_models)) for _ in range(int(n_datasets))]
+
+
+def group_forecast_labels(labels):
+    """``[(label, [indices]), ...]`` -- the distinct legend labels in first-
+    appearance order, each with the forecasts (positions in `labels`) that
+    share it. ``None`` labels are skipped. Both backends build one legend
+    entry per group from this, so the two legends list the same entries in
+    the same order."""
+    groups = {}
+    order = []
+    for i, label in enumerate(labels or ()):
+        if label is None:
+            continue
+        if label not in groups:
+            groups[label] = []
+            order.append(label)
+        groups[label].append(i)
+    return [(label, groups[label]) for label in order]
 
 #: `trail_alpha`'s floor, as a FRACTION of the LIVE forecast's alpha.
 #:
@@ -102,7 +190,33 @@ def forecast_alpha(observed_alpha, alpha_scale=FORECAST_ALPHA_SCALE):
     return base * float(alpha_scale)
 
 
-def forecast_from_history(history, model, t, min_history=DEFAULT_MIN_HISTORY):
+def model_min_history(model):
+    """The fewest revealed rows `model` can be fit on (`Forecaster.min_history`).
+
+    `model` is anything `hypertools.predict` accepts (a name, a spec dict,
+    a `Forecaster` subclass or instance); it is resolved with `hyp.predict`'s
+    own resolver, so an unknown spec raises the same ``ValueError`` here that
+    the first fit would have raised. A class or dict spec is NOT constructed
+    (a `Chronos` constructor would download a model): the floor is read from
+    the class's `min_history_for`, given the spec's constructor arguments.
+    """
+    from ..predict.predict import _resolve_forecaster_spec
+    from ..predict.common import Forecaster
+    resolved, kwargs = _resolve_forecaster_spec(model, {})
+    if isinstance(resolved, Forecaster):
+        return int(resolved.min_history)
+    args = []
+    if isinstance(resolved, dict):
+        args = list(resolved.get('args', []) or [])
+        kwargs = {**dict(resolved.get('kwargs', {}) or {}), **kwargs}
+        resolved = resolved['model']
+        if isinstance(resolved, Forecaster):
+            return int(resolved.min_history)
+    return int(resolved.min_history_for(*args, **kwargs))
+
+
+def forecast_from_history(history, model, t, min_history=DEFAULT_MIN_HISTORY,
+                          dataset=None):
     """Forecast `t` steps on from `history`, as a displacement path.
 
     Parameters
@@ -117,7 +231,16 @@ def forecast_from_history(history, model, t, min_history=DEFAULT_MIN_HISTORY):
         Forecast horizon, in RAW analyze-space steps. ``t=1`` is the next
         observation.
     min_history : int, default 2
-        Refuse to forecast from fewer rows than this.
+        Refuse to forecast from fewer rows than this. The model's own floor
+        (`model_min_history`: 3 for the default ARIMA order) is applied on
+        top of it, so a history the model could not be fit on returns
+        ``None`` rather than reaching the model's internals.
+    dataset : int or None
+        Which dataset `history` belongs to. Only read when `model` is a
+        forecaster already FITTED on several datasets
+        (``hyp.predict([a, b], return_model=True)``): the history is then
+        forecast with that dataset's own fitted parameters
+        (`Forecaster.for_dataset`).
 
     Returns
     -------
@@ -138,7 +261,14 @@ def forecast_from_history(history, model, t, min_history=DEFAULT_MIN_HISTORY):
         raise ValueError(
             f"history must be 2-D (n_observed, n_dims); got shape "
             f"{history.shape}.")
-    if len(history) < max(2, min_history):
+    if (dataset is not None and hasattr(model, 'for_dataset')
+            and len(getattr(model, 'models_', ())) > 1):
+        # a forecaster fitted on several datasets: forecast THIS dataset's
+        # history with its own fitted parameters (the schedule forecasts
+        # one history at a time, which `predict_new` otherwise refuses as
+        # a dataset-count mismatch; Codex round 3)
+        model = model.for_dataset(dataset)
+    if len(history) < max(2, min_history, model_min_history(model)):
         return None
 
     forecast = np.asarray(_predict(history, model=model, t=t), dtype=float)
@@ -178,6 +308,41 @@ def revealed_raw_counts(n_raw, n_grid, num, total_frames):
     return min(n_raw, int(np.floor(pos)) + 1)
 
 
+def drawn_head_index(n_grid, num, total_frames):
+    """FRAME-GRID row the reveal ends on at frame `num` (parallel/window).
+
+    `revealed_raw_counts` takes this same `end` and floors it back onto RAW
+    rows -- the last observation at or before the head. This returns the head
+    itself: the vertex the backends actually draw last.
+    """
+    from .trails import anim_window_bounds
+    _, end, _ = anim_window_bounds(num, total_frames, int(n_grid), 0)
+    return max(0, int(end) - 1)
+
+
+def grid_head(grid, n_raw, n_grid, head_index):
+    """``(point, raw position)`` of the grid vertex a frame's reveal ends on.
+
+    The point is read straight out of the animation grid the backends draw
+    from -- not re-derived by interpolating the history a second time, which
+    could drift from the picture. `position` is where that vertex falls in
+    RAW rows (fractional between observations), which is what a 1-D plot puts
+    on x.
+
+    ``(None, None)`` when there is no grid to read, i.e. for a `hue=`/
+    `cluster=` regrouped reveal, whose forecasts keep the raw-row anchor.
+    """
+    if grid is None:
+        return None, None
+    grid = np.asarray(grid, dtype=float)
+    if not len(grid):
+        return None, None
+    j = min(max(int(head_index), 0), len(grid) - 1)
+    n_raw, n_grid = int(n_raw), int(n_grid)
+    pos = (j * (n_raw - 1) / (n_grid - 1)) if n_grid > 1 and n_raw > 1 else 0.0
+    return grid[j], float(pos)
+
+
 class DatasetRevealSchedule:
     """Which ORIGINAL rows of each source dataset are on screen at each frame.
 
@@ -212,51 +377,91 @@ class DatasetRevealSchedule:
         self.window_frames = int(window_frames)
         self.serial = bool(serial)
         self._rows = []
+        # Per frame per dataset: the DRAWN head as ``(run, grid row)``, and
+        # its fractional source parameter. Finding the run that holds the head
+        # is work the reveal already does to count rows; keeping WHICH run won
+        # and where its polyline ends is what lets a forecast start at the
+        # vertex the picture ends on rather than at the observation behind it
+        # (maintainer report, 2026-09-11).
+        self._heads = []
+        self._head_params = []
         for frame in range(self.n_frames):
             if self.serial:
-                counts = self._serial_counts(frame)
+                counts, heads, params = self._serial_counts(frame)
             else:
                 windows = dataset_window_bounds(
                     frame, self.n_frames, ownership, self.grid_lengths,
                     self.window_frames)
-                counts = []
+                counts, heads, params = [], [], []
                 for d in range(ownership.n_datasets):
                     head = None
+                    at = None
                     for r in ownership.runs_of(d):
                         p = run_head_param(windows[r], ownership, r)
-                        if p is not None:
-                            head = p if head is None else max(head, p)
+                        if p is not None and (head is None or p > head):
+                            head, at = p, (r, windows[r].head_end - 1)
                     counts.append(0 if head is None
                                   else min(ownership.row_count(d),
                                            int(head) + 1))
+                    heads.append(at)
+                    params.append(None if head is None else float(head))
             self._rows.append([tuple(range(k)) for k in counts])
+            self._heads.append(heads)
+            self._head_params.append(params)
 
     def _serial_counts(self, frame):
         """`order='serial'` already sweeps runs in order (`serial_reveal_counts`
-        walks the trace list), so a dataset's count is the sum of its runs'."""
+        walks the trace list), so a dataset's count is the sum of its runs'.
+
+        Returns ``(counts, heads, params)`` -- the same three the non-serial
+        branch collects: rows revealed, the drawn head as ``(run, grid row)``,
+        and the head's fractional source parameter. A serial sweep reaches
+        runs in order, so the LAST run with anything on screen holds the head.
+        """
         from .matplotlib_backend import serial_reveal_counts
         own = self.ownership
         grid_counts = serial_reveal_counts(
             list(self.grid_lengths), frame, self.n_frames)
-        out = []
+        out, heads, params = [], [], []
         for d in range(own.n_datasets):
             total = 0
+            at = None
+            param = None
             for r in own.runs_of(d):
                 g = self.grid_lengths[r]
-                _, n_rows = own.run_span(r)
+                first_row, n_rows = own.run_span(r)
                 span = own.draw_span(r)
                 shown = min(grid_counts[r], g)
                 if g < 2 or span <= 0 or shown <= 0:
                     total += min(n_rows, max(0, shown))
+                    if shown > 0:                 # an all-or-nothing run
+                        at, param = (r, max(0, shown - 1)), float(first_row)
                 else:
                     pos = (shown - 1) * span / (g - 1)
                     total += min(n_rows, int(np.floor(pos)) + 1)
+                    at, param = (r, shown - 1), float(first_row + pos)
             out.append(min(own.row_count(d), total))
-        return out
+            heads.append(at)
+            params.append(param)
+        return out, heads, params
 
     def visible_rows(self, dataset, frame):
         """Original row indices of `dataset` on screen at `frame`, in order."""
         return self._rows[min(max(int(frame), 0), self.n_frames - 1)][dataset]
+
+    def head_index(self, dataset, frame):
+        """``(run, grid row)`` of this dataset's DRAWN head, or None.
+
+        The grid row indexes the run's OWN drawn array, so the head vertex is
+        ``grids[run][grid_row]`` for the same per-run arrays the backends
+        animate.
+        """
+        return self._heads[min(max(int(frame), 0), self.n_frames - 1)][dataset]
+
+    def head_param(self, dataset, frame):
+        """The drawn head's fractional ORIGINAL-row position, or None."""
+        return self._head_params[
+            min(max(int(frame), 0), self.n_frames - 1)][dataset]
 
     def head_run(self, dataset, frame):
         """The run DRAWING this dataset's last visible row, or `None` when
@@ -318,7 +523,14 @@ def project_schedule_cost(timings, remaining_rows):
             f"projecting a schedule needs timed fits at two DIFFERENT "
             f"history lengths; got {sorted(timings)}")
     short, long = min(timings), max(timings)
-    per_row = (timings[long] - timings[short]) / (long - short)
+    if len(timings) == 2:
+        per_row = (timings[long] - timings[short]) / (long - short)
+    else:
+        # every timed length, by least squares: one noisy pair no longer
+        # sets the slope on its own
+        rows = np.asarray(sorted(timings), dtype=float)
+        secs = np.asarray([timings[int(r)] for r in rows], dtype=float)
+        per_row = float(np.polyfit(rows, secs, 1)[0])
     per_row = max(per_row, 0.0)          # noise can invert two samples
     setup = max(timings[long] - per_row * long, 0.0)
     projected = sum(setup + per_row * rows for rows in remaining_rows)
@@ -341,7 +553,8 @@ class ForecastSchedule:
 
     def __init__(self, histories, counts=None, model=None, t=None, rows=None,
                  min_history=DEFAULT_MIN_HISTORY, transform=None,
-                 slow_warning_seconds=DEFAULT_SLOW_WARNING_SECONDS):
+                 slow_warning_seconds=DEFAULT_SLOW_WARNING_SECONDS,
+                 forecast_function=None, heads=None, head_positions=None):
         if (counts is None) == (rows is None):
             raise ValueError(
                 "pass exactly one of counts= (a revealed ROW COUNT per "
@@ -358,9 +571,26 @@ class ForecastSchedule:
         self.rows = [[tuple(int(i) for i in r) for r in frame]
                      for frame in rows]
         self.counts = [[len(r) for r in frame] for frame in self.rows]
+        # `heads[f][i]` is the VERTEX dataset `i`'s trajectory ends on at
+        # frame `f` -- the drawn endpoint, which an animation's refined frame
+        # grid puts BETWEEN two raw observations. `counts`/`rows` above are
+        # the observations the fit may use; the head is where the result is
+        # drawn from. Absent (None) for a reveal with no grid to read.
+        self.heads = (None if heads is None else
+                      [[None if h is None else np.asarray(h, dtype=float)
+                        for h in frame] for frame in heads])
+        # ...and where each head falls in RAW rows, fractionally (a 1-D plot
+        # draws the row index on x, so its forecast hangs off this).
+        self.head_positions = (
+            None if head_positions is None else
+            [[None if p is None else float(p) for p in frame]
+             for frame in head_positions])
         self.model = model
         self.t = int(t)
-        self.min_history = int(min_history)
+        # the caller's floor, raised to the MODEL's own: an ARIMA(1, 1, 1)
+        # cannot be fit on the 2-row history the earliest frames reveal, so
+        # those frames draw no forecast rather than crashing the schedule
+        self.min_history = max(int(min_history), model_min_history(model))
         self.transform = transform
         self.n_frames = len(self.counts)
         self.n_datasets = len(self.histories)
@@ -378,6 +608,13 @@ class ForecastSchedule:
                     todo.append((i, r))
         self._paths.clear()
 
+        # Several drawn columns can share one multivariate fit. A callback
+        # may expose its fit key so timing/counts describe the model work,
+        # while the path cache still keeps every distinct drawn trace.
+        fit_key = getattr(forecast_function, 'fit_key', lambda i, rows: (i, rows))
+        fit_count = len({fit_key(i, r) for i, r in todo})
+        completed_fits = set()
+
         warned = slow_warning_seconds is None
         # Seconds keyed by revealed-history LENGTH, for fits that really
         # ran. A mapping rather than a list of samples, because the slope
@@ -387,20 +624,26 @@ class ForecastSchedule:
         self.projection = None       # filled in when a projection is made
         for n_done, (i, r) in enumerate(todo):
             start = time.perf_counter()
-            path = forecast_from_history(self.histories[i][list(r)],
-                                         self.model, self.t,
-                                         min_history=self.min_history)
+            path = (forecast_function(i, r, self.model, self.t, self.min_history)
+                    if forecast_function is not None else
+                    forecast_from_history(self.histories[i][list(r)],
+                                          self.model, self.t,
+                                          min_history=self.min_history,
+                                          dataset=i))
             elapsed = time.perf_counter() - start
             spent += elapsed
-            if path is not None:
+            key = fit_key(i, r)
+            did_fit = path is not None and key not in completed_fits
+            if did_fit:
                 self.n_fits += 1
+                completed_fits.add(key)
             self._paths[(i, r)] = path
             # Time only REAL fits. The earliest (dataset, count) pairs are
             # histories shorter than min_history, where forecast_from_history
             # returns None without fitting anything -- timing one of those
             # projects 0.0 s for a job that may take minutes, which is worse
             # than not warning at all.
-            if path is not None:
+            if did_fit:
                 timings.setdefault(len(r), []).append(elapsed)
             # Wait for two DISTINCT history lengths. `todo` is ordered by
             # FRAME and then by DATASET, so every dataset is fitted at one
@@ -412,10 +655,17 @@ class ForecastSchedule:
             # silently collapsed back into the constant-per-fit projection
             # it exists to replace -- with nothing failing, because a
             # factor-of-ten tolerance covers the difference on small data.
-            if not warned and len(timings) >= 2:
+            # ...and for a timed fit long enough to measure (see
+            # `PROJECTION_MIN_ROWS`), or the schedule's longest when that
+            # is shorter
+            longest = max(len(rows) for _, rows in todo)
+            if (not warned and len(timings) >= 2
+                    and max(timings) >= min(PROJECTION_MIN_ROWS, longest)):
                 pooled = {rows: float(np.median(times))
                           for rows, times in timings.items()}
-                remaining = [len(rows) for _, rows in todo[n_done + 1:]]
+                remaining = list({fit_key(j, rows): len(rows)
+                                  for j, rows in todo[n_done + 1:]
+                                  if fit_key(j, rows) not in completed_fits}.values())
                 projected, per_row, setup, lengths = project_schedule_cost(
                     pooled, remaining)
                 total = spent + projected
@@ -429,7 +679,7 @@ class ForecastSchedule:
                 }
                 if total > slow_warning_seconds:
                     warnings.warn(
-                        f"predict= over this animation needs {len(todo)} "
+                        f"predict= over this animation needs {fit_count} "
                         f"forecast fits (one per distinct revealed history "
                         f"length), projected at roughly {total:.1f} s in "
                         f"total before the first frame can be drawn: "
@@ -450,49 +700,80 @@ class ForecastSchedule:
     @classmethod
     def for_parallel(cls, histories, grid_lengths, model, t, n_frames,
                      min_history=DEFAULT_MIN_HISTORY,
-                     slow_warning_seconds=DEFAULT_SLOW_WARNING_SECONDS):
+                     slow_warning_seconds=DEFAULT_SLOW_WARNING_SECONDS,
+                     forecast_function=None, grids=None):
         """Schedule for a parallel/`'window'` animation.
 
         Every dataset advances together, so each one's revealed row count
         comes straight from `revealed_raw_counts` -- i.e. from the library's
         own `trails.anim_window_bounds`, not a second copy of the reveal
-        arithmetic.
+        arithmetic. `grids` are the animation-grid arrays the backends draw,
+        read here for each frame's drawn head (see `grid_head`).
         """
-        counts = [[revealed_raw_counts(len(h), g, f, n_frames)
-                   for h, g in zip(histories, grid_lengths)]
-                  for f in range(n_frames)]
+        counts, heads, positions = [], [], []
+        for f in range(n_frames):
+            counts.append([revealed_raw_counts(len(h), g, f, n_frames)
+                           for h, g in zip(histories, grid_lengths)])
+            if grids is None:
+                continue
+            frame_heads, frame_positions = [], []
+            for h, g, grid in zip(histories, grid_lengths, grids):
+                point, pos = grid_head(grid, len(h), g,
+                                       drawn_head_index(g, f, n_frames))
+                frame_heads.append(point)
+                frame_positions.append(pos)
+            heads.append(frame_heads)
+            positions.append(frame_positions)
         return cls(histories, counts=counts, model=model, t=t,
                    min_history=min_history,
-                   slow_warning_seconds=slow_warning_seconds)
+                   slow_warning_seconds=slow_warning_seconds,
+                   forecast_function=forecast_function,
+                   heads=heads or None, head_positions=positions or None)
 
     @classmethod
     def for_serial(cls, histories, grid_lengths, model, t, n_frames,
                    min_history=DEFAULT_MIN_HISTORY,
-                   slow_warning_seconds=DEFAULT_SLOW_WARNING_SECONDS):
+                   slow_warning_seconds=DEFAULT_SLOW_WARNING_SECONDS,
+                   forecast_function=None, grids=None):
         """Serial reveals one dataset at a time, so its schedule comes from
         the backend's own `serial_reveal_counts` (animation-core Task 7),
-        mapped from frame-grid rows onto raw rows dataset by dataset."""
+        mapped from frame-grid rows onto raw rows dataset by dataset. The
+        drawn head comes off the same `shown` count, one grid row back."""
         from .matplotlib_backend import serial_reveal_counts
-        counts = []
+        counts, heads, positions = [], [], []
         for f in range(n_frames):
             grid_counts = serial_reveal_counts(list(grid_lengths), f, n_frames)
-            row = []
-            for h, g, shown in zip(histories, grid_lengths, grid_counts):
+            row, frame_heads, frame_positions = [], [], []
+            for i, (h, g, shown) in enumerate(
+                    zip(histories, grid_lengths, grid_counts)):
                 n_raw = len(h)
                 if g < 2 or n_raw < 2 or shown <= 0:
                     row.append(min(n_raw, max(0, shown)))
                 else:
                     pos = (min(shown, g) - 1) * (n_raw - 1) / (g - 1)
                     row.append(min(n_raw, int(np.floor(pos)) + 1))
+                if grids is None:
+                    continue
+                point, head_pos = grid_head(
+                    grids[i] if i < len(grids) else None, n_raw, g,
+                    max(0, min(int(shown), int(g)) - 1))
+                frame_heads.append(point)
+                frame_positions.append(head_pos)
             counts.append(row)
+            if grids is not None:
+                heads.append(frame_heads)
+                positions.append(frame_positions)
         return cls(histories, counts=counts, model=model, t=t,
                    min_history=min_history,
-                   slow_warning_seconds=slow_warning_seconds)
+                   slow_warning_seconds=slow_warning_seconds,
+                   forecast_function=forecast_function,
+                   heads=heads or None, head_positions=positions or None)
 
     @classmethod
     def for_regrouped(cls, histories, reveal, model, t, n_frames,
                       min_history=DEFAULT_MIN_HISTORY,
-                      slow_warning_seconds=DEFAULT_SLOW_WARNING_SECONDS):
+                      slow_warning_seconds=DEFAULT_SLOW_WARNING_SECONDS,
+                      forecast_function=None, grids=None):
         """Schedule for an animation whose data `hue=`/`cluster=` regrouped.
 
         The revealed rows come from a `DatasetRevealSchedule` rather than from
@@ -503,9 +784,31 @@ class ForecastSchedule:
         """
         rows = [[reveal.visible_rows(i, f) for i in range(len(histories))]
                 for f in range(n_frames)]
+        # `grids` here is one array per RUN (what the backends draw), so the
+        # head vertex comes from the run the reveal says is drawing it.
+        heads, positions = [], []
+        if grids is not None:
+            for f in range(n_frames):
+                frame_heads, frame_positions = [], []
+                for i in range(len(histories)):
+                    at = reveal.head_index(i, f)
+                    grid = (np.asarray(grids[at[0]], dtype=float)
+                            if at is not None and at[0] < len(grids)
+                            else None)
+                    if grid is None or not len(grid):
+                        frame_heads.append(None)
+                        frame_positions.append(None)
+                        continue
+                    j = min(max(int(at[1]), 0), len(grid) - 1)
+                    frame_heads.append(grid[j])
+                    frame_positions.append(reveal.head_param(i, f))
+                heads.append(frame_heads)
+                positions.append(frame_positions)
         return cls(histories, rows=rows, model=model, t=t,
                    min_history=min_history,
-                   slow_warning_seconds=slow_warning_seconds)
+                   slow_warning_seconds=slow_warning_seconds,
+                   forecast_function=forecast_function,
+                   heads=heads or None, head_positions=positions or None)
 
     # -- lookups -----------------------------------------------------------
     def revealed_rows(self, dataset, frame):
@@ -528,16 +831,57 @@ class ForecastSchedule:
             return None
         return self.histories[dataset][rows[-1]]
 
+    def head(self, dataset, frame):
+        """The vertex the DRAWN trajectory ends on at `frame`, or None.
+
+        An animation is paced on a refined frame grid, so the head usually
+        falls BETWEEN two raw observations; `anchor` is the last observation
+        at or before it. A forecast continues from the head -- the endpoint a
+        viewer can actually see -- rather than hanging back from the line's
+        tip (maintainer report, 2026-09-11). None when no grid was passed (a
+        `hue=`/`cluster=` regrouped reveal), where `anchor` stands in.
+        """
+        if self.heads is None:
+            return None
+        return self.heads[min(frame, self.n_frames - 1)][dataset]
+
+    def head_position(self, dataset, frame):
+        """Where this frame's head falls in RAW rows, fractionally.
+
+        1-D plots draw the row index on x, so their forecast hangs off this
+        rather than off the integer row `anchor` sits on. Falls back to that
+        row when there is no grid.
+        """
+        if self.head_positions is None:
+            rows = self.revealed_rows(dataset, frame)
+            return float(rows[-1]) if rows else None
+        return self.head_positions[min(frame, self.n_frames - 1)][dataset]
+
     def path(self, dataset, frame):
         """Displacement path (t + 1, d) for `dataset` at `frame`, or None."""
         return self._paths[(dataset, self.revealed_rows(dataset, frame))]
 
     def polyline(self, dataset, frame):
-        """The DRAWN forecast: anchor + displacement, or None."""
+        """The DRAWN forecast: this frame's head, then every predicted point.
+
+        Only the vertex the forecast hangs FROM moves with the reveal; rows
+        1.. are the model's own predictions at the absolute positions they
+        were fitted to. So `t=` still counts raw steps on from the last
+        OBSERVATION, `pin_ramp`'s exact x ramp is untouched, and the vertex
+        count is unchanged -- the forecast simply meets the line it
+        continues.
+        """
         path = self.path(dataset, frame)
         if path is None:
             return None
-        return self.anchor(dataset, frame) + path
+        anchor = self.anchor(dataset, frame)
+        if anchor is None:
+            return None
+        drawn = anchor + path
+        head = self.head(dataset, frame)
+        if head is None:
+            return drawn
+        return np.vstack([np.asarray(head, dtype=float), drawn[1:]])
 
     def stacked_paths(self):
         """Every forecast vertex this schedule will ever draw, stacked.
@@ -588,6 +932,13 @@ class ForecastSchedule:
         out.transform = transform
         out.n_frames, out.n_datasets = self.n_frames, self.n_datasets
         out.n_fits = 0            # no refitting: displacements are affine-mapped
+        # a head is a POSITION (a drawn vertex), so it takes the same full
+        # affine the histories take; a head POSITION is a raw row index, not
+        # a coordinate, so it carries through untouched
+        out.heads = (None if self.heads is None else
+                     [[None if h is None else transform(h) for h in frame]
+                      for frame in self.heads])
+        out.head_positions = self.head_positions
         # a displacement is a DIFFERENCE of positions, so the mean cancels and
         # only the scale survives: d_display = 2 * d_analyze / scale
         out._paths = {key: (None if p is None else 2.0 * p / transform.scale)
@@ -642,10 +993,22 @@ class MultiModelSchedule:
         return sched.revealed(i, frame)
 
     def anchor(self, dataset, frame):
-        """The last revealed observation this slot's forecast starts from
-        (see `ForecastSchedule.anchor`)."""
+        """The last observation this slot's forecast was fit through -- the
+        forecast is DRAWN from `head` (see `ForecastSchedule.anchor`)."""
         sched, i = self._locate(dataset)
         return sched.anchor(i, frame)
+
+    def head(self, dataset, frame):
+        """The vertex this slot's drawn trajectory ends on at `frame` (see
+        `ForecastSchedule.head`)."""
+        sched, i = self._locate(dataset)
+        return sched.head(i, frame)
+
+    def head_position(self, dataset, frame):
+        """Where that head falls in raw rows (see
+        `ForecastSchedule.head_position`)."""
+        sched, i = self._locate(dataset)
+        return sched.head_position(i, frame)
 
     def path(self, dataset, frame):
         """This slot's displacement path at `frame`, or None (see

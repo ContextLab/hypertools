@@ -200,3 +200,53 @@ class TestLoopThroughPlot:
         with pytest.raises(ValueError, match=r"loop=True is only supported"):
             hyp.plot(clouds[:2], animate=style, loop=True, duration=1,
                      show=False)
+
+
+# --- 1.1 release review: A2 per-segment rotations= under loop=True --------
+
+class TestLoopedRotationsList:
+    """`loop=` promises ``2(n + 1) - 1`` segments; the plot()-level check
+    counted ``2n - 1`` while the backends re-validated against the looped
+    cloud list, so neither 5 nor 7 entries were ever accepted."""
+
+    def clouds(self):
+        rng = np.random.default_rng(0)
+        return [rng.normal(size=(50, 3)) + 3.0 * i for i in range(3)]
+
+    @pytest.mark.parametrize('backend', ['matplotlib', 'plotly'])
+    def test_the_documented_length_is_accepted(self, backend):
+        if backend == 'plotly':
+            pytest.importorskip('plotly')
+        out = hyp.plot(self.clouds(), animate='morph', loop=True,
+                       rotations=[0.5, 1, 0.5, 1, 0.5, 1, 0.5],
+                       duration=2, frame_rate=5, show=False,
+                       backend=backend)
+        if backend == 'matplotlib':
+            try:
+                assert out.n_segments == 7
+            finally:
+                plt.close(out.figure)
+        else:
+            assert len(out.frames) > 0
+
+    @pytest.mark.parametrize('backend', ['matplotlib', 'plotly'])
+    def test_the_unlooped_length_is_rejected_naming_the_looped_count(
+            self, backend):
+        if backend == 'plotly':
+            pytest.importorskip('plotly')
+        with pytest.raises(ValueError) as err:
+            hyp.plot(self.clouds(), animate='morph', loop=True,
+                     rotations=[1] * 5, duration=2, frame_rate=5,
+                     show=False, backend=backend)
+        msg = str(err.value)
+        assert 'has 5 entries' in msg and 'needs exactly 7' in msg
+        assert 'loop=True' in msg and '3 clouds count as 4' in msg
+
+    def test_without_loop_the_unlooped_length_still_holds(self):
+        anim = hyp.plot(self.clouds(), animate='morph',
+                        rotations=[1] * 5, duration=2, frame_rate=5,
+                        show=False)
+        try:
+            assert anim.n_segments == 5
+        finally:
+            plt.close(anim.figure)

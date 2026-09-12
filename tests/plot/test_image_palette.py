@@ -156,10 +156,18 @@ def test_n_colors_must_be_a_positive_integer(tmp_path):
 # --- the `palette='image:<path>'` spelling ------------------------------------
 
 def test_palette_string_resolves_through_get_palette_colors(tmp_path):
-    """One interception in _get_palette must serve every palette consumer."""
+    """One interception in _get_palette must serve every palette consumer.
+    As a PLOT palette the image's colors are sorted by value (dark to
+    bright; Jeremy, 2026-09-08) -- the salient vivid red comes after the
+    pale beige only if it is darker, which it is -- and ``?sort=original``
+    keeps the extraction order, vivid first."""
     path = painting_png(tmp_path)
     resolved = get_palette_colors(f'image:{path}', 2)
-    assert resolved[0] == pytest.approx(VIVID, abs=0.02)
+    assert any(np.allclose(c, VIVID, atol=0.02) for c in resolved)
+    from matplotlib.colors import rgb_to_hsv
+    assert np.all(np.diff(rgb_to_hsv(np.asarray(resolved))[:, 2]) >= 0)
+    original = get_palette_colors(f'image:{path}?sort=original', 2)
+    assert original[0] == pytest.approx(VIVID, abs=0.02)
 
 
 def test_palette_string_colours_a_categorical_hue(tmp_path):
@@ -208,8 +216,12 @@ def test_an_image_with_too_few_colours_interpolates_rather_than_repeats(
     drawn = [to_rgb(ln.get_color()) for ln in _ax(fig).lines]
     assert len({tuple(np.round(c, 6)) for c in drawn}) == 5, (
         'repeated colours would make two categories indistinguishable')
-    assert np.allclose(drawn[0], VIVID, atol=0.02), (
-        'the most salient anchor must survive interpolation, and lead')
+    assert any(np.allclose(c, VIVID, atol=0.02) for c in drawn), (
+        'the most salient anchor must survive interpolation')
+    # the anchors are sorted by value before blending, so the five colours
+    # run dark to bright (the vivid red is the darker anchor here)
+    from matplotlib.colors import rgb_to_hsv
+    assert np.all(np.diff(rgb_to_hsv(np.asarray(drawn))[:, 2]) >= -1e-9)
 
 
 def test_a_single_colour_image_raises_rather_than_inventing_colours(

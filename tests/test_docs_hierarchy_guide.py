@@ -1,19 +1,22 @@
-"""The hierarchy guide exists, is reachable, and is TRUE.
+"""The hierarchy guide exists, is reachable, and describes what it links.
 
-Two kinds of assertion live here.
+Every assertion here is structural or prose-level: the guide page exists
+and sits in the index toctree (an .rst in no toctree is both unreachable
+and a Sphinx warning against a zero-warning build standard); it carries
+every section the maintainer review named (F22); its "How each axis is
+read" comparison table shows the row-plot vs row-forecast divergence and
+the `plot(..., predict=)` shape rule on all three rows; `api.rst` links
+it from BOTH the Plot and Predict sections and `tutorials.rst` links it
+too; and the market-sectors section of `tutorials.rst` is checked
+against what `market_sectors.ipynb` actually does (hierarchy framing
+only if the notebook builds a MultiIndex, otherwise the hyperalignment
+and market-mean framing).
 
-Structural ones pin the sections the maintainer review named (F22) and the
-links that make the page reachable -- a guide that is written but never
-linked is not documentation, and an .rst in no toctree is also a Sphinx
-warning against a zero-warning build standard.
-
-The one that matters most is `test_every_doctest_in_the_guide_runs`. Every
-example on the page is a real, executed `hyp.plot`/`hyp.predict` call whose
-printed output -- trace counts, hierarchy keys, forecast shapes, and the
-verbatim text of six error/warning messages -- is compared against what the
-library actually produces. A guide is the first place a user meets this
-feature, so a stale example is worse than no example: this test is what
-makes the page fail loudly instead of aging quietly.
+The guide's worked examples are `.. doctest::` blocks; this file does
+NOT execute them. They run under Sphinx's doctest builder
+(`cd docs && make doctest`, see the `sphinx.ext.doctest` note in
+docs/conf.py), which is where a stale printed output or quoted message
+fails.
 """
 import json
 import os

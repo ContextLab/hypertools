@@ -7,6 +7,7 @@ import scipy.interpolate as interpolate
 from .common import Manipulator
 
 from ..core.shared import get
+from ..core.pipeline import as_internal_frames
 
 
 def _resampling_x(data):
@@ -77,6 +78,9 @@ def fitter(data, **kwargs):
                     ld[k].append(d[k])
         return ld
 
+    # frames of any backend become pandas here, once (datatype audit,
+    # 2026-09-08): this fitter reads the pandas index directly
+    data = as_internal_frames(data)
     if dw.zoo.is_multiindex_dataframe(data):
         return listify_dicts([fitter(d, **kwargs) for d in dw.unstack(data)])
     elif isinstance(data, list):
@@ -143,6 +147,10 @@ def transformer(data, **kwargs):
         If `axis` is missing from `kwargs`, or (after resolving
         `transpose`) is not 0.
     """
+    # a fitted manipulator's `.transform` hands over whatever the caller
+    # passed: frames of any backend become pandas here, once (datatype
+    # audit, 2026-09-08)
+    data = as_internal_frames(data)
     if dw.zoo.is_multiindex_dataframe(data):
         stack_result = True
         data = dw.unstack(data)

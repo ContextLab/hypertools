@@ -652,3 +652,86 @@ class TestVolumeMoreTransparentThanR1:
         _, _, _, opacity, _ = resolve_plotly_volume_params(
             0.2, 3, boost=DENSITY_BOOST_MAX)
         assert opacity < self.R1_MAX_VOLUME_OPACITY
+
+
+class TestDensityGridFadesOutInsideItself:
+    """The KDE grid used to stop 15% past each dataset's bounding box, so
+    under the unit frame a wide, flat cloud's glow was cut off in a hard
+    horizontal band well inside the frame (feature tour 9.14, 2026-09-06).
+    The grid now also reaches `KDE_GRID_BANDWIDTHS` kernel widths past the
+    data, where the density has already faded -- and it stays LOCAL to its
+    own cloud, so a small cloud beside a huge one keeps its resolution (a
+    scene-wide grid sampled it to all zeros; release review round 2)."""
+
+    @staticmethod
+    def _flat_wide_clouds():
+        rng = np.random.default_rng(3)
+        return [np.column_stack([rng.normal(c, 0.5, 60),
+                                 rng.normal(0.0, 0.25, 60)])
+                for c in (-4.0, 0.0, 4.0)]
+
+    @staticmethod
+    def _edge_over_peak(Z):
+        edge = max(Z[0, :].max(), Z[-1, :].max(), Z[:, 0].max(),
+                   Z[:, -1].max())
+        return edge / Z.max()
+
+    def test_matplotlib_grid_edges_carry_no_visible_density(self):
+        fig = hyp.plot(self._flat_wide_clouds(), '.', density=True,
+                       show=False)
+        images = fig.axes[0].get_images()
+        assert len(images) == 3
+        for im in images:
+            Z = np.asarray(im.get_array())
+            assert self._edge_over_peak(Z) < 1e-3
+        # ...and each grid reaches past its own data on every side
+        for im, line in zip(images, fig.axes[0].lines):
+            xmin, xmax, ymin, ymax = im.get_extent()
+            drawn = np.column_stack(line.get_data())
+            assert xmin < drawn[:, 0].min() and xmax > drawn[:, 0].max()
+            assert ymin < drawn[:, 1].min() and ymax > drawn[:, 1].max()
+        mpl.pyplot.close(fig)
+
+    def test_matplotlib_grid_reaches_four_bandwidths_past_the_data(self):
+        from hypertools.plot.density import KDE_GRID_BANDWIDTHS, fit_kde
+        cloud = self._flat_wide_clouds()[1]
+        fig = hyp.plot([cloud], '.', density=True, axis_scale='data',
+                       reduce=None, ndims=2, show=False)
+        im = fig.axes[0].get_images()[0]
+        xmin, xmax, ymin, ymax = im.get_extent()
+        drawn = np.column_stack(fig.axes[0].lines[0].get_data())
+        kde = fit_kde(drawn)
+        sx, sy = np.sqrt(np.diag(kde.covariance))
+        assert xmin <= drawn[:, 0].min() - KDE_GRID_BANDWIDTHS * sx + 1e-9
+        assert xmax >= drawn[:, 0].max() + KDE_GRID_BANDWIDTHS * sx - 1e-9
+        assert ymin <= drawn[:, 1].min() - KDE_GRID_BANDWIDTHS * sy + 1e-9
+        assert ymax >= drawn[:, 1].max() + KDE_GRID_BANDWIDTHS * sy - 1e-9
+        mpl.pyplot.close(fig)
+
+    def test_a_small_cloud_beside_a_huge_one_keeps_its_density(self):
+        rng = np.random.default_rng(0)
+        small = rng.normal(size=(200, 2))
+        huge = rng.normal(size=(200, 2)) * 10000
+        fig = hyp.plot([small, huge], '.', density=True, axis_scale='data',
+                       reduce=None, ndims=2, show=False)
+        images = fig.axes[0].get_images()
+        assert len(images) == 2
+        Z = np.asarray(images[0].get_array())
+        assert Z.max() > 0 and np.count_nonzero(Z) > 0.5 * Z.size
+        xmin, xmax, ymin, ymax = images[0].get_extent()
+        iy, ix = np.unravel_index(np.argmax(Z), Z.shape)
+        peak = (np.linspace(xmin, xmax, Z.shape[1])[ix],
+                np.linspace(ymin, ymax, Z.shape[0])[iy])
+        assert np.allclose(peak, small.mean(axis=0), atol=0.5)
+        # its grid is its own neighbourhood, not the huge cloud's
+        assert xmax - xmin < 50
+        mpl.pyplot.close(fig)
+
+    def test_plotly_contour_grid_edges_carry_no_visible_density(self):
+        fig = hyp.plot(self._flat_wide_clouds(), '.', density=True,
+                       backend='plotly', show=False)
+        contours = [t for t in fig.data if t.type == 'contour']
+        assert len(contours) == 3
+        for c in contours:
+            Z = np.asarray(c.z)
+            assert self._edge_over_peak(Z) < 1e-3

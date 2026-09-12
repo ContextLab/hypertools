@@ -64,7 +64,12 @@ class FrameContext:
         while the artists inside it are the backend's own live objects and
         are meant to be mutated.
         BACKEND-NATIVE: on plotly these are that frame's ``go.Scatter``/
-        ``go.Scatter3d`` traces, in the same order.
+        ``go.Scatter3d`` traces, in the same order -- except that a
+        dataset drawn by SEVERAL traces (an animated multicoloured 2-D
+        line: one trace per colour bin) is one
+        `hypertools.plot.plotly_backend.PlotlyTraceGroup`, a tuple of its
+        traces that sets an assigned attribute (``artist.opacity = 0.4``)
+        on every member, so there is still one artist per dataset.
 
         ARTIST LIFETIME -- read this before writing a callback. Whether
         ``artists`` holds fresh objects per frame or the same objects
@@ -85,7 +90,12 @@ class FrameContext:
         Matplotlib never hands you a fresh artist: ``FuncAnimation``'s
         updater mutates the same ``Line2D``/collection objects every
         frame, so ``ctx.artists[0]`` on frame 1 and on frame 2 are the
-        SAME object in different states.
+        SAME object in different states. Under a CONTINUOUS or matrix
+        ``hue=`` the rendered artists are per-dataset ``LineCollection``/
+        ``Line3DCollection`` objects (the single-colour ``Line2D`` heads
+        are hidden and only drive the bookkeeping), and those collections
+        are what ``artists`` holds -- so ``set_alpha``/``set_color`` on
+        them changes what is drawn.
 
         THE PORTABLE RULE, on both backends: ASSIGN the complete desired
         value on EVERY invocation, including the default. What breaks is

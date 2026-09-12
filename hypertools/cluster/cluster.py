@@ -15,6 +15,7 @@ import numpy as np
 
 from .common import Clusterer, CLUSTERERS, MIXTURES
 from ..core.model import external_stacklevel
+from ..core.shared import check_spec_keys
 from ..tools.format_data import format_data as formatter
 
 # backward-compatible aliases: `hypertools.cluster.cluster.models` and
@@ -23,6 +24,24 @@ from ..tools.format_data import format_data as formatter
 # import these names from here and must keep working unchanged.
 models = CLUSTERERS
 mixture_models = MIXTURES
+
+#: The one documented top-level convenience a cluster dict spec accepts
+#: besides the canonical 'model'/'args'/'kwargs' and the legacy 'params'.
+_CLUSTER_SPEC_SHORTCUTS = ('n_clusters',)
+
+
+def _check_cluster_spec_keys(spec):
+    """Raise `ValueError` if a cluster dict spec carries top-level keys
+    other than `core.shared.SPEC_KEYS` and the 'n_clusters' shortcut.
+
+    A flat spec such as `{'model': 'KMeans', 'n_clusters': 4,
+    'random_state': 0}` used to drop `random_state` without a word, so its
+    clusters changed from call to call (1.1 review). The shared
+    `core.shared.check_spec_keys` names the offending keys and spells out
+    the corrected spec, with those keys merged into 'kwargs'.
+    """
+    check_spec_keys(spec, 'cluster', shortcuts=_CLUSTER_SPEC_SHORTCUTS,
+                    param='cluster')
 
 
 def _resolve_cluster_spec(cluster, n_clusters, random_state=None,
@@ -36,7 +55,10 @@ def _resolve_cluster_spec(cluster, n_clusters, random_state=None,
     to the constructor's parameters by position, with `'kwargs'` winning
     on a conflict -- final wave item 3), or the LEGACY dict spec
     `{'model': ..., 'params': {...}}` (accepted for backward
-    compatibility, but emits a `DeprecationWarning`).
+    compatibility, but emits a `DeprecationWarning`). Besides those keys a
+    dict spec may carry only the top-level `'n_clusters'` shortcut; any
+    other top-level key (e.g. a flat `'random_state'`) raises `ValueError`
+    naming it (see `_check_cluster_spec_keys`).
 
     The `n_clusters=` convenience is preserved exactly as the pre-1.0 API
     behaved: it is injected into the constructor only when the resolved
@@ -85,6 +107,8 @@ def _resolve_cluster_spec(cluster, n_clusters, random_state=None,
                              "value of the 'model' key and a dictionary of "
                              "custom parameters as the value of the 'kwargs' "
                              "key (the legacy 'params' key is also accepted).")
+        # a flat key such as 'random_state' used to be dropped silently
+        _check_cluster_spec_keys(cluster)
         if "args" in cluster or "kwargs" in cluster:
             # canonical 1.0 dict spec: {'model': ..., 'args': [...], 'kwargs': {...}}
             if "params" in cluster:
@@ -292,8 +316,12 @@ def cluster(x, cluster="KMeans", n_clusters=None, return_model=False,
         conflict, and a spec-carried cluster count winning over
         `n_clusters=`), or the LEGACY dict spec `{'model' : 'KMeans',
         'params' : {'max_iter' : 100}}` (accepted for backward
-        compatibility, but emits a `DeprecationWarning`). A
-        previously-fitted `Clusterer` (as returned by `return_model=True`)
+        compatibility, but emits a `DeprecationWarning`). Model parameters
+        always go under `'kwargs'`; the only other top-level key a dict
+        spec accepts is the `'n_clusters'` shortcut (`{'model': 'KMeans',
+        'n_clusters': 4}`), and any other one -- e.g. `{'model': 'KMeans',
+        'random_state': 0}` -- raises `ValueError` naming it rather than
+        being ignored. A previously-fitted `Clusterer` (as returned by `return_model=True`)
         is applied via `.transform`/`.predict` instead of being refit;
         no-predict models (e.g. AgglomerativeClustering) can only recover
         their fit-time labels this way -- reusing them on different data
