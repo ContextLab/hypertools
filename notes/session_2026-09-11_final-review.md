@@ -171,3 +171,16 @@ evidence/CI for the new head.
   exactly" were describing the defect as the contract; rewritten, with a versionchanged note. CHANGELOG bullet added.
 - NOTE: this moves the branch head off the verified candidate e9db5204 -- CI, the headless tour and the Colab run all need
   re-running before sign-off, and notes/final_review_2026-09-11/ needs its evidence table refreshed.
+- STALE ARTIFACTS from the fix: examples/animate_forecast.py animates 60 observations over 180 frames (stride 4, 237 grid
+  rows), so its old forecast trailed the drawn head by up to 0.40 = 10.7% of the data diagonal on 134/180 frames. Both
+  committed clips therefore show the OLD geometry and must be regenerated: docs/_static/thumbnails/
+  sphx_glr_animate_forecast_thumb.gif (sphinx gallery build -> scripts/generate_gallery_thumbs.py) and
+  docs/tutorials/animate_forecast.mp4 (scripts/execute_tutorial.py docs/tutorials/animate_forecast.ipynb; the climate
+  archive IS cached -- 3 x (60, 6) real regions -- so re-execution will not silently fall back to synthetic data).
+  It is the ONLY example combining predict= with animate=; the feature tour has no animated-forecast case.
+  generate_gallery_thumbs.py never listed this stem (fixed 9f26b995), so nothing regenerated that thumb.
+- TOOLING TRAP, fired TWICE today (existing note n410812797x266): `pytest ... > log 2>&1; tail log` and
+  `pytest ...; echo "exit: $?"` both exit with the LAST command's status, so the harness reports exit 0 over a failed or
+  never-run suite. One run had also invented a test filename (tests/test_plot_forecast_trail.py does not exist), pytest
+  errored "no tests ran", and the notification still said exit 0. Read the summary LINE, never the exit code, or glob the
+  paths instead of typing them.
