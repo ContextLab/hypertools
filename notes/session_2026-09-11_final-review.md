@@ -214,6 +214,14 @@ evidence/CI for the new head.
   legitimately has none -- too little history to fit). The horizon is 3 hours on a 24-hour axis, so it is a few pixels wide
   and overlaps truth. NO DEFECT. Note this case is 24 rows over 9 frames -> grid stride 1 -> every head lands on a raw
   observation, so it does not exercise the anchor fix at all; tests/test_animated_forecast_anchor.py does.
+- HOVER CONTRACT re-checked on the figure this fix touches (ANIM-forecast-plotly, 13 traces): trace 0 'signal' is the only
+  hoverable one and it IS named (legendgroup 'signal'); the 8 unnamed trail/live forecast slots are all hoverinfo='skip',
+  and truth + the 3 legend-proxy traces are named with showlegend=True. So nothing can hover as 'trace N' -- Jeremy's
+  FIRST report stays fixed on the traces this change adds vertices to. (Forecast traces are deliberately non-hoverable;
+  pre-existing design, untouched here.)
+- COLAB FRONTEND: viewer opened ANIM-forecast-plotly, played it, and Close released it -- plotly modebar/logomark markers
+  went from present to 0. NOTE the 'Interactive HyperTools review' string matches the HELPER CELL'S SOURCE in a snapshot,
+  so it is not evidence of a live iframe; the graph markers are.
 - TOOLING TRAP, fired TWICE today (existing note n410812797x266): `pytest ... > log 2>&1; tail log` and
   `pytest ...; echo "exit: $?"` both exit with the LAST command's status, so the harness reports exit 0 over a failed or
   never-run suite. One run had also invented a test filename (tests/test_plot_forecast_trail.py does not exist), pytest
