@@ -222,6 +222,15 @@ evidence/CI for the new head.
 - COLAB FRONTEND: viewer opened ANIM-forecast-plotly, played it, and Close released it -- plotly modebar/logomark markers
   went from present to 0. NOTE the 'Interactive HyperTools review' string matches the HELPER CELL'S SOURCE in a snapshot,
   so it is not evidence of a live iframe; the graph markers are.
+- CI 34674962598 at c433b8f0: COMPLETED SUCCESS, 17/17 (16 success + release-gate skipped), finished 07:08:04Z, zero
+  failures. Per job: macOS 3.10-3.13 6556 passed/24 skipped; ubuntu 3.10/3.11/3.13 6552/28; ubuntu 3.12 6552/28 plus
+  pandas-3.0 gate 6565/25 plus coverage 6565/25; Windows 3.10-3.13 6546/34; docs-clean 51 gallery files + 323 doctests
+  0 failures; dataset-gate 33; live-source-gate 43 passed/1 deselected; wheel-smoke passed. EVERY platform is exactly
+  +20 tests vs e9db5204 (macOS 6536->6556, ubuntu 6532->6552, Windows 6526->6546, pandas/coverage 6545->6565), matching
+  the 20 tests in tests/test_animated_forecast_anchor.py -- the new coverage runs everywhere and nothing else moved.
+- HANDOVER STATE verified directly (not from memory): origin/fix/1.1-release-review == c433b8f0 (the commit CI tested and
+  Colab installed), and the 4 unpushed commits touch ONLY notes/session_2026-09-11_final-review.md -- no code, tests or
+  docs are held back from the PR.
 - SAME TRAP, THIRD FORM (stderr suppression, 2026-09-12): pulling per-job test totals with
   `gh api repos/O/R/actions/jobs/<id>/logs 2>/dev/null` reported '(no pytest summary line)' for all 9 completed jobs.
   The endpoint is fine (HTTP 200, ~1 MB text/plain); `gh api` REFUSES to print a body containing terminal escape
