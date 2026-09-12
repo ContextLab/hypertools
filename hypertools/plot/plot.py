@@ -11524,6 +11524,9 @@ def plot(
                 return ForecastSchedule.for_regrouped(
                     analyze_histories, _reveal, model=model_spec, t=t,
                     n_frames=_n_frames, slow_warning_seconds=_slow_secs,
+                    # one array per RUN here (hue=/cluster= regrouped the
+                    # data), which is exactly what the reveal indexes
+                    grids=xform,
                     **_time_kwargs)
             return _builder(
                 analyze_histories, _grid_lengths, model=model_spec, t=t,

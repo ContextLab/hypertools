@@ -293,6 +293,76 @@ def test_a_retained_trail_forecast_starts_at_the_head_it_was_fit_from():
         plt.close(anim.figure)
 
 
+@pytest.mark.parametrize('backend', ['matplotlib', 'plotly'])
+def test_a_regrouped_hue_animation_anchors_on_the_drawn_head(backend):
+    """`hue=` cuts a dataset into one drawn trace per contiguous category
+    run, so the reveal is expressed in RUNS rather than in the dataset's own
+    rows and the head belongs to whichever run is currently drawing it.
+    Measured before this path was covered: the forecast trailed the drawn
+    head by up to 0.51, on 75 of 81 frames."""
+    hue = ['early'] * 6 + ['late'] * 6
+    checked = 0
+    if backend == 'matplotlib':
+        anim = hyp.plot(spiral(12), '-', hue=hue, predict='Kalman', t=3,
+                        animate=True, duration=6, frame_rate=15, show=False,
+                        backend='matplotlib', slow_warning_seconds=None)
+        try:
+            ax = anim.figure.axes[0]
+            for frame in range(anim.n_frames):
+                anim.draw_frame(frame)
+                drawn = [ln for ln in ax.get_lines()
+                         if getattr(ln, '_hyp_forecast_role', None) is None
+                         and len(ln.get_xdata())]
+                live = [ln for ln in ax.get_lines()
+                        if getattr(ln, '_hyp_forecast_role', None) == 'live'
+                        and len(ln.get_xdata())]
+                if not drawn or not live:
+                    continue
+                # the run furthest along owns the head
+                head = np.array([drawn[-1].get_xdata()[-1],
+                                 drawn[-1].get_ydata()[-1]])
+                start = np.array([live[0].get_xdata()[0],
+                                  live[0].get_ydata()[0]])
+                np.testing.assert_allclose(
+                    start, head, atol=1e-9,
+                    err_msg=(f'frame {frame}: the regrouped forecast starts '
+                             f'at {start}, the drawn head is {head}'))
+                checked += 1
+        finally:
+            plt.close(anim.figure)
+    else:
+        fig = hyp.plot(spiral(12), '-', hue=hue, predict='Kalman', t=3,
+                       animate=True, duration=6, frame_rate=15, show=False,
+                       backend='plotly', slow_warning_seconds=None)
+        meta = [tr.meta if isinstance(tr.meta, dict) else {} for tr in fig.data]
+        data_slots = [i for i, m in enumerate(meta)
+                      if 'hyp_forecast_role' not in m]
+        live_slots = [i for i, m in enumerate(meta)
+                      if m.get('hyp_forecast_role') == 'live']
+        for frame, payload in enumerate(fig.frames):
+            slots = (list(payload.traces) if payload.traces is not None
+                     else list(range(len(payload.data))))
+            by_slot = dict(zip(slots, payload.data))
+            drawn = [by_slot[s] for s in data_slots
+                     if s in by_slot and by_slot[s].x is not None
+                     and len(by_slot[s].x)]
+            live = [by_slot[s] for s in live_slots
+                    if s in by_slot and by_slot[s].x is not None
+                    and len(by_slot[s].x)]
+            if not drawn or not live:
+                continue
+            head = np.array([np.asarray(drawn[-1].x, float)[-1],
+                             np.asarray(drawn[-1].y, float)[-1]])
+            start = np.array([np.asarray(live[0].x, float)[0],
+                              np.asarray(live[0].y, float)[0]])
+            np.testing.assert_allclose(
+                start, head, atol=1e-9,
+                err_msg=(f'frame {frame}: the regrouped forecast starts at '
+                         f'{start}, the drawn head is {head}'))
+            checked += 1
+    assert checked > 3, f'{backend}: only {checked} frames drew a forecast'
+
+
 def test_the_predicted_points_themselves_are_unchanged():
     """Re-anchoring moves only the vertex the forecast hangs from. Every
     point the model actually predicted keeps its place, so `t=` still counts

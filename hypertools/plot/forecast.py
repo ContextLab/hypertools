@@ -377,51 +377,91 @@ class DatasetRevealSchedule:
         self.window_frames = int(window_frames)
         self.serial = bool(serial)
         self._rows = []
+        # Per frame per dataset: the DRAWN head as ``(run, grid row)``, and
+        # its fractional source parameter. Finding the run that holds the head
+        # is work the reveal already does to count rows; keeping WHICH run won
+        # and where its polyline ends is what lets a forecast start at the
+        # vertex the picture ends on rather than at the observation behind it
+        # (maintainer report, 2026-09-11).
+        self._heads = []
+        self._head_params = []
         for frame in range(self.n_frames):
             if self.serial:
-                counts = self._serial_counts(frame)
+                counts, heads, params = self._serial_counts(frame)
             else:
                 windows = dataset_window_bounds(
                     frame, self.n_frames, ownership, self.grid_lengths,
                     self.window_frames)
-                counts = []
+                counts, heads, params = [], [], []
                 for d in range(ownership.n_datasets):
                     head = None
+                    at = None
                     for r in ownership.runs_of(d):
                         p = run_head_param(windows[r], ownership, r)
-                        if p is not None:
-                            head = p if head is None else max(head, p)
+                        if p is not None and (head is None or p > head):
+                            head, at = p, (r, windows[r].head_end - 1)
                     counts.append(0 if head is None
                                   else min(ownership.row_count(d),
                                            int(head) + 1))
+                    heads.append(at)
+                    params.append(None if head is None else float(head))
             self._rows.append([tuple(range(k)) for k in counts])
+            self._heads.append(heads)
+            self._head_params.append(params)
 
     def _serial_counts(self, frame):
         """`order='serial'` already sweeps runs in order (`serial_reveal_counts`
-        walks the trace list), so a dataset's count is the sum of its runs'."""
+        walks the trace list), so a dataset's count is the sum of its runs'.
+
+        Returns ``(counts, heads, params)`` -- the same three the non-serial
+        branch collects: rows revealed, the drawn head as ``(run, grid row)``,
+        and the head's fractional source parameter. A serial sweep reaches
+        runs in order, so the LAST run with anything on screen holds the head.
+        """
         from .matplotlib_backend import serial_reveal_counts
         own = self.ownership
         grid_counts = serial_reveal_counts(
             list(self.grid_lengths), frame, self.n_frames)
-        out = []
+        out, heads, params = [], [], []
         for d in range(own.n_datasets):
             total = 0
+            at = None
+            param = None
             for r in own.runs_of(d):
                 g = self.grid_lengths[r]
-                _, n_rows = own.run_span(r)
+                first_row, n_rows = own.run_span(r)
                 span = own.draw_span(r)
                 shown = min(grid_counts[r], g)
                 if g < 2 or span <= 0 or shown <= 0:
                     total += min(n_rows, max(0, shown))
+                    if shown > 0:                 # an all-or-nothing run
+                        at, param = (r, max(0, shown - 1)), float(first_row)
                 else:
                     pos = (shown - 1) * span / (g - 1)
                     total += min(n_rows, int(np.floor(pos)) + 1)
+                    at, param = (r, shown - 1), float(first_row + pos)
             out.append(min(own.row_count(d), total))
-        return out
+            heads.append(at)
+            params.append(param)
+        return out, heads, params
 
     def visible_rows(self, dataset, frame):
         """Original row indices of `dataset` on screen at `frame`, in order."""
         return self._rows[min(max(int(frame), 0), self.n_frames - 1)][dataset]
+
+    def head_index(self, dataset, frame):
+        """``(run, grid row)`` of this dataset's DRAWN head, or None.
+
+        The grid row indexes the run's OWN drawn array, so the head vertex is
+        ``grids[run][grid_row]`` for the same per-run arrays the backends
+        animate.
+        """
+        return self._heads[min(max(int(frame), 0), self.n_frames - 1)][dataset]
+
+    def head_param(self, dataset, frame):
+        """The drawn head's fractional ORIGINAL-row position, or None."""
+        return self._head_params[
+            min(max(int(frame), 0), self.n_frames - 1)][dataset]
 
     def head_run(self, dataset, frame):
         """The run DRAWING this dataset's last visible row, or `None` when
@@ -733,7 +773,7 @@ class ForecastSchedule:
     def for_regrouped(cls, histories, reveal, model, t, n_frames,
                       min_history=DEFAULT_MIN_HISTORY,
                       slow_warning_seconds=DEFAULT_SLOW_WARNING_SECONDS,
-                      forecast_function=None):
+                      forecast_function=None, grids=None):
         """Schedule for an animation whose data `hue=`/`cluster=` regrouped.
 
         The revealed rows come from a `DatasetRevealSchedule` rather than from
@@ -744,10 +784,31 @@ class ForecastSchedule:
         """
         rows = [[reveal.visible_rows(i, f) for i in range(len(histories))]
                 for f in range(n_frames)]
+        # `grids` here is one array per RUN (what the backends draw), so the
+        # head vertex comes from the run the reveal says is drawing it.
+        heads, positions = [], []
+        if grids is not None:
+            for f in range(n_frames):
+                frame_heads, frame_positions = [], []
+                for i in range(len(histories)):
+                    at = reveal.head_index(i, f)
+                    grid = (np.asarray(grids[at[0]], dtype=float)
+                            if at is not None and at[0] < len(grids)
+                            else None)
+                    if grid is None or not len(grid):
+                        frame_heads.append(None)
+                        frame_positions.append(None)
+                        continue
+                    j = min(max(int(at[1]), 0), len(grid) - 1)
+                    frame_heads.append(grid[j])
+                    frame_positions.append(reveal.head_param(i, f))
+                heads.append(frame_heads)
+                positions.append(frame_positions)
         return cls(histories, rows=rows, model=model, t=t,
                    min_history=min_history,
                    slow_warning_seconds=slow_warning_seconds,
-                   forecast_function=forecast_function)
+                   forecast_function=forecast_function,
+                   heads=heads or None, head_positions=positions or None)
 
     # -- lookups -----------------------------------------------------------
     def revealed_rows(self, dataset, frame):
