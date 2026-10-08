@@ -158,8 +158,11 @@ def test_describe_matplotlib_single_dataset_no_legend():
 def test_describe_returns_fig_key():
     x = np.random.default_rng(0).normal(size=(30, 8))
     result = describe(x, reduce='PCA', max_dims=5, show=False)
-    assert set(result.keys()) == {'average', 'individual', 'fig'}
-    assert result['fig'] is None  # no figure drawn when show=False
+    assert set(result.keys()) == {'average', 'individual', 'pooled', 'fig'}
+    # 1.1 release review (maintainer decision): show=False now returns the
+    # drawn figure without displaying it, like hyp.plot(show=False); it
+    # used to return None here
+    assert isinstance(result['fig'], plt.Figure)
     plt.close('all')
     shown = describe(x, reduce='PCA', max_dims=5, show=True,
                      backend='matplotlib')

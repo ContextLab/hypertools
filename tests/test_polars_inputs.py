@@ -300,7 +300,14 @@ def test_analyze_polars_matches_pandas(pdf, plf, lazy, kind):
 @pytest.mark.parametrize('kind', KINDS)
 def test_describe_polars_matches_pandas(pdf, plf, lazy, kind):
     x, ref = _inputs(pdf, plf, lazy, kind)
-    _same(hyp.describe(x, show=False), hyp.describe(ref, show=False))
+    got, want = hyp.describe(x, show=False), hyp.describe(ref, show=False)
+    # describe(show=False) returns its drawn figure since the 1.1 release
+    # review (it used to be None); two distinct Figure objects never compare
+    # equal, so compare the scores and check both figures were drawn
+    import matplotlib.pyplot as plt
+    assert isinstance(got.pop('fig'), plt.Figure)
+    assert isinstance(want.pop('fig'), plt.Figure)
+    _same(got, want)
 
 
 def _mpl_drawn(fig):

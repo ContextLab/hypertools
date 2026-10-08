@@ -70,7 +70,7 @@ def test_describe_max_dims_gt_features_does_not_crash():
     with pytest.warns(UserWarning, match='exceeds the data dimensionality'):
         result = hyp.describe(x, reduce='PCA', max_dims=8, show=False)
     # 'fig' added by the 2026-07 release audit (F11-reduce-describe-015)
-    assert set(result.keys()) == {'average', 'individual', 'fig'}
+    assert set(result.keys()) == {'average', 'individual', 'pooled', 'fig'}
 
 
 def test_describe_empty_component_range_raises_clear_error():

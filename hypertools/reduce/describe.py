@@ -67,26 +67,33 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True,
         evaluate more.
 
     show : bool
-        Plot the result (default: True). The figure is displayed only
+        Display the figure (default: True). The figure is drawn and
+        returned in the result dict's 'fig' key either way; `show` only
+        controls whether it is displayed. With `show=True` it is displayed
         when the resolved backend can show one (plotly, or an interactive
         matplotlib backend); under a non-interactive matplotlib backend
-        (e.g. Agg) the figure is still drawn and returned in the result
-        dict's 'fig' key, without calling `plt.show()`.
+        (e.g. Agg) it is drawn and returned without calling `plt.show()`.
+        With `show=False` it is returned without being displayed, exactly
+        like `hyp.plot(show=False)`: a matplotlib figure is closed
+        (deregistered from pyplot, so Jupyter does not display it) but
+        stays renderable and savable, and a plotly figure's `.show()` is
+        not called.
 
     format_data : bool
         Whether or not to first call the format_data function (default: True).
 
     backend : {'auto', 'matplotlib', 'plotly'}
         Which plotting backend to draw the correlation-vs-dimensions figure
-        with when `show=True`. Validated eagerly (even with `show=False`,
-        an unknown backend raises the same "backend must be one of ..."
-        `ValueError` as `hyp.plot`). Default: 'auto', resolved the same way
+        with. Validated eagerly (an unknown backend raises the same
+        "backend must be one of ..." `ValueError` as `hyp.plot`). Default: 'auto', resolved the same way
         `hyp.plot` resolves it -- plotly on Colab/Kaggle when available, else
         matplotlib. The matplotlib figure is a seaborn line plot with the top
         and right spines removed; the plotly figure is an interactive
         `go.Figure` (which has no top/right spines by default). Multi-dataset
         inputs get one distinguishable color per dataset, a legend, and the
-        'average' curve overlaid, on both backends. The analysis results in
+        'average' curve (the mean of the per-dataset curves) overlaid as a
+        dashed black line, on both backends. The x axis is ticked at whole
+        component counts only. The analysis results in
         the returned dict are identical either way (only 'fig' differs: it
         holds the backend's own figure object).
 
@@ -94,13 +101,22 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True,
     -------
 
     result : dict
-        A dictionary with the analysis results. 'average' is the correlation
-        by number of components for all data. 'individual' is a list of lists,
-        where each list is a correlation by number of components vector (for each
-        input list). 'fig' is the rendered figure handle (a
+        A dictionary with the analysis results. 'individual' is a list of
+        lists, where each list is a correlation by number of components
+        vector (one per input dataset), starting at 2 components.
+        'average' is the element-wise mean of the 'individual' curves (the
+        dashed 'average' line in the figure); when curves differ in length
+        (possible with `max_dims=None`, since each dataset's sweep stops at
+        its own dimensionality), each component count is averaged over the
+        curves that reach it. For a single dataset, 'average' equals
+        'individual'[0]. 'pooled' is the curve for all datasets STACKED
+        into one point cloud (what 'average' meant before 1.1); it is not
+        drawn, and it generally differs from 'average' because pooling adds
+        the between-dataset distances. For a single dataset it also equals
+        'individual'[0]. 'fig' is the drawn figure (a
         `matplotlib.figure.Figure` or `plotly.graph_objects.Figure`,
-        depending on the backend) when `show=True` and a figure was drawn;
-        otherwise None.
+        depending on the backend), whether or not `show` is True; it is
+        None only if there was nothing to plot.
 
     Examples
     --------
@@ -110,7 +126,7 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True,
     ...               axis=0)
     >>> result = hyp.describe(x, reduce='PCA', max_dims=4, show=False)
     >>> sorted(result.keys())
-    ['average', 'fig', 'individual']
+    ['average', 'fig', 'individual', 'pooled']
 
     """
     from ..core.shared import require_data
@@ -300,31 +316,44 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True,
             'computation can take a long time.',
             stacklevel=external_stacklevel())
 
-    # a dictionary to store results
+    # a dictionary to store results. 'individual' holds one curve per
+    # dataset; 'average' is their element-wise mean -- what the name and the
+    # figure's legend say (1.1 release review: it used to be the curve of
+    # the STACKED point cloud, which mixes in between-dataset distances and
+    # so is not the mean of the curves drawn beside it). That pooled curve is still computed and returned
+    # as 'pooled', but it is not drawn. `datasets` (not `x`) is iterated so
+    # a bare array with format_data=False is one dataset, not one per row.
     result = {}
-    result['average'] = summary(x, max_dims)
-    result['individual'] = [summary(x_i, max_dims) for x_i in x]
-
-    if max_dims is None:
-        max_dims = len(result['average'])
+    result['individual'] = [summary(x_i, max_dims) for x_i in datasets]
+    result['average'] = _mean_curve(result['individual'])
+    if len(datasets) > 1:
+        result['pooled'] = summary(x, max_dims)
+    else:
+        # one dataset: the stacked data IS that dataset
+        result['pooled'] = list(result['individual'][0])
 
     # if show, plot it on the resolved backend. With max_dims < 3 there is no
     # component range to correlate over (range(2, max_dims) is empty), so the
     # result is empty and there is nothing to plot -- warn and skip rather than
     # crash inside seaborn/plotly (QC 2026-07).
+    # The figure is drawn whether or not it is shown: show=False returns it
+    # undisplayed, exactly like hyp.plot(show=False) (1.1 release review --
+    # it used to skip drawing and return fig=None).
     fig = None
-    if show and not any(result['individual']):
+    draw = bool(any(result['individual']))
+    if show and not draw:
         warnings.warn('describe() has no components to plot (need max_dims >= 3 '
                       'and at least 3 features); skipping the figure.',
                       stacklevel=external_stacklevel())
         show = False
-    if show:
+    if draw:
         from ..plot.plotly_backend import resolve_backend
         resolved_backend = resolve_backend(backend)
         title = 'Correlation with raw data by number of components'
         # only multi-dataset inputs need a legend and the 'average' overlay
         # (for a single dataset, average == individual[0])
         multi = len(result['individual']) > 1
+        n_components = max(len(trace) for trace in result['individual'])
         if resolved_backend == 'plotly':
             import plotly.graph_objects as go
             fig = go.Figure()
@@ -342,9 +371,14 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True,
                     line=dict(color='black', width=3, dash='dash')))
             fig.update_layout(title=title, xaxis_title='Number of components',
                               yaxis_title='Correlation')
+            # component counts are whole numbers: pin the ticks to integers
+            # (plotly's auto ticks labelled 2.5, 3.5, ... on short sweeps)
+            fig.update_xaxes(tickmode='array',
+                             tickvals=_integer_ticks(n_components))
             # plotly axes have no top/right spines by default (Jeremy's despine
             # request is inherent here); return the dict, show the figure
-            fig.show()
+            if show:
+                fig.show()
         else:
             import pandas as pd
             import seaborn as sns
@@ -371,6 +405,10 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True,
             ax.set_title(title)
             ax.set_ylabel('Correlation')
             ax.set_xlabel('Number of components')
+            # component counts are whole numbers: no fractional ticks
+            # (matplotlib's auto locator labelled 2.25, 2.5, ...)
+            from matplotlib.ticker import MaxNLocator
+            ax.xaxis.set_major_locator(MaxNLocator(integer=True))
             # drop the top and right spines (Jeremy's despine request)
             sns.despine(ax=ax, top=True, right=True)
             # only call plt.show() when the backend can actually display a
@@ -379,15 +417,68 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True,
             # UserWarning on every default describe() call (release-1.0
             # audit, X4-warnings-006). The figure is returned either way.
             import matplotlib
-            if matplotlib.get_backend().lower() not in ('agg', 'pdf',
-                                                        'svg', 'ps',
-                                                        'template'):
+            if not show:
+                # same canvas-preserving close hyp.plot(show=False) does:
+                # deregister the figure from pyplot (so Jupyter does not
+                # display it and it does not leak) while keeping it
+                # renderable -- matplotlib >= 3.11 detaches the real canvas
+                # on plt.close
+                live_canvas = fig.canvas
+                plt.close(fig)
+                if fig.canvas is not live_canvas:
+                    fig.set_canvas(live_canvas)
+            elif matplotlib.get_backend().lower() not in ('agg', 'pdf',
+                                                          'svg', 'ps',
+                                                          'template'):
                 plt.show()
     # hand the figure back so it can be saved/styled/embedded -- describe()
     # used to be the one plotting entry point with no figure handle
     # (F11-reduce-describe-015)
     result['fig'] = fig
     return result
+
+
+def _mean_curve(curves):
+    """Element-wise mean of per-dataset correlation curves.
+
+    Curves may differ in length (with ``max_dims=None`` each dataset's sweep
+    stops at its own dimensionality); the mean at each component count is
+    taken over the curves that reach it.
+
+    Parameters
+    ----------
+    curves : list of list of float
+        One correlation-by-number-of-components curve per dataset.
+
+    Returns
+    -------
+    list of float
+        The mean curve, as long as the longest input curve.
+    """
+    longest = max((len(c) for c in curves), default=0)
+    return [float(np.mean([c[i] for c in curves if len(c) > i]))
+            for i in range(longest)]
+
+
+def _integer_ticks(n_components):
+    """Whole-number x tick positions for a sweep over 2..n_components+1.
+
+    Parameters
+    ----------
+    n_components : int
+        Number of evaluated component counts (the sweep starts at 2).
+
+    Returns
+    -------
+    list of int
+        At most ~9 evenly spaced integer tick positions within the sweep,
+        chosen by matplotlib's integer ``MaxNLocator`` so both backends
+        label the same ticks.
+    """
+    from matplotlib.ticker import MaxNLocator
+    lo, hi = 2, 1 + max(int(n_components), 1)
+    ticks = MaxNLocator(integer=True).tick_values(lo, hi)
+    return [int(t) for t in ticks if lo <= t <= hi]
 
 
 def get_corr(reduced, alldims):
