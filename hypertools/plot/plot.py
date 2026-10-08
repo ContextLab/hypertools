@@ -907,9 +907,10 @@ def _draw_truth_overlays(ax, raw_truths, antialias=True, owner=None,
     identity. `label` names the FIRST truth in the legend -- every trace's
     truth means the same thing, so one entry covers them all.
 
-    Returns the created artists. They are drawn in FULL, in every mode: a
-    truth trace is what happened, not a prediction being refitted as an
-    animation's reveal advances, so it stays put while the forecast moves.
+    Returns the created artists, drawn in FULL. A time-progressing
+    animation then slices them per frame to the rows a drawn forecast has
+    reached (`_truth_frame_updater`), using the ``_hyp_truth_step`` each
+    artist carries.
     """
     artists = []
     src_lines = _observed_run_lines(
@@ -917,7 +918,8 @@ def _draw_truth_overlays(ax, raw_truths, antialias=True, owner=None,
     for i, tr in enumerate(raw_truths):
         tr = np.asarray(tr, dtype=float)
         _rows = tr.shape[0]
-        drawn = _interp_static_line(tr) if antialias else tr
+        drawn, _step = (_antialias_static_line(tr) if antialias
+                        else (tr, 1))
         _src = owner[i] if owner is not None and i < len(owner) else i
         _src_line = src_lines[_src] if _src < len(src_lines) else None
         style = _forecast_style_from(_src_line, alpha_scale=1.0)
@@ -969,6 +971,12 @@ def _draw_truth_overlays(ax, raw_truths, antialias=True, owner=None,
         for _a in artists[_before:]:
             _a._hyp_forecast_role = 'truth'
             _a._hyp_forecast_dataset = i
+        # vertices per held-out row: the curve's dense vertex ``k * step``
+        # is truth row ``k`` (the markers are the rows themselves), which is
+        # how an animation slices both to the rows revealed so far
+        # (`_truth_frame_updater`)
+        artists[_before]._hyp_truth_step = int(_step)
+        artists[_before + 1]._hyp_truth_step = 1
         if label is not None and artists[_before:]:
             artists[_before]._hyp_truth_label = str(label)
         # one 'truth' legend entry for the whole figure: every trace's
@@ -976,6 +984,46 @@ def _draw_truth_overlays(ax, raw_truths, antialias=True, owner=None,
         # would list it once per series
         label = None
     return artists
+
+
+def _truth_frame_updater(truth_artists, counts):
+    """A frame updater revealing `truth=` artists as the forecast reaches
+    them (maintainer decision, 1.1 review).
+
+    `counts[frame][i]` (`forecast.truth_reveal_counts`) is how many held-out
+    rows truth ``i`` shows; 0 hides it, ``k`` shows its seam row plus rows
+    ``1..k``. Each artist keeps its FULL geometry captured here and is
+    sliced to ``k * _hyp_truth_step + 1`` vertices per frame -- a pure
+    function of the frame, so replays and saves match playback. The legend
+    is untouched: its 'truth' entry is a proxy glyph
+    (`_add_overlay_legend_entries`), present on every frame. The returned
+    updater has already been applied for frame 0.
+    """
+    full = []
+    for art in truth_artists:
+        data = (art.get_data_3d() if hasattr(art, 'get_data_3d')
+                else art.get_data())
+        full.append((art, [np.asarray(c, dtype=float).copy() for c in data],
+                     int(getattr(art, '_hyp_truth_step', 1))))
+    n_frames = len(counts)
+
+    def _update(ctx):
+        row = counts[min(max(int(ctx.frame), 0), n_frames - 1)]
+        for art, data, step in full:
+            i = int(getattr(art, '_hyp_forecast_dataset', 0))
+            k = row[i] if i < len(row) else 0
+            stop = k * step + 1 if k > 0 else 0
+            cols = [c[:stop] for c in data]
+            if len(cols) == 3:
+                art.set_data_3d(*cols)
+            else:
+                art.set_data(*cols)
+            art.set_visible(k > 0)
+
+    class _Frame0:
+        frame = 0
+    _update(_Frame0)
+    return _update
 
 
 def _categorical_color_label_maps(hue, palette, explicit_colors,
@@ -6033,11 +6081,18 @@ def plot(
         (matplotlib ``line._hyp_forecast_role``, plotly
         ``meta['hyp_forecast_role']``) exactly as forecast artists are
         tagged ``'static'``/``'live'``/``'trail'``. With `legend=True` it
-        gets one ``'truth'`` legend entry. Drawn in FULL in every mode,
-        including a time-progressing animation: it is what actually
-        happened, held still while the forecast is refitted frame by frame
-        against it, so the comparison the figure exists to make is on screen
-        the whole way through. Identical on both backends (default: None).
+        gets one ``'truth'`` legend entry. Static plots (and
+        ``animate='spin'``) draw it in FULL. A time-progressing animation
+        (``True``/``'parallel'``/``'serial'``/``'window'``, including a
+        `hue=`/`cluster=` regrouped reveal) reveals it as the forecast
+        reaches it: each held-out row appears on the first frame whose
+        drawn forecast of that dataset (any model's, for a `predict=`
+        list) extends to or past that row's position, and stays on every
+        later frame -- so the answer is not on screen before the animation
+        has forecast anywhere near it. While no drawn forecast has reached
+        it (e.g. too little history revealed yet) the truth is hidden; its
+        ``'truth'`` legend entry is shown on every frame. Identical on both
+        backends (default: None).
 
     t : int or datetime-like
         Forecast horizon passed to `predict` (see
@@ -11589,6 +11644,21 @@ def plot(
                 [_build_schedule(_spec) for _spec in _specs],
                 names=_predict_names)
 
+    # truth= in a TIME-PROGRESSING animation (maintainer decision, 1.1
+    # review): each held-out row appears on the first frame whose drawn
+    # forecast reaches it, then stays -- drawing the whole truth from frame
+    # 0 showed the answer before the animation had forecast anywhere near
+    # it. `counts[frame][i]` is how many of truth i's rows are on screen
+    # (0 = hidden, seam included). No schedule (no forecast drawn) means
+    # nothing is ever revealed. Static plots and 'spin' draw it in full.
+    _truth_reveal = None
+    if raw_truths is not None and animate and animate != 'spin':
+        from .forecast import truth_reveal_counts
+        _truth_reveal = truth_reveal_counts(
+            forecast_schedule, len(raw_truths),
+            [max(len(tr) - 1, 0) for tr in raw_truths],
+            max(1, int(round(frame_rate * duration))))
+
     # Display space (GH #285): axis_scale='unit' -- what hypertools has
     # always done -- mean-centres every drawn vertex (data, forecasts, and
     # every forecast a schedule will ever draw) and rescales it into the
@@ -12181,6 +12251,7 @@ def plot(
             ylim=_data_ylim,
             x_date=_series_is_date,
             truths=raw_truths,
+            truth_reveal=_truth_reveal,
             forecast_labels=_forecast_labels,
             forecast_datasets=_model_forecast_owner,
             # what a later `ax=<this figure>` call continues the palette
@@ -12424,13 +12495,10 @@ def plot(
                         _artist.set_clip_on(False)
 
             # truth= (GH #285): the ACTUAL continuation, beside the
-            # forecast. Drawn in FULL for every mode -- static, 'spin', and
-            # the time-progressing ones. It is not a prediction being made
-            # as the reveal advances but the thing the predictions are
-            # measured against, so it stays put while the forecast is
-            # refitted frame by frame; that also keeps both backends
-            # identical, since plotly's frames rewrite only the traces
-            # `_add_animation` owns.
+            # forecast. Drawn in FULL here; a time-progressing animation
+            # then reveals it row by row as the drawn forecast reaches it
+            # (`_truth_reveal`, the updater registered below -- plotly's
+            # frames rewrite the truth traces from the same table).
             _truth_artists = None
             if raw_truths is not None:
                 # `_forecast_owner` maps a forecast to the RUN it
@@ -12488,6 +12556,14 @@ def plot(
                 _recolor_overlay_legend(
                     ax, _legend_recolor,
                     close_fig=None if _user_supplied_ax else fig)
+
+            # a time-progressing animation reveals each truth row on the
+            # first frame whose drawn forecast reaches it (see
+            # `_truth_reveal`); registered before the forecast updater, and
+            # INTERNAL so an on_frame= callback sees this frame's truth
+            if _truth_artists and _truth_reveal is not None:
+                _frame_hooks.add_internal(
+                    _truth_frame_updater(_truth_artists, _truth_reveal))
 
             # ...and the time-progressing modes get one LIVE artist per
             # dataset instead, refilled every frame from the precomputed

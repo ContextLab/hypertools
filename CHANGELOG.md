@@ -843,6 +843,20 @@ Because 1.1.0 had not been published, they ship in it.
   points themselves are unchanged, so `t=` still counts raw steps on from
   the last observation.
 
+- **An animated `truth=` no longer shows the answer before the forecast
+  gets there.** A time-progressing animation (`True`/`'parallel'`,
+  `'serial'`, `'window'`, and `hue=`/`cluster=` regrouped reveals) drew
+  the whole held-out continuation from frame 0. Each truth row now appears
+  on the first frame whose drawn forecast of that dataset (any model's,
+  for `predict=[...]`) reaches or passes its position, and stays on every
+  later frame; with no forecast drawn yet it is hidden. On the feature-tour
+  series (24 hourly rows, `t=3`, 9 frames) the truth was on all 9 frames
+  and is now on the last; on a 20-row walk forecast 12 steps out it now
+  grows 0, 0, 0, 0, 1, 3, 5, 7, 9, 12 rows over 10 frames. Both backends
+  agree frame for frame (plotly's base trace holds frame 0's state), the
+  `'truth'` legend entry is on every frame, and static plots and
+  `animate='spin'` still draw it in full.
+
 - **No leftover "install the extra first" instructions.** Every optional
   dependency goes through the on-demand installer, and the stale prose
   that told users to install an extra by hand is gone: the `plot()`

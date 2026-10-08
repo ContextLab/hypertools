@@ -883,6 +883,26 @@ class ForecastSchedule:
             return drawn
         return np.vstack([np.asarray(head, dtype=float), drawn[1:]])
 
+    def reach(self, dataset, frame):
+        """How far, in RAW rows, the forecast DRAWN at `frame` extends.
+
+        The row position of its last predicted step: the last revealed row
+        plus the path's step count. None when nothing is drawn for this
+        dataset at `frame` (too little history revealed). `truth=` reveals
+        a held-out row once a drawn forecast reaches it
+        (`truth_reveal_counts`).
+        """
+        pts = self.polyline(dataset, frame)
+        if pts is None or len(pts) < 2:
+            return None
+        rows = self.revealed_rows(dataset, frame)
+        return int(max(rows)) + len(self.path(dataset, frame)) - 1
+
+    def history_length(self, dataset):
+        """Raw rows in `dataset`'s full history; its `truth=` row ``k``
+        (1-based) sits at raw position ``history_length - 1 + k``."""
+        return len(self.histories[dataset])
+
     def stacked_paths(self):
         """Every forecast vertex this schedule will ever draw, stacked.
 
@@ -1022,6 +1042,18 @@ class MultiModelSchedule:
         sched, i = self._locate(dataset)
         return sched.polyline(i, frame)
 
+    def reach(self, dataset, frame):
+        """How far this slot's drawn forecast extends at `frame` (see
+        `ForecastSchedule.reach`)."""
+        sched, i = self._locate(dataset)
+        return sched.reach(i, frame)
+
+    def history_length(self, dataset):
+        """Raw rows in this slot's dataset history (see
+        `ForecastSchedule.history_length`)."""
+        sched, i = self._locate(dataset)
+        return sched.history_length(i)
+
     def stacked_paths(self):
         """Every vertex every model will ever draw (see
         `ForecastSchedule.stacked_paths`)."""
@@ -1043,6 +1075,45 @@ class MultiModelSchedule:
         (see `ForecastSchedule.to_display`)."""
         return MultiModelSchedule(
             [s.to_display(transform) for s in self.schedules], self.names)
+
+
+def truth_reveal_counts(schedule, n_truths, horizons, n_frames):
+    """How many `truth=` rows each truth shows on every animation frame.
+
+    A held-out truth row is revealed on the first frame whose DRAWN
+    forecast reaches it -- some live forecast of the same dataset (any
+    model, for ``predict=[...]``) extends to or past that row's position --
+    and stays revealed on every later frame (maintainer decision, 1.1
+    review): drawing the whole truth from frame 0 showed the answer before
+    the animation had forecast anywhere near it.
+
+    `schedule` is a `ForecastSchedule`/`MultiModelSchedule` (or None, when
+    no forecast is drawn at all -- then nothing is revealed); truth ``i``
+    continues schedule dataset ``i`` (every flat index ``j`` with
+    ``j % per-model count == i``). `horizons[i]` is truth ``i``'s row count
+    excluding its prepended seam row. Returns ``counts[frame][i]`` in
+    ``0..horizons[i]``: 0 hides the truth (seam included), ``k`` shows the
+    seam plus held-out rows ``1..k``. A pure table, so any frame can be
+    drawn in any order (``save()``/``to_jshtml()`` replays).
+    """
+    n_frames = max(1, int(n_frames))
+    counts = [[0] * n_truths for _ in range(n_frames)]
+    if schedule is None:
+        return counts
+    per_model = getattr(schedule, 'per_model', schedule.n_datasets)
+    best = [0] * n_truths
+    for f in range(n_frames):
+        for j in range(schedule.n_datasets):
+            i = j % per_model
+            if i >= n_truths:
+                continue
+            reach = schedule.reach(j, f)
+            if reach is None:
+                continue
+            covered = reach - (schedule.history_length(j) - 1)
+            best[i] = max(best[i], min(int(horizons[i]), covered))
+        counts[f] = list(best)
+    return counts
 
 
 #: Past forecasts retained by `forecast_trail=True`.

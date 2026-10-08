@@ -654,6 +654,16 @@ def _aa_window(aa_curves, i, a, b):
     return dense[a * step:(b - 1) * step + 1]
 
 
+def _truth_slice(cols, step, sizes, row, i):
+    """Truth ``i``'s coordinate columns (and per-vertex marker sizes) cut
+    to the rows `row[i]` reveals: ``k`` rows -> the seam plus rows ``1..k``,
+    i.e. dense vertices ``0..k * step``; 0 -> empty."""
+    k = row[i] if i < len(row) else 0
+    stop = k * step + 1 if k > 0 else 0
+    return ([np.asarray(c)[:stop] for c in cols],
+            None if sizes is None else sizes[:stop])
+
+
 def _aa_x(step, start_x, n_drawn):
     """The x positions accompanying a drawn 1-D window of `n_drawn` vertices
     whose first vertex sits at ORIGINAL row index `start_x`.
@@ -1144,7 +1154,7 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 into=None, title_kwargs=None, title_segment_colors=None,
                 legend_kwargs=None, legend_entries=None,
                 axis_scale='unit', xlim=None, ylim=None, x_date=False,
-                truths=None, forecast_labels=None,
+                truths=None, truth_reveal=None, forecast_labels=None,
                 forecast_datasets=None, datasets_drawn=None,
                 legend_explicit=False, raw_data=None, frame_kwargs=None,
                 trace_names=None, row_counts=None, before_show=None):
@@ -1192,6 +1202,13 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         fully-opaque, marked trace per dataset, tagged
         ``meta['hyp_forecast_role'] = 'truth'`` -- the plotly half of
         `plot._draw_truth_overlays`.
+    truth_reveal : list of list of int or None
+        A time-progressing animation's ``counts[frame][i]``
+        (`forecast.truth_reveal_counts`): how many held-out rows truth ``i``
+        shows on each frame (0 hides it). The base trace holds frame 0's
+        state and every forecast-drawing frame rewrites it; the 'truth'
+        legend entry is then always a data-free key, so it never flickers.
+        None (static plots, 'spin') draws every truth in full.
     trace_names : list of str or None
         The name of every entry of `data` -- what its hover label shows --
         from `plot._plotly_hover_names`: the label its legend entry shows or
@@ -2222,9 +2239,14 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     # `plot._draw_truth_overlays`, with the same styling policy (the
     # observed trace's colour and width, SOLID, fully opaque, with markers
     # on the observations) and the same `hyp_forecast_role='truth'` tag.
-    # Appended AFTER the forecast block and BEFORE the trail traces, and
-    # never rewritten per frame: it is what happened, not a prediction being
-    # refitted as the reveal advances.
+    # Appended AFTER the forecast block and BEFORE the trail traces. In a
+    # time-progressing animation (`truth_reveal`) every forecast-drawing
+    # frame rewrites it to the rows a drawn forecast has reached so far.
+    #: ``(trace index, truth i, full coordinate columns, vertices per row,
+    #: per-vertex marker sizes or None)`` per truth trace an animated
+    #: reveal rewrites (`truth_reveal`)
+    truth_frame_specs = []
+    _truth_key_color = None
     if truths is not None:
         from .plot import TRUTH_STYLE
         # composing into a figure/cell that already lists a truth entry:
@@ -2284,18 +2306,39 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
             if tr_common['showlegend']:
                 _truth_key_at = (len(traces), tr_line)
             if ndims >= 3:
-                traces.append(go.Scatter3d(x=tr_draw[:, 0], y=tr_draw[:, 1],
-                                           z=tr_draw[:, 2], **tr_common))
+                tr_cols = [tr_draw[:, 0], tr_draw[:, 1], tr_draw[:, 2]]
             elif ndims == 2:
-                traces.append(go.Scatter(x=tr_draw[:, 0], y=tr_draw[:, 1],
-                                         **tr_common))
+                tr_cols = [tr_draw[:, 0], tr_draw[:, 1]]
             else:
-                traces.append(go.Scatter(
-                    x=_aa_x(tr_step, _rows_of(src, data[src]) - 1,
-                            tr_draw.shape[0]),
-                    y=tr_draw[:, 0], **tr_common))
-        if _truth_key_at is not None and len(_truth_rgbs) > 1:
+                tr_cols = [_aa_x(tr_step, _rows_of(src, data[src]) - 1,
+                                 tr_draw.shape[0]).astype(float),
+                           tr_draw[:, 0]]
+            tr_sizes = (np.asarray(tr_marker['size'], dtype=float)
+                        if isinstance(tr_marker, dict)
+                        and np.ndim(tr_marker.get('size')) == 1 else None)
+            if truth_reveal is not None:
+                # a time-progressing animation: the base trace is frame
+                # 0's state (`_truth_frame_data` rewrites it per frame), so
+                # a figure shown before playback does not give the answer
+                # away either
+                truth_frame_specs.append(
+                    (len(traces), i, tr_cols, int(tr_step), tr_sizes))
+                tr_cols, _sz = _truth_slice(tr_cols, int(tr_step), tr_sizes,
+                                            truth_reveal[0], i)
+                if _sz is not None:
+                    tr_common['marker'] = dict(tr_marker, size=_sz)
+            _xyz = dict(zip('xyz', tr_cols))
+            traces.append(go.Scatter3d(**_xyz, **tr_common) if ndims >= 3
+                          else go.Scatter(**_xyz, **tr_common))
+        if _truth_key_at is not None and (len(_truth_rgbs) > 1
+                                          or truth_reveal is not None):
+            # several colours -> a neutral key; an ANIMATED reveal -> a
+            # data-free key in the truth's own colour, because the truth
+            # trace itself is empty on the frames before the forecast
+            # reaches it and its legend entry must not flicker
             traces[_truth_key_at[0]].showlegend = False
+            if len(_truth_rgbs) == 1:
+                _truth_key_color = _truth_key_at[1].get('color')
         else:
             _truth_key_at = None
 
@@ -2816,7 +2859,8 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         # the forecast keys, so the drawn traces' indices are untouched
         from .forecast import FORECAST_LEGEND_COLOR
         from .plot import TRUTH_STYLE
-        _gray = _to_plotly_color(FORECAST_LEGEND_COLOR, 1.0)
+        _gray = (_truth_key_color if _truth_key_color is not None
+                 else _to_plotly_color(FORECAST_LEGEND_COLOR, 1.0))
         _key = dict(mode='lines+markers', name='truth', showlegend=True,
                     hoverinfo='skip', legendrank=1001,
                     line=dict(_truth_key_at[1], color=_gray),
@@ -2898,6 +2942,8 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                        forecast_datasets=forecast_datasets,
                        forecast_trail=forecast_trail,
                        forecast_antialias=antialias,
+                       truth_reveal=truth_reveal,
+                       truth_frame_specs=truth_frame_specs,
                        surface=surface, surface_colors=surface_colors,
                        surface_trace_start=surface_trace_start_3d,
                        surface_dataset_indices=surface_dataset_indices,
@@ -5432,7 +5478,8 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                    segment_title_style=None, segment_title_colors=None,
                    ownership=None,
                    forecast_frame_colors=None, forecast_reveal=None,
-                   hue_units=None, hue_colors_3d=None):
+                   hue_units=None, hue_colors_3d=None,
+                   truth_reveal=None, truth_frame_specs=None):
     """Attach frames + play controls: 'spin' rotates the camera; True /
     'parallel' reveals trajectories through a sliding time window; 'morph'
     eases the single traveling point-cloud trace (+ mesh, if surfaced)
@@ -5826,6 +5873,24 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                     y=draw[:, 0], **_extra))
         return out
 
+    truth_trace_indices = ([spec[0] for spec in truth_frame_specs]
+                           if truth_reveal is not None and truth_frame_specs
+                           else [])
+
+    def _truth_frame_data(k):
+        """One geometry update per `truth=` trace at frame `k`: the rows
+        the drawn forecasts have reached so far (`truth_reveal`), in
+        `truth_trace_indices` order."""
+        out = []
+        row = truth_reveal[min(k, len(truth_reveal) - 1)]
+        for _idx, i, cols, step, sizes in truth_frame_specs:
+            cols, sz = _truth_slice(cols, step, sizes, row, i)
+            extra = {} if sz is None else dict(marker=dict(size=sz))
+            xyz = dict(zip('xyz', cols))
+            out.append(go.Scatter3d(**xyz, **extra) if ndims >= 3
+                       else go.Scatter(**xyz, **extra))
+        return out
+
     def _window_colors(idx, start, stop):
         """Dataset `idx`'s per-point hue RGB array sliced to the
         ``[start:stop]`` row window (rows are aligned 1:1 with `data[idx]`
@@ -6203,6 +6268,12 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                                             k, forecast_anchors))
                 frame_kwargs['traces'] = (list(frame_kwargs['traces'])
                                           + forecast_trace_indices)
+            if truth_trace_indices:
+                # truth= rows appear once a drawn forecast reaches them
+                frame_kwargs['data'] = (list(frame_kwargs['data'])
+                                        + _truth_frame_data(k))
+                frame_kwargs['traces'] = (list(frame_kwargs['traces'])
+                                          + truth_trace_indices)
             # `_shown`/`lengths` are ALREADY built above (one entry per
             # dataset, from the per-idx loop just above) -- reused here
             # rather than re-derived, same as `lengths`/`starts` themselves
@@ -6398,6 +6469,12 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                                             k, forecast_anchors))
                 frame_kwargs['traces'] = (list(frame_kwargs['traces'])
                                           + forecast_trace_indices)
+            if truth_trace_indices:
+                # truth= rows appear once a drawn forecast reaches them
+                frame_kwargs['data'] = (list(frame_kwargs['data'])
+                                        + _truth_frame_data(k))
+                frame_kwargs['traces'] = (list(frame_kwargs['traces'])
+                                          + truth_trace_indices)
             if frame_hooks is not None:
                 frame_hooks.record(
                     frame=k, n_frames=n_frames,

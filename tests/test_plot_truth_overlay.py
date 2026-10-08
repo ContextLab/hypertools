@@ -124,7 +124,12 @@ def test_series_mode_truth_takes_values_only_and_gets_the_index():
     plt.close(fig)
 
 
-def test_truth_is_drawn_in_full_during_an_animation(stock):
+def test_truth_is_revealed_as_the_animated_forecast_reaches_it(stock):
+    # Maintainer decision (1.1 review) changed this test's old contract
+    # ("drawn in full during an animation", checked on frame 1): truth
+    # rows now appear once a drawn forecast reaches them, so frame 1 --
+    # whose forecast ends well before the held-out rows -- shows none, and
+    # the last frame shows them all, verbatim.
     train, held = stock
     anim = hyp.plot(train, reduce=None, ndims=2, axis_scale='data',
                     predict='Kalman', t=T, truth=held, animate=True,
@@ -133,6 +138,9 @@ def test_truth_is_drawn_in_full_during_an_animation(stock):
     ani._init_draw()
     ani._func(1, *ani._args)
     line = _by_role(fig, 'truth')[0]
+    assert len(line.get_ydata()) == 0 and not line.get_visible()
+    ani._func(anim.n_frames - 1, *ani._args)
+    assert line.get_visible()
     assert np.allclose(np.asarray(line.get_ydata()),
                        np.r_[train[-1, 1], held[:, 1]])
     plt.close(fig)
