@@ -211,3 +211,94 @@ def test_static_legend_stays_on_the_data_traces():
     fig = hyp.plot([a, b], legend=True, backend='plotly', show=False)
     assert [t.name for t in _hoverable_data(fig) if t.showlegend] == \
         ['1', '2']
+
+
+# --------------------------------------------------------------------------
+# nested dataset lists: every leaf is named (and grouped) by its OUTER group
+# (1.1 release review: the leaves were named '1', '2', '2', '4' -- the
+# group label on each group's summary leaf, the flat leaf NUMBER on the
+# rest -- so hover named the wrong group and the legendgroups paired a
+# leaf of group 1 with a leaf of group 2)
+
+
+def _nested_leaves(fig):
+    return sorted(_hoverable_data(fig),
+                  key=lambda t: t.meta['hyp_trace_index'])
+
+
+def _assert_grouped_like(leaves, expected):
+    assert [t.name for t in leaves] == expected
+    for name in set(expected):
+        members = [t for t in leaves if t.name == name]
+        others = [t for t in leaves if t.name != name]
+        if len(members) > 1:
+            # one legendgroup per outer group, shared by exactly its leaves
+            assert {t.legendgroup for t in members} == {name}
+            assert not any(t.legendgroup == name for t in others)
+
+
+@pytest.mark.parametrize('legend', [None, True])
+def test_nested_list_leaves_are_named_by_their_outer_group(legend):
+    a, b = _walks()
+    kw = {} if legend is None else {'legend': legend}
+    fig = hyp.plot([[a, b], [a + 2, b + 2]], backend='plotly', show=False,
+                   **kw)
+    leaves = _nested_leaves(fig)
+    _assert_grouped_like(leaves, ['1', '1', '2', '2'])
+    # colours were already right: a group's leaves share its colour
+    assert leaves[0].line.color == leaves[1].line.color
+    assert leaves[2].line.color == leaves[3].line.color
+    assert leaves[0].line.color != leaves[2].line.color
+    if legend:
+        # one shown entry per group, toggling that group's leaves
+        assert [t.showlegend for t in leaves] == [True, False, True, False]
+    else:
+        assert _legend_names(fig) == []
+
+
+def test_nested_list_legend_list_names_the_groups_and_uneven_depths():
+    a, b = _walks()
+    fig = hyp.plot([[a, b, a - 1], [a + 2, b + 2]], backend='plotly',
+                   show=False, legend=['left', 'right'])
+    _assert_grouped_like(_nested_leaves(fig),
+                         ['left', 'left', 'left', 'right', 'right'])
+    assert sorted(_legend_names(fig)) == ['left', 'right']
+    # varying depth: the group's summary leaf carries the entry
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore')
+        fig = hyp.plot([a, [b, [a + 1]]], backend='plotly', show=False,
+                       legend=True)
+    leaves = _nested_leaves(fig)
+    _assert_grouped_like(leaves, ['1', '2', '2'])
+    assert [t.showlegend for t in leaves] == [True, True, False]
+
+
+def test_nested_list_per_leaf_legend_list_still_names_the_leaves():
+    a, b = _walks()
+    fig = hyp.plot([[a, b], [a + 2, b + 2]], backend='plotly', show=False,
+                   legend=['p', 'q', 'r', 's'])
+    assert [t.name for t in _nested_leaves(fig)] == ['p', 'q', 'r', 's']
+
+
+def test_nested_list_animation_names_and_groups_by_outer_group():
+    a, b = _walks()
+    fig = hyp.plot([[a, b], [a + 2, b + 2]], animate=True, duration=1,
+                   frame_rate=4, legend=True, backend='plotly', show=False)
+    leaves = _nested_leaves(fig)
+    _assert_grouped_like(leaves, ['1', '1', '2', '2'])
+    entries = [t for t in fig.data if t.showlegend]
+    assert sorted(t.name for t in entries) == ['1', '2']
+    for t in entries:
+        members = [d for d in leaves if d.legendgroup == t.legendgroup]
+        assert len(members) == 2 and all(d.name == t.name for d in members)
+
+
+def test_stacked_dict_hierarchy_leaves_are_named_by_their_group():
+    a, b = _walks()
+    stacked = hyp.stack({'US': {'x': a, 'y': b},
+                         'EU': {'x': a + 2, 'y': b + 2}})
+    fig = hyp.plot(stacked, backend='plotly', show=False, legend=True)
+    data = _hoverable_data(fig)
+    assert {t.name for t in data} == {'US', 'EU'}
+    assert {t.legendgroup for t in data} == {'US', 'EU'}
+    assert sorted(_legend_names(fig)) == ['EU', 'US']

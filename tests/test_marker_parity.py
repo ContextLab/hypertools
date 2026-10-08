@@ -169,3 +169,63 @@ class TestMarkerSizeEmpiricalParity3D:
             f"{mpl_diameter}px, plotly3d diameter={plotly_diameter}px "
             f"(rel_error={rel_error:.2%})"
         )
+
+
+class TestObservationMarkerParity3D:
+    """A marker on each OBSERVATION of a smoothed 3-D line ('o-' and every
+    other line+marker fmt, `plotly_backend._observation_marker`) is a
+    per-vertex size ARRAY -- and `go.Scatter3d` renders an array size at
+    HALF the diameter of the same scalar size (measured in kaleido: 8 ->
+    7.25 px vs 14.25 px, 16 -> 14.25 vs 28.75, 64 -> 57 vs 114). The
+    array was filled with the scalar-calibrated size, so 3-D 'o-' markers
+    drew at half matplotlib's diameter: 2 px dots under a 1.4 px line,
+    hidden (1.1 release review). 2-D `go.Scatter` arrays render at the
+    scalar size, so only 3-D is corrected."""
+
+    @pytest.mark.parametrize('markersize', [3.0, 6.0, 12.0])
+    def test_observation_marker_diameter_within_20pct_of_matplotlib(
+            self, markersize, tmp_path):
+        import numpy as np
+        from hypertools.plot.plotly_backend import _observation_marker
+        mpl_path = str(tmp_path / f'mpl3d_obs_{markersize}.png')
+        plotly_path = str(tmp_path / f'plotly3d_obs_{markersize}.png')
+
+        render_mpl_marker_3d(markersize, 'o', mpl_path)
+        mpl_w, mpl_h = measure_diameter(mpl_path)
+        mpl_diameter = (mpl_w + mpl_h) / 2.0
+
+        marker = _observation_marker(
+            dict(color='red', symbol='circle',
+                 size=_marker_size_px(markersize, 'o', ndims=3)),
+            n_vertices=5, vertices=[0, 4], ndims=3)
+        assert not np.isscalar(marker['size'])     # the bubble form
+        render_plotly_marker_3d(None, plotly_path, marker=marker)
+        plotly_w, plotly_h = measure_diameter(plotly_path)
+        plotly_diameter = (plotly_w + plotly_h) / 2.0
+
+        assert mpl_diameter > 0 and plotly_diameter > 0
+        rel_error = abs(plotly_diameter - mpl_diameter) / mpl_diameter
+        assert rel_error <= 0.20, (
+            f"markersize={markersize}: mpl3d diameter={mpl_diameter}px, "
+            f"plotly3d observation-marker diameter={plotly_diameter}px "
+            f"(rel_error={rel_error:.2%})")
+
+    @pytest.mark.parametrize('ndims', [2, 3])
+    def test_hyp_plot_line_marker_sizes_render_like_marker_only(self, ndims):
+        """End to end: the observation markers of a 'o-' trace render at
+        the same diameter as the plain markers of an 'o' trace (scalar
+        size) with the same markersize -- in 3-D that is twice the scalar
+        value, since Scatter3d halves an array size; in 2-D the same."""
+        import numpy as np
+        import hypertools as hyp
+        rng = np.random.default_rng(0)
+        a = rng.standard_normal((36, 5)).cumsum(0)
+        lines = hyp.plot(a, '-o', markersize=3, ndims=ndims,
+                         backend='plotly', show=False)
+        dots = hyp.plot(a, 'o', markersize=3, ndims=ndims,
+                        backend='plotly', show=False)
+        arr = np.asarray(lines.data[0].marker.size, dtype=float)
+        scalar = float(dots.data[0].marker.size)
+        assert arr.ndim == 1 and (arr > 0).sum() == 36
+        expected = scalar * (2.0 if ndims >= 3 else 1.0)
+        assert np.allclose(arr[arr > 0], expected)

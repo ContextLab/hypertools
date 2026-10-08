@@ -812,6 +812,25 @@ input too.
 Found by the pre-publication review of the 1.1.0 draft against 1.0.0.
 Because 1.1.0 had not been published, they ship in it.
 
+- **plotly names and groups every leaf of a nested dataset list by its
+  group.** For `hyp.plot([[a, b], [c, d]], backend='plotly')` only each
+  group's first leaf carried the group's label; the others fell back to
+  their flat leaf number, so the leaves were named `'1'`, `'2'`, `'2'`,
+  `'4'`. Hover named the wrong group, and the legendgroups paired a leaf of
+  group 1 with a leaf of group 2, so a legend click toggled the wrong
+  lines. Every leaf is now named by its outer group (or by its entry in a
+  per-group `legend=` list), as a hierarchy's leaves already were, in static
+  and animated figures. Matplotlib was not affected.
+- **3-D plotly markers on a line (`fmt='-o'`) draw at matplotlib's size.**
+  These markers are given per-point sizes, and `go.Scatter3d` draws a
+  per-point size at half the diameter of the same single size. The
+  conversion did not allow for that, so the markers drew at half
+  matplotlib's diameter. With `markersize=3` they were about 2 px dots under
+  a 1.4 px line, and most were hidden. They now match matplotlib within the
+  existing marker-parity tolerance (for example 4 px, previously 2 px, against matplotlib's
+  5 px at `markersize=3`). Marker-only 3-D traces and all 2-D traces were
+  already correct.
+
 - **An animated forecast now starts where that frame's line ends.**
   `predict=` with `animate=` drew each frame's forecast from the last raw
   observation at or before the drawn head. An animation is paced on a

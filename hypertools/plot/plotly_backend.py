@@ -314,6 +314,33 @@ MORPH_DEFAULT_MARKERSIZE_PT = _morph.MORPH_DEFAULT_MARKERSIZE_PT
 # fatter than the already-corrected 2-D/mpl-matching size.
 _SCATTER3D_SIZE_FACTOR = 1.776
 
+# ...and a per-point size ARRAY in `go.Scatter3d` (plotly's "bubble" form,
+# which hypertools' observation markers use -- `_observation_marker`)
+# renders at HALF the diameter of the same SCALAR size. Measured
+# 2026-10-08 in kaleido (isolated markers, scale 4): scalar 8/16/32/64 ->
+# 14.25/28.75/57/114 px, the same values as a size array -> 7.25/14.25/
+# 28.25/57 px (ratio 1.97-2.02 for every size from 4 to 64). `go.Scatter`
+# (2-D, SVG) draws an array size exactly like a scalar one. So a 3-D size
+# array is filled with the scalar size times this, or 'o-' markers in 3-D
+# render at half matplotlib's diameter -- 2 px dots hidden under the
+# line they mark (1.1 release review). `_scalar_marker_size` undoes it
+# where an array is folded back into one scalar size.
+_SCATTER3D_ARRAY_SIZE_BOOST = 2.0
+
+
+def _array_marker_size(size, ndims):
+    """The value a per-point `marker.size` ARRAY entry takes for a marker
+    whose scalar `marker.size` is `size` (see `_SCATTER3D_ARRAY_SIZE_BOOST`)."""
+    size = float(size or 0)
+    return size * _SCATTER3D_ARRAY_SIZE_BOOST if ndims >= 3 else size
+
+
+def _scalar_marker_size(sizes, ndims):
+    """The scalar `marker.size` that draws like the largest entry of the
+    per-point size array `sizes` (the inverse of `_array_marker_size`)."""
+    size = float(np.max(sizes))
+    return size / _SCATTER3D_ARRAY_SIZE_BOOST if ndims >= 3 else size
+
 # matplotlib format-string characters -> plotly marker symbols. This MUST
 # cover every marker character matplotlib's fmt grammar accepts (the printable
 # keys of matplotlib.lines.Line2D.markers): a missing entry makes _parse_fmt
@@ -752,7 +779,8 @@ def _observation_marker(marker, n_vertices, vertices, ndims):
         return marker
     marker = _bubble_safe_marker(marker, ndims)
     sizes = np.zeros(int(n_vertices))
-    sizes[vertices] = marker.get('size') or 0
+    # Scatter3d draws an array size at half a scalar's diameter
+    sizes[vertices] = _array_marker_size(marker.get('size'), ndims)
     marker['size'] = sizes
     return marker
 
@@ -2776,7 +2804,8 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                         marker.get('size', 0)):
                     # an observation-marked (per-vertex size) forecast: its
                     # legend key takes the marker's one real size
-                    marker['size'] = float(np.max(marker['size']))
+                    marker['size'] = _scalar_marker_size(
+                        marker['size'], ndims)
                 forecast_legend_specs.append(
                     (tr.name, tr.line.to_plotly_json(),
                      meta.get('hyp_forecast_alpha'), tr.mode or 'lines',
@@ -5294,7 +5323,12 @@ def _legend_proxy_for(trace, ndims, group):
         marker = {k: v for k, v in trace.marker.to_plotly_json().items()
                   if k in ('color', 'size', 'symbol', 'opacity')}
         marker['color'] = _scalar(marker.get('color'))
-        marker['size'] = _scalar(marker.get('size'))
+        _size = marker.get('size')
+        # a per-point size array (observation markers) folds back to the
+        # scalar size that draws like it (`_scalar_marker_size`)
+        marker['size'] = (_scalar_marker_size(_size, ndims)
+                          if _size is not None and not np.isscalar(_size)
+                          else _size)
         common['marker'] = marker
     if ndims >= 3:
         return go.Scatter3d(x=[None], y=[None], z=[None], **common)
@@ -5777,7 +5811,8 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                 # every vertex of this frame's smoothed curve (the static
                 # overlay's rule, `_observation_marker`)
                 _sizes = np.zeros(draw.shape[0])
-                _sizes[::int(step)] = float(_base.marker.size)
+                _sizes[::int(step)] = _array_marker_size(
+                    _base.marker.size, ndims)
                 _extra['marker'] = dict(size=_sizes)
             if ndims >= 3:
                 out.append(go.Scatter3d(x=draw[:, 0], y=draw[:, 1],

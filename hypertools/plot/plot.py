@@ -10965,6 +10965,26 @@ def plot(
             # overwritten here, so the legend was drawn anyway)
             legend = names
 
+    # nested-list input coloured by OUTER group: every leaf's plotly hover
+    # name (and so its legendgroup) is its group's label -- the label the
+    # legend shows on the group's summary leaf, or would under legend=True
+    # -- exactly as a hierarchy's leaves are named by their top-level group.
+    # Without it the summary leaf alone carried the group label and the
+    # other leaves fell back to their flat leaf NUMBER ('1', '2', '2', '4'
+    # for [[a, b], [c, d]]), so hover named the wrong group and the
+    # legendgroups paired leaves of different groups (1.1 release review).
+    # A legend=/names= list with one entry per LEAF names the leaves
+    # themselves instead, so it leaves this unset.
+    _nested_hover_labels = None
+    if (_nested_group_colored and hue is None
+            and len(nested_groups) == len(xform)):
+        _n_outer = len(set(nested_groups))
+        if (isinstance(legend, (list, tuple)) and len(legend) == _n_outer
+                and len(legend) != len(xform)):
+            _nested_hover_labels = [legend[g] for g in nested_groups]
+        elif not isinstance(legend, (list, tuple)):
+            _nested_hover_labels = [g + 1 for g in nested_groups]
+
     # handle legend
     if legend is not None:
         if legend is False:
@@ -12133,7 +12153,8 @@ def plot(
             trace_names=_plotly_hover_names(
                 len(xform), legend, category_names=_run_cat_names,
                 group_labels=(_mi_style.get('group_labels')
-                              if _multiindex_meta is not None else None),
+                              if _multiindex_meta is not None
+                              else _nested_hover_labels),
                 user_labels=_legend_user_labels,
                 series_names=_series_names, hue=hue,
                 hue_group_labels=hue_group_labels),

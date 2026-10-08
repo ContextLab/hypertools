@@ -23,7 +23,8 @@ import matplotlib
 matplotlib.use('Agg')
 
 import hypertools as hyp
-from hypertools.plot.plotly_backend import _marker_size_px
+from hypertools.plot.plotly_backend import (_array_marker_size,
+                                             _marker_size_px)
 
 pytest.importorskip('plotly')
 
@@ -96,8 +97,12 @@ def test_o_dash_marks_every_observation_and_nothing_else(ndims):
         a, b = np.polyfit(raw_xyz[:, d], marked[:, d], 1)
         np.testing.assert_allclose(a * raw_xyz[:, d] + b, marked[:, d],
                                    atol=1e-9)
-    # each at the fmt's own marker size
-    assert set(sizes[sizes > 0]) == {_marker_size_px(6.0, 'o', ndims)}
+    # each at the fmt's own marker size, in the per-point-array encoding
+    # (Scatter3d draws an array size at half a scalar's diameter, so a 3-D
+    # array entry is twice the scalar size; tests/test_marker_parity.py
+    # measures the rendered diameter against matplotlib's)
+    assert set(sizes[sizes > 0]) == {
+        _array_marker_size(_marker_size_px(6.0, 'o', ndims), ndims)}
 
 
 @pytest.mark.parametrize('kw', [dict(marker='o'), dict(markers='o')])

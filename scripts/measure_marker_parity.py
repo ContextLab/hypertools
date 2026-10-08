@@ -99,15 +99,23 @@ def render_plotly_marker(size_px, path, color='red'):
     fig.write_image(path, width=CANVAS_SIZE[0], height=CANVAS_SIZE[1])
 
 
-def render_plotly_marker_3d(size_px, path, color='red'):
+def render_plotly_marker_3d(size_px, path, color='red', marker=None):
     """Render one isolated plotly `go.Scatter3d` marker (`marker.size=
     size_px`), centered at the scene origin, on the same `CANVAS_SIZE`
     canvas -- `go.Scatter3d` needs `_SCATTER3D_SIZE_FACTOR` correction on
-    top of the 2-D conversion (see this module's docstring)."""
+    top of the 2-D conversion (see this module's docstring).
+
+    `marker` (a full plotly marker dict) replaces the scalar marker: its
+    `size` may be a per-point ARRAY, drawn over that many points at the
+    origin -- the "bubble" form hypertools' observation markers use
+    (`plotly_backend._observation_marker`), which Scatter3d renders at
+    half the diameter of the same scalar size."""
     import plotly.graph_objects as go
+    if marker is None:
+        marker = dict(color=color, size=size_px, symbol='circle')
+    n = 1 if np.isscalar(marker.get('size')) else len(marker['size'])
     fig = go.Figure(data=[go.Scatter3d(
-        x=[0], y=[0], z=[0], mode='markers',
-        marker=dict(color=color, size=size_px, symbol='circle'))])
+        x=[0] * n, y=[0] * n, z=[0] * n, mode='markers', marker=marker)])
     fig.update_layout(
         width=CANVAS_SIZE[0], height=CANVAS_SIZE[1],
         scene=dict(xaxis=dict(visible=False, range=[-1, 1]),
