@@ -259,3 +259,15 @@ def test_describe_show_false_returns_plotly_figure_without_showing(
     assert isinstance(result['fig'], go.Figure)
     assert shown == []
     assert len(result['fig'].data) == 4  # 3 datasets + average
+
+
+def test_describe_bare_array_without_format_data_is_one_dataset():
+    # format_data=False with a bare array used to iterate its ROWS as
+    # datasets and crash with "IndexError: tuple index out of range"
+    x = _walks(n=1)[0]
+    result = describe(x, reduce='PCA', max_dims=5, format_data=False,
+                      show=False)
+    plt.close('all')
+    assert len(result['individual']) == 1
+    assert len(result['individual'][0]) == 3
+    np.testing.assert_allclose(result['average'], result['individual'][0])

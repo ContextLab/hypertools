@@ -1545,7 +1545,9 @@ Because 1.1.0 had not been published, they ship in it.
   (0.781 there), and the stacked curve is
   still returned, as `'pooled'`, without being drawn. For one dataset all
   three are equal. The x axis is ticked at whole component counts on both
-  backends (it showed 2.25, 2.5, ...).
+  backends (it showed 2.25, 2.5, ...). A bare array passed with
+  `format_data=False` is one dataset; it used to be split into rows and
+  raise `IndexError`.
 - **`hyp.describe(show=False)` returns its figure**, undisplayed, like
   `hyp.plot(show=False)`: a matplotlib figure is closed out of pyplot but
   stays savable, and a plotly figure is not shown. It used to skip drawing
