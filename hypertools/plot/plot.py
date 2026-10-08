@@ -5798,7 +5798,9 @@ def plot(
         ``hyp.plot(np.column_stack([t, y]), reduce=None, ndims=2,
         axis_scale='data')`` draws real ``t`` on x and real ``y`` on y. No
         frame square is drawn, the axes keep their ticks and spines (top
-        and right removed), `xlabel=`/`ylabel=` still apply (DataFrame
+        and right removed) and draw no gridlines on either backend (a
+        caller's own `ax=` keeps any grid it already has),
+        `xlabel=`/`ylabel=` still apply (DataFrame
         column names supply them by default), and the limits come from
         `xlim`/`ylim` when given, otherwise from the full data (forecast
         and `truth=` overlays included) with a 5% margin -- fixed up front,

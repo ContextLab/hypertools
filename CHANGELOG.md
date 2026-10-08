@@ -1553,6 +1553,11 @@ Because 1.1.0 had not been published, they ship in it.
   stays savable, and a plotly figure is not shown. It used to skip drawing
   and return `fig=None`, so `show=False` now costs the (small) drawing time
   as well.
+- **matplotlib `axis_scale='data'` plots have no grid.** Seaborn's
+  `whitegrid` style, which hypertools draws under, left a grey grid on
+  data-scale axes (static, animated and `ndims=1` series plots)
+  that the plotly backend never drew. Both backends now draw none. A
+  caller's own `ax=` keeps whatever grid it already has.
 
 ### Documented limitations
 

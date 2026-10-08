@@ -270,3 +270,68 @@ def test_S2_a_non_date_xlim_on_a_date_axis_is_refused():
     with pytest.raises(ValueError, match='date axis'):
         hyp.plot(_dated_series(), ndims=1, xlim=('soon', 'later'),
                  show=False)
+
+
+# --- no gridlines under the data scale (1.1 release review) -----------------
+# hypertools draws inside seaborn's 'whitegrid' style, so matplotlib's
+# data-scale axes carried a grey grid that the plotly backend (showgrid=False)
+# never drew. The maintainer chose plotly's look: no grid.
+
+def _visible_gridlines(ax):
+    ax.figure.canvas.draw()
+    return [g for g in ax.get_xgridlines() + ax.get_ygridlines()
+            if g.get_visible()]
+
+
+@pytest.mark.parametrize('kwargs', [
+    dict(ndims=2, reduce=None, axis_scale='data'),
+    dict(ndims=2, reduce=None, axis_scale='data', xlim=(-20, 20),
+         ylim=(-20, 20)),
+])
+def test_matplotlib_data_scale_draws_no_grid(series, kwargs):
+    t, y = series
+    fig = hyp.plot(np.column_stack([t, y]), backend='matplotlib',
+                   show=False, **kwargs)
+    assert _visible_gridlines(fig.axes[0]) == []
+    plt.close(fig)
+
+
+def test_matplotlib_series_mode_draws_no_grid(series):
+    _, y = series
+    # ndims=1 series mode defaults to the data scale (ticks on)
+    fig = hyp.plot(pd.Series(y), ndims=1, backend='matplotlib', show=False)
+    ax = fig.axes[0]
+    assert ax.axison and ax.xaxis.get_visible()
+    assert _visible_gridlines(ax) == []
+    plt.close(fig)
+
+
+def test_matplotlib_animated_data_scale_draws_no_grid(series):
+    t, y = series
+    anim = hyp.plot(np.column_stack([t, y]), backend='matplotlib',
+                    reduce=None, ndims=2, axis_scale='data', animate=True,
+                    duration=1, frame_rate=5, show=False)
+    fig = anim.fig if hasattr(anim, 'fig') else anim[0]
+    assert _visible_gridlines(fig.axes[0]) == []
+    plt.close(fig)
+
+
+def test_data_scale_keeps_a_caller_axes_own_grid(series):
+    # a caller's axes is theirs to style: a grid they turned on stays on
+    t, y = series
+    fig, ax = plt.subplots()
+    ax.grid(True)
+    hyp.plot(np.column_stack([t, y]), backend='matplotlib', reduce=None,
+             ndims=2, axis_scale='data', ax=ax, show=False)
+    assert _visible_gridlines(ax) != []
+    plt.close(fig)
+
+
+def test_plotly_data_scale_draws_no_grid(series):
+    pytest.importorskip('plotly')
+    t, y = series
+    fig = hyp.plot(np.column_stack([t, y]), backend='plotly', reduce=None,
+                   ndims=2, axis_scale='data', xlim=(-20, 120),
+                   ylim=(-20, 20), show=False)
+    assert fig.layout.xaxis.showgrid is False
+    assert fig.layout.yaxis.showgrid is False

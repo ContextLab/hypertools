@@ -939,6 +939,11 @@ def _draw(
     invoke callbacks.
     """
 
+    # whether the caller handed us their own axes (their styling -- e.g. a
+    # grid they turned on -- is theirs to keep; see the axis_scale='data'
+    # branch below)
+    _caller_ax = ax is not None
+
     # chemtrails/precog/bullettime (GH #127): normalize to one bool per
     # dataset now, at the top of `_draw`, BEFORE any nested closure below is
     # defined -- `update_lines_parallel`/`animate_plot3D` close over these
@@ -3300,7 +3305,12 @@ def _draw(
     # axis_scale='data' (GH #285) is the deliberate exception: its whole
     # point is that the drawn coordinates ARE the data's own, so its ticks
     # and spines stay on (matplotlib's defaults) and only the top/right
-    # spines are dropped, the way a plain time-series panel is drawn.
+    # spines are dropped, the way a plain time-series panel is drawn. The
+    # gridlines seaborn's 'whitegrid' style (applied by `plot()`) puts on
+    # hypertools' own axes are removed, matching the plotly backend's
+    # `showgrid=False` (1.1 release review: the matplotlib data-scale plot
+    # drew a grey grid the plotly one never had). A caller's `ax=` keeps
+    # whatever grid its owner gave it.
     # the font stack in force NOW (`plot()` draws inside the rc_context
     # that sets it), given explicitly to the axis labels and title below:
     # a caller's `ax=` (every `panels=` cell) created its label and title
@@ -3313,6 +3323,8 @@ def _draw(
         for _side in ('top', 'right'):
             if _side in ax.spines:
                 ax.spines[_side].set_visible(False)
+        if not _caller_ax:
+            ax.grid(False)
         if xlabel is not None:
             ax.set_xlabel(xlabel, fontfamily=_text_family)
         if ylabel is not None:
