@@ -123,8 +123,8 @@ VISUAL_FIXES = {
     "PANEL-models-plotly": "First figure: each panel is titled with its reducer (PCA, FactorAnalysis). Second figure: the subplots= alias gives one panel per dataset, titled Dataset A and Dataset B.",
     "ANIM-fc-colors-matplotlib": "Each forecast takes the colour of its forecast_hue group from forecast_palette (four values, four viridis colours, no colorbar); clustered forecasts share one colour per endpoint cluster; the observed trajectories keep their own colours.",
     "ANIM-fc-colors-plotly": "Each forecast takes the colour of its forecast_hue group from forecast_palette (four values, four viridis colours, no colorbar); clustered forecasts share one colour per endpoint cluster; the observed trajectories keep their own colours.",
-    "TEXT-plot-matplotlib": "Each point is labelled with its document (the table lists them in full); animal documents are one colour and market documents the other. Some LDA topic mixtures coincide, so some labels may overlap.",
-    "TEXT-plot-plotly": "Each point is labelled with its document (the table lists them in full); animal documents are one colour and market documents the other. Some LDA topic mixtures coincide, so some labels may overlap.",
+    "TEXT-plot-matplotlib": "Eight documents, animals in one colour and markets in the other. A 3-topic LDA model on eight short documents places several at the same spot, so fewer than eight markers are visible; the table gives each document's plotted position, and the markers should sit at those positions.",
+    "TEXT-plot-plotly": "Eight documents, animals in one colour and markets in the other. A 3-topic LDA model on eight short documents places several at the same spot, so fewer than eight markers are visible; the table gives each document's plotted position, and the markers should sit at those positions.",
     "TEXT-transformer": "Each point is labelled with its document (the table lists them in full); animal and market documents form two separate groups. Compare with the topic model above.",
     "ANIM-clock": "Each title runs from 0% to 100%. Parallel reveals both helices together, cumulatively; window shows only a sliding 0.5 s segment of each; spin rotates both complete paths.",
     "PLOT-hierarchy-metadata": "The displayed trace keys list the two leaves and the derived mean in draw order; all share the single top-level group's colour, so left and right are identified by the keys rather than by colour.",
@@ -710,6 +710,14 @@ if "show=True" not in text(red):
 
 run_case('RED-describe', demo)""",
     )
+# Undo the 2026-10-08 first pass on the LDA text plots (labels piled up), so a
+# notebook synced by that pass takes the table-based version below.
+for _b in ("matplotlib", "plotly"):
+    _cell = case_cell("TEXT-plot-" + _b)
+    _first = ("legend=True,labels=DOC_LABELS,title='Text topics')\n"
+              "    display(pd.DataFrame({'label':DOC_LABELS,'document':TEXTS}))")
+    if _first in text(_cell):
+        set_source(_cell, text(_cell).replace(_first, "legend=True,title='Text topics')"))
 # Figure-QA adjudication 2026-09-11: make the figures show what the cases claim.
 for case_id, old, new in [
     *[
@@ -731,10 +739,14 @@ for case_id, old, new in [
          "subplots=True,title=['Dataset A','Dataset B'])")
         for b in ("matplotlib", "plotly")
     ],
+    # LDA on eight short documents puts several at the same spot, where point
+    # labels would pile up; a table of plotted positions shows which coincide.
     *[
         (f"TEXT-plot-{b}", "legend=True,title='Text topics')",
-         "legend=True,labels=DOC_LABELS,title='Text topics')\n"
-         "    display(pd.DataFrame({'label':DOC_LABELS,'document':TEXTS}))")
+         "legend=True,title='Text topics')\n"
+         "    kw=dict(vectorizer='CountVectorizer',corpus=TEXTS,ndims=2,semantic={'model':'LatentDirichletAllocation','kwargs':{'n_components':3,'random_state':0}})\n"
+         "    xy=np.asarray(hyp.plot(TEXTS,show=False,return_model=True,**kw)['xform_data'][0])\n"
+         "    display(pd.DataFrame({'group':['animals']*4+['markets']*4,'x':xy[:,0].round(2),'y':xy[:,1].round(2),'document':TEXTS}))")
         for b in ("matplotlib", "plotly")
     ],
     ("TEXT-transformer", "legend=True,title='Transformer embeddings')",
