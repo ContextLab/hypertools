@@ -64,11 +64,14 @@ jobs:
     - name: Install system dependencies (Ubuntu)
       if: matrix.os == 'ubuntu-latest'
       run: |
-        sudo apt-get update
+        sudo apt-get -o Acquire::Retries=3 update
         # fonts-noto-cjk (GH #205): ubuntu-latest ships no CJK-covering font
         # at all, so tests/test_multibyte.py's `requires_covering_font`
         # skipif would silently skip every CJK-dependent test on this OS.
-        sudo apt-get install -y ffmpeg fonts-noto-cjk
+        # --no-install-recommends: ffmpeg's recommends (VA/VDPAU drivers, speech
+        # models) are never used here and tripled the download; a slow mirror
+        # (182 MB at 111 kB/s, 2026-10-08) pushed docs-clean past its timeout.
+        sudo apt-get -o Acquire::Retries=3 install -y --no-install-recommends ffmpeg fonts-noto-cjk
         fc-cache -f
 
     - name: Install system dependencies (macOS)
@@ -259,13 +262,16 @@ jobs:
         python-version: '3.11'
     - name: Install system dependencies
       run: |
-        sudo apt-get update
+        sudo apt-get -o Acquire::Retries=3 update
         # ffmpeg: mp4 rendering of animated gallery examples (matches RTD).
         # fonts-noto-cjk: CJK-covering font for the multibyte gallery text.
         # pandoc: nbsphinx renders the hand-authored tutorials/*.ipynb via
         # pandoc (Read the Docs' build image bundles pandoc; a bare GH runner
         # does not, so declare it here or the notebook stage fails).
-        sudo apt-get install -y ffmpeg fonts-noto-cjk pandoc
+        # --no-install-recommends: ffmpeg's recommends (VA/VDPAU drivers, speech
+        # models) are never used here and tripled the download; a slow mirror
+        # (182 MB at 111 kB/s, 2026-10-08) pushed docs-clean past its timeout.
+        sudo apt-get -o Acquire::Retries=3 install -y --no-install-recommends ffmpeg fonts-noto-cjk pandoc
         fc-cache -f
     - name: Export a pristine source tree (tracked files only)
       run: |
