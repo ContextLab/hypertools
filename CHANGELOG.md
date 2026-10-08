@@ -559,7 +559,7 @@ previously ambiguous or silently lossy.
 ### Bug fixes
 
 - **NumPy 2-compatible optional dependency floors.** The `gensim` and
-  `density3d` extras require gensim>=4.4.0 and scikit-image>=0.23.2,
+  `density3d` extras require gensim>=4.4.0 and scikit-image>=0.25.0,
   respectively; dev/docs requirements match. Earlier advertised minimums
   predate upstream NumPy 2 support.
 - **Backtest model ownership.** Forecast backtests fit an independent copy
@@ -882,7 +882,8 @@ Because 1.1.0 had not been published, they ship in it.
   score), and `metric='dispersion'` on all-constant datasets raises like
   `'isc'` already did instead of returning NaN with a RuntimeWarning.
 - `docs/doc_requirements.txt` carries the same core floors as
-  `pyproject.toml` (scikit-learn 1.4.2, pandas 2.2.2, matplotlib 3.9.0).
+  `pyproject.toml` (scikit-learn 1.5.2, pandas 2.2.3, matplotlib 3.9.2,
+  scipy 1.14.1, numpy 2.1.0, statsmodels 0.14.3).
 - **A list of `{category: color}` dicts works with a regrouping `hue=`.**
   Each dataset naming its own categories (the documented per-dataset dict
   form) was rejected as "2 per-dataset palettes but 4 dataset(s)" once
@@ -1480,6 +1481,12 @@ Because 1.1.0 had not been published, they ship in it.
   spellings are no longer hidden inside the library.
 - **`[density3d]` needs `scikit-image>=0.25.0`**, the first release with
   Python 3.13 wheels.
+- **Core dependency floors have wheels for Python 3.10 through 3.13.**
+  The floors rise to numpy 2.1.0, pandas 2.2.3, scipy 1.14.1, matplotlib
+  3.9.2, scikit-learn 1.5.2, statsmodels 0.14.3 and pillow 10.4.0, the first
+  release of each with CPython 3.13 wheels (the previous floors shipped
+  cp310-cp312 only, so a lowest-version install on 3.13 built them from
+  source). The README and `docs/doc_requirements.txt` match.
 - **Animated lines keep every observation.** Lines were resampled onto one
   row per frame, so a dataset with more rows than frames was drawn through
   only some of its points (a 36-row helix in a 9-frame animation became a

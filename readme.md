@@ -250,16 +250,16 @@ for one block as a context manager); a missing extra then raises
 ## Requirements
 
 + python>=3.10
-+ scikit-learn>=1.4.2
-+ pandas>=2.2.2
++ scikit-learn>=1.5.2
++ pandas>=2.2.3
 + seaborn>=0.13.0
-+ pillow>=8
-+ matplotlib>=3.9.0
-+ scipy>=1.13.0
-+ numpy>=2.0.0
++ pillow>=10.4.0
++ matplotlib>=3.9.2
++ scipy>=1.14.1
++ numpy>=2.1.0
 + umap-learn>=0.5.5, numba>=0.61.0
 + pydata-wrangler>=0.5.1 (data-wrangling core)
-+ pykalman>=0.11, statsmodels>=0.14 (Kalman/ARIMA forecasting; Kalman imputation)
++ pykalman>=0.11, statsmodels>=0.14.3 (Kalman/ARIMA forecasting; Kalman imputation)
 + requests>=2.31.0, dill>=0.3.8, ipympl>=0.9.3
 + ffmpeg (for saving animations)
 

@@ -46,25 +46,30 @@ classifiers = [
 ]
 dependencies = [
     # NOTE (2026-07 red-team): these floors must be co-installable with the
-    # numpy>=2.0 floor below. matplotlib<3.9, pandas<2.2.2, numba<0.60 and
+    # numpy floor below. matplotlib<3.9, pandas<2.2.2, numba<0.60 and
     # scikit-learn<1.4.2 each require/only-support numpy<2, so a floor-pinned
     # resolver (`uv --resolution lowest`, a minimum-pinned lockfile) would hit
     # ResolutionImpossible. Default (newest-first) installs are unaffected.
-    "scikit-learn>=1.4.2",   # 1.4.2 is the first with numpy-2 runtime support
+    # 2026-10: each compiled core floor is also the first release that ships
+    # wheels for every Python the classifiers claim (cp310 through cp313,
+    # checked on PyPI's JSON API; tests/test_dependency_floor_wheels.py), so
+    # a lowest-version install on 3.13 never builds numpy/pandas/scipy/
+    # matplotlib/scikit-learn/statsmodels/pillow from source.
+    "scikit-learn>=1.5.2",   # 1.5.2: first with cp313 wheels (1.4.2 = numpy 2)
     # pandas 3.0+ supported as of datawrangler 0.5.0 (data-wrangler#30/#31 fixed
     # the pandas-3 type detection); the <3 ceiling is lifted (CI exercises
     # pandas 3.x). 2.2.2 is the first pandas that supports numpy 2 (2.2.0/.1
-    # require numpy<2).
-    "pandas>=2.2.2",
+    # require numpy<2); 2.2.3 is the first with cp313 wheels.
+    "pandas>=2.2.3",
     "seaborn>=0.13.0",
-    # Pillow is already a hard requirement of matplotlib>=3.9 (`pillow>=8`),
-    # so this adds no install weight -- but hypertools now imports PIL
-    # itself (hypertools/plot/colors.py: image_palette / palette='image:...'),
-    # and a library that imports a package declares it.
-    "pillow>=8",
-    "matplotlib>=3.9.0",     # 3.8.x requires numpy<2; 3.9.0 supports numpy 2
-    "scipy>=1.13.0",
-    "numpy>=2.0.0",
+    # Pillow is already a hard requirement of matplotlib (`pillow>=8`), but
+    # hypertools imports PIL itself (hypertools/plot/colors.py:
+    # image_palette / palette='image:...'), and a library that imports a
+    # package declares it. 10.4.0 is the first with cp313 wheels.
+    "pillow>=10.4.0",
+    "matplotlib>=3.9.2",     # 3.8.x requires numpy<2; 3.9.2: first cp313 wheels
+    "scipy>=1.14.1",         # first with cp313 wheels
+    "numpy>=2.1.0",          # first with cp313 wheels (2.0.x: cp310-cp312)
     "umap-learn>=0.5.5",
     # umap-learn's own numba floor (>=0.51) lets uv resolve unbuildable
     # numba 0.53/llvmlite 0.36 on py3.12+ (audit X5-003); pin a real floor.
@@ -81,7 +86,7 @@ dependencies = [
     # ModuleNotFoundError when these were extras-only). The heavier skaters laplace
     # ensemble stays in the [predict] extra.
     "pykalman>=0.11",
-    "statsmodels>=0.14",
+    "statsmodels>=0.14.3",   # first with cp313 wheels
     # HyperTools 1.0: data-wrangling core (funnel/stack/unstack/format detection, model
     # dispatch, text+HF embeddings). 0.5.0+ adds pandas 3.0 support (dw#30/#31).
     # https://github.com/ContextLab/data-wrangler
