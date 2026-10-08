@@ -1365,7 +1365,7 @@ def _forecast_endpoints(forecasts):
 
 def resolve_forecast_overrides(n_datasets, forecasts=None, *, hue=None,
                                cluster=None, n_clusters=None, palette=None,
-                               fmt=None, stacklevel=2):
+                               fmt=None, stacklevel=2, default_palette=None):
     """Resolve `forecast_hue=`/`forecast_cluster=`/`forecast_palette=`/
     `forecast_fmt=` into one override dict per dataset.
 
@@ -1423,6 +1423,12 @@ def resolve_forecast_overrides(n_datasets, forecasts=None, *, hue=None,
         Colours for the grouping. With no grouping given, spent one colour
         per dataset. `None` means "no colour override" -- callers pass the
         figure's own `palette=` when they want the observed one inherited.
+    default_palette : callable or None
+        The grouping's colours when `palette` is None: called with the
+        number of groups, it returns that many colours. `plot()` passes
+        `_forecast_group_palette`, which continues the figure's palette
+        past the observed data's colours so no group repeats one. None
+        keeps 'hls' from its first colour.
     fmt : str, sequence of str, or None
         Line/marker style for the forecasts, independent of the observed
         `fmt`. Validated here with matplotlib's own `fmt=` parser, so both
@@ -1542,6 +1548,9 @@ def resolve_forecast_overrides(n_datasets, forecasts=None, *, hue=None,
                     f". The clusterer rejected that: {exc}") from exc
 
     if labels is not None:
+        if palette is None and default_palette is not None:
+            palette = list(default_palette(max(1, len(
+                {lab for lab in labels if lab is not None}))))
         for i, color in enumerate(_forecast_label_colors(
                 labels, 'hls' if palette is None else palette)):
             overrides[i]['color'] = color

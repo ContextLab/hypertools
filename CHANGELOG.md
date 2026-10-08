@@ -857,6 +857,29 @@ Because 1.1.0 had not been published, they ship in it.
   `'truth'` legend entry is on every frame, and static plots and
   `animate='spin'` still draw it in full.
 
+- **Default forecast group colours no longer repeat an observed line's
+  colour.** `forecast_hue=`/`forecast_cluster=` without
+  `forecast_palette=` started the palette over, so forecast group 0 was
+  drawn in exactly dataset 0's colour: `hyp.plot([a, b, a + 2, b + 2],
+  predict='Kalman', t=6, forecast_cluster='KMeans', forecast_n_clusters=2)`
+  drew its two groups in `#db5f57` and `#57d3db`, the colours of datasets
+  0 and 2. The groups now continue the figure's `palette=` past the colour
+  slots the observed data takes (its datasets or `hue=`/`cluster=` groups,
+  plus any an earlier call took on a reused `ax=`): the same call draws
+  `#dbc257` and `#57db80`, the free slots of 'hls' at 8, and `palette='Set2'`
+  gives Set2's fifth and sixth colours. Same on both backends, static and
+  animated; `panels=` resolves the default against the whole grid, so each
+  label keeps the single-axes figure's colour. An explicit
+  `forecast_palette=` overrides exactly as before.
+
+- **A continuous `hue=` no longer repaints an explicitly coloured
+  forecast on matplotlib.** Under a continuous `hue=` the matplotlib
+  backend recoloured every forecast in its trace's final hue colour,
+  discarding `forecast_hue=`/`forecast_cluster=`/`forecast_palette=` (and a
+  colour letter in `forecast_fmt=`), static and animated, while plotly kept
+  them -- the two backends drew the same call in different colours. The
+  explicit colour now wins on both, as `forecast_fmt=`'s docs say.
+
 - **No leftover "install the extra first" instructions.** Every optional
   dependency goes through the on-demand installer, and the stale prose
   that told users to install an extra by hand is gone: the `plot()`

@@ -411,6 +411,104 @@ def _palette_continuation(palette, n, offset=0, used=None):
     return fallback
 
 
+def _observed_palette_colors(palette, n_drawn, color=None, draw_fmt=None,
+                             prior=None):
+    """The distinct colours the OBSERVED data takes, in order -- what a
+    default forecast grouping continues the palette past
+    (`_forecast_group_palette`).
+
+    `color` is the resolved per-trace ``color=`` (an explicit colour, or the
+    per-run colours a categorical ``hue=``/``cluster=`` assigned); without
+    it each dataset lacking a colour letter in `draw_fmt` takes the next
+    palette slot. `prior` is ``(offset, used)`` for slots earlier calls
+    took on a reused axes/figure/cell. The unlabeled-group gray is not a
+    palette slot and is left out."""
+    from matplotlib.colors import to_rgb
+    out = []
+
+    def _add(c):
+        try:
+            rgb = tuple(float(v) for v in to_rgb(c))
+        except (TypeError, ValueError):
+            return
+        if rgb != tuple(to_rgb(NAN_COLOR)) and rgb not in out:
+            out.append(rgb)
+
+    offset, used = prior if prior is not None else (0, None)
+    if offset and used is not None and len(used) == offset:
+        for c in used:
+            _add(tuple(c)[:3])
+    if color is not None:
+        single = isinstance(color, str) or _is_single_color(color)
+        for c in ([color] if single else list(color)):
+            _add(c)
+        return out
+    n_slots = sum(1 for i in range(n_drawn)
+                  if _fmt_color_letter(draw_fmt[i] if draw_fmt is not None
+                                       and i < len(draw_fmt) else None)
+                  is None)
+    if (isinstance(palette, collections.abc.Mapping)
+            or _looks_like_dataset_palettes(palette)):
+        return out
+    # the cycle is sampled for EVERY drawn dataset and the unlettered ones
+    # take its first colours in order -- exactly how both backends colour
+    # them (a lettered dataset skips a slot without changing the sampling)
+    for c in _palette_continuation(palette, n_drawn, offset,
+                                   used if offset else None)[:n_slots]:
+        _add(c)
+    return out
+
+
+def _prior_palette_slots(ax, plotly_into, backend):
+    """``(offset, used)``: the palette slots (and their colours, or None)
+    earlier hypertools calls took on the axes / plotly figure / grid cell
+    this call draws into -- read from the same records the observed
+    palette continuation reads (``ax._hyp_palette_offset``/``_used``;
+    ``layout.meta``'s ``hyp_datasets_drawn``/``hyp_palette_used`` and their
+    per-cell forms). ``(0, None)`` for a fresh figure."""
+    try:
+        is_plotly = resolve_backend(backend) == 'plotly'
+    except Exception:  # noqa: BLE001 - an unresolvable backend has no record
+        is_plotly = False
+    if is_plotly:
+        if plotly_into is None:
+            return 0, None
+        if _is_plotly_cell(plotly_into):
+            meta = plotly_into.figure.layout.meta
+            meta = meta if isinstance(meta, dict) else {}
+            key = str(plotly_into.index)
+            return (int((meta.get('hyp_cell_datasets_drawn') or {}).get(
+                        key, 0)),
+                    (meta.get('hyp_cell_palette_used') or {}).get(key))
+        meta = getattr(plotly_into, 'layout', None)
+        meta = meta.meta if meta is not None else None
+        meta = meta if isinstance(meta, dict) else {}
+        return int(meta.get('hyp_datasets_drawn', 0)), meta.get(
+            'hyp_palette_used')
+    if ax is not None and hasattr(ax, 'set_prop_cycle'):
+        return (int(getattr(ax, '_hyp_palette_offset', 0) or 0),
+                getattr(ax, '_hyp_palette_used', None))
+    return 0, None
+
+
+def _forecast_group_palette(palette, observed):
+    """The DEFAULT colours of a `forecast_hue=`/`forecast_cluster=` grouping
+    (no `forecast_palette=`), as a function of the group count: the
+    figure's palette CONTINUED past the `observed` colours
+    (`_observed_palette_colors`), so no forecast group wears an observed
+    line's colour (maintainer decision, 1.1 review -- cluster 0 used to be
+    dataset 0's colour exactly). A per-dataset or mapping palette has no
+    sequence to continue, so 'hls' is continued past the observed count."""
+    if (palette is None or isinstance(palette, collections.abc.Mapping)
+            or _looks_like_dataset_palettes(palette)):
+        palette = 'hls'
+
+    def _colors(n):
+        return _palette_continuation(palette, n, len(observed),
+                                     observed if observed else None)
+    return _colors
+
+
 def _extend_palette_used(offset, used, taken):
     """The palette-slot colours an axes/figure/cell holds after a call that
     took `taken` past `offset` earlier slots whose colours were `used`, or
@@ -732,8 +830,15 @@ def _draw_forecast_overlays(ax, raw_forecasts, antialias=True,
     # downstream consumers pair forecasts with data by identity rather than
     # by list position (which only holds while forecasts stay
     # one-per-dataset in dataset order).
+    from .forecast import override_has_color as _pins_colour
     for _ds, _a in _artist_dataset:
         _a._hyp_forecast_role = 'static'
+        # an explicit forecast colour (forecast_hue=/cluster=/palette=, a
+        # colour letter in forecast_fmt=) that a continuous hue= must not
+        # repaint (`_apply_multicolor_lines`/`_apply_multicolor_markers`)
+        _a._hyp_forecast_pinned = bool(_pins_colour(
+            overrides[_ds] if overrides is not None
+            and _ds < len(overrides) else None))
         _a._hyp_forecast_dataset = (dataset_index[_ds]
                                     if dataset_index is not None else _ds)
         _a._hyp_forecast_label = (labels[_ds] if labels is not None
@@ -3465,7 +3570,42 @@ def _panel_pick_model_major(seq, index, n_datasets, n_models):
     return [seq[k * n_datasets + index] for k in range(n_models)]
 
 
-def _panel_slice_forecast_kwargs(kw, index, n_datasets):
+def _panel_observed_groups(kw):
+    """How many palette colours the single-axes call's OBSERVED data takes
+    when a grouping colours it: the categories of a categorical (string)
+    `hue=`, or an integer `n_clusters=`. None when nothing groups the data
+    or the count is not knowable from the arguments alone (then each
+    dataset is counted as one slot)."""
+    hue = kw.get('hue')
+    if hue is not None and not isinstance(hue, (str, bytes)):
+        values = []
+        items = list(hue) if isinstance(hue, (list, tuple)) else [hue]
+        for item in items:
+            if isinstance(item, (str, bytes)) or np.ndim(item) == 0:
+                values.append(item)
+            else:
+                values.extend(np.asarray(item, dtype=object).ravel())
+        labels = {v for v in values if not is_missing_label(v)}
+        if labels and all(isinstance(v, str) for v in labels):
+            return len(labels)
+        return None
+    n_clusters = kw.get('n_clusters')
+    if isinstance(n_clusters, (int, np.integer)) \
+            and not isinstance(n_clusters, bool):
+        return int(n_clusters)
+    return None
+
+
+def _panel_draw_fmts(fmt, n_datasets):
+    """`fmt=` as one format string per dataset (None when unset)."""
+    if fmt is None:
+        return None
+    if isinstance(fmt, str):
+        return [fmt] * n_datasets
+    return list(fmt)
+
+
+def _panel_slice_forecast_kwargs(kw, index, n_datasets, grid_kw=None):
     """Narrow the per-FORECAST kwargs (`_PANEL_PER_FORECAST_KWARGS`) to
     panel `index`, reproducing the single-axes figure's assignment:
 
@@ -3503,8 +3643,25 @@ def _panel_slice_forecast_kwargs(kw, index, n_datasets):
         from .colors import is_missing_label
         from .forecast import _forecast_label_colors
         _labels = [None if is_missing_label(v) else v for v in labels]
-        _colours = _forecast_label_colors(
-            _labels, 'hls' if fc_palette is None else fc_palette)
+        if fc_palette is None:
+            # the single-axes default (`_forecast_group_palette`): the
+            # palette continued past the colours the single-axes figure's
+            # observed datasets take, so a label keeps that figure's colour
+            # read from the WHOLE grid's kwargs (`grid_kw`), before any
+            # per-dataset argument was narrowed to this panel
+            _grid = kw if grid_kw is None else grid_kw
+            _palette = _grid.get('palette')
+            _palette = 'hls' if _palette is None else _palette
+            _n_groups = _panel_observed_groups(_grid)
+            _fc_default = _forecast_group_palette(
+                _palette, _observed_palette_colors(
+                    _palette, n_datasets if _n_groups is None else _n_groups,
+                    _grid.get('color'),
+                    None if _n_groups is not None
+                    else _panel_draw_fmts(_grid.get('fmt'), n_datasets)))
+            fc_palette = list(_fc_default(max(1, len(
+                {v for v in _labels if v is not None}))))
+        _colours = _forecast_label_colors(_labels, fc_palette)
         _own = _panel_pick_model_major(_labels, index, n_datasets, n_models)
         _own_colours = _panel_pick_model_major(
             _colours, index, n_datasets, n_models)
@@ -3570,6 +3727,7 @@ def _panel_narrow_kwargs(kw, index, n_datasets, lengths):
     `kw` (one panel's `plot()` kwargs, modified in place) to panel `index`:
     the ONE rule both `panel_fit=` modes apply, so the docstring's "one per
     dataset" forms describe the whole grid either way (P3)."""
+    grid_kw = dict(kw)
     for key in _PANEL_PER_DATASET_KWARGS:
         if key in kw:
             kw[key] = _panel_slice_per_dataset(
@@ -3590,7 +3748,7 @@ def _panel_narrow_kwargs(kw, index, n_datasets, lengths):
         kw['legend'] = _panel_slice_legend(kw['legend'], index, n_datasets,
                                            kw)
     if kw.get('predict') is not None:
-        _panel_slice_forecast_kwargs(kw, index, n_datasets)
+        _panel_slice_forecast_kwargs(kw, index, n_datasets, grid_kw)
         kw['predict'] = _panel_bind_forecaster(kw['predict'], index,
                                                n_datasets)
 
@@ -6427,7 +6585,10 @@ def plot(
 
         One value per FORECAST, not per observation: a forecast is a single
         trace. Datasets sharing a value share a colour, drawn from
-        `forecast_palette=`. Mutually exclusive with `forecast_cluster=`
+        `forecast_palette=` -- or, without one, from the figure's
+        `palette=` CONTINUED past the colours the observed data takes, so
+        no forecast group wears an observed line's colour (see
+        `forecast_palette=`). Mutually exclusive with `forecast_cluster=`
         (both decide the same thing), exactly as `hue=` and `cluster=` are
         for the observed data.
 
@@ -6487,6 +6648,21 @@ def plot(
         different colormap from the data.
 
         With `forecast_hue=` or `forecast_cluster=`, one colour per group.
+        Left at `None` there, the groups take the figure's `palette=`
+        CONTINUED past the observed data's colour slots (its datasets, or
+        its `hue=`/`cluster=` groups, plus any an earlier call took on a
+        reused `ax=`) -- the next colours of a fixed-sequence palette such
+        as 'Set2', and the free slots of a finer sampling of an evenly
+        spaced one such as 'hls' (four observed 'hls' colours -> the groups
+        get the 45- and 135-degree hues of 'hls' at 8) -- so no forecast
+        group is drawn in an observed line's colour. A per-dataset or
+        ``{category: color}`` `palette=` has no sequence to continue, so
+        'hls' is continued past the observed count instead; a continuous
+        `hue=` (colormap colours, no palette slots) keeps 'hls' from its
+        first colour. An explicit `forecast_palette=` replaces all of
+        this. With `panels=` the same default is resolved against the
+        whole grid, so each label keeps the colour the single-axes figure
+        gives it.
         With NEITHER, there is no forecast grouping to colour by, so it is
         spent one colour per forecast (see `forecast_hue=` on what counts as
         one for a hierarchical `x=`) -- except for a COLLECTION of models
@@ -11980,12 +12156,25 @@ def plot(
             or any(v is not None
                    for v in _forecast_style_kwargs.values())):
         from .forecast import resolve_forecast_overrides
+        # a forecast_hue=/forecast_cluster= grouping without
+        # forecast_palette= continues the figure's palette PAST the colours
+        # the observed data takes (maintainer decision, 1.1 review), so
+        # cluster 0 is no longer dataset 0's colour. A continuous hue
+        # colours the data from a colormap, not palette slots: unchanged.
+        _fc_default_palette = None
+        if (_fc_palette is None and line_colors is None
+                and (_fc_hue is not None or forecast_cluster is not None)):
+            _fc_default_palette = _forecast_group_palette(
+                palette, _observed_palette_colors(
+                    palette, len(xform), mpl_kwargs.get('color'), draw_fmt,
+                    prior=_prior_palette_slots(ax, _plotly_into, backend)))
         _forecast_overrides = resolve_forecast_overrides(
             len(raw_forecasts), raw_forecasts,
             hue=_fc_hue, cluster=forecast_cluster,
             n_clusters=forecast_n_clusters,
             palette=_fc_palette, fmt=_fc_fmt,
-            stacklevel=external_stacklevel())
+            stacklevel=external_stacklevel(),
+            default_palette=_fc_default_palette)
 
     # on_frame= (plan 1.1 Task 7): ONE shared registry, created before
     # either backend's per-frame closures exist, and threaded into both --
@@ -12635,6 +12824,13 @@ def plot(
                                   and _i < len(_forecast_overrides)
                                   else None),
                         anchor_color=_fc_anchor)
+                    # an explicit forecast_*= colour, which a continuous
+                    # hue= must not repaint (`_apply_multicolor_lines`)
+                    from .forecast import override_has_color as _pins
+                    _fc_pinned = bool(_pins(
+                        _forecast_overrides[_i]
+                        if _forecast_overrides is not None
+                        and _i < len(_forecast_overrides) else None))
                     # trails FIRST, so the live forecast draws on top of its
                     # own fan rather than under it
                     _row = []
@@ -12656,6 +12852,7 @@ def plot(
                         _t.set_clip_on(False)
                         _t.set_visible(False)
                         _t._hyp_forecast_role = 'trail'
+                        _t._hyp_forecast_pinned = _fc_pinned
                         _t._hyp_forecast_age = _age
                         # identity, like the static overlay and plotly's
                         # meta['hyp_dataset']: the animated artists ARE
@@ -12679,6 +12876,7 @@ def plot(
                         _art, = ax.plot([], label='_nolegend_', **_fc_style)
                     _art.set_clip_on(False)
                     _art._hyp_forecast_role = 'live'
+                    _art._hyp_forecast_pinned = _fc_pinned
                     _art._hyp_forecast_dataset = (
                         _model_forecast_owner[_i]
                         if _model_forecast_owner is not None else _i)
@@ -14233,6 +14431,10 @@ def _apply_multicolor_lines(ax, xform, line_colors, kwargs_list,
     # filters them (`forecast_cluster=`, a per-dataset refusal) breaks
     # silently -- each forecast would simply take a neighbour's colour.
     for _fi, _fc_line in enumerate(_kept_forecasts):
+        if getattr(_fc_line, '_hyp_forecast_pinned', False):
+            # an explicit forecast_*= colour wins over the anchor, as
+            # `_forecast_style_from` documents and plotly already draws
+            continue
         _ds = getattr(_fc_line, '_hyp_forecast_dataset', _fi)
         if _ds is not None and _ds < len(line_colors) and len(line_colors[_ds]):
             _anchor_color = line_colors[_ds][-1]
@@ -14614,6 +14816,10 @@ def _apply_multicolor_markers(ax, xform, point_colors, kwargs_list,
     # reorders or filters the forecasts (`forecast_cluster=`, a per-dataset
     # refusal).
     for _fi, _fc_line in enumerate(_kept_forecasts):
+        if getattr(_fc_line, '_hyp_forecast_pinned', False):
+            # an explicit forecast_*= colour wins over the anchor, as
+            # `_forecast_style_from` documents and plotly already draws
+            continue
         _ds = getattr(_fc_line, '_hyp_forecast_dataset', _fi)
         if (_ds is not None and _ds < len(point_colors)
                 and len(point_colors[_ds])):
