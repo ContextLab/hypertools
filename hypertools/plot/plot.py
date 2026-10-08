@@ -6046,9 +6046,15 @@ def plot(
         animation frames and NOT in drawn vertices. ``t=1`` forecasts only
         the next observation. A datetime-like `t` (a ``Timestamp``, a
         ``datetime`` or a date string) is measured against each dataset's
-        own ``DatetimeIndex``, exactly as `hyp.predict` measures it, and
-        must resolve to the same number of steps for every dataset;
-        datasets without a ``DatetimeIndex``, a `t` at or before the last
+        own ``DatetimeIndex``, exactly as `hyp.predict` measures it: every
+        dataset is forecast up to that time, so a flat list whose indexes
+        end at different times or have different spacings gets a
+        different number of steps per dataset (the single integer horizon
+        the renderer works in is the LARGEST of those counts). A hierarchical (``MultiIndex``) input is stricter: `t`
+        must resolve to ONE step count shared by every group
+        (``ValueError`` otherwise), and a row ``MultiIndex`` is not a
+        ``DatetimeIndex``, so it needs an integer `t`. Datasets without a
+        ``DatetimeIndex``, a `t` at or before any dataset's last
         observation, or a pipeline stage that changed the row count raise
         ``ValueError``. Because an animation is paced on a resampled
         frame grid (see `duration`/`frame_rate`), a frame's drawn head
@@ -6217,6 +6223,16 @@ def plot(
         `NotImplementedError`: a morph interpolates between point CLOUDS, so
         there is no time axis to forecast along. See `forecast_trail=` to
         keep earlier forecasts on screen as a fading fan.
+
+        **File size (plotly).** An animated plotly figure embeds every
+        frame, and its animated lines keep every observation, so the
+        figure's HTML/JSON grows with rows x frames: a 3000-row 3-D random
+        walk animated over 300 frames (``duration=10, frame_rate=30``) is
+        about 6.7 MB of JSON (about 4.5 MB in 2-D). Passing `resample=N`
+        (below) to thin the input first shrinks it in proportion --
+        ``resample=1000`` brings that example to about 2.3 MB (1.5 MB in
+        2-D). Fewer frames (a lower `frame_rate` or shorter `duration`)
+        shrink it too.
 
     order : {'parallel', 'serial'}
         Whether animated datasets are revealed all at once ('parallel') or

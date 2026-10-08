@@ -1558,6 +1558,13 @@ Because 1.1.0 had not been published, they ship in it.
   data-scale axes (static, animated and `ndims=1` series plots)
   that the plotly backend never drew. Both backends now draw none. A
   caller's own `ax=` keeps whatever grid it already has.
+- **Two `plot()` docstring corrections.** A datetime `t=` on a flat list
+  was documented as having to resolve to the same number of steps for
+  every dataset; each dataset is in fact forecast up to that time on its
+  own index (only a hierarchical input needs one shared count). And the
+  `animate=` entry now says how large an animated plotly figure gets: a
+  3000-row, 300-frame 3-D animation is about 6.7 MB of JSON, and
+  `resample=1000` brings it to about 2.3 MB.
 
 ### Documented limitations
 

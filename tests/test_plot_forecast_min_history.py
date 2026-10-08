@@ -244,6 +244,9 @@ def test_datetime_t_without_a_datetime_index_is_refused(dated):
     with pytest.raises(ValueError, match='at or before'):
         hyp.plot(frame, ndims=1, predict='Kalman',
                  t=pd.Timestamp('2020-01-20'), show=False)
+    # NOT refused: a flat list whose indexes end at different times is
+    # forecast up to the target on each dataset's own index (different step
+    # counts); only the hierarchical path refuses a mismatch
     shifted = frame.copy()
     shifted.index = shifted.index + pd.Timedelta(days=3)
     target = pd.Timestamp('2020-02-05')
