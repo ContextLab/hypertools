@@ -1487,6 +1487,14 @@ Because 1.1.0 had not been published, they ship in it.
   release of each with CPython 3.13 wheels (the previous floors shipped
   cp310-cp312 only, so a lowest-version install on 3.13 built them from
   source). The README and `docs/doc_requirements.txt` match.
+- **`animate_market_sectors` reads ExxonMobil's full share history.** SEC's
+  ticker map now sends XOM to a new holding-company CIK (2115436) with a
+  single 2026-06-30 share count, so every earlier XOM month was
+  back-filled from that one value. The example pins XOM to Exxon Mobil
+  Corp's CIK (34088), whose reported counts start on 2009-06-30, and its
+  SEC cache files are keyed by CIK so a file fetched under the old mapping
+  is not reused. The example and tutorial also note that HON's 2026-06-30
+  SEC share count (316,940,010) is half its 2026-03-31 count (633,653,119).
 - **Animated lines keep every observation.** Lines were resampled onto one
   row per frame, so a dataset with more rows than frames was drawn through
   only some of its points (a 36-row helix in a 9-frame animation became a

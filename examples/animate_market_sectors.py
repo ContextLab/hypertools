@@ -53,6 +53,10 @@ counts, which the SEC's XBRL API (the per-concept endpoint, falling back to
 company facts; quarterly, from 2009) reports as they stood on the day, are
 multiplied by every later split before they meet the price. Earlier months
 back-fill the first reported capitalisation along the adjusted price.
+XOM's counts are read from Exxon Mobil Corp's filings (CIK 34088), not the
+holding company the SEC's ticker map now names. HON's 2026-06-30 count in
+the SEC data (316,940,010, from a 10-Q/A) is half its 2026-03-31 count
+(633,653,119).
 Everything is cached on disk. If the network is unavailable the example
 falls back to a seeded synthetic basket with the same sector structure and
 share counts, so it always renders, and the technique is identical either
@@ -181,19 +185,27 @@ def fetch_shares(tickers, splits):
     if os.environ.get('HYPERTOOLS_OFFLINE'):
         raise RuntimeError('HYPERTOOLS_OFFLINE is set: refusing to fetch')
     try:
+        # an explicit override where the SEC's ticker map names a filer that
+        # does not hold the ticker's share history: it maps XOM to ExxonMobil
+        # Holdings Corp (CIK 2115436), which has filed one share count
+        # (2026-06-30), so every earlier XOM month would be back-filled from
+        # that single value; Exxon Mobil Corporation (CIK 34088) reports
+        # counts from 2009-06-30 (both measured 2026-10-08)
         ciks = {row['ticker']: row['cik_str'] for row in _cached_json(
             'sec_company_tickers.json',
-            'https://www.sec.gov/files/company_tickers.json').values()}
+            'https://www.sec.gov/files/company_tickers.json').values()} | {'XOM': 34088}
         shares = {}
         for ticker in tickers:
-            facts = _cached_json(f'sec_shares_{ticker}.json',
+            # the cache is keyed by CIK as well as ticker, so a file fetched
+            # under a ticker's earlier CIK is never reused for a new one
+            facts = _cached_json(f'sec_shares_{ticker}_{ciks[ticker]}.json',
                                  SEC.format(cik=ciks[ticker]))['units']['shares']
             if not facts:
                 # the per-concept endpoint comes back EMPTY for a few filers
                 # (ABT, KO -- measured 2026-09-03) whose complete
                 # company-facts file carries the same concept; read it there
                 facts = _cached_json(
-                    f'sec_facts_{ticker}.json', SEC_FACTS.format(cik=ciks[ticker])
+                    f'sec_facts_{ticker}_{ciks[ticker]}.json', SEC_FACTS.format(cik=ciks[ticker])
                 )['facts']['dei']['EntityCommonStockSharesOutstanding']['units']['shares']
             # one value per period end: the LATEST filing wins over amendments
             frame = pd.DataFrame(facts).sort_values('filed')
