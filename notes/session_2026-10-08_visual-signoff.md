@@ -38,3 +38,21 @@ Branch `fix/1.1-release-review`; PR #286 still OPEN and unmerged. Nothing merged
 - Full verification: pytest, ruff, sphinx -W, doctest, tutorials, headless tour, push, CI, Colab.
 - Round-2 visual review of changed cases only (carry forward pass for pixel-identical renders).
 - Open GitHub issue for axis_scale midrange (1.2).
+
+## Integration + verification (2026-10-08 afternoon)
+- Integrated: a4b146af (plotly nested names + 3-D markers), b240258a/ea7f90a2 (tour cases),
+  183de73c (floors), 8d02cb81 (XOM CIK), c1b7adc3/888e231d (describe), 279cd73a (no data-scale grid),
+  ddd98ae7 (docstrings), cb0f9a95 (truth reveal), 387e7704 (forecast group colours),
+  bdbcebf1 (CI apt --no-install-recommends + retries), 5dda6190 (25 tutorials re-executed),
+  5520987b (market thumb).
+- Verified at 5520987b: tutorials 25/25; pytest 6633 passed/21 skipped/0 failed; ruff clean;
+  example smoke 348 passed; sphinx -W html 0 warnings, 51 gallery; doctest 323/0; thumbs (only
+  market_sectors changed). ea7f90a2 changed only scripts/update_feature_tour.py (tour tooling).
+- Headless tour at ea7f90a2: 241 PASS / 3 SKIP / 0 FAIL, clean tree, exact commit.
+- CI drift rerun at c433b8f0: all 15 test jobs + gates green; docs-clean CANCELLED at 75-min timeout
+  because apt fetched 182 MB at 111 kB/s (27 min) -> fixed in bdbcebf1.
+- Pushed ea7f90a2; CI run 37825666381 in progress (5520987b run cancelled as superseded).
+- Issue #287 opened for axis_scale midrange (1.2).
+- Round-2 review page published (same artifact URL, collection verdicts_r2): 29 to review
+  (flagged or changed render + HIER-plotly names + DOCS-market-sectors), 46 carried (byte-identical
+  renders previously passed). Bluesky 20_market_sectors re-rendered at ea7f90a2.
