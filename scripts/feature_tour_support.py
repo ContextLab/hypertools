@@ -418,6 +418,8 @@ TEXTS = [
     "investors buy stocks and bonds",
     "markets react to economic news",
 ]
+# Short point labels so text plots can be checked by eye against TEXTS.
+DOC_LABELS = [f"{i}: {' '.join(doc.split()[:3])}" for i, doc in enumerate(TEXTS)]
 
 
 def assert_hosted_contract(name, data):

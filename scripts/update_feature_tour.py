@@ -119,14 +119,14 @@ set_source(helper, Path("scripts/feature_tour_support.py").read_text(encoding="u
 
 VISUAL_FIXES = {
     "COLOR-helpers": "The strip is the data-matrix colormap after gamma=2: continuous between anchors but visibly banded, because a random-walk matrix gives a striped palette (see matrix_palette). The three extracted image colors are checked by assertion only and are not drawn.",
-    "PANEL-models-matplotlib": "Each panel is titled with its reducer (PCA, FactorAnalysis); the subplots alias creates a dataset grid.",
-    "PANEL-models-plotly": "Each panel is titled with its reducer (PCA, FactorAnalysis); the subplots alias creates a dataset grid.",
+    "PANEL-models-matplotlib": "First figure: each panel is titled with its reducer (PCA, FactorAnalysis). Second figure: the subplots= alias gives one panel per dataset, titled Dataset A and Dataset B.",
+    "PANEL-models-plotly": "First figure: each panel is titled with its reducer (PCA, FactorAnalysis). Second figure: the subplots= alias gives one panel per dataset, titled Dataset A and Dataset B.",
     "ANIM-fc-colors-matplotlib": "Each forecast takes the colour of its forecast_hue group from forecast_palette (four values, four viridis colours, no colorbar); clustered forecasts share one colour per endpoint cluster; the observed trajectories keep their own colours.",
     "ANIM-fc-colors-plotly": "Each forecast takes the colour of its forecast_hue group from forecast_palette (four values, four viridis colours, no colorbar); clustered forecasts share one colour per endpoint cluster; the observed trajectories keep their own colours.",
-    "TEXT-plot-matplotlib": "All eight documents are plotted, but some LDA topic mixtures coincide, so fewer than eight marker positions may be distinguishable; the legend names animals and markets.",
-    "TEXT-plot-plotly": "All eight documents are plotted, but some LDA topic mixtures coincide, so fewer than eight marker positions may be distinguishable; the legend names animals and markets.",
-    "TEXT-transformer": "The eight embedded documents render as points; animal and market documents separate. Compare with the topic model above.",
-    "ANIM-clock": "Each title runs from 0% to 100%; parallel reveals cumulatively, window shows only a sliding 0.5 s segment, and spin rotates the complete path.",
+    "TEXT-plot-matplotlib": "Each point is labelled with its document (the table lists them in full); animal documents are one colour and market documents the other. Some LDA topic mixtures coincide, so some labels may overlap.",
+    "TEXT-plot-plotly": "Each point is labelled with its document (the table lists them in full); animal documents are one colour and market documents the other. Some LDA topic mixtures coincide, so some labels may overlap.",
+    "TEXT-transformer": "Each point is labelled with its document (the table lists them in full); animal and market documents form two separate groups. Compare with the topic model above.",
+    "ANIM-clock": "Each title runs from 0% to 100%. Parallel reveals both helices together, cumulatively; window shows only a sliding 0.5 s segment of each; spin rotates both complete paths.",
     "PLOT-hierarchy-metadata": "The displayed trace keys list the two leaves and the derived mean in draw order; all share the single top-level group's colour, so left and right are identified by the keys rather than by colour.",
 }
 for _backend in ("matplotlib", "plotly"):
@@ -363,7 +363,9 @@ add(
     "ANIM-clock",
     "Actual reveal bounds and callable titles across animation modes",
     """def demo():
-    a=hyp.load('helix',n_samples=12)
+    # Two helices (the second reversed and shifted) so parallel reveal is visible.
+    helix=np.asarray(hyp.load('helix',n_samples=12))
+    a=[helix,helix[::-1]+np.array([2.,0.,0.])]
     for mode in ['parallel','window','spin']:
         contexts=[]
         # draw_frame/n_frames are the matplotlib HyperAnimation API; Colab
@@ -381,7 +383,7 @@ add(
                     if len(xyz):np.testing.assert_allclose(xyz[-1],data[end-1])
         show_result(obj)""",
     ["behavior:frame-context", "plot:title", "plot:on_frame"],
-    visual="Each title runs from 0% to 100%; parallel reveals cumulatively, window shows only a sliding 0.5 s segment, and spin rotates the complete path.",
+    visual="Each title runs from 0% to 100%. Parallel reveals both helices together, cumulatively; window shows only a sliding 0.5 s segment of each; spin rotates both complete paths.",
 )
 
 add(
@@ -435,9 +437,13 @@ add(
     path=SCRATCH/'luminance.png';PILImage.fromarray(pixels).save(path)
     colors=image_palette(path,n_colors=2,max_luminance=.5)
     assert np.max(np.atleast_1d(luminance(colors)))<=.5
-    display(PILImage.open(path));print('Selected dark palette:',colors)""",
+    swatch=np.atleast_2d(colors)[:,:3]
+    fig,(left,right)=plt.subplots(1,2,figsize=(6,1.6))
+    left.imshow(pixels);left.set_title('Input image');left.axis('off')
+    right.imshow(swatch[None]);right.set_title(f'Selected palette ({len(swatch)} colour)');right.axis('off')
+    plt.show();print('Selected dark palette:',colors)""",
     ["behavior:image-luminance"],
-    visual="Bright background is excluded from the selected palette.",
+    visual="Left: the input image (bright cream on the left, dark blue on the right). Right: the selected palette, which keeps the dark blue and excludes the bright cream.",
 )
 
 add(
@@ -719,6 +725,21 @@ for case_id, old, new in [
      "frame_rate=6,on_frame=callback,title=' ',show=False)"),
     ("TEXT-transformer", "view(TEXTS,'matplotlib',vectorizer='all-MiniLM-L6-v2',ndims=2,",
      "view(TEXTS,'matplotlib',fmt='o',vectorizer='all-MiniLM-L6-v2',ndims=2,"),
+    # Visual sign-off 2026-10-08: make the pictures reviewable on their own.
+    *[
+        (f"PANEL-models-{b}", "subplots=True,title='subplots= alias')",
+         "subplots=True,title=['Dataset A','Dataset B'])")
+        for b in ("matplotlib", "plotly")
+    ],
+    *[
+        (f"TEXT-plot-{b}", "legend=True,title='Text topics')",
+         "legend=True,labels=DOC_LABELS,title='Text topics')\n"
+         "    display(pd.DataFrame({'label':DOC_LABELS,'document':TEXTS}))")
+        for b in ("matplotlib", "plotly")
+    ],
+    ("TEXT-transformer", "legend=True,title='Transformer embeddings')",
+     "legend=True,labels=DOC_LABELS,title='Transformer embeddings')\n"
+     "    display(pd.DataFrame({'label':DOC_LABELS,'document':TEXTS}))"),
 ]:
     cell = case_cell(case_id)
     if new not in text(cell):
