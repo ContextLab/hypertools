@@ -8,9 +8,12 @@ Usage (needs a Qt binding, e.g. in a throwaway env with `pip install -e . PyQt6`
 
 Same call as the feature tour's GUI-native case (QtAgg, interactive=True,
 explore=True). Input is real Qt events (QTest), so it travels the same path
-as a mouse. Each step grabs the window to a PNG; checks go to checks.json.
+as a mouse. Each step grabs the window to a PNG
+checks go to checks.json.
 """
-import json, sys, time
+import json
+import sys
+import time
 from pathlib import Path
 import numpy as np
 import matplotlib
@@ -22,10 +25,13 @@ from PyQt6.QtCore import Qt, QPoint, QTimer
 from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QApplication
 
-OUT = Path(sys.argv[1]); OUT.mkdir(parents=True, exist_ok=True)
+OUT = Path(sys.argv[1])
+OUT.mkdir(parents=True, exist_ok=True)
 hyp.set_interactive_backend('QtAgg')
 hyp.plot(hyp.load('helix'), backend='matplotlib', interactive=True, explore=True, show=True)
-fig = plt.gcf(); ax = fig.axes[0]; canvas = fig.canvas
+fig = plt.gcf()
+ax = fig.axes[0]
+canvas = fig.canvas
 window = canvas.window()
 checks = {'qt_backend': matplotlib.get_backend(), 'window_class': type(window).__name__}
 frames = []
@@ -33,7 +39,8 @@ frames = []
 def grab(tag):
     QApplication.processEvents()
     path = OUT / f'f{len(frames):04d}.png'
-    window.grab().save(str(path)); frames.append(tag)
+    window.grab().save(str(path))
+    frames.append(tag)
 
 def point_to_widget(i):
     data = np.asarray(ax.lines[0].get_data_3d()).T if ax.lines else None
@@ -47,7 +54,11 @@ def annotation_texts():
     return [t.get_text() for t in ax.texts if t.get_visible() and t.get_text()]
 
 steps = []
-def step(fn): steps.append(fn); return fn
+
+
+def step(fn):
+    steps.append(fn)
+    return fn
 
 @step
 def start():
@@ -58,8 +69,10 @@ def hover():
     n = len(ax.lines[0].get_data_3d()[0])
     seen = []
     for i in np.linspace(0, n - 1, 12).astype(int):
-        QTest.mouseMove(canvas, point_to_widget(i)); QTest.qWait(120)
-        seen.append(annotation_texts()); grab(f'hover point {i}')
+        QTest.mouseMove(canvas, point_to_widget(i))
+        QTest.qWait(120)
+        seen.append(annotation_texts())
+        grab(f'hover point {i}')
     checks['hover_annotations'] = [s for s in seen if s]
     checks['hover_distinct'] = len({tuple(s) for s in seen if s})
 
@@ -69,7 +82,9 @@ def rotate():
     c = QPoint(canvas.width() // 2, canvas.height() // 2)
     QTest.mousePress(canvas, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, c)
     for k in range(1, 25):
-        QTest.mouseMove(canvas, c + QPoint(6 * k, 2 * k)); QTest.qWait(40); grab('rotate')
+        QTest.mouseMove(canvas, c + QPoint(6 * k, 2 * k))
+        QTest.qWait(40)
+        grab('rotate')
     QTest.mouseRelease(canvas, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, c + QPoint(144, 48))
     checks['rotate_azim_elev'] = {'before': before, 'after': (ax.azim, ax.elev)}
 
@@ -79,10 +94,13 @@ def zoom():
     c = QPoint(canvas.width() // 2, canvas.height() // 2)
     QTest.mousePress(canvas, Qt.MouseButton.RightButton, Qt.KeyboardModifier.NoModifier, c)
     for k in range(1, 16):
-        QTest.mouseMove(canvas, c + QPoint(0, -5 * k)); QTest.qWait(40); grab('zoom')
+        QTest.mouseMove(canvas, c + QPoint(0, -5 * k))
+        QTest.qWait(40)
+        grab('zoom')
     QTest.mouseRelease(canvas, Qt.MouseButton.RightButton, Qt.KeyboardModifier.NoModifier, c + QPoint(0, -75))
     checks['zoom_xlim'] = {'before': list(before), 'after': list(ax.get_xlim3d())}
-    for _ in range(4): grab('after zoom')
+    for _ in range(4):
+        grab('after zoom')
 
 @step
 def close():
@@ -93,7 +111,8 @@ def close():
 
 def run(i=0):
     if i < len(steps):
-        steps[i](); QTimer.singleShot(150, lambda: run(i + 1))
+        steps[i]()
+        QTimer.singleShot(150, lambda: run(i + 1))
     else:
         (OUT / 'checks.json').write_text(json.dumps(checks, indent=1, default=str))
         (OUT / 'frames.json').write_text(json.dumps(frames))
