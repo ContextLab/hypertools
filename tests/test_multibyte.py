@@ -927,10 +927,23 @@ def test_plotly_public_path_dedups_explicit_family_already_in_stack():
 def _run_render(out_path, env=None):
     full = dict(os.environ)
     full.update(env or {})
-    return subprocess.run(
-        [sys.executable, _RENDER_PLOTLY_SCRIPT, json.dumps(['a', 'b']), '',
-         out_path],
-        timeout=_KALEIDO_TIMEOUT_S, capture_output=True, text=True, env=full)
+    try:
+        return subprocess.run(
+            [sys.executable, _RENDER_PLOTLY_SCRIPT, json.dumps(['a', 'b']),
+             '', out_path],
+            timeout=_KALEIDO_TIMEOUT_S, capture_output=True, text=True,
+            env=full)
+    except subprocess.TimeoutExpired as err:
+        # a bare TimeoutExpired says nothing about WHERE the script stalled;
+        # its stderr carries the script's stage lines and stack dumps
+        def _tail(stream):
+            if isinstance(stream, bytes):
+                stream = stream.decode('utf-8', 'replace')
+            return (stream or '')[-6000:]
+        pytest.fail(
+            f'the render script did not finish in {_KALEIDO_TIMEOUT_S} s.\n'
+            f'--- stderr ---\n{_tail(err.stderr)}\n'
+            f'--- stdout ---\n{_tail(err.stdout)}')
 
 
 @requires_covering_font

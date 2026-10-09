@@ -21,12 +21,16 @@ JSON list of per-dataset label lists (each inner list's length must match
 that dataset's 15 points -- see `hypertools.plot.plotly_backend.
 _build_point_annotations`), or 'null'/omitted for no point labels.
 """
+import faulthandler
 import json
 import os
 import sys
 import threading
+import time
 
 import numpy as np
+
+_T0 = time.monotonic()
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import hypertools as hyp  # noqa: E402
@@ -92,7 +96,18 @@ def _write_image(fig, out_png):
                            kopts={'path': override, 'timeout': 30})
 
 
+def _stage(name):
+    """Timestamped progress on stderr, so a caller that times this script out
+    can see how far it got."""
+    print(f'render stage [{time.monotonic() - _T0:6.1f} s]: {name}',
+          file=sys.stderr, flush=True)
+
+
 def main():
+    # if anything below stalls, say WHERE: every thread's stack goes to stderr
+    # every 40 s (a caller's TimeoutExpired carries the captured stderr)
+    faulthandler.dump_traceback_later(40, repeat=True, file=sys.stderr)
+    _stage('started')
     legend_json, title, out_png = sys.argv[1], sys.argv[2], sys.argv[3]
     labels_json = sys.argv[4] if len(sys.argv) > 4 else 'null'
     legend = json.loads(legend_json)
@@ -101,6 +116,7 @@ def main():
             for i in range(len(legend))]
     fig = hyp.plot(data, legend=legend, title=title or None, labels=labels,
                    backend='plotly', show=False)
+    _stage('figure built')
     deadline = float(os.environ.get(DEADLINE_ENV) or DEFAULT_DEADLINE_S)
 
     def _give_up():
@@ -112,7 +128,9 @@ def main():
     watchdog.daemon = True
     watchdog.start()
     try:
+        _stage('export started')
         _write_image(fig, out_png)
+        _stage('export finished')
     except Exception as err:
         if not is_browser_lifecycle_error(err):
             raise            # a real failure: let the traceback through
