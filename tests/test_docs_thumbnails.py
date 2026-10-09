@@ -80,3 +80,19 @@ def test_publish_ref_matches_conf_release_rule():
     # non-release refs -> literal namespace
     for ref in ('dev-1.0', 'feature-x', 'v1.0', 'v1.0.0rc1', '1.0.0'):
         assert mod._publish_ref(ref, v) == ref
+
+
+def test_post_build_finds_html_under_readthedocs_output(tmp_path, monkeypatch):
+    """Read the Docs writes the site to ``$READTHEDOCS_OUTPUT/html``; post_build
+    used to look for ``_images`` directly under ``$READTHEDOCS_OUTPUT``, so the
+    variable never matched and only a path guess made the RTD build work."""
+    html = tmp_path / 'html'
+    (html / '_images').mkdir(parents=True)
+    (html / 'auto_examples').mkdir()
+    (html / 'auto_examples' / 'index.html').write_text('<html></html>')
+    monkeypatch.setenv('READTHEDOCS_OUTPUT', str(tmp_path))
+    mod = _load_post_build()
+    images_dir, gallery_html = mod.find_build_dirs()
+    assert images_dir is not None, 'READTHEDOCS_OUTPUT/html was not found'
+    assert os.path.samefile(images_dir, html / '_images')
+    assert os.path.samefile(gallery_html, html / 'auto_examples' / 'index.html')

@@ -98,7 +98,8 @@ def find_build_dirs():
     # Also check environment variables that Read the Docs might set
     rtd_output = os.environ.get('READTHEDOCS_OUTPUT', '')
     if rtd_output:
-        possible_build_dirs.insert(0, rtd_output)
+        # Read the Docs writes the site to $READTHEDOCS_OUTPUT/html
+        possible_build_dirs[:0] = [os.path.join(rtd_output, 'html'), rtd_output]
     
     for build_dir in possible_build_dirs:
         if build_dir and os.path.exists(build_dir):
