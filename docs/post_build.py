@@ -418,6 +418,48 @@ def clean_notebook_plotly_scripts(build_root=None):
     return changed
 
 
+# Every tutorial notebook opens with its HyperTools install cell (so "Run all"
+# works on Colab), and nbsphinx renders cells in order: the page showed 15
+# lines of setup code ABOVE its own title. Move that cell under the title and
+# collapse it. The notebook itself is not changed.
+_SETUP_CELL = re.compile(
+    r'(?P<cell><div class="nbinput[^"]*docutils container">\s*'
+    r'<div class="prompt.*?</div>\s*</div>\s*'
+    r'<div class="input_area.*?</div>\s*</div>\s*</div>\s*)'
+    r'(?P<title><section[^>]*>\s*<h1.*?</h1>)', re.S)
+
+
+def collapse_tutorial_setup_cells(build_root=None):
+    """Move each tutorial page's leading install cell below its title, inside
+    a collapsed <details>. Returns the number of pages changed."""
+    if build_root is None:
+        if not GALLERY_HTML:
+            print("  Skipping tutorial setup cells (no build dir)")
+            return 0
+        build_root = os.path.dirname(os.path.dirname(GALLERY_HTML))
+    changed = 0
+    for page in sorted(glob.glob(os.path.join(build_root, 'tutorials',
+                                              '*.html'))):
+        with open(page, encoding='utf-8') as f:
+            html = f.read()
+        start = html.find('<article')
+        match = _SETUP_CELL.search(html, start) if start >= 0 else None
+        # only the FIRST thing in the article, and only an install cell
+        if (not match or html[html.find('>', start) + 1:match.start()].strip()
+                or 'install' not in match.group('cell')
+                or 'hypertools' not in match.group('cell').lower()):
+            continue
+        moved = (match.group('title')
+                 + '\n<details class="hypertools-setup"><summary>Setup: '
+                 'install HyperTools (run this cell first on Colab)</summary>\n'
+                 + match.group('cell') + '</details>\n')
+        with open(page, 'w', encoding='utf-8') as f:
+            f.write(html[:match.start()] + moved + html[match.end():])
+        changed += 1
+    print(f"  Collapsed the setup cell on {changed} tutorial pages")
+    return changed
+
+
 def main():
     """Main function to run post-build processing"""
     print("Running post-build script to fix animated thumbnails...")
@@ -430,6 +472,7 @@ def main():
     wrap_thumbnail_links()
     clean_gallery_tooltips()
     clean_notebook_plotly_scripts()
+    collapse_tutorial_setup_cells()
 
     if success:
         print("✅ Post-build processing completed successfully!")

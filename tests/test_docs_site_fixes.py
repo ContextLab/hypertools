@@ -259,3 +259,47 @@ def test_no_page_adds_its_own_contents_directive():
                  and any(line.lstrip().startswith('.. contents::')
                          for line in p.read_text(encoding='utf-8').splitlines())]
     assert not offenders, offenders
+
+
+_TUTORIAL_PAGE = '''<html><body><article role="main" id="furo-main-content">
+          <div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># HyperTools setup: use 1.1 or newer; retain a current local checkout.</span>
+<span class="o">%</span><span class="k">pip</span> install -q "hypertools[interactive]&gt;=1.1.0"
+</pre></div>
+</div>
+</div>
+<section id="Alignment">
+<h1>Alignment<a class="headerlink" href="#Alignment">¶</a></h1>
+<p>The align function.</p>
+</section></article></body></html>'''
+
+
+def test_tutorial_setup_cell_is_collapsed_below_the_title(tmp_path):
+    """Every tutorial notebook starts with its install cell, which nbsphinx
+    renders ABOVE the page title: 15 lines of setup code before the heading.
+    post_build moves it under the title, collapsed (the notebook is untouched)."""
+    import importlib.util
+    import pathlib
+    spec = importlib.util.spec_from_file_location(
+        '_hyp_post_build_setup',
+        pathlib.Path(__file__).resolve().parents[1] / 'docs' / 'post_build.py')
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    (tmp_path / 'tutorials').mkdir()
+    page = tmp_path / 'tutorials' / 'align.html'
+    page.write_text(_TUTORIAL_PAGE, encoding='utf-8')
+    plain = tmp_path / 'tutorials' / 'noinstall.html'
+    plain.write_text(_TUTORIAL_PAGE.replace('HyperTools setup', 'First cell')
+                     .replace('pip</span> install', 'x</span> y'), encoding='utf-8')
+    assert mod.collapse_tutorial_setup_cells(str(tmp_path)) == 1
+    html = page.read_text(encoding='utf-8')
+    title, details, cell = (html.index('<h1>'), html.index('<details'),
+                            html.index('HyperTools setup'))
+    assert title < details < cell < html.index('</details>')
+    assert html.index('</details>') < html.index('The align function')
+    assert html.count('class="nbinput') == 1          # moved, not copied
+    assert mod.collapse_tutorial_setup_cells(str(tmp_path)) == 0   # idempotent
+    assert plain.read_text(encoding='utf-8').count('<details') == 0  # not an install cell

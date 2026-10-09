@@ -159,6 +159,10 @@ _shutil.rmtree(_doctest_scratch, ignore_errors=True)
 # rendering), just without the broken per-method stub links.
 numpydoc_class_members_toctree = False
 
+# The autosummary class stubs already list each class's methods and attributes;
+# numpydoc's own tables put a second copy of both on every class page.
+numpydoc_show_class_members = False
+
 # Never execute notebooks during the docs build: tutorial notebooks are
 # committed pre-executed (with outputs), and 'auto' also re-executed every
 # sphinx-gallery-generated .ipynb -- doubling build time and hanging on
