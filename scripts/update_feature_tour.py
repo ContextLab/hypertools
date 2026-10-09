@@ -594,7 +594,9 @@ print('Automatic counts:',summary.status.value_counts().to_dict())
 print('Visual counts:',summary.visual.value_counts().to_dict())
 print('Not run:',sorted({c['id'] for c in CASES}-set(RESULTS)))
 attention=summary[(summary.status!='PASS') | (summary.visual.isin(['fail','not reviewed']))]
-display(attention[['id','status','visual','detail','visual_notes']])
+# A second DataFrame display in one Colab output re-runs Colab's table script,
+# which throws ('buttonEl' already declared); show this one as plain HTML.
+display(HTML(attention[['id','status','visual','detail','visual_notes']].to_html()))
 save_report()
 print('Use one interactive viewer at a time; Close disposes its browser resources.')
 viewer = interactive_viewer()  # the helper displays it; a bare call showed it twice""",
@@ -749,6 +751,8 @@ for case_id, old, new in [
          "    display(pd.DataFrame({'group':['animals']*4+['markets']*4,'x':xy[:,0].round(2),'y':xy[:,1].round(2),'document':TEXTS}))")
         for b in ("matplotlib", "plotly")
     ],
+    ("IMP-score", "display(hyp.impute(damaged,model=['SimpleImputer'],truth=a,metrics=['rmse','mae']))",
+     "display(HTML(hyp.impute(damaged,model=['SimpleImputer'],truth=a,metrics=['rmse','mae']).to_html()))"),
     ("TEXT-transformer", "legend=True,title='Transformer embeddings')",
      "legend=True,labels=DOC_LABELS,title='Transformer embeddings')\n"
      "    display(pd.DataFrame({'label':DOC_LABELS,'document':TEXTS}))"),
