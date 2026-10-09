@@ -72,3 +72,22 @@ Branch `fix/1.1-release-review`; PR #286 still OPEN and unmerged. Nothing merged
 - Headless tour at 4c762c0c: 241/3/0, clean tree. CI run 37868951965 at 4c762c0c: success, 17/17.
 - PR #286 head = 4c762c0c, OPEN, MERGEABLE. NOT merged. Waiting on Jeremy: GUI verdict, RTD webhook,
   merge sign-off. Packet: notes/final_review_2026-09-11/START_HERE.md (untracked).
+
+## 2026-10-09: docs site (RTD parity) + final candidate d21e0340
+- Jeremy confirmed GUI-native ("gui looks good") -> recorded in verdicts_r2. Visual sign-off complete.
+- RTD-parity build: from docs/, READTHEDOCS=True READTHEDOCS_GIT_IDENTIFIER=master READTHEDOCS_OUTPUT=$OUT
+  sphinx -T -b html -d _build/doctrees . $OUT/html, then python docs/post_build.py.
+- post_build bug (4e0dbaeb): looked for _images under $READTHEDOCS_OUTPUT not .../html.
+- Browser pass (sampled) found gallery/dark/mobile/duplicate/console defects -> 0ad2a366; docstring
+  markup leaks (38 on 8 pages) + _Unset sentinel repr -> 09f6e8b1, test 61b5cda5.
+- Jeremy then reported hierarchy.html broken: furo red ERROR box from `.. contents::` (CSS ::before, invisible
+  to sphinx -W / HTML scans). Fixed 998581dd. Lesson docs-site-check-every-page + checker (7a240862).
+- Every-page check also led to: tutorial setup cell collapsed under title (post_build), one Methods/Attributes
+  table per class (numpydoc_show_class_members=False), stubs committed as generated (40ea3170);
+  teaser GIFs at native 200px (d21e0340).
+- Full suite at 40ea3170: 6655 passed/21 skipped/0 failed; ruff clean. Tour at d21e0340: 241/3/0.
+- Cold RTD build at d21e0340: 0 warnings, 171 pages; linkcheck 0 broken; every-page check 137 pages 0
+  findings; verify_docs_playwright 8/8.
+- Colab at d21e0340 (drive/1Bz_253Z5ZDw7tKUqy0v3xJJgPLccnlAz): 241/3/0, SET-01 commit confirmed. Console (b):
+  plotly.py renderer's own `import "…plotly-3.6.0.min"` (rstrip(".js") bug) 403 + MathJax 2.7.5 errors: UPSTREAM.
+- CI run 37938862214 at d21e0340: success, 17/17 (16 success + release-gate skipped). PR #286 head = d21e0340, MERGEABLE. NOT merged.
