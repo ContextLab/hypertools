@@ -66,6 +66,13 @@ detached tag checkout — the notebook migrator detects the branch via
       extras are not evidence for this behavior. Never remove packages from
       a working research environment to manufacture the missing-extra
       condition.
+- [ ] **The `release-gate` job's own environment.** That job is skipped on
+      pull requests, so a missing import in it first shows on the `master`
+      push. Run the two gate files in a fresh venv holding only what the job
+      installs (`pytest nbformat nbclient`):
+      `python -m pytest tests/test_notebook_install_gate.py tests/test_release_readiness_gate.py`
+      and expect no failures. The release-form checks themselves can only
+      pass after step 2.
 - [ ] **conda-forge** is no longer a prerequisite: the feedstock
       (`conda-forge/hypertools-feedstock`) exists since 1.0.0 and its bot bumps
       on each PyPI release (step 7).
