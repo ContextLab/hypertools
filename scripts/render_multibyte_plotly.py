@@ -24,6 +24,7 @@ _build_point_annotations`), or 'null'/omitted for no point labels.
 import json
 import os
 import sys
+import threading
 
 import numpy as np
 
@@ -41,6 +42,15 @@ NO_BROWSER_EXIT = 3
 #: real non-browser binary to prove the NO_BROWSER_EXIT path fires, with a real
 #: subprocess and a real `BrowserFailedError` rather than a stubbed one.
 BROWSER_PATH_ENV = 'HYPERTOOLS_RENDER_BROWSER_PATH'
+
+#: Seconds the image export may take before the script gives up on the
+#: browser. Kaleido's own `timeout` does not always fire: a browser that
+#: starts and then never answers left a hosted CI job waiting for the caller's
+#: whole 120 s (2026-10-09). A browser that never answers is "no usable
+#: browser HERE", so the deadline ends with NO_BROWSER_EXIT, and it must stay
+#: below the caller's subprocess timeout.
+DEADLINE_ENV = 'HYPERTOOLS_RENDER_DEADLINE_S'
+DEFAULT_DEADLINE_S = 75.0
 
 
 def is_browser_lifecycle_error(err):
@@ -91,6 +101,16 @@ def main():
             for i in range(len(legend))]
     fig = hyp.plot(data, legend=legend, title=title or None, labels=labels,
                    backend='plotly', show=False)
+    deadline = float(os.environ.get(DEADLINE_ENV) or DEFAULT_DEADLINE_S)
+
+    def _give_up():
+        print(f'NO_BROWSER: TimeoutError: the browser did not answer within '
+              f'{deadline:g} s', file=sys.stderr, flush=True)
+        os._exit(NO_BROWSER_EXIT)    # the export thread cannot be interrupted
+
+    watchdog = threading.Timer(deadline, _give_up)
+    watchdog.daemon = True
+    watchdog.start()
     try:
         _write_image(fig, out_png)
     except Exception as err:
@@ -98,6 +118,8 @@ def main():
             raise            # a real failure: let the traceback through
         print(f'NO_BROWSER: {type(err).__name__}: {err}', file=sys.stderr)
         sys.exit(NO_BROWSER_EXIT)
+    finally:
+        watchdog.cancel()
 
 
 if __name__ == '__main__':

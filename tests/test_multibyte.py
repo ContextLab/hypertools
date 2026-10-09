@@ -1037,3 +1037,26 @@ def test_a_real_RuntimeError_that_is_NOT_plotly_s_is_NOT_the_browser():
                              'a RuntimeError (PEP 479)')
     assert not _is_browser_lifecycle_error(caught), (
         f'{caught!r} is unrelated to the browser: {caught}')
+
+
+@requires_covering_font
+@pytest.mark.skipif(os.name == 'nt', reason='the stand-in browser is a POSIX shell script')
+def test_render_script_exits_NO_BROWSER_when_the_browser_never_answers(
+        tmp_path):
+    """A "browser" that starts and then never speaks is the same class of
+    failure as one that dies on startup, and it must end the same way: with
+    the reserved exit code, inside the script's own deadline. On 2026-10-09 a
+    hosted ubuntu job sat in kaleido for the caller's whole 120 s (kaleido's
+    own 30 s timeout did not fire) and the NO_BROWSER test above failed with
+    TimeoutExpired instead. Driven for real: the stand-in is an executable
+    that stays alive and answers nothing."""
+    silent = tmp_path / 'silent-browser'
+    silent.write_text('#!/bin/sh\nexec sleep 600\n')
+    silent.chmod(0o755)
+    result = _run_render(str(tmp_path / 'never.png'),
+                         {_BROWSER_PATH_ENV: str(silent),
+                          _render_mod.DEADLINE_ENV: '15'})
+    assert result.returncode == _NO_BROWSER_EXIT, (
+        f'expected exit {_NO_BROWSER_EXIT}, got {result.returncode}\n'
+        f'stderr:\n{result.stderr[-800:]}')
+    assert 'NO_BROWSER:' in result.stderr
