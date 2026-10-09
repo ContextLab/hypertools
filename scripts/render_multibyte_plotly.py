@@ -96,6 +96,25 @@ def _write_image(fig, out_png):
                            kopts={'path': override, 'timeout': 30})
 
 
+def _exit_now(code):
+    """Leave with `code` WITHOUT joining other threads.
+
+    After a failed browser launch choreographer leaves non-daemon worker
+    threads blocked on a queue and a pipe read, and a normal exit waits for
+    them at interpreter shutdown -- forever, on Linux with Python 3.11
+    (2026-10-09: the script had already reported NO_BROWSER and still ran
+    into its caller's 120 s timeout; every thread's stack showed the main
+    thread in `threading._shutdown`). The verdict is already decided, so
+    flush what was written and go.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.flush()
+        except Exception:
+            pass
+    os._exit(code)
+
+
 def _stage(name):
     """Timestamped progress on stderr, so a caller that times this script out
     can see how far it got."""
@@ -120,8 +139,9 @@ def main():
     deadline = float(os.environ.get(DEADLINE_ENV) or DEFAULT_DEADLINE_S)
 
     def _give_up():
-        print(f'NO_BROWSER: TimeoutError: the browser did not answer within '
-              f'{deadline:g} s', file=sys.stderr, flush=True)
+        # os.write, not print: another thread may hold sys.stderr's lock
+        os.write(2, (f'NO_BROWSER: TimeoutError: the browser did not answer '
+                     f'within {deadline:g} s\n').encode())
         os._exit(NO_BROWSER_EXIT)    # the export thread cannot be interrupted
 
     watchdog = threading.Timer(deadline, _give_up)
@@ -135,9 +155,10 @@ def main():
         if not is_browser_lifecycle_error(err):
             raise            # a real failure: let the traceback through
         print(f'NO_BROWSER: {type(err).__name__}: {err}', file=sys.stderr)
-        sys.exit(NO_BROWSER_EXIT)
+        _exit_now(NO_BROWSER_EXIT)
     finally:
         watchdog.cancel()
+        faulthandler.cancel_dump_traceback_later()
 
 
 if __name__ == '__main__':
