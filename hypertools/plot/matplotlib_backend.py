@@ -1555,13 +1555,17 @@ def _draw(
             )
 
         _explore_font_kwargs = {} if font is None else dict(fontproperties=font)
+        # put the label on the side of the point facing the axes centre, so a
+        # point near an edge never pushes its label out of the window
+        fx, fy = ax.transAxes.inverted().transform(
+            ax.transData.transform((x2, y2)))
         annotate_plot_explore.label = ax.annotate(
             label,
             xy=(x2, y2),
-            xytext=(-20, 20),
+            xytext=(-20 if fx > 0.5 else 20, 20 if fy < 0.5 else -20),
             textcoords="offset points",
-            ha="right",
-            va="bottom",
+            ha="right" if fx > 0.5 else "left",
+            va="bottom" if fy < 0.5 else "top",
             **_label_callout_kwargs(0.5, arrowstyle="->", facecolor="yellow"),
             **_explore_font_kwargs,
         )

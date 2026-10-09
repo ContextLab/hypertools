@@ -812,6 +812,10 @@ input too.
 Found by the pre-publication review of the 1.1.0 draft against 1.0.0.
 Because 1.1.0 had not been published, they ship in it.
 
+- **`explore=True` hover labels stay inside the window.** The label was
+  always drawn up and to the left of the hovered point, so a point near the
+  left edge of a native window had its label cut off. It now opens toward
+  the centre of the axes.
 - **plotly names and groups every leaf of a nested dataset list by its
   group.** For `hyp.plot([[a, b], [c, d]], backend='plotly')` only each
   group's first leaf carried the group's label; the others fell back to

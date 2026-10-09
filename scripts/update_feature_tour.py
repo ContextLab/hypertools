@@ -242,7 +242,7 @@ set_source(
     """def demo():
     if IN_COLAB: raise RuntimeError('Native desktop GUI is unavailable in Colab.')
     script = SCRATCH/'native_gui_check.py'
-    script.write_text("import matplotlib\\nmatplotlib.use('QtAgg')\\nimport hypertools as hyp\\nimport matplotlib.pyplot as plt\\nhyp.set_interactive_backend('QtAgg')\\nhyp.plot(hyp.load('helix'), backend='matplotlib', interactive=True, explore=True, show=False)\\nplt.show(block=True)\\n")
+    script.write_text("import matplotlib\\nmatplotlib.use('QtAgg')\\nimport hypertools as hyp\\nimport matplotlib.pyplot as plt\\nhyp.set_interactive_backend('QtAgg')\\nhyp.plot(hyp.load('helix'), backend='matplotlib', interactive=True, explore=True, show=True)\\nplt.show(block=True)\\n")
     process = subprocess.Popen([sys.executable,str(script)])
     time.sleep(2)
     assert process.poll() is None, 'Native window process failed; install a Qt binding and inspect its error.'
