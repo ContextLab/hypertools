@@ -48,7 +48,7 @@ detached tag checkout — the notebook migrator detects the branch via
       candidate commit, which must be pushed (the tour installs
       `hypertools[...] @ git+…@<REVIEW_COMMIT>`), and upload ONE copy to
       Colab, saved as `notes/colab/hypertools_1.1_candidate_<short-sha>.ipynb`
-      (the last one made was `hypertools_1.1_candidate_fa3e60e5.ipynb`).
+      (one is kept per reviewed candidate; the newest is the current one).
       Run it in a fresh runtime. It tests a Git candidate with comprehensive
       extras, not a published wheel or missing-extra installation. Run it
       locally too: `scripts/execute_tutorial.py --out-dir /tmp/tour-check

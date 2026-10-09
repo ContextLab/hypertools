@@ -137,6 +137,10 @@ Each of these turns previously accepted input into rejected input, or changes wh
 - An animated forecast starts at the point the line has reached in that frame. It used to start at the last observation behind it, so it stood still while the line moved and then jumped.
 - `forecast_hue=`/`forecast_cluster=` without `forecast_palette=` take the palette colours after the ones the observed data uses. They used to restart the palette, so the first forecast group was drawn in the first dataset's colour. Pass `forecast_palette=` to choose the colours.
 - Matplotlib `axis_scale='data'` axes no longer draw gridlines, matching plotly. A grid on your own `ax=` is kept.
+- Model comparisons rank complete models only. `hyp.impute(x, model=[...], truth=)` and `hyp.predict(x, model=[...], holdout=)` used to name the lowest-scoring model `best` even when it had left values unscored, so a model scored on fewer, easier values could win. A model with any `unscored` value keeps its row but is excluded from the verdict and listed in the new `scores.attrs['incomplete']`. When no model is complete, `attrs['best']` and `attrs['beats_baseline']` are `None`; `beats_baseline` is also `None` when the baseline itself is incomplete. Each case warns.
+- `hyp.impute(truth=, mask=)` matches labelled data by label. A truth or mask DataFrame whose rows or columns are in another order is reindexed to the data's order; it used to be compared by position, which silently changed the score. Different label sets raise `ValueError`. Bare arrays are still compared by position.
+- `hyp.describe` sweeps the dimensionality of a reducer instance. `reduce=PCA(n_components=2)` used to be evaluated at 2 components for every point of the curve (also in 1.0); an unfitted instance is now cloned for each point. An already fitted model, an instance with no `n_components`, and `reduce=None` raise `ValueError`.
+- An installed optional package that is older than hypertools requires is upgraded on first use, with a notice, or reported with its installed and required versions. It used to be accepted as it was, and a plotly below 6.1.1 failed later with a message about kaleido. With `hyp.set_autoinstall(False)`, `backend='plotly'` on a too-old plotly raises, and `backend='auto'` warns and uses matplotlib.
 - Core dependency floors are raised to the first releases with Python 3.10 through 3.13 wheels: numpy 2.1.0, pandas 2.2.3, scipy 1.14.1, matplotlib 3.9.2, scikit-learn 1.5.2, statsmodels 0.14.3 and pillow 10.4.0.
 
 ## Bug fixes
@@ -206,6 +210,7 @@ The 1.1.0 draft was reviewed against 1.0.0 before publication, and the fixes shi
 - **Animation.** Animated lines keep every observation instead of one row per frame; a morph shows its in-between frames; `on_frame=` titles stay on the canvas; companion panels use the right colour.
 - **Forecasting.** Business-day data are no longer interpolated onto weekends; a fitted forecaster can be reused on a different kind of index; 1-D forecasts are drawn at the data's scale.
 - **Explore mode.** `explore=True` hover labels open toward the centre of the axes, so a label near the edge of the window is not cut off.
+- **Pipelines.** `sklearn.base.clone` works on a `hyp.Pipeline` and returns an unfitted, independent copy (it raised in 1.0 too).
 - **Input handling and errors.** pandas and polars Series keep their index and name through the Manipulator classes and `hyp.Pipeline`; a repeated `metrics=` entry, `holdout=True` with `t=0`, `hyp.load(..., streaming=True)` on a non-Hugging-Face source and degenerate `alignment_score` input each raise a `ValueError` saying what is wrong; synthetic datasets accept more seed types; `hyp.text_windows` accepts NumPy integers; `text2mat` reads a flat list of strings as one dataset; `predict='ARIMA'` animates.
 
 ## Known limitations
@@ -249,6 +254,9 @@ The [changelog](https://github.com/ContextLab/hypertools/blob/v1.1.0/CHANGELOG.m
 - A `pipeline=` fit on a column hierarchy is checked by feature name against the frame being plotted. Plot a frame whose groups carry the feature names the pipeline was fit on; `feature_correspondence='position'` is unaffected.
 - `forecast_hue=`, `forecast_cluster=`, `forecast_n_clusters=`, `forecast_palette=` and `forecast_fmt=` count plotted traces (leaves plus means) under a hierarchy, so supply one value per drawn trajectory.
 - `hyp.describe(...)['average']` is now the mean of the per-dataset curves; use `['pooled']` for the stacked curve it used to hold. `hyp.describe(show=False)['fig']` is now the figure rather than `None`.
+- Code that reads `scores.attrs['best']` or `['beats_baseline']` from `hyp.impute`/`hyp.predict` must allow `None`, and can read `attrs['incomplete']` for the models left out of the ranking.
+- A `truth=` or `mask=` DataFrame for `hyp.impute` is matched to the data by label. Pass `.to_numpy()` to compare by position.
+- `hyp.describe` no longer accepts an already fitted reducer or `reduce=None`. Pass a name, a `{'model': ..., 'kwargs': ...}` spec or an unfitted instance.
 - In an animation, `truth=` points appear as the forecast reaches them, and default `forecast_hue=`/`forecast_cluster=` colours no longer repeat the observed lines' colours. Pass `forecast_palette=` to fix the colours.
 - `HyperAnimation.save()` now raises `TypeError` on keywords other than `fps=` and `dpi=` (it used to drop them silently). Pass `writer=` to delegate every keyword to matplotlib.
 - A `title=` that is neither a string nor a callable raises `TypeError`, and a list of strings is accepted only for a serial-style animation (one per dataset). Pass one string, a callable `ctx -> str`, or that list.
