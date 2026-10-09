@@ -82,7 +82,10 @@ def test_load_kaggle_tiny_dataset():
               "-- install it with `pip install hypertools[kaggle]`")
     # uciml/iris is a tiny (~3.6KB) public dataset that downloads
     # anonymously (no Kaggle credentials needed) via kagglehub
-    df = hyp.load('kaggle/uciml/iris')
+    # an outage skips, a defect still fails, and the live-source gate skips
+    # nothing (2026-10-09: a macOS runner could not resolve api.kaggle.com)
+    with skip_on_transient_network('loading kaggle/uciml/iris'):
+        df = hyp.load('kaggle/uciml/iris')
     assert isinstance(df, pd.DataFrame)
     assert len(df) > 0
     assert df.shape[1] > 1
