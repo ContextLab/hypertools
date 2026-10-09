@@ -18,7 +18,8 @@ import copy
 import numpy as np
 import pandas as pd
 
-from .._shared.helpers import as_pandas_dataframe, is_frame_dataset
+from .._shared.helpers import (as_pandas_dataframe, is_frame_dataset,
+                               is_series_like)
 from ..predict.backtest import build_scores, resolve_metrics, score_pair
 from .common import Imputer
 
@@ -38,13 +39,13 @@ def label_flags(x):
     column). Other dataframes (polars) name their columns but have no row
     labels. Arrays and everything else are unlabelled.
     """
-    if isinstance(x, pd.Series):
-        return True, False
-    if isinstance(x, pd.DataFrame):
-        return True, True
     if is_frame_dataset(x):
         import datawrangler as dw
         return bool(dw.zoo.dataframe_like(x)), True
+    if is_series_like(x):
+        # a pandas Series carries a row index; a polars Series has none
+        index = getattr(x, 'index', None)
+        return index is not None and not callable(index), False
     return False, False
 
 
@@ -120,7 +121,7 @@ def _as_frame(x, like, what, labelled=(False, False)):
     and silently mis-scored). Otherwise the comparison is positional.
     """
     rows, columns = label_flags(x)
-    if isinstance(x, pd.Series):
+    if rows and not columns:               # a row-labelled Series
         frame = x.to_frame()
     elif is_frame_dataset(x):
         frame = as_pandas_dataframe(x)     # any backend datawrangler knows

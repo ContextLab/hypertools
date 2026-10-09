@@ -475,8 +475,11 @@ def _match_columns(forecast, columns, name):
     `hyp.impute(truth=)` applies). Rows are forecast STEPS and stay
     positional by construction.
     """
-    if not isinstance(forecast, pd.DataFrame):
-        return forecast
+    # local import, as elsewhere in this module (no hypertools imports at load)
+    from .._shared.helpers import is_frame_dataset
+    import datawrangler as dw
+    if not (is_frame_dataset(forecast) and dw.zoo.dataframe_like(forecast)):
+        return forecast     # only a pandas-API frame carries column labels here
     own = forecast.columns
     if own.equals(columns) or len(own) != len(columns):
         return forecast     # a shape mismatch is reported by the scorer
