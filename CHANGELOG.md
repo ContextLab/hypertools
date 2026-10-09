@@ -1622,7 +1622,8 @@ Because 1.1.0 had not been published, they ship in it.
   returns), whose dimensionality is fixed by its fit, and an instance with
   no `n_components` parameter now raise a `ValueError` that says to pass a
   name, a dict spec or an unfitted instance; they used to draw the flat
-  curve.
+  curve. `reduce=None`, which leaves nothing to sweep and drew a flat 1.0,
+  raises a `ValueError` too.
 - **`sklearn.base.clone` works on a `hyp.Pipeline`.** `Pipeline` is a
   scikit-learn `BaseEstimator`, but `clone(pipeline)` raised `RuntimeError:
   Cannot clone object ... as the constructor either does not set or

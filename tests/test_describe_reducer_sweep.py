@@ -189,3 +189,14 @@ def test_instance_curve_is_what_both_backends_draw(backend):
         xs, ys = list(line.get_xdata()), list(line.get_ydata())
     assert xs == [2, 3, 4, 5]
     assert np.allclose(ys, expected)
+
+
+def test_reduce_none_is_refused():
+    """With no reducer there is nothing to sweep: every "dimensionality" was
+    the unreduced data, so the curve was a flat 1.0 at every point."""
+    import numpy as np
+    import pytest
+    import hypertools as hyp
+    x = np.random.default_rng(8).normal(size=(60, 6))
+    with pytest.raises(ValueError, match='reduce=None'):
+        hyp.describe(x, reduce=None, max_dims=6, show=False)

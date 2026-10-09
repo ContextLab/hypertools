@@ -34,7 +34,8 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True,
 
     reduce : str, dict, class, or unfitted instance
         Decomposition/manifold learning model to use (default:
-        'IncrementalPCA'). Models supported: PCA, IncrementalPCA, SparsePCA,
+        'IncrementalPCA'; `None` raises a `ValueError`, since the sweep
+        needs a reducer). Models supported: PCA, IncrementalPCA, SparsePCA,
         MiniBatchSparsePCA, KernelPCA, FastICA, FactorAnalysis, TruncatedSVD,
         DictionaryLearning, MiniBatchDictionaryLearning, TSNE, Isomap,
         SpectralEmbedding, LocallyLinearEmbedding, MDS, and UMAP; the mixture
@@ -150,6 +151,14 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True,
     require_data(x, 'describe')
     if isinstance(x, tuple):
         x = list(x)
+
+    # no reducer means nothing to sweep: each "dimensionality" would be the
+    # unreduced data, a flat 1.0 curve that says nothing (1.1 release review)
+    if reduce is None:
+        raise ValueError(
+            "describe() evaluates a reducer at each dimensionality, so it "
+            "needs one; got reduce=None. Pass a reducer name such as "
+            "reduce='PCA' (the default is 'IncrementalPCA').")
 
     # validate max_dims up front (release-1.0 audit, X2-error-quality-017):
     # max_dims=0/-3 silently returned empty results, and a float hit a bare
