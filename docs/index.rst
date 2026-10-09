@@ -51,6 +51,9 @@ Some key features of HyperTools are:
 7. Applying topic models and other text vectorization methods to text
    data
 
+What changed in each release is listed in the
+`changelog <https://github.com/ContextLab/hypertools/blob/master/CHANGELOG.md>`_.
+
 .. toctree::
    :maxdepth: 2
    :caption: Contents:
