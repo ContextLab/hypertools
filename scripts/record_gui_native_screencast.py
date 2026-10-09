@@ -36,11 +36,18 @@ window = canvas.window()
 checks = {'qt_backend': matplotlib.get_backend(), 'window_class': type(window).__name__}
 frames = []
 
-def grab(tag):
+def grab(tag, at=None):
+    """Save the window; `at` is the pointer position in canvas coordinates."""
     QApplication.processEvents()
     path = OUT / f'f{len(frames):04d}.png'
     window.grab().save(str(path))
-    frames.append(tag)
+    entry = {'tag': tag}
+    if at is not None:
+        pos = canvas.mapTo(window, at)
+        dpr = window.devicePixelRatioF()
+        entry['pointer'] = [pos.x() * dpr, pos.y() * dpr]
+    frames.append(entry)
+
 
 def point_to_widget(i):
     data = np.asarray(ax.lines[0].get_data_3d()).T if ax.lines else None
@@ -62,17 +69,20 @@ def step(fn):
 
 @step
 def start():
-    grab('window opened')
+    for _ in range(4):
+        grab('opened')
 
 @step
 def hover():
     n = len(ax.lines[0].get_data_3d()[0])
     seen = []
     for i in np.linspace(0, n - 1, 12).astype(int):
-        QTest.mouseMove(canvas, point_to_widget(i))
+        where = point_to_widget(i)
+        QTest.mouseMove(canvas, where)
         QTest.qWait(120)
         seen.append(annotation_texts())
-        grab(f'hover point {i}')
+        for _ in range(3):
+            grab('hover', where)
     checks['hover_annotations'] = [s for s in seen if s]
     checks['hover_distinct'] = len({tuple(s) for s in seen if s})
 
@@ -84,7 +94,7 @@ def rotate():
     for k in range(1, 25):
         QTest.mouseMove(canvas, c + QPoint(6 * k, 2 * k))
         QTest.qWait(40)
-        grab('rotate')
+        grab('rotate', c + QPoint(6 * k, 2 * k))
     QTest.mouseRelease(canvas, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, c + QPoint(144, 48))
     checks['rotate_azim_elev'] = {'before': before, 'after': (ax.azim, ax.elev)}
 
@@ -96,11 +106,11 @@ def zoom():
     for k in range(1, 16):
         QTest.mouseMove(canvas, c + QPoint(0, -5 * k))
         QTest.qWait(40)
-        grab('zoom')
+        grab('zoom', c + QPoint(0, -5 * k))
     QTest.mouseRelease(canvas, Qt.MouseButton.RightButton, Qt.KeyboardModifier.NoModifier, c + QPoint(0, -75))
     checks['zoom_xlim'] = {'before': list(before), 'after': list(ax.get_xlim3d())}
     for _ in range(4):
-        grab('after zoom')
+        grab('zoomed')
 
 @step
 def close():
@@ -122,5 +132,7 @@ QTimer.singleShot(800, run)
 t0 = time.time()
 plt.show(block=True)
 checks['event_loop_seconds'] = round(time.time() - t0, 1)
+# closing the last window can end the loop before run() reaches its else branch
+(OUT / 'frames.json').write_text(json.dumps(frames))
 (OUT / 'checks.json').write_text(json.dumps(checks, indent=1, default=str))
 print('clean exit')
