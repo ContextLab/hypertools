@@ -56,3 +56,19 @@ Branch `fix/1.1-release-review`; PR #286 still OPEN and unmerged. Nothing merged
 - Round-2 review page published (same artifact URL, collection verdicts_r2): 29 to review
   (flagged or changed render + HIER-plotly names + DOCS-market-sectors), 46 carried (byte-identical
   renders previously passed). Bluesky 20_market_sectors re-rendered at ea7f90a2.
+
+## Round 2 + GUI + final candidate (2026-10-08 evening)
+- Round-2 verdicts: 28/28 pass; GUI-native flagged "need more instruction".
+- GUI-native recorded in a real Qt window (PyQt6 in a throwaway uv venv; QTest events; frames grabbed
+  from the window): 11 hover labels, azim -60 -> 147, xlim +-1.00 -> +-1.18, q closes, clean exit.
+  Found + fixed (ea7a5f4e): tour GUI script used show=False (no window ever opened); explore hover label
+  clipped at the left edge (now opens toward axes centre; tests/test_explore_label_placement.py).
+  Recorder: scripts/record_gui_native_screencast.py (ruff tidy a5c83938). Screencast on the review page.
+- Full suite at ea7a5f4e: 6637 passed / 21 skipped / 0 failed; ruff clean at a5c83938.
+- Colab at a5c83938: 241/3/0; console showed Colab's table script throwing 'buttonEl already declared'
+  where one cell displays two DataFrames (IMP-score, results summary) -> second table as plain HTML
+  (4c762c0c). Colab at 4c762c0c (drive/1MbgX7eFkavZPtdSQ4FoJOsSP6eYJSv3s): 241/3/0, SET-01 commit
+  confirmed, no notebook-caused console errors.
+- Headless tour at 4c762c0c: 241/3/0, clean tree. CI run 37868951965 at 4c762c0c: success, 17/17.
+- PR #286 head = 4c762c0c, OPEN, MERGEABLE. NOT merged. Waiting on Jeremy: GUI verdict, RTD webhook,
+  merge sign-off. Packet: notes/final_review_2026-09-11/START_HERE.md (untracked).
