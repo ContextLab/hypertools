@@ -276,12 +276,14 @@ html_theme_options = {
     'light_css_variables': {
         'color-brand-primary': '#007030',
         'color-brand-content': '#007030',
+        'color-link--hover': '#005524',
         'font-stack': "'Nunito Sans', -apple-system, BlinkMacSystemFont, "
                       "'Segoe UI', Helvetica, Arial, sans-serif",
     },
     'dark_css_variables': {
         'color-brand-primary': '#4CAF50',
         'color-brand-content': '#4CAF50',
+        'color-link--hover': '#81C784',
     },
     'footer_icons': [
         {
@@ -363,38 +365,31 @@ texinfo_documents = [
 ]
 
 
-def hyperanimation_scraper(block, block_vars, gallery_conf, **kwargs):
-    """Scrape the animations ``hyp.plot(..., show=False)`` returns.
+# The gallery's matplotlib scraper lives in docs/_gallery_scrapers.py (a
+# side-effect-free sibling module, importable by the test suite): it is
+# sphinx-gallery's own matplotlib scraper plus the ``show=False``
+# HyperAnimations that one cannot see, each rendered exactly once.
+from _gallery_scrapers import (  # noqa: E402 (needs the sys.path entry above)
+    matplotlib_and_hyperanimation_scraper)
 
-    sphinx-gallery's matplotlib scraper walks ``plt.get_fignums()`` and pairs
-    each MANAGED figure with any ``matplotlib.animation.Animation`` in the
-    example's namespace. A ``show=False`` plot leaves its figure unmanaged
-    by pyplot, so the five launch examples (which bind the ``HyperAnimation``
-    wrapper the call returns) rendered NOTHING in the gallery -- measured
-    2026-09-03: their generated pages carried no image block at all, and no
-    ``.mp4`` for a thumbnail. This scraper finds every ``HyperAnimation`` (or
-    bare ``Animation``) whose figure the matplotlib scraper will not see and
-    renders it through sphinx-gallery's own animation writer, so the page
-    gets the same embedded video as the managed-figure examples.
+
+def _quiet_gallery_only_warnings(gallery_conf, fname):
+    """sphinx-gallery ``reset_modules`` hook, run before every example.
+
+    The docs build renders with the non-interactive Agg backend, so
+    examples/explore.py's ``explore=True`` makes hypertools warn -- correctly
+    -- that hover labels need an interactive backend. sphinx-gallery prints a
+    warning into the page's output block together with the build machine's
+    absolute path to the example. The warning describes the build
+    environment, not anything a reader of the page did, and the page's own
+    text says the picture is a static render; so it is filtered here, for the
+    gallery build only. Library behaviour is unchanged.
     """
-    from pathlib import PurePosixPath
-    import matplotlib.pyplot as plt
-    from matplotlib.animation import Animation
-    from sphinx_gallery.scrapers import _anim_rst
-    from hypertools.plot.hyper_animation import HyperAnimation
-
-    managed = {plt.figure(num) for num in plt.get_fignums()}
-    seen, rst = set(), []
-    for value in block_vars['example_globals'].values():
-        ani = value.animation if isinstance(value, HyperAnimation) else value
-        if not isinstance(ani, Animation) or id(ani) in seen:
-            continue
-        seen.add(id(ani))
-        if ani._fig in managed:
-            continue                    # the matplotlib scraper renders it
-        image_path = PurePosixPath(next(block_vars['image_path_iterator']))
-        rst.append(_anim_rst(ani, image_path, gallery_conf))
-    return '\n'.join(rst)
+    import warnings
+    warnings.filterwarnings(
+        'ignore', category=UserWarning,
+        message=r'explore=True shows labels on hover, which needs an '
+                r'interactive matplotlib backend')
 
 
 # Gallery page order. sphinx-gallery's default (`NumberOfCodeLinesSortKey`)
@@ -476,10 +471,25 @@ sphinx_gallery_conf = {
     'expected_failing_examples': [],
     # Performance optimizations
     'capture_repr': ('_repr_html_',),
-    # scrape BOTH matplotlib figures and plotly figures (the plotly scraper
+    # scrape BOTH matplotlib figures (including `show=False` animations,
+    # see docs/_gallery_scrapers.py) and plotly figures (the plotly scraper
     # renders interactive figures into the gallery via kaleido)
-    'image_scrapers': ('matplotlib', plotly_sg_scraper,
-                       hyperanimation_scraper),
+    'image_scrapers': (matplotlib_and_hyperanimation_scraper,
+                       plotly_sg_scraper),
+    # A plotly figure that is a block's last expression was shown TWICE: once
+    # by the plotly scraper above (hyp.plot shows the figure, which is what
+    # the scraper collects) and once more through `capture_repr`, because a
+    # plotly Figure also has a `_repr_html_`. Keep the scraped copy -- it is
+    # the one that also yields the page's thumbnail PNG.
+    # (hyp.plot returns `HyperPlotlyFigure`, a plotly `Figure` subclass;
+    # sphinx-gallery matches this against `str(type(obj))`.)
+    'ignore_repr_types': r'plotly\.graph_objs\._figure\.Figure'
+                         r'|HyperPlotlyFigure',
+    # `# sphinx_gallery_thumbnail_path = ...` lines configure the build; they
+    # are not part of the example and should not be shown in its code
+    'remove_config_comments': True,
+    # the defaults, plus the gallery-only warning filter defined above
+    'reset_modules': ('matplotlib', 'seaborn', _quiet_gallery_only_warnings),
     # Limit memory usage display
     'show_memory': False,
     # Ensure proper thumbnail linking

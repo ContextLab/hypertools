@@ -10,6 +10,10 @@ will pop up that will help you identify the datapoint.  You can customize the
 labels by passing a list of labels to the `label(s)` kwarg. Alternatively, if
 you don't pass a list of labels, the labels will be the index of the datapoint,
 along with the PCA coordinate.
+
+Hover labels need an interactive matplotlib backend. This gallery is built
+with a non-interactive one, so the figure below is a static image: run the
+example in an interactive session to hover over the points.
 """
 
 # sphinx_gallery_thumbnail_path = '_static/thumbnails/sphx_glr_explore_thumb.png'

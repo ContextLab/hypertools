@@ -325,6 +325,99 @@ def inject_notebook_badges():
     return n
 
 
+def strip_rst_markup(text):
+    """Plain text for a gallery tooltip: drop the RST inline markup
+    sphinx-gallery leaves in an example's intro paragraph.
+
+    sphinx-gallery's own ``_sanitize_rst`` only recognises markup that is
+    preceded by whitespace, so a literal that follows ``(`` or ``/`` keeps
+    its backticks, and a tooltip is a plain HTML attribute -- the backticks
+    were shown literally on 15 gallery cards. A role with a ``~`` target
+    keeps only the last dotted name, any other role keeps its target, and
+    double- or single-backtick literals lose their backticks. ``text`` is
+    the (HTML-escaped) attribute value and stays escaped: only backticks and
+    role prefixes are removed."""
+    def _role(match):
+        target = match.group(1)
+        if target.startswith('~'):
+            return target[1:].rsplit('.', 1)[-1]
+        return target
+    text = re.sub(r':[\w:+.-]+:`([^`]+)`', _role, text)
+    text = re.sub(r'``(.+?)``', r'\1', text)
+    text = re.sub(r'`([^`]+)`_{0,2}', r'\1', text)
+    return text
+
+
+def clean_gallery_tooltips(gallery_html=None):
+    """Strip RST markup from every gallery card's ``tooltip="..."`` attribute
+    (see ``strip_rst_markup``). Returns the number of tooltips changed."""
+    gallery_html = gallery_html or GALLERY_HTML
+    if not gallery_html or not os.path.exists(gallery_html):
+        print("  Skipping tooltip cleanup (no build dir)")
+        return 0
+    with open(gallery_html, encoding='utf-8') as f:
+        html = f.read()
+    changed = 0
+
+    def _clean(match):
+        nonlocal changed
+        cleaned = strip_rst_markup(match.group(2))
+        changed += cleaned != match.group(2)
+        return f'{match.group(1)}{cleaned}"'
+
+    html = re.sub(r'(<div class="sphx-glr-thumbcontainer"[^>]*?\stooltip=")'
+                  r'([^"]*)"', _clean, html)
+    if changed:
+        with open(gallery_html, 'w', encoding='utf-8') as f:
+            f.write(html)
+    print(f"  Cleaned RST markup out of {changed} gallery tooltips")
+    return changed
+
+
+# plotly's notebook renderers store two things in a notebook's saved outputs
+# that do not survive being embedded in a Sphinx page (nbsphinx copies the
+# stored HTML verbatim; the tutorials are committed pre-executed):
+#   * `<script type="module">import "https://cdn.plot.ly/plotly-X.Y.Z.min"
+#     </script>` -- the renderer's one-time "notebook_connected" bootstrap.
+#     The URL has no `.js` and the CDN answers 403. Each figure's own output
+#     carries a regular `<script src=".../plotly-X.Y.Z.min.js">`, which is
+#     what draws it, so the bootstrap is dead weight.
+#   * `<script src=".../mathjax/2.7.5/MathJax.js?config=TeX-AMS-MML_SVG">`
+#     in every figure. The page already loads MathJax 4 (Sphinx's default),
+#     whose `window.MathJax` configuration object MathJax 2 then trips over
+#     ("Cannot read properties of undefined (reading 'Startup')").
+_PLOTLY_MODULE_IMPORT = re.compile(
+    r'<script type="module">\s*import\s+"https://cdn\.plot\.ly/plotly-[\w.-]+'
+    r'\.min"\s*;?\s*</script>')
+_PLOTLY_MATHJAX2 = re.compile(
+    r'<script src="https://cdnjs\.cloudflare\.com/ajax/libs/mathjax/2\.[\d.]+/'
+    r'MathJax\.js[^"]*"></script>')
+
+
+def clean_notebook_plotly_scripts(build_root=None):
+    """Remove plotly's dead CDN bootstrap and its MathJax 2 <script> from the
+    notebook-rendered tutorial pages (see the note above). Returns the number
+    of pages changed."""
+    if build_root is None:
+        if not GALLERY_HTML:
+            print("  Skipping notebook plotly cleanup (no build dir)")
+            return 0
+        build_root = os.path.dirname(os.path.dirname(GALLERY_HTML))
+    changed = 0
+    for page in sorted(glob.glob(os.path.join(build_root, 'tutorials',
+                                              '*.html'))):
+        with open(page, encoding='utf-8') as f:
+            html = f.read()
+        cleaned = _PLOTLY_MODULE_IMPORT.sub('', html)
+        cleaned = _PLOTLY_MATHJAX2.sub('', cleaned)
+        if cleaned != html:
+            with open(page, 'w', encoding='utf-8') as f:
+                f.write(cleaned)
+            changed += 1
+    print(f"  Cleaned plotly notebook scripts in {changed} tutorial pages")
+    return changed
+
+
 def main():
     """Main function to run post-build processing"""
     print("Running post-build script to fix animated thumbnails...")
@@ -335,6 +428,8 @@ def main():
 
     inject_notebook_badges()
     wrap_thumbnail_links()
+    clean_gallery_tooltips()
+    clean_notebook_plotly_scripts()
 
     if success:
         print("✅ Post-build processing completed successfully!")
