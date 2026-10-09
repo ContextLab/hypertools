@@ -91,3 +91,32 @@ Branch `fix/1.1-release-review`; PR #286 still OPEN and unmerged. Nothing merged
 - Colab at d21e0340 (drive/1Bz_253Z5ZDw7tKUqy0v3xJJgPLccnlAz): 241/3/0, SET-01 commit confirmed. Console (b):
   plotly.py renderer's own `import "…plotly-3.6.0.min"` (rstrip(".js") bug) 403 + MathJax 2.7.5 errors: UPSTREAM.
 - CI run 37938862214 at d21e0340: success, 17/17 (16 success + release-gate skipped). PR #286 head = d21e0340, MERGEABLE. NOT merged.
+
+## 2026-10-09 (later): red-team review, sign-off, re-cut
+- f5a0af21: changelog links (docs home + release notes), release notes brought up to date. CI 37958047439
+  success 17/17; Colab 241/3/0 (tab dropped mid-run; counts from the original Run all).
+- Jeremy pasted an independent red-team review of f5a0af21 (notes/release_redteam_2026-10-09/, untracked,
+  his session's files). All 5 findings reproduced with his probe, then fixed (rules chosen by Jeremy via
+  questions): (1) scoring ranks complete models only, attrs['incomplete'], None verdicts (3121910d);
+  (2) impute truth=/mask= aligned by label, mismatches raise (3121910d; type checks through shared helpers
+  0585a5ad after tests/test_datatype_gate.py failed in the full suite); (3) describe clones+sweeps an
+  unfitted instance, rejects fitted models (33810c6a) and reduce=None (9648e258); (4) lazy_import checks
+  installed extras against declared versions, upgrades or reports (b2d35ad7); (5) isotropic docstring.
+  Also: sklearn clone(hyp.Pipeline) works (33810c6a; failed in 1.0 too).
+- Probe after: labels 3.667 x3; best=SimpleImputer, incomplete=['PPCA']; describe instance == name.
+- e95777fb: full suite 6760 passed/21 skipped/0 failed; ruff clean; tour 241/3/0, all 73 figure renders
+  byte-identical to the round-2 approved ones; RTD-way docs -W 0 warnings, 137 pages 0 findings;
+  verify_optional_install PASS; packaging tests 13 passed; Colab (drive/1O-gcAIgAxVMrXTFboIFoE0mjHaihyFoQ)
+  241/3/0, SET-01 confirmed. Colab image ships plotly 5.24.1 (below the 6.1.1 floor); the tour's install
+  cell replaced it with 7.1.0 before import, so the new version check did not fire there.
+- CI 37972394267 at e95777fb: 15 success + release-gate skipped + 1 FAILURE: test (ubuntu-latest, 3.11),
+  tests/test_multibyte.py::test_render_script_exits_NO_BROWSER_when_the_browser_will_not_launch,
+  subprocess.TimeoutExpired at 120 s (same test passed in seconds on the other 15 jobs). Kaleido's own
+  30 s timeout did not fire. Fixed in the render script (hard deadline -> NO_BROWSER exit) + new test
+  with a real silent executable (a0c30a10).
+- RTD webhook root cause confirmed by POSTing an unsigned request to the hook URL: HTTP 400 "This webhook
+  doesn't have a secret configured ... no longer permitted". Hook 11883014 dates from 2017-02-02, legacy
+  URL, no secret. Needs Jeremy's RTD admin: re-sync/re-create the GitHub integration, build latest + v1.1.0.
+- SIGN-OFF 2026-10-09 (AskUserQuestion): "Sign off: merge and re-cut", CHANGELOG date 2026-10-09.
+  Scope: fast-forward master, checklist steps 2-5 (date, gallery, artifacts, master CI, move tag, tag CI,
+  replace draft assets + body). STOP before PyPI upload and before publishing the GitHub release.
