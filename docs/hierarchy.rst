@@ -20,10 +20,6 @@ anything else:
 Everything below follows from that. Every example on this page is
 executable and its output is checked by ``tests/test_docs_hierarchy_guide.py``.
 
-.. contents:: On this page
-   :local:
-   :depth: 1
-
 
 Row versus column semantics
 ----------------------------

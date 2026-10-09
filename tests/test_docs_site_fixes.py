@@ -246,3 +246,16 @@ def test_gallery_tooltips_are_cleaned_in_the_built_index(tmp_path):
     assert 'tooltip="Nothing to clean here."' in html
     assert body in html                 # only tooltip attributes are touched
     assert mod.clean_gallery_tooltips(str(index)) == 0
+
+
+def test_no_page_adds_its_own_contents_directive():
+    """furo draws every page's table of contents in the right-hand column and
+    renders a red ERROR box over a page that adds a ``.. contents::`` of its
+    own (docs/hierarchy.rst did, 2026-10-09)."""
+    import pathlib
+    docs = pathlib.Path(__file__).resolve().parents[1] / 'docs'
+    offenders = [str(p.relative_to(docs)) for p in docs.rglob('*.rst')
+                 if '_build' not in p.parts and 'auto_examples' not in p.parts
+                 and any(line.lstrip().startswith('.. contents::')
+                         for line in p.read_text(encoding='utf-8').splitlines())]
+    assert not offenders, offenders
