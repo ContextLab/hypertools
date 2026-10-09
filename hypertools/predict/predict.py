@@ -483,7 +483,7 @@ def predict(data, model='Kalman', t=10, return_model=False, holdout=None,
         independent copy; the caller's instance is unchanged. Already fitted
         instances are refused because they may have seen the held-out rows.
 
-        **`t` is not consulted** for an int/float `holdout`. The number of
+        `t` **is not consulted** for an int/float `holdout`. The number of
         held-out observations is reported in the frame's ``horizon``
         column. (Use ``holdout=True`` to say "hold out `t` rows".)
 
@@ -534,22 +534,25 @@ def predict(data, model='Kalman', t=10, return_model=False, holdout=None,
 
     Returns
     -------
-    forecasts (and the fitted Forecaster if return_model=True). Lists in,
-    lists out: a single input dataset returns a single forecast DataFrame.
-    A hierarchical DataFrame (see `data`) returns a LIST of forecasts, one
-    per group in input order -- or, with ``return_model=True``, the parallel
-    ``([f0, f1, ...], [m0, m1, ...])`` pair described there.
+    forecasts
+        The forecasts (and the fitted Forecaster if ``return_model=True``).
+        Lists in, lists out: a single input dataset returns a single
+        forecast DataFrame. A hierarchical DataFrame (see `data`) returns a
+        LIST of forecasts, one per group in input order -- or, with
+        ``return_model=True``, the parallel
+        ``([f0, f1, ...], [m0, m1, ...])`` pair described there.
 
-    A COLLECTION of models (see `model`) returns a ``{name: forecast}``
-    dict whose values are exactly what a single-model call would have
-    returned (a DataFrame, or a list of them for list/hierarchical input).
+        A COLLECTION of models (see `model`) returns a ``{name: forecast}``
+        dict whose values are exactly what a single-model call would have
+        returned (a DataFrame, or a list of them for list/hierarchical
+        input).
 
-    With ``holdout=``, a scores DataFrame instead (see Notes) -- or
-    ``(scores, forecasts)`` with ``return_forecasts=True``.
+        With ``holdout=``, a scores DataFrame instead (see Notes) -- or
+        ``(scores, forecasts)`` with ``return_forecasts=True``.
 
     Notes
     -----
-    **Backtesting (``holdout=``).** The returned frame has one ROW per
+    **Backtesting** (``holdout=``). The returned frame has one ROW per
     model, in the order the models were given, plus an always-present
     ``'naive'`` row: the last-value-carried-forward baseline (each column's
     last OBSERVED training value, repeated over the horizon), which is the

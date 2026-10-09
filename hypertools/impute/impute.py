@@ -450,20 +450,21 @@ def impute(data, model='PPCA', return_model=False, truth=None, mask=None,
 
     Returns
     -------
-    The imputed data (and the fitted Imputer if return_model=True). Lists
-    in, lists out: a single input dataset returns a single imputed
-    DataFrame.
+    imputed
+        The imputed data (and the fitted Imputer if ``return_model=True``).
+        Lists in, lists out: a single input dataset returns a single
+        imputed DataFrame.
 
-    A COLLECTION of models (see `model`) returns a ``{name: imputed}``
-    dict whose values are exactly what a single-model call would have
-    returned.
+        A COLLECTION of models (see `model`) returns a ``{name: imputed}``
+        dict whose values are exactly what a single-model call would have
+        returned.
 
-    With ``truth=``, a scores DataFrame instead (see Notes) -- or
-    ``(scores, imputations)`` with ``return_imputed=True``.
+        With ``truth=``, a scores DataFrame instead (see Notes) -- or
+        ``(scores, imputations)`` with ``return_imputed=True``.
 
     Notes
     -----
-    **Scoring (``truth=``).** The returned frame has one ROW per imputer,
+    **Scoring** (``truth=``). The returned frame has one ROW per imputer,
     in the order they were given, plus an always-present ``'mean'`` row:
     the column-mean baseline (each column's observed mean, which is what
     `SimpleImputer` fills and what every cross-column imputer is reduced

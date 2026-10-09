@@ -134,7 +134,7 @@ def lsl_stream(name=None, type=None, timeout=10.0, **resolve_kwargs):
         bounds mid-stream silence: once samples are flowing, the returned
         generator raises
         :class:`~hypertools.core.exceptions.HypertoolsIOError` if
-        nothing arrives for ~`timeout` consecutive seconds (e.g. the
+        nothing arrives for about `timeout` consecutive seconds (e.g. the
         source device disconnected).
     **resolve_kwargs
         Extra keyword arguments forwarded to the underlying pylsl resolve
@@ -182,7 +182,7 @@ def lsl_stream(name=None, type=None, timeout=10.0, **resolve_kwargs):
         matched stream has a string (non-numeric) channel format, or --
         raised from the returned generator's ``next()`` during iteration
         -- if a stream that was delivering samples goes silent for
-        ~`timeout` consecutive seconds.
+        about `timeout` consecutive seconds.
 
     Examples
     --------
@@ -308,7 +308,7 @@ class LSLStream:
 
     Iterating pulls one sample per ``next()`` (an infinite stream that
     raises :class:`~hypertools.core.exceptions.HypertoolsIOError` when the
-    source goes silent for ~`timeout` seconds, closing itself first).
+    source goes silent for about `timeout` seconds, closing itself first).
     ``close()`` destroys the inlet (liblsl's ``lsl_destroy_inlet``, at
     once, whatever else still references it), and so does leaving a
     ``with`` block, garbage collection, and

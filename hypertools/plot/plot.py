@@ -1913,8 +1913,22 @@ def _valid_line2d_kwargs():
     return valid
 
 
+class _Unset:
+    """Type of a "this argument was not passed" default.
+
+    Only its identity matters (callers test ``value is SENTINEL``); the
+    class exists so the default reads as ``<default>`` in `help()` and in
+    the rendered signature instead of ``<object object at 0x...>``.
+    """
+
+    __slots__ = ()
+
+    def __repr__(self):
+        return '<default>'
+
+
 #: Sentinel: `slow_warning_seconds` was not passed, so use the default.
-_UNSET_SLOW_WARNING = object()
+_UNSET_SLOW_WARNING = _Unset()
 
 
 def _validate_forecast_trail(forecast_trail, predict):
@@ -6737,7 +6751,7 @@ def plot(
         control. Must be a non-negative number if given; raises `ValueError`
         otherwise.
 
-    morph_samples (``animate='morph'`` only) : int or None
+    morph_samples (animate='morph' only) : int or None
         An OPTIONAL cap on morphing-dataset size, applied BEFORE the
         duplicate-padding described under `animate` above: any morphing
         dataset larger than `morph_samples` is first downsampled (without
@@ -6758,7 +6772,7 @@ def plot(
         Must be a positive integer (or None); anything else
         raises ``ValueError``. Ignored for every other `animate` mode.
 
-    loop (``animate='morph'`` only) : bool
+    loop (animate='morph' only) : bool
         Close the morph sequence: after the last cloud, transition back to
         the FIRST one and hold it again, so a looping player never hard-cuts
         from the last shape to the first. `n` clouds then give
@@ -7414,7 +7428,7 @@ def plot(
           -- EXACTLY, since evenly-spaced ``linspace(0.10, 0.65, 3)`` would
           instead give a 37.5%-not-35% middle shell); plotly's
           ``go.Volume`` layer uses ``surface_count=5*levels`` (15 at the
-          default). **2-D density has no ``levels`` concept at all** --
+          default). **2-D density has no** ``levels`` **concept at all** --
           the 2-D layer is a single continuous alpha/heatmap ramp with no
           discrete shells, so ``levels`` is silently ignored for 2-D data
           (no error; the key is still valid, it's just a no-op there).
@@ -7624,7 +7638,7 @@ def plot(
            so is deliberately different. The bundle is not a per-frame
            record.
 
-        2. **A STATIC plot with `hue=` or `cluster=`.** These regroup the
+        2. **A STATIC plot with** `hue=` **or** `cluster=`. These regroup the
            drawn traces by category rather than by dataset, so there is no
            longer one trace per dataset -- but there is still one forecast
            per dataset, each anchored at that dataset's last observation and
@@ -7633,7 +7647,7 @@ def plot(
            continuous `hue=` (where the colour is taken at the anchor, since
            the trace has many) and `cluster=`. Drawn, and ``drawn`` is True.
 
-        3. **An ANIMATED plot with `hue=` or `cluster=`.** Not drawn, and
+        3. **An ANIMATED plot with** `hue=` **or** `cluster=`. Not drawn, and
            warns: the per-frame schedule maps frame-grid rows onto each
            DATASET's raw observations, and regrouping leaves only per-run
            traces to reveal, with no per-dataset reveal to schedule against.

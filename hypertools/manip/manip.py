@@ -279,8 +279,9 @@ def manip(data, model="ZScore", return_model=False, normalize=None, reduce=None,
 
     Returns
     -------
-    The manipulated data (and the fitted model/Pipeline if
-    `return_model=True`).
+    manipulated
+        The manipulated data (and the fitted model/Pipeline if
+        ``return_model=True``).
 
     Notes
     -----

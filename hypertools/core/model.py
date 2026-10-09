@@ -170,9 +170,10 @@ def apply_model(data, model, mode='auto', return_model=False,
 
     Returns
     -------
-    result (and fitted model(s) if return_model=True; see `return_model`
-    for the exact shape). Lists in, lists out: a single input dataset
-    returns a single result.
+    result
+        The result (and fitted model(s) if ``return_model=True``; see
+        `return_model` for the exact shape). Lists in, lists out: a single
+        input dataset returns a single result.
     """
     # ndims parity with hyp.reduce (release-1.0 audit, X2-error-quality-018:
     # reduce(ndims=0) raised while apply_model(..., ndims=0) silently

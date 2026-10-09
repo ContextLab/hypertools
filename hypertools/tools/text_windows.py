@@ -93,13 +93,13 @@ def text_windows(text, size=None, step=1, unit='words', min_windows=1,
         document); the nesting is never flattened.
 
     size : int or None, optional
-        Window width, in `unit`s. ``None`` (the default) means "the whole
-        document": one window per document, which -- with `max_chars` -- is
-        the truncation-only form used by the Wikipedia tutorial.
+        Window width, counted in `unit`. ``None`` (the default) means "the
+        whole document": one window per document, which -- with `max_chars`
+        -- is the truncation-only form used by the Wikipedia tutorial.
 
     step : int, optional
-        How many `unit`s to advance between consecutive windows (default 1,
-        i.e. maximally overlapping). ``step=size`` gives disjoint chunks.
+        How many `unit` items to advance between consecutive windows (default
+        1, i.e. maximally overlapping). ``step=size`` gives disjoint chunks.
 
     unit : {'words', 'sentences', 'chars'}, optional
         What a window is measured in. ``'words'`` splits on whitespace and
@@ -114,8 +114,8 @@ def text_windows(text, size=None, step=1, unit='words', min_windows=1,
         rendering guard: `hypertools.plot` draws a one-row dataset as a dot,
         so a turn that collapses to a single window shows up as a stray
         speck rather than a path. It is best-effort: a document of `n`
-        `unit`s can never yield more than `n` windows, and an empty document
-        yields none.
+        `unit` items can never yield more than `n` windows, and an empty
+        document yields none.
 
     max_chars : int or None, optional
         Truncate each document to its first `max_chars` characters *before*
