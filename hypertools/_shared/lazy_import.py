@@ -22,6 +22,21 @@ is per interpreter, so a child process that runs hypertools code (the
 plotly animation-export worker) is started with ``subprocess_env()``,
 which carries the effective value over as that variable.
 
+An extra that IS installed is also checked against the requirement
+pyproject declares for it (`outdated_requirements`): every distribution of
+the extra, not only the module asked for, because a feature needs them
+together (kaleido 1.x cannot export with plotly < 6.1.1). A distribution
+below its declared floor is upgraded through the same pip call, with a
+notice naming the installed version and the requirement -- but only while
+none of its modules is imported yet. An imported package cannot be swapped
+under a running interpreter, so in that case, and whenever installation is
+off, the call raises ``ImportError`` naming the installed version, the
+requirement and the command. The check needs the ``packaging`` library,
+which is not a declared hypertools dependency of its own: matplotlib (a
+core dependency) requires it, so it is present in every resolved install;
+where it is not, the check is skipped rather than guessed at. A passed
+check is remembered per (module, extra), so it runs once per process.
+
 ``ensure_kaleido_chrome()`` provisions what plotly's static image export
 needs at run time: a Chrome build for kaleido and, on Linux images that
 lack them (a fresh Colab or Kaggle kernel, measured 2026-09-04), the four
@@ -68,6 +83,12 @@ CHROME_APT_PACKAGES = ('libatk1.0-0', 'libatk-bridge2.0-0', 'libatspi2.0-0',
 APT_TIMEOUT_SECONDS = 600
 
 _kaleido_ready = False
+
+#: (top-level module, extra, explicit requirements or None) keys whose
+#: installed versions were checked against the declared requirements and
+#: whose module imported: `lazy_import` returns these without reading any
+#: metadata again. Only a PASSED check is remembered.
+_VERSIONS_VERIFIED = set()
 
 #: the `set_autoinstall` handles that are alive, oldest first, as `_Scope`
 #: records (a weak reference each), plus the BASELINE: the value the newest
@@ -206,9 +227,19 @@ class set_autoinstall:
 
            hyp.predict(data, model='Chronos', t=5)       # installs on demand
 
+    An extra that is installed but OLDER than the requirement hypertools
+    declares (a notebook image with plotly 5 where ``plotly>=6.1.1`` is
+    required) is upgraded the same way, with a notice naming the installed
+    version and the requirement -- provided the old version has not been
+    imported yet. Python cannot replace a package that is already imported,
+    so in that case nothing is installed and the call raises ``ImportError``
+    asking for the upgrade command and a restart.
+
     With installation off, a call that needs a missing extra raises
     ``ImportError`` naming the manual ``pip install "hypertools[<extra>]"``
-    command, and nothing is installed. Turn it off in locked-down
+    command, and nothing is installed. An extra that is installed but too
+    old raises ``ImportError`` too, naming the installed version, the
+    requirement and the same command. Turn it off in locked-down
     environments and anywhere pip should not run inside a Python process.
     For a process where no Python runs before hypertools is imported (a CI
     image built ahead of time), the environment variable
@@ -306,8 +337,21 @@ def extra_requirements(extra):
 
 
 def install_command(extra):
-    """The manual command for ``extra``, for error messages."""
+    """The manual command for ``extra``, for error messages. It also
+    UPGRADES: pip re-resolves the extra's requirements for an installed
+    hypertools and replaces a distribution that is below its floor, without
+    reinstalling hypertools itself (no ``-U``, which would)."""
     return f'pip install "hypertools[{extra}]"'
+
+
+def _manual_command(extra, requirements):
+    """The command a person runs instead: the extra's, or the explicit
+    requirements quoted for a shell (an unquoted ``>=`` is a redirection)."""
+    if extra:
+        return install_command(extra)
+    if requirements:
+        return 'pip install ' + ' '.join(f'"{r}"' for r in requirements)
+    return None
 
 
 def _notice(text):
@@ -320,9 +364,152 @@ def _pip_install(requirements):
     importlib.invalidate_caches()
 
 
+def _meets_floor(installed, requirement):
+    """False only when the version string ``installed`` is certainly BELOW
+    the floor ``requirement`` declares.
+
+    Only the floor-setting clauses count (``>=``, ``>``, ``~=``, and ``==``
+    without a wildcard); an upper bound or an exclusion cannot make an
+    installed version too old. Versions are compared by their release
+    numbers, so a development, pre-release, post-release or local build of
+    the floor version (``6.1.1.dev0``, ``6.1.1rc1``, ``6.1.1+local``) meets
+    ``>=6.1.1``. Anything that carries no usable version -- a string that
+    is not a version, an all-zero "unknown" placeholder such as
+    ``0+unknown`` or ``0.0.0`` from an untagged source build, a requirement
+    that does not parse, or no ``packaging`` library to parse with -- is
+    treated as meeting the floor: never a false alarm.
+    """
+    try:
+        from packaging.requirements import Requirement
+        from packaging.version import Version
+        req = Requirement(requirement)
+        have = Version(Version(installed).base_version)
+    except Exception:           # ImportError, InvalidRequirement, InvalidVersion
+        return True
+    if not any(have.release):
+        return True
+    for clause in req.specifier:
+        if clause.version.endswith('.*'):
+            continue
+        try:
+            floor = Version(Version(clause.version).base_version)
+        except Exception:
+            continue
+        if clause.operator in ('>=', '~=', '==') and have < floor:
+            return False
+        if clause.operator == '>' and have <= floor:
+            return False
+    return True
+
+
+def outdated_requirements(requirements):
+    """The requirements whose INSTALLED distribution is below the declared
+    floor.
+
+    Each requirement string is looked up by the distribution name it
+    declares (``scikit-image``, not the import name ``skimage``) in the
+    installed package metadata. A distribution that is not installed is not
+    "too old" (a missing module is `lazy_import`'s other branch), and
+    neither is one whose marker does not apply here or whose version cannot
+    be compared (see `_meets_floor`).
+
+    Parameters
+    ----------
+    requirements : iterable of str
+        Requirement strings, e.g. ``['plotly>=6.1.1', 'kaleido>=1.0']``.
+
+    Returns
+    -------
+    list of (str, str, str)
+        ``(requirement, distribution name, installed version)`` for each
+        requirement the installed version does not meet, in order.
+    """
+    try:
+        from packaging.requirements import Requirement
+    except ImportError:
+        return []
+    found = []
+    for requirement in requirements or ():
+        try:
+            req = Requirement(requirement)
+            if req.marker is not None and not req.marker.evaluate():
+                continue
+            installed = metadata.version(req.name)
+        except Exception:       # unparseable, or the distribution is absent
+            continue
+        if not _meets_floor(installed, requirement):
+            found.append((requirement, req.name, installed))
+    return found
+
+
+def _imported_modules_of(dist_name):
+    """The top-level modules of the installed distribution ``dist_name`` that
+    are imported in this process (``['_plotly_utils', 'plotly']``)."""
+    try:
+        dist = metadata.distribution(dist_name)
+    except Exception:
+        return []
+    names = set((dist.read_text('top_level.txt') or '').split())
+    if not names:
+        for f in dist.files or ():
+            first = f.parts[0] if f.parts else ''
+            if len(f.parts) == 1 and first.endswith('.py'):
+                first = first[:-3]
+            if first.isidentifier():
+                names.add(first)
+    return sorted(n for n in names if n in sys.modules)
+
+
+def _too_old_text(outdated):
+    return '; '.join(f'{name} {have} is installed, but hypertools needs {req}'
+                     for req, name, have in outdated)
+
+
+def _upgrade_outdated(outdated, requirements, extra, need):
+    """Bring the distributions in ``outdated`` (from `outdated_requirements`)
+    up to their requirements, or raise ImportError saying exactly what is
+    installed, what is required and what to run."""
+    what = _too_old_text(outdated) + need
+    manual = _manual_command(extra, requirements)
+    imported = sorted({name for _req, name, _have in outdated
+                       if _imported_modules_of(name)})
+    restart = (' and restart Python (in a notebook, restart the kernel or '
+               'runtime)')
+    if not auto_install_enabled():
+        raise ImportError(
+            f'{what}. Upgrade with `{manual}`'
+            + (f'{restart}, since {", ".join(imported)} is already imported '
+               'in this process' if imported else '')
+            + ' (automatic installation is off; '
+            'hypertools.set_autoinstall(True) turns it on).')
+    if imported:
+        # an imported package cannot be replaced under a running
+        # interpreter: its loaded modules stay the old ones and anything it
+        # imports later comes from the new files. Nothing is installed.
+        raise ImportError(
+            f'{what}. {", ".join(imported)} is already imported in this '
+            'Python process, so hypertools did not upgrade it in place. Run '
+            f'`{manual}`{restart}.')
+    _notice('upgrading '
+            + ', '.join(f'{name} {have} to {req}' for req, name, have in outdated)
+            + f'{need} ...')
+    try:
+        _pip_install(requirements)
+    except subprocess.CalledProcessError as e:
+        raise ImportError(
+            f'{what}, and upgrading automatically failed '
+            f'({type(e).__name__}). Run `{manual}` and try again.') from e
+    still = outdated_requirements(requirements)
+    if still:
+        raise ImportError(
+            f'{_too_old_text(still)}{need}, and upgrading automatically '
+            f'left it in place. Run `{manual}` and try again.')
+
+
 def lazy_import(module, purpose=None, extra=None, requirements=None):
-    """Import ``module``, installing the extra that provides it first if it
-    is missing.
+    """Import ``module``, first installing the extra that provides it if it
+    is missing, or upgrading it if what is installed is older than the
+    requirement hypertools declares.
 
     Parameters
     ----------
@@ -347,20 +534,51 @@ def lazy_import(module, purpose=None, extra=None, requirements=None):
     ------
     ImportError
         When the module is missing and cannot be installed (auto-install
-        disabled, no network, no permission, or no extra provides it); the
-        message carries the manual command.
+        disabled, no network, no permission, or no extra provides it), or
+        when an installed distribution of the extra is below its declared
+        requirement and cannot be upgraded (auto-install disabled, the old
+        version already imported in this process, or pip failed). The
+        message carries the manual command and, for a version problem, the
+        installed version and the requirement.
+
+    Notes
+    -----
+    Every requirement of the extra is checked, not only the distribution
+    behind ``module``: ``lazy_import('kaleido')`` also verifies plotly,
+    because static export needs the two together. The check reads the
+    installed package metadata once; a passed check is remembered for the
+    life of the process, so later calls only import. See
+    `outdated_requirements` for what counts as too old.
     """
+    top = module.split('.')[0]
+    extra = extra or EXTRA_FOR_MODULE.get(top)
+    key = (top, extra, None if requirements is None else tuple(requirements))
+    if key in _VERSIONS_VERIFIED:
+        try:
+            return importlib.import_module(module)
+        except ImportError:
+            pass                    # e.g. a submodule: decided below
+    need = f' (needed for {purpose})' if purpose else ''
+    declared = requirements
+    if declared is None and extra is not None:
+        try:
+            declared = extra_requirements(extra)
+        except (ValueError, metadata.PackageNotFoundError):
+            # an unknown extra, or hypertools run from a source tree with no
+            # installed metadata: nothing to check an installed module
+            # against (a MISSING module still reports this, below)
+            declared = None
+    outdated = outdated_requirements(declared) if declared else []
+    if outdated:
+        # before the import: an upgrade is only possible while the old
+        # version is not imported yet
+        _upgrade_outdated(outdated, declared, extra, need)
     try:
-        return importlib.import_module(module)
+        imported = importlib.import_module(module)
     except ImportError as first:
-        top = module.split('.')[0]
-        extra = extra or EXTRA_FOR_MODULE.get(top)
         if requirements is None and extra is not None:
             requirements = extra_requirements(extra)
-        need = f' (needed for {purpose})' if purpose else ''
-        manual = (install_command(extra) if extra
-                  else f'pip install {" ".join(requirements)}' if requirements
-                  else None)
+        manual = _manual_command(extra, requirements)
         if requirements is None:
             raise ImportError(
                 f'{module} is not installed{need}, and hypertools declares no '
@@ -374,12 +592,21 @@ def lazy_import(module, purpose=None, extra=None, requirements=None):
         _notice(f'installing {", ".join(requirements)}{need} ...')
         try:
             _pip_install(requirements)
-            return importlib.import_module(module)
+            imported = importlib.import_module(module)
         except (subprocess.CalledProcessError, ImportError) as second:
             raise ImportError(
                 f'{module} is not installed{need}, and installing it '
                 f'automatically failed ({type(second).__name__}). Install it '
                 f'with `{manual}` and try again.') from second
+    _VERSIONS_VERIFIED.add(key)
+    return imported
+
+
+def _installed_version(dist_name):
+    try:
+        return metadata.version(dist_name)
+    except Exception:
+        return '(unknown version)'
 
 
 def _kaleido_can_render():
@@ -392,6 +619,23 @@ def _kaleido_can_render():
         if 'chrome' not in str(e).lower():
             raise
         return False, e
+    except ValueError as e:
+        # plotly's "Image export using the "kaleido" engine requires the
+        # kaleido package" while kaleido IS importable: the two versions do
+        # not work together (kaleido 1.x with plotly < 6.1.1; measured with
+        # plotly 5.24.1 + kaleido 1.3.0, review 2026-10-09). Say that, not
+        # "install kaleido". `lazy_import` catches the declared floors
+        # first; this is for an environment it could not check.
+        if 'kaleido' not in str(e).lower():
+            raise
+        from .exceptions import HypertoolsIOError
+        raise HypertoolsIOError(
+            f"plotly {_installed_version('plotly')} and kaleido "
+            f"{_installed_version('kaleido')} are both installed but cannot "
+            "export a static image together (hypertools needs "
+            f"{', '.join(extra_requirements('interactive'))}). Bring them in "
+            f"line with `{install_command('interactive')}` and restart "
+            f"Python. plotly said: {str(e).strip()}") from e
 
 
 def _apt_install(packages):

@@ -401,24 +401,46 @@ def resolve_backend(backend):
         # import avoids a plotly_backend <-> backend import cycle at module load.
         from . import backend as _backend
         preferred = getattr(_backend, 'PREFERRED_RENDER_BACKEND', None)
-        if preferred == 'plotly' and _has_plotly():
+        if preferred == 'plotly' and _plotly_usable():
             return 'plotly'
         if preferred == 'matplotlib':
             return 'matplotlib'
-        if detect_environment() in ('colab', 'kaggle') and _has_plotly():
+        if detect_environment() in ('colab', 'kaggle') and _plotly_usable():
             return 'plotly'
         return 'matplotlib'
-    if backend == 'plotly' and not _has_plotly():
-        # installs the [interactive] extra on demand (see _shared.lazy_import)
+    if backend == 'plotly':
+        # installs the [interactive] extra on demand, or upgrades a plotly /
+        # kaleido older than the declared requirement (see
+        # _shared.lazy_import). Always asked BEFORE anything imports plotly:
+        # an old plotly can only be upgraded while it is not imported yet
+        # (review 2026-10-09; this used to `import plotly` first and ask
+        # only when that failed, so an old one was imported unchecked).
+        # After the first call this is a set lookup and a sys.modules hit.
         lazy_import('plotly', purpose='the plotly backend')
     return backend
 
 
-def _has_plotly():
+def _plotly_usable():
+    """For ``backend='auto'``: True when plotly is installed AND meets the
+    requirement hypertools declares (upgrading it on demand when it is too
+    old and not imported yet).
+
+    An absent plotly is not installed here -- ``'auto'`` only picks plotly
+    where it already is. A plotly that is too old and cannot be upgraded
+    (installation off, or already imported in this process) warns with the
+    versions and the command, and the plot falls back to matplotlib.
+    """
+    import importlib.util
+    if 'plotly' not in sys.modules \
+            and importlib.util.find_spec('plotly') is None:
+        return False
     try:
-        import plotly  # noqa: F401
+        lazy_import('plotly', purpose='the plotly backend')
         return True
-    except ImportError:
+    except ImportError as e:
+        warnings.warn(
+            f"the plotly backend cannot be used, so this plot falls back to "
+            f"matplotlib: {e}")
         return False
 
 

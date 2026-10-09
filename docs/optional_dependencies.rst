@@ -89,12 +89,54 @@ If the install fails (no network, no permission to write to the
 environment), the call raises ``ImportError`` naming the manual command,
 e.g. ``pip install "hypertools[interactive]"``.
 
+An extra that is installed but too old
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``pip install "hypertools[interactive]"`` always resolves versions that
+work together. An environment that already held an older copy of one of
+those packages (a notebook image with an older plotly, say) may not. So an
+installed extra is also checked, once per process, against the requirements
+hypertools declares, and every package of the extra is checked, because a
+feature needs them together: kaleido 1.x cannot export a static image with
+a plotly older than 6.1.1.
+
+A package below its declared requirement is upgraded the same way a missing
+one is installed, with a notice naming the installed version and the
+requirement::
+
+    hypertools: upgrading plotly 5.24.1 to plotly>=6.1.1 (needed for the plotly backend) ...
+
+This happens only while that package has not been imported yet. Python
+cannot replace a package that is already imported in a running process, so
+if your code (or another library) imported the old version first, nothing
+is installed and the call raises ``ImportError``::
+
+    plotly 5.24.1 is installed, but hypertools needs plotly>=6.1.1 (needed
+    for the plotly backend). plotly is already imported in this Python
+    process, so hypertools did not upgrade it in place. Run `pip install
+    "hypertools[interactive]"` and restart Python (in a notebook, restart
+    the kernel or runtime).
+
+With installation turned off (below) the call raises ``ImportError`` with
+the same three facts: the installed version, the requirement, and the
+command. That command upgrades the extra's packages and leaves hypertools
+itself as it is. With ``backend='auto'`` (the default), where plotly is
+chosen only because the environment has it, a plotly that is too old and
+cannot be upgraded produces a warning with that message and the plot is
+drawn with matplotlib instead.
+
+A development or pre-release build of the required version (``6.1.1.dev0``,
+``6.1.1rc1``) counts as that version, and a package whose version cannot be
+read (an untagged source build reporting ``0+unknown``) is never reported
+as too old.
+
 Turning it off
 ~~~~~~~~~~~~~~
 
-Call ``hypertools.set_autoinstall(False)``. A missing extra then raises
+Call ``hypertools.set_autoinstall(False)``. A missing extra, or one that
+is installed but older than hypertools requires, then raises
 ``ImportError`` with the manual ``pip install "hypertools[<extra>]"``
-command, and nothing is installed. It works like
+command, and nothing is installed or upgraded. It works like
 ``set_interactive_backend``: called directly it applies to the rest of the
 session (``set_autoinstall(True)`` turns installation back on), and used
 with ``with`` it applies to one block::

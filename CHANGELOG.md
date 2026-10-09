@@ -843,6 +843,23 @@ Because 1.1.0 had not been published, they ship in it.
   scored against the wrong columns; it is reordered now, and one that
   returns different column labels raises a `ValueError`. The built-in
   forecasters were not affected.
+- **An installed extra that is too old is upgraded, or reported as what it
+  is.** On-demand installation only asked whether an optional package
+  imported, not whether it met the requirement hypertools declares. In an
+  environment that already held plotly 5.24.1 next to kaleido 1.3
+  (`plotly>=6.1.1` is required), saving a plotly figure as an image failed
+  with plotly's "Image export using the "kaleido" engine requires the
+  kaleido package", although kaleido was installed. Every package of an
+  extra is now checked against its declared requirement, once per process.
+  One that is too old is upgraded with a notice (`hypertools: upgrading
+  plotly 5.24.1 to plotly>=6.1.1 ...`) as long as it has not been imported
+  yet; if it has, or after `set_autoinstall(False)`, the call raises
+  `ImportError` naming the installed version, the requirement and the
+  command (`pip install "hypertools[interactive]"`, plus a restart when the
+  old version is already imported). With `backend='auto'` such a plotly
+  gives a warning and a matplotlib figure. `backend='plotly'` no longer
+  imports plotly before that check. A correctly resolved
+  `pip install "hypertools[interactive]"` was never affected.
 - **`explore=True` hover labels stay inside the window.** The label was
   always drawn up and to the left of the hovered point, so a point near the
   left edge of a native window had its label cut off. It now opens toward

@@ -67,7 +67,12 @@ from .forecast import (FORECAST_ALPHA_SCALE, forecast_alpha,
 # unusable there; `plot()` warns (once, naming every such kwarg) rather
 # than silently dropping it with no feedback at all.
 def _is_plotly_figure(obj):
-    """True for a plotly Figure (without importing plotly when it is absent)."""
+    """True for a plotly Figure (without importing plotly: an object cannot
+    be a plotly figure in a process where plotly was never imported, and an
+    import here would load an installed plotly before `lazy_import` has
+    checked its version -- after which it can no longer be upgraded)."""
+    if 'plotly' not in sys.modules:
+        return False
     try:
         from plotly.basedatatypes import BaseFigure
     except ImportError:
