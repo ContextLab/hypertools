@@ -192,7 +192,7 @@ spread tightens ~30%. See the full gallery example,
 :doc:`auto_examples/plot_story_trajectories`.
 
 .. image:: _static/thumbnails/sphx_glr_plot_story_trajectories_thumb.gif
-   :width: 400
+   :width: 200
    :alt: Animated hyperaligned brain-activity trajectories through a spoken story
 
 A quarter century of the market: six sectors, one space
@@ -210,7 +210,7 @@ share counts from the SEC. (For the column-MultiIndex route to a market
 hierarchy, see :doc:`hierarchy`.)
 
 .. image:: _static/thumbnails/sphx_glr_animate_market_sectors_thumb.gif
-   :width: 400
+   :width: 200
    :alt: Six hyperaligned sector paths and the heavier market mean in one turning 3-D box, titled by date
 
 .. toctree::
@@ -235,7 +235,7 @@ and the mean temperature against time, drawn segment by segment on the
 same colour scale.
 
 .. image:: _static/thumbnails/sphx_glr_animate_weather_decades_thumb.gif
-   :width: 400
+   :width: 200
    :alt: A century of twenty cities' temperatures as one trajectory, coloured blue-cold to red-hot
 
 .. toctree::
@@ -257,7 +257,7 @@ and the title colour run on the public ``on_frame`` hook and read the
 schedule the library publishes; thirty seconds, two camera turns.
 
 .. image:: _static/thumbnails/sphx_glr_animate_conversation_thumb.gif
-   :width: 400
+   :width: 200
    :alt: The Mad Tea-Party revealed one turn at a time, each path coloured by speaker
 
 .. toctree::
@@ -279,7 +279,7 @@ box, each painting's name with its artist and year, the description that
 was embedded, and a thumbnail of the canvas.
 
 .. image:: _static/thumbnails/sphx_glr_animate_painting_embeddings_thumb.gif
-   :width: 400
+   :width: 200
    :alt: Five clouds of painting-description embeddings spinning in 3-D, each in its canvas's colour
 
 .. toctree::
@@ -328,7 +328,7 @@ it just above the cloud). The loader degrades to five parametric clouds
 when the zoo cannot be fetched, so the notebook always renders.
 
 .. image:: _static/thumbnails/sphx_glr_animate_morph_zoo_thumb.gif
-   :width: 400
+   :width: 200
    :alt: A cloud of dots morphing through the shapes zoo, titled per shape
 
 .. toctree::
