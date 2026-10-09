@@ -28,7 +28,8 @@ import datawrangler as dw
 from .._shared.helpers import (is_array_dataset, is_frame_dataset,
                                is_series_like, as_pandas_dataframe)
 
-from .backtest import imputer_collection, score_imputations
+from .backtest import (data_label_flags, imputer_collection,
+                       score_imputations)
 from .common import Imputer
 from .ppca import PPCA
 from .sklearn_imputers import SimpleImputer, KNNImputer, IterativeImputer
@@ -407,11 +408,26 @@ def impute(data, model='PPCA', return_model=False, truth=None, mask=None,
         copy and leaves the caller's instance unchanged. Fitted instances
         are refused because their learned state may contain the hidden truth.
 
+        ALIGNMENT. When `data` and `truth` are both labelled, `truth` is
+        matched to `data` BY LABEL, not by position: a pandas DataFrame
+        labels its rows and columns (a default ``0..n-1`` index counts --
+        a reordered frame carries those integers with it), a pandas Series
+        its rows, and a polars frame its columns only (its rows are
+        positional). The same labels in a different order are reordered to
+        `data`'s; labels that differ -- or that are repeated, when the two
+        sequences are not identical -- raise a `ValueError` naming the
+        axis and the labels. A bare array on either side carries no
+        labels and is compared by position (shape-checked), so pass
+        ``truth.to_numpy()`` to compare two differently-labelled frames
+        cell for cell. With a list of datasets each pair is aligned
+        independently.
+
     mask : boolean array (or list of these), or None
         RESTRICT scoring to a subset of the damaged cells, e.g. only the
         rows of a simulated occlusion (`mask` is intersected with the NaN
         mask, so cells that were never missing are excluded either way).
-        Same shape as `data`; only valid alongside ``truth=``. Score the
+        Same shape as `data` (a labelled mask is aligned to `data` by
+        label exactly as `truth` is); only valid alongside ``truth=``. Score the
         occluded band and the scattered dropouts separately by calling
         twice with complementary masks.
 
@@ -485,8 +501,20 @@ def impute(data, model='PPCA', return_model=False, truth=None, mask=None,
     imputer that cannot beat a column mean has not earned its complexity.
     TIES on the ranking metric go to the model listed FIRST (a stable
     comparison, so the verdict is reproducible); models whose ranking
-    metric is NaN are never chosen as best, and ``attrs['best']`` is None
-    if nothing scored.
+    metric is NaN are never chosen as best.
+
+    ONLY COMPLETE MODELS ARE RANKED. A model with ``unscored > 0`` (summed
+    over every dataset and column) was graded on fewer -- often easier --
+    cells than the others, so it keeps its descriptive row but can never
+    be ``attrs['best']``; it is named in ``attrs['incomplete']`` (a list,
+    empty when every row is complete) and a warning says so. If NO model
+    is complete (or nothing scored), ``attrs['best']`` is None,
+    ``attrs['best_score']`` is NaN and ``attrs['beats_baseline']`` is None
+    -- there is no verdict, which is not the same as "did not beat the
+    baseline". ``attrs['beats_baseline']`` is likewise None if the
+    baseline row is itself incomplete (it is then listed in
+    ``attrs['incomplete']`` too). Test ``is True`` / ``is None`` rather
+    than truthiness when the distinction matters.
 
     The verdict lives in ``attrs`` rather than in a ``best`` column on
     purpose: it is one fact about the whole comparison, and a column would
@@ -524,6 +552,7 @@ def impute(data, model='PPCA', return_model=False, truth=None, mask=None,
     >>> scores.attrs['baseline']
     'mean'
     """
+    raw = data          # un-wrangled: which datasets carry labels (truth=)
     data = _normalize_data(data)
 
     # MULTI-MODEL / SCORING dispatch (GH #285). Both are strictly opt-in:
@@ -551,10 +580,12 @@ def impute(data, model='PPCA', return_model=False, truth=None, mask=None,
             names, specs = collection
         else:
             names, specs = [spec_name(model, supported_names(IMPUTERS))], [model]
+        datasets = _score_datasets(data)
         return score_imputations(
-            _score_datasets(data), impute, names, specs, truth, mask=mask,
+            datasets, impute, names, specs, truth, mask=mask,
             metrics=metrics, per_column=per_column,
-            return_imputed=return_imputed, kwargs=kwargs)
+            return_imputed=return_imputed, kwargs=kwargs,
+            labelled=data_label_flags(raw, len(datasets)))
     if collection is not None:
         names, specs = collection
         results = {name: impute(data, model=spec, return_model=return_model,

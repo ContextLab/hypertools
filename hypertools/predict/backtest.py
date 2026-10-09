@@ -247,7 +247,12 @@ def build_scores(records, metrics, per_column=False, baseline=None,
         per-column rows, indexed by (model[, dataset], column).
     baseline : str or None
         The row name of the always-present baseline, excluded from the
-        "best" verdict.
+        "best" verdict. Only COMPLETE models (``unscored == 0`` summed over
+        every dataset and column) are ranked; rows that left values
+        missing are named in ``attrs['incomplete']``, ``attrs['best']`` is
+        None when no model is complete, and ``attrs['beats_baseline']`` is
+        None when there is no best model or the baseline is itself
+        incomplete.
     extra : dict or None
         Extra scalar columns (e.g. ``{'horizon': 30}``) appended to both
         forms.
@@ -268,26 +273,58 @@ def build_scores(records, metrics, per_column=False, baseline=None,
     # local import (as in `Forecaster.fit_predict`) keeps the numeric core
     # of this module free of hypertools imports at module load
     from ..core.model import external_stacklevel
-    for name, unscored in wide['unscored'].items():
-        # a model that failed to produce some values is scored on FEWER
-        # entries than the others, so its row is not directly comparable;
-        # say so instead of letting the smaller `n` pass unnoticed.
-        if unscored:
+    # COVERAGE (release red-team 2026-10-09). A row that left any value
+    # missing is scored on FEWER -- and possibly easier -- entries than the
+    # others, so its metrics describe it but cannot be RANKED against rows
+    # that produced every value: PPCA, which skips fully-missing rows,
+    # used to "win" with the error of the easy cells alone. `unscored` is
+    # summed over every (dataset, column) the verdict averages, so a model
+    # incomplete anywhere is incomplete for the verdict.
+    incomplete = [name for name, unscored in wide['unscored'].items()
+                  if unscored]
+    for name in incomplete:
+        unscored = int(wide.loc[name, 'unscored'])
+        total = int(unscored + wide.loc[name, 'n'])
+        if name == baseline:
             warnings.warn(
-                f'model {name!r} left {int(unscored)} of '
-                f'{int(unscored + wide.loc[name, "n"])} scored {kind}(s) '
-                'missing (NaN); its scores cover only the ones it produced, '
-                'so they are not directly comparable to models that '
-                'produced every value.', stacklevel=external_stacklevel())
+                f'baseline {name!r} left {unscored} of {total} scored '
+                f'{kind}(s) missing (NaN); its scores cover only the ones '
+                'it produced, so they are not directly comparable to '
+                'models that produced every value. No comparison against '
+                "a partial baseline is made: attrs['beats_baseline'] is "
+                'None.', stacklevel=external_stacklevel())
+        else:
+            warnings.warn(
+                f'model {name!r} left {unscored} of {total} scored '
+                f'{kind}(s) missing (NaN); its scores cover only the ones '
+                'it produced, so they are not directly comparable to '
+                'models that produced every value. It is excluded from '
+                "the ranking (attrs['best']) and listed in "
+                "attrs['incomplete'].", stacklevel=external_stacklevel())
     for key, value in extra.items():
         wide[key] = value
 
     primary = labels[0]
-    candidates = wide.drop(index=baseline, errors='ignore')[primary].dropna()
+    models = wide.drop(index=baseline, errors='ignore')
+    candidates = models.loc[models['unscored'] == 0, primary].dropna()
     best = str(candidates.idxmin()) if len(candidates) else None
     baseline_score = (float(wide.loc[baseline, primary])
                       if baseline in wide.index else np.nan)
     best_score = float(wide.loc[best, primary]) if best is not None else np.nan
+    if best is None and len(models) and (models['unscored'] > 0).all():
+        warnings.warn(
+            f'no model produced every scored {kind}, so none can be ranked: '
+            "attrs['best'] and attrs['beats_baseline'] are None and "
+            "attrs['best_score'] is NaN. The rows still describe each "
+            'model on the values it did produce.',
+            stacklevel=external_stacklevel())
+    if best is None or baseline in incomplete:
+        # nothing to compare, or nothing complete to compare it against
+        beats_baseline = None
+    else:
+        beats_baseline = bool(np.isfinite(best_score)
+                              and np.isfinite(baseline_score)
+                              and best_score < baseline_score)
     attrs = {
         'metric': primary,
         'metrics': list(labels),
@@ -295,9 +332,8 @@ def build_scores(records, metrics, per_column=False, baseline=None,
         'baseline_score': baseline_score,
         'best': best,
         'best_score': best_score,
-        'beats_baseline': bool(np.isfinite(best_score)
-                               and np.isfinite(baseline_score)
-                               and best_score < baseline_score),
+        'beats_baseline': beats_baseline,
+        'incomplete': [str(name) for name in incomplete],
     }
     attrs.update(extra)
 
@@ -427,6 +463,39 @@ def _forecast_at_times(model, index):
     return result
 
 
+def _match_columns(forecast, columns, name):
+    """Put a forecast's columns in the held-out data's order, BY LABEL.
+
+    Scoring pairs forecast and held-out columns by position. The built-in
+    forecasters label their output with the training columns, so this is a
+    no-op for them; a user forecaster that returns the same columns in
+    another order is reordered, and one that returns different (or
+    ambiguously repeated) column labels is refused rather than scored
+    against the wrong columns (release red-team 2026-10-09, the same rule
+    `hyp.impute(truth=)` applies). Rows are forecast STEPS and stay
+    positional by construction.
+    """
+    if not isinstance(forecast, pd.DataFrame):
+        return forecast
+    own = forecast.columns
+    if own.equals(columns) or len(own) != len(columns):
+        return forecast     # a shape mismatch is reported by the scorer
+    if not own.is_unique or not columns.is_unique:
+        raise ValueError(
+            f'model {name!r} returned forecast columns {list(own)} for data '
+            f'with columns {list(columns)}; the column labels differ and '
+            'some are duplicated, so they cannot be paired unambiguously.')
+    missing = columns.difference(own, sort=False)
+    unexpected = own.difference(columns, sort=False)
+    if len(missing) or len(unexpected):
+        raise ValueError(
+            f"model {name!r} returned forecast column labels that do not "
+            f"match the data's (missing: {list(missing)}; unexpected: "
+            f'{list(unexpected)}); a forecast must keep the columns it was '
+            'fit on to be scored.')
+    return forecast.reindex(columns=columns)
+
+
 def backtest_predict(datasets, make_forecaster, t, holdout, names, specs,
                      metrics=None, per_column=False, return_forecasts=False,
                      kwargs=None):
@@ -487,7 +556,7 @@ def backtest_predict(datasets, make_forecaster, t, holdout, names, specs,
             else:
                 forecast = fitted.predict(k)
                 forecast.index = held.index
-            per_dataset.append(forecast)
+            per_dataset.append(_match_columns(forecast, held.columns, name))
         forecasts[name] = per_dataset
     forecasts[baseline] = [naive_forecast(train, held.index)
                            for (train, held) in splits]

@@ -576,8 +576,25 @@ def predict(data, model='Kalman', t=10, return_model=False, holdout=None,
     complexity, whatever its absolute error looks like. TIES on the ranking
     metric go to the model listed FIRST (the comparison is stable, so
     re-running with the same specs gives the same verdict); models whose
-    ranking metric is NaN (nothing scoreable) are never chosen as best, and
-    ``attrs['best']`` is None if no model scored at all.
+    ranking metric is NaN (nothing scoreable) are never chosen as best.
+
+    ONLY COMPLETE MODELS ARE RANKED. A model with ``unscored > 0`` (summed
+    over every dataset and column) was scored on fewer held-out values
+    than the others, so it keeps its descriptive row but can never be
+    ``attrs['best']``; it is named in ``attrs['incomplete']`` (a list,
+    empty when every row is complete) and a warning says so. If NO model
+    is complete (or none scored at all), ``attrs['best']`` is None,
+    ``attrs['best_score']`` is NaN and ``attrs['beats_baseline']`` is None
+    -- there is no verdict, which is not the same as "did not beat the
+    baseline". ``attrs['beats_baseline']`` is likewise None if the naive
+    baseline is itself incomplete (a column with no observed training
+    value gives it nothing to carry forward; it is then listed in
+    ``attrs['incomplete']`` too). Test ``is True`` / ``is None`` rather
+    than truthiness when the distinction matters.
+
+    Forecast and held-out COLUMNS are paired by label: a custom forecaster
+    that returns the training columns in another order is reordered, and
+    one that returns different column labels raises a `ValueError`.
 
     The verdict lives in ``attrs`` rather than in a ``best`` column on
     purpose: it is one fact about the whole comparison, and a column would

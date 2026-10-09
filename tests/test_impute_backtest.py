@@ -351,3 +351,257 @@ def test_unscored_warning_points_at_the_caller():
     assert len(unscored) == 1
     assert unscored[0].filename == __file__
     assert not unscored[0].filename.startswith(package_dir + os.sep)
+
+
+# --- incomplete models never win (release red-team 2026-10-09) -------------
+
+def _outlier_arc():
+    """A trajectory whose occluded band holds large values: a model that
+    skips the band is graded only on the easy scattered cells."""
+    t = np.linspace(0, 2, 40)
+    truth = pd.DataFrame({'x': 3 * t, 'y': 1.5 * t, 'z': 6 + 10 * t - 5 * t * t})
+    truth.iloc[15:20] += 100
+    return truth, hyp.damage(truth, rows=slice(15, 20), frac=.1, seed=1)
+
+
+def test_incomplete_model_never_wins():
+    # PPCA cannot fill the 5 occluded rows, so its MAE (0.94 over the 10
+    # scattered cells) covers none of the hard ones; SimpleImputer filled
+    # all 25 (MAE 63.7). The partial score used to be ranked first.
+    truth, damaged = _outlier_arc()
+    np.random.seed(0)
+    with pytest.warns(UserWarning, match='excluded from the ranking'):
+        scores = hyp.impute(damaged, model=['PPCA', 'SimpleImputer'],
+                            truth=truth)
+    assert scores.loc['PPCA', 'n'] == 10
+    assert scores.loc['PPCA', 'unscored'] == 15
+    assert scores.loc['SimpleImputer', 'unscored'] == 0
+    # the descriptive row is kept, and it IS the smaller number
+    assert scores.loc['PPCA', 'MAE'] < scores.loc['SimpleImputer', 'MAE']
+    assert scores.attrs['best'] == 'SimpleImputer'
+    assert scores.attrs['best_score'] == pytest.approx(
+        scores.loc['SimpleImputer', 'MAE'])
+    assert scores.attrs['incomplete'] == ['PPCA']
+    # SimpleImputer IS the column-mean baseline: equal, so not strictly below
+    assert scores.attrs['beats_baseline'] is False
+
+
+def test_complete_comparison_reports_no_incomplete_models():
+    truth = _arc()
+    damaged = _damage(truth)
+    scores = hyp.impute(damaged, model=['Kalman', 'KNNImputer'], truth=truth)
+    assert scores.attrs['incomplete'] == []
+    assert scores.attrs['best'] in ('Kalman', 'KNNImputer')
+    assert isinstance(scores.attrs['beats_baseline'], bool)
+
+
+def test_no_complete_model_gives_no_verdict():
+    truth, damaged = _outlier_arc()
+    np.random.seed(0)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter('always')
+        scores = hyp.impute(damaged, model='PPCA', truth=truth)
+    assert scores.loc['PPCA', 'unscored'] == 15
+    assert np.isfinite(scores.loc['PPCA', 'MAE'])  # row still described
+    assert scores.attrs['best'] is None
+    assert np.isnan(scores.attrs['best_score'])
+    assert scores.attrs['beats_baseline'] is None
+    assert scores.attrs['incomplete'] == ['PPCA']
+    messages = [str(w.message) for w in caught]
+    assert any('no model produced every' in m for m in messages)
+
+
+def test_per_column_verdict_ranks_complete_models_only():
+    truth, damaged = _outlier_arc()
+    np.random.seed(0)
+    with pytest.warns(UserWarning, match='excluded from the ranking'):
+        long = hyp.impute(damaged, model=['PPCA', 'SimpleImputer'],
+                          truth=truth, per_column=True)
+    assert list(long.index.names) == ['model', 'column']
+    assert (long.loc['PPCA', 'unscored'] == 5).all()
+    assert long.attrs['best'] == 'SimpleImputer'
+    assert long.attrs['incomplete'] == ['PPCA']
+
+
+def test_model_incomplete_on_one_dataset_is_incomplete_for_the_verdict():
+    # dataset 0 has scattered damage only (PPCA fills all of it); dataset 1
+    # has an occluded band PPCA cannot fill. The verdict averages both, so
+    # PPCA's coverage is judged over both.
+    truth, occluded = _outlier_arc()
+    scattered = hyp.damage(truth, frac=.1, seed=2)
+    np.random.seed(0)
+    with pytest.warns(UserWarning, match='excluded from the ranking'):
+        scores = hyp.impute([scattered, occluded],
+                            model=['PPCA', 'SimpleImputer'],
+                            truth=[truth, truth])
+    np.random.seed(0)
+    with pytest.warns(UserWarning):
+        long = hyp.impute([scattered, occluded],
+                          model=['PPCA', 'SimpleImputer'],
+                          truth=[truth, truth], per_column=True)
+    assert long.loc[('PPCA', 0), 'unscored'].sum() == 0
+    assert long.loc[('PPCA', 1), 'unscored'].sum() == 15
+    assert scores.loc['PPCA', 'unscored'] == 15
+    assert scores.attrs['incomplete'] == ['PPCA']
+    assert scores.attrs['best'] == 'SimpleImputer'
+    assert long.attrs['best'] == 'SimpleImputer'
+    assert long.attrs['incomplete'] == ['PPCA']
+
+
+# --- truth=/mask= are aligned by label (release red-team 2026-10-09) -------
+
+def _labelled():
+    truth = pd.DataFrame({'a': [1., 2., 3., 4.], 'b': [10., 20., 30., 40.]},
+                         index=['r0', 'r1', 'r2', 'r3'])
+    damaged = truth.copy()
+    damaged.iloc[1, 0] = np.nan
+    damaged.iloc[2, 1] = np.nan
+    return truth, damaged
+
+
+def _mae(damaged, truth, **kwargs):
+    return float(hyp.impute(damaged, model='SimpleImputer', truth=truth,
+                            **kwargs).loc['SimpleImputer', 'MAE'])
+
+
+def test_truth_is_aligned_to_the_data_by_label():
+    truth, damaged = _labelled()
+    expected = _mae(damaged, truth)
+    assert expected == pytest.approx(11 / 3)          # 3.667
+    # reordered columns used to give 18.833, reversed rows 1.833
+    assert _mae(damaged, truth[['b', 'a']]) == pytest.approx(expected)
+    assert _mae(damaged, truth.iloc[::-1]) == pytest.approx(expected)
+    assert _mae(damaged, truth.iloc[::-1][['b', 'a']]) == pytest.approx(expected)
+
+
+def test_returned_truth_is_in_the_data_order():
+    truth, damaged = _labelled()
+    _, out = hyp.impute(damaged, model='SimpleImputer',
+                        truth=truth.iloc[::-1][['b', 'a']],
+                        return_imputed=True)
+    pd.testing.assert_frame_equal(out['truth'], truth)
+
+
+def test_default_integer_labels_are_labels_too():
+    # a frame's default 0..n-1 index is still a set of row labels: a
+    # reversed truth frame carries them, and is put back in the data's order
+    truth, damaged = _labelled()
+    truth, damaged = truth.reset_index(drop=True), damaged.reset_index(drop=True)
+    assert _mae(damaged, truth.iloc[::-1]) == pytest.approx(11 / 3)
+
+
+def test_mask_is_aligned_to_the_data_by_label():
+    truth, damaged = _labelled()
+    mask = pd.DataFrame(False, index=truth.index, columns=truth.columns)
+    mask.loc['r1', 'a'] = True                 # score only the (r1, a) cell
+    expected = hyp.impute(damaged, model='SimpleImputer', truth=truth,
+                          mask=mask)
+    assert expected.loc['SimpleImputer', 'n'] == 1
+    assert expected.loc['SimpleImputer', 'MAE'] == pytest.approx(2 / 3)
+    shuffled = hyp.impute(damaged, model='SimpleImputer', truth=truth,
+                          mask=mask.iloc[::-1][['b', 'a']])
+    pd.testing.assert_frame_equal(shuffled, expected)
+
+
+@pytest.mark.parametrize('what', ['truth', 'mask'])
+def test_mismatched_labels_are_rejected(what):
+    truth, damaged = _labelled()
+    mask = pd.DataFrame(True, index=truth.index, columns=truth.columns)
+    given = {'truth': truth, 'mask': mask}
+    given[what] = given[what].rename(columns={'b': 'c'})
+    with pytest.raises(ValueError) as err:
+        hyp.impute(damaged, model='SimpleImputer', **given)
+    message = str(err.value)
+    assert what in message and 'column' in message
+    assert "'c'" in message and "'b'" in message
+    given = {'truth': truth, 'mask': mask}
+    given[what] = given[what].rename(index={'r3': 'r9'})
+    with pytest.raises(ValueError) as err:
+        hyp.impute(damaged, model='SimpleImputer', **given)
+    message = str(err.value)
+    assert what in message and 'row' in message
+    assert "'r9'" in message and "'r3'" in message
+
+
+def test_duplicated_labels_that_need_aligning_are_rejected():
+    truth, damaged = _labelled()
+    dup_truth = truth.rename(index={'r1': 'r0'}).iloc[::-1]
+    with pytest.raises(ValueError, match=r"truth.*row.*duplicated.*'r0'"):
+        hyp.impute(damaged, model='SimpleImputer', truth=dup_truth)
+    dup_data = damaged.rename(columns={'b': 'a'})
+    with pytest.raises(ValueError, match=r"column.*duplicated.*'a'"):
+        hyp.impute(dup_data, model='SimpleImputer', truth=truth)
+
+
+def test_identically_labelled_duplicates_stay_positional():
+    # repeated labels in the SAME order on both sides need no alignment
+    truth, damaged = _labelled()
+    relabel = {'r1': 'r0', 'r3': 'r2'}
+    assert _mae(damaged.rename(index=relabel),
+                truth.rename(index=relabel)) == pytest.approx(11 / 3)
+
+
+def test_bare_arrays_stay_positional():
+    truth, damaged = _labelled()
+    expected = 11 / 3
+    # array / array, labelled data / array truth, array data / labelled truth
+    assert _mae(damaged.to_numpy(), truth.to_numpy()) == pytest.approx(expected)
+    assert _mae(damaged, truth.to_numpy()) == pytest.approx(expected)
+    assert _mae(damaged.to_numpy(), truth) == pytest.approx(expected)
+    # an array carries no labels, so a reordered one IS scored as given
+    assert _mae(damaged, truth[['b', 'a']].to_numpy()) == pytest.approx(113 / 6)
+    with pytest.raises(ValueError, match='must match cell for cell'):
+        hyp.impute(damaged, model='SimpleImputer', truth=truth.to_numpy()[:3])
+
+
+def test_frames_with_different_kinds_of_labels_are_rejected():
+    # data indexed by dates, truth by the default 0..n-1: both are labelled
+    # frames whose row labels differ. Guessing "positional" could mis-score
+    # silently, so it is an error that names the fix.
+    truth, damaged = _labelled()
+    dates = pd.date_range('2026-01-01', periods=4)
+    dated = damaged.set_axis(dates, axis=0)
+    with pytest.raises(ValueError, match=r'(?s)truth.*row labels.*to_numpy'):
+        hyp.impute(dated, model='SimpleImputer',
+                   truth=truth.reset_index(drop=True))
+    assert _mae(dated, truth.to_numpy()) == pytest.approx(11 / 3)
+    assert _mae(dated, truth.set_axis(dates, axis=0)) == pytest.approx(11 / 3)
+
+
+def test_each_dataset_is_aligned_independently():
+    truth, damaged = _labelled()
+    other = truth.rename(index=lambda r: r.upper()) * 2
+    other_damaged = other.copy()
+    other_damaged.iloc[0, 1] = np.nan
+    expected = hyp.impute([damaged, other_damaged], model='SimpleImputer',
+                          truth=[truth, other], per_column=True)
+    shuffled = hyp.impute([damaged, other_damaged], model='SimpleImputer',
+                          truth=[truth[['b', 'a']], other.iloc[::-1]],
+                          per_column=True)
+    pd.testing.assert_frame_equal(shuffled, expected)
+    with pytest.raises(ValueError, match=r'(?s)truth\[1\].*row'):
+        hyp.impute([damaged, other_damaged], model='SimpleImputer',
+                   truth=[truth, truth])
+
+
+def test_polars_truth_is_aligned_by_column_name():
+    pl = pytest.importorskip('polars')
+    truth, damaged = _labelled()
+    # polars frames have column names but no row labels: columns are
+    # aligned by name, rows compared by position
+    swapped = pl.from_pandas(truth[['b', 'a']].reset_index(drop=True))
+    assert _mae(damaged, swapped) == pytest.approx(11 / 3)
+    plain = damaged.reset_index(drop=True)
+    assert _mae(pl.from_pandas(plain), swapped) == pytest.approx(11 / 3)
+    with pytest.raises(ValueError, match=r"(?s)truth.*column.*'c'"):
+        hyp.impute(damaged, model='SimpleImputer',
+                   truth=swapped.rename({'b': 'c'}))
+
+
+def test_series_truth_is_aligned_by_row_label():
+    truth = pd.DataFrame({'x': [1., 2., 3., 40.]}, index=list('abcd'))
+    damaged = truth.copy()
+    damaged.iloc[3, 0] = np.nan
+    expected = _mae(damaged, truth)
+    assert expected == pytest.approx(38.)
+    assert _mae(damaged, truth['x'].iloc[::-1]) == pytest.approx(expected)

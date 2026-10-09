@@ -812,6 +812,37 @@ input too.
 Found by the pre-publication review of the 1.1.0 draft against 1.0.0.
 Because 1.1.0 had not been published, they ship in it.
 
+- **A model that left values missing can no longer be named the best.**
+  `hyp.impute(x, model=[...], truth=)` and
+  `hyp.predict(x, model=[...], holdout=)` picked `scores.attrs['best']` as
+  the lowest score regardless of coverage, so a model scored on fewer,
+  easier values could win: `PPCA`, which cannot fill a fully-missing row,
+  was "best" with an MAE of 0.94 over the 10 cells it filled while
+  `SimpleImputer` scored 63.7 over all 25. Only complete models (`unscored`
+  of 0 over every dataset and column) are ranked now. Incomplete models keep
+  their rows, are listed in the new `scores.attrs['incomplete']`, and the
+  warning says they are excluded from the ranking. When no model is
+  complete, `attrs['best']` is `None`, `attrs['best_score']` is NaN and
+  `attrs['beats_baseline']` is `None`; `attrs['beats_baseline']` is also
+  `None` when the baseline row is itself incomplete. Each case warns.
+- **`hyp.impute(truth=, mask=)` matches labelled data by label.** `truth`
+  and `mask` were checked for shape and then compared cell by position, so
+  a truth DataFrame with its columns or rows in another order was scored
+  against the wrong cells without a word (an MAE of 18.83 or 1.83 where the
+  answer is 3.67). When the data and `truth`/`mask` are both labelled, the
+  same labels in a different order are now reordered to the data's, and
+  labels that differ (or are repeated and not in identical order) raise a
+  `ValueError` naming the axis and the labels. A default `0..n-1` index
+  counts as labels; a polars frame is matched by column name and row
+  position. Bare arrays are compared by position as before, so
+  `truth.to_numpy()` is the way to compare two differently-labelled frames
+  cell for cell. A wrong-shaped array `truth` now gets hypertools' shape
+  message instead of a pandas internals error.
+- **A backtest pairs forecast and held-out columns by label.** A custom
+  `Forecaster` that returned the training columns in another order was
+  scored against the wrong columns; it is reordered now, and one that
+  returns different column labels raises a `ValueError`. The built-in
+  forecasters were not affected.
 - **`explore=True` hover labels stay inside the window.** The label was
   always drawn up and to the left of the hovered point, so a point near the
   left edge of a native window had its label cut off. It now opens toward

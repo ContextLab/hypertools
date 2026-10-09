@@ -392,3 +392,152 @@ def test_unscored_warning_points_at_the_caller():
     assert len(unscored) == 1
     assert unscored[0].filename == __file__
     assert not unscored[0].filename.startswith(package_dir + os.sep)
+
+
+# --- incomplete models never win (release red-team 2026-10-09) -------------
+
+def _records(model, values, unscored):
+    """Plain per-column score records, as `backtest_predict` builds them."""
+    return [{'model': model, 'column': c, 'MAE': v, 'n': 5 - u, 'unscored': u}
+            for c, v, u in zip('ab', values, unscored)]
+
+
+def test_build_scores_ranks_complete_models_only():
+    # no built-in forecaster leaves SOME of a horizon NaN while another
+    # fills all of it on the same data, so the "partial model has the
+    # lowest score" verdict is exercised on the shared helper with plain
+    # hand-written records (data, not a stand-in object).
+    from hypertools.predict.backtest import build_scores
+    records = (_records('partial', [0.1, 0.1], [0, 3])
+               + _records('full', [2.0, 4.0], [0, 0])
+               + _records('naive', [5.0, 5.0], [0, 0]))
+    with pytest.warns(UserWarning, match="'partial'.*excluded from the ranking"):
+        wide = build_scores(records, ('mae',), baseline='naive')
+    with pytest.warns(UserWarning, match='excluded from the ranking'):
+        long = build_scores(records, ('mae',), per_column=True,
+                            baseline='naive')
+    for scores in (wide, long):
+        assert scores.attrs['best'] == 'full'
+        assert scores.attrs['best_score'] == pytest.approx(3.0)
+        assert scores.attrs['incomplete'] == ['partial']
+        assert scores.attrs['beats_baseline'] is True
+    assert wide.loc['partial', 'MAE'] == pytest.approx(0.1)   # row kept
+    assert wide.loc['partial', 'unscored'] == 3
+    assert long.loc[('partial', 'b'), 'unscored'] == 3
+
+
+def test_build_scores_judges_coverage_over_every_dataset():
+    from hypertools.predict.backtest import build_scores
+    records = []
+    for dataset, unscored in enumerate([[0, 0], [0, 1]]):
+        for model, values, u in [('partial', [0.1, 0.1], unscored),
+                                 ('full', [2.0, 2.0], [0, 0]),
+                                 ('naive', [5.0, 5.0], [0, 0])]:
+            for r in _records(model, values, u):
+                records.append({**r, 'dataset': dataset})
+    with pytest.warns(UserWarning, match='excluded from the ranking'):
+        scores = build_scores(records, ('mae',), baseline='naive')
+    assert scores.attrs['best'] == 'full'
+    assert scores.attrs['incomplete'] == ['partial']
+
+
+def test_build_scores_with_no_complete_model_or_baseline():
+    from hypertools.predict.backtest import build_scores
+    records = (_records('partial', [0.1, 0.1], [0, 3])
+               + _records('naive', [5.0, 5.0], [0, 0]))
+    with pytest.warns(UserWarning, match='no model produced every'):
+        scores = build_scores(records, ('mae',), baseline='naive')
+    assert scores.attrs['best'] is None
+    assert np.isnan(scores.attrs['best_score'])
+    assert scores.attrs['beats_baseline'] is None
+    records = (_records('full', [2.0, 4.0], [0, 0])
+               + _records('naive', [5.0, 5.0], [2, 0]))
+    with pytest.warns(UserWarning, match="(?s)baseline 'naive'.*beats_baseline"):
+        scores = build_scores(records, ('mae',), baseline='naive')
+    assert scores.attrs['best'] == 'full'
+    assert scores.attrs['beats_baseline'] is None
+    assert scores.attrs['incomplete'] == ['naive']
+
+
+def test_user_forecaster_that_forecasts_nothing_never_wins():
+    with pytest.warns(UserWarning, match='excluded from the ranking'):
+        scores = hyp.predict(_series(n=40), model=[NaNForecaster, 'Kalman'],
+                             holdout=5)
+    assert scores.attrs['best'] == 'Kalman'
+    assert scores.attrs['incomplete'] == ['NaNForecaster']
+    assert isinstance(scores.attrs['beats_baseline'], bool)
+
+
+def test_holdout_with_no_complete_forecaster_gives_no_verdict():
+    # REAL case: the last training row is missing, and the held-out times
+    # fall between forecast steps, so Kalman and ARIMA both have no anchor
+    # to interpolate the first held-out value from and leave it NaN.
+    frame = pd.DataFrame(np.r_[np.arange(1., 25.), np.nan, 26., 27.],
+                         index=np.r_[np.arange(25.), 24.5, 25.])
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter('always')
+        scores = hyp.predict(frame, model=['Kalman', 'ARIMA'], holdout=2)
+    assert list(scores['unscored']) == [1, 1, 0]
+    assert np.isfinite(scores.loc['Kalman', 'MAE'])   # row still described
+    assert scores.attrs['incomplete'] == ['Kalman', 'ARIMA']
+    assert scores.attrs['best'] is None
+    assert np.isnan(scores.attrs['best_score'])
+    assert scores.attrs['beats_baseline'] is None
+    assert any('no model produced every' in str(w.message) for w in caught)
+
+
+def test_holdout_with_an_incomplete_baseline_makes_no_comparison():
+    # REAL case: column 'b' has no observed training value, so the naive
+    # last-value baseline has nothing to carry forward and scores 'a' only.
+    frame = pd.DataFrame({'a': np.sin(np.arange(30.) / 3),
+                          'b': np.r_[np.full(27, np.nan), 1., 2., 3.]})
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter('always')
+        scores = hyp.predict(frame, model=['Kalman', 'ARIMA'], holdout=3)
+    assert scores.loc['naive', 'unscored'] == 3
+    assert scores.loc[['Kalman', 'ARIMA'], 'unscored'].sum() == 0
+    assert scores.attrs['incomplete'] == ['naive']
+    assert scores.attrs['best'] == scores.drop(index='naive')['MAE'].idxmin()
+    assert scores.attrs['beats_baseline'] is None
+    assert any("baseline 'naive'" in str(w.message)
+               and 'beats_baseline' in str(w.message) for w in caught)
+
+
+def _forecast_columns_reversed(data, n_steps, future_index, **kwargs):
+    last = data.ffill().iloc[-1]
+    frame = pd.DataFrame(
+        np.repeat(last.to_numpy(dtype=float)[None, :], n_steps, axis=0),
+        index=future_index, columns=data.columns)
+    return frame[list(data.columns)[::-1]]
+
+
+class ReversedColumns(Forecaster):
+    """A user forecaster (last value carried forward) that hands its
+    columns back in reverse order, correctly labelled."""
+
+    def __init__(self, **kwargs):
+        super().__init__(forecaster=_forecast_columns_reversed, **kwargs)
+
+
+def _forecast_renamed(data, n_steps, future_index, **kwargs):
+    return _forecast_columns_reversed(data, n_steps, future_index).rename(
+        columns={'b': 'c'})
+
+
+class RenamedColumns(Forecaster):
+    def __init__(self, **kwargs):
+        super().__init__(forecaster=_forecast_renamed, **kwargs)
+
+
+def test_holdout_scores_a_forecast_by_column_label():
+    frame = _series(n=40)
+    frame['b'] += 50          # make a positional mix-up unmissable
+    scores, forecasts = hyp.predict(frame, model=ReversedColumns, holdout=5,
+                                    return_forecasts=True)
+    # the same last-value forecast as the baseline, so the same scores
+    for metric in ('MAE', 'RMSE', 'MAPE'):
+        assert scores.loc['ReversedColumns', metric] == pytest.approx(
+            scores.loc['naive', metric])
+    assert list(forecasts['ReversedColumns'].columns) == ['a', 'b']
+    with pytest.raises(ValueError, match=r"(?s)RenamedColumns.*column.*'c'"):
+        hyp.predict(frame, model=RenamedColumns, holdout=5)
