@@ -1606,6 +1606,44 @@ Because 1.1.0 had not been published, they ship in it.
   `animate=` entry now says how large an animated plotly figure gets: a
   3000-row, 300-frame 3-D animation is about 6.7 MB of JSON, and
   `resample=1000` brings it to about 2.3 MB.
+- **`hyp.describe` sweeps the dimensionality of a reducer instance.** A
+  configured instance such as `reduce=PCA(n_components=2)`, and a dict spec
+  that pins it (`{'model': 'PCA', 'kwargs': {'n_components': 2}}`), were
+  reduced to that one dimensionality at every point of the sweep while the
+  curve labelled the points 2, 3, 4, ... (on 60 x 6 random data: 0.739 four
+  times, against 0.739, 0.852, 0.930, 0.974 for `reduce='PCA'`; also in
+  1.0). The sweep's dimensionality now always wins: an unfitted instance is
+  cloned for each point with `n_components` set to that point, keeping its
+  other settings and leaving the instance you passed unmodified and
+  unfitted, and an `n_components` in a dict spec's kwargs is ignored. Both
+  give the same curve as the name, without the "Unequal values passed to
+  dims and n_components" warnings. An already fitted model (including the
+  `Reducer` or `Pipeline` that `hyp.reduce(..., return_model=True)`
+  returns), whose dimensionality is fixed by its fit, and an instance with
+  no `n_components` parameter now raise a `ValueError` that says to pass a
+  name, a dict spec or an unfitted instance; they used to draw the flat
+  curve.
+- **`sklearn.base.clone` works on a `hyp.Pipeline`.** `Pipeline` is a
+  scikit-learn `BaseEstimator`, but `clone(pipeline)` raised `RuntimeError:
+  Cannot clone object ... as the constructor either does not set or
+  modifies parameter steps` (also in 1.0). It now returns an unfitted
+  pipeline with the same step names, order and settings and independent
+  copies of every step, including nested pipelines and the pipelines that
+  `return_model=True` returns. `hyp.apply_model(data, pipeline,
+  stack=False, return_model=True)`, which clones the model for each
+  dataset, therefore returns one fitted pipeline per dataset and leaves the
+  one you passed unfitted; it used to return the same pipeline for every
+  dataset, holding only the last dataset's fit (the transformed data is
+  unchanged). `set_params(steps=...)` resolves and names
+  the new steps as the constructor does (it used to store them raw), and a
+  nested `<step>__<parameter>` name is refused with an error that says to
+  use `named_steps`.
+- **`Normalize(mode='isotropic')` docstring correction.** It said a rotated
+  copy of a cloud is rescaled by the same scalar. The scalar is the largest
+  absolute coordinate deviation from the centroid, which depends on the
+  cloud's orientation (9.03 for a 200-point 2-D cloud, 7.21 for the same
+  cloud turned 45 degrees). The shape is preserved either way; the
+  behaviour is unchanged.
 
 ### Documented limitations
 

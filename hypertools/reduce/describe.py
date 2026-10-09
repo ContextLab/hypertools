@@ -32,7 +32,7 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True,
         number of columns (ragged lists raise a `ValueError`); `None`
         raises a `TypeError`.
 
-    reduce : str, dict, class, instance, or fitted Reducer
+    reduce : str, dict, class, or unfitted instance
         Decomposition/manifold learning model to use (default:
         'IncrementalPCA'). Models supported: PCA, IncrementalPCA, SparsePCA,
         MiniBatchSparsePCA, KernelPCA, FastICA, FactorAnalysis, TruncatedSVD,
@@ -46,6 +46,19 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True,
         Can be passed as a string, or for finer control as a dictionary, e.g.
         reduce={'model': 'PCA', 'kwargs': {'whiten': True}}. See scikit-learn
         model docs for details on parameters supported for each model.
+
+        The sweep sets the number of dimensions itself, at every point,
+        so a dimensionality in the spec never takes effect: an
+        ``n_components`` entry in a dict spec's ``'kwargs'`` is ignored,
+        and an unfitted instance such as ``PCA(n_components=2,
+        whiten=True)`` is cloned for each point with ``n_components`` set
+        to that point (its other settings are kept, and the instance you
+        passed is neither modified nor fitted). An ALREADY FITTED model --
+        including the `Reducer` or `Pipeline` that ``hyp.reduce(...,
+        return_model=True)`` returns -- raises a `ValueError`, because
+        its dimensionality was fixed by the fit; so does an instance with
+        no ``n_components`` parameter. Pass a name, a dict spec or an
+        unfitted instance instead.
 
     max_dims : int
         Dimensionalities 2 through `max_dims - 1` are evaluated (the bound
@@ -184,6 +197,10 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True,
         return method == 'barnes_hut'
 
     tsne_dims_cap = 4 if _tsne_barnes_hut(reduce) else None
+    # the sweep sets the dimensionality at every point, whatever form the
+    # reducer was given in; a model whose dimensionality cannot be varied
+    # is refused here, before anything is computed or drawn
+    spec_for = _sweep_spec(reduce)
     _dim_cap_warned = []  # warn about a too-large max_dims only once
 
     def summary(x, max_dims=None):
@@ -263,7 +280,8 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True,
 
         corrs=[]
         for dims in range(2, max_dims):
-            reduced = get_cdist(reducer(x, ndims=dims, reduce=reduce))
+            reduced = get_cdist(reducer(x, ndims=dims,
+                                        reduce=spec_for(dims)))
             corrs.append(get_corr(reduced, alldims))
             del reduced
         return corrs
@@ -436,6 +454,162 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True,
     # (F11-reduce-describe-015)
     result['fig'] = fig
     return result
+
+
+_SWEEP_ALTERNATIVES = (
+    "Pass the model's name (e.g. reduce='PCA'), a spec such as "
+    "{'model': 'PCA', 'kwargs': {'whiten': True}}, or an unfitted instance "
+    "(e.g. PCA(whiten=True)) instead; describe() sets the number of "
+    "dimensions itself at each point of the sweep.")
+
+
+def _is_fitted_model(model):
+    """Whether a reducer instance already carries a fit.
+
+    Parameters
+    ----------
+    model : object
+        An already-constructed model: a `hypertools.Pipeline`, a
+        `hypertools.reduce.common.Reducer`, or a scikit-learn-style
+        instance.
+
+    Returns
+    -------
+    bool
+        The object's own ``is_fitted`` flag when it has one (hypertools'
+        wrappers and pipelines); otherwise scikit-learn's
+        `check_is_fitted` verdict. An object that reports nothing either
+        way counts as not fitted.
+    """
+    from ..core.pipeline import _step_is_fitted
+    return _step_is_fitted(model)
+
+
+def _clone_with_dims(model, dims):
+    """An unfitted copy of `model` with ``n_components`` set to `dims`.
+
+    Parameters
+    ----------
+    model : object
+        An unfitted scikit-learn-style reducer instance with an
+        ``n_components`` parameter (validated by `_sweep_spec`).
+    dims : int
+        The dimensionality for the copy.
+
+    Returns
+    -------
+    object
+        A `sklearn.base.clone` of `model` (same settings, no fitted
+        state) for an estimator with ``get_params``, else a deep copy;
+        `model` itself is never modified.
+    """
+    if hasattr(model, 'get_params') and hasattr(model, 'set_params'):
+        from sklearn.base import clone
+        return clone(model).set_params(n_components=dims)
+    import copy
+    duplicate = copy.deepcopy(model)
+    duplicate.n_components = dims
+    return duplicate
+
+
+def _check_sweepable_instance(model):
+    """Refuse a reducer instance whose dimensionality the sweep cannot vary.
+
+    Parameters
+    ----------
+    model : object
+        An already-constructed model passed as `reduce=` (directly or as
+        a dict spec's ``'model'``).
+
+    Raises
+    ------
+    ValueError
+        If `model` is already fitted (its dimensionality was fixed by the
+        fit), or has no ``n_components`` parameter to set. The message
+        says what to pass instead.
+    """
+    kind = type(model).__name__
+    if _is_fitted_model(model):
+        raise ValueError(
+            f"describe() cannot sweep the number of dimensions of an "
+            f"already fitted model (got a fitted {kind}): its "
+            f"dimensionality was fixed when it was fit, so every point of "
+            f"the curve would be the same reduction. "
+            + _SWEEP_ALTERNATIVES)
+    if hasattr(model, 'get_params'):
+        settable = 'n_components' in model.get_params(deep=False)
+    else:
+        settable = hasattr(model, 'n_components')
+    if not settable:
+        raise ValueError(
+            f"describe() cannot sweep the number of dimensions of this "
+            f"{kind} instance: it has no n_components parameter to set, so "
+            f"its dimensionality cannot be varied. " + _SWEEP_ALTERNATIVES)
+
+
+def _sweep_spec(reduce):
+    """Build the per-dimensionality `reduce=` spec for `describe`'s sweep.
+
+    `describe` evaluates one reduction per candidate dimensionality, so
+    the dimensionality in the spec itself must never win over the sweep's:
+    a reducer pinned to 2 components would be evaluated at 2 components
+    for every point while the curve labelled them 2, 3, 4, ... (1.1
+    release review).
+
+    Parameters
+    ----------
+    reduce : str, dict, class, instance or None
+        `describe`'s `reduce=` argument.
+
+    Returns
+    -------
+    callable
+        ``spec_for(dims)``: the spec to hand `hypertools.reduce` together
+        with ``ndims=dims``. A name, a class and ``None`` are returned
+        as they are (`ndims` already sets their dimensionality). A dict
+        spec is copied with any ``n_components`` entry removed from its
+        ``'kwargs'``/``'params'``. An unfitted instance (bare, or as a
+        dict spec's ``'model'``) is replaced by a fresh clone with
+        ``n_components=dims``; the caller's object is never modified.
+
+    Raises
+    ------
+    ValueError
+        For an already-fitted model (including the `Reducer` or
+        `Pipeline` that ``return_model=True`` returns) and for an
+        instance with no ``n_components`` parameter.
+    """
+    def is_instance(model):
+        """Whether `model` is an already-constructed object, as opposed to
+        a name, a class, a dict spec or ``None``/``False``."""
+        return not (model is None or model is False
+                    or isinstance(model, (str, dict))
+                    or inspect.isclass(model))
+
+    if isinstance(reduce, dict):
+        inner = reduce.get('model')
+        if is_instance(inner):
+            _check_sweepable_instance(inner)
+
+        def spec_for(dims):
+            """A copy of the dict spec for one sweep point: no pinned
+            ``n_components``, and an instance model cloned at `dims`."""
+            spec = dict(reduce)
+            for key in ('kwargs', 'params'):
+                if isinstance(spec.get(key), dict):
+                    spec[key] = {name: value
+                                 for name, value in spec[key].items()
+                                 if name != 'n_components'}
+            if is_instance(inner):
+                spec['model'] = _clone_with_dims(inner, dims)
+            return spec
+        return spec_for
+
+    if is_instance(reduce):
+        _check_sweepable_instance(reduce)
+        return lambda dims: _clone_with_dims(reduce, dims)
+
+    return lambda dims: reduce
 
 
 def _mean_curve(curves):

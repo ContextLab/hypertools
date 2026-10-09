@@ -29,9 +29,10 @@ every `.transform()` -- e.g. a `reduce='PCA'` stage would fit a brand
 NEW PCA basis on whatever data `.transform` was given, rather than
 reusing the basis fit the first time).
 """
+import copy
 import warnings
 
-from sklearn.base import BaseEstimator
+from sklearn.base import BaseEstimator, clone as _sklearn_clone
 from sklearn.exceptions import NotFittedError
 
 from .model import external_stacklevel
@@ -424,6 +425,47 @@ def _raise_if_manip_emptied_rows(data, result, spec, downstream):
             "rows before the next stage.")
 
 
+def _unfitted_copy(obj):
+    """An unfitted, independent copy of a pipeline step or of a stage spec.
+
+    Used by `Pipeline.__sklearn_clone__` (what `sklearn.base.clone` calls).
+
+    Parameters
+    ----------
+    obj : object
+        A resolved pipeline step (a nested `Pipeline`, a `_DispatchStep`,
+        or a model instance), or the spec a `_DispatchStep` was built
+        from (a name, class, dict spec, instance, or `None`/`False`).
+
+    Returns
+    -------
+    object
+        Names, classes, `None` and booleans are returned as they are
+        (they hold no state). A dict spec is copied with its ``'model'``
+        copied the same way. A `_DispatchStep` is rebuilt, unfitted,
+        around a copy of its spec. An object with ``get_params`` (any
+        scikit-learn estimator, hypertools' own stage classes, a nested
+        `Pipeline`) is cloned with `sklearn.base.clone`: same settings,
+        no fitted state. Anything else is deep-copied -- scikit-learn's
+        own rule for non-estimators -- which keeps whatever state it has.
+    """
+    if obj is None or isinstance(obj, (str, bool, type)):
+        return obj
+    if isinstance(obj, _DispatchStep):
+        return obj._unfitted_copy()
+    if isinstance(obj, dict):
+        duplicate = dict(obj)
+        if 'model' in duplicate:
+            duplicate['model'] = _unfitted_copy(duplicate['model'])
+        for key in ('args', 'kwargs', 'params'):
+            if key in duplicate:
+                duplicate[key] = copy.deepcopy(duplicate[key])
+        return duplicate
+    if hasattr(obj, 'get_params'):
+        return _sklearn_clone(obj)
+    return copy.deepcopy(obj)
+
+
 class _DispatchStep:
     """Wrap a stage dispatcher (`hyp.manip`/`hyp.normalize`/`hyp.reduce`/
     `hyp.align`/`hyp.cluster`) as a fit/transform step that genuinely
@@ -541,6 +583,22 @@ class _DispatchStep:
         self._fitted = fitted
         return result
 
+    def _unfitted_copy(self):
+        """A new, unfitted step for the same stage, around an unfitted copy
+        of the original spec (see the module-level `_unfitted_copy`); the
+        fitted model this step holds is not carried over."""
+        spec = self._spec
+        from ..reduce.common import Reducer
+        if isinstance(spec, Reducer):
+            # a `Reducer` handed in as the spec is a FITTED one being
+            # reused (`hyp.reduce` accepts no unfitted `Reducer`), so its
+            # unfitted counterpart is the model it wraps: the class plus
+            # its constructor arguments, or the configured instance
+            spec = ({'model': spec.model, 'kwargs': dict(spec.params or {})}
+                    if isinstance(spec.model, type) else spec.model)
+        return type(self)(self._name, _unfitted_copy(spec), self._call,
+                          downstream=getattr(self, '_downstream', ()))
+
     def __repr__(self):
         return f"<{self._name} stage>"
 
@@ -594,11 +652,22 @@ class Pipeline(BaseEstimator):
 
     Notes
     -----
-    `steps` stores already-*resolved* `(name, instance)` tuples (specs are
-    resolved to instances in `__init__`), not the raw constructor input. This
-    deviates from scikit-learn's clone contract, which expects `get_params`/
-    `set_params` to round-trip the exact constructor arguments -- so
-    `sklearn.base.clone(pipe)` compatibility is not guaranteed.
+    `Pipeline` is a scikit-learn `BaseEstimator`. `steps` stores
+    already-*resolved* `(name, instance)` tuples (specs are resolved to
+    instances, and unnamed ones named, in `__init__`), not the raw
+    constructor input, so `get_params()['steps']` is that resolved list.
+    `set_params(steps=...)` resolves and names new steps exactly like the
+    constructor, and discards the pipeline's own fitted state. Nested
+    ``<step>__<parameter>`` names are not supported: configure a step
+    through `named_steps`, or pass new `steps`.
+
+    `sklearn.base.clone(pipe)` returns an UNFITTED pipeline with the same
+    step names, order and settings and independent copies of every step,
+    whether or not `pipe` is fitted; fitting the clone leaves `pipe`
+    untouched. Steps are copied the way scikit-learn copies them: an
+    estimator (anything with `get_params`) by `clone`, i.e. same settings
+    and no fitted state; any other object by a deep copy, which keeps
+    whatever state it has.
 
     Steps receive the running output AS-IS (no stacking/unstacking), so raw
     scikit-learn steps operate on a single array/DataFrame; only
@@ -630,6 +699,33 @@ class Pipeline(BaseEstimator):
     """
 
     def __init__(self, steps, input_hierarchy=None):
+        self.steps = self._resolve_steps(steps)
+        self.input_hierarchy = _validate_input_hierarchy(input_hierarchy)
+        self._is_fitted = False
+
+    @staticmethod
+    def _resolve_steps(steps):
+        """Validate, resolve and name a `steps` argument.
+
+        Parameters
+        ----------
+        steps : list
+            Step specs, as documented for the constructor.
+
+        Returns
+        -------
+        list of (str, object)
+            The named, resolved steps, in order.
+
+        Raises
+        ------
+        TypeError
+            If `steps` is not a list of specs, a tuple step is not a
+            ``('name', spec)`` pair, or a spec resolves to an object with
+            no fit/transform method.
+        ValueError
+            If explicit step names repeat.
+        """
         # up-front validation (2026-07 audit F21-010): a non-list `steps`
         # (e.g. Pipeline('PCA')) used to iterate the string character by
         # character, and malformed tuple steps were stored silently only to
@@ -662,9 +758,76 @@ class Pipeline(BaseEstimator):
                     "a dict spec {'model': ..., 'kwargs': {...}}, or a "
                     "nested Pipeline")
             entries.append((name, model))
-        self.steps = _name_steps(entries)
-        self.input_hierarchy = _validate_input_hierarchy(input_hierarchy)
-        self._is_fitted = False
+        return _name_steps(entries)
+
+    def set_params(self, **params):
+        """Set this pipeline's parameters (scikit-learn's `set_params`).
+
+        Parameters
+        ----------
+        **params
+            ``steps`` and/or ``input_hierarchy``, as for the constructor.
+            New ``steps`` are validated, resolved and named exactly as
+            the constructor does, and the pipeline's own fitted state is
+            discarded (`is_fitted` is then True only if every new step is
+            itself already fitted). Passing the list `get_params` returned
+            leaves the pipeline as it was.
+
+        Returns
+        -------
+        Pipeline
+            `self`.
+
+        Raises
+        ------
+        ValueError
+            For any other parameter name (including nested
+            ``<step>__<parameter>`` names, which are not supported), or
+            an invalid ``input_hierarchy``.
+        TypeError
+            For invalid ``steps`` (see the constructor).
+        """
+        unknown = sorted(set(params) - {'steps', 'input_hierarchy'})
+        if unknown:
+            raise ValueError(
+                f"invalid parameter(s) {', '.join(repr(u) for u in unknown)} "
+                "for Pipeline; valid parameters are 'steps' and "
+                "'input_hierarchy'. Nested '<step>__<parameter>' names are "
+                "not supported: configure a step through "
+                "pipeline.named_steps['<step>'], or pass new steps.")
+        # resolve everything before assigning anything, so a bad value
+        # leaves the pipeline unchanged
+        updates = {}
+        if 'steps' in params and params['steps'] is not self.steps:
+            updates['steps'] = self._resolve_steps(params['steps'])
+        if 'input_hierarchy' in params:
+            updates['input_hierarchy'] = _validate_input_hierarchy(
+                params['input_hierarchy'])
+        if 'steps' in updates:
+            self._is_fitted = False
+        for name, value in updates.items():
+            setattr(self, name, value)
+        return self
+
+    def __sklearn_clone__(self):
+        """`sklearn.base.clone` support: an unfitted, independent copy.
+
+        scikit-learn's default clone rebuilds an estimator from
+        `get_params()` and requires the constructor to store every
+        argument untouched; this constructor resolves and names its
+        steps, so the default raised ``RuntimeError: Cannot clone object
+        ...``. The copy is built step by step instead.
+
+        Returns
+        -------
+        Pipeline
+            A new pipeline of the same class with the same step names and
+            order, each step an unfitted copy (see `_unfitted_copy`), and
+            a deep copy of `input_hierarchy`.
+        """
+        steps = [(name, _unfitted_copy(model)) for name, model in self.steps]
+        return type(self)(
+            steps, input_hierarchy=copy.deepcopy(self.input_hierarchy))
 
     @property
     def named_steps(self):

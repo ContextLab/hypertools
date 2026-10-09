@@ -9,7 +9,8 @@ Contract under test (see `hypertools.manip.normalize.Normalize`):
 - centroid (``data.mean(axis=0)``) lands at ``(min + max) / 2``;
 - every column is divided by the SAME scalar,
   ``abs(data - centroid).max()``, so pairwise-distance ratios (the shape)
-  are unchanged and a rotated copy is rescaled by the same scalar;
+  are unchanged; that scalar is measured along the coordinate axes, so a
+  rotated copy generally gets a DIFFERENT one (same shape, different size);
 - output lies in ``[min, max]`` with at least one coordinate on a bound;
 - ``min=-1, max=1`` reproduces ``(x - mean) / abs(x - mean).max()``
   exactly;
@@ -92,7 +93,31 @@ def test_centroid_lands_at_midpoint_and_range_holds(lo, hi):
     assert np.isclose(out.min(), lo) or np.isclose(out.max(), hi)
 
 
-def test_rotated_copy_is_rescaled_by_the_same_scalar():
+def test_rotated_copy_gets_a_different_scalar():
+    """The scale is the largest absolute COORDINATE deviation, which depends
+    on orientation: an elongated 2-D cloud and its 45-degree rotation are
+    divided by different scalars (1.1 release review -- the docstring used
+    to say a rotated copy is rescaled by the same scalar)."""
+    x = np.random.default_rng(0).normal(size=(200, 2)) * [3.0, 1.0]
+    t = np.pi / 4
+    r = np.array([[np.cos(t), -np.sin(t)], [np.sin(t), np.cos(t)]])
+    rotated = x @ r.T
+    m_a = Normalize(mode='isotropic', min=-1, max=1)
+    m_b = Normalize(mode='isotropic', min=-1, max=1)
+    out_a = np.asarray(m_a.fit_transform(x))
+    out_b = np.asarray(m_b.fit_transform(rotated))
+    assert np.isclose(m_a.peak, np.abs(x - x.mean(axis=0)).max())
+    assert np.isclose(m_b.peak, np.abs(rotated - rotated.mean(axis=0)).max())
+    assert np.isclose(m_a.peak, 9.0251, atol=1e-4)
+    assert np.isclose(m_b.peak, 7.2069, atol=1e-4)
+    # shape is preserved in both: each output is its input scaled by one
+    # constant, and the constants differ by the ratio of the two scalars
+    assert np.allclose(pdist(out_a) * m_a.peak, pdist(x))
+    assert np.allclose(pdist(out_b) * m_b.peak, pdist(rotated))
+    assert np.allclose(pdist(out_b) / pdist(out_a), m_a.peak / m_b.peak)
+
+
+def test_rotated_copy_keeps_its_shape_up_to_one_scalar():
     x = _cloud()
     r = _rotation()
     centred = x - x.mean(axis=0)

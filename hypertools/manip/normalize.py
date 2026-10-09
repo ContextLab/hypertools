@@ -287,8 +287,11 @@ class Normalize(Manipulator):
         coordinate exactly on a face; that cube is then mapped affinely
         onto `[min, max]`. All pairwise distances are scaled by one
         constant, so the data's shape (angles, distance ratios) is
-        preserved and a rotated copy is rescaled by the same scalar. The
-        centroid lands at the midpoint ``(min + max) / 2`` and every
+        preserved. The scalar is measured along the coordinate axes, so
+        it depends on the data's orientation: a rotated copy of the same
+        cloud is generally divided by a different scalar (its shape is
+        preserved just the same, but the two results differ in size).
+        The centroid lands at the midpoint ``(min + max) / 2`` and every
         coordinate lies in `[min, max]`, with at least one coordinate
         touching `min` or `max`. With ``min=-1, max=1`` this is exactly
         ``(x - x.mean(axis=0)) / abs(x - x.mean(axis=0)).max()`` -- the
