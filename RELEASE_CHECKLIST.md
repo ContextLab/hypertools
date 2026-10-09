@@ -17,7 +17,7 @@ detached tag checkout — the notebook migrator detects the branch via
 
 - [ ] PR #286 CI fully green (matrix, `wheel-smoke`, `docs-clean`,
       `dataset-gate`, `live-source-gate`).
-- [ ] Full suite green locally: `pytest` (about 5,900 passed, 0 failed —
+- [ ] Full suite green locally: `pytest` (about 6,800 passed, 0 failed —
       including `tests/test_examples_are_native.py`, the native-usage gate,
       at 0 failed).
 - [ ] Example smoke gate: `HYPERTOOLS_EXAMPLE_SMOKE=1 pytest tests/test_examples_are_native.py`
