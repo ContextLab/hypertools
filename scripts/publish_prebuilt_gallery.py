@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 """Publish the BUILT example gallery (``docs/auto_examples``) to the
-``docs-gallery-v<version>`` branch, for Read the Docs to reuse.
+``docs-gallery-v<version>`` branch, for Read the Docs to reuse, and record
+the published commit in ``docs/prebuilt_gallery.json``.
 
 Read the Docs ends a build after 15 minutes and executing the gallery takes
 about 25, so its build fetches this tree instead
@@ -11,13 +12,18 @@ The branch is one orphan commit holding ``auto_examples/`` and a
 ``manifest.json`` (version, source commit, the md5 of every example's
 source). Publishing again REPLACES that commit (a forced push): the tree is
 about 100 MB of images and video, and keeping every republish would grow the
-repository by that much each time. Nothing on the main branch changes.
+repository by that much each time.
+
+``--push`` then writes the new commit's id to ``docs/prebuilt_gallery.json``.
+COMMIT THAT FILE: the docs build fetches the gallery by that id, not by branch
+name, so a build can only ever use the tree its own checkout recorded. That
+commit is the one change allowed between building the gallery and releasing
+(the release gate checks it is the only one).
 
 It refuses to publish a gallery that is not a complete build of this
 checkout: the tracked tree must be clean, every example must have a current
-md5 in the gallery, no page may contain this machine's path to the
-checkout, and the tree must pass the same safety check the fetch step applies
-(regular files only; pages read nothing outside the gallery).
+md5 in the gallery, no page may contain this machine's path to the checkout,
+and the tree may hold only regular files.
 
 Run MANUALLY as a release step, after ``make html`` from the release commit
 (see RELEASE_CHECKLIST.md):
@@ -51,7 +57,7 @@ def _load_fetch_module():
 fpg = _load_fetch_module()
 
 # files a reader's browser or sphinx reads as text; scanned for local paths
-_TEXT_SUFFIXES = ('.rst', '.py', '.ipynb', '.json', '.txt', '.html', '.md5')
+_TEXT_SUFFIXES = ('.rst', '.py', '.ipynb', '.json', '.txt', '.html')
 
 
 def _git(args, cwd):
@@ -93,6 +99,12 @@ def manifest_content(repo_root, version, source_commit):
     }
 
 
+def pin_content(version, commit, source_commit):
+    """``docs/prebuilt_gallery.json``: the gallery commit a build fetches."""
+    return {'version': version, 'commit': commit,
+            'source_commit': source_commit}
+
+
 def problems(repo_root, gallery_dir):
     """Reasons this gallery must not be published (empty when it may be)."""
     found = []
@@ -108,10 +120,10 @@ def problems(repo_root, gallery_dir):
     if stale:
         found.append('the gallery is not a complete build of these examples '
                      '(no current md5 for: ' + ', '.join(stale) + ')')
-    unsafe = fpg.unsafe_entries(gallery_dir)
-    if unsafe:
-        found.append('the fetch step would reject this gallery: '
-                     + '; '.join(unsafe))
+    irregular = fpg.irregular_entries(gallery_dir)
+    if irregular:
+        found.append('the gallery holds entries that are not regular files: '
+                     + ', '.join(irregular))
     leaked = files_naming(gallery_dir, os.path.abspath(repo_root))
     if leaked:
         found.append("pages contain this machine's path to the checkout: "
@@ -130,7 +142,8 @@ def publish(repo_root=_REPO, gallery_dir=None, push=False,
         return 1
     version = fpg.project_version(repo_root)
     branch = fpg.branch_for(version)
-    manifest = manifest_content(repo_root, version, head_commit(repo_root))
+    source_commit = head_commit(repo_root)
+    manifest = manifest_content(repo_root, version, source_commit)
     work = tempfile.mkdtemp(prefix='docs-gallery-')
     try:
         shutil.copytree(gallery_dir, os.path.join(work, fpg.GALLERY_DIRNAME),
@@ -144,8 +157,8 @@ def publish(repo_root=_REPO, gallery_dir=None, push=False,
         steps = [
             ['init', '--quiet', '--initial-branch', branch],
             ['add', '-A'],
-            ['commit', '--quiet', '-m', f'docs: pre-built gallery for v{version} '
-                   f'(from {manifest["source_commit"]})'],
+            ['commit', '--quiet', '-m',
+             f'docs: pre-built gallery for v{version} (from {source_commit})'],
         ]
         if push:
             steps.append(['push', '--quiet', '--force', remote,
@@ -156,13 +169,21 @@ def publish(repo_root=_REPO, gallery_dir=None, push=False,
                 print(f'git {step[0]} failed: {done.stderr.strip()}',
                       file=sys.stderr)
                 return 1
-        if push:
-            print(f'pushed {n_files} files to {branch} '
-                  f'(from {manifest["source_commit"]})')
-        else:
+        commit = _git(['rev-parse', 'HEAD'], work).stdout.strip()
+        if not push:
             # the commit lives in a throwaway directory deleted below
             print(f'validated {n_files} files for {branch} locally; no push '
                   'performed (pass --push to publish)')
+            return 0
+        pin_path = os.path.join(repo_root, fpg.PIN_RELPATH)
+        with open(pin_path, 'w', encoding='utf-8') as f:
+            json.dump(pin_content(version, commit, source_commit), f,
+                      indent=2, sort_keys=True)
+            f.write('\n')
+        print(f'pushed {n_files} files to {branch} as {commit} '
+              f'(built from {source_commit})')
+        print(f'wrote {fpg.PIN_RELPATH}; commit it -- the docs build fetches '
+              'the gallery by that commit id')
         return 0
     finally:
         shutil.rmtree(work, ignore_errors=True)

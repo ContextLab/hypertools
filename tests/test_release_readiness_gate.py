@@ -494,18 +494,51 @@ def test_release_gate_gallery_colab_notebooks_are_published():
     assert ok, f'RELEASE GATE: docs-notebooks/v{version}/ {reason}'
 
 
+def _github_json(path):
+    """One authenticated-when-possible GitHub API read; fails closed."""
+    import json
+    import urllib.request
+    req = urllib.request.Request(
+        'https://api.github.com/repos/ContextLab/hypertools/' + path,
+        headers={'Accept': 'application/vnd.github+json',
+                 'User-Agent': 'hypertools-release-gate'})
+    token = os.environ.get('GITHUB_TOKEN') or os.environ.get('GH_TOKEN')
+    if token:
+        req.add_header('Authorization', f'Bearer {token}')
+    with urllib.request.urlopen(req, timeout=30) as r:
+        return json.loads(r.read().decode('utf-8'))
+
+
+def _files_changed_since(commit, head):
+    """Paths that differ between ``commit`` and ``head``. Uses the local
+    history when it has ``commit`` (a full clone, before the push) and the
+    GitHub compare API otherwise (CI checks out one commit)."""
+    out = subprocess.run(['git', 'diff', '--name-only', commit, head],
+                         cwd=_REPO, capture_output=True, text=True)
+    if out.returncode == 0:
+        return sorted(p for p in out.stdout.splitlines() if p)
+    data = _github_json(f'compare/{commit}...{head}')
+    assert data.get('status') in ('ahead', 'identical'), (
+        f'RELEASE GATE: {commit} is not an ancestor of the release commit '
+        f'{head} (compare status {data.get("status")!r})')
+    return sorted(f['filename'] for f in data.get('files', []))
+
+
 @pytest.mark.skipif(
     not REQUIRE_RELEASE,
     reason='release gate; set HYPERTOOLS_REQUIRE_RELEASE=1 (the release-gate '
            'CI job does on master/tag builds)')
 def test_release_gate_prebuilt_gallery_is_published_for_this_commit():
     # Read the Docs ends a build after 15 minutes and executing the gallery
-    # takes longer, so its build reuses the gallery published to the
-    # docs-gallery-v<version> branch (docs/fetch_prebuilt_gallery.py). Without
-    # one built from THIS commit the docs for the release time out, or show
-    # figures another commit's code drew. The manifest must name HEAD and
-    # carry the md5 of every example as it is in this checkout (the md5 is
-    # what sphinx-gallery compares before it skips executing an example).
+    # takes longer, so its build fetches the gallery recorded in
+    # docs/prebuilt_gallery.json BY COMMIT ID (docs/fetch_prebuilt_gallery.py).
+    # Without a usable record the docs for the release time out, or show
+    # figures another commit's code drew. The record must be for this
+    # version; its commit must be what the docs-gallery branch still points
+    # at (so it can be fetched); the gallery must have been built from this
+    # release commit, give or take the commit that recorded it; and its
+    # manifest must carry the md5 of every example as it is in this checkout
+    # (the md5 is what sphinx-gallery compares before it skips an example).
     import hashlib
     import json
     import urllib.request
@@ -514,21 +547,52 @@ def test_release_gate_prebuilt_gallery_is_published_for_this_commit():
     if head is None:
         pytest.fail('RELEASE GATE: cannot determine the release HEAD commit; '
                     'run the gate from the git checkout being released.')
+    pin_path = os.path.join(_REPO, 'docs', 'prebuilt_gallery.json')
+    how = ('Build the docs from the release commit, run '
+           'scripts/publish_prebuilt_gallery.py --push, and commit '
+           'docs/prebuilt_gallery.json.')
+    if not os.path.isfile(pin_path):
+        pytest.fail(f'RELEASE GATE: no docs/prebuilt_gallery.json. {how}')
+    with open(pin_path, encoding='utf-8') as f:
+        pin = json.load(f)
+    commit, built_from = pin.get('commit'), pin.get('source_commit')
+    assert pin.get('version') == version, (
+        f'RELEASE GATE: docs/prebuilt_gallery.json is for version '
+        f'{pin.get("version")!r}, not {version!r}. {how}')
+    assert _SHA40_RE.match(str(commit)) and _SHA40_RE.match(str(built_from)), (
+        'RELEASE GATE: docs/prebuilt_gallery.json must record two full '
+        f'commit ids, found commit={commit!r} source_commit={built_from!r}')
+
+    # 1) the recorded commit is the one the gallery branch points at
+    try:
+        ref = _github_json(f'git/ref/heads/docs-gallery-v{version}')
+    except Exception as e:                            # HTTPError(404) etc.
+        pytest.fail(f'RELEASE GATE: no docs-gallery-v{version} branch '
+                    f'({getattr(e, "code", e)}). {how}')
+    assert ref['object']['sha'] == commit, (
+        f'RELEASE GATE: docs-gallery-v{version} points at '
+        f'{ref["object"]["sha"]}, but this checkout records {commit}; a '
+        f'build of this checkout could not fetch its gallery. {how}')
+
+    # 2) built from this release commit: nothing but the record itself may
+    #    have changed since
+    changed = _files_changed_since(built_from, head)
+    assert set(changed) <= {'docs/prebuilt_gallery.json'}, (
+        f'RELEASE GATE: files changed since the gallery was built from '
+        f'{built_from}: {changed}. {how}')
+
+    # 3) the published manifest covers exactly this checkout's examples
     url = ('https://raw.githubusercontent.com/ContextLab/hypertools/'
-           f'docs-gallery-v{version}/manifest.json')
+           f'{commit}/manifest.json')
     try:
         with urllib.request.urlopen(url, timeout=30) as r:
             manifest = json.loads(r.read().decode('utf-8'))
-    except Exception as e:                            # HTTPError(404) etc.
-        pytest.fail(
-            f'RELEASE GATE: no pre-built gallery manifest on branch '
-            f'docs-gallery-v{version} ({getattr(e, "code", e)}). Build the '
-            'docs from the release commit, then run '
-            'scripts/publish_prebuilt_gallery.py --push.')
-    assert manifest.get('source_commit') == head, (
-        f'RELEASE GATE: the pre-built gallery was built from '
-        f'{manifest.get("source_commit")}, not this release commit {head}; '
-        'rebuild the docs and run scripts/publish_prebuilt_gallery.py --push.')
+    except Exception as e:
+        pytest.fail(f'RELEASE GATE: cannot read the manifest of gallery '
+                    f'commit {commit} ({getattr(e, "code", e)}). {how}')
+    assert manifest.get('source_commit') == built_from, (
+        f'RELEASE GATE: gallery commit {commit} says it was built from '
+        f'{manifest.get("source_commit")}, the record says {built_from}')
     examples_dir = os.path.join(_REPO, 'examples')
     local = {}
     for name in sorted(os.listdir(examples_dir)):

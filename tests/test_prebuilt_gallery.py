@@ -3,10 +3,11 @@
 ``docs/fetch_prebuilt_gallery.py`` (fetch).
 
 Read the Docs ends a build after 15 minutes and executing the gallery takes
-longer, so its build fetches the gallery the release pipeline published and
-sphinx-gallery skips every example whose source md5 is unchanged. Publishing
-is a MANUAL release step with no CI job, so the round trip is exercised here
-against a real local bare git remote.
+longer, so its build fetches the gallery the release pipeline published, by
+the commit id recorded in ``docs/prebuilt_gallery.json``, and sphinx-gallery
+skips every example whose source md5 is unchanged. Publishing is a MANUAL
+release step with no CI job, so the round trip is exercised here against a
+real local bare git remote.
 """
 
 import importlib.util
@@ -141,26 +142,46 @@ def test_stale_examples_are_the_ones_sphinx_would_execute(tmp_path,
         'plot_a.py', 'plot_new.py']
 
 
+def _publish_and_pin(root, remote):
+    """Publish the gallery built in ``root`` and commit the recorded id, as
+    the release checklist does. Returns the gallery commit id."""
+    assert ppg.publish(repo_root=str(root), push=True,
+                       remote=str(remote)) == 0
+    pin = json.loads((root / 'docs' / 'prebuilt_gallery.json').read_text(
+        encoding='utf-8'))
+    _git(['add', 'docs/prebuilt_gallery.json'], root)
+    _git(['commit', '--quiet', '-m', 'pin the pre-built gallery'], root)
+    return pin
+
+
+def _fresh_clone(tmp_path, root, name='fresh'):
+    """A second checkout of the same commit, as Read the Docs would have."""
+    fresh = tmp_path / name
+    _git(['clone', '--quiet', str(root), str(fresh)], tmp_path)
+    assert not (fresh / 'docs' / 'auto_examples').exists()
+    return fresh
+
+
 def test_publish_then_fetch_round_trip(tmp_path, git_identity, capsys):
     root = _checkout(tmp_path)
     gallery = _build_gallery(root)
     remote = _bare_remote(tmp_path)
+    built_from = ppg.head_commit(str(root))
 
-    assert ppg.publish(repo_root=str(root), push=True,
-                       remote=str(remote)) == 0
-    head = ppg.head_commit(str(root))
-    shown = subprocess.run(
-        ['git', 'show', 'docs-gallery-v9.8.7:manifest.json'], cwd=remote,
-        check=True, capture_output=True, text=True).stdout
-    manifest = json.loads(shown)
-    assert manifest['source_commit'] == head
-    assert manifest['version'] == '9.8.7'
+    pin = _publish_and_pin(root, remote)
+    assert pin['version'] == '9.8.7'
+    assert pin['source_commit'] == built_from
+    on_branch = subprocess.run(
+        ['git', 'rev-parse', 'docs-gallery-v9.8.7'], cwd=remote, check=True,
+        capture_output=True, text=True).stdout.strip()
+    assert pin['commit'] == on_branch
+    manifest = json.loads(subprocess.run(
+        ['git', 'show', f'{pin["commit"]}:manifest.json'], cwd=remote,
+        check=True, capture_output=True, text=True).stdout)
+    assert manifest['source_commit'] == built_from
     assert manifest['examples'] == fpg.example_md5s(root / 'examples')
 
-    # a second checkout of the same commit, as Read the Docs would have
-    fresh = tmp_path / 'fresh'
-    _git(['clone', '--quiet', str(root), str(fresh)], tmp_path)
-    assert not (fresh / 'docs' / 'auto_examples').exists()
+    fresh = _fresh_clone(tmp_path, root)
     status, stale = fpg.fetch(str(fresh), remote=str(remote))
     assert (status, stale) == ('fetched', [])
     for path in sorted(p.relative_to(gallery) for p in gallery.rglob('*')
@@ -171,14 +192,43 @@ def test_publish_then_fetch_round_trip(tmp_path, git_identity, capsys):
     assert '2 of 2 examples are current' in capsys.readouterr().out
 
 
+def test_overwriting_the_branch_cannot_change_what_a_build_reads(
+        tmp_path, git_identity):
+    # the gallery is fetched by the commit id the checkout recorded; whoever
+    # later pushes something else to the branch does not reach that build
+    root = _checkout(tmp_path)
+    gallery = _build_gallery(root)
+    remote = _bare_remote(tmp_path)
+    _publish_and_pin(root, remote)
+    honest = (gallery / 'plot_a.rst').read_bytes()
+
+    def build(g):
+        (g / 'plot_a.rst').write_text('.. include:: /etc/passwd\n',
+                                      encoding='utf-8')
+        (g / 'plot_a.py.md5').write_text(
+            fpg.source_md5(root / 'examples' / 'plot_a.py'), encoding='utf-8')
+    _push_tree_as_gallery(tmp_path, remote, build)
+
+    fresh = _fresh_clone(tmp_path, root)
+    status, _stale = fpg.fetch(str(fresh), remote=str(remote))
+    fetched = fresh / 'docs' / 'auto_examples' / 'plot_a.rst'
+    # the recorded commit is either still served (and is what arrives) or it
+    # is gone and nothing arrives; the overwriting tree never does
+    assert status in ('fetched', 'missing')
+    if status == 'fetched':
+        assert fetched.read_bytes() == honest
+    else:
+        assert not fetched.exists()
+
+
 def test_republishing_replaces_the_branch_instead_of_growing_it(
         tmp_path, git_identity):
     root = _checkout(tmp_path)
     _build_gallery(root)
     remote = _bare_remote(tmp_path)
-    for _ in range(2):
-        assert ppg.publish(repo_root=str(root), push=True,
-                           remote=str(remote)) == 0
+    first = _publish_and_pin(root, remote)
+    second = _publish_and_pin(root, remote)
+    assert first['commit'] != second['commit']      # built from a new HEAD
     count = subprocess.run(
         ['git', 'rev-list', '--count', 'docs-gallery-v9.8.7'], cwd=remote,
         check=True, capture_output=True, text=True).stdout.strip()
@@ -190,10 +240,8 @@ def test_fetch_reports_examples_changed_since_publishing(tmp_path,
     root = _checkout(tmp_path)
     _build_gallery(root)
     remote = _bare_remote(tmp_path)
-    assert ppg.publish(repo_root=str(root), push=True,
-                       remote=str(remote)) == 0
-    fresh = tmp_path / 'fresh'
-    _git(['clone', '--quiet', str(root), str(fresh)], tmp_path)
+    _publish_and_pin(root, remote)
+    fresh = _fresh_clone(tmp_path, root)
     (fresh / 'examples' / 'plot_b.py').write_text('print("later")\n',
                                                   encoding='utf-8')
     assert fpg.fetch(str(fresh), remote=str(remote)) == ('fetched',
@@ -202,7 +250,7 @@ def test_fetch_reports_examples_changed_since_publishing(tmp_path,
                      '--require']) == 1          # present, but stale
 
 
-def test_fetch_without_a_published_gallery_lets_the_build_go_on(
+def test_fetch_without_a_recorded_gallery_lets_the_build_go_on(
         tmp_path, git_identity, capsys):
     root = _checkout(tmp_path)
     remote = _bare_remote(tmp_path)
@@ -212,6 +260,40 @@ def test_fetch_without_a_published_gallery_lets_the_build_go_on(
     assert fpg.main(['--repo-root', str(root), '--remote', str(remote)]) == 0
     assert fpg.main(['--repo-root', str(root), '--remote', str(remote),
                      '--require']) == 1
+
+
+@pytest.mark.parametrize('pin', [
+    '{"version": "9.8.7", "commit": "docs-gallery-v9.8.7"}',   # a ref name
+    '{"version": "9.8.7", "commit": "--upload-pack=touch x"}',
+    '{"version": "9.8.7", "commit": "abc123"}',                # abbreviated
+    '{"version": "9.8.6", "commit": "' + 'a' * 40 + '"}',      # other release
+    '["' + 'a' * 40 + '"]',
+    'not json',
+])
+def test_fetch_ignores_a_record_that_is_not_a_full_commit_id_for_this_version(
+        tmp_path, git_identity, pin):
+    # only a 40-hex commit id is ever handed to git: a branch name would make
+    # the fetch follow a ref that can be overwritten
+    root = _checkout(tmp_path)
+    _build_gallery(root)
+    remote = _bare_remote(tmp_path)
+    _publish_and_pin(root, remote)
+    fresh = _fresh_clone(tmp_path, root)
+    (fresh / 'docs' / 'prebuilt_gallery.json').write_text(pin,
+                                                          encoding='utf-8')
+    assert fpg.fetch(str(fresh), remote=str(remote)) == ('missing', None)
+    assert not (fresh / 'docs' / 'auto_examples').exists()
+
+
+def test_fetch_with_an_unfetchable_commit_lets_the_build_go_on(
+        tmp_path, git_identity, capsys):
+    root = _checkout(tmp_path)
+    remote = _bare_remote(tmp_path)
+    (root / 'docs' / 'prebuilt_gallery.json').write_text(
+        json.dumps({'version': '9.8.7', 'commit': 'b' * 40}),
+        encoding='utf-8')
+    assert fpg.fetch(str(root), remote=str(remote)) == ('missing', None)
+    assert 'cannot fetch commit' in capsys.readouterr().out
 
 
 def test_fetch_leaves_an_existing_gallery_alone(tmp_path, git_identity):
@@ -235,6 +317,7 @@ def test_publish_refuses_an_incomplete_gallery(tmp_path, git_identity,
     refs = subprocess.run(['git', 'for-each-ref'], cwd=remote, check=True,
                           capture_output=True, text=True).stdout
     assert refs == ''
+    assert not (root / 'docs' / 'prebuilt_gallery.json').exists()
 
 
 def test_publish_refuses_uncommitted_changes(tmp_path, git_identity, capsys):
@@ -258,9 +341,20 @@ def test_publish_refuses_pages_naming_the_build_machines_path(
     assert 'plot_a.rst' in capsys.readouterr().err
 
 
-def test_publish_without_push_leaves_the_remote_untouched(tmp_path,
-                                                          git_identity,
-                                                          capsys):
+def test_publish_refuses_a_gallery_holding_a_symlink(tmp_path, git_identity,
+                                                     capsys):
+    root = _checkout(tmp_path)
+    gallery = _build_gallery(root)
+    try:
+        (gallery / 'leak.rst').symlink_to(root / 'pyproject.toml')
+    except (OSError, NotImplementedError):
+        pytest.skip('this platform cannot create a symlink here')
+    assert ppg.publish(repo_root=str(root), push=False) == 1
+    assert 'leak.rst' in capsys.readouterr().err
+
+
+def test_publish_without_push_leaves_the_remote_and_the_record_untouched(
+        tmp_path, git_identity, capsys):
     root = _checkout(tmp_path)
     _build_gallery(root)
     remote = _bare_remote(tmp_path)
@@ -270,6 +364,62 @@ def test_publish_without_push_leaves_the_remote_untouched(tmp_path,
     refs = subprocess.run(['git', 'for-each-ref'], cwd=remote, check=True,
                           capture_output=True, text=True).stdout
     assert refs == ''
+    assert not (root / 'docs' / 'prebuilt_gallery.json').exists()
+
+
+def _push_tree_as_gallery(tmp_path, remote, build):
+    """Push a hand-made tree to the gallery branch, bypassing the publisher:
+    what someone with push access could do. ``build(gallery_dir)`` fills
+    ``auto_examples/``. Returns the pushed commit id."""
+    work = tmp_path / f'handmade{len(list(tmp_path.glob("handmade*")))}'
+    (work / 'auto_examples').mkdir(parents=True)
+    build(work / 'auto_examples')
+    (work / 'manifest.json').write_text('{"source_commit": "0"}\n',
+                                        encoding='utf-8')
+    _git(['init', '--quiet', '--initial-branch', 'docs-gallery-v9.8.7'], work)
+    _git(['add', '-A'], work)
+    _git(['commit', '--quiet', '-m', 'handmade'], work)
+    _git(['push', '--quiet', '--force', str(remote),
+          'HEAD:refs/heads/docs-gallery-v9.8.7'], work)
+    return subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=work, check=True,
+                          capture_output=True, text=True).stdout.strip()
+
+
+def test_fetch_rejects_a_recorded_gallery_holding_a_symlink(
+        tmp_path, git_identity, capsys):
+    # copying or reading a symlink would pull a file from the build machine
+    # into the published site
+    secret = tmp_path / 'secret.txt'
+    secret.write_text('build machine secret\n', encoding='utf-8')
+    root = _checkout(tmp_path)
+    remote = _bare_remote(tmp_path)
+
+    def build(gallery):
+        (gallery / 'plot_a.rst').write_text('plot_a\n======\n',
+                                            encoding='utf-8')
+        try:
+            (gallery / 'leak.rst').symlink_to(secret)
+        except (OSError, NotImplementedError):
+            pytest.skip('this platform cannot create a symlink here')
+
+    commit = _push_tree_as_gallery(tmp_path, remote, build)
+    (root / 'docs' / 'prebuilt_gallery.json').write_text(
+        json.dumps({'version': '9.8.7', 'commit': commit}), encoding='utf-8')
+    assert fpg.fetch(str(root), remote=str(remote)) == ('rejected', None)
+    assert not (root / 'docs' / 'auto_examples').exists()
+    out = capsys.readouterr().out
+    assert 'REJECTED' in out and 'leak.rst' in out
+    assert fpg.main(['--repo-root', str(root), '--remote', str(remote),
+                     '--require']) == 1
+
+
+def test_the_recorded_gallery_for_this_checkout_is_well_formed():
+    pin_path = _REPO / 'docs' / 'prebuilt_gallery.json'
+    if not pin_path.is_file():
+        pytest.skip('no pre-built gallery recorded in this checkout')
+    pin = fpg.read_pin(str(_REPO))
+    assert pin is not None, 'docs/prebuilt_gallery.json is not a usable record'
+    assert set(pin) == {'version', 'commit', 'source_commit'}
 
 
 def test_warnings_name_files_by_their_repository_path(tmp_path):
@@ -325,98 +475,3 @@ def test_a_gallery_built_here_names_no_local_path():
     if not gallery.is_dir() or not any(gallery.glob('*.rst')):
         pytest.skip('no built gallery in docs/auto_examples')
     assert ppg.files_naming(str(gallery), str(_REPO)) == []
-
-
-def _push_tree_as_gallery(tmp_path, remote, build):
-    """Publish a hand-made tree to the gallery branch, bypassing the
-    publisher's checks -- what someone pushing to the branch directly could
-    do. ``build(gallery_dir)`` fills ``auto_examples/``."""
-    work = tmp_path / 'handmade'
-    (work / 'auto_examples').mkdir(parents=True)
-    build(work / 'auto_examples')
-    (work / 'manifest.json').write_text('{"source_commit": "0"}\n',
-                                        encoding='utf-8')
-    _git(['init', '--quiet', '--initial-branch', 'docs-gallery-v9.8.7'], work)
-    _git(['add', '-A'], work)
-    _git(['commit', '--quiet', '-m', 'handmade'], work)
-    _git(['push', '--quiet', '--force', str(remote),
-          'HEAD:refs/heads/docs-gallery-v9.8.7'], work)
-
-
-def test_fetch_rejects_a_gallery_holding_a_symlink(tmp_path, git_identity,
-                                                   capsys):
-    # copying or reading a symlink would pull a file from the build machine
-    # into the published site
-    secret = tmp_path / 'secret.txt'
-    secret.write_text('build machine secret\n', encoding='utf-8')
-    root = _checkout(tmp_path)
-    remote = _bare_remote(tmp_path)
-
-    def build(gallery):
-        (gallery / 'plot_a.rst').write_text('plot_a\n======\n',
-                                            encoding='utf-8')
-        try:
-            (gallery / 'leak.rst').symlink_to(secret)
-        except (OSError, NotImplementedError):
-            pytest.skip('this platform cannot create a symlink here')
-
-    _push_tree_as_gallery(tmp_path, remote, build)
-    assert fpg.fetch(str(root), remote=str(remote)) == ('rejected', None)
-    assert not (root / 'docs' / 'auto_examples').exists()
-    out = capsys.readouterr().out
-    assert 'REJECTED' in out and 'leak.rst' in out
-    assert fpg.main(['--repo-root', str(root), '--remote', str(remote),
-                     '--require']) == 1
-
-
-@pytest.mark.parametrize('page', [
-    '.. include:: /etc/passwd\n',
-    '.. literalinclude:: ../../secrets.env\n',
-    '.. raw:: html\n    :file: /home/docs/.netrc\n',
-    '.. image:: ../../../private.png\n',
-    ':download:`notes <../../.git/config>`\n',
-    '.. csv-table::\n   :file: C:\\Users\\docs\\keys.csv\n',
-])
-def test_fetch_rejects_a_page_that_reads_outside_the_gallery(
-        tmp_path, git_identity, page):
-    root = _checkout(tmp_path)
-    remote = _bare_remote(tmp_path)
-    _push_tree_as_gallery(
-        tmp_path, remote,
-        lambda gallery: (gallery / 'plot_a.rst').write_text(
-            'plot_a\n======\n\n' + page, encoding='utf-8'))
-    assert fpg.fetch(str(root), remote=str(remote)) == ('rejected', None)
-    assert not (root / 'docs' / 'auto_examples').exists()
-
-
-def test_the_constructs_a_real_gallery_page_uses_are_accepted(tmp_path):
-    gallery = tmp_path / 'auto_examples'
-    (gallery / 'images').mkdir(parents=True)
-    (gallery / 'plot_a.rst').write_text(
-        '.. image-sg:: /auto_examples/images/sphx_glr_plot_a_001.png\n'
-        '   :srcset: /auto_examples/images/sphx_glr_plot_a_001.png, '
-        '/auto_examples/images/sphx_glr_plot_a_001_2_00x.png 2.00x\n\n'
-        '.. video:: /auto_examples/images/sphx_glr_plot_a_001.mp4\n\n'
-        '.. raw:: html\n    :file: images/sphx_glr_plot_a_002.html\n\n'
-        '.. raw:: html\n\n    <div></div>\n\n'
-        ':download:`Download zipped: plot_a.zip <plot_a.zip>`\n\n'
-        '.. image:: https://example.org/badge.svg\n',
-        encoding='utf-8')
-    assert fpg.unsafe_entries(str(gallery)) == []
-
-
-def test_publish_refuses_a_gallery_the_fetch_step_would_reject(
-        tmp_path, git_identity, capsys):
-    root = _checkout(tmp_path)
-    gallery = _build_gallery(root)
-    (gallery / 'plot_a.rst').write_text(
-        'plot_a\n======\n\n.. include:: /etc/hosts\n', encoding='utf-8')
-    assert ppg.publish(repo_root=str(root), push=False) == 1
-    assert 'outside the gallery' in capsys.readouterr().err
-
-
-def test_a_gallery_built_here_passes_the_fetch_safety_check():
-    gallery = _REPO / 'docs' / 'auto_examples'
-    if not gallery.is_dir() or not any(gallery.glob('*.rst')):
-        pytest.skip('no built gallery in docs/auto_examples')
-    assert fpg.unsafe_entries(str(gallery)) == []

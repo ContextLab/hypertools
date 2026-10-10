@@ -138,26 +138,31 @@ detached tag checkout — the notebook migrator detects the branch via
       do NOT commit afterward** — any later commit changes HEAD, so you must
       rebuild the gallery and re-publish (the gate fails until you do). The same
       gate re-runs on the master push (step 4) and the tag (step 5).
-- [ ] **Publish the built gallery for Read the Docs to reuse.** Read the
-      Docs ends a build after 15 minutes and executing the gallery takes about
-      25, so its build fetches the gallery you just built
+- [ ] **Publish the built gallery for Read the Docs to reuse, and record
+      it.** Read the Docs ends a build after 15 minutes and executing the
+      gallery takes about 25, so its build fetches the gallery you just built
       (`docs/fetch_prebuilt_gallery.py`, run from `.readthedocs.yaml`) and
-      sphinx-gallery skips every example whose source is unchanged. From the
-      repo root, with the same `docs/auto_examples` and a clean tracked tree:
+      sphinx-gallery skips every example whose source is unchanged. Do this
+      BEFORE publishing the notebooks above, from the repo root, with the
+      freshly built `docs/auto_examples` and a clean tracked tree:
       `python scripts/publish_prebuilt_gallery.py --push`
       It replaces the single commit on the `docs-gallery-v1.1.0` branch (a
-      forced push, by design: the tree is about 100 MB) and refuses a gallery
-      that is incomplete or names this machine's path. The same "no commits
-      afterward" rule applies: the manifest pins `source_commit` to HEAD.
-      The Read the Docs build trusts this branch as far as it trusts anyone
-      with push access; the fetch step rejects a tree with symlinks or pages
-      that read files outside the gallery.
+      forced push, by design: the tree is about 100 MB), refuses a gallery
+      that is incomplete or names this machine's path, and writes the new
+      commit's id to `docs/prebuilt_gallery.json`. Commit that file:
+      `git add docs/prebuilt_gallery.json && git commit -m "release: record the pre-built gallery"`
+      The docs build fetches the gallery by that commit id, never by branch
+      name, so overwriting the branch later cannot change what a build of the
+      release reads. This is the ONE commit allowed after building the
+      gallery; the gate fails if anything else changed. Publish the notebooks
+      (previous item) after it, so their manifest names the final HEAD.
 - [ ] **Verify it:**
       `HYPERTOOLS_REQUIRE_RELEASE=1 pytest tests/test_release_readiness_gate.py::test_release_gate_prebuilt_gallery_is_published_for_this_commit`
-      → green (`raw.githubusercontent.com` can serve the previous manifest for
-      up to five minutes after a republish). After the `master` push in step 4,
-      open the Read the Docs build for `latest` and confirm it finished and its
-      `pre_build` step printed `51 of 51 examples are current`.
+      → green, and `python docs/fetch_prebuilt_gallery.py --require` in a
+      fresh clone of the release commit prints `51 of 51 examples are
+      current`. After the `master` push in step 4, open the Read the Docs
+      build for `latest` and confirm it finished and its `pre_build` step
+      printed the same line.
 
 ## 3. Build + verify artifacts locally (do NOT upload yet)
 
@@ -312,7 +317,7 @@ run with `HYPERTOOLS_REQUIRE_RELEASE=1` by the `release-gate` CI job on
 | CHANGELOG heading | `## <version> (YYYY-MM-DD)` — version == pyproject, a REAL calendar date (not `(unreleased)`, not `2026-99-99`), and not earlier than the release commit's date (a stale draft date fails) |
 | generated gallery (`docs-clean` job) | every built `docs/auto_examples/*.ipynb` carries the PyPI spec (covers every published notebook, at the build layer) |
 | gallery Colab notebooks published | `docs-notebooks/v<version>/manifest.json` present, its `source_commit` == the release HEAD, its inventory == the built gallery, and the branch's actual `.ipynb` set (one GitHub tree request) == the manifest — so stale (old-RC), partial, or mismatched publishes all fail. Requires step 2's publish to have run FROM the release commit, BEFORE the master/tag push — see the deadlock note there. |
-| pre-built gallery published | `docs-gallery-v<version>/manifest.json` present, its `source_commit` == the release HEAD, its example md5s == the examples in the checkout |
+| pre-built gallery recorded | `docs/prebuilt_gallery.json` is for this version; its commit is what `docs-gallery-v<version>` points at; nothing but that file changed since the gallery was built; the gallery's example md5s == the examples in the checkout |
 
 Always-on (every branch): no notebook installs the defunct `dev-1.0-refactor`;
 all tutorial branch-installs share one branch; every README image is a single

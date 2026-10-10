@@ -5,26 +5,26 @@ before sphinx runs, so a Read the Docs build does not execute the gallery.
 Executing the 51 gallery examples takes about 25 minutes; Read the Docs ends a
 build after 15. The release pipeline already builds the gallery from the
 release commit (RELEASE_CHECKLIST.md), and
-``scripts/publish_prebuilt_gallery.py`` publishes that tree to the
-``docs-gallery-v<version>`` branch. This script fetches it. sphinx-gallery then
-finds, for every example, a ``<name>.py.md5`` that matches the example's
-source and skips executing it; an example whose source has changed since the
-gallery was published has no matching md5 and is executed as usual.
+``scripts/publish_prebuilt_gallery.py`` publishes that tree as one commit on
+the ``docs-gallery-v<version>`` branch and records that commit's id in the
+tracked file ``docs/prebuilt_gallery.json``. This script fetches exactly that
+commit. sphinx-gallery then finds, for every example, a ``<name>.py.md5`` that
+matches the example's source and skips executing it; an example whose source
+has changed since the gallery was published has no matching md5 and is
+executed as usual.
+
+Trust: the gallery is fetched BY COMMIT ID, taken from the checkout being
+built, never by branch name. A commit id is a hash of the content, so the
+build uses the tree the release recorded or nothing: overwriting the gallery
+branch cannot change what a build of this checkout reads. The tree may still
+hold only regular files (a symlink would be followed when copied).
 
 Run from ``.readthedocs.yaml`` (``pre_build``). It never fails the build: with
-no published gallery for this version it says so and sphinx executes
-everything. ``--require`` turns "missing" and "stale" into a non-zero exit,
-for checking a published gallery by hand.
+no usable gallery it says why and sphinx executes everything. ``--require``
+turns "missing", "rejected" and "stale" into a non-zero exit, for checking a
+published gallery by hand.
 
     python docs/fetch_prebuilt_gallery.py [--require] [--remote URL]
-
-Trust: the gallery branch is written by whoever can push to this repository,
-the same people who can change ``docs/conf.py``. A fetched tree is still
-checked before it is used (``unsafe_entries``): it may hold only regular
-files, and its pages may only read files inside the gallery. A symlink, or a
-page that includes a path outside ``auto_examples``, would make the docs
-build copy a file from the build machine into the published site; such a
-tree is rejected and sphinx executes the examples instead.
 
 Standard library only: it runs before the docs requirements matter and is
 imported by the publish script and the tests.
@@ -46,7 +46,9 @@ REPO_URL = 'https://github.com/ContextLab/hypertools.git'
 BRANCH_PREFIX = 'docs-gallery-v'
 GALLERY_DIRNAME = 'auto_examples'
 MANIFEST_NAME = 'manifest.json'
+PIN_RELPATH = os.path.join('docs', 'prebuilt_gallery.json')
 _VERSION_RE = re.compile(r'^[0-9][0-9A-Za-z.+\-]*$')
+_SHA40_RE = re.compile(r'^[0-9a-f]{40}$')
 
 
 def branch_for(version):
@@ -98,106 +100,104 @@ def stale_examples(examples_dir, gallery_dir):
     return stale
 
 
-# RST constructs that make sphinx read a file named in the page
-_FILE_DIRECTIVE_RE = re.compile(
-    r'^\s*\.\.\s+(?:include|literalinclude|image|image-sg|figure|video|'
-    r'csv-table|raw|parsed-literal)::[ \t]*(\S*)', re.M)
-_FILE_OPTION_RE = re.compile(r'^\s*:(?:file|srcset):[ \t]*(.+)$', re.M)
-_DOWNLOAD_ROLE_RE = re.compile(r':download:`[^`<]*<([^`>]+)>`|:download:`([^`<>]+)`')
+def read_pin(repo_root):
+    """The recorded gallery commit for this checkout:
+    ``{'version', 'commit', 'source_commit'}``, or ``None`` with no (or an
+    unusable) ``docs/prebuilt_gallery.json``."""
+    try:
+        with open(os.path.join(repo_root, PIN_RELPATH),
+                  encoding='utf-8') as f:
+            pin = json.load(f)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(pin, dict):
+        return None
+    if not _SHA40_RE.match(str(pin.get('commit', ''))):
+        return None
+    return pin
 
 
-def _path_stays_in_gallery(path):
-    path = path.strip()
-    if not path or re.match(r'^[a-z][a-z0-9+.\-]*://', path, re.I):
-        return True                               # nothing local is read
-    if '..' in path.replace('\\', '/').split('/'):
-        return False
-    if path.startswith('/'):                      # sphinx: relative to srcdir
-        return path.startswith(f'/{GALLERY_DIRNAME}/')
-    return not os.path.isabs(path) and not re.match(r'^[A-Za-z]:', path)
-
-
-def unsafe_entries(tree):
-    """Reasons ``tree`` must not be used as a gallery: entries that are not
-    regular files or directories (a symlink would be followed when copied or
-    read), and pages that read a file outside the gallery."""
+def irregular_entries(tree):
+    """Entries of ``tree`` that are not regular files or directories. A
+    symlink would be followed when the tree is copied or read, pulling a file
+    from the build machine into the published site."""
     found = []
     for base, dirs, names in os.walk(tree):
         for name in dirs + names:
             path = os.path.join(base, name)
-            rel = os.path.relpath(path, tree)
             if os.path.islink(path) or not (os.path.isdir(path)
                                             or os.path.isfile(path)):
-                found.append(f'{rel}: not a regular file or directory')
-        for name in names:
-            path = os.path.join(base, name)
-            if not name.endswith(('.rst', '.txt')) or os.path.islink(path):
-                continue
-            with open(path, encoding='utf-8', errors='replace') as f:
-                text = f.read()
-            named = [m.group(1) for m in _FILE_DIRECTIVE_RE.finditer(text)]
-            for m in _FILE_OPTION_RE.finditer(text):
-                # srcset holds several "path [1.5x]" entries
-                named += [part.split()[0] for part in m.group(1).split(',')
-                          if part.split()]
-            named += [m.group(1) or m.group(2)
-                      for m in _DOWNLOAD_ROLE_RE.finditer(text)]
-            for target in named:
-                if not _path_stays_in_gallery(target):
-                    found.append(f'{os.path.relpath(path, tree)}: reads '
-                                 f'{target!r}, outside the gallery')
-    return sorted(set(found))
+                found.append(os.path.relpath(path, tree))
+    return sorted(found)
 
 
-def fetch(repo_root, remote=REPO_URL, version=None, out=print):
-    """Copy the published gallery for ``version`` into
+def _git(args, cwd):
+    return subprocess.run(['git'] + args, cwd=cwd, capture_output=True,
+                          text=True)
+
+
+def fetch(repo_root, remote=REPO_URL, out=print):
+    """Copy the recorded gallery commit into
     ``<repo_root>/docs/auto_examples``.
 
     Returns ``(status, stale)``: status is ``'fetched'``, ``'missing'`` (no
-    branch for this version), ``'rejected'`` (the published tree failed
-    ``unsafe_entries``) or ``'present'`` (a gallery is already there and is
-    left alone); ``stale`` lists the examples sphinx will still execute
-    (``None`` when nothing was fetched).
+    gallery recorded for this version, or its commit cannot be fetched),
+    ``'rejected'`` (the tree is not what was recorded, or holds a symlink) or
+    ``'present'`` (a gallery is already there and is left alone); ``stale``
+    lists the examples sphinx will still execute (``None`` when nothing was
+    fetched).
     """
-    version = version or project_version(repo_root)
-    branch = branch_for(version)
+    version = project_version(repo_root)
     examples_dir = os.path.join(repo_root, 'examples')
     target = os.path.join(repo_root, 'docs', GALLERY_DIRNAME)
     if os.path.isdir(target) and os.listdir(target):
         out(f'pre-built gallery: {target} already exists; leaving it alone')
         return 'present', stale_examples(examples_dir, target)
 
+    pin = read_pin(repo_root)
+    if pin is None or pin.get('version') != version:
+        out(f'pre-built gallery: none recorded for {version} in '
+            f'{PIN_RELPATH}; sphinx will execute every example.')
+        return 'missing', None
+    commit = pin['commit']
+
     work = tempfile.mkdtemp(prefix='docs-gallery-')
     try:
-        clone = subprocess.run(
-            ['git', 'clone', '--quiet', '--depth', '1', '--branch', branch,
-             remote, work], capture_output=True, text=True)
+        steps = (['init', '--quiet'],
+                 ['fetch', '--quiet', '--depth', '1', remote, commit],
+                 ['checkout', '--quiet', '--detach', 'FETCH_HEAD'])
+        for step in steps:
+            done = _git(step, work)
+            if done.returncode != 0:
+                out(f'pre-built gallery: cannot fetch commit {commit} from '
+                    f'{remote}; sphinx will execute every example.\n'
+                    f'{done.stderr.strip()}')
+                return 'missing', None
+        got = _git(['rev-parse', 'HEAD'], work).stdout.strip()
         source = os.path.join(work, GALLERY_DIRNAME)
-        if clone.returncode != 0 or not os.path.isdir(source):
-            out(f'pre-built gallery: none published for {version} (branch '
-                f'{branch} of {remote}); sphinx will execute every example.\n'
-                f'{clone.stderr.strip()}')
-            return 'missing', None
-        unsafe = unsafe_entries(source)
-        if unsafe:
-            out(f'pre-built gallery: REJECTED {branch}; sphinx will execute '
-                'every example.\n  ' + '\n  '.join(unsafe))
+        problems = []
+        if got != commit:
+            problems.append(f'fetched {got}, not the recorded {commit}')
+        if not os.path.isdir(source):
+            problems.append(f'no {GALLERY_DIRNAME}/ in the commit')
+        else:
+            problems += [f'{rel}: not a regular file or directory'
+                         for rel in irregular_entries(source)]
+        if problems:
+            out('pre-built gallery: REJECTED; sphinx will execute every '
+                'example.\n  ' + '\n  '.join(problems))
             return 'rejected', None
-        manifest_path = os.path.join(work, MANIFEST_NAME)
-        commit = None
-        if os.path.isfile(manifest_path):
-            with open(manifest_path, encoding='utf-8') as f:
-                commit = json.load(f).get('source_commit')
         if os.path.isdir(target):
             os.rmdir(target)                      # empty, checked above
-        shutil.copytree(source, target)
+        shutil.copytree(source, target, symlinks=True)
     finally:
         shutil.rmtree(work, ignore_errors=True)
 
     stale = stale_examples(examples_dir, target)
     n = len(example_md5s(examples_dir))
-    out(f'pre-built gallery: fetched {branch} (built from {commit}); '
-        f'{n - len(stale)} of {n} examples are current')
+    out(f'pre-built gallery: fetched commit {commit} (built from '
+        f'{pin.get("source_commit")}); {n - len(stale)} of {n} examples are '
+        'current')
     if stale:
         out('pre-built gallery: sphinx will execute the examples that changed '
             'since it was published: ' + ', '.join(stale))

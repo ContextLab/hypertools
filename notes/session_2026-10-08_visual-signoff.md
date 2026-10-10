@@ -203,3 +203,11 @@ Branch `fix/1.1-release-review`; PR #286 still OPEN and unmerged. Nothing merged
   outside the gallery (include, literalinclude, :file:, image, download); the publisher applies the
   same check. Accepted as is: the branch is as trusted as push access to the repository. Suggested to
   Jeremy: a branch protection rule for `docs-gallery-*`.
+- A second commit security review (of 3a651b52) said the RST content scanner could be bypassed
+  (docutils syntax the regexes miss; includes through unscanned files). Replaced the scanner with a
+  commit pin: the publisher writes the orphan commit's id to `docs/prebuilt_gallery.json`, the fetch
+  step fetches that exact id (`git fetch <remote> <sha>`, verified on GitHub) and only accepts a
+  40-hex id for the current version. Overwriting the branch cannot change what a build reads. Symlink
+  check kept. Release order is now: build gallery -> publish_prebuilt_gallery --push -> commit the pin
+  -> publish notebooks -> artifacts. Gate checks the pin, the branch head, that only the pin changed
+  since the build, and the manifest md5s.
