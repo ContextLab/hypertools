@@ -83,7 +83,13 @@ def _install_notebook_cell():
     # master or a vX.Y.Z release tag -> the released package; anything else
     # (dev-1.0, feature branches) -> that branch from GitHub as a preview.
     if branch == 'master' or re.fullmatch(r'v\d+\.\d+\.\d+', branch):
-        pip = '%pip install -q "hypertools[interactive]"'
+        # the floor matters: without it, a runtime that already has an older
+        # hypertools (a Colab session opened before this release reached
+        # PyPI, or any environment with the previous release) reports the
+        # requirement satisfied and the examples run against the old version
+        import hypertools
+        pip = ('%pip install -q "hypertools[interactive]>='
+               f'{hypertools.__version__}"')
         note = '# Install hypertools (run this first on Colab)'
     else:
         url = 'git+https://github.com/ContextLab/hypertools.git@' + branch
@@ -570,6 +576,16 @@ def _gallery_page_context(app, pagename, templatename, context, doctree):
     context['theme_source_view_link'] = _GALLERY_VIEW_LINK
 
 
+def _add_inline_playback_cells(app):
+    """Give the animated showcase notebooks a final cell that plays the
+    animation (docs/_gallery_notebooks.py says why they need one)."""
+    import glob
+    from _gallery_notebooks import add_inline_playback
+    for path in sorted(glob.glob(os.path.join(app.srcdir, 'auto_examples',
+                                              '*.ipynb'))):
+        add_inline_playback(path)
+
+
 def setup(app):
     app.connect('html-page-context', _gallery_page_context)
     # Keep the strict (-W) docs-clean CI gate robust to TRANSIENT third-party
@@ -581,3 +597,6 @@ def setup(app):
     # docs/_gallery_log_filter.py and tests/test_docs_gallery_log_filter.py.
     from _gallery_log_filter import install
     install()
+    # sphinx-gallery writes the notebooks in its own 'builder-inited'
+    # handler (default priority 500); run after it
+    app.connect('builder-inited', _add_inline_playback_cells, priority=900)

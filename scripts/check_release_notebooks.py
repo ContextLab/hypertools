@@ -91,6 +91,25 @@ def classify_notebooks(paths):
     return missing, branch_installs, stale_notes
 
 
+_FLOORED_RE = re.compile(r'hypertools\[[^\]]*\]\s*>=\s*\d')
+
+
+def unfloored_installs(paths):
+    """Notebooks with a hypertools install line that carries no version
+    floor (``hypertools[...]>=X.Y.Z``). Without one, ``pip install`` in an
+    environment that already has an OLDER hypertools reports the requirement
+    satisfied, and a notebook written for this release runs against the old
+    one (seen on Colab: a session opened before 1.1.0 reached PyPI kept 1.0.0
+    and the 1.1 examples failed with a TypeError)."""
+    names = []
+    for p in paths:
+        with open(p, encoding='utf-8') as f:
+            nb = json.load(f)
+        if any(not _FLOORED_RE.search(ln) for ln, _ in _hyp_install_lines(nb)):
+            names.append(os.path.basename(p))
+    return names
+
+
 def _collect(dirs_or_globs):
     paths = []
     for d in dirs_or_globs:
@@ -122,7 +141,8 @@ def main(argv=None):
               file=sys.stderr)
         return 1
     missing, branch, stale = classify_notebooks(paths)
-    if not (missing or branch or stale):
+    unfloored = unfloored_installs(paths)
+    if not (missing or branch or stale or unfloored):
         print(f'release notebook check OK: {len(paths)} notebooks, '
               'all install the PyPI package')
         return 0
@@ -132,6 +152,9 @@ def main(argv=None):
         print(f'FAIL git+/@branch install: {branch}', file=sys.stderr)
     if stale:
         print(f'FAIL leftover preview note: {stale}', file=sys.stderr)
+    if unfloored:
+        print(f'FAIL hypertools install without a version floor (>=X.Y.Z): '
+              f'{unfloored}', file=sys.stderr)
     return 1
 
 

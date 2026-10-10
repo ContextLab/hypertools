@@ -5,7 +5,7 @@ Colab.
 Gallery install lines are branch-aware:
 
 * on ``master`` OR a ``vX.Y.Z`` release tag it installs the RELEASED package
-  (``%pip install -q "hypertools[interactive]"``);
+  (``%pip install -q "hypertools[interactive]>=<version>"``);
 * on any other branch it installs THAT branch from GitHub, so the dev-1.0
   preview notebooks install the matching dev build rather than the older
   PyPI release.
@@ -121,9 +121,21 @@ def portable_video_source(filename):
     return '# Colab serves output frames separately from kernel files; embed movie bytes.\ntry:\n    from google import colab as colab\nexcept ImportError:\n    pass  # Local Jupyter/Sphinx uses the relative video below.\nelse:\n    from IPython.display import Video, display\n    display(Video({filename!r}, embed=True))\n'.format(filename=filename)
 
 
+def _project_version():
+    """The release version, from pyproject.toml (the gallery install cell's
+    floor; docs/conf.py uses ``hypertools.__version__``, the same number)."""
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    with open(os.path.join(root, 'pyproject.toml'), encoding='utf-8') as f:
+        return re.search(r'(?m)^version\s*=\s*["\']([^"\']+)["\']',
+                         f.read()).group(1)
+
+
 def install_lines(branch):
     if _is_release_ref(branch):
-        pip = '%pip install -q "hypertools[interactive]"'
+        # floored: an environment that already has an older hypertools would
+        # otherwise satisfy the requirement and run the examples against it
+        pip = ('%pip install -q "hypertools[interactive]>='
+               f'{_project_version()}"')
         note = '# Install hypertools (run this first on Colab)'
     else:
         pip = f'%pip install -q "{hyp_spec("interactive", branch)}"'

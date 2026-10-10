@@ -243,3 +243,29 @@ Branch `fix/1.1-release-review`; PR #286 still OPEN and unmerged. Nothing merged
 - Parallel gallery trial (6 workers, scratch clone, while the serial build ran): 12.9 min, exit 0 with -W.
   animate_weather_decades (696 s) and animate_market_sectors (573 s) bound it. One loky "worker stopped"
   notice. Not adopted for 1.1.0.
+
+## 2026-10-10: release day and the first post-release report
+
+- 12:10 UTC: `v1.1.0` tag moved to cf76a931 (master CI 17/17 green at 08:15; four idle hours because my
+  waiter watched the "Dependency Graph" run id instead of the "Tests" run). Tag CI 17/17 green 14:11.
+  Each CI run takes ~2 h because the ubuntu-3.12 job runs the suite three times serially.
+- Jeremy: "Can you do steps 1--3, and also do the conda forge release? I'll post the bluesky thread".
+  RTD `stable` re-synced by redelivering the last master push webhook delivery (RTD ignores a force-moved
+  tag); PyPI 1.1.0 uploaded 14:40 (digests match; clean-env wheel smoke OK); GitHub release published
+  14:42; conda-forge/hypertools-feedstock#1 opened from the jeremymanning fork, rerendered, merged 14:51,
+  package uploaded (CDN index lag; clean conda install not yet confirmed).
+- First report after release (Jeremy, Colab, gallery notebook animate_morph_zoo): (1) TypeError
+  "Normalize.__init__() got an unexpected keyword argument 'mode'": a runtime opened before the PyPI
+  upload had hypertools 1.0.0 and the unfloored `%pip install -q "hypertools[interactive]"` was "already
+  satisfied". Deleting the runtime fixed it. (2) the notebook showed no figure: six showcase examples end
+  with `fig = anim.figure` inside `if __name__ == '__main__':`, which displays nothing in a notebook.
+- Fixed in the PUBLISHED notebooks (docs-notebooks branch, no change to master or the tag): all 51 install
+  cells now read `hypertools[interactive]>=1.1.0` (Jeremy: keep it); the six showcases have a final cell
+  `anim` (Jeremy chose "Play the animation inline"). Verified on Colab: morph zoo plays a 30 s video,
+  rendered in 48 s. Measured inline render with the PyPI package, locally: morph 4 s, forecast 9 s,
+  conversation 19 s, paintings 52 s, market 74 s, weather 235 s; none exceeds the embed limit.
+- Source fix for the next release is on branch `fix/gallery-install-floor` (NOT master: the release gate
+  allows no commit there between releases): conf.py emits the floored install line and appends the
+  playback cell after sphinx-gallery writes the notebooks (docs/_gallery_notebooks.py);
+  check_release_notebooks.py rejects an unfloored install; tests added. What we missed: no gallery
+  notebook was run on Colab against the published package; the checklist now says to.

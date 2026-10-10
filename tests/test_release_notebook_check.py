@@ -24,7 +24,7 @@ def _load():
 
 crn = _load()
 
-_PYPI = '# Install hypertools (run this first on Colab)\n%pip install -q "hypertools[interactive]"'
+_PYPI = '# Install hypertools (run this first on Colab)\n%pip install -q "hypertools[interactive]>=1.1.0"'
 _BRANCH = '%pip install -q "hypertools[interactive] @ git+https://github.com/ContextLab/hypertools.git@dev-1.0"'
 _PREVIEW = ('# Install hypertools (dev-1.0 preview) -- run this first on Colab.\n'
             '# On release this becomes: %pip install hypertools\n'
@@ -136,3 +136,41 @@ def test_main_ok_and_min_count(tmp_path):
 def test_main_fails_on_branch_install(tmp_path):
     _write(tmp_path, 'branch.ipynb', _nb(_BRANCH))
     assert crn.main([str(tmp_path)]) == 1
+
+
+def test_an_install_without_a_version_floor_is_flagged(tmp_path):
+    # in an environment that already has an older hypertools, an unfloored
+    # `pip install hypertools[...]` is "already satisfied" and the notebook
+    # runs against the old release
+    bare = _write(tmp_path, 'bare.ipynb',
+                  _nb('%pip install -q "hypertools[interactive]"'))
+    floored = _write(tmp_path, 'floored.ipynb',
+                     _nb('%pip install -q "hypertools[interactive]>=1.1.0"'))
+    assert crn.unfloored_installs([bare, floored]) == ['bare.ipynb']
+    assert crn.main([bare]) == 1
+    assert crn.main([floored]) == 0
+
+
+def test_every_install_line_needs_the_floor(tmp_path):
+    p = _write(tmp_path, 'mixed.ipynb', _nb(
+        '%pip install -q "hypertools[interactive]>=1.1.0"',
+        '%pip install -q "hypertools[text]"'))
+    assert crn.unfloored_installs([p]) == ['mixed.ipynb']
+
+
+def test_the_generated_gallery_cell_and_the_tutorials_carry_the_floor():
+    import glob
+    import importlib.util
+    import re
+    repo = _SCRIPT.parent.parent
+    spec = importlib.util.spec_from_file_location(
+        'add_colab_install_cell', repo / 'scripts' / 'add_colab_install_cell.py')
+    acic = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(acic)
+    _note, pip = acic.install_lines('master')
+    version = re.search(r'(?m)^version\s*=\s*"([^"]+)"',
+                        (repo / 'pyproject.toml').read_text()).group(1)
+    assert pip == f'%pip install -q "hypertools[interactive]>={version}"'
+    tutorials = sorted(glob.glob(str(repo / 'docs' / 'tutorials' / '*.ipynb')))
+    assert len(tutorials) >= 20
+    assert crn.unfloored_installs(tutorials) == []

@@ -122,9 +122,12 @@ detached tag checkout — the notebook migrator detects the branch via
       `python scripts/publish_gallery_notebooks.py --ref v1.1.0 --notebooks-dir docs/auto_examples --push`
       (the `docs-notebooks` branch already exists; the script deletes and
       rewrites the whole `v1.1.0/` namespace and its `manifest.json`, so a
-      re-cut republishes cleanly over the draft's publish). Publishing static
-      notebooks before PyPI is harmless: their `%pip install hypertools[...]`
-      cells resolve 1.1 the moment PyPI is updated (step 6).
+      re-cut republishes cleanly over the draft's publish). The notebooks'
+      install cells carry a version floor (`hypertools[...]>=1.1.0`), so a
+      runtime opened before the PyPI upload (step 6) fails to install rather
+      than quietly keeping 1.0.0; do not test them on Colab until PyPI has
+      1.1.0, and after the upload run one gallery notebook and one tutorial
+      on Colab in a fresh runtime.
       Both the `master` "latest" docs and the `v1.1.0` "stable" docs resolve to
       this ONE `v1.1.0` namespace (`docs/post_build.py` `_publish_ref`), so this
       single publish covers both.
