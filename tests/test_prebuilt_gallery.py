@@ -210,15 +210,54 @@ def test_overwriting_the_branch_cannot_change_what_a_build_reads(
     _push_tree_as_gallery(tmp_path, remote, build)
 
     fresh = _fresh_clone(tmp_path, root)
-    status, _stale = fpg.fetch(str(fresh), remote=str(remote))
-    fetched = fresh / 'docs' / 'auto_examples' / 'plot_a.rst'
-    # the recorded commit is either still served (and is what arrives) or it
-    # is gone and nothing arrives; the overwriting tree never does
-    assert status in ('fetched', 'missing')
-    if status == 'fetched':
-        assert fetched.read_bytes() == honest
-    else:
-        assert not fetched.exists()
+    assert honest                                   # the honest page existed
+    # the branch no longer points at the recorded commit: nothing is used
+    assert fpg.fetch(str(fresh), remote=str(remote)) == ('rejected', None)
+    assert not (fresh / 'docs' / 'auto_examples').exists()
+
+
+def test_a_record_naming_a_commit_off_the_gallery_branch_is_rejected(
+        tmp_path, git_identity, capsys):
+    # the host serves other commits too (another branch, a fork's pull
+    # request); only the gallery branch's own commit is accepted
+    root = _checkout(tmp_path)
+    _build_gallery(root)
+    remote = _bare_remote(tmp_path)
+    pin = _publish_and_pin(root, remote)
+    # a second, different gallery commit on ANOTHER branch of the same remote
+    other = tmp_path / 'other'
+    (other / 'auto_examples').mkdir(parents=True)
+    (other / 'auto_examples' / 'plot_a.rst').write_text('other\n',
+                                                        encoding='utf-8')
+    (other / 'manifest.json').write_text(json.dumps(
+        {'version': '9.8.7', 'source_commit': pin['source_commit']}),
+        encoding='utf-8')
+    _git(['init', '--quiet', '--initial-branch', 'elsewhere'], other)
+    _git(['add', '-A'], other)
+    _git(['commit', '--quiet', '-m', 'other'], other)
+    _git(['push', '--quiet', str(remote), 'HEAD:refs/heads/elsewhere'], other)
+    elsewhere = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=other,
+                               check=True, capture_output=True,
+                               text=True).stdout.strip()
+    fresh = _fresh_clone(tmp_path, root)
+    (fresh / 'docs' / 'prebuilt_gallery.json').write_text(json.dumps(
+        dict(pin, commit=elsewhere)), encoding='utf-8')
+    assert fpg.fetch(str(fresh), remote=str(remote)) == ('rejected', None)
+    assert not (fresh / 'docs' / 'auto_examples').exists()
+    assert 'REJECTED' in capsys.readouterr().out
+
+
+def test_fetch_rejects_a_gallery_whose_manifest_disagrees_with_the_record(
+        tmp_path, git_identity):
+    root = _checkout(tmp_path)
+    _build_gallery(root)
+    remote = _bare_remote(tmp_path)
+    pin = _publish_and_pin(root, remote)
+    fresh = _fresh_clone(tmp_path, root)
+    (fresh / 'docs' / 'prebuilt_gallery.json').write_text(json.dumps(
+        dict(pin, source_commit='c' * 40)), encoding='utf-8')
+    assert fpg.fetch(str(fresh), remote=str(remote)) == ('rejected', None)
+    assert not (fresh / 'docs' / 'auto_examples').exists()
 
 
 def test_republishing_replaces_the_branch_instead_of_growing_it(
@@ -285,7 +324,7 @@ def test_fetch_ignores_a_record_that_is_not_a_full_commit_id_for_this_version(
     assert not (fresh / 'docs' / 'auto_examples').exists()
 
 
-def test_fetch_with_an_unfetchable_commit_lets_the_build_go_on(
+def test_fetch_with_no_gallery_branch_lets_the_build_go_on(
         tmp_path, git_identity, capsys):
     root = _checkout(tmp_path)
     remote = _bare_remote(tmp_path)
@@ -293,7 +332,7 @@ def test_fetch_with_an_unfetchable_commit_lets_the_build_go_on(
         json.dumps({'version': '9.8.7', 'commit': 'b' * 40}),
         encoding='utf-8')
     assert fpg.fetch(str(root), remote=str(remote)) == ('missing', None)
-    assert 'cannot fetch commit' in capsys.readouterr().out
+    assert 'no docs-gallery-v9.8.7 branch' in capsys.readouterr().out
 
 
 def test_fetch_leaves_an_existing_gallery_alone(tmp_path, git_identity):
@@ -374,8 +413,8 @@ def _push_tree_as_gallery(tmp_path, remote, build):
     work = tmp_path / f'handmade{len(list(tmp_path.glob("handmade*")))}'
     (work / 'auto_examples').mkdir(parents=True)
     build(work / 'auto_examples')
-    (work / 'manifest.json').write_text('{"source_commit": "0"}\n',
-                                        encoding='utf-8')
+    (work / 'manifest.json').write_text(
+        '{"version": "9.8.7", "source_commit": "0"}\n', encoding='utf-8')
     _git(['init', '--quiet', '--initial-branch', 'docs-gallery-v9.8.7'], work)
     _git(['add', '-A'], work)
     _git(['commit', '--quiet', '-m', 'handmade'], work)
@@ -404,7 +443,8 @@ def test_fetch_rejects_a_recorded_gallery_holding_a_symlink(
 
     commit = _push_tree_as_gallery(tmp_path, remote, build)
     (root / 'docs' / 'prebuilt_gallery.json').write_text(
-        json.dumps({'version': '9.8.7', 'commit': commit}), encoding='utf-8')
+        json.dumps({'version': '9.8.7', 'commit': commit,
+                    'source_commit': '0'}), encoding='utf-8')
     assert fpg.fetch(str(root), remote=str(remote)) == ('rejected', None)
     assert not (root / 'docs' / 'auto_examples').exists()
     out = capsys.readouterr().out

@@ -14,10 +14,19 @@ has changed since the gallery was published has no matching md5 and is
 executed as usual.
 
 Trust: the gallery is fetched BY COMMIT ID, taken from the checkout being
-built, never by branch name. A commit id is a hash of the content, so the
-build uses the tree the release recorded or nothing: overwriting the gallery
-branch cannot change what a build of this checkout reads. The tree may still
-hold only regular files (a symlink would be followed when copied).
+built. A commit id is a hash of the content, so the build uses the tree the
+release recorded or nothing: overwriting the gallery branch cannot change
+what a build of this checkout reads. The recorded commit must ALSO be the
+one the ``docs-gallery-v<version>`` branch points at, so a record cannot
+name some other commit the host happens to serve (one from a fork's pull
+request, say); and its manifest must name the same version and source
+commit as the record. The tree may hold only regular files (a symlink would
+be followed when copied).
+
+What this does not do is inspect the gallery's pages. Whoever can change the
+record in a checkout can change ``docs/conf.py`` in it too, which runs as
+code in the docs build; the record is trusted exactly as far as the checkout
+it is read from.
 
 Run from ``.readthedocs.yaml`` (``pre_build``). It never fails the build: with
 no usable gallery it says why and sphinx executes everything. ``--require``
@@ -141,8 +150,10 @@ def fetch(repo_root, remote=REPO_URL, out=print):
     ``<repo_root>/docs/auto_examples``.
 
     Returns ``(status, stale)``: status is ``'fetched'``, ``'missing'`` (no
-    gallery recorded for this version, or its commit cannot be fetched),
-    ``'rejected'`` (the tree is not what was recorded, or holds a symlink) or
+    gallery recorded for this version, no gallery branch, or the commit
+    cannot be fetched), ``'rejected'`` (the branch does not point at the
+    recorded commit, the manifest disagrees with the record, or the tree
+    holds a symlink) or
     ``'present'`` (a gallery is already there and is left alone); ``stale``
     lists the examples sphinx will still execute (``None`` when nothing was
     fetched).
@@ -160,9 +171,20 @@ def fetch(repo_root, remote=REPO_URL, out=print):
             f'{PIN_RELPATH}; sphinx will execute every example.')
         return 'missing', None
     commit = pin['commit']
+    branch = branch_for(version)
 
     work = tempfile.mkdtemp(prefix='docs-gallery-')
     try:
+        listed = _git(['ls-remote', remote, f'refs/heads/{branch}'], work)
+        tip = listed.stdout.split()[0] if listed.stdout.split() else None
+        if listed.returncode != 0 or tip is None:
+            out(f'pre-built gallery: no {branch} branch on {remote}; sphinx '
+                f'will execute every example.\n{listed.stderr.strip()}')
+            return 'missing', None
+        if tip != commit:
+            out(f'pre-built gallery: REJECTED; {branch} points at {tip}, not '
+                f'the recorded {commit}. sphinx will execute every example.')
+            return 'rejected', None
         steps = (['init', '--quiet'],
                  ['fetch', '--quiet', '--depth', '1', remote, commit],
                  ['checkout', '--quiet', '--detach', 'FETCH_HEAD'])
@@ -178,6 +200,20 @@ def fetch(repo_root, remote=REPO_URL, out=print):
         problems = []
         if got != commit:
             problems.append(f'fetched {got}, not the recorded {commit}')
+        try:
+            with open(os.path.join(work, MANIFEST_NAME),
+                      encoding='utf-8') as f:
+                manifest = json.load(f)
+        except (OSError, ValueError):
+            manifest = None
+        if not isinstance(manifest, dict):
+            problems.append(f'no readable {MANIFEST_NAME} in the commit')
+        else:
+            for key in ('version', 'source_commit'):
+                if manifest.get(key) != pin.get(key):
+                    problems.append(
+                        f'{MANIFEST_NAME} {key} is {manifest.get(key)!r}, '
+                        f'the record says {pin.get(key)!r}')
         if not os.path.isdir(source):
             problems.append(f'no {GALLERY_DIRNAME}/ in the commit')
         else:
