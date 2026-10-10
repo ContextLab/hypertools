@@ -18,6 +18,14 @@ for checking a published gallery by hand.
 
     python docs/fetch_prebuilt_gallery.py [--require] [--remote URL]
 
+Trust: the gallery branch is written by whoever can push to this repository,
+the same people who can change ``docs/conf.py``. A fetched tree is still
+checked before it is used (``unsafe_entries``): it may hold only regular
+files, and its pages may only read files inside the gallery. A symlink, or a
+page that includes a path outside ``auto_examples``, would make the docs
+build copy a file from the build machine into the published site; such a
+tree is rejected and sphinx executes the examples instead.
+
 Standard library only: it runs before the docs requirements matter and is
 imported by the publish script and the tests.
 """
@@ -90,13 +98,65 @@ def stale_examples(examples_dir, gallery_dir):
     return stale
 
 
+# RST constructs that make sphinx read a file named in the page
+_FILE_DIRECTIVE_RE = re.compile(
+    r'^\s*\.\.\s+(?:include|literalinclude|image|image-sg|figure|video|'
+    r'csv-table|raw|parsed-literal)::[ \t]*(\S*)', re.M)
+_FILE_OPTION_RE = re.compile(r'^\s*:(?:file|srcset):[ \t]*(.+)$', re.M)
+_DOWNLOAD_ROLE_RE = re.compile(r':download:`[^`<]*<([^`>]+)>`|:download:`([^`<>]+)`')
+
+
+def _path_stays_in_gallery(path):
+    path = path.strip()
+    if not path or re.match(r'^[a-z][a-z0-9+.\-]*://', path, re.I):
+        return True                               # nothing local is read
+    if '..' in path.replace('\\', '/').split('/'):
+        return False
+    if path.startswith('/'):                      # sphinx: relative to srcdir
+        return path.startswith(f'/{GALLERY_DIRNAME}/')
+    return not os.path.isabs(path) and not re.match(r'^[A-Za-z]:', path)
+
+
+def unsafe_entries(tree):
+    """Reasons ``tree`` must not be used as a gallery: entries that are not
+    regular files or directories (a symlink would be followed when copied or
+    read), and pages that read a file outside the gallery."""
+    found = []
+    for base, dirs, names in os.walk(tree):
+        for name in dirs + names:
+            path = os.path.join(base, name)
+            rel = os.path.relpath(path, tree)
+            if os.path.islink(path) or not (os.path.isdir(path)
+                                            or os.path.isfile(path)):
+                found.append(f'{rel}: not a regular file or directory')
+        for name in names:
+            path = os.path.join(base, name)
+            if not name.endswith(('.rst', '.txt')) or os.path.islink(path):
+                continue
+            with open(path, encoding='utf-8', errors='replace') as f:
+                text = f.read()
+            named = [m.group(1) for m in _FILE_DIRECTIVE_RE.finditer(text)]
+            for m in _FILE_OPTION_RE.finditer(text):
+                # srcset holds several "path [1.5x]" entries
+                named += [part.split()[0] for part in m.group(1).split(',')
+                          if part.split()]
+            named += [m.group(1) or m.group(2)
+                      for m in _DOWNLOAD_ROLE_RE.finditer(text)]
+            for target in named:
+                if not _path_stays_in_gallery(target):
+                    found.append(f'{os.path.relpath(path, tree)}: reads '
+                                 f'{target!r}, outside the gallery')
+    return sorted(set(found))
+
+
 def fetch(repo_root, remote=REPO_URL, version=None, out=print):
     """Copy the published gallery for ``version`` into
     ``<repo_root>/docs/auto_examples``.
 
     Returns ``(status, stale)``: status is ``'fetched'``, ``'missing'`` (no
-    branch for this version) or ``'present'`` (a gallery is already there and
-    is left alone); ``stale`` lists the examples sphinx will still execute
+    branch for this version), ``'rejected'`` (the published tree failed
+    ``unsafe_entries``) or ``'present'`` (a gallery is already there and is
+    left alone); ``stale`` lists the examples sphinx will still execute
     (``None`` when nothing was fetched).
     """
     version = version or project_version(repo_root)
@@ -118,6 +178,11 @@ def fetch(repo_root, remote=REPO_URL, version=None, out=print):
                 f'{branch} of {remote}); sphinx will execute every example.\n'
                 f'{clone.stderr.strip()}')
             return 'missing', None
+        unsafe = unsafe_entries(source)
+        if unsafe:
+            out(f'pre-built gallery: REJECTED {branch}; sphinx will execute '
+                'every example.\n  ' + '\n  '.join(unsafe))
+            return 'rejected', None
         manifest_path = os.path.join(work, MANIFEST_NAME)
         commit = None
         if os.path.isfile(manifest_path):
@@ -149,7 +214,7 @@ def main(argv=None):
                          'example in it is current')
     args = ap.parse_args(argv)
     status, stale = fetch(args.repo_root, remote=args.remote)
-    if args.require and (status == 'missing' or stale):
+    if args.require and (status in ('missing', 'rejected') or stale):
         return 1
     return 0
 

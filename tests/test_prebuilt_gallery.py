@@ -325,3 +325,98 @@ def test_a_gallery_built_here_names_no_local_path():
     if not gallery.is_dir() or not any(gallery.glob('*.rst')):
         pytest.skip('no built gallery in docs/auto_examples')
     assert ppg.files_naming(str(gallery), str(_REPO)) == []
+
+
+def _push_tree_as_gallery(tmp_path, remote, build):
+    """Publish a hand-made tree to the gallery branch, bypassing the
+    publisher's checks -- what someone pushing to the branch directly could
+    do. ``build(gallery_dir)`` fills ``auto_examples/``."""
+    work = tmp_path / 'handmade'
+    (work / 'auto_examples').mkdir(parents=True)
+    build(work / 'auto_examples')
+    (work / 'manifest.json').write_text('{"source_commit": "0"}\n',
+                                        encoding='utf-8')
+    _git(['init', '--quiet', '--initial-branch', 'docs-gallery-v9.8.7'], work)
+    _git(['add', '-A'], work)
+    _git(['commit', '--quiet', '-m', 'handmade'], work)
+    _git(['push', '--quiet', '--force', str(remote),
+          'HEAD:refs/heads/docs-gallery-v9.8.7'], work)
+
+
+def test_fetch_rejects_a_gallery_holding_a_symlink(tmp_path, git_identity,
+                                                   capsys):
+    # copying or reading a symlink would pull a file from the build machine
+    # into the published site
+    secret = tmp_path / 'secret.txt'
+    secret.write_text('build machine secret\n', encoding='utf-8')
+    root = _checkout(tmp_path)
+    remote = _bare_remote(tmp_path)
+
+    def build(gallery):
+        (gallery / 'plot_a.rst').write_text('plot_a\n======\n',
+                                            encoding='utf-8')
+        try:
+            (gallery / 'leak.rst').symlink_to(secret)
+        except (OSError, NotImplementedError):
+            pytest.skip('this platform cannot create a symlink here')
+
+    _push_tree_as_gallery(tmp_path, remote, build)
+    assert fpg.fetch(str(root), remote=str(remote)) == ('rejected', None)
+    assert not (root / 'docs' / 'auto_examples').exists()
+    out = capsys.readouterr().out
+    assert 'REJECTED' in out and 'leak.rst' in out
+    assert fpg.main(['--repo-root', str(root), '--remote', str(remote),
+                     '--require']) == 1
+
+
+@pytest.mark.parametrize('page', [
+    '.. include:: /etc/passwd\n',
+    '.. literalinclude:: ../../secrets.env\n',
+    '.. raw:: html\n    :file: /home/docs/.netrc\n',
+    '.. image:: ../../../private.png\n',
+    ':download:`notes <../../.git/config>`\n',
+    '.. csv-table::\n   :file: C:\\Users\\docs\\keys.csv\n',
+])
+def test_fetch_rejects_a_page_that_reads_outside_the_gallery(
+        tmp_path, git_identity, page):
+    root = _checkout(tmp_path)
+    remote = _bare_remote(tmp_path)
+    _push_tree_as_gallery(
+        tmp_path, remote,
+        lambda gallery: (gallery / 'plot_a.rst').write_text(
+            'plot_a\n======\n\n' + page, encoding='utf-8'))
+    assert fpg.fetch(str(root), remote=str(remote)) == ('rejected', None)
+    assert not (root / 'docs' / 'auto_examples').exists()
+
+
+def test_the_constructs_a_real_gallery_page_uses_are_accepted(tmp_path):
+    gallery = tmp_path / 'auto_examples'
+    (gallery / 'images').mkdir(parents=True)
+    (gallery / 'plot_a.rst').write_text(
+        '.. image-sg:: /auto_examples/images/sphx_glr_plot_a_001.png\n'
+        '   :srcset: /auto_examples/images/sphx_glr_plot_a_001.png, '
+        '/auto_examples/images/sphx_glr_plot_a_001_2_00x.png 2.00x\n\n'
+        '.. video:: /auto_examples/images/sphx_glr_plot_a_001.mp4\n\n'
+        '.. raw:: html\n    :file: images/sphx_glr_plot_a_002.html\n\n'
+        '.. raw:: html\n\n    <div></div>\n\n'
+        ':download:`Download zipped: plot_a.zip <plot_a.zip>`\n\n'
+        '.. image:: https://example.org/badge.svg\n',
+        encoding='utf-8')
+    assert fpg.unsafe_entries(str(gallery)) == []
+
+
+def test_publish_refuses_a_gallery_the_fetch_step_would_reject(
+        tmp_path, git_identity, capsys):
+    root = _checkout(tmp_path)
+    gallery = _build_gallery(root)
+    (gallery / 'plot_a.rst').write_text(
+        'plot_a\n======\n\n.. include:: /etc/hosts\n', encoding='utf-8')
+    assert ppg.publish(repo_root=str(root), push=False) == 1
+    assert 'outside the gallery' in capsys.readouterr().err
+
+
+def test_a_gallery_built_here_passes_the_fetch_safety_check():
+    gallery = _REPO / 'docs' / 'auto_examples'
+    if not gallery.is_dir() or not any(gallery.glob('*.rst')):
+        pytest.skip('no built gallery in docs/auto_examples')
+    assert fpg.unsafe_entries(str(gallery)) == []

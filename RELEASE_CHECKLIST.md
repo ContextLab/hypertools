@@ -149,6 +149,9 @@ detached tag checkout — the notebook migrator detects the branch via
       forced push, by design: the tree is about 100 MB) and refuses a gallery
       that is incomplete or names this machine's path. The same "no commits
       afterward" rule applies: the manifest pins `source_commit` to HEAD.
+      The Read the Docs build trusts this branch as far as it trusts anyone
+      with push access; the fetch step rejects a tree with symlinks or pages
+      that read files outside the gallery.
 - [ ] **Verify it:**
       `HYPERTOOLS_REQUIRE_RELEASE=1 pytest tests/test_release_readiness_gate.py::test_release_gate_prebuilt_gallery_is_published_for_this_commit`
       → green (`raw.githubusercontent.com` can serve the previous manifest for

@@ -195,3 +195,11 @@ Branch `fix/1.1-release-review`; PR #286 still OPEN and unmerged. Nothing merged
   gallery build from that commit, publish notebooks + pre-built gallery, artifacts, push `master`,
   confirm RTD `latest` builds, tag, tag CI, confirm RTD `stable`, replace draft assets and body. STOP
   before PyPI and before publishing the GitHub release.
+- e831cb2b: Read the Docs fix + README tour + American spelling (about 1,200 prose replacements; Jeremy
+  chose "User-facing text now"; identifiers, quoted literals, vendored code untouched; io.ipynb and
+  pipelines.ipynb re-executed). Opened PR #288 from `release/1.1.0-recut` so CI runs before `master`.
+- Commit security review of e831cb2b flagged the fetch step: content from a mutable branch, and symlinks
+  followed on copy. Fixed: `unsafe_entries` rejects symlinks/non-regular files and pages that read
+  outside the gallery (include, literalinclude, :file:, image, download); the publisher applies the
+  same check. Accepted as is: the branch is as trusted as push access to the repository. Suggested to
+  Jeremy: a branch protection rule for `docs-gallery-*`.

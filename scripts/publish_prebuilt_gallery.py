@@ -15,8 +15,9 @@ repository by that much each time. Nothing on the main branch changes.
 
 It refuses to publish a gallery that is not a complete build of this
 checkout: the tracked tree must be clean, every example must have a current
-md5 in the gallery, and no page may contain this machine's path to the
-checkout.
+md5 in the gallery, no page may contain this machine's path to the
+checkout, and the tree must pass the same safety check the fetch step applies
+(regular files only; pages read nothing outside the gallery).
 
 Run MANUALLY as a release step, after ``make html`` from the release commit
 (see RELEASE_CHECKLIST.md):
@@ -107,6 +108,10 @@ def problems(repo_root, gallery_dir):
     if stale:
         found.append('the gallery is not a complete build of these examples '
                      '(no current md5 for: ' + ', '.join(stale) + ')')
+    unsafe = fpg.unsafe_entries(gallery_dir)
+    if unsafe:
+        found.append('the fetch step would reject this gallery: '
+                     + '; '.join(unsafe))
     leaked = files_naming(gallery_dir, os.path.abspath(repo_root))
     if leaked:
         found.append("pages contain this machine's path to the checkout: "
