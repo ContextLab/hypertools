@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.1.0 (2026-10-09)
+## 1.1.0 (2026-10-10)
 
 Hierarchical (`MultiIndex`) DataFrames become a first-class input. A frame
 whose **columns** carry a hierarchy now expands into one trace per group

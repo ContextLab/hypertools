@@ -222,3 +222,24 @@ Branch `fix/1.1-release-review`; PR #286 still OPEN and unmerged. Nothing merged
 - scripts/rehearse_prebuilt_gallery.sh: end-to-end rehearsal against a local bare remote. Mini run
   (three examples, real sphinx-gallery 0.22.1) PASSED: fetch 3 of 3 current, RTD recipe 36 s, 0 examples
   executed, overwritten branch rejected. Changed tests also run under a real Python 3.10 (uv): 61 passed.
+
+## 2026-10-10 (after midnight EDT)
+
+- Jeremy's process lessons (recorded as user-level compound lessons `commit-pinned-checks-dry-run-first`
+  and `shorten-the-loop-before-iterating`): think a commit-pinned check through and rehearse it before
+  building it; narrow check first and the full suite once; overlap waits (CI beside local work); track
+  how long each step takes. Timing table: notes/final_review_2026-09-11/timings_2026-10-09.md (untracked).
+- 553c3922: gallery built (0 warnings, 51 notebooks, 28.6 min). Full rehearsal against a local bare
+  remote PASSED (51 of 51 current, RTD recipe 41 s, 0 examples executed, overwritten branch rejected).
+- Real sequence: published docs-gallery-v1.1.0 = 3e83fb59, recorded it (fc141fff), pushed the PR branch.
+  Read the Docs PR build 35055033 on fc141fff SUCCEEDED in 373 s: fetched 3e83fb59, "51 of 51 examples
+  are current", sphinx 141 s, "successfully executed 0 out of 0", 0 warnings; the five launch tutorial
+  pages and hierarchy.html return 200 on the PR preview; plot_impute shows the repository-relative
+  warning path.
+- The sequence then stopped at the release gates: the CHANGELOG heading was dated 2026-10-09 and the
+  record commit was made at 00:28 EDT on 2026-10-10. Re-dated to 2026-10-10. That is a tracked change
+  beyond the record, so the gallery is rebuilt once more from this commit. With the date corrected (trial,
+  uncommitted) all 25 release gates passed, and 24 + 1 pylsl skip in the release-gate job's environment.
+- Parallel gallery trial (6 workers, scratch clone, while the serial build ran): 12.9 min, exit 0 with -W.
+  animate_weather_decades (696 s) and animate_market_sectors (573 s) bound it. One loky "worker stopped"
+  notice. Not adopted for 1.1.0.
