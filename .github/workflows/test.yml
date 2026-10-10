@@ -144,6 +144,11 @@ jobs:
         python -c "import matplotlib.font_manager as fm; fm._load_fontmanager(try_read_cache=False)"
 
     - name: Run pytest
+      # Ubuntu / Python 3.12 runs the suite ONCE, in the pandas-3 + coverage
+      # step below. It used to run it three times in a row (here, then the
+      # pandas-3 gate, then coverage: 36 + 36 + 50 minutes), which made that
+      # one job, and so every CI run, take two hours.
+      if: ${{ !(matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12') }}
       env:
         MPLBACKEND: Agg
         # Authenticate the fivethirtyeight loader's GitHub API listing calls
@@ -156,24 +161,19 @@ jobs:
       run: |
         pytest -v --tb=short
 
-    - name: Acceptance gate — pandas 3.0 (Ubuntu Python 3.12 only)
-      # Guarantees a pandas-3 run regardless of resolver choices (dw#30/#31 fix).
+    - name: Run pytest — pandas 3.0 acceptance gate, with coverage (Ubuntu Python 3.12 only)
+      # This matrix cell's one test run. It guarantees a pandas-3 run
+      # regardless of resolver choices (dw#30/#31 fix) and produces the
+      # coverage report in the same pass.
       if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
       env:
         MPLBACKEND: Agg
+        # see "Run pytest" above for why the token is passed
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         pip install "pandas>=3.0"
         python -c "import pandas as pd; assert pd.__version__.split('.')[0] == '3', pd.__version__; print('pandas', pd.__version__)"
-        pytest -q
-
-    - name: Run pytest with coverage (Ubuntu Python 3.12 only)
-      if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
-      env:
-        MPLBACKEND: Agg
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: |
-        pytest --cov=hypertools --cov-report=xml --cov-report=term-missing
+        pytest -v --tb=short --cov=hypertools --cov-report=xml --cov-report=term-missing
 
     - name: Upload coverage to Codecov (Ubuntu Python 3.12 only)
       if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'

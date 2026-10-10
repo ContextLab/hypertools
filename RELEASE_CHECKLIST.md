@@ -215,7 +215,11 @@ same artifacts you verify are the ones you publish.
       `git push --force origin refs/tags/v1.1.0`. A moved tag is safe ONLY
       because nothing has been published from the old one (PyPI still has
       1.0.0, the GitHub release is a draft); once PyPI has 1.1.0 the tag is
-      frozen.
+      frozen for anything that changes the package. (On 2026-10-10, after the
+      PyPI upload, the tag was moved once more for a docs-only fix to the
+      gallery notebooks, by the maintainer's decision: the package code is
+      identical, so the PyPI files still match the tag's `hypertools/` tree,
+      but they were built from the earlier commit `cf76a931`.)
 - [ ] Confirm: `git ls-remote origin refs/tags/v1.1.0^{}` == the new sha.
 - [ ] Wait for the `v1.1.0` tag CI to go GREEN (the workflow's `tags: ['v*']`
       trigger runs the same jobs; `release-gate` + `docs-clean` gallery scan

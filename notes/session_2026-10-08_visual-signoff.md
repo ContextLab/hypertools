@@ -269,3 +269,9 @@ Branch `fix/1.1-release-review`; PR #286 still OPEN and unmerged. Nothing merged
   playback cell after sphinx-gallery writes the notebooks (docs/_gallery_notebooks.py);
   check_release_notebooks.py rejects an unfloored install; tests added. What we missed: no gallery
   notebook was run on Colab against the published package; the checklist now says to.
+- Jeremy: "can we move the tag forward so the notebook links work? it's OK for tutorials to be out of
+  sync with pypi, since the code itself (of the package) is unchanged". Plan: fast-forward master to
+  this branch, cold gallery build, rehearsal, publish + record, notebooks, gates, push master and move
+  the tag together, re-sync RTD stable. No new PyPI upload; dist/ untouched.
+- Batched into the same commit: the ubuntu-3.12 CI job now runs the suite once (pandas-3 gate + coverage
+  in one pass) instead of three times; expected run length ~50 min instead of ~2 h.
