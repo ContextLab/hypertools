@@ -40,7 +40,7 @@ def _as_leaf_frame(obj, key):
     """One dataset -> a flat-columned DataFrame."""
     where = f"frames{''.join(f'[{k!r}]' for k in key)}"
     if is_frame_dataset(obj):
-        # any backend datawrangler recognises, as hypertools' pandas type
+        # any backend datawrangler recognizes, as hypertools' pandas type
         obj = as_pandas_dataframe(obj)
         if obj.columns.nlevels > 1:
             raise ValueError(
@@ -155,7 +155,7 @@ def stack(frames, names=None, level_names=None, aggregate=None):
     ----------
     frames : dict or list/tuple
         The datasets, nested as deeply as the hierarchy is tall. A dict's
-        keys label its groups; a list's members are labelled by `names=` (or
+        keys label its groups; a list's members are labeled by `names=` (or
         ``'dataset 1'``, ``'dataset 2'``, ... ). Nesting dicts nests levels:
         ``{'listeners': {'subject 1': df, ...}, 'speakers': {...}}`` gives
         a ``(Group, Subject, Feature)`` hierarchy. Every leaf may be a
@@ -165,7 +165,7 @@ def stack(frames, names=None, level_names=None, aggregate=None):
         Labels for the members of each positional (list/tuple) group. One
         per member; the same names apply to every such group, which is what
         lets ``{'listeners': subjects, 'speakers': subjects}`` share one
-        subject naming. Dict groups are labelled by their own keys.
+        subject naming. Dict groups are labeled by their own keys.
 
     level_names : list of str, optional
         ``columns.names`` for the result: one name per grouping level plus

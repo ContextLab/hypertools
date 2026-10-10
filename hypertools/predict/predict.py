@@ -64,7 +64,7 @@ def _coerce_dataset(d):
 
     Types are classified with datawrangler's predicates (see
     `hypertools._shared.helpers`): a DataFrame of any backend datawrangler
-    recognises (polars DataFrame/LazyFrame, ...) becomes a pandas
+    recognizes (polars DataFrame/LazyFrame, ...) becomes a pandas
     DataFrame, hypertools' internal frame type (a pandas frame passes
     through untouched); a pandas or polars Series becomes its one-column
     frame (index and name preserved)."""
@@ -616,7 +616,7 @@ def predict(data, model='Kalman', t=10, return_model=False, holdout=None,
     on one column for ``Kalman`` and 32% for ``ARIMA`` -- and raising
     ``n_iter`` from 1 to 100 does not close the gap, because `pykalman`'s
     EM starts from identity covariances and settles on a different
-    optimum. Columns measured in wildly different units (millimetres beside
+    optimum. Columns measured in wildly different units (millimeters beside
     percentages, say) will therefore not be weighted the way you expect.
     Pass ``normalize=`` upstream, or `hypertools.normalize` the data, when
     the features are not already comparable.
@@ -782,7 +782,7 @@ def predict(data, model='Kalman', t=10, return_model=False, holdout=None,
             # shared one model across every group, and dropped groups 2..n
             # onto `predict_new` -- all three promises above at once (review
             # of this task's first commit). Deep-copying a stateless dict is
-            # behaviourally identical (measured: `copy.deepcopy({'model':
+            # behaviorally identical (measured: `copy.deepcopy({'model':
             # 'Kalman', 'kwargs': {}})` compares equal), so `dict` left the
             # passthrough rather than growing a "does it hold an instance?"
             # special case.

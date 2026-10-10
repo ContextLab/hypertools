@@ -12,7 +12,7 @@ features of one measurement**: each month is a single 20-dimensional
 observation of "what the world's weather was doing", and ``hyp.plot``
 reduces that stream to a 3-D path.
 
-Every point on the path is coloured by the **average temperature across all
+Every point on the path is colored by the **average temperature across all
 twenty cities** on a diverging blue-cold / red-hot scale
 (``palette='RdBu_r'``), so the seasons show up as the path sweeping between
 the ends of the colormap and the slow warming trend shows up as where the
@@ -22,7 +22,7 @@ over the stacked rows so a hot city cannot dominate the reduction purely by
 scale, and ``chemtrails=True`` leaves the traversed path glowing faintly
 behind the moving head as 138 years play in one two-minute camera orbit.
 
-The colour axis, the colorbar and the trail are all the library's; the
+The color axis, the colorbar and the trail are all the library's; the
 example adds no ``ScalarMappable`` and reaches for nothing private. What it
 does add is one ``anim.on_frame`` hook that keeps three things in step with
 the head of the path, every frame:
@@ -30,18 +30,18 @@ the head of the path, every frame:
 * a **figure-wide title** naming the month the head is passing through
   ("March 1954");
 * a **world map** (Natural Earth 110 m coastlines, fetched once and cached)
-  with one dot per city, coloured by *that city's* temperature that month
+  with one dot per city, colored by *that city's* temperature that month
   through the *same* colormap and value range as the path's colorbar --
   so tropical cities sit at the red end all year while the mid-latitude
   ones flip between blue and red with the seasons, out of phase across the
   equator;
 * a **mean-temperature-vs-time** panel, sharing its left and right edges
-  with the map: the full 138-year series drawn faintly in grey once, the
-  months revealed so far growing over it as a line coloured **segment by
+  with the map: the full 138-year series drawn faintly in gray once, the
+  months revealed so far growing over it as a line colored **segment by
   segment by the mean temperature it is drawn at** (same colormap and
-  range again), and a head marker on the current month coloured like the
+  range again), and a head marker on the current month colored like the
   head of the path. The raw monthly mean swings by ~12 \N{DEGREE SIGN}C
-  every year (the coloured line and the marker bounce with it), so a
+  every year (the colored line and the marker bounce with it), so a
   trailing 12-month rolling mean is drawn in plain black over the revealed
   months to let the warming drift show through the seasons.
 
@@ -89,7 +89,7 @@ LAND = ('https://raw.githubusercontent.com/nvkelso/natural-earth-vector/'
 MONTHS = ('January', 'February', 'March', 'April', 'May', 'June', 'July',
           'August', 'September', 'October', 'November', 'December')
 # map-label nudges (x points, y points, alignment) for the crowded corners
-# of the archive's twenty cities; everything else is labelled to the right
+# of the archive's twenty cities; everything else is labeled to the right
 LABEL_OFFSETS = {'Chicago': (-5, 4, 'right'), 'Montreal': (4, 5, 'left'),
                  'New_York': (4, -9, 'left'), 'Seoul': (-5, 4, 'right'),
                  'Shanghai': (3, -9, 'left'), 'Tokyo': (4, 3, 'left'),
@@ -219,7 +219,7 @@ def construct_artifact(data):
     mean = data.temps.mean(axis=1)              # the hue: raw monthly mean
     n_months = len(mean)
     # THE hypertools call: twenty cities as twenty FEATURES of one path,
-    # coloured by the average temperature across them on a blue-cold /
+    # colored by the average temperature across them on a blue-cold /
     # red-hot scale, one camera orbit over the two-minute reveal. Stage
     # order is the library's: manip -> normalize -> reduce -> animate.
     # An animated line is resampled onto the frame grid, so the frame rate
@@ -244,7 +244,7 @@ def construct_artifact(data):
     cbar_ax.set_position([0.50, 0.22, 0.014, 0.50])
     cbar_ax.yaxis.label.set_fontsize(11)
 
-    # The map and the path share ONE colour scale: the colorbar spans the
+    # The map and the path share ONE color scale: the colorbar spans the
     # hue's actual range, so the same norm sends each city's own monthly
     # temperature through the same colormap (extremes saturate).
     norm = matplotlib.colors.Normalize(mean.min(), mean.max())
@@ -271,9 +271,9 @@ def construct_artifact(data):
                         color='0.25')
 
     # Mean temperature over time: the whole raw series once, faintly; then
-    # the raw months revealed so far, each segment coloured by the value it
+    # the raw months revealed so far, each segment colored by the value it
     # ends at, a trailing 12-month mean over them in black, and a marker on
-    # the current month coloured like the head of the path. The panel takes
+    # the current month colored like the head of the path. The panel takes
     # its left/right edges from the map's DRAWN box (equal aspect shrinks
     # the map inside the box it was given), so the two line up exactly.
     when = data.years + (data.months - 1) / 12

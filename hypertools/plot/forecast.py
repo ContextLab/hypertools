@@ -11,11 +11,11 @@ bounding box, and lets each frame be a table lookup.
 Three spaces, never conflated (see the plan's Contract 2):
 
 - ANALYZE space  -- `xform` post normalize/reduce/align, pre-resample,
-                    pre-centre/scale. Forecasts are computed HERE, and `t` is
+                    pre-center/scale. Forecasts are computed HERE, and `t` is
                     measured in these RAW samples.
 - FRAME GRID     -- `plot._interp_anim_line` resamples every animated line
                     dataset to exactly `round(frame_rate * duration)` rows.
-- DISPLAY box    -- the centred/rescaled [-1, 1] cube (`plot.py:4568-4585`).
+- DISPLAY box    -- the centered/rescaled [-1, 1] cube (`plot.py:4568-4585`).
 """
 
 import time
@@ -69,7 +69,7 @@ DEFAULT_MIN_HISTORY = 2
 #:
 #: Maintainer decision (1.1.0): a forecast should read as the same series
 #: projected forward, so it inherits its observed trace's identity --
-#: colour, linestyle AND linewidth -- and differs ONLY in transparency.
+#: color, linestyle AND linewidth -- and differs ONLY in transparency.
 #: This deliberately replaces the pre-1.1.0 rule (always ``linestyle='--'``
 #: at a hard-coded ``alpha=0.6`` regardless of how the data was drawn),
 #: under which a forecast of a dotted, hairline or already-translucent
@@ -84,16 +84,16 @@ FORECAST_ALPHA_SCALE = 0.5
 #: Linestyle per MODEL for a `predict=[...]` collection, cycled in model
 #: order (matplotlib fmt vocabulary; the plotly backend maps each through
 #: the same `_resolve_fmt` the observed traces use). A forecast keeps its
-#: dataset's COLOUR -- that is what says which series it continues -- so
+#: dataset's COLOR -- that is what says which series it continues -- so
 #: with several models on one series the dash is what says which model
 #: made it. The first model is solid, exactly like the single-model form,
 #: so ``predict=['Kalman']`` draws what ``predict='Kalman'`` draws.
 FORECAST_MODEL_LINESTYLES = ('-', '--', ':', '-.')
 
-#: Colour of a forecast's LEGEND glyph when the forecasts sharing that
-#: entry are drawn in more than one colour (one model over several
+#: Color of a forecast's LEGEND glyph when the forecasts sharing that
+#: entry are drawn in more than one color (one model over several
 #: datasets): the entry then stands for the model's dash, not for any one
-#: dataset's colour, so it is drawn in a neutral dark gray (at the
+#: dataset's color, so it is drawn in a neutral dark gray (at the
 #: forecast's own alpha, so it reads as faded like the forecasts do).
 FORECAST_LEGEND_COLOR = '#555555'
 
@@ -107,9 +107,9 @@ FORECAST_LEGEND_MIN_ALPHA = 0.8
 
 
 def override_has_color(override):
-    """Whether a `resolve_forecast_overrides` dict recolours the forecast:
+    """Whether a `resolve_forecast_overrides` dict recolors the forecast:
     a ``'color'`` entry (`forecast_hue=`/`forecast_cluster=`/
-    `forecast_palette=`) or a colour letter in its ``'fmt'``."""
+    `forecast_palette=`) or a color letter in its ``'fmt'``."""
     if not override:
         return False
     if override.get('color') is not None:
@@ -126,9 +126,9 @@ def override_has_color(override):
 
 def forecast_alpha_scale_for(override, alpha_scale=FORECAST_ALPHA_SCALE):
     """The alpha scale a forecast is drawn with: `alpha_scale` (the
-    documented halving) when it inherits its trace's colour, and 1.0 --
-    the trace's own alpha -- when an override recolours it: the colour is
-    then what tells the forecast from its trace, and fading a recoloured
+    documented halving) when it inherits its trace's color, and 1.0 --
+    the trace's own alpha -- when an override recolors it: the color is
+    then what tells the forecast from its trace, and fading a recolored
     forecast on top of that hid it among translucent traces (1.1 release
     review, feature-tour 9.10). Both backends call this."""
     return 1.0 if override_has_color(override) else alpha_scale
@@ -223,7 +223,7 @@ def forecast_from_history(history, model, t, min_history=DEFAULT_MIN_HISTORY,
     ----------
     history : array-like, shape (n_observed, n_dims)
         The trajectory revealed so far, in ANALYZE space (already reduced,
-        not yet resampled onto the frame grid and not yet centred/scaled).
+        not yet resampled onto the frame grid and not yet centered/scaled).
     model : str or dict
         Anything `hypertools.predict` accepts ('Kalman', 'ARIMA', 'Laplace',
         'GaussianProcess', 'Chronos', ...).
@@ -473,7 +473,7 @@ class DatasetRevealSchedule:
 
 
 class DisplayTransform:
-    """The centre/scale affine `plot()` applies at `plot.py:4569-4582`.
+    """The center/scale affine `plot()` applies at `plot.py:4569-4582`.
 
     ``2 * (((a - mean) - offset) / scale) - 1``. Recorded at setup so a
     forecast computed in ANALYZE space can be mapped into the SAME display
@@ -778,7 +778,7 @@ class ForecastSchedule:
 
         The revealed rows come from a `DatasetRevealSchedule` rather than from
         the drawn traces, because a dataset may now be spread over several of
-        them. They are passed through as ROW TUPLES, not summarised to counts:
+        them. They are passed through as ROW TUPLES, not summarized to counts:
         the reveal is what defines a frame's history, and the cache key must
         say so.
         """
@@ -906,7 +906,7 @@ class ForecastSchedule:
     def stacked_paths(self):
         """Every forecast vertex this schedule will ever draw, stacked.
 
-        This is what Task 4 folds into the joint centre/scale statistics so
+        This is what Task 4 folds into the joint center/scale statistics so
         the display box contains all of it by construction.
         """
         rows = []
@@ -922,7 +922,7 @@ class ForecastSchedule:
         """Replace `column` of every path with an exact arithmetic ramp.
 
         `ndims=1` series mode (GH #285) draws each column against its row
-        INDEX, which it materialises as an extra x column before forecasting
+        INDEX, which it materializes as an extra x column before forecasting
         -- so the model also "forecasts" a perfectly regular ramp. Its x
         values are an extrapolation the PLOT is entitled to decide (the
         index continues by one observation per step, exactly), not something
@@ -1209,7 +1209,7 @@ def trail_alpha(age, n_retained, live_alpha=None, floor=None):
 #
 # Resolved HERE, backend-neutrally, into one plain dict per dataset, because
 # resolving it twice is how the two backends drift apart. Each backend's
-# `_forecast_style_from` then translates the same dict into its own colour /
+# `_forecast_style_from` then translates the same dict into its own color /
 # dash / opacity vocabulary.
 # ---------------------------------------------------------------------------
 
@@ -1230,10 +1230,10 @@ _FORECAST_COUNT_NOTE = (
 def _forecast_label_colors(labels, palette):
     """One RGB tuple per dataset, from `labels` (one per DATASET).
 
-    Categorical throughout: two datasets share a colour exactly when they
+    Categorical throughout: two datasets share a color exactly when they
     share a label. `mat2colors`' 1-D numeric path is deliberately NOT used --
     it BINS values into a gradient, so integer cluster labels 0/1/2 would come
-    out as three shades of one hue rather than three distinguishable colours.
+    out as three shades of one hue rather than three distinguishable colors.
 
     ``None`` marks an UNLABELED dataset (see `_is_missing_label`): it forms
     one group drawn in the neutral `colors.NAN_COLOR` gray and consumes no
@@ -1261,7 +1261,7 @@ def _validate_fmt(fmt, kwarg='forecast_fmt'):
     Checked HERE so both backends refuse the same strings at the same
     moment: left to drawing time, matplotlib raises from inside
     `_apply_forecast_override` and plotly's `_resolve_fmt` quietly ignores
-    the characters it does not recognise.
+    the characters it does not recognize.
     """
     if _process_plot_format is None:  # pragma: no cover
         return
@@ -1389,23 +1389,23 @@ def resolve_forecast_overrides(n_datasets, forecasts=None, *, hue=None,
         and both mismatches otherwise fail silently or misleadingly (a raw
         ``(t,)`` array would be read as one t-dimensional endpoint).
     hue : sequence or None
-        One value per dataset. Datasets sharing a value share a colour. A
+        One value per dataset. Datasets sharing a value share a color. A
         missing value (`None`, NaN, `pd.NA`) marks that dataset UNLABELED:
         every one of them forms a single group drawn in neutral gray and
         consuming no palette slot, exactly as `plot()` treats a
         partially-labeled `hue=`. A bare string is rejected rather than read
         as one label per character, and each value must be hashable -- it
-        becomes a key in the label -> colour map.
+        becomes a key in the label -> color map.
     cluster : cluster spec or None
         Clusters the forecast ENDPOINTS -- where each series is predicted to
-        end up -- so a forecast's colour answers "which of these are heading
+        end up -- so a forecast's color answers "which of these are heading
         to the same place?".
 
         It deliberately does NOT recluster the observed data: inheriting the
         observed assignment is what the default already gives, so that
         reading would make the kwarg a no-op. Nor does it cluster every
-        predicted POINT (one forecast would change colour along its own short
-        path, contradicting "coloured by where it is heading"), nor whole
+        predicted POINT (one forecast would change color along its own short
+        path, contradicting "colored by where it is heading"), nor whole
         flattened trajectories (sensitive to `t`, to sampling and to
         dimensionality, where an endpoint has one stable meaning).
 
@@ -1420,15 +1420,15 @@ def resolve_forecast_overrides(n_datasets, forecasts=None, *, hue=None,
         sets, and there is no reason a good number of groups for one is a
         good number for the other.
     palette : str, list of colors, matplotlib Colormap, or None
-        Colours for the grouping. With no grouping given, spent one colour
-        per dataset. `None` means "no colour override" -- callers pass the
+        Colors for the grouping. With no grouping given, spent one color
+        per dataset. `None` means "no color override" -- callers pass the
         figure's own `palette=` when they want the observed one inherited.
     default_palette : callable or None
-        The grouping's colours when `palette` is None: called with the
-        number of groups, it returns that many colours. `plot()` passes
+        The grouping's colors when `palette` is None: called with the
+        number of groups, it returns that many colors. `plot()` passes
         `_forecast_group_palette`, which continues the figure's palette
-        past the observed data's colours so no group repeats one. None
-        keeps 'hls' from its first colour.
+        past the observed data's colors so no group repeats one. None
+        keeps 'hls' from its first color.
     fmt : str, sequence of str, or None
         Line/marker style for the forecasts, independent of the observed
         `fmt`. Validated here with matplotlib's own `fmt=` parser, so both
@@ -1447,7 +1447,7 @@ def resolve_forecast_overrides(n_datasets, forecasts=None, *, hue=None,
     if hue is not None and cluster is not None:
         raise ValueError(
             "forecast_hue= and forecast_cluster= both decide how the "
-            "forecasts are grouped and coloured, so passing both would mean "
+            "forecasts are grouped and colored, so passing both would mean "
             "silently picking a winner. Pass one (this mirrors hue= and "
             "cluster= for the observed data).")
     if n_clusters is not None and cluster is None:
@@ -1472,14 +1472,14 @@ def resolve_forecast_overrides(n_datasets, forecasts=None, *, hue=None,
         labels = list(hue)
         # a per-observation hue (the shape `hue=` takes) reaches here as a
         # list of ARRAYS, and grouping by `==` on those raises numpy's
-        # "truth value of an array is ambiguous" from deep inside the colour
+        # "truth value of an array is ambiguous" from deep inside the color
         # code. Say what was actually wrong instead.
         if any(isinstance(v, (list, tuple, np.ndarray)) for v in labels):
             raise ValueError(
                 "forecast_hue= takes one SCALAR value per dataset (a "
                 "forecast is a single trace, so there is no per-observation "
                 "hue to take); got a sequence as one of its values. Pass "
-                "hue= to colour the observed data per observation.")
+                "hue= to color the observed data per observation.")
         if len(labels) != n_datasets:
             raise ValueError(
                 f"forecast_hue= must have exactly one value per FORECAST (a "
@@ -1492,9 +1492,9 @@ def resolve_forecast_overrides(n_datasets, forecasts=None, *, hue=None,
         # normalization `plot()` applies to a categorical `hue=`)
         from .colors import is_missing_label
         labels = [None if is_missing_label(v) else v for v in labels]
-        # labels become the KEYS of a label -> colour map, so an unhashable
+        # labels become the KEYS of a label -> color map, so an unhashable
         # one (a dict, a set) passes the sequence guard above and then fails
-        # as a bare "unhashable type" from inside the colour code
+        # as a bare "unhashable type" from inside the color code
         # `hash(v)` rather than `isinstance(v, Hashable)`: the ABC only asks
         # whether `__hash__` EXISTS, and a tuple holding a list has one that
         # raises when called.
@@ -1507,7 +1507,7 @@ def resolve_forecast_overrides(n_datasets, forecasts=None, *, hue=None,
                 raise TypeError(
                     f"every forecast_hue= value must be usable as a group "
                     f"label, which means hashable (datasets sharing a value "
-                    f"share a colour); got {v!r} "
+                    f"share a color); got {v!r} "
                     f"({type(v).__name__}).") from exc
     elif cluster is not None:
         # `plot()` passes `len(raw_forecasts)` as `n_datasets`, so it cannot
@@ -1555,7 +1555,7 @@ def resolve_forecast_overrides(n_datasets, forecasts=None, *, hue=None,
                 labels, 'hls' if palette is None else palette)):
             overrides[i]['color'] = color
     elif palette is not None:
-        # nothing to group BY, so the palette is spent one colour per
+        # nothing to group BY, so the palette is spent one color per
         # dataset -- the only grouping a forecast set has on its own
         for i, color in enumerate(_forecast_label_colors(
                 list(range(n_datasets)), palette)):

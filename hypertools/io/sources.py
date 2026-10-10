@@ -1256,7 +1256,7 @@ def _parse_yahoo_chart(payload, *, ticker, interval='1d', window='',
     Yahoo stamps every bar at the exchange's local session open expressed
     in UTC (23:00 UTC for a Sydney-listed ticker, 14:30 UTC for New York),
     and reports the exchange's UTC offset as ``meta.gmtoffset`` (seconds).
-    Normalising the raw UTC stamp to midnight dated every bar east of UTC
+    Normalizing the raw UTC stamp to midnight dated every bar east of UTC
     one day early (BHP.AX 2025-01-06..10 came back as 2025-01-05..09; 1.1
     release review, I2), so the offset is applied first: the resulting
     ``date`` is the exchange-local trading day.

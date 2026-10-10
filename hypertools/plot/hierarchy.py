@@ -109,7 +109,7 @@ def build_hierarchy_traces(leaf_arrays, meta, aux=None):
     this chain mutates its inputs -- and a blanket copy would double peak
     memory for no gain against it. (Incidentally, on the pandas installed
     here copy-on-write makes `np.asarray(df)` a non-writeable view, so a
-    stray write raises; that is version-specific behaviour, not a guarantee.
+    stray write raises; that is version-specific behavior, not a guarantee.
     Any future code that needs to WRITE into an `arrays` member must copy at
     that point and say why.)
 
@@ -237,7 +237,7 @@ def build_hierarchy_styles(traces, palette='hls', linestyle=None,
     carries a legend label. When ``meta['n_levels'] == 1`` there IS no mean:
     each leaf is itself a top-level group, so each carries its own label.
     Without this, a two-level (Group, Feature) column hierarchy drew several
-    completely unlabelled traces and an empty legend (F11).
+    completely unlabeled traces and an empty legend (F11).
 
     Parameters
     ----------
@@ -257,7 +257,7 @@ def build_hierarchy_styles(traces, palette='hls', linestyle=None,
         A caller-supplied replacement for the legend text, ONE entry per
         unique top-level index value in ``unique_top`` order (the same
         per-top-level-group convention `linestyles` already uses). Only the
-        labelled traces are affected -- everything else keeps
+        labeled traces are affected -- everything else keeps
         ``'_nolegend_'`` -- so the legend still has exactly ``n_top``
         entries. ``None`` (the default) keeps the index values themselves.
         Raises ``ValueError`` on a length mismatch, naming ``legend=``
@@ -269,14 +269,14 @@ def build_hierarchy_styles(traces, palette='hls', linestyle=None,
         ``{'colors', 'linewidths', 'alphas', 'labels', 'group_labels',
         'linestyles', 'n_top', 'unique_top'}``, one entry per trace (aligned
         by position). ``group_labels`` is every trace's top-level group
-        label (the legend text of the group it is coloured as, never the
+        label (the legend text of the group it is colored as, never the
         ``'_nolegend_'`` sentinel) -- the plotly backend's hover name.
     """
     n_levels = traces.meta['n_levels']
 
     # Top-level uniqueness is NA-aware for the same reason prefix grouping
     # is: two leaves whose top label is missing are ONE group, and must get
-    # one colour and one legend entry rather than one each. `unique_top`
+    # one color and one legend entry rather than one each. `unique_top`
     # keeps the ORIGINAL value -- the sentinel is never user-visible.
     unique_top = []
     top_index_of = {}
@@ -310,7 +310,7 @@ def build_hierarchy_styles(traces, palette='hls', linestyle=None,
     # legend=[...] under a hierarchy renames the top-level GROUPS, so it is
     # sized like `linestyles` (one entry per unique top-level value), not
     # like the drawn-trace count a flat `legend=` list uses -- the leaves
-    # and the intermediate means are unlabelled by the rule below, so a
+    # and the intermediate means are unlabeled by the rule below, so a
     # per-trace list would be mostly sentinel padding the caller cannot see
     # the need for. Checked here, where `n_top`/`unique_top` are known.
     per_top_label = None
@@ -328,7 +328,7 @@ def build_hierarchy_styles(traces, palette='hls', linestyle=None,
 
     colors, linewidths, alphas, labels = [], [], [], []
     # every trace's TOP-level group label (never the sentinel): what the
-    # legend entry it shares a colour with says -- the plotly backend's
+    # legend entry it shares a color with says -- the plotly backend's
     # hover name for leaves and intermediate means, which carry no legend
     # label of their own
     group_labels = []
@@ -343,7 +343,7 @@ def build_hierarchy_styles(traces, palette='hls', linestyle=None,
         # Only the TOP-level mean carries a legend label -- except when
         # n_levels == 1, where there IS no mean and each leaf is itself a
         # top-level group. Without that exception a (Group, Feature) column
-        # hierarchy drew several completely unlabelled traces (F11).
+        # hierarchy drew several completely unlabeled traces (F11).
         top_level = (level == 0) and (mean or n_levels == 1)
         group_labels.append(str(top_val) if per_top_label is None
                             else str(per_top_label[top_i]))

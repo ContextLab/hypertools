@@ -381,7 +381,7 @@ def transition_t(step, n_steps):
     `n_steps`): ``smoothstep((step + 1) / (n_steps + 1))``.
 
     Always strictly inside ``(0, 1)``: the ENDPOINTS of a transition are the
-    two hold clouds, which the neighbouring HOLD segments already draw, so a
+    two hold clouds, which the neighboring HOLD segments already draw, so a
     transition frame that sampled them would only repeat a hold. The
     samples are the ``n_steps`` interior points of an ``n_steps + 1``-way
     split, which keeps them symmetric about the midpoint and evenly spaced

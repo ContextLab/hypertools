@@ -33,7 +33,7 @@ def _contains_text(el):
 
 def _is_dataset(el):
     """True if `el` is ONE dataset object: an array, a DataFrame of any
-    backend datawrangler recognises (pandas, polars DataFrame/LazyFrame,
+    backend datawrangler recognizes (pandas, polars DataFrame/LazyFrame,
     dataframe-likes) or a Series-like (see `hypertools._shared.helpers`)."""
     return is_array_dataset(el) or is_frame_dataset(el) or is_series_like(el)
 
@@ -130,7 +130,7 @@ def format_data(x, vectorizer='CountVectorizer',
       tuples are treated like lists.
     - Input types are classified with datawrangler's predicates
       (``dw.zoo.is_array`` / ``is_dataframe`` / ``array_like``), so every
-      DataFrame backend datawrangler recognises -- pandas, polars
+      DataFrame backend datawrangler recognizes -- pandas, polars
       (DataFrame or LazyFrame), modin, dataframe-likes -- is accepted, and
       non-pandas frames are converted to pandas via
       ``dw.wrangle(..., backend='pandas')`` (polars nulls become NaN).
@@ -263,7 +263,7 @@ def format_data(x, vectorizer='CountVectorizer',
     # per-dataset conversions (release-1.0 audit):
     # - a Series inside a list is a 1-D dataset, like a top-level Series
     #   (converted above)
-    # - a DataFrame of any other backend datawrangler recognises (polars
+    # - a DataFrame of any other backend datawrangler recognizes (polars
     #   DataFrame/LazyFrame, modin, dataframe-likes) becomes a pandas
     #   DataFrame, hypertools' internal frame type; pandas frames pass
     #   through untouched (index, columns and dtypes preserved)

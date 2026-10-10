@@ -209,7 +209,7 @@ class RunWindow:
         and the first run's `first_row` is also 0, so a degenerate value and
         a real boundary coincide. Two derivations of one fact can drift;
         `head_end` already carries it. (The two were measured equal over 1116
-        windows before the substitution, so this changes no behaviour.)
+        windows before the substitution, so this changes no behavior.)
     grid : int
         The run's drawn row count. Carried so `run_head_param` can invert the
         projection from the window ALONE -- the reveal schedule must read the

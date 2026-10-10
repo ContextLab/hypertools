@@ -31,6 +31,12 @@ build:
       # blocker #2). Fetch a pinned Chrome into choreographer's deps dir, where
       # Kaleido discovers it automatically (no PATH wiring needed).
       - plotly_get_chrome -y
+    pre_build:
+      # Reuse the gallery the release pipeline built and published
+      # (scripts/publish_prebuilt_gallery.py): executing all the examples here
+      # takes longer than the 15-minute build limit. Examples whose source
+      # changed since are still executed by sphinx-gallery.
+      - python docs/fetch_prebuilt_gallery.py
     post_build:
       # Fix animated GIF thumbnails after documentation build
       - python docs/post_build.py

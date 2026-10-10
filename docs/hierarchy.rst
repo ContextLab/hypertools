@@ -288,10 +288,10 @@ never drift out of step with the trace it describes:
    >>> bool(np.allclose(aux[2], (aux[0] + aux[1]) / 2))
    True
 
-Colours are mapped over the concatenation of every trace's values -- leaves
+Colors are mapped over the concatenation of every trace's values -- leaves
 and means together -- so one scale spans the figure and a ``colorbar=``
 reads against all of it. The hierarchy still sets linewidth, alpha and
-labels; only its colours step aside. Forecast overlays inherit the colour
+labels; only its colors step aside. Forecast overlays inherit the color
 of the trace they continue, taken at the anchor point.
 
 A flat array sized to the **total drawn observations** is rejected, not
@@ -319,7 +319,7 @@ Matrix hue: one blend per observation
 A per-leaf sequence may be **2-D**. Then each row is a set of **mixture
 weights** over the palette, and the observation is drawn in the blend those
 weights describe. This is the form that lets the hierarchy's own arithmetic
-choose the colours: a mean trace averages its members' weights, and the mean
+choose the colors: a mean trace averages its members' weights, and the mean
 of mixture weights is itself a mixture weight -- so give each leaf one
 *primary* and every parent comes out a *secondary* without anything
 computing it.
@@ -341,16 +341,16 @@ The rules, in full:
 
 * weights are **normalized to sum to 1**, so only the ratio between
   components shows. Halving every weight in a row draws the identical
-  colour -- a second quantity needs its own palette entry (a black one, say,
+  color -- a second quantity needs its own palette entry (a black one, say,
   for "darker = larger"), it cannot ride on the total magnitude;
-* **negative** entries have no colour meaning, so each row is shifted by its
-  own minimum: a signed matrix is coloured by within-row *contrast*;
-* the palette must supply at least one colour **per column**. A shorter
+* **negative** entries have no color meaning, so each row is shifted by its
+  own minimum: a signed matrix is colored by within-row *contrast*;
+* the palette must supply at least one color **per column**. A shorter
   palette raises; a longer one leaves components unused;
 * every per-leaf matrix must have the **same width** -- they share one
   palette;
-* a **non-finite** entry draws that observation neutral grey and warns. A
-  mean is the element-wise mean of its members, so one ``NaN`` greys the
+* a **non-finite** entry draws that observation neutral gray and warns. A
+  mean is the element-wise mean of its members, so one ``NaN`` grays the
   leaf *and every ancestor mean* at that row;
 * by default the **width decides**: more than 3 columns, or any explicit
   ``color_reduce=``, switches to the literal-RGB route instead -- the matrix
@@ -439,8 +439,8 @@ own label:
    >>> build_hierarchy_styles(traces)['labels']
    ['G1', 'G2']
 
-Colour is assigned per **top-level** index value, so every trace descending
-from one top-level group shares its colour and is distinguished by weight
+Color is assigned per **top-level** index value, so every trace descending
+from one top-level group shares its color and is distinguished by weight
 and opacity instead.
 
 
@@ -478,7 +478,7 @@ position at each timepoint.
 
 **Some kwargs are refused, and some are ignored.** ``cluster=`` and
 ``n_clusters=`` raise ``ValueError`` on **either** axis -- both would fight
-the hierarchy's colour assignment -- and the remedy differs by axis, which
+the hierarchy's color assignment -- and the remedy differs by axis, which
 is why the two messages differ. ``df.reset_index(drop=True)`` flattens a
 ROW hierarchy, but it does not touch a column ``MultiIndex``, so a column
 hierarchy needs ``df.columns = df.columns.map('_'.join)`` instead:
@@ -509,8 +509,8 @@ refused, with the same message:
 a ``UserWarning``, since the hierarchy owns them. A ``linestyle=`` **list**
 must have exactly one entry per top-level group.
 
-``legend=`` is the one overridden kwarg that is *honoured* rather than
-warned away -- colour, width and alpha encode the hierarchy's structure, so
+``legend=`` is the one overridden kwarg that is *honored* rather than
+warned away -- color, width and alpha encode the hierarchy's structure, so
 a caller's value would contradict the drawing, but legend text names groups
 the hierarchy has no opinion about. A **list** renames the top-level groups
 (one entry per unique top-level value, in first-appearance order, exactly
@@ -518,7 +518,7 @@ like ``linestyle=``); ``legend=False`` suppresses the automatic legend; and
 ``legend=True`` (or omitting it) labels the groups with the index values
 themselves. ``legend=False`` suppresses the *legend* only -- ``colorbar=True``
 still shows one named segment per top-level group, because the colorbar is
-the colour key for the drawn groups rather than a second legend:
+the color key for the drawn groups rather than a second legend:
 
 .. doctest::
 
@@ -602,8 +602,8 @@ list is therefore rejected -- but **asymmetrically**:
    ...     print(str(error).split('. ')[0])
    hyp.predict received a list whose element 0 is a DataFrame with a row MultiIndex
 
-The asymmetry is deliberate. `hypertools.plot`'s row behaviour is
-documented and depended upon, so it is preserved; its column behaviour was
+The asymmetry is deliberate. `hypertools.plot`'s row behavior is
+documented and depended upon, so it is preserved; its column behavior was
 never pinned (it silently flattened to a single line), so rejecting it is
 purely additive. `hypertools.predict` had nothing to preserve on either
 axis -- a row-hierarchical frame in a list raised a ``TypeError`` from deep
@@ -621,7 +621,7 @@ Return shapes
 ``return_model=True`` gives back a bundle whose two data entries answer
 different questions.
 
-``xform_data`` is the **analysed pipeline output**, one entry per analysed
+``xform_data`` is the **analyzed pipeline output**, one entry per analyzed
 input dataset -- for a hierarchy, one per leaf. ``trace_data`` is the final
 **pre-center/pre-scale plotted trajectories**: for a hierarchy, the leaves
 followed by the per-level means. Means are presentation artifacts built in
@@ -683,10 +683,10 @@ grouping is still what makes the answer meaningful.)
 
 Name matching applies to a **bare hierarchical frame**, and only to that.
 A *list* is taken as already grouped and is matched positionally -- its
-members ARE the datasets, whether they are arrays or labelled DataFrames --
+members ARE the datasets, whether they are arrays or labeled DataFrames --
 so ``pipeline.transform([leaf_a, leaf_b])`` never reorders columns for you.
 That is the same positional contract a list has always had elsewhere in
-hypertools; hand the pipeline the frame if you want the labels honoured.
+hypertools; hand the pipeline the frame if you want the labels honored.
 
 Given a frame, features are matched to the fitted pipeline **by name**, on
 the same terms they are matched across groups, so reordering the innermost
@@ -787,7 +787,7 @@ pair ``([f0, f1, ...], [m0, m1, ...])`` rather than a list of pairs.
    ['return', 'volatility', 'momentum']
 
 
-Fitted model behaviour
+Fitted model behavior
 -----------------------
 
 Hierarchical forecasting needs one model per group, so `hypertools.predict`
@@ -799,7 +799,7 @@ states ownership explicitly. **The object you pass is never mutated**, and
    :widths: 34 66
 
    * - ``model=``
-     - Behaviour per group
+     - Behavior per group
    * - a name, a class, or a dict spec
      - one independent model is **fitted per group**
    * - an **unfitted** instance
@@ -873,7 +873,7 @@ so nothing degrades silently when you switch.
    [(5, 3), (5, 3), (5, 3)]
 
 The per-level linewidth, alpha and legend rules, the continuous-hue
-colouring and the per-trace forecast overlays are all applied by both
+coloring and the per-trace forecast overlays are all applied by both
 backends. Animated hierarchical plots work on both as well.
 
 
@@ -1030,7 +1030,7 @@ Group order, which is a different question
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Everything above is about correspondence **within** a group. The order of
-the **groups** is a separate matter, and it is *not* neutralised: groups
+the **groups** is a separate matter, and it is *not* neutralized: groups
 become datasets, ``reduce=`` row-stacks every dataset and fits **one**
 model on the stack (that is what makes the space shared), so group order is
 row order in that stack. A reducer whose fit depends on row order will
@@ -1093,7 +1093,7 @@ It is documented rather than worked around for two reasons, neither of which
 is "existing figures would move". Imposing a canonical group order would
 mean inventing a total ordering over arbitrary hierarchy labels -- mixed
 types, missing values, tuples of both -- and every choice there is arbitrary.
-And it would make a labelled hierarchy behave differently from the
+And it would make a labeled hierarchy behave differently from the
 equivalent list of datasets, which has always been positional, adding one
 more semantic distinction between two spellings of the same plot. Pass
 ``reduce='PCA'`` when block order must not matter; it is an explicit,

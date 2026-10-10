@@ -65,8 +65,8 @@ class FrameContext:
         are meant to be mutated.
         BACKEND-NATIVE: on plotly these are that frame's ``go.Scatter``/
         ``go.Scatter3d`` traces, in the same order -- except that a
-        dataset drawn by SEVERAL traces (an animated multicoloured 2-D
-        line: one trace per colour bin) is one
+        dataset drawn by SEVERAL traces (an animated multicolored 2-D
+        line: one trace per color bin) is one
         `hypertools.plot.plotly_backend.PlotlyTraceGroup`, a tuple of its
         traces that sets an assigned attribute (``artist.opacity = 0.4``)
         on every member, so there is still one artist per dataset.
@@ -92,7 +92,7 @@ class FrameContext:
         frame, so ``ctx.artists[0]`` on frame 1 and on frame 2 are the
         SAME object in different states. Under a CONTINUOUS or matrix
         ``hue=`` the rendered artists are per-dataset ``LineCollection``/
-        ``Line3DCollection`` objects (the single-colour ``Line2D`` heads
+        ``Line3DCollection`` objects (the single-color ``Line2D`` heads
         are hidden and only drive the bookkeeping), and those collections
         are what ``artists`` holds -- so ``set_alpha``/``set_color`` on
         them changes what is drawn.
@@ -106,10 +106,10 @@ class FrameContext:
 
         * Where artists are SHARED (matplotlib all styles, plotly spin),
           anything you set persists until something overwrites it, so
-          ``if ctx.frame == 0: artist.set_color('red')`` colours the
+          ``if ctx.frame == 0: artist.set_color('red')`` colors the
           ENTIRE animation rather than frame 0.
         * Where they are PER-FRAME (plotly parallel/serial/window/morph),
-          the same callback colours ONLY frame 0 -- each frame carries an
+          the same callback colors ONLY frame 0 -- each frame carries an
           independent trace payload that the callback mutates before it
           is stored. Measured 2026-07-30: ``fig.frames[0].data[0] is not
           fig.frames[1].data[0]`` for every one of those four styles.
@@ -123,7 +123,7 @@ class FrameContext:
             artist.set_color('red' if ctx.frame == target else DEFAULT)
 
             # correct everywhere -- also assigns on every frame
-            artist.set_color(COLOURS[ctx.frame])
+            artist.set_color(COLORS[ctx.frame])
 
             # BROKEN -- assigns on one frame, leaves the rest to chance
             if ctx.frame == target:

@@ -619,7 +619,7 @@ def load(
 
 def _is_loaded_one(dataset):
     """True for ONE already-loaded dataset: an array, or a DataFrame of
-    any backend datawrangler recognises (pandas, polars, a LazyFrame, ...).
+    any backend datawrangler recognizes (pandas, polars, a LazyFrame, ...).
     Strings and path-likes are never datasets here -- they name something
     to load -- and are excluded BEFORE the datawrangler predicate is asked
     (``dw.zoo.is_dataframe`` would otherwise try to read a path)."""
@@ -669,7 +669,7 @@ def _resolve(dataset, *, legacy, split, streaming, trust, cache=False,
 
     if dataset in EXAMPLE_DATA.keys():
         _reject_kwargs('built-in example dataset')
-        # *_model -> Pipeline; offline=True is honoured inside
+        # *_model -> Pipeline; offline=True is honored inside
         geo_data = _load_example_data(dataset, offline=offline)
     else:
         # resolution chain, right after built-in names: scikit-learn's

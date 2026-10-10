@@ -107,10 +107,10 @@ def mat2colors(m, palette='hls', n_bins=100):
     import seaborn as sns
 
     if is_frame_dataset(m):
-        # any dataframe backend datawrangler recognises (pandas, polars, ...)
+        # any dataframe backend datawrangler recognizes (pandas, polars, ...)
         m = as_pandas_dataframe(m).to_numpy()
     elif is_series_like(m) and not dw.zoo.array_like(m):
-        # a labelled vector that is not numpy-like itself (a polars Series;
+        # a labeled vector that is not numpy-like itself (a polars Series;
         # a pandas Series is `array_like` and read below as it is): its
         # values
         m = np.asarray(m)
@@ -317,7 +317,7 @@ IMAGE_PALETTE_N = 6
 #: "is not a valid palette name" error.
 IMAGE_PALETTE_PREFIX = 'image:'
 
-#: Below this chroma (max(RGB) - min(RGB)) an image has no colour to be
+#: Below this chroma (max(RGB) - min(RGB)) an image has no color to be
 #: salient ABOUT, so `image_palette` orders by population instead.
 _ACHROMATIC_EPS = 0.02
 
@@ -410,7 +410,7 @@ def sort_colors(colors, key='value'):
 def is_palette_matrix(obj):
     """True for a t x k DATA matrix passed as a palette (`matrix_palette`).
 
-    A DataFrame (any backend datawrangler recognises: pandas, polars, ...),
+    A DataFrame (any backend datawrangler recognizes: pandas, polars, ...),
     or a 2-D numeric array (or nested list) that cannot be a list of colors:
     a color list has 3 or 4 columns with every value in [0, 1], and keeps
     meaning exactly that. Anything else 2-D and numeric -- another column
@@ -776,11 +776,11 @@ def image_palette(image, n_colors=IMAGE_PALETTE_N, resize=200,
     Notes
     -----
     Salience is ``pixel_fraction * chroma``, where
-    ``chroma = max(r, g, b) - min(r, g, b)`` measures distance from grey.
+    ``chroma = max(r, g, b) - min(r, g, b)`` measures distance from gray.
     Ordering by pixel fraction ALONE returns a painting's background --
     which is exactly the bug this function exists to avoid. When every
-    cluster is achromatic (max chroma < 0.02, i.e. a greyscale image) the
-    ordering falls back to pixel fraction, because a grey image has no
+    cluster is achromatic (max chroma < 0.02, i.e. a grayscale image) the
+    ordering falls back to pixel fraction, because a gray image has no
     vivid color and "largest" is then the right answer.
 
     Examples
@@ -1311,7 +1311,7 @@ def palette_lead_color(spec):
         spec = matrix_palette(spec)
     if isinstance(spec, MatrixColormap):
         # every matrix palette spans the RGB cube after per-channel scaling,
-        # so its MIDDLE color is near mid-grey for any matrix and two
+        # so its MIDDLE color is near mid-gray for any matrix and two
         # datasets would look alike; the most saturated anchor (chroma =
         # max - min, first on ties) is the color the matrix is about
         chroma = spec.anchors.max(axis=1) - spec.anchors.min(axis=1)

@@ -25,11 +25,11 @@ region, against a seasonal swing of about 9 (measured 2026-09-04).
 
 Three keywords restyle the forecasts without touching the observed paths:
 ``forecast_hue=`` groups the forecasts (the two Old World regions share a
-colour, the Americas have their own), ``forecast_palette=`` gives that
-grouping its own colours, and ``forecast_fmt=`` draws every forecast dashed.
+color, the Americas have their own), ``forecast_palette=`` gives that
+grouping its own colors, and ``forecast_fmt=`` draws every forecast dashed.
 Everything they do not name is inherited from the trace a forecast
-continues. A forecast that inherits its trace's colour is drawn at half
-the trace's alpha; these carry their own colours from
+continues. A forecast that inherits its trace's color is drawn at half
+the trace's alpha; these carry their own colors from
 ``forecast_palette=``, so each current forecast is drawn at full opacity,
 and with ``forecast_trail=True`` only the earlier fits fade.
 
@@ -147,7 +147,7 @@ def construct_artifact(data):
     # shared space; `predict=` refits on every distinct revealed history
     # and `forecast_trail=` keeps the earlier fits as a fading fan. The
     # three `forecast_*` keywords restyle the forecasts only: the two Old
-    # World regions' forecasts share a colour, the Americas' has its own,
+    # World regions' forecasts share a color, the Americas' has its own,
     # all three are dashed, and each still continues the path it belongs
     # to. `slow_warning_seconds=None` silences the long-schedule notice:
     # the 180 fits this clip needs measured about 6 s, a known wait.

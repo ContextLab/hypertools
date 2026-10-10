@@ -7,7 +7,7 @@ Morphing hull surfaces through shapes
 Building on the *Morphing through the shapes zoo, with titles* example, this
 one wraps the moving point cloud in a smooth, lit convex-hull SURFACE: the
 ``surface=`` kwarg of `hyp.plot` combined with ``animate='morph'``. The hull
-mesh is recomputed from the travelling cloud on every frame, shaded with a
+mesh is recomputed from the traveling cloud on every frame, shaded with a
 two-light Blinn-Phong model and backface-culled for the current camera
 angle, so a blue-teal "skin" flows continuously from the bunny to the cube,
 the sphere, the teapot and the vase as the points underneath rearrange
@@ -31,7 +31,7 @@ transition gets, never how fast it spins: every hold gets a slow full turn
 and every transition a brisk quarter-turn, so the camera visibly steps
 forward each time one shape morphs into the next.
 
-Each cloud is first centred and scaled into the [-1, 1] cube with
+Each cloud is first centered and scaled into the [-1, 1] cube with
 ``hyp.manip(..., model='Normalize', mode='isotropic')`` -- one centroid and
 one scalar per shape, so proportions are preserved -- because `hyp.plot`
 draws every dataset in one shared frame. Five of the zoo's seven shapes are
@@ -53,7 +53,7 @@ than the default 3, roughly a 4x per-frame speedup (measured: 30 frames in
 
 import hypertools as hyp
 
-# five of the zoo's seven shapes, each centred and scaled into the [-1, 1]
+# five of the zoo's seven shapes, each centered and scaled into the [-1, 1]
 # cube with one shared centroid and scalar (mode='isotropic'), so every shape
 # keeps its proportions inside hyp.plot's shared frame
 shapes = ['bunny', 'cube', 'sphere', 'teapot', 'vase']

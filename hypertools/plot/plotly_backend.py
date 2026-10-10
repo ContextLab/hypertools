@@ -66,27 +66,27 @@ from . import morph as _morph
 
 
 def _normalize_scatter3d_alpha(trace, inherited_mode=None, *, frame=False):
-    """Keep a Scatter3d's hue when its colours carry transparency.
+    """Keep a Scatter3d's hue when its colors carry transparency.
 
-    Plotly's WebGL line/marker path composites an ``rgba(...)`` colour
-    without premultiplying it, so a translucent colour ADDS to the white
+    Plotly's WebGL line/marker path composites an ``rgba(...)`` color
+    without premultiplying it, so a translucent color ADDS to the white
     background instead of blending with it: steelblue at alpha 0.5 renders
     as (197, 255, 255), a pale cyan, rather than (162, 192, 217) (notebook
     visual review 2026-09; 1.1 release review). The trace-level `opacity`
     blends correctly, so:
 
-    * UNIFORM alpha (every active colour the same) moves to `opacity`
-      verbatim, with the colours made opaque -- true translucency.
+    * UNIFORM alpha (every active color the same) moves to `opacity`
+      verbatim, with the colors made opaque -- true translucency.
     * NONUNIFORM alpha (a translucent line with opaque markers, per-vertex
       alpha, ...) cannot be one `opacity`. The largest alpha becomes the
-      trace `opacity`, and every colour is first composited over the white
+      trace `opacity`, and every color is first composited over the white
       paper (`_blend_toward_white`, the rule this module's Mesh3d surfaces
       use) by its share ``alpha / max_alpha`` of it. Over white the result
-      is exactly the requested colour; what it cannot express is a
+      is exactly the requested color; what it cannot express is a
       lower-alpha part showing ANOTHER trace through it at its own lower
       opacity -- the price of drawing the right hue.
 
-    Only active components participate: an unused marker colour must not
+    Only active components participate: an unused marker color must not
     prevent correcting a line. This operation is idempotent and also
     accepts partial frame traces.
     """
@@ -126,7 +126,7 @@ def _normalize_scatter3d_alpha(trace, inherited_mode=None, *, frame=False):
             obj.color = color
         trace.opacity = (1 if trace.opacity is None else trace.opacity) * top
         return
-    # nonuniform: opacity = the largest alpha, each colour pre-blended
+    # nonuniform: opacity = the largest alpha, each color pre-blended
     # toward white by its own share of it
     for obj, color, values in components:
         scalar = isinstance(color, str)
@@ -1079,7 +1079,7 @@ def _compose_scope_traces(into):
 
 
 def _rgb_triplet(color):
-    """The ``(r, g, b)`` of a plotly colour string, opacity dropped (an
+    """The ``(r, g, b)`` of a plotly color string, opacity dropped (an
     ``rgba(...)``/``rgb(...)`` string as `_to_plotly_color` builds; any
     other spelling is returned as itself)."""
     text = str(color).strip()
@@ -1090,7 +1090,7 @@ def _rgb_triplet(color):
 
 
 def _rgba_with_alpha(color, alpha):
-    """`color` (any plotly colour string, typically the ``rgba(r,g,b,a)``
+    """`color` (any plotly color string, typically the ``rgba(r,g,b,a)``
     `_to_plotly_color` builds) with its alpha replaced by `alpha`."""
     text = str(color).strip()
     if text.startswith(('rgba(', 'rgb(')):
@@ -1106,12 +1106,12 @@ def _forecast_legend_traces(specs, ndims):
 
     `specs` is ``[(label, line, alpha[, mode, marker]), ...]``, one per
     forecast trace that carries a legend label (its model's name), in
-    trace order; `line` is the trace's ``line=`` dict (colour with the
+    trace order; `line` is the trace's ``line=`` dict (color with the
     forecast alpha baked in, width, dash), and `mode`/`marker` the
     trace's drawing mode and marker dict when `forecast_fmt=` added
     markers (`_forecast_marker`). Each entry wears the first such forecast's line style,
-    and its colour when every forecast under that label shares one (a
-    single dataset, or a `forecast_palette=` that colours by model);
+    and its color when every forecast under that label shares one (a
+    single dataset, or a `forecast_palette=` that colors by model);
     otherwise `forecast.FORECAST_LEGEND_COLOR` at the forecast's alpha --
     the entry then stands for the model's dash, not for any one dataset.
     The traces carry ``meta['hyp_legend_entry'] = <label>`` and NO
@@ -1132,7 +1132,7 @@ def _forecast_legend_traces(specs, ndims):
         line = dict(first_line)
         line['width'] = max(float(specs[k][1].get('width') or 0)
                             for k in members) or first_line.get('width')
-        # the same colour at different opacities is ONE colour (Codex
+        # the same color at different opacities is ONE color (Codex
         # round 3: alpha=[1, .4] made every all-red key gray)
         if len({_rgb_triplet(specs[k][1].get('color'))
                 for k in members}) != 1:
@@ -1236,7 +1236,7 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         from `plot._plotly_hover_names`: the label its legend entry shows or
         would show under ``legend=True`` (a category for every run of it, a
         hierarchy's top-level group for its leaves, a series' column, else
-        the dataset number), or None for a lone unlabelled dataset, which is
+        the dataset number), or None for a lone unlabeled dataset, which is
         then drawn with no hover name box at all (`_hover_identity`). A name
         shared by several traces becomes their `legendgroup`. Whether a
         legend entry is DRAWN stays decided by `legend`. `None` (a direct
@@ -1269,7 +1269,7 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     before_show : callable or None
         Called as ``before_show(fig)`` with the finished figure, before it
         is saved or shown -- so whatever `plot()` records on it (the
-        palette colours beside `datasets_drawn`, legend ranks) is in the
+        palette colors beside `datasets_drawn`, legend ranks) is in the
         displayed and saved figure too.
     forecast_datasets : list of int or None
         GH #285. Which SOURCE DATASET each forecast belongs to, for
@@ -1342,7 +1342,7 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     frame_kwargs : dict or None
         `plot()`'s ``frame_kwargs=`` -- matplotlib keywords for the cube
         (`plot_wireframe`) or square (`Rectangle`) frame, mapped onto the
-        plotly frame by `_frame_style` (colour, width, dash, alpha, 2-D
+        plotly frame by `_frame_style` (color, width, dash, alpha, 2-D
         fill); unmappable keys are named in a warning.
     forecasts : list of numpy.ndarray or None
         predict= forecast traces (see below). ONE PER INPUT DATASET, which
@@ -1417,12 +1417,12 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     forecast_reveal : hypertools.plot.forecast.DatasetRevealSchedule or None
         Which of each dataset's ORIGINAL rows are on screen at each frame,
         when `hue=`/`cluster=` regrouping means a dataset spans several
-        traces. Used only to colour the animated forecast traces: a live
-        forecast wears the colour of the run drawing the head at that frame,
+        traces. Used only to color the animated forecast traces: a live
+        forecast wears the color of the run drawing the head at that frame,
         and a retained `forecast_trail=` member wears the one it was FIT
         with, so a boundary crossing does not repaint the historical fan
         (Decision R3, matching the matplotlib backend). `None` for
-        unregrouped figures, where the forecast keeps its build-time colour.
+        unregrouped figures, where the forecast keeps its build-time color.
     ownership : hypertools.plot.ownership.TraceOwnership or None
         Which source dataset each drawn trace came from and which of its
         rows (`None` when the traces do not correspond to input datasets --
@@ -1437,13 +1437,13 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         5-row dataset for 9 of its 15 frames.
     title_kwargs : dict or None
         Alias-resolved title styling (`hyp.plot`'s `title_kwargs=`). Its
-        size/family/weight/style/colour/y keys map onto `layout.title`
+        size/family/weight/style/color/y keys map onto `layout.title`
         (see `_plotly_title_overrides`, which warns by name about the
         matplotlib-only ones); applied to both the static title and every
         per-frame title of a serial/morph animation.
 
     title_segment_colors : list of colors or None
-        `hyp.plot`'s `title_color=` in its per-segment form -- one colour
+        `hyp.plot`'s `title_color=` in its per-segment form -- one color
         per `segment_titles` entry, re-applied on every frame. The
         callable form is matplotlib-only and is rejected in `plot()`
         before reaching here.
@@ -1524,7 +1524,7 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     center/scale-matched to `data` by the caller), each starting with the
     dataset's final observed row so the trace connects. Rendered as one
     `showlegend=False` trace per dataset, styled to match its source trace
-    (`_forecast_style_from`): the SAME colour, width and dash, at half its
+    (`_forecast_style_from`): the SAME color, width and dash, at half its
     opacity.
 
     `forecast_schedule`/`forecast_trail` (predict= during a TIME-PROGRESSING
@@ -1647,7 +1647,7 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
 
     ndims = data[0].shape[1] if data[0].ndim > 1 else 1
 
-    # `frame_kwargs=`: the cube/square's colour, width, dash (and 2-D fill)
+    # `frame_kwargs=`: the cube/square's color, width, dash (and 2-D fill)
     _frame = _frame_style(frame_kwargs, ndims)
 
     # ax= (`into`) must be the same KIND of surface as this plot: a 3-D
@@ -1733,12 +1733,12 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     # (and trail) trace, which every animation frame slices to its window
     # (`_aa_window_sizes`); None where the marker size is a plain scalar
     obs_marker_sizes = [None] * len(data)
-    #: dataset -> the colour-bin representation of an ANIMATED multicoloured
+    #: dataset -> the color-bin representation of an ANIMATED multicolored
     #: 1-D/2-D line (`_hue_line_bins`): full-curve x/y, each segment's bin,
-    #: and the bins' colours -- what `_add_animation` re-slices every frame
+    #: and the bins' colors -- what `_add_animation` re-slices every frame
     hue_units = {}
-    #: dataset -> its drawn curve's per-vertex line colours, for an
-    #: ANIMATED multicoloured 3-D line, whose frames send the window's slice
+    #: dataset -> its drawn curve's per-vertex line colors, for an
+    #: ANIMATED multicolored 3-D line, whose frames send the window's slice
     hue_colors_3d = {}
 
     def _rows_of(i, arr):
@@ -1809,18 +1809,18 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
 
         # multicolored lines: per-point colors along each trajectory.
         #
-        # The trace's `alpha=` lives in these per-point colours -- for the
-        # LINE and the MARKERS alike, exactly as a single-coloured trace's
+        # The trace's `alpha=` lives in these per-point colors -- for the
+        # LINE and the MARKERS alike, exactly as a single-colored trace's
         # `alpha=` dims both its line and its markers (the reference every
         # hue path is held to). On matplotlib, `plot._apply_multicolor_lines`
-        # gives the segment colours a 4th channel from `tkwargs['alpha']`
+        # gives the segment colors a 4th channel from `tkwargs['alpha']`
         # and `plot._apply_multicolor_markers` scatters with the same alpha;
-        # serializing the colours through `_rgb_string` (which drops the 4th
+        # serializing the colors through `_rgb_string` (which drops the 4th
         # channel) with no trace `opacity` is why a hierarchy's 0.7 leaves,
         # and a plain `hue=` + `alpha=`, once rendered fully opaque on plotly
         # alone. (Until the 1.1 release review the markers deliberately
-        # kept opaque hue colours, copying a matplotlib path that dropped
-        # the alpha; both backends now honour it.) In 3-D the uniform alpha
+        # kept opaque hue colors, copying a matplotlib path that dropped
+        # the alpha; both backends now honor it.) In 3-D the uniform alpha
         # is then moved to the trace's native `opacity` by
         # `_normalize_scatter3d_alpha`, which keeps Scatter3d's hue intact.
         trace_point_colors = None
@@ -1894,7 +1894,7 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 draw_arr = draw_arr.copy()
                 grid = np.linspace(0, arr.shape[0] - 1, draw_arr.shape[0])
                 draw_arr[enclosed_mask[np.round(grid).astype(int)]] = np.nan
-            # the line and marker colours follow the SAME resampling, so
+            # the line and marker colors follow the SAME resampling, so
             # they stay index-aligned with the drawn vertices
             trace_point_colors = trace_line_colors = _aa_resample_colors(
                 trace_point_colors, arr.shape[0], draw_arr.shape[0])
@@ -1924,10 +1924,10 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
             meta=dict(hyp_trace_index=i),
         )
         if trace_point_colors is not None:
-            # per-point marker colours, in every dimensionality: the 1-D
+            # per-point marker colors, in every dimensionality: the 1-D
             # branch used to fall through to the single `color`, so a
             # marker-only continuous hue drew all 60 points in ONE palette
-            # colour there while matplotlib's `_apply_multicolor_markers`
+            # color there while matplotlib's `_apply_multicolor_markers`
             # scattered them per point
             common['marker'] = dict(color=trace_point_colors,
                                     size=msize, symbol=symbol)
@@ -1960,13 +1960,13 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         ys = draw_arr[:, 1] if ndims == 2 else draw_arr[:, 0]
         if trace_point_colors is not None and 'lines' in mode:
             if animate:
-                # an ANIMATED multicoloured 2-D line is re-drawn window by
-                # window, so its colours must travel with it: a fixed set
-                # of colour-BIN traces (`_hue_bin_units`), each drawing every
-                # segment of its colour that the frame's window holds
+                # an ANIMATED multicolored 2-D line is re-drawn window by
+                # window, so its colors must travel with it: a fixed set
+                # of color-BIN traces (`_hue_bin_units`), each drawing every
+                # segment of its color that the frame's window holds
                 # (1.1 release review: one static trace per segment left
                 # the whole trajectory on screen, and every frame
-                # overwrote segment 0 with the window in one colour)
+                # overwrote segment 0 with the window in one color)
                 _bins = _hue_line_bins(trace_line_colors)
                 hue_units[i] = dict(xs=np.asarray(xs, dtype=float),
                                     ys=np.asarray(ys, dtype=float),
@@ -1991,13 +1991,13 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
             if 'markers' in mode:
                 # ... and, for a marker+line fmt ('o-'), the markers as ONE
                 # marker-only trace on the observations themselves, each in
-                # its own hue colour -- matplotlib's
+                # its own hue color -- matplotlib's
                 # `_apply_multicolor_markers` scatter beside its
                 # LineCollection. The segments carry only the line, so
                 # without this the markers were silently dropped.
                 # (the observation vertices of the drawn curve: exactly the
                 # samples for a static plot, whose densified rows keep every
-                # one; their colours are the hue's own at those rows)
+                # one; their colors are the hue's own at those rows)
                 _ov = obs_vertices[obs_vertices < len(xs)]
                 obs_x, obs_y = xs[_ov], ys[_ov]
                 obs_point_colors = [trace_point_colors[j] for j in _ov]
@@ -2013,7 +2013,7 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                     meta=dict(hyp_trace_index=i)))
                 if i in hue_units:
                     # an animation re-draws the observations a window
-                    # holds, each in its own colour
+                    # holds, each in its own color
                     hue_units[i]['markers'] = dict(
                         vertices=np.asarray(_ov, dtype=int),
                         colors=list(trace_point_colors))
@@ -2023,7 +2023,7 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     n_data_traces = len(traces) - n_surface_traces_2d - n_density_traces_2d
 
     # predict=: one forecast trace per dataset, styled to match its source
-    # trace -- same colour, width and dash, at half its opacity
+    # trace -- same color, width and dash, at half its opacity
     # (`_forecast_style_from`; GH #169, matplotlib parity).
     # `forecast_trace_start`/`forecast_trace_specs` do for these traces what
     # `trail_trace_start`/`trail_dataset_indices` (just below) do for the
@@ -2033,9 +2033,9 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     # `traces[forecast_trace_start + k]`; age 0 is the live forecast.
     forecast_trace_start = len(traces)
     forecast_trace_specs = []
-    #: parallel to `forecast_trace_specs`: {run -> colour} for each
+    #: parallel to `forecast_trace_specs`: {run -> color} for each
     #: forecast trace, so a frame can repaint it in the head run's
-    #: colour (Decision R3). Empty dict = the colour is pinned.
+    #: color (Decision R3). Empty dict = the color is pinned.
     forecast_frame_colors = []
     #: ``(label, line, alpha)`` per forecast trace that carries a legend
     #: label -- `_forecast_legend_traces` turns these into one data-free
@@ -2063,7 +2063,7 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 override=(forecast_overrides[i]
                           if forecast_overrides is not None
                           and i < len(forecast_overrides) else None),
-                # a continuous `hue=` draws this run in MANY colours, so the
+                # a continuous `hue=` draws this run in MANY colors, so the
                 # forecast takes the one it starts from (matplotlib parity;
                 # see `_hue_anchor_color`). `src` -- the run holding the
                 # dataset's last observation -- is the right index into
@@ -2073,8 +2073,8 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
             # the forecast's legend entry (its model's name, GH #285) is a
             # separate data-free trace built by `_forecast_legend_traces`
             # from every forecast sharing the label -- so one model over
-            # several datasets (several colours) gets ONE neutral entry,
-            # not the first dataset's colour posing as the model's. The
+            # several datasets (several colors) gets ONE neutral entry,
+            # not the first dataset's color posing as the model's. The
             # forecast trace itself never lists.
             fc_name = (forecast_labels[i]
                        if forecast_labels is not None
@@ -2160,7 +2160,7 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
             from .forecast import forecast_alpha_scale_for
             live_alpha = forecast_alpha(
                 tkwargs.get('alpha'),
-                # a recoloured forecast keeps its trace's alpha here too
+                # a recolored forecast keeps its trace's alpha here too
                 # (Codex round 3: the animated branch still halved it)
                 forecast_alpha_scale_for(
                     forecast_overrides[i]
@@ -2179,7 +2179,7 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                               and i < len(forecast_overrides) else None),
                     # same anchor the STATIC branch above takes: under a
                     # continuous hue the run's own `line.color` is the
-                    # per-dataset palette colour, which nothing is drawn in.
+                    # per-dataset palette color, which nothing is drawn in.
                     anchor_color=_hue_anchor_color(point_colors, _src))
                 fc_mode, fc_marker = _forecast_marker(
                     tkwargs, (forecast_overrides[i]
@@ -2215,14 +2215,14 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                     forecast_legend_specs.append(
                         (forecast_labels[i], fc_line, alpha, fc_mode,
                          fc_marker))
-                # Decision R3: the colour a live/retained forecast wears is
+                # Decision R3: the color a live/retained forecast wears is
                 # the HEAD RUN's, which changes from frame to frame. Plotly
-                # frames carry geometry, so the colour must be resolvable
+                # frames carry geometry, so the color must be resolvable
                 # per frame -- precompute what THIS trace would look like
                 # continuing each possible run, through the same
                 # `_forecast_style_from` the build above uses, so the two
                 # cannot express different policies. Empty when the user
-                # pinned the colour (forecast_hue=/_cluster=/_palette=):
+                # pinned the color (forecast_hue=/_cluster=/_palette=):
                 # an explicit grouping is fixed for the whole animation.
                 _ov = (forecast_overrides[i]
                        if forecast_overrides is not None
@@ -2230,8 +2230,8 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 # A continuous hue pins it too: the forecast's identity is
                 # the hue value where its trajectory ENDS, which does not
                 # change from frame to frame. Decision R3's per-frame
-                # head-run colour stays correct for CATEGORICAL regrouping,
-                # where the run colour is what the viewer actually sees.
+                # head-run color stays correct for CATEGORICAL regrouping,
+                # where the run color is what the viewer actually sees.
                 # Same rule, same reason, as matplotlib's `_override_colour`
                 # -- including that this half is DEFENSIVE: a continuous hue
                 # never regroups, so `forecast_reveal` is None and
@@ -2239,9 +2239,9 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 # (measured 2026-08-16). The anchor an animated forecast
                 # actually wears comes from `anchor_color=` above.
                 from .forecast import override_has_color
-                # a colour letter in forecast_fmt= pins the colour as an
+                # a color letter in forecast_fmt= pins the color as an
                 # explicit forecast_hue=/palette= does (Codex round 4:
-                # 'ro:' forecasts were repainted in the head run's colour)
+                # 'ro:' forecasts were repainted in the head run's color)
                 _pinned = (override_has_color(_ov)
                            or _hue_anchor_color(point_colors, _src)
                            is not None)
@@ -2259,7 +2259,7 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     # truth= (GH #285): each trace's ACTUAL continuation, drawn beside the
     # forecast it is compared against -- the plotly half of
     # `plot._draw_truth_overlays`, with the same styling policy (the
-    # observed trace's colour and width, SOLID, fully opaque, with markers
+    # observed trace's color and width, SOLID, fully opaque, with markers
     # on the observations) and the same `hyp_forecast_role='truth'` tag.
     # Appended AFTER the forecast block and BEFORE the trail traces. In a
     # time-progressing animation (`truth_reveal`) every forecast-drawing
@@ -2279,9 +2279,9 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
             and tr.showlegend
             for tr in _compose_scope_traces(into))
         # the one 'truth' key stands for EVERY dataset's truth: when they
-        # span several colours it is a neutral proxy (added with the
+        # span several colors it is a neutral proxy (added with the
         # forecast keys below), not the first truth trace, which wore
-        # dataset 0's colour (1.1 release review, F10; matplotlib parity)
+        # dataset 0's color (1.1 release review, F10; matplotlib parity)
         _truth_key_at = None
         _truth_rgbs = set()
         for i, tr in enumerate(truths):
@@ -2354,8 +2354,8 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                           else go.Scatter(**_xyz, **tr_common))
         if _truth_key_at is not None and (len(_truth_rgbs) > 1
                                           or truth_reveal is not None):
-            # several colours -> a neutral key; an ANIMATED reveal -> a
-            # data-free key in the truth's own colour, because the truth
+            # several colors -> a neutral key; an ANIMATED reveal -> a
+            # data-free key in the truth's own color, because the truth
             # trace itself is empty on the frames before the forecast
             # reaches it and its legend entry must not flicker
             traces[_truth_key_at[0]].showlegend = False
@@ -2375,7 +2375,7 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     # carries ``meta['hyp_trail_index']`` -- the ORIGINAL dataset index that
     # produced it -- so `_add_animation` can look up the right dataset's data
     # per frame. A dataset's trail is ONE trace, except an animated
-    # multicoloured 2-D line's, which is one trace per colour bin
+    # multicolored 2-D line's, which is one trace per color bin
     # (`_hue_line_bins`); `n_trail_traces` counts traces, not datasets.
     #
     # Backend parity (Task 4): 'serial' builds these too, not just
@@ -2424,13 +2424,13 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         trail = dict(mode=mode, showlegend=False, hoverinfo='skip',
                      line=dict(color=color, width=width, dash=dash),
                      marker=trail_marker,
-                     # which dataset this trail belongs to (a multicoloured
-                     # 2-D trail is several colour-bin traces)
+                     # which dataset this trail belongs to (a multicolored
+                     # 2-D trail is several color-bin traces)
                      meta=dict(hyp_trail_index=i))
         if i in hue_units:
-            # a multicoloured 2-D trail: the head's colour bins at the
+            # a multicolored 2-D trail: the head's color bins at the
             # trail's opacity (matplotlib's trail collection keeps the
-            # per-segment colours at 0.3 alpha), lines only, as matplotlib
+            # per-segment colors at 0.3 alpha), lines only, as matplotlib
             # draws it
             for _k, _color in enumerate(hue_units[i]['bins']['colors']):
                 traces.append(go.Scatter(
@@ -2441,7 +2441,7 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                     meta=dict(hyp_trail_index=i, hyp_hue_bin=_k)))
             continue
         if i in hue_colors_3d:
-            # a multicoloured 3-D trail: the head's per-vertex colours at
+            # a multicolored 3-D trail: the head's per-vertex colors at
             # the trail's opacity; every frame sends its window's slice
             trail['line'] = dict(
                 color=[_rgba_with_alpha(c, _trail_alpha)
@@ -2592,7 +2592,7 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         # way every other trace in this module carries its alpha (see
         # `_to_plotly_color` in the data loop) -- on the same hold/morph
         # schedule as the color (`_morph.morph_alpha`); all-`None` keeps
-        # the plain opaque `_rgb_string` colour, as before.
+        # the plain opaque `_rgb_string` color, as before.
         morph_alphas0 = [(kwargs_list[i] or {}).get('alpha')
                          for i in morph_indices_3d]
         alpha0 = _morph.morph_alpha(morph_alphas0, 0, 0, 1)
@@ -2757,7 +2757,7 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                            size=round(12 * PT_TO_PX),
                            family=font_family if font_family is not None
                            else 'DejaVu Sans, Arial, sans-serif')
-        # title_kwargs= (GH #285): size/colour/family/weight/style/y, the
+        # title_kwargs= (GH #285): size/color/family/weight/style/y, the
         # plotly-expressible half of matplotlib's set_title kwargs.
         _title_props, _title_font_props = _plotly_title_overrides(
             title_kwargs)
@@ -2852,7 +2852,7 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     if forecast_legend_specs and not legend_explicit and (
             legend is not None or legend_entries):
         # composing into a figure/cell that already lists some of these
-        # models: hide the earlier keys and decide the new key's colour
+        # models: hide the earlier keys and decide the new key's color
         # over EVERY forecast of that model in the scope (Codex round 4:
         # three calls into one cell listed 'Kalman' three times)
         names = {s[0] for s in forecast_legend_specs}
@@ -2987,13 +2987,13 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                        # the run -> dataset -> rows mapping the reveal
                        # clock is driven from (see `_run_window`)
                        ownership=ownership,
-                       # an animated multicoloured line's colours travel
+                       # an animated multicolored line's colors travel
                        # with its window (`_hue_line_bins`)
                        hue_units=hue_units, hue_colors_3d=hue_colors_3d)
 
-    # Notebook visual review 2026-09: Scatter3d's RGBA colour path can
+    # Notebook visual review 2026-09: Scatter3d's RGBA color path can
     # change hue under transparency. Use RGB + native opacity instead.
-    # Include frame payloads, which may override the base trace colours.
+    # Include frame payloads, which may override the base trace colors.
     # Done HERE, on this call's own figure, before any `ax=` composition:
     # a caller's figure keeps its own traces exactly as they were (1.1
     # release review: this loop used to run over the composed figure and
@@ -3073,11 +3073,11 @@ PANEL_COLORBAR_PX = 110
 PANEL_GUTTER_PAD_PX = 8
 #: The base margin round a panel grid (the untitled single-axes figure's).
 PANEL_MARGIN_PX = 10
-#: Gap between neighbouring 3-D cells: what matplotlib's `tight_layout`
+#: Gap between neighboring 3-D cells: what matplotlib's `tight_layout`
 #: leaves between two `Axes3D` panels (measured 2026-09-07: 20-26 px
 #: between 193-297 px cells at 100 dpi).
 PANEL_GAP_PX = 20
-#: Gap between neighbouring 2-D/1-D cells, wider for the tick labels an
+#: Gap between neighboring 2-D/1-D cells, wider for the tick labels an
 #: `axis_scale='data'` panel draws (matplotlib: ~43 px between two 2-D
 #: panels of a 2x2 grid).
 PANEL_AXIS_GAP_PX = 40
@@ -3174,12 +3174,12 @@ def make_panel_grid(nrows, ncols, ndims, titles=None, size=None,
     `make_subplots`' default spacing -- 10-15 % of the figure between
     cells -- and full-height cells, so three 3-D panels sat in tall
     narrow cells with their titles far above small cubes): `PANEL_GAP_PX`
-    (`PANEL_AXIS_GAP_PX` for 2-D/1-D cells) between neighbours,
+    (`PANEL_AXIS_GAP_PX` for 2-D/1-D cells) between neighbors,
     `title_px` above every row (default `PANEL_TITLE_PX` when `titles`
     has one, else 0; `panels=` passes what its panels' own titles need),
     and -- for 3-D grids -- SQUARE cells, as an `Axes3D`'s equal box
     aspect makes them, sized by whichever of the width or the height
-    binds and centred in the figure. 2-D cells fill the figure.
+    binds and centered in the figure. 2-D cells fill the figure.
 
     Extra keywords go to `make_subplots` (``shared_xaxes=``, ...); a
     caller's ``horizontal_spacing=``/``vertical_spacing=`` replaces the
@@ -3206,7 +3206,7 @@ def make_panel_grid(nrows, ncols, ndims, titles=None, size=None,
     if ndims >= 3:
         cell_w = cell_h = min(cell_w, cell_h)
     # the gutter after the LAST column and the title room above the FIRST
-    # row live in the margins; the grid is centred in what is left
+    # row live in the margins; the grid is centered in what is left
     plot_w = ncols * cell_w + (ncols - 1) * (gap + gutter_px)
     plot_h = nrows * cell_h + (nrows - 1) * (gap + title_px)
     side = max((width - plot_w - gutter_px) / 2, 0.0)
@@ -3460,7 +3460,7 @@ def transplant_panel(target, panel, row, col, index, ndims):
         scene.pop('domain', None)
         # a cell drawn into twice keeps the earlier call's `labels=`
         # (updating the scene would replace its annotation list, leaving
-        # the first dataset's points visible but unlabelled; round 2)
+        # the first dataset's points visible but unlabeled; round 2)
         earlier = [a.to_plotly_json()
                    for a in target.layout[keys['scene']].annotations]
         if earlier:
@@ -3545,7 +3545,7 @@ def transplant_panel(target, panel, row, col, index, ndims):
 
     # the panel's legend, beside its own cell (same styling as the
     # single-axes legend, whose x=1.02/y=0.5 meant "just right of the one
-    # plot, vertically centred on it")
+    # plot, vertically centered on it")
     legend = (panel.layout.legend.to_plotly_json()
               if panel.layout.legend is not None else {})
     _explicit = _explicit_legend_position(legend)
@@ -3894,7 +3894,7 @@ def _export_ceiling(n_frames):
 
 def _kill_process_tree(proc):
     """Kill a render subprocess AND its headless-Chrome children. On POSIX the
-    subprocess is its own session leader, so the whole group is signalled; on
+    subprocess is its own session leader, so the whole group is signaled; on
     Windows ``taskkill /T`` walks the tree. Best-effort and BOUNDED at every
     step -- including `taskkill` itself, which is a subprocess that can stall
     and would otherwise block the recovery path indefinitely."""
@@ -4273,16 +4273,16 @@ def _frame_style(frame_kwargs, ndims):
     """The plotly styling of the cube/square frame from `plot()`'s
     ``frame_kwargs=`` (matplotlib's `plot_wireframe`/`Rectangle` keywords).
 
-    Returns ``dict(color, width_pt, dash, fill)`` -- `color` a plotly colour
+    Returns ``dict(color, width_pt, dash, fill)`` -- `color` a plotly color
     string (``alpha=`` folded in), `width_pt` the frame width in the
     points `_cube_trace`/`_square_shape` take (a matplotlib ``linewidth``
     scaled by the same factor that makes the default 1 pt frame match
     matplotlib's on screen), `dash` a plotly dash name, `fill` the 2-D
-    square's fill colour or None. With no `frame_kwargs` this is exactly the
+    square's fill color or None. With no `frame_kwargs` this is exactly the
     historical black frame. Keywords with no plotly equivalent (``zorder``,
     ``rstride``, ...) are named in one warning instead of being dropped
     silently (1.1 release review: plotly ignored `frame_kwargs=` outright,
-    so the cube stayed black whatever colour was asked for).
+    so the cube stayed black whatever color was asked for).
     """
     kw = dict(frame_kwargs or {})
     alpha = kw.pop('alpha', None)
@@ -4319,7 +4319,7 @@ def _frame_style(frame_kwargs, ndims):
             "color/edgecolor, linewidth, linestyle, alpha (and, for the 2-D "
             "square, facecolor/fill).", UserWarning, stacklevel=3)
     def _one(c):
-        # a `colors=` list (one per wireframe line): one colour here
+        # a `colors=` list (one per wireframe line): one color here
         if isinstance(c, (list, tuple)) and c and not isinstance(
                 c[0], (int, float, np.integer, np.floating)):
             return c[0]
@@ -4335,7 +4335,7 @@ def _frame_style(frame_kwargs, ndims):
             else _LINESTYLE_NAMES.get(style, 'solid'))
     fill_color = None
     if ndims < 3:
-        # matplotlib's `plot_square`: a `color=` (or a face colour) fills
+        # matplotlib's `plot_square`: a `color=` (or a face color) fills
         # the square unless `fill=False`; with neither it is an outline
         face_color = face if face is not None else both
         if face_color is not None and fill is not False:
@@ -4947,7 +4947,7 @@ def _forecast_style_from(tkwargs, fmt_str, alpha=None, override=None,
 
     The plotly twin of `hypertools.plot.plot._forecast_style_from`, sharing
     its policy constant (`forecast.FORECAST_ALPHA_SCALE`) so the two backends
-    cannot drift: colour, line WIDTH and DASH are inherited verbatim from the
+    cannot drift: color, line WIDTH and DASH are inherited verbatim from the
     observed trace, and only the opacity changes -- ``observed_alpha *
     FORECAST_ALPHA_SCALE``, with an unset alpha counting as fully opaque.
     The dash comes from the same `_resolve_fmt` call the observed trace is
@@ -4972,17 +4972,17 @@ def _forecast_style_from(tkwargs, fmt_str, alpha=None, override=None,
         plotly's dash/rgba vocabulary. Sparse: only the aspects it names
         replace the inherited ones.
     anchor_color : tuple of float, optional
-        The source trace's FINAL per-point colour, from `_hue_anchor_color`,
-        when a continuous `hue=` gave that trace many colours. It replaces
+        The source trace's FINAL per-point color, from `_hue_anchor_color`,
+        when a continuous `hue=` gave that trace many colors. It replaces
         `tkwargs['color']` (which is then only plotly's per-dataset palette
-        fallback, not a colour the trace is actually drawn in) and is still
+        fallback, not a color the trace is actually drawn in) and is still
         overruled by an explicit `forecast_color=`, so the precedence reads
         override > anchor > inherited, exactly as on matplotlib.
 
     Returns
     -------
     (dict, float)
-        A trace ``line=`` dict, and the alpha baked into its rgba colour --
+        A trace ``line=`` dict, and the alpha baked into its rgba color --
         the SAME float callers record in ``meta['hyp_forecast_alpha']``, so a
         reader of `meta` can trust it.
     """
@@ -5003,7 +5003,7 @@ def _forecast_style_from(tkwargs, fmt_str, alpha=None, override=None,
     _mode, _symbol, dash, _marker_char = _resolve_fmt(
         override.get('fmt', fmt_str), _fmt_kwargs)
     if alpha is None:
-        # a recoloured forecast keeps its trace's alpha (matplotlib
+        # a recolored forecast keeps its trace's alpha (matplotlib
         # parity: `plot._forecast_style_from` applies the same
         # `forecast.forecast_alpha_scale_for` rule)
         from .forecast import forecast_alpha_scale_for
@@ -5014,7 +5014,7 @@ def _forecast_style_from(tkwargs, fmt_str, alpha=None, override=None,
         'color',
         anchor_color if anchor_color is not None else tkwargs.get('color'))
     if 'color' not in override:
-        # a colour letter in `forecast_fmt=` ('r:') recolours the forecast,
+        # a color letter in `forecast_fmt=` ('r:') recolors the forecast,
         # as it does on matplotlib (Codex round 3: plotly dropped it)
         fmt_color = _fmt_color_letter(override.get('fmt'))
         if fmt_color is not None:
@@ -5024,14 +5024,14 @@ def _forecast_style_from(tkwargs, fmt_str, alpha=None, override=None,
 
 
 def _fmt_color_letter(fmt):
-    """The colour a matplotlib format string names (``'r:'`` -> ``'r'``),
+    """The color a matplotlib format string names (``'r:'`` -> ``'r'``),
     or None when it names none (or is not a string)."""
     if not isinstance(fmt, str) or not fmt:
         return None
     try:
         from matplotlib.axes._base import _process_plot_format
         return _process_plot_format(fmt)[2]
-    except Exception:  # noqa: BLE001 - an unparseable fmt names no colour
+    except Exception:  # noqa: BLE001 - an unparseable fmt names no color
         return None
 
 
@@ -5039,7 +5039,7 @@ def _forecast_marker(tkwargs, override, line_color, ndims):
     """``(mode, marker)`` for a forecast trace: ``('lines', None)`` unless
     `forecast_fmt=` asked for a marker (``'o:'``), in which case the trace
     draws ``'lines+markers'`` with that marker at the observed trace's
-    marker size, in the forecast's own colour -- what the matplotlib
+    marker size, in the forecast's own color -- what the matplotlib
     overlay draws for the same string (Codex round 3: plotly dropped the
     marker). A forecast never inherits the OBSERVED trace's marker: it is
     a line, and only its own format string can add markers to it."""
@@ -5114,10 +5114,10 @@ def _colorbar_trace(go, colorbar_info, ndims, legend_present):
         # show exactly the colors `mat2colors` assigned to the points.
         # A CONTINUOUS colorbar needs ONE palette to sample across the
         # value range. A `{category: color}` dict resolves here (read as an
-        # ordered list of colours); a PER-DATASET palette LIST (GH #285) is
+        # ordered list of colors); a PER-DATASET palette LIST (GH #285) is
         # n separate palettes with no single ramp between them, and
         # `colors._get_palette` already rejects it by name -- from
-        # `mat2colors`, when the per-point colours are computed, which is
+        # `mat2colors`, when the per-point colors are computed, which is
         # strictly before this colorbar is built. No second check here: it
         # could never fire.
         from .colors import continuous_colormap
@@ -5192,21 +5192,21 @@ def _rgb_string(c):
     return f'rgb({r},{g},{b})'
 
 
-#: Most colour-bin traces an ANIMATED multicoloured 2-D line gets
-#: (`_hue_line_bins`). A plotly 2-D line has ONE colour per trace, and every
-#: frame must rewrite every trace of the line, so the per-segment colours
+#: Most color-bin traces an ANIMATED multicolored 2-D line gets
+#: (`_hue_line_bins`). A plotly 2-D line has ONE color per trace, and every
+#: frame must rewrite every trace of the line, so the per-segment colors
 #: are drawn with at most this many traces. A continuous `hue=` maps through
-#: a 100-colour ramp (`colors.continuous_colormap`'s `n_bins`), so it is
-#: drawn EXACTLY; only a line with more distinct colours than this (a
-#: matrix/RGB hue's blends) has each segment take its bin's mean colour
-#: (k-means over the distinct colours; measured 2026-09-11: 48 bins over a
-#: 100-colour ramp were at most 7-15/255 per channel off, 100 bins are exact).
+#: a 100-color ramp (`colors.continuous_colormap`'s `n_bins`), so it is
+#: drawn EXACTLY; only a line with more distinct colors than this (a
+#: matrix/RGB hue's blends) has each segment take its bin's mean color
+#: (k-means over the distinct colors; measured 2026-09-11: 48 bins over a
+#: 100-color ramp were at most 7-15/255 per channel off, 100 bins are exact).
 HUE_ANIM_MAX_BINS = 100
 
 
 class PlotlyTraceGroup(tuple):
     """The several frame traces that draw ONE dataset -- an animated
-    multicoloured 2-D line is one trace per colour bin (`_hue_line_bins`)
+    multicolored 2-D line is one trace per color bin (`_hue_line_bins`)
     -- handed to an `on_frame=` callback as that dataset's single entry of
     `FrameContext.artists`.
 
@@ -5235,14 +5235,14 @@ def _parse_rgba(color):
 
 
 def _hue_line_bins(colors, max_bins=HUE_ANIM_MAX_BINS):
-    """Group a multicoloured line's SEGMENT colours into a bounded set of
-    colour bins, for the animated 2-D representation (see
+    """Group a multicolored line's SEGMENT colors into a bounded set of
+    color bins, for the animated 2-D representation (see
     `HUE_ANIM_MAX_BINS`).
 
-    `colors` is one plotly colour string per drawn VERTEX (segment ``j``
-    wears vertex ``j``'s colour, as `_segment_traces_2d` draws it). Returns
-    ``dict(seg_bin=<int array, one per segment>, colors=[bin colour
-    strings])``. Deterministic: the k-means starts from distinct colours
+    `colors` is one plotly color string per drawn VERTEX (segment ``j``
+    wears vertex ``j``'s color, as `_segment_traces_2d` draws it). Returns
+    ``dict(seg_bin=<int array, one per segment>, colors=[bin color
+    strings])``. Deterministic: the k-means starts from distinct colors
     spread evenly over their first-appearance order.
     """
     seg_colors = list(colors[:-1]) if len(colors) > 1 else list(colors)
@@ -5279,8 +5279,8 @@ def _hue_line_bins(colors, max_bins=HUE_ANIM_MAX_BINS):
 
 
 def _binned_polylines(xs, ys, seg_bin, k, v0, v1):
-    """The x/y of colour bin `k`'s share of vertices ``v0..v1`` (inclusive)
-    of a multicoloured line: its runs of consecutive segments, each drawn
+    """The x/y of color bin `k`'s share of vertices ``v0..v1`` (inclusive)
+    of a multicolored line: its runs of consecutive segments, each drawn
     as one polyline, separated by NaN gaps (plotly breaks a line at a gap).
     Empty arrays when the window holds none of the bin's segments."""
     if v1 <= v0:
@@ -5320,11 +5320,11 @@ def _segment_traces_2d(go, pts, colors, width, dash, name, trace_index=None):
 
 def _to_plotly_color(color, alpha=None):
     # ROUNDS each channel, like `_rgb_string`. These are the module's two
-    # colour serializers and they must agree: a forecast whose colour is
-    # anchored to its source trace's final per-point colour
+    # color serializers and they must agree: a forecast whose color is
+    # anchored to its source trace's final per-point color
     # (`_hue_anchor_color`) goes through THIS function while the trace's own
     # per-point strings go through `_rgb_string`, so truncating here made the
-    # "same" colour print one channel unit darker (measured on viridis's last
+    # "same" color print one channel unit darker (measured on viridis's last
     # stop: 0.9932*255 -> rgb(253,...) rounded vs rgb(252,...) truncated).
     if color is None:
         return None
@@ -5336,11 +5336,11 @@ def _to_plotly_color(color, alpha=None):
 
 
 def _hue_anchor_color(point_colors, src):
-    """The single colour a forecast inherits from a MULTI-coloured trace.
+    """The single color a forecast inherits from a MULTI-colored trace.
 
-    A continuous `hue=` gives the observed trace one colour per point, so
-    "the same colour as its trace" resolves to the colour where the forecast
-    begins: the source run's LAST per-point colour. The matplotlib twin is
+    A continuous `hue=` gives the observed trace one color per point, so
+    "the same color as its trace" resolves to the color where the forecast
+    begins: the source run's LAST per-point color. The matplotlib twin is
     the `_kept_forecasts` loop in `plot._apply_multicolor_lines`, which
     anchors on `line_colors[dataset][-1]` -- without this, plotly styled the
     forecast from `kwargs_list[src]['color']`, which under a continuous hue
@@ -5348,11 +5348,11 @@ def _hue_anchor_color(point_colors, src):
     (`plot.py`, "if 'color' not in mpl_kwargs"). Measured on a 3-trace column
     hierarchy with `hue=linspace(0,1)` and `palette='viridis'`: the observed
     traces all ended at rgb(253,231,37) while their forecasts drew
-    rgb(59,82,139)/rgb(33,145,140)/rgb(94,201,97) -- seaborn's 3-colour
+    rgb(59,82,139)/rgb(33,145,140)/rgb(94,201,97) -- seaborn's 3-color
     viridis cycle, unrelated to the hue.
 
-    Returns None (leaving the inherited single colour in place) when this
-    trace has no per-point colours, which is every non-continuous-hue plot.
+    Returns None (leaving the inherited single color in place) when this
+    trace has no per-point colors, which is every non-continuous-hue plot.
     """
     if point_colors is None or src is None or src >= len(point_colors):
         return None
@@ -5415,13 +5415,13 @@ def _hover_name(trace_names, i):
 def _hover_identity(name, trace_names, ndims):
     """Extra properties that give a data trace its hover identity (1.1
     release review, maintainer finding: plotly showed "trace 0", "trace 1",
-    ... on hover because unlabelled data traces had no `name`).
+    ... on hover because unlabeled data traces had no `name`).
 
     * a name shared by several data traces (the runs of one hue/cluster
       category, a hierarchy group's leaves and means) becomes their
       `legendgroup`, so the one legend entry of the group toggles all of
       them;
-    * a trace with no name at all (a lone, unlabelled dataset) gets a
+    * a trace with no name at all (a lone, unlabeled dataset) gets a
       `hovertemplate` with an empty ``<extra></extra>``: plotly would
       otherwise print "trace 0" in the name box, a label that names
       nothing -- the coordinates alone are shown.
@@ -5451,7 +5451,7 @@ def _trace_name(legend, tkwargs, i):
     it the trace's actual name -- rendered in hover labels ("_nolegend_"
     beside the cursor on every leaf of a MultiIndex plot) and written into
     exported HTML, where a plain list of arrays leaves `name=None`.
-    Normalising to None here fixes both while keeping the sentinel's
+    Normalizing to None here fixes both while keeping the sentinel's
     meaning: `showlegend` at the call site already excludes a `None` name,
     so exactly the same traces stay out of the legend (its own
     `startswith('_')` test is kept as a belt-and-braces guard for any
@@ -5538,8 +5538,8 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
     (length `len(data)`, broadcast/validated by `plotly_draw`). Only
     datasets with at least one of the three flags set get a trail trace at
     all -- each trail trace's ``meta['hyp_trail_index']`` is the ORIGINAL
-    dataset index that produced it (an animated multicoloured 2-D line's
-    trail is several colour-bin traces, like its head), so each frame's
+    dataset index that produced it (an animated multicolored 2-D line's
+    trail is several color-bin traces, like its head), so each frame's
     trail geometry is built from `chemtrails[i]`/`precog[i]`/
     `bullettime[i]` for that SAME original dataset index `i`, not from the
     trail trace's own position. This applies to `animate=True`/
@@ -5670,7 +5670,7 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
             sizes, aa_curves[idx][1], a, b)))
 
     # A dataset's head (and trail) may be SEVERAL traces -- an animated
-    # multicoloured 2-D line is one trace per colour bin (`_hue_line_bins`)
+    # multicolored 2-D line is one trace per color bin (`_hue_line_bins`)
     # -- so frames address each dataset's own traces, found by their tags,
     # in trace order.
     hue_units = hue_units or {}
@@ -5687,11 +5687,11 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
     if _head_traces:
         trace_indices = [k for i in sorted(_head_traces)
                          for k in _head_traces[i]]
-    # per-vertex colour arrays a trace carries over its dataset's whole
-    # curve (a multicoloured 3-D line and its trail): every frame sends the
-    # slice matching its window, so the colours travel with the data
+    # per-vertex color arrays a trace carries over its dataset's whole
+    # curve (a multicolored 3-D line and its trail): every frame sends the
+    # slice matching its window, so the colors travel with the data
     # (1.1 release review: frames rewrote only the geometry, painting a late
-    # window with the colours of the trajectory's first rows)
+    # window with the colors of the trajectory's first rows)
     _full_colors = {}
     for _k in list(trace_indices) + [k for ks in _trail_traces.values()
                                      for k in ks]:
@@ -5756,7 +5756,7 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
 
     def _artists(entries_by_unit):
         """`FrameContext.artists`: ONE artist per dataset head (then per
-        trail) -- a dataset drawn by several colour-bin traces is handed
+        trail) -- a dataset drawn by several color-bin traces is handed
         over as one `PlotlyTraceGroup`, so a callback (`dataset_fade=`)
         styling ``ctx.artists[i]`` styles the whole of dataset `i`."""
         return tuple(e[0] if len(e) == 1 else PlotlyTraceGroup(e)
@@ -5852,7 +5852,7 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
                 fit_frame = None
                 pts = None          # fewer past frames than the fan is deep
             # Decision R3, matplotlib parity: the live forecast takes the
-            # colour of the run drawing the head NOW; a retained one takes
+            # color of the run drawing the head NOW; a retained one takes
             # the run that was drawing it when it was FIT, so a boundary
             # crossing does not repaint the historical fan.
             _line = None
@@ -6093,7 +6093,7 @@ def _add_animation(fig, data, ndims, animate, frame_rate, duration,
             draw_pts = pts[~hide] if hide is not None else pts
 
             # GH #284: the cloud's `alpha=` rides in the marker's rgba
-            # string on the same schedule as its colour (see the initial
+            # string on the same schedule as its color (see the initial
             # morph trace in `plotly_draw`); `None` keeps it opaque.
             alpha = _morph.morph_alpha(morph_alphas, seg_idx, step, n_steps)
             color_str = (_rgb_string(color) if alpha is None

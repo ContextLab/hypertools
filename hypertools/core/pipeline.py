@@ -294,7 +294,7 @@ def _validate_input_hierarchy(spec):
 
 def as_internal_frames(data):
     """`data` with every DataFrame dataset in hypertools' internal pandas
-    form: a frame of any backend datawrangler recognises (polars, a
+    form: a frame of any backend datawrangler recognizes (polars, a
     LazyFrame, modin, ...) is converted once here -- pandas frames are
     returned as-is -- so raw scikit-learn steps and the manipulators, which
     are written against pandas, never see another backend; a Series (pandas
@@ -330,7 +330,7 @@ def _dataset_widths(data):
     def _width(item):
         """One dataset's feature count, or `None` if it is not knowable."""
         if is_frame_dataset(item):
-            # a frame of any backend datawrangler recognises (pandas as-is)
+            # a frame of any backend datawrangler recognizes (pandas as-is)
             return as_dataframe(item).shape[1]
         if is_array_dataset(item) and item.ndim == 2:
             return item.shape[1]
@@ -636,7 +636,7 @@ class Pipeline(BaseEstimator):
         `fit_transform`/`transform` can reproduce that grouping when handed
         a bare hierarchical frame. `hyp.plot(df, return_model=True)` sets it
         for a column-`MultiIndex` `df`; nothing else does, so no other
-        pipeline changes behaviour. Keys: ``'axis'`` (only ``'columns'`` is
+        pipeline changes behavior. Keys: ``'axis'`` (only ``'columns'`` is
         defined), ``'n_features'`` (each leaf's width -- what every step was
         fit on), ``'feature_correspondence'`` (the `group_columns` rule that
         produced the leaves) and ``'feature_labels'`` (those leaves'
@@ -927,7 +927,7 @@ class Pipeline(BaseEstimator):
         that shape gets fit-time feature-NAME matching. A **list** is taken
         as already grouped and is passed through unchanged, matched
         POSITIONALLY -- that is true whether its members are arrays or
-        labelled DataFrames, because a list is the shape `hyp.plot` itself
+        labeled DataFrames, because a list is the shape `hyp.plot` itself
         fits on and its members are the datasets, not something to re-derive
         groups from. So `pipeline.transform([leaf_a, leaf_b])` never
         reorders columns by name even if those leaves carry labels; only
@@ -949,7 +949,7 @@ class Pipeline(BaseEstimator):
             # hand on plain arrays, exactly as `hyp.plot` does when it feeds
             # the pipeline its leaves -- so fit and transform see the same
             # KIND of input, not merely the same shapes (plot.py: "Hand the
-            # pipeline plain arrays rather than the labelled leaves").
+            # pipeline plain arrays rather than the labeled leaves").
             data = [leaf.to_numpy()[:, order] if order is not None
                     else leaf.to_numpy() for leaf in leaves]
 
@@ -963,7 +963,7 @@ class Pipeline(BaseEstimator):
                 "frame with the SAME column hierarchy (its innermost level "
                 f"is the feature axis, so each group must still be {expected}"
                 " features wide), or the equivalent list of per-group "
-                "arrays. To analyse the flattened frame instead, fit a new "
+                "arrays. To analyze the flattened frame instead, fit a new "
                 "pipeline on it (df.columns = df.columns.map('_'.join); "
                 "hyp.plot(df, return_model=True)).")
         return data

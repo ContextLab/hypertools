@@ -120,3 +120,78 @@ Branch `fix/1.1-release-review`; PR #286 still OPEN and unmerged. Nothing merged
 - SIGN-OFF 2026-10-09 (AskUserQuestion): "Sign off: merge and re-cut", CHANGELOG date 2026-10-09.
   Scope: fast-forward master, checklist steps 2-5 (date, gallery, artifacts, master CI, move tag, tag CI,
   replace draft assets + body). STOP before PyPI upload and before publishing the GitHub release.
+
+## 2026-10-09 (evening): re-cut in progress
+
+- Hosted CI found three more problems after the sign-off, each fixed on the release line:
+  macOS 3.10 live Kaggle load (DNS; now `skip_on_transient_network`, cb0c5432); ubuntu 3.11
+  render-script test timing out at 120 s (54c89af8 added stage lines + faulthandler; the dump showed
+  the script had its verdict and Python was waiting at shutdown on choreographer's non-daemon threads
+  after a failed browser launch; 75d6c723 exits with `os._exit` once the verdict is printed).
+  Upstream (choreographer) not reported.
+- 75d6c723: PR CI 16 green; pushed to `master` as a fast-forward at 23:02 UTC. GitHub marked PR #286
+  merged and closed #284 and #285 (neither had an unchecked item).
+- First `master` run: `release-gate` FAILED, 4 tests, `ModuleNotFoundError: nbformat`. The job installed
+  only pytest and is skipped on PRs, so this was its first real run with the executor tests in the gate
+  file. f7462896 installs nbformat + nbclient there and adds a pre-flight checklist item (run the gate
+  files in a pytest+nbformat+nbclient venv). `master` run 38005395083 at f7462896: 17/17 green.
+- Jeremy re-enabled the RTD webhook; both pushes triggered builds, and all three builds FAILED with
+  "Build terminated due to time out" (15-minute limit; ~165 s setup, sphinx needs ~25 min for the 51
+  gallery examples; the 1.0 build took 885 s). RTD still serves 1.0; the five launch tutorial URLs 404.
+- Jeremy's decisions (2026-10-09): make the RTD build reuse the pre-built gallery; shorten the README's
+  1.0/1.1 sections to a pointer at the changelog and add the five launch clips as GIFs ("updated readme
+  and gifs look great"; "make sure they have nice smooth frame rates").
+- Implementation: `scripts/publish_prebuilt_gallery.py` force-pushes one orphan commit
+  (`auto_examples/` + `manifest.json`) to `docs-gallery-v<version>`; `docs/fetch_prebuilt_gallery.py`
+  runs in `.readthedocs.yaml` `pre_build` and copies it into `docs/auto_examples`; sphinx-gallery then
+  skips every example whose `.py.md5` matches. Measured in a fresh clone with the RTD recipe: 38 s,
+  0 warnings, output identical to the cold build except the two download zips and the execution-times
+  page. New release gate `test_release_gate_prebuilt_gallery_is_published_for_this_commit`.
+- Found on the way: two gallery pages printed `/Users/jmanning/hypertools/examples/...` in a captured
+  warning. `relative_warning_paths` (docs/_gallery_log_filter.py, installed from conf.py's
+  reset hook) makes it `examples/plot_impute.py:43: ...`; the publisher refuses a gallery that names
+  the checkout path.
+- README GIFs: `images/tour_*.gif`, made with ffmpeg + gifsicle from the launch mp4s at 15-20 fps
+  (5.0 / 2.4 / 3.7 / 3.2 / 3.1 MB). The 10 new README URLs (5 tutorials, 5 images at the v1.1.0 tag)
+  404 until RTD builds and the tag moves; re-check after both.
+- Still held: the `v1.1.0` tag (at 96ac8b7f), the draft release, PyPI. Order from here: commit, cold
+  gallery build from that commit, publish notebooks + pre-built gallery, artifacts, push `master`,
+  confirm RTD `latest` builds, tag, tag CI, confirm RTD `stable`, replace draft assets and body. STOP
+  before PyPI and before publishing the GitHub release.
+
+## 2026-10-09 (evening): re-cut in progress
+
+- Hosted CI found three more problems after the sign-off, each fixed on the release line:
+  macOS 3.10 live Kaggle load (DNS; now `skip_on_transient_network`, cb0c5432); ubuntu 3.11
+  render-script test timing out at 120 s (54c89af8 added stage lines + faulthandler; the dump showed
+  the script had its verdict and Python was waiting at shutdown on choreographer's non-daemon threads
+  after a failed browser launch; 75d6c723 exits with `os._exit` once the verdict is printed).
+  Upstream (choreographer) not reported.
+- 75d6c723: PR CI 16 green; pushed to `master` as a fast-forward at 23:02 UTC. GitHub marked PR #286
+  merged and closed #284 and #285 (neither had an unchecked item).
+- First `master` run: `release-gate` FAILED, 4 tests, `ModuleNotFoundError: nbformat`. The job installed
+  only pytest and is skipped on PRs, so this was its first real run with the executor tests in the gate
+  file. f7462896 installs nbformat + nbclient there and adds a pre-flight checklist item. `master` run
+  38005395083 at f7462896: 17/17 green.
+- The RTD webhook fires again; both pushes triggered builds, and all three builds FAILED with
+  "Build terminated due to time out" (15-minute limit; ~165 s setup, sphinx needs ~25 min for the 51
+  gallery examples; the 1.0 build took 885 s). RTD still serves 1.0; the five launch tutorial URLs 404.
+- Jeremy's decisions (2026-10-09): make the RTD build reuse the pre-built gallery; shorten the README's
+  1.0/1.1 sections to a pointer at the changelog and add the five launch clips as GIFs with smooth
+  frame rates ("updated readme and gifs look great"); American spelling in the README.
+- Implementation: `scripts/publish_prebuilt_gallery.py` force-pushes one orphan commit
+  (`auto_examples/` + `manifest.json`) to `docs-gallery-v<version>`; `docs/fetch_prebuilt_gallery.py`
+  runs in `.readthedocs.yaml` `pre_build` and copies it into `docs/auto_examples`; sphinx-gallery then
+  skips every example whose `.py.md5` matches. Measured in a fresh clone with the RTD recipe: 38 s,
+  0 warnings, output identical to the cold build except the two download zips and the execution-times
+  page. New release gate `test_release_gate_prebuilt_gallery_is_published_for_this_commit`.
+- Found on the way: two gallery pages printed `/Users/jmanning/hypertools/examples/...` in a captured
+  warning. `relative_warning_paths` (docs/_gallery_log_filter.py, installed from conf.py's reset hook)
+  makes it `examples/plot_impute.py:43: ...`; the publisher refuses a gallery naming the checkout path.
+- README GIFs: `images/tour_*.gif`, made with ffmpeg + gifsicle from the launch mp4s at 15-20 fps
+  (5.0 / 2.4 / 3.7 / 3.2 / 3.1 MB). The 10 new README URLs (5 tutorials, 5 images at the v1.1.0 tag)
+  404 until RTD builds and the tag moves; re-check after both.
+- Still held: the `v1.1.0` tag (at 96ac8b7f), the draft release, PyPI. Order from here: commit, cold
+  gallery build from that commit, publish notebooks + pre-built gallery, artifacts, push `master`,
+  confirm RTD `latest` builds, tag, tag CI, confirm RTD `stable`, replace draft assets and body. STOP
+  before PyPI and before publishing the GitHub release.

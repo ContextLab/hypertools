@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 =========================================================================
-The shape of a conversation: one path per turn, coloured by its speaker
+The shape of a conversation: one path per turn, colored by its speaker
 =========================================================================
 
 A conversation as geometry, in one ``hyp.plot`` call on raw dialogue. Each
@@ -10,18 +10,18 @@ word windows, and the turns are handed to ``hyp.plot`` as a **list of lists
 of strings**: the nesting is the grouping, so every turn becomes its own
 disjoint trajectory through one shared 3-D space. The call embeds every
 window with a sentence-transformer (``vectorizer='all-MiniLM-L6-v2'``),
-reduces them together with UMAP, colours each path by **speaker** through a
+reduces them together with UMAP, colors each path by **speaker** through a
 categorical ``hue=`` with a native legend, and ``order='serial'`` reveals
 the turns one at a time with ``chemtrails=True`` leaving the spoken path
 behind each head. ``title=`` carries one string per turn -- just the words
 being spoken, wrapped onto two lines when a turn is long so nothing runs off
 the figure -- and the library's own reveal schedule advances it; the title
-never names the speaker, because the *colour* does: ``title_color=`` takes
-one colour per turn and the library retints the title with the current
-speaker's colour every frame, while ``title_kwargs={'size': ...}`` sets its
+never names the speaker, because the *color* does: ``title_color=`` takes
+one color per turn and the library retints the title with the current
+speaker's color every frame, while ``title_kwargs={'size': ...}`` sets its
 size (and the library now reserves the animated 3-D title's own vertical
 margin, sized to the tallest wrapped title, so the figure never has to grow
-by hand); the legend maps colours to names.
+by hand); the legend maps colors to names.
 
 The one effect written out by hand is a **recency fade** across turns: the
 current turn is opaque, earlier turns recede slowly (a turn keeps most of
@@ -46,14 +46,14 @@ fully offline and deterministic.
 stripped, so the geometry reflects what the characters *say*, not how the
 narrator introduces them -- otherwise every one of Alice's turns would be
 pulled together by the repeated words "said Alice" rather than by their
-content. Who is speaking is carried by the colour (paths and title alike)
+content. Who is speaking is carried by the color (paths and title alike)
 and the legend.
 
 **Embeddings.** Sentence embeddings come from the ``[text]`` extra, which
 hypertools installs on demand the first time an embedding model is
 requested; nothing here checks for it. The test-suite drives the same
 pipeline (embed -> reduce -> disjoint per-turn paths -> serial reveal
-coloured by speaker) through ``fixture_data``, which embeds with
+colored by speaker) through ``fixture_data``, which embeds with
 ``vectorizer='TfidfVectorizer'`` so no test downloads a model.
 """
 
@@ -120,7 +120,7 @@ WINDOW, STEP, MIN_WINDOWS = 6, 2, 3
 # at ~0.32, so the recent past of the conversation lingers on screen.
 FLOOR, DECAY = 0.18, 0.7
 # Title size and wrap width. At 14 pt a character is ~8.7 px wide at 100 dpi,
-# so a 64-character line is ~560 px over the 800 px-wide axes -- centred with
+# so a 64-character line is ~560 px over the 800 px-wide axes -- centered with
 # clear margin either side -- and the longest turn (117 characters, 119 with
 # the quotes the title adds) wraps to exactly two lines; no turn needs a
 # third (verified by rendering turns 15-17 and 22, the long ones).
@@ -238,14 +238,14 @@ def construct_artifact(data):
     HyperAnimation wrapper: `.on_frame()` lives on it, not on the
     FuncAnimation that `fig, ani = ...` would give."""
     # category order is FIRST APPEARANCE, not alphabetical, so the palette
-    # must be listed in that order for each speaker to get their colour
+    # must be listed in that order for each speaker to get their color
     order = list(dict.fromkeys(data.speakers))
-    # the title is JUST the spoken line (who says it is the title's colour),
+    # the title is JUST the spoken line (who says it is the title's color),
     # wrapped so the longest turn fits the figure on two lines
     titles = [textwrap.fill(f'\u201c{text}\u201d', TITLE_WIDTH)
               for text in data.texts]
     # THE hypertools call: raw dialogue in, one disjoint trajectory per
-    # turn, coloured by speaker, revealed ONE TURN AT A TIME. backend= is
+    # turn, colored by speaker, revealed ONE TURN AT A TIME. backend= is
     # pinned because the hook sets matplotlib alphas, and on Colab the
     # default backend would be plotly.
     anim = hyp.plot(

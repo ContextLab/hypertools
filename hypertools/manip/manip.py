@@ -76,7 +76,7 @@ def _validate_manip_input(data):
         # independent manipulators (Smooth, Delay, Resample) never combine
         # features across datasets, and the shared-statistics ones
         # (ZScore, Normalize) match columns by position themselves when
-        # the labels differ (Codex rounds 11 and 12: relabelling here
+        # the labels differ (Codex rounds 11 and 12: relabeling here
         # renamed a named frame's features for EVERY model)
         return [_validate_one(d, no_observations) for d in data]
     return _validate_one(data, no_observations)

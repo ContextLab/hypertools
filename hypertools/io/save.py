@@ -277,7 +277,7 @@ def _write_payload(obj, tmp_name, ext, protocol, target):
 
 def _as_array(obj):
     """``obj`` as a numpy array for the array writers: a DataFrame of any
-    backend datawrangler recognises (pandas as-is, polars/LazyFrame/...
+    backend datawrangler recognizes (pandas as-is, polars/LazyFrame/...
     converted) by its values, anything else by ``np.asarray``."""
     if is_frame_dataset(obj):
         return np.asarray(as_pandas_dataframe(obj))
@@ -287,7 +287,7 @@ def _as_array(obj):
 def _as_frame(obj, ext, target):
     """DataFrame view of ``obj`` for the tabular writers, with a clear
     error when the object has no faithful 2-d tabular form. A frame of any
-    backend datawrangler recognises is written as a pandas frame (datatype
+    backend datawrangler recognizes is written as a pandas frame (datatype
     audit, 2026-09-08)."""
     if is_frame_dataset(obj):
         return as_pandas_dataframe(obj)

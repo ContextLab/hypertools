@@ -20,13 +20,13 @@ month** (a growth curve). Three library calls turn that into the figure:
 3. ``hyp.plot`` draws all six, plus a seventh, heavier path: the **market**,
    the point-by-point mean of the six aligned sector paths.
 
-**Colour is the market's composition.** Every path is coloured through the
+**Color is the market's composition.** Every path is colored through the
 library's *mixture* hue: ``hue=`` carries one row of weights per month and
-``palette=`` the six sector colours, and each point is drawn in the
+``palette=`` the six sector colors, and each point is drawn in the
 weighted blend (``hue_mode='mixture'``). A sector's weights are a one-hot
-row, so it keeps its own colour; the market path's weights are each
-sector's **share of the basket's market capitalisation** that month
-(reported share counts x price), so its colour shifts toward whichever
+row, so it keeps its own color; the market path's weights are each
+sector's **share of the basket's market capitalization** that month
+(reported share counts x price), so its color shifts toward whichever
 sectors dominate -- away from technology red as the dot-com bubble deflates
 (about a third of the basket in mid-2000, a fifth by 2004), toward
 financial gold before 2008 (the largest sector in 2006), then back to
@@ -52,7 +52,7 @@ split-adjusted -- ``adjclose`` also reinvests dividends -- so the share
 counts, which the SEC's XBRL API (the per-concept endpoint, falling back to
 company facts; quarterly, from 2009) reports as they stood on the day, are
 multiplied by every later split before they meet the price. Earlier months
-back-fill the first reported capitalisation along the adjusted price.
+back-fill the first reported capitalization along the adjusted price.
 XOM's counts are read from Exxon Mobil Corp's filings (CIK 34088), not the
 holding company the SEC's ticker map now names. HON's 2026-06-30 count in
 the SEC data (316,940,010, from a 10-Q/A) is half its 2026-03-31 count
@@ -180,7 +180,7 @@ def fetch_shares(tickers, splits):
     or ``None``. The counts are filed as they stood on the day; each is
     multiplied by the ratio of every LATER split in `splits` (ticker ->
     [(date, ratio)]), which puts it in the units of Yahoo's split-adjusted
-    close -- the pair multiply to the true capitalisation, even in the
+    close -- the pair multiply to the true capitalization, even in the
     months between a split and the next filing."""
     if os.environ.get('HYPERTOOLS_OFFLINE'):
         raise RuntimeError('HYPERTOOLS_OFFLINE is set: refusing to fetch')
@@ -302,8 +302,8 @@ def construct_artifact(data):
     aligned = hyp.align(reduced, model='HyperAlign')
     market = np.mean(aligned, axis=0)
     # mixture hue: one row of weights per month, blended through the six
-    # sector colours. One-hot rows keep a sector its own colour; the market
-    # path's rows are the sectors' shares of the basket's capitalisation.
+    # sector colors. One-hot rows keep a sector its own color; the market
+    # path's rows are the sectors' shares of the basket's capitalization.
     hue = [np.tile(np.eye(len(names))[i], (n_months, 1))
            for i in range(len(names))] + [data.weights.to_numpy()]
     # THE call: seven paths, one minute, three turns of the camera; a

@@ -130,7 +130,7 @@ def score_pair(pred, truth, metrics):
     whose PREDICTION is missing -- values the model failed to produce (PPCA
     leaves fully-missing rows NaN, GH #169). They are counted rather than
     silently dropped: a model scored on fewer, easier entries than its
-    neighbours would otherwise look better than it is.
+    neighbors would otherwise look better than it is.
     """
     p, a = _finite_pair(pred, truth)
     record = {METRIC_LABELS[m]: METRIC_FUNCS[m](pred, truth) for m in metrics}

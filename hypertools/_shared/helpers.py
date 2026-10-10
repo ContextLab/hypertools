@@ -310,7 +310,7 @@ def segment_by_run(x, hue, labels=None):
     seg_bridge : list of bool
         ``seg_bridge[i]`` is True when segments i and i+1 are consecutive
         runs of the SAME input dataset, so a line may be bridged from i into
-        i+1 (a colour transition within one trajectory); False at dataset
+        i+1 (a color transition within one trajectory); False at dataset
         boundaries. Length is ``len(segments) - 1``. Pass the complementary
         indices to ``patch_lines(breaks=...)``.
     seg_dataset : list of int
@@ -347,7 +347,7 @@ def patch_lines(x, breaks=None, labels=None):
     """Bridge each group's line to the start of the next group.
 
     Extending every group with the first point of the NEXT group makes a
-    line format render one continuous curve across group (colour)
+    line format render one continuous curve across group (color)
     transitions. `breaks` is an optional iterable of group indices that must
     NOT be bridged INTO from their predecessor -- used to keep a line from
     crossing a dataset boundary (GH #291), e.g. the run segments produced by
@@ -597,7 +597,7 @@ def is_frame_dataset(x):
 
 
 def is_series_like(x):
-    """True for ONE labelled 1-D vector that is neither an array nor a
+    """True for ONE labeled 1-D vector that is neither an array nor a
     DataFrame dataset: a pandas Series (``dw.zoo.array_like`` admits it,
     ``dw.zoo.is_array`` does not), a polars Series, or any other object
     exposing ``to_numpy()``. hypertools treats these as a single 1-D

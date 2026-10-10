@@ -252,7 +252,7 @@ def drawn_extent(anim, frames=None, threshold=5):
         frame indices.
     threshold : int, optional
         How far (0-255, per channel) a pixel must differ from the figure's
-        own background colour to count as drawn. The default 5 treats
+        own background color to count as drawn. The default 5 treats
         anything below 250 on a white figure as ink -- faint antialiasing
         included.
 

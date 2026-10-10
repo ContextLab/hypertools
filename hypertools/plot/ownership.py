@@ -12,7 +12,7 @@ It also needs to distinguish two spans that are easy to conflate and were:
   sliced from, and
 * the source parameters a run DRAWS (`draw_span`), which is one longer for a
   bridged run because `patch_lines` appends the next run's first observation
-  so the polyline is continuous across a colour change.
+  so the polyline is continuous across a color change.
 
 Using the owned span to pace the drawn geometry mis-times every category
 boundary by one vertex, and leaves an observation on screen that the reveal
@@ -106,7 +106,7 @@ class TraceOwnership:
         `patch_lines` appends the NEXT run's first point to every bridged run,
         so a drawn run's array is one row longer than the span it owns.
         Passing post-bridge lengths here would hand every bridged run one row
-        of its neighbour's data -- exactly the double-counting that makes a
+        of its neighbor's data -- exactly the double-counting that makes a
         forecast history wrong by one observation per category boundary.
         Pass `seg_bridge` straight through from `segment_by_run` rather than
         re-deriving it from run positions: `plot._regroup_categorical_lines`

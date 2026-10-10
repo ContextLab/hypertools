@@ -492,3 +492,54 @@ def test_release_gate_gallery_colab_notebooks_are_published():
     ok, reason = _published_matches_manifest(
         _published_gallery_stems(version), manifest['notebooks'])
     assert ok, f'RELEASE GATE: docs-notebooks/v{version}/ {reason}'
+
+
+@pytest.mark.skipif(
+    not REQUIRE_RELEASE,
+    reason='release gate; set HYPERTOOLS_REQUIRE_RELEASE=1 (the release-gate '
+           'CI job does on master/tag builds)')
+def test_release_gate_prebuilt_gallery_is_published_for_this_commit():
+    # Read the Docs ends a build after 15 minutes and executing the gallery
+    # takes longer, so its build reuses the gallery published to the
+    # docs-gallery-v<version> branch (docs/fetch_prebuilt_gallery.py). Without
+    # one built from THIS commit the docs for the release time out, or show
+    # figures another commit's code drew. The manifest must name HEAD and
+    # carry the md5 of every example as it is in this checkout (the md5 is
+    # what sphinx-gallery compares before it skips executing an example).
+    import hashlib
+    import json
+    import urllib.request
+    version = _project_version()
+    head = _repo_head()
+    if head is None:
+        pytest.fail('RELEASE GATE: cannot determine the release HEAD commit; '
+                    'run the gate from the git checkout being released.')
+    url = ('https://raw.githubusercontent.com/ContextLab/hypertools/'
+           f'docs-gallery-v{version}/manifest.json')
+    try:
+        with urllib.request.urlopen(url, timeout=30) as r:
+            manifest = json.loads(r.read().decode('utf-8'))
+    except Exception as e:                            # HTTPError(404) etc.
+        pytest.fail(
+            f'RELEASE GATE: no pre-built gallery manifest on branch '
+            f'docs-gallery-v{version} ({getattr(e, "code", e)}). Build the '
+            'docs from the release commit, then run '
+            'scripts/publish_prebuilt_gallery.py --push.')
+    assert manifest.get('source_commit') == head, (
+        f'RELEASE GATE: the pre-built gallery was built from '
+        f'{manifest.get("source_commit")}, not this release commit {head}; '
+        'rebuild the docs and run scripts/publish_prebuilt_gallery.py --push.')
+    examples_dir = os.path.join(_REPO, 'examples')
+    local = {}
+    for name in sorted(os.listdir(examples_dir)):
+        if name.endswith('.py'):
+            # text mode: the hash sphinx-gallery computes, the same on every
+            # platform's line endings
+            with open(os.path.join(examples_dir, name), 'rt',
+                      errors='surrogateescape', encoding='utf-8') as f:
+                local[name] = hashlib.md5(f.read().encode(
+                    errors='surrogateescape', encoding='utf-8')).hexdigest()
+    assert manifest.get('examples') == local, (
+        'RELEASE GATE: the pre-built gallery does not cover exactly the '
+        'examples in this checkout: '
+        f'{sorted(set(local.items()) ^ set((manifest.get("examples") or {}).items()))}')

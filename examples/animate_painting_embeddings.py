@@ -13,25 +13,25 @@ shared 3-D space with UMAP, keeps the five clouds separate (the nesting of
 the input is the grouping), spins the camera, and annotates each cloud with
 its painting's name.
 
-Each cloud is drawn in a colour taken from the **actual canvas**:
+Each cloud is drawn in a color taken from the **actual canvas**:
 ``hypertools.plot.colors.image_palette`` clusters the downloaded image's
 pixels and orders the result by ``pixel_fraction * chroma``, so the vivid
 subject wins rather than the muted background -- Starry Night comes out
 cobalt, not canvas-beige. The right-hand column shows, for each painting,
 its name with the artist and year, the complete description that was
-embedded (in that painting's colour, so nothing about the geometry is
-hidden), and a thumbnail of the canvas itself, vertically centred on its
+embedded (in that painting's color, so nothing about the geometry is
+hidden), and a thumbnail of the canvas itself, vertically centered on its
 description.
 
 **Data & graceful degradation.** The descriptions are bundled inline (so the
 text side is fully offline and deterministic). Each canvas is downloaded
 once from Wikimedia Commons and cached; if an image cannot be fetched, a
-hand-picked representative colour is used instead, the thumbnail slot shows
-a flat swatch of that colour, and the run says so. Sentence embeddings come
+hand-picked representative color is used instead, the thumbnail slot shows
+a flat swatch of that color, and the run says so. Sentence embeddings come
 from the ``[text]`` extra, which hypertools installs on demand the first
 time an embedding model is requested; nothing here checks for it. The
 test-suite drives the same pipeline (embed -> reduce together -> one
-cloud/colour per painting -> spin) through ``fixture_data``, which embeds
+cloud/color per painting -> spin) through ``fixture_data``, which embeds
 with ``vectorizer='TfidfVectorizer'`` so no test downloads a model.
 """
 
@@ -143,7 +143,7 @@ class Paintings(NamedTuple):
     colors: list                # one RGB tuple per painting
     images: list                # per painting, the cached canvas path or None
     vectorizer: str             # how the windows are embedded
-    source: str                 # which path produced the colours
+    source: str                 # which path produced the colors
 
 
 def windows(text, size=WINDOW, step=STEP):
@@ -178,23 +178,23 @@ def fetch_canvas(spec):
         return dest
     except Exception as error:
         print(f'canvas {spec["file"][:20]}... unavailable ({error!r}); '
-              'using its hand-picked colour and a flat swatch')
+              'using its hand-picked color and a flat swatch')
         return None
 
 
 def canvas_color(spec, path):
-    """The painting's most salient colour, from the real canvas.
+    """The painting's most salient color, from the real canvas.
 
-    Choosing the colour is the library's job: ``image_palette`` orders
+    Choosing the color is the library's job: ``image_palette`` orders
     clusters by ``pixel_fraction * chroma``, so a small vivid region beats a
     large muted one. Ordering by cluster SIZE -- which is what this example
     used to do -- returns the background.
 
-    One legibility floor on top of that ordering: the first colour whose
+    One legibility floor on top of that ordering: the first color whose
     luminance is at most MAX_LUMINANCE. Measured on the real canvases, The
     Great Wave's two most salient clusters are its cream sky and foam
     (luminance 0.88 and 0.94), which vanish on a white page; its Prussian
-    blue is third. Without a canvas, the hand-picked colour stands in.
+    blue is third. Without a canvas, the hand-picked color stands in.
     """
     if path is None:
         return to_rgb(spec['fallback'])
@@ -212,7 +212,7 @@ def load_paintings(paintings=PAINTINGS):
 
 
 def fixture_data(paintings=PAINTINGS):
-    """The same payload with every colour drawn from the one committed
+    """The same payload with every color drawn from the one committed
     thumbnail, no canvas images (flat swatches stand in), and a
     deterministic TF-IDF embedding. No network, no model."""
     names = list(paintings)
@@ -254,7 +254,7 @@ def construct_artifact(data):
     """`data.descriptions` / `data.colors` / `data.images` in, the animation
     out. Returns the HyperAnimation wrapper, never the unpacked pair."""
     # labels= in its per-OBSERVATION form: one sub-list per cloud, carrying
-    # the painting's name on its MIDDLE window (roughly the centre of a text
+    # the painting's name on its MIDDLE window (roughly the center of a text
     # trajectory) and None everywhere else. (1.1 also takes one label per
     # dataset, placed by label_anchor=; this form names the window itself.)
     labels = [[name if i == len(cloud) // 2 else None
@@ -287,7 +287,7 @@ def construct_artifact(data):
     ax.title.set_visible(True)
     # one block per painting: bold name, then artist and year in italics
     # (placed after measuring the name), then the description that was
-    # actually embedded, all in that cloud's colour
+    # actually embedded, all in that cloud's color
     text_x = MARGIN + (box_hi[0] - box_lo[0]) + GAP
     blocks, texts = [], []
     for i, name in enumerate(data.names):
@@ -309,7 +309,7 @@ def construct_artifact(data):
     boxes = [figure_box(t) for t in texts]
     text_x1 = max(b.x1 for b in boxes)
     text_mid = (max(b.y1 for b in boxes) + min(b.y0 for b in boxes)) / 2
-    # slide the axes so the box sits MARGIN from the left edge, centred on the
+    # slide the axes so the box sits MARGIN from the left edge, centered on the
     # text column (a translation: the projection's scale only depends on the
     # axes' size), then hang the title just above its highest projected point
     shift = np.array([MARGIN - box_lo[0], text_mid - (box_lo[1] + box_hi[1]) / 2])
@@ -323,7 +323,7 @@ def construct_artifact(data):
     ax.set_title(ax.get_title(), fontproperties=ax.title.get_fontproperties(),
                  y=(top - y0) ** 2 / (figure_box(ax.title).y0 - y0))
     # thumbnails: a missing canvas becomes a flat 4:3 swatch of the painting's
-    # colour, so the layout is identical offline
+    # color, so the layout is identical offline
     thumbs = [np.full((3, 4, 3), color) if path is None else imread(path)
               for path, color in zip(data.images, data.colors)]
     aspects = [im.shape[0] / im.shape[1] for im in thumbs]
@@ -331,7 +331,7 @@ def construct_artifact(data):
     width = min(1 - MARGIN - (text_x1 + GAP),
                 THUMB_MAX_H * fig_h / (max(aspects) * fig_w))
     for (head, body), im, aspect in zip(blocks, thumbs, aspects):
-        # true aspect, centred on the block's vertical midpoint
+        # true aspect, centered on the block's vertical midpoint
         head_box, body_box = figure_box(head), figure_box(body)
         height = width * aspect * fig_w / fig_h
         middle = (max(head_box.y1, body_box.y1) + min(head_box.y0, body_box.y0)) / 2

@@ -53,10 +53,10 @@ class HyperAnimation(tuple):
     only -- see ``hyp.plot``'s ``on_frame=`` docstring for the
     backend-portable form and the ``FrameContext`` it receives).
 
-    ``.colors`` holds the resolved colour scale of the plot that produced
+    ``.colors`` holds the resolved color scale of the plot that produced
     the animation (the same dict ``return_model=True`` puts in
     ``bundle['colors']``: kind, palette, cmap, norm, vmin, vmax, the
-    per-group colours and their labels), so a companion panel can reuse the
+    per-group colors and their labels), so a companion panel can reuse the
     library's mapping. ``.drawn_extent(frames=None)`` measures the union
     bounding box of everything the animation draws.
     """
@@ -151,9 +151,9 @@ class HyperAnimation(tuple):
             iterable of frame indices measures exactly those.
         threshold : int, optional
             How far (0-255, per channel) a pixel must differ from the
-            figure's own background colour to count as drawn. The default
+            figure's own background color to count as drawn. The default
             5 treats anything below 250 on a white figure as ink, faint
-            antialiasing included; raise it to ignore light artefacts.
+            antialiasing included; raise it to ignore light artifacts.
 
         Returns
         -------

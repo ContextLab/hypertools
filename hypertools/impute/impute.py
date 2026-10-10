@@ -61,7 +61,7 @@ def _coerce_dataset(d):
 
     Types are classified with datawrangler's predicates (see
     `hypertools._shared.helpers`): a DataFrame of any backend datawrangler
-    recognises (polars DataFrame/LazyFrame, ...) becomes a pandas
+    recognizes (polars DataFrame/LazyFrame, ...) becomes a pandas
     DataFrame, hypertools' internal frame type (a pandas frame passes
     through untouched); a pandas or polars Series becomes its one-column
     frame (index and name preserved)."""
@@ -408,7 +408,7 @@ def impute(data, model='PPCA', return_model=False, truth=None, mask=None,
         copy and leaves the caller's instance unchanged. Fitted instances
         are refused because their learned state may contain the hidden truth.
 
-        ALIGNMENT. When `data` and `truth` are both labelled, `truth` is
+        ALIGNMENT. When `data` and `truth` are both labeled, `truth` is
         matched to `data` BY LABEL, not by position: a pandas DataFrame
         labels its rows and columns (a default ``0..n-1`` index counts --
         a reordered frame carries those integers with it), a pandas Series
@@ -418,7 +418,7 @@ def impute(data, model='PPCA', return_model=False, truth=None, mask=None,
         sequences are not identical -- raise a `ValueError` naming the
         axis and the labels. A bare array on either side carries no
         labels and is compared by position (shape-checked), so pass
-        ``truth.to_numpy()`` to compare two differently-labelled frames
+        ``truth.to_numpy()`` to compare two differently-labeled frames
         cell for cell. With a list of datasets each pair is aligned
         independently.
 
@@ -426,7 +426,7 @@ def impute(data, model='PPCA', return_model=False, truth=None, mask=None,
         RESTRICT scoring to a subset of the damaged cells, e.g. only the
         rows of a simulated occlusion (`mask` is intersected with the NaN
         mask, so cells that were never missing are excluded either way).
-        Same shape as `data` (a labelled mask is aligned to `data` by
+        Same shape as `data` (a labeled mask is aligned to `data` by
         label exactly as `truth` is); only valid alongside ``truth=``. Score the
         occluded band and the scattered dropouts separately by calling
         twice with complementary masks.

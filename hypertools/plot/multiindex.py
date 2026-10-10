@@ -41,7 +41,7 @@ carry the legend label.
 Example (``n_levels == 1``, reachable from a two-level COLUMN hierarchy such
 as (Group, Feature), where the innermost level is the feature axis): there is
 no non-leaf level, so NO mean is built and every leaf is itself a top-level
-group -- lw=1, alpha=1.0, its own colour, and **its own legend label**.
+group -- lw=1, alpha=1.0, its own color, and **its own legend label**.
 Applying the general rule here would leave every trace ``'_nolegend_'`` and
 the legend empty, which is what it did before 1.1 (F11).
 

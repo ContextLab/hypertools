@@ -6,7 +6,7 @@ Trails: chemtrails and precognition
 
 Animated plots can show more than the current position along each
 trajectory. ``chemtrails=True`` leaves a low-opacity trace of the path
-*already travelled* behind the moving points; ``precog=True`` draws a
+*already traveled* behind the moving points; ``precog=True`` draws a
 low-opacity trace of the path *still to come* ahead of them. Combining
 both (or passing ``bullettime=True``) shows the entire timeseries at low
 opacity with the current segment highlighted. The data are two

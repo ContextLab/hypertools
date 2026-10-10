@@ -202,8 +202,8 @@ Three library calls: ``hyp.reduce`` takes each sector (a months-by-stocks
 matrix of growth curves, four or five stocks each) to three dimensions on
 its own, ``hyp.align(..., model='HyperAlign')`` hyperaligns the six paths into
 one shared space, and ``hyp.plot`` draws them with a seventh, heavier path
--- the market, their mean -- coloured through the mixture hue by each
-sector's share of the basket's capitalisation. The title is the current
+-- the market, their mean -- colored through the mixture hue by each
+sector's share of the basket's capitalization. The title is the current
 date, tinted by the basket's trailing-twelve-month return, and the camera
 makes three turns over one minute of 26 years. Prices from Yahoo Finance,
 share counts from the SEC. (For the column-MultiIndex route to a market
@@ -225,18 +225,18 @@ The figure from the HyperTools paper in one ``hyp.plot`` call: monthly
 temperatures for twenty cities are twenty *features* of one trajectory,
 not twenty datasets, so 138 years become a single path that sweeps with
 the seasons and drifts with the century. A continuous ``hue=`` (the
-average temperature across the cities) colours it on a blue-cold /
+average temperature across the cities) colors it on a blue-cold /
 red-hot scale with a native colorbar; ``manip='Smooth'``,
 ``normalize='across'`` and ``chemtrails=True`` are the only other
 keywords. One ``on_frame`` hook keeps two companion panels and a
 month/year title in step with the head of the path over the two-minute
-orbit: a world map with each city coloured by that month's temperature,
+orbit: a world map with each city colored by that month's temperature,
 and the mean temperature against time, drawn segment by segment on the
-same colour scale.
+same color scale.
 
 .. image:: _static/thumbnails/sphx_glr_animate_weather_decades_thumb.gif
    :width: 200
-   :alt: A century of twenty cities' temperatures as one trajectory, coloured blue-cold to red-hot
+   :alt: A century of twenty cities' temperatures as one trajectory, colored blue-cold to red-hot
 
 .. toctree::
   :maxdepth: 2
@@ -249,16 +249,16 @@ The shape of a conversation, revealed one turn at a time
 Raw dialogue in: each turn of the *Mad Tea-Party* is a list of word
 windows, and the turns are one list of lists of strings handed to a single
 ``hyp.plot`` call, so every turn is its own trajectory through one shared
-space. ``vectorizer=`` embeds, a categorical ``hue=`` colours by speaker
+space. ``vectorizer=`` embeds, a categorical ``hue=`` colors by speaker
 with a native legend, ``order='serial'`` reveals one turn at a time with
 ``chemtrails=True``, and a per-turn ``title=`` shows the line being spoken,
-wrapped when long, in the speaker's colour. The recency fade across turns
-and the title colour run on the public ``on_frame`` hook and read the
+wrapped when long, in the speaker's color. The recency fade across turns
+and the title color run on the public ``on_frame`` hook and read the
 schedule the library publishes; thirty seconds, two camera turns.
 
 .. image:: _static/thumbnails/sphx_glr_animate_conversation_thumb.gif
    :width: 200
-   :alt: The Mad Tea-Party revealed one turn at a time, each path coloured by speaker
+   :alt: The Mad Tea-Party revealed one turn at a time, each path colored by speaker
 
 .. toctree::
   :maxdepth: 2
@@ -272,7 +272,7 @@ Raw text in, five clouds out: a paragraph per painting is cut into word
 windows and handed to ``hyp.plot`` as a list of five lists of strings, so
 the nesting is the grouping. ``vectorizer='all-MiniLM-L6-v2'`` embeds every
 window, ``reduce='UMAP'`` puts them in one shared space, ``labels=`` names
-each cloud and ``animate='spin'`` orbits it. Each cloud's colour comes from
+each cloud and ``animate='spin'`` orbits it. Each cloud's color comes from
 its real canvas through ``image_palette``, which orders clusters by
 salience rather than size, with one legibility floor on top. Beside the
 box, each painting's name with its artist and year, the description that
@@ -280,7 +280,7 @@ was embedded, and a thumbnail of the canvas.
 
 .. image:: _static/thumbnails/sphx_glr_animate_painting_embeddings_thumb.gif
    :width: 200
-   :alt: Five clouds of painting-description embeddings spinning in 3-D, each in its canvas's colour
+   :alt: Five clouds of painting-description embeddings spinning in 3-D, each in its canvas's color
 
 .. toctree::
   :maxdepth: 2
@@ -291,8 +291,8 @@ Palette order, and a data matrix as a palette
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 ``image_palette`` lists a canvas's clusters most salient first, and that is
-still the colour a dataset leads with when a painting stands for it in a
-per-dataset list. Used as the palette of one plot, though, the same colours
+still the color a dataset leads with when a painting stands for it in a
+per-dataset list. Used as the palette of one plot, though, the same colors
 are put in a deterministic order -- by value, dark to bright, so a continuous
 ``hue=`` reads as a gradient -- and ``palette_sort=`` (or ``?sort=`` inside
 the spec) picks ``'value'``, ``'hue'``, ``'lightness'``, ``'columns'`` or
@@ -300,9 +300,9 @@ the spec) picks ``'value'``, ``'hue'``, ``'lightness'``, ``'columns'`` or
 reduces it to three dimensions (``palette_reduce=``, default ``'PCA'``, with
 ``palette_manip=``/``palette_normalize=``/``palette_align=`` passed through),
 scales each component to an RGB channel, sorts the rows along the first
-component and resamples the result to however many colours the plot needs. A
+component and resamples the result to however many colors the plot needs. A
 2-D array with three or four columns and every value in [0, 1] is still read
-as a list of colours::
+as a list of colors::
 
     import numpy as np
     import hypertools as hyp
@@ -314,7 +314,7 @@ as a list of colours::
     hyp.plot(walk, hue=np.arange(len(walk)), palette=weights)    # PCA, sorted along PC1
     hyp.plot(walk, hue=np.arange(len(walk)), palette=weights,
              palette_reduce='FastICA', palette_sort='hue')
-    # an image's colours, ordered by hue rather than by value:
+    # an image's colors, ordered by hue rather than by value:
     # hyp.plot(walk, hue=np.arange(len(walk)), palette='image:starry_night.jpg?sort=hue')
 
 Morphing through the shapes zoo

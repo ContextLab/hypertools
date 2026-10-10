@@ -138,6 +138,23 @@ detached tag checkout — the notebook migrator detects the branch via
       do NOT commit afterward** — any later commit changes HEAD, so you must
       rebuild the gallery and re-publish (the gate fails until you do). The same
       gate re-runs on the master push (step 4) and the tag (step 5).
+- [ ] **Publish the built gallery for Read the Docs to reuse.** Read the
+      Docs ends a build after 15 minutes and executing the gallery takes about
+      25, so its build fetches the gallery you just built
+      (`docs/fetch_prebuilt_gallery.py`, run from `.readthedocs.yaml`) and
+      sphinx-gallery skips every example whose source is unchanged. From the
+      repo root, with the same `docs/auto_examples` and a clean tracked tree:
+      `python scripts/publish_prebuilt_gallery.py --push`
+      It replaces the single commit on the `docs-gallery-v1.1.0` branch (a
+      forced push, by design: the tree is about 100 MB) and refuses a gallery
+      that is incomplete or names this machine's path. The same "no commits
+      afterward" rule applies: the manifest pins `source_commit` to HEAD.
+- [ ] **Verify it:**
+      `HYPERTOOLS_REQUIRE_RELEASE=1 pytest tests/test_release_readiness_gate.py::test_release_gate_prebuilt_gallery_is_published_for_this_commit`
+      → green (`raw.githubusercontent.com` can serve the previous manifest for
+      up to five minutes after a republish). After the `master` push in step 4,
+      open the Read the Docs build for `latest` and confirm it finished and its
+      `pre_build` step printed `51 of 51 examples are current`.
 
 ## 3. Build + verify artifacts locally (do NOT upload yet)
 
@@ -216,14 +233,12 @@ same artifacts you verify are the ones you publish.
       (Publication is a MANUAL step today — there is no CI job for it; a
       `contents: write` `publish-gallery-notebooks` job on master/tags could
       automate it once token/environment handling is decided.)
-- [ ] **Read the Docs: build BOTH `latest` and the `v1.1.0` tag by hand.**
-      Pushes do not reach RTD at the moment: the GitHub → RTD webhook
-      (`https://readthedocs.org/api/v2/webhook/github/hypertools/`) last
-      answered HTTP 400 in GitHub's delivery log, and RTD has built nothing
-      since the 1.0.0 release (`latest`/`stable` at 647ce929, 2026-07-24),
-      although `master` moved on 2026-09-05. Re-sync the GitHub
-      integration in the RTD admin (Admin → Integrations,
-      https://app.readthedocs.org/dashboard/hypertools/integrations/), then
+- [ ] **Read the Docs: confirm `latest` and the `v1.1.0` tag both built.**
+      Pushes reach RTD again: both `master` pushes on 2026-10-09 started
+      builds (before that the 2017 webhook had no secret and RTD answered
+      HTTP 400). A build that fails with "Build terminated due to time out"
+      means the pre-built gallery was not fetched or was stale (step 2): the
+      build's `pre_build` output says which. If a build is missing,
       trigger builds of `latest` (master) and of the `v1.1.0` tag from
       https://app.readthedocs.org/projects/hypertools/builds/, and point the
       "stable"/default version at `v1.1.0`, replacing `v1.0.0`. Verify:
@@ -294,6 +309,7 @@ run with `HYPERTOOLS_REQUIRE_RELEASE=1` by the `release-gate` CI job on
 | CHANGELOG heading | `## <version> (YYYY-MM-DD)` — version == pyproject, a REAL calendar date (not `(unreleased)`, not `2026-99-99`), and not earlier than the release commit's date (a stale draft date fails) |
 | generated gallery (`docs-clean` job) | every built `docs/auto_examples/*.ipynb` carries the PyPI spec (covers every published notebook, at the build layer) |
 | gallery Colab notebooks published | `docs-notebooks/v<version>/manifest.json` present, its `source_commit` == the release HEAD, its inventory == the built gallery, and the branch's actual `.ipynb` set (one GitHub tree request) == the manifest — so stale (old-RC), partial, or mismatched publishes all fail. Requires step 2's publish to have run FROM the release commit, BEFORE the master/tag push — see the deadlock note there. |
+| pre-built gallery published | `docs-gallery-v<version>/manifest.json` present, its `source_commit` == the release HEAD, its example md5s == the examples in the checkout |
 
 Always-on (every branch): no notebook installs the defunct `dev-1.0-refactor`;
 all tutorial branch-installs share one branch; every README image is a single

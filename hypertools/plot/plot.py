@@ -243,7 +243,7 @@ def _seaborn_palette_arg(palette, n_colors):
 
     - a PER-DATASET list of palettes (``palette=['image:wave.jpg',
       'viridis', ...]``, see `colors.dataset_palettes`) resolves to each
-      palette's `palette_lead_color`, one colour per dataset -- which is
+      palette's `palette_lead_color`, one color per dataset -- which is
       exactly what this cycling palette is for.
     - a ``{category: color}`` DICT names CATEGORIES, and the groups these
       call sites cycle over are datasets, not categories. The ambient cycle
@@ -253,8 +253,8 @@ def _seaborn_palette_arg(palette, n_colors):
       (`_categorical_color_label_maps`, the partially-labeled hue branch,
       the marker regroup, and the discrete colorbar) resolves the dict by
       NAME through `colors.resolve_category_colors` and sets explicit
-      colours. A dict with NO categorical hue at all is rejected outright
-      -- by `colors._get_palette`, when the figure's colour scale is
+      colors. A dict with NO categorical hue at all is rejected outright
+      -- by `colors._get_palette`, when the figure's color scale is
       resolved -- rather than silently drawing in the default palette."""
     import collections.abc
 
@@ -263,7 +263,7 @@ def _seaborn_palette_arg(palette, n_colors):
     from .colors import DEFAULT_PALETTE, IMAGE_PALETTE_PREFIX
     if (isinstance(palette, (list, tuple, np.ndarray))
             and len(palette) == 0):
-        # seaborn cycles a colour list with `itertools.cycle`, so an EMPTY
+        # seaborn cycles a color list with `itertools.cycle`, so an EMPTY
         # list escaped as a bare StopIteration from inside
         # `sns.color_palette`; say what the no-hue path already says.
         raise ValueError("palette= was given as an empty list; supply at "
@@ -280,9 +280,9 @@ def _seaborn_palette_arg(palette, n_colors):
                                                      n_colors)]
     _specs = dataset_palettes(palette, n_colors)
     if _specs is not None:
-        # a {category: color} dict ENTRY has no lead colour (it names
+        # a {category: color} dict ENTRY has no lead color (it names
         # categories, like a whole-plot dict); the ambient cycle gets the
-        # default palette's colour at that position, and the categorical
+        # default palette's color at that position, and the categorical
         # paths resolve the dicts by name (`_categorical_color_label_maps`
         # merges a per-dataset list of dicts into one mapping).
         _default = None
@@ -313,45 +313,45 @@ def _fmt_draws_line(fmt):
 
 
 def _fmt_color_letter(fmt):
-    """The colour a matplotlib format string names (``'r-'`` -> ``'r'``),
+    """The color a matplotlib format string names (``'r-'`` -> ``'r'``),
     or None when it names none, is not a string, or does not parse. The
     plot.py twin of `plotly_backend._fmt_color_letter`: the plotly backend
-    has no colour cycle, so the palette is handed to it as explicit
-    per-dataset ``color=`` entries, and this is how a colour letter in
+    has no color cycle, so the palette is handed to it as explicit
+    per-dataset ``color=`` entries, and this is how a color letter in
     ``fmt=`` keeps its matplotlib precedence over that palette (1.1 release
-    review, round 6: ``fmt='r-'`` drew the palette colour on plotly)."""
+    review, round 6: ``fmt='r-'`` drew the palette color on plotly)."""
     if not isinstance(fmt, str) or not fmt or _process_plot_format is None:
         return None
     try:
         return _process_plot_format(fmt)[2]
-    except Exception:  # noqa: BLE001 - an unparseable fmt names no colour
+    except Exception:  # noqa: BLE001 - an unparseable fmt names no color
         return None
 
 
 def _palette_slots_consumed(n_drawn, mpl_kwargs, line_colors, draw_fmt,
                             category_colored=False):
-    """How many colour-cycle slots one call's `n_drawn` drawn datasets take
+    """How many color-cycle slots one call's `n_drawn` drawn datasets take
     up: what a later ``ax=`` call into the same axes, figure or grid cell
     continues the palette from, on BOTH backends.
 
-    Only a dataset coloured FROM the cycle consumes a slot. An explicit
+    Only a dataset colored FROM the cycle consumes a slot. An explicit
     ``color=`` (or a palette mapping resolved into one), a ``hue=``
-    colouring, and a colour letter in ``fmt=`` (``'r-'``) colour their
+    coloring, and a color letter in ``fmt=`` (``'r-'``) color their
     datasets without touching the cycle -- exactly as a matplotlib axes
     treats them -- so ``hyp.plot(a, fmt='r-')`` followed by
-    ``hyp.plot(b, ax=...)`` gives ``b`` the FIRST palette colour, the one
+    ``hyp.plot(b, ax=...)`` gives ``b`` the FIRST palette color, the one
     the single call ``fmt=['r-', '-']`` gives it (1.1 release review, round
     7: the count was every drawn dataset, so that second call drew the
-    SECOND palette colour on plotly, and in an initially empty
+    SECOND palette color on plotly, and in an initially empty
     `hyp.subplots` cell on both backends).
 
     `category_colored` says so EXPLICITLY when a ``hue=``/``cluster=``
-    grouping coloured the drawn groups by category: such a call consumes
+    grouping colored the drawn groups by category: such a call consumes
     no slot whatever its fmt. Inferring that from the resolved kwargs
     alone missed the marker-only categorical grouping (``hue=...,
     fmt='o'``), whose groups used to be drawn straight from the ambient
     cycle -- so ordinary -> ``hue=`` with ``fmt='o'`` -> ordinary ended on
-    the THIRD palette colour instead of the second (round 9)."""
+    the THIRD palette color instead of the second (round 9)."""
     if category_colored or "color" in mpl_kwargs or line_colors is not None:
         return 0
     return sum(
@@ -361,35 +361,35 @@ def _palette_slots_consumed(n_drawn, mpl_kwargs, line_colors, draw_fmt,
 
 
 def _palette_continuation(palette, n, offset=0, used=None):
-    """The `n` colours a call draws from `palette` into an axes, figure or
+    """The `n` colors a call draws from `palette` into an axes, figure or
     grid cell where earlier hypertools calls already took `offset` slots --
-    `used` being those slots' colours, in order (None when unknown).
+    `used` being those slots' colors, in order (None when unknown).
 
-    With no earlier slots this is the palette's own `n`-colour sampling,
+    With no earlier slots this is the palette's own `n`-color sampling,
     exactly what a fresh call draws. With earlier slots the palette is
     CONTINUED, never restarted and never repeated:
 
-    - a fixed-sequence palette (a colour list, 'deep', 'Set2', ...) gives
-      the next colours in its sequence -- the `offset`-th onward of its
+    - a fixed-sequence palette (a color list, 'deep', 'Set2', ...) gives
+      the next colors in its sequence -- the `offset`-th onward of its
       ``offset + n`` sampling, what one call with every dataset would draw;
     - an evenly RE-SAMPLED palette ('hls', 'husl', a colormap such as
-      'viridis') places its colours by count, so the ``offset + n``
+      'viridis') places its colors by count, so the ``offset + n``
       sampling is not an extension of the ``offset`` one: 'hls' at 2 is
       0 and 180 degrees, at 4 it is 0/90/180/270, so taking its last two
       repeated 180 (1.1 release review: two datasets then two more drew
       a2 == b1). Instead take the smallest sampling of ``m >= offset + n``
-      colours that CONTAINS every colour already used and fill its free
-      slots in palette order -- 'hls' 2 + 2 draws exactly the 4-colour
+      colors that CONTAINS every color already used and fill its free
+      slots in palette order -- 'hls' 2 + 2 draws exactly the 4-color
       'hls' set, and 1 + 1 still draws what one call with both draws.
 
-    When no such sampling exists (the earlier colours came from another
-    palette, or a short colour list has no free slot left to fill), it
+    When no such sampling exists (the earlier colors came from another
+    palette, or a short color list has no free slot left to fill), it
     falls back to the ``offset``-th onward of the ``offset + n`` sampling.
     """
     import seaborn as sns
 
     def sample(m):
-        """The palette's own `m`-colour sampling, as RGB tuples."""
+        """The palette's own `m`-color sampling, as RGB tuples."""
         return [tuple(float(v) for v in c[:3]) for c in sns.color_palette(
             _seaborn_palette_arg(palette, m), m)]
 
@@ -403,7 +403,7 @@ def _palette_continuation(palette, n, offset=0, used=None):
     used_arr = np.asarray([tuple(c)[:3] for c in used], dtype=float)
     # every sampling that could hold `used` plus `n` free slots; the upper
     # bound covers the nested refinements repeated composition produces
-    # (each at most doubles the grid the used colours sit on)
+    # (each at most doubles the grid the used colors sit on)
     for m in range(offset + n, 4 * (offset + n) + 9):
         cand = np.asarray(sample(m), dtype=float)
         dist = np.abs(cand[:, None, :] - used_arr[None, :, :]).max(axis=-1)
@@ -418,13 +418,13 @@ def _palette_continuation(palette, n, offset=0, used=None):
 
 def _observed_palette_colors(palette, n_drawn, color=None, draw_fmt=None,
                              prior=None):
-    """The distinct colours the OBSERVED data takes, in order -- what a
+    """The distinct colors the OBSERVED data takes, in order -- what a
     default forecast grouping continues the palette past
     (`_forecast_group_palette`).
 
-    `color` is the resolved per-trace ``color=`` (an explicit colour, or the
-    per-run colours a categorical ``hue=``/``cluster=`` assigned); without
-    it each dataset lacking a colour letter in `draw_fmt` takes the next
+    `color` is the resolved per-trace ``color=`` (an explicit color, or the
+    per-run colors a categorical ``hue=``/``cluster=`` assigned); without
+    it each dataset lacking a color letter in `draw_fmt` takes the next
     palette slot. `prior` is ``(offset, used)`` for slots earlier calls
     took on a reused axes/figure/cell. The unlabeled-group gray is not a
     palette slot and is left out."""
@@ -456,7 +456,7 @@ def _observed_palette_colors(palette, n_drawn, color=None, draw_fmt=None,
             or _looks_like_dataset_palettes(palette)):
         return out
     # the cycle is sampled for EVERY drawn dataset and the unlettered ones
-    # take its first colours in order -- exactly how both backends colour
+    # take its first colors in order -- exactly how both backends color
     # them (a lettered dataset skips a slot without changing the sampling)
     for c in _palette_continuation(palette, n_drawn, offset,
                                    used if offset else None)[:n_slots]:
@@ -465,7 +465,7 @@ def _observed_palette_colors(palette, n_drawn, color=None, draw_fmt=None,
 
 
 def _prior_palette_slots(ax, plotly_into, backend):
-    """``(offset, used)``: the palette slots (and their colours, or None)
+    """``(offset, used)``: the palette slots (and their colors, or None)
     earlier hypertools calls took on the axes / plotly figure / grid cell
     this call draws into -- read from the same records the observed
     palette continuation reads (``ax._hyp_palette_offset``/``_used``;
@@ -497,12 +497,12 @@ def _prior_palette_slots(ax, plotly_into, backend):
 
 
 def _forecast_group_palette(palette, observed):
-    """The DEFAULT colours of a `forecast_hue=`/`forecast_cluster=` grouping
+    """The DEFAULT colors of a `forecast_hue=`/`forecast_cluster=` grouping
     (no `forecast_palette=`), as a function of the group count: the
-    figure's palette CONTINUED past the `observed` colours
+    figure's palette CONTINUED past the `observed` colors
     (`_observed_palette_colors`), so no forecast group wears an observed
-    line's colour (maintainer decision, 1.1 review -- cluster 0 used to be
-    dataset 0's colour exactly). A per-dataset or mapping palette has no
+    line's color (maintainer decision, 1.1 review -- cluster 0 used to be
+    dataset 0's color exactly). A per-dataset or mapping palette has no
     sequence to continue, so 'hls' is continued past the observed count."""
     if (palette is None or isinstance(palette, collections.abc.Mapping)
             or _looks_like_dataset_palettes(palette)):
@@ -515,9 +515,9 @@ def _forecast_group_palette(palette, observed):
 
 
 def _extend_palette_used(offset, used, taken):
-    """The palette-slot colours an axes/figure/cell holds after a call that
-    took `taken` past `offset` earlier slots whose colours were `used`, or
-    None when the earlier colours are unknown (then the next call falls back
+    """The palette-slot colors an axes/figure/cell holds after a call that
+    took `taken` past `offset` earlier slots whose colors were `used`, or
+    None when the earlier colors are unknown (then the next call falls back
     to the count alone; see `_palette_continuation`)."""
     if offset <= 0:
         return [tuple(float(v) for v in c[:3]) for c in taken]
@@ -528,7 +528,7 @@ def _extend_palette_used(offset, used, taken):
 
 
 def _record_palette_used(fig, into, offset, used, taken):
-    """Record the palette-slot colours on a plotly figure's ``layout.meta``,
+    """Record the palette-slot colors on a plotly figure's ``layout.meta``,
     beside the slot count the plotly backend records there: per figure as
     ``'hyp_palette_used'``, per `PlotlyCell` as
     ``'hyp_cell_palette_used'[str(index)]``."""
@@ -574,11 +574,11 @@ def _rank_plotly_legend(fig, first_trace, order):
 
 
 def _sync_color_scales(drawn, *infos):
-    """Rewrite each discrete colour scale in `infos` (the return_model
+    """Rewrite each discrete color scale in `infos` (the return_model
     bundle's ``'colors'``, a discrete colorbar's info) in place to the
-    per-dataset colours `drawn` -- the colours the datasets were actually
-    drawn in -- when it has one colour per dataset. Only for datasets
-    coloured from the palette cycle (see `_color_scales_from_cycle` in
+    per-dataset colors `drawn` -- the colors the datasets were actually
+    drawn in -- when it has one color per dataset. Only for datasets
+    colored from the palette cycle (see `_color_scales_from_cycle` in
     `plot`), whose scale was resolved from the palette's fresh sampling."""
     from matplotlib.colors import BoundaryNorm, ListedColormap, to_rgb
     rgb = np.asarray([to_rgb(c) for c in drawn], dtype=float)
@@ -604,10 +604,10 @@ def _apply_forecast_override(style, override):
 
     Sparse by design (see `forecast.resolve_forecast_overrides`): only the
     aspects the user actually named are replaced, so `forecast_fmt=':'`
-    leaves the inherited colour alone and `forecast_palette=` leaves the
+    leaves the inherited color alone and `forecast_palette=` leaves the
     inherited dash alone.
 
-    An explicit override colour beats a colour letter inside `forecast_fmt=`
+    An explicit override color beats a color letter inside `forecast_fmt=`
     (``forecast_fmt='r--'`` with `forecast_hue=`), matching matplotlib's own
     rule that a `color=` kwarg wins over a fmt string.
     """
@@ -634,7 +634,7 @@ def _forecast_style_from(src_line, alpha_scale=FORECAST_ALPHA_SCALE,
     """Style a forecast to match the observed trace it continues.
 
     A forecast is the SAME series projected forward, so it inherits its
-    observed trace's identity -- colour, linestyle and linewidth -- and
+    observed trace's identity -- color, linestyle and linewidth -- and
     differs only in transparency: ``alpha = observed_alpha * alpha_scale``
     (an unset alpha is matplotlib's "opaque", i.e. 1.0). See
     `hypertools.plot.forecast.FORECAST_ALPHA_SCALE` for why, and for the
@@ -644,25 +644,25 @@ def _forecast_style_from(src_line, alpha_scale=FORECAST_ALPHA_SCALE,
     overlay (`_draw_forecast_overlays`, which also serves ``animate='spin'``)
     and the per-frame live/trail artists all call it, so no two of them can
     drift apart. `plotly_backend._forecast_style_from` is its plotly twin
-    (same policy, plotly's colour/width/dash/opacity vocabulary).
+    (same policy, plotly's color/width/dash/opacity vocabulary).
 
     Parameters
     ----------
     src_line : matplotlib.lines.Line2D or None
         The observed trace being continued. ``None`` (fewer drawn lines than
         datasets -- the same defensive case the call sites already guarded)
-        falls back to matplotlib's own defaults, letting the colour cycle.
+        falls back to matplotlib's own defaults, letting the color cycle.
     alpha_scale : float, default `FORECAST_ALPHA_SCALE`
     override : dict or None
         This dataset's `forecast_*=` override
         (`forecast.resolve_forecast_overrides`). Sparse: only the aspects it
         names replace the inherited ones.
     anchor_color : RGB(A) tuple or None
-        Under a CONTINUOUS `hue=` the observed trace has many colours, so
-        "the same colour as its trace" resolves to the colour where the
-        forecast starts: the final observed point's hue colour. Passed here
+        Under a CONTINUOUS `hue=` the observed trace has many colors, so
+        "the same color as its trace" resolves to the color where the
+        forecast starts: the final observed point's hue color. Passed here
         (rather than read off `src_line`) because the line artist carries
-        the per-dataset palette colour, which is a colour nothing visible is
+        the per-dataset palette color, which is a color nothing visible is
         drawn in. A `forecast_*=` override still wins over it. Plotly's twin
         takes the same argument, so both backends anchor identically.
 
@@ -672,10 +672,10 @@ def _forecast_style_from(src_line, alpha_scale=FORECAST_ALPHA_SCALE,
         ``color``/``linestyle``/``linewidth``/``alpha`` kwargs for `ax.plot`
         (plus ``marker`` when `forecast_fmt=` asked for one).
     """
-    # an explicit forecast COLOUR (`forecast_hue=`/`forecast_cluster=`/
-    # `forecast_palette=`, or a colour letter in `forecast_fmt=`) is what
+    # an explicit forecast COLOR (`forecast_hue=`/`forecast_cluster=`/
+    # `forecast_palette=`, or a color letter in `forecast_fmt=`) is what
     # tells the forecast from its trace, so it is drawn at the trace's own
-    # alpha rather than faded on top of being recoloured (1.1 release
+    # alpha rather than faded on top of being recolored (1.1 release
     # review, feature-tour 9.10: Set1 forecasts at 0.35 over 0.7 leaves
     # were invisible). `forecast_alpha_scale_for` is the one rule.
     from .forecast import forecast_alpha_scale_for
@@ -711,7 +711,7 @@ def _observed_run_lines(lines):
     observations (`matplotlib_backend._plot_possibly_split`, which tags the
     companion ``_hyp_marker_companion``). Every consumer that looks a run up
     by index (the forecast and truth overlays' style source, the animated
-    head-run colour) must skip the companions, or run ``i`` reads run
+    head-run color) must skip the companions, or run ``i`` reads run
     ``i // 2``'s artists: three ``'o-'`` datasets gave forecasts red, red,
     green instead of red, green, blue (1.1 release review, F1).
     """
@@ -723,7 +723,7 @@ def _draw_forecast_overlays(ax, raw_forecasts, antialias=True,
                             owner=None, overrides=None, labels=None,
                             dataset_index=None, src_lines=None):
     """Overlay one forecast trace per input dataset (GH #169), styled to
-    match its source line (`_forecast_style_from`): same colour, linestyle
+    match its source line (`_forecast_style_from`): same color, linestyle
     and linewidth, at half its alpha.
 
     Called AFTER `_draw` has already built the legend (from the original data
@@ -743,8 +743,8 @@ def _draw_forecast_overlays(ax, raw_forecasts, antialias=True,
     model's name, for every `predict=` form (1.1: a collection labels each
     model; the single-model form labels its one model too). The label is
     NOT put on the artist (every artist stays ``'_nolegend_'``): a model's
-    forecasts over several datasets are drawn in several colours, and a
-    legend built from the first of them would show dataset 0's colour as if
+    forecasts over several datasets are drawn in several colors, and a
+    legend built from the first of them would show dataset 0's color as if
     it were the model's. Each artist is tagged ``_hyp_forecast_label``
     instead, and `_forecast_legend_handles` builds one proxy glyph per
     distinct label from those tags -- which `plot()` adds to the legend
@@ -838,8 +838,8 @@ def _draw_forecast_overlays(ax, raw_forecasts, antialias=True,
     from .forecast import override_has_color as _pins_colour
     for _ds, _a in _artist_dataset:
         _a._hyp_forecast_role = 'static'
-        # an explicit forecast colour (forecast_hue=/cluster=/palette=, a
-        # colour letter in forecast_fmt=) that a continuous hue= must not
+        # an explicit forecast color (forecast_hue=/cluster=/palette=, a
+        # color letter in forecast_fmt=) that a continuous hue= must not
         # repaint (`_apply_multicolor_lines`/`_apply_multicolor_markers`)
         _a._hyp_forecast_pinned = bool(_pins_colour(
             overrides[_ds] if overrides is not None
@@ -857,7 +857,7 @@ def _add_overlay_legend_entries(ax, forecast_artists=None, truth_artists=None,
     know about -- it built the legend from the data lines before any
     overlay existed. One proxy per forecast label
     (`_forecast_legend_handles`) goes in after the data entries, and a
-    labelled `truth=` artist after those; entries already present are
+    labeled `truth=` artist after those; entries already present are
     kept, in place, so calling this once for the forecasts and once for
     the truth overlay lists ``data..., forecasts..., truth`` either way.
     No legend on the axes means the call asked for none: nothing is added.
@@ -896,9 +896,9 @@ def _add_overlay_legend_entries(ax, forecast_artists=None, truth_artists=None,
     labels = [lab for _, lab in kept] + [h.get_label() for h in fc_handles]
     if truth_lines:
         first = truth_lines[0]
-        # the colour decided over EVERY truth artist, not only the tagged
+        # the color decided over EVERY truth artist, not only the tagged
         # first one: the key stands for all datasets' truths, and wore
-        # dataset 0's colour whatever the others were (1.1 review, F10)
+        # dataset 0's color whatever the others were (1.1 review, F10)
         colors = {to_rgba(ln.get_color()) for ln in ax.lines
                   if getattr(ln, '_hyp_forecast_role', None) == 'truth'}
         handles.append(Line2D(
@@ -912,14 +912,14 @@ def _add_overlay_legend_entries(ax, forecast_artists=None, truth_artists=None,
 
 
 def _recolor_overlay_legend(ax, colors, close_fig=None):
-    """Apply `legend_colors=`'s plain colour list to a legend that also
+    """Apply `legend_colors=`'s plain color list to a legend that also
     lists `predict=`/`truth=` overlay entries (data entries first, then the
     overlays -- `_add_overlay_legend_entries`' order).
 
-    One colour per legend entry recolours them all. One colour per DATA
+    One color per legend entry recolors them all. One color per DATA
     entry -- what the list meant before a forecast had a legend entry of
     its own, and still what it means on a legend without overlays --
-    recolours the data entries and leaves the forecast/truth glyphs as
+    recolors the data entries and leaves the forecast/truth glyphs as
     drawn (1.1 release review: ``legend_colors=['r', 'b']`` with
     ``predict=`` raised 'the legend has 3'). Any other count raises
     ``ValueError`` -- after closing `close_fig` (the figure this call
@@ -959,10 +959,10 @@ def _forecast_legend_handles(artists):
 
     Each handle wears its forecasts' linestyle, linewidth, marker and alpha
     -- so the key looks like the faded, dashed lines it names -- and their
-    colour when every forecast under that label shares one (a single
-    dataset, or a `forecast_palette=` that colours by model). When the
-    label spans several colours (one model continuing several datasets,
-    each in its own colour) the glyph is `forecast.FORECAST_LEGEND_COLOR`,
+    color when every forecast under that label shares one (a single
+    dataset, or a `forecast_palette=` that colors by model). When the
+    label spans several colors (one model continuing several datasets,
+    each in its own color) the glyph is `forecast.FORECAST_LEGEND_COLOR`,
     a neutral gray: the entry then stands for the model, not for any one
     dataset. `plotly_backend._forecast_legend_traces` is its twin, so both
     backends list the same entries with the same glyphs.
@@ -1004,7 +1004,7 @@ def _draw_truth_overlays(ax, raw_truths, antialias=True, owner=None,
                          label=None, src_lines=None):
     """Overlay each trace's ACTUAL continuation (`truth=`, GH #285).
 
-    Styled from the trace it continues (same colour and linewidth, via
+    Styled from the trace it continues (same color and linewidth, via
     `_forecast_style_from` with no alpha fade) and then given `TRUTH_STYLE`,
     so a viewer can tell truth from forecast at a glance without a legend.
     Every artist is role-tagged ``'truth'`` on `_hyp_forecast_role`, beside
@@ -1041,12 +1041,12 @@ def _draw_truth_overlays(ax, raw_truths, antialias=True, owner=None,
         # marker+line fmt for the observed data.
         # The curve KEEPS the marker with `markevery=[]` (draws none) so its
         # legend glyph shows line + marker -- otherwise the 'truth' entry
-        # is a solid line in the trace's own colour, identical to the
+        # is a solid line in the trace's own color, identical to the
         # observed trace's entry (feature tour 9.11, 2026-09-06; the same
         # trick `_plot_possibly_split` uses for a marker+line fmt).
         line_style = dict(style, markevery=[])
         marker_style = dict(style, linestyle='None')
-        # never labelled: the legend entry is a proxy glyph built by
+        # never labeled: the legend entry is a proxy glyph built by
         # `_add_overlay_legend_entries` from the `_hyp_truth_label` tag,
         # so a reused axes lists ONE 'truth' however many calls drew one
         # (Codex round 4)
@@ -1138,13 +1138,13 @@ def _truth_frame_updater(truth_artists, counts):
 
 def _categorical_color_label_maps(hue, palette, explicit_colors,
                                   group_labels, sort_numeric):
-    """Map each hue category -> (colour, legend label), in the SAME drawn
+    """Map each hue category -> (color, legend label), in the SAME drawn
     order the marker/global grouping would use, so a LINE plot's per-category
-    colours match an equivalent marker plot.
+    colors match an equivalent marker plot.
 
     `explicit_colors`/`group_labels` are the per-category values already
     resolved by the special hue sub-cases (partially-labeled hue, quantized
-    matrix/mixture colours, cluster labels); when the colour was left to the
+    matrix/mixture colors, cluster labels); when the color was left to the
     palette (plain string/int categorical, hard clustering) it is resolved
     here from `palette`. `sort_numeric` selects sorted-numeric drawn order
     (integer hue / cluster ids) over first-appearance order (string hue)."""
@@ -1165,7 +1165,7 @@ def _categorical_color_label_maps(hue, palette, explicit_colors,
     elif isinstance(palette, collections.abc.Mapping):
         # palette= as a {category: color} DICT (GH #285): resolved by NAME,
         # so the caller no longer has to work out first-appearance order by
-        # hand to line a colour list up with the right category. `hue` has
+        # hand to line a color list up with the right category. `hue` has
         # already been turned into group IDS by this point, so the names to
         # match on are `group_labels` (the category names), falling back to
         # the ids' own str() for hue sources that have no separate names
@@ -1184,8 +1184,8 @@ def _categorical_color_label_maps(hue, palette, explicit_colors,
         # report "lists 3 per-dataset palettes but 2 dataset(s) were
         # passed" for a three-dataset call. Two readings are meaningful:
         # every entry a {category: color} dict -- each dataset naming its
-        # own categories' colours -- merges into one mapping resolved by
-        # name; anything else has no category to colour and is rejected
+        # own categories' colors -- merges into one mapping resolved by
+        # name; anything else has no category to color and is rejected
         # with the real counts.
         _names = (list(group_labels)
                   if isinstance(group_labels, (list, tuple))
@@ -1234,7 +1234,7 @@ def _regroup_categorical_lines(xform, hue, labels, cat_color, cat_label):
     """Regroup LINE data by categorical `hue` into contiguous runs (GH #291).
 
     Splits each input dataset into maximal same-category runs (preserving
-    order + dataset identity), colours each run by its category, bridges only
+    order + dataset identity), colors each run by its category, bridges only
     runs adjacent WITHIN one input dataset, and gives each category exactly
     ONE legend entry (the first run carries the label; later runs of the same
     category get ``'_nolegend_'``). Returns
@@ -1258,7 +1258,7 @@ def _regroup_categorical_lines(xform, hue, labels, cat_color, cat_label):
     segments, seg_labels, seg_cat, seg_bridge, seg_dataset = segment_by_run(
         xform, hue, labels)
     # BEFORE patch_lines, which appends the next run's first point to every
-    # bridged run: TraceOwnership must not be told a run OWNS its neighbour's
+    # bridged run: TraceOwnership must not be told a run OWNS its neighbor's
     # first observation -- it needs the owned span and the drawn span kept
     # apart (see ownership.TraceOwnership.draw_span).
     seg_lengths = [len(s) for s in segments]
@@ -1653,9 +1653,9 @@ def _matrix_hue_wants_rgb(hue_array, color_reduce, hue_mode=None):
     The automatic rule is kept as the default because changing it would
     silently repaint every existing figure with a wide matrix hue. But it
     cannot be the ONLY rule, because it contradicts what mixture weights are
-    for: one palette colour per component, one component per leaf. A market
+    for: one palette color per component, one component per leaf. A market
     with six sectors needs six columns, and the automatic rule sends exactly
-    that to the reducer -- measured on the Market candidate, whose 4-colour
+    that to the reducer -- measured on the Market candidate, whose 4-color
     palette was ignored outright and whose blue-intended leaves drew red.
     `hue_mode='mixture'` is how a caller says "these are weights, however
     many there are"; `hue_mode='rgb'` forces the other branch for a narrow
@@ -1668,7 +1668,7 @@ def _matrix_hue_wants_rgb(hue_array, color_reduce, hue_mode=None):
 
 def _validate_hue_mode(hue_mode, color_reduce, hue=None):
     """`hue_mode=` is only meaningful for a MATRIX hue, and only one of
-    `hue_mode='mixture'` / `color_reduce=` can be honoured at once."""
+    `hue_mode='mixture'` / `color_reduce=` can be honored at once."""
     if hue_mode is None:
         return
     if hue is None:
@@ -1748,17 +1748,17 @@ def _hierarchy_hue_per_leaf(hue, n_rows, n_leaves):
 
     * rows are NORMALIZED to sum to 1 by `mat2colors`, so only the ratio
       between components is visible -- halving every weight in a row draws
-      the identical colour. A second quantity therefore needs its own
+      the identical color. A second quantity therefore needs its own
       palette entry (e.g. a black one for "darker = larger"); it cannot ride
       on the total magnitude;
-    * negative entries have no colour meaning, so `mat2colors` shifts each
-      row by its own minimum -- a signed matrix is coloured by within-row
+    * negative entries have no color meaning, so `mat2colors` shifts each
+      row by its own minimum -- a signed matrix is colored by within-row
       CONTRAST, not by absolute value;
-    * the palette must supply at least one colour per COLUMN; a shorter one
+    * the palette must supply at least one color per COLUMN; a shorter one
       raises, a longer one simply leaves components unused;
-    * a non-finite entry colours that observation neutral grey and warns.
+    * a non-finite entry colors that observation neutral gray and warns.
       Because a derived mean is the element-wise mean of its children, one
-      NaN greys the leaf AND every ancestor mean at that row;
+      NaN grays the leaf AND every ancestor mean at that row;
     * every per-leaf matrix must have the same width -- they share one
       palette;
     * BY DEFAULT the width decides: more than 3 columns, or any explicit
@@ -1817,7 +1817,7 @@ def _hierarchy_hue_per_leaf(hue, n_rows, n_leaves):
                 f"{wrong}. {expected}.")
         # A 2-D per-leaf entry is a MATRIX hue: one row of mixture weights
         # per observation, blended through the palette. It is kept AS a
-        # matrix rather than ravelled -- ravelling passes the length check
+        # matrix rather than raveled -- raveling passes the length check
         # above (the first dimension IS n_rows) and then reinterprets each
         # row's k weights as k consecutive CONTINUOUS values, which drew
         # every trace across ~220 degrees of hue instead of holding one.
@@ -2305,7 +2305,7 @@ def _validate_title_color(title_color, segment_titles, title_kwargs=None):
     A single color (string or RGB(A) tuple) styles whatever title is drawn.
     A SEQUENCE of colors -- or a callable ``ctx -> color`` -- tints each
     segment of a serial/morph `title=` LIST, so it is only meaningful
-    alongside one. Naming a colour BOTH here and as
+    alongside one. Naming a color BOTH here and as
     ``title_kwargs={'color': ...}`` is a conflict (one of them silently
     lost), so it raises.
     """
@@ -2315,7 +2315,7 @@ def _validate_title_color(title_color, segment_titles, title_kwargs=None):
         raise ValueError(
             f"title_color={title_color!r} and title_kwargs['color']="
             f"{title_kwargs['color']!r} were both given; they set the same "
-            "title colour, so pass only one of them.")
+            "title color, so pass only one of them.")
     if callable(title_color) or (
             not _is_single_color(title_color)
             and isinstance(title_color, (list, tuple, np.ndarray))):
@@ -2384,7 +2384,7 @@ def _validate_title_wrap(title_wrap):
 # --------------------------------------------------------------------------
 # GH #285 (animation group): dynamic `title=`, `loop=`, `dataset_fade=` and
 # `companion=`. Every one of them is opt-in and defaults to the exact
-# pre-1.1.x behaviour.
+# pre-1.1.x behavior.
 # --------------------------------------------------------------------------
 
 #: Substring that turns a `title=` string into a per-frame format PATTERN.
@@ -2401,7 +2401,7 @@ def _title_is_pattern(title):
 
 def _dataset_values(item):
     """The values of ONE user dataset as a numpy array: a DataFrame dataset
-    (`is_frame_dataset`: pandas, polars, whatever datawrangler recognises)
+    (`is_frame_dataset`: pandas, polars, whatever datawrangler recognizes)
     through its pandas form, a series-like (`is_series_like`) through its
     ``to_numpy``, anything else through `np.asarray`."""
     if is_frame_dataset(item):
@@ -2434,7 +2434,7 @@ def _capture_row_indices(x):
     """
     def _index_of(item):
         if is_frame_dataset(item):
-            # every dataframe backend datawrangler recognises, read through
+            # every dataframe backend datawrangler recognizes, read through
             # its pandas form; a backend with no row index (polars) comes
             # back with the default RangeIndex, i.e. "no index" below
             item = as_pandas_dataframe(item)
@@ -2473,7 +2473,7 @@ def _capture_column_names(x):
     """
     def _columns_of(item):
         if is_series_like(item):
-            # a labelled vector's one column is its name (pandas: None when
+            # a labeled vector's one column is its name (pandas: None when
             # unnamed; polars: '' when unnamed)
             name = getattr(item, 'name', None)
             return None if name is None or name == '' else [str(name)]
@@ -2803,8 +2803,8 @@ def _series_expand_list(value, owner, n_input, key=None):
     natural way to style k columns of one frame) is left exactly as passed.
 
     `key` names the kwarg, when there is one: a bare ``(r, g, b[, a])``
-    tuple under ``color`` is ONE colour, not three per-dataset values, and
-    three datasets would otherwise turn it into three separate colours
+    tuple under ``color`` is ONE color, not three per-dataset values, and
+    three datasets would otherwise turn it into three separate colors
     (`_is_single_color` settles the same ambiguity for
     `title_color=`/`legend_colors=`).
     """
@@ -3480,7 +3480,7 @@ _PANEL_PER_OBSERVATION_KWARGS = ('hue',)
 _PANEL_SPECIAL_KWARGS = ('hue', 'labels', 'palette', 'legend', 'predict',
                          'title')
 
-#: colour kwargs whose 3/4-number tuple is ONE colour, not one entry per
+#: color kwargs whose 3/4-number tuple is ONE color, not one entry per
 #: dataset (`_is_single_color`). Every other per-dataset list -- notably
 #: ``alpha=[0.3, 0.6, 0.9]`` for three datasets -- is sliced as a list.
 _PANEL_COLOR_KWARGS = ('color', 'colors')
@@ -3496,10 +3496,10 @@ def _panel_slice_per_dataset(value, index, n_datasets, single_color=False):
 
 def _panel_slice_palette(palette, index, n_datasets):
     """Narrow a PER-DATASET `palette=` list (``['viridis', 'magma']``, a
-    list of colour lists, a list of ``{category: color}`` dicts -- see
+    list of color lists, a list of ``{category: color}`` dicts -- see
     `palette=`) to panel `index`'s own entry, as a one-entry per-dataset
     list (which `plot()` broadcasts to the panel's single dataset). A list
-    that is one palette of explicit colours is a single palette and is
+    that is one palette of explicit colors is a single palette and is
     forwarded whole, exactly as the single-axes call reads it."""
     if (_looks_like_dataset_palettes(palette)
             and len(palette) == n_datasets):
@@ -3522,13 +3522,13 @@ def _panel_slice_legend(legend, index, n_datasets, kw):
 
 
 def _panel_slice_legend_colors(legend_colors, index, n_datasets, kw):
-    """Narrow a plain `legend_colors=` colour LIST to panel `index`.
+    """Narrow a plain `legend_colors=` color LIST to panel `index`.
 
-    On one axes a plain list recolours the legend's entries in order: one
+    On one axes a plain list recolors the legend's entries in order: one
     per dataset first, then the entries every dataset shares (the forecast
     model(s), ``truth``). Each panel's legend lists ITS dataset and those
-    shared entries, so it gets its dataset's colour followed by the shared
-    colours -- forwarding the whole list made every panel refuse it ("has 2
+    shared entries, so it gets its dataset's color followed by the shared
+    colors -- forwarding the whole list made every panel refuse it ("has 2
     entries but the legend has 1", 1.1 release review), though the same
     call works on one axes. Only when the entries name the DATASETS
     (nothing regroups the traces, as in `_panel_slice_legend`); a
@@ -3572,7 +3572,7 @@ def _panel_forecast_labels(hue, n_datasets, n_models):
         return None
     if is_series_like(hue):
         # a pandas / polars Series or Index (any series-like datawrangler
-        # recognises) is a label vector like a list (Codex round 11)
+        # recognizes) is a label vector like a list (Codex round 11)
         hue = np.asarray(hue).ravel()
     if not isinstance(hue, (list, tuple, np.ndarray)):
         return None
@@ -3590,8 +3590,8 @@ def _panel_pick_model_major(seq, index, n_datasets, n_models):
 
 
 def _panel_observed_groups(kw):
-    """How many palette colours the single-axes call's OBSERVED data takes
-    when a grouping colours it: the categories of a categorical (string)
+    """How many palette colors the single-axes call's OBSERVED data takes
+    when a grouping colors it: the categories of a categorical (string)
     `hue=`, or an integer `n_clusters=`. None when nothing groups the data
     or the count is not knowable from the arguments alone (then each
     dataset is counted as one slot)."""
@@ -3634,12 +3634,12 @@ def _panel_slice_forecast_kwargs(kw, index, n_datasets, grid_kw=None):
       model-major for a collection) -> the panel's own; one per MODEL is
       forwarded unchanged (every panel draws every model).
     - `forecast_palette=`: with a list-valued `forecast_hue=` the grid's
-      label -> colour map is resolved ONCE (with the palette the single-
-      axes call would use) and each panel receives its own labels' colours
-      in its own first-appearance order, so a label keeps one colour
+      label -> color map is resolved ONCE (with the palette the single-
+      axes call would use) and each panel receives its own labels' colors
+      in its own first-appearance order, so a label keeps one color
       across panels; with nothing to group by and a single model it is
-      spent one colour per forecast, so the panel receives its forecast's
-      colour. A collection's per-MODEL palette is forwarded unchanged.
+      spent one color per forecast, so the panel receives its forecast's
+      color. A collection's per-MODEL palette is forwarded unchanged.
     """
     predict = kw.get('predict')
     if predict is None:
@@ -3655,7 +3655,7 @@ def _panel_slice_forecast_kwargs(kw, index, n_datasets, grid_kw=None):
             labels, index, n_datasets, n_models)
         # the palette is resolved against the WHOLE grid's labels, in
         # the single-axes call's own order (`_forecast_label_colors`),
-        # and the panel gets the colours of its own labels in the order
+        # and the panel gets the colors of its own labels in the order
         # it will first see them -- an unlabeled forecast takes no slot
         # (`is_missing_label`), exactly as `resolve_forecast_overrides`
         # reads it
@@ -3664,8 +3664,8 @@ def _panel_slice_forecast_kwargs(kw, index, n_datasets, grid_kw=None):
         _labels = [None if is_missing_label(v) else v for v in labels]
         if fc_palette is None:
             # the single-axes default (`_forecast_group_palette`): the
-            # palette continued past the colours the single-axes figure's
-            # observed datasets take, so a label keeps that figure's colour
+            # palette continued past the colors the single-axes figure's
+            # observed datasets take, so a label keeps that figure's color
             # read from the WHOLE grid's kwargs (`grid_kw`), before any
             # per-dataset argument was narrowed to this panel
             _grid = kw if grid_kw is None else grid_kw
@@ -3684,9 +3684,9 @@ def _panel_slice_forecast_kwargs(kw, index, n_datasets, grid_kw=None):
         _own = _panel_pick_model_major(_labels, index, n_datasets, n_models)
         _own_colours = _panel_pick_model_major(
             _colours, index, n_datasets, n_models)
-        # one slot per DISTINCT LABEL, not per distinct colour: the
+        # one slot per DISTINCT LABEL, not per distinct color: the
         # panel's `resolve_forecast_overrides` spends the palette one
-        # colour per label it sees, so two labels that share a colour on
+        # color per label it sees, so two labels that share a color on
         # purpose (``forecast_palette=['red', 'red']``, a palette name
         # that cycles) must keep two entries (Codex round 6)
         _seen, _ordered = [], []
@@ -3804,17 +3804,17 @@ def _panel_slice_per_observation(value, index, lengths):
 def _matrix_hue_legend_entries(hue_array, palette, legend, column_names):
     """One legend proxy entry per hue-matrix COLUMN (GH #285).
 
-    A matrix/mixture `hue=` blends a palette colour per observation, so
+    A matrix/mixture `hue=` blends a palette color per observation, so
     there are no discrete traces to label and hypertools used to drop any
     `legend=` with a warning -- leaving every such figure to hand-build
     `Line2D` proxies (`examples/animate_market_sectors.py`). The palette
     entries the blend is made OF are a perfectly good key, so build one
-    swatch per column instead: labelled from an explicit ``legend=[...]``
+    swatch per column instead: labeled from an explicit ``legend=[...]``
     list, else the hue DataFrame's own column names, else ``1..k``.
 
     Returns a list of ``(label, color)`` pairs, or None when the matrix is
     literal RGB (`hue_mode='rgb'`/`color_reduce=`), where the columns are
-    colour channels rather than palette weights and no key exists.
+    color channels rather than palette weights and no key exists.
     """
     n_columns = int(hue_array.shape[1])
     colors = get_palette_colors(palette, n_columns)
@@ -3824,7 +3824,7 @@ def _matrix_hue_legend_entries(hue_array, palette, legend, column_names):
                 f"legend was given as a list of length {len(legend)}, but "
                 f"the matrix hue= has {n_columns} columns; under a "
                 "matrix/mixture hue the legend names one entry per hue "
-                "COLUMN (the palette colours the per-observation blend is "
+                "COLUMN (the palette colors the per-observation blend is "
                 "made of).")
         labels = [str(el) for el in legend]
     elif column_names is not None and len(column_names) == n_columns:
@@ -3862,7 +3862,7 @@ def _resolve_label_anchor(label_anchor, length):
 
 
 def _validate_label_anchor_value(label_anchor):
-    """`label_anchor=` must be a recognised anchor name or an int; checked
+    """`label_anchor=` must be a recognized anchor name or an int; checked
     up front, independent of `labels=` (1.1 release review T8)."""
     if label_anchor is None or label_anchor in ('first', 'center',
                                                 'middle', 'last'):
@@ -4080,7 +4080,7 @@ def _panel_lift_for(xi, source):
 
 
 def _panel_frame(source, xi):
-    """The analyzed rows `xi` of one shared-fit panel, re-labelled with the
+    """The analyzed rows `xi` of one shared-fit panel, re-labeled with the
     source dataset's row index (and, when the width survived the pipeline,
     its column names) so `plot()` captures them exactly as it would for the
     raw frame: `ndims=1` series mode then draws dates on x and names y after
@@ -4199,12 +4199,12 @@ class _PanelClusterLabels:
     single-axes call never drew.
 
     `categories` is the probe's COMPLETE cluster label set, in the order
-    the single-axes call colours it (sorted, as `plot()`'s cluster branch
-    sorts hard labels): the label-to-colour mapping every cell of the grid
+    the single-axes call colors it (sorted, as `plot()`'s cluster branch
+    sorts hard labels): the label-to-color mapping every cell of the grid
     shares. A shared fit's per-dataset slice can miss a cluster entirely,
-    and colouring the slice from ITS OWN label set drew global clusters 1
-    and 0 in the same first palette colour in adjacent panels (round 9);
-    None for soft (mixture) labels, whose blends carry their own colours.
+    and coloring the slice from ITS OWN label set drew global clusters 1
+    and 0 in the same first palette color in adjacent panels (round 9);
+    None for soft (mixture) labels, whose blends carry their own colors.
     """
 
     __slots__ = ('labels', 'model', 'spec', 'categories')
@@ -4223,7 +4223,7 @@ class _PanelClusterLabels:
 def _hard_cluster_categories(labels):
     """The sorted label set `plot()`'s cluster branch draws HARD cluster
     `labels` in (first-appearance order when they do not sort), or None
-    for a soft (2-D, mixture-proportion) labelling."""
+    for a soft (2-D, mixture-proportion) labeling."""
     if labels is None:
         return None
     arr = np.asarray(labels)
@@ -4237,10 +4237,10 @@ def _hard_cluster_categories(labels):
 
 
 def _replayed_cluster_colors(present, categories, palette):
-    """The colours of the cluster labels `present` (in drawn order) under
+    """The colors of the cluster labels `present` (in drawn order) under
     the SHARED mapping a `panels=` probe fitted: label ``categories[k]``
-    takes the k-th of the palette's ``len(categories)`` colours -- the
-    colour the single-axes call, which draws every category, gives it.
+    takes the k-th of the palette's ``len(categories)`` colors -- the
+    color the single-axes call, which draws every category, gives it.
     None when there is no shared mapping to apply: no `categories`, a
     label the probe never produced, or a ``{category: color}`` palette,
     which every path already resolves by NAME."""
@@ -4549,8 +4549,8 @@ def _plot_panels(x, panels, call_kwargs, _name='panels'):
         # the ONE clustering fit across every dataset, each panel
         # replaying its own dataset's slice of the labels (the same rows
         # `_panel_narrow_kwargs` slices a flat hue= by) under the ONE
-        # label-to-colour mapping (`categories=`: a slice missing a
-        # cluster must not shift the others' colours, round 9)
+        # label-to-color mapping (`categories=`: a slice missing a
+        # cluster must not shift the others' colors, round 9)
         panel_clusters = []
         offsets = np.cumsum([0] + lengths)
         for i in range(n_panels):
@@ -4597,7 +4597,7 @@ def _plot_panels(x, panels, call_kwargs, _name='panels'):
         if panel_clusters[i] is not None:
             # ...and its probe's clustering, replayed (no second fit)
             kw.update(cluster=panel_clusters[i], n_clusters=None)
-        # each panel's rows, labelled with its source frame's index and
+        # each panel's rows, labeled with its source frame's index and
         # column names so series mode keeps dates on x and the column on y
         # exactly as the raw frame would (P2)
         panel_data.append([_panel_frame(src, xi)
@@ -4666,7 +4666,7 @@ def _plot_panels(x, panels, call_kwargs, _name='panels'):
         # legend or colorbar) -- so `tight_layout` does not shrink the
         # panels to fit them (1.1 release review, feature-tour 9.8: three
         # 10-entry legends left three 1.3 in cubes). An explicit `size=`
-        # is honoured verbatim.
+        # is honored verbatim.
         _cols = ncols if n_panels > 1 else 1
         _extra = 0.0
         if any(a.get_legend() is not None for a in panel_axes):
@@ -5001,7 +5001,7 @@ def plot(
         a mismatched length raises ``ValueError``. Any `color`/`colors`/
         `linewidth`/`alpha` kwarg is ignored (with a ``UserWarning``) since
         MultiIndex grouping owns those. `legend=` is the one overridden
-        kwarg that is HONOURED rather than warned away: a list renames the
+        kwarg that is HONORED rather than warned away: a list renames the
         top-level groups (one entry per unique top-level value, in
         first-appearance order -- see `legend` below) and ``legend=False``
         suppresses the automatic legend. `names=` (per-INPUT-DATASET
@@ -5108,7 +5108,7 @@ def plot(
         differ the same way, and did before 1.1 -- so it is DOCUMENTED, not
         silently worked around. A canonical group order would mean inventing
         a total ordering over arbitrary, mixed-type, NA-bearing labels, and
-        would make a labelled hierarchy behave differently from the
+        would make a labeled hierarchy behave differently from the
         equivalent positional list of datasets. Pass ``reduce='PCA'`` when
         block order must not matter.
 
@@ -5125,10 +5125,10 @@ def plot(
         A mean trace takes the **element-wise mean of its members' hue**,
         computed by the same operation that averages their data, so an
         auxiliary value can never drift out of step with the trace it
-        describes. Colours are mapped over the concatenation of every
+        describes. Colors are mapped over the concatenation of every
         trace's values, leaves and means together, so one scale spans the
         figure and a `colorbar=` reads against all of it. The hierarchy
-        still sets linewidth, alpha and labels; only its colours step aside.
+        still sets linewidth, alpha and labels; only its colors step aside.
         The per-trace values are returned as ``trace_metadata['aux']``.
 
         A flat array sized to the TOTAL DRAWN observations is **rejected**,
@@ -5156,7 +5156,7 @@ def plot(
         position. A **column**-MultiIndex DataFrame in a list instead raises
         ``ValueError`` -- before 1.1 it silently flattened to a single line
         with no warning at all. The asymmetry is deliberate: the row
-        behaviour is documented and depended upon, the column one was not.
+        behavior is documented and depended upon, the column one was not.
 
         See docs/hierarchy.rst for the user-facing guide to all of the
         above: the per-axis comparison table, worked examples of each rule,
@@ -5243,7 +5243,7 @@ def plot(
         entries, non-numeric, out of range) is also just ignored-with-a-
         warning in this case, not validated against and raised on --
         whether ``alpha=`` will be used is decided before it is checked.
-        A continuous or matrix `hue=` keeps it: the per-point coloured
+        A continuous or matrix `hue=` keeps it: the per-point colored
         line segments AND markers carry their dataset's alpha.
 
         A `predict=` forecast overlay is drawn at HALF its dataset's alpha
@@ -5376,10 +5376,10 @@ def plot(
         `hue=` (or `cluster=`/`n_clusters=`) the drawn groups are
         categories rather than datasets, so only a list of ``{category:
         color}`` dicts is meaningful there -- each dataset's dict names
-        its own categories' colours, and they are merged into one mapping
-        resolved by name (naming one category with two different colours
+        its own categories' colors, and they are merged into one mapping
+        resolved by name (naming one category with two different colors
         raises); any other per-dataset list with a categorical grouping
-        raises ``ValueError`` stating both counts. A plain colour list
+        raises ``ValueError`` stating both counts. A plain color list
         shorter than the number of datasets is CYCLED when there is no
         hue (``['red', 'blue']`` over three datasets draws red, blue,
         red), as it always was.
@@ -5473,7 +5473,7 @@ def plot(
         It may also carry one SCALAR per dataset, broadcast over that
         dataset's rows -- ``hyp.plot(windows, hue=speakers)`` instead of
         ``hue=[[speaker] * len(w) for speaker, w in zip(speakers,
-        windows)]`` -- so datasets sharing a value share a colour. The
+        windows)]`` -- so datasets sharing a value share a color. The
         exact rule: this reading applies only when `hue` is a list/tuple of
         exactly ``len(x)`` entries, NONE of them a sequence (a sequence per
         entry is the nested form above), there is more than one dataset,
@@ -5501,8 +5501,8 @@ def plot(
         width, the historical rule described under `color_reduce`).
 
         ``'mixture'`` blends each row through `palette` as weights, one
-        palette colour per COLUMN, whatever the width. This is what a
-        hierarchy needs to make its own colour scheme: give each leaf one
+        palette color per COLUMN, whatever the width. This is what a
+        hierarchy needs to make its own color scheme: give each leaf one
         primary and every derived mean comes out the blend of its children,
         with nothing computing it. Six sectors need six columns, and the
         automatic rule would send exactly that to the reducer instead.
@@ -5615,17 +5615,17 @@ def plot(
         with a ``UserWarning`` (that path colors by value, so there are
         no discrete groups to name).
 
-        A NESTED-list `x` (``[[a, b], [c, d]]``) colours every leaf by its
+        A NESTED-list `x` (``[[a, b], [c, d]]``) colors every leaf by its
         outer group, and its legend follows the same rule: one entry per
         outer group (``1..n`` for ``True``, or a list with one name per
         group), drawn on the group's shallowest leaf; a list with one entry
         per LEAF still labels every leaf.
 
         Under a matrix-valued (mixture) `hue=` the blended per-observation
-        colours have no discrete traces to label, so hypertools used to
+        colors have no discrete traces to label, so hypertools used to
         drop the legend with a warning. It now builds one proxy swatch per
-        hue COLUMN instead -- the palette colours the blend is made of --
-        labelled from an explicit ``legend=[...]`` list (which must then
+        hue COLUMN instead -- the palette colors the blend is made of --
+        labeled from an explicit ``legend=[...]`` list (which must then
         have one entry per hue column), else the hue DataFrame's own column
         names, else ``1..k``. A literal-RGB matrix hue (`hue_mode='rgb'` or
         `color_reduce=`) and a 1-D continuous hue still have no finite key
@@ -5637,7 +5637,7 @@ def plot(
         2}`), or to plotly's ``layout.legend`` (`{'x': 0.02, 'y': 0.98,
         'orientation': 'h'}`) under `backend='plotly'`. Applied LAST, so
         anything given here wins over hypertools' own defaults (a
-        frameless legend centred outside the right edge). Default None.
+        frameless legend centered outside the right edge). Default None.
 
     legend_colors : list of colors, or list of (label, color) pairs
         An explicit override of the legend's swatches. A plain list of
@@ -5649,12 +5649,12 @@ def plot(
         ``NotImplementedError`` there). A list of ``(label, color)`` pairs
         REPLACES the legend outright with exactly those entries, on both
         backends -- which is how a figure adds a key entry no trace
-        corresponds to (e.g. a grey "Market" line alongside per-sector
+        corresponds to (e.g. a gray "Market" line alongside per-sector
         swatches). Mixing the two forms raises ``ValueError``. Under
-        `panels=`, a plain list naming the datasets (one colour per
+        `panels=`, a plain list naming the datasets (one color per
         dataset, then one per shared entry such as a forecast model or
         ``truth``) is split so each panel's legend gets its own dataset's
-        colour followed by the shared ones; a pair list is drawn whole in
+        color followed by the shared ones; a pair list is drawn whole in
         every panel. Default None.
 
     colorbar : bool or dict
@@ -5742,7 +5742,7 @@ def plot(
         probe; plotly's ``layout.margin.t``), so a larger title still fits
         on the canvas.
 
-        On `backend='plotly'` the size/family/weight/style/colour/y keys
+        On `backend='plotly'` the size/family/weight/style/color/y keys
         map onto ``layout.title``; anything plotly's title cannot express
         (``pad``, ``loc``, ``backgroundcolor``, ``linespacing``, ...) is
         reported in one ``UserWarning`` naming the backend and the keys.
@@ -5752,9 +5752,9 @@ def plot(
         A single color styles the whole figure's title (shorthand for
         ``title_kwargs={'color': ...}``). A LIST of colors tints each
         segment of a per-segment `title=` list -- one per segment, so each
-        dataset's title can carry that dataset's own colour -- and requires
+        dataset's title can carry that dataset's own color -- and requires
         `title=` to be such a list. A CALLABLE receives the per-frame
-        `FrameContext` (see `on_frame=`) and returns the colour for that
+        `FrameContext` (see `on_frame=`) and returns the color for that
         frame; being frame-driven it is matplotlib-only, and raises
         ``NotImplementedError`` under `backend='plotly'`, whose frames are
         all built up front. Default None.
@@ -5816,7 +5816,7 @@ def plot(
         - `matplotlib.font_manager.FontProperties`: used as-is.
 
         Weights: the package bundles a Bold face beside Noto Sans Regular
-        (``NotoSans-Bold.ttf``, same licence and provenance), so a bold
+        (``NotoSans-Bold.ttf``, same license and provenance), so a bold
         request under the default font -- ``title_kwargs={'fontweight':
         'bold'}``, ``legend_kwargs={'prop': {'weight': 'bold'}}`` and the
         like -- resolves to that real bold face on the matplotlib backend
@@ -5930,8 +5930,8 @@ def plot(
         `return_model=True`) is accepted as a one-step pipeline. A
         pipeline ending in a fitted `'cluster'` step (a clustered figure's
         bundle, or ``hyp.analyze(..., cluster=..., return_model=True)``)
-        colours the figure by that step's labels for `x`, with the fit
-        figure's cluster colours, unless `hue=` is given; a clusterer with
+        colors the figure by that step's labels for `x`, with the fit
+        figure's cluster colors, unless `hue=` is given; a clusterer with
         no out-of-sample `predict` that cannot label `x` warns and draws
         without clusters. Mutually exclusive with `manip=`/
         `normalize=`/`reduce=`/`ndims=`/`align=`/`cluster=` (each must be
@@ -5984,7 +5984,7 @@ def plot(
         including a `DatetimeIndex`, which ticks as real dates -- or
         ``0..n-1`` for a plain array), in the data's own units
         (`axis_scale` defaults to ``'data'`` here). Two or more columns are
-        allowed and become two or more lines, coloured from `palette` and
+        allowed and become two or more lines, colored from `palette` and
         named in the legend by their DataFrame column names (`names=`
         overrides them; `legend=True` shows them). ``reduce=`` still
         applies first, to ONE component -- ``ndims=1, reduce='PCA'`` draws
@@ -5996,7 +5996,7 @@ def plot(
         that the line doubles back). Before 1.1 this path drew a single
         column against ``0..n-1`` with the values rescaled to ``[-1, 1]``,
         no visible axes, and refused 2+ columns -- so this is a deliberate
-        behaviour change: what a 1-D figure draws is now the data's own
+        behavior change: what a 1-D figure draws is now the data's own
         coordinates. ``axis_scale='unit'`` puts the (index, value) traces
         back inside the ``[-1, 1]`` frame square like any other 2-D plot,
         which rescales BOTH axes and so does not restore the pre-1.1
@@ -6007,7 +6007,7 @@ def plot(
 
         ``'unit'`` is what hypertools has always done, and remains the
         default for 2-D and 3-D plots: the (possibly reduced/aligned)
-        coordinates are mean-centred and rescaled into ``[-1, 1]`` by a
+        coordinates are mean-centered and rescaled into ``[-1, 1]`` by a
         single shared affine transform across all datasets (and, with
         `predict=`, across every forecast vertex), the axes are pinned
         around hypertools' own frame (2-D: ``(-1.2375, 1.2375)`` around a
@@ -6147,7 +6147,7 @@ def plot(
         one forecast trace per dataset, listed ONCE in the legend (when
         there is one) under the model's name -- the same name
         ``hyp.predict(x, model=[spec])`` would give it -- with a glyph in
-        the forecasts' own style: their colour when every forecast shares
+        the forecasts' own style: their color when every forecast shares
         one, else a neutral gray, since the entry then names the model
         rather than any one dataset. (Before the 1.1.0 release review only
         a collection of models was listed.) A forecast
@@ -6155,10 +6155,10 @@ def plot(
         observed trace it continues -- same color, same linestyle, same
         linewidth -- and differs only in transparency: ``forecast_alpha =
         observed_alpha * 0.5`` (an unset `alpha` is matplotlib's opaque 1.0,
-        so the default is 0.5). A forecast given its OWN colour
+        so the default is 0.5). A forecast given its OWN color
         (`forecast_hue=`, `forecast_cluster=`, `forecast_palette=`, or a
-        colour letter in `forecast_fmt=`) keeps its trace's alpha instead:
-        the colour is then what tells it apart, and fading it as well hid
+        color letter in `forecast_fmt=`) keeps its trace's alpha instead:
+        the color is then what tells it apart, and fading it as well hid
         it among translucent traces. Per-dataset styling carries through dataset
         by dataset, e.g. ``alpha=[1.0, 0.4]`` gives forecasts at
         ``[0.5, 0.2]``, and a dotted dataset gets a dotted forecast. Both
@@ -6175,7 +6175,7 @@ def plot(
         forecast is recomputed from the history revealed so far and drawn
         from the endpoint of the current frame, so it grows with the
         animation. Every one of those forecasts is computed BEFORE the first
-        frame is drawn and folded into the plot's centre/scale statistics,
+        frame is drawn and folded into the plot's center/scale statistics,
         so the whole fan lands inside the cube and nothing is clipped or
         clamped, and every frame is a lookup -- ``ani.save()`` and
         ``to_jshtml()`` replays render identically. NOT supported with
@@ -6211,18 +6211,18 @@ def plot(
         ``{name: forecast}`` contract this reuses verbatim, so the two
         agree by construction. Two things need telling apart -- which
         series a forecast continues and which model made it -- so each
-        overlay keeps its dataset's COLOUR (as the single-model form does)
+        overlay keeps its dataset's COLOR (as the single-model form does)
         and takes a linestyle per MODEL, cycling solid, dashed, dotted,
         dash-dot in model order (the first model is solid, so
         ``predict=['Kalman']`` draws what ``predict='Kalman'`` draws). The
         legend lists each model by name (the auto-name from the spec, or
         the mapping key) with a glyph in its linestyle -- neutral gray when
-        the model's forecasts span several colours. `forecast_fmt=` may be
+        the model's forecasts span several colors. `forecast_fmt=` may be
         a list, one entry per model, replacing the cycle; `forecast_palette`
-        (a seaborn palette name or an explicit colour list) colours by
-        MODEL instead, one colour per model shared across datasets.
+        (a seaborn palette name or an explicit color list) colors by
+        MODEL instead, one color per model shared across datasets.
         (Until the 1.1.0 release review a per-model ``'husl'`` palette was
-        the default, and its first colour was the first dataset's own.)
+        the default, and its first color was the first dataset's own.)
         Works with `truth=`, static and animated, on both backends. The
         ``return_model=True`` bundle's
         ``predict['forecasts']`` becomes a ``{name: [forecast per dataset]}``
@@ -6248,11 +6248,11 @@ def plot(
         space, and with a `reduce=` spec it is whatever that spec produced,
         so pass values already in it (hypertools does not re-project
         `truth=`; the column-count check is what catches the mistake). It
-        then goes through the SAME centre/scale transform as the data, so
+        then goes through the SAME center/scale transform as the data, so
         it lands where the forecast does, and -- like a forecast -- is
         drawn with its dataset's last observed row prepended so it connects
         to the trajectory. It is
-        styled DISTINCTLY from the forecast -- its dataset's colour, solid,
+        styled DISTINCTLY from the forecast -- its dataset's color, solid,
         fully opaque, with round markers at the observations -- and its
         artists are role-tagged ``'truth'``
         (matplotlib ``line._hyp_forecast_role``, plotly
@@ -6578,7 +6578,7 @@ def plot(
 
     forecast_trail (animation only) : bool or int
         Keep earlier forecasts on screen as a fading fan -- the forecast
-        analogue of `chemtrails` (default: False). Requires `predict=`;
+        analog of `chemtrails` (default: False). Requires `predict=`;
         without it, `ValueError`. `True` retains 16 past forecasts; an int
         sets the cap (must be >= 1). Each retained forecast is drawn in its
         dataset's style, exactly like the live one, at an alpha that decays
@@ -6598,15 +6598,15 @@ def plot(
         contain every forecast the animation will draw.
 
     forecast_hue : sequence or None
-        Group the FORECASTS by one value per dataset, colouring them
+        Group the FORECASTS by one value per dataset, coloring them
         independently of the observed data (default: `None` -- inherit).
         Requires `predict=`; without it, `ValueError`.
 
         One value per FORECAST, not per observation: a forecast is a single
-        trace. Datasets sharing a value share a colour, drawn from
+        trace. Datasets sharing a value share a color, drawn from
         `forecast_palette=` -- or, without one, from the figure's
-        `palette=` CONTINUED past the colours the observed data takes, so
-        no forecast group wears an observed line's colour (see
+        `palette=` CONTINUED past the colors the observed data takes, so
+        no forecast group wears an observed line's color (see
         `forecast_palette=`). Mutually exclusive with `forecast_cluster=`
         (both decide the same thing), exactly as `hue=` and `cluster=` are
         for the observed data.
@@ -6618,18 +6618,18 @@ def plot(
         `forecast_fmt=` and to `forecast_palette=`'s no-grouping case.
 
     forecast_cluster : str, class, instance, dict, or None
-        Colour each forecast by WHERE IT IS PREDICTED TO END UP: the forecast
-        ENDPOINTS are clustered, and each forecast takes its cluster's colour
+        Color each forecast by WHERE IT IS PREDICTED TO END UP: the forecast
+        ENDPOINTS are clustered, and each forecast takes its cluster's color
         (default: `None` -- inherit). Requires `predict=`; without it,
         `ValueError`. Takes the same model specs as `cluster=`.
 
-        So a forecast's colour answers "which of these series are heading to
+        So a forecast's color answers "which of these series are heading to
         the same place?" -- a question the observed data cannot answer, which
         is the point of the separate kwarg. It deliberately does NOT
         recluster the observed data: inheriting the observed assignment is
         what the default already does, so that reading would make this a
         no-op. Nor does it cluster every predicted POINT (a single forecast
-        would then change colour along its own short path) or whole
+        would then change color along its own short path) or whole
         flattened trajectories (sensitive to `t`, to sampling and to
         dimensionality, where an endpoint has one stable meaning).
 
@@ -6645,9 +6645,9 @@ def plot(
         In an ANIMATION the groups are resolved ONCE, from the full-history
         forecasts (the ones `return_model=True` returns), and stay fixed for
         every frame -- they are not reclustered as the reveal progresses, so
-        the colours hold still while the forecast geometry moves. Cluster
+        the colors hold still while the forecast geometry moves. Cluster
         labels are arbitrary names for groups, so per-frame reclustering
-        would let a forecast change colour whenever a fit nudged its
+        would let a forecast change color whenever a fit nudged its
         endpoint across a boundary, and would repaint a retained
         `forecast_trail=` fan whose earlier members were drawn under the old
         grouping.
@@ -6661,31 +6661,31 @@ def plot(
         ignored.
 
     forecast_palette : str, list of colors, matplotlib Colormap, or None
-        Colours for the forecast grouping (default: `None` -- inherit the
-        observed colours). Requires `predict=`; without it, `ValueError`.
+        Colors for the forecast grouping (default: `None` -- inherit the
+        observed colors). Requires `predict=`; without it, `ValueError`.
         Takes the same forms as `palette=`, so the forecasts can use a
         different colormap from the data.
 
-        With `forecast_hue=` or `forecast_cluster=`, one colour per group.
+        With `forecast_hue=` or `forecast_cluster=`, one color per group.
         Left at `None` there, the groups take the figure's `palette=`
-        CONTINUED past the observed data's colour slots (its datasets, or
+        CONTINUED past the observed data's color slots (its datasets, or
         its `hue=`/`cluster=` groups, plus any an earlier call took on a
-        reused `ax=`) -- the next colours of a fixed-sequence palette such
+        reused `ax=`) -- the next colors of a fixed-sequence palette such
         as 'Set2', and the free slots of a finer sampling of an evenly
-        spaced one such as 'hls' (four observed 'hls' colours -> the groups
+        spaced one such as 'hls' (four observed 'hls' colors -> the groups
         get the 45- and 135-degree hues of 'hls' at 8) -- so no forecast
-        group is drawn in an observed line's colour. A per-dataset or
+        group is drawn in an observed line's color. A per-dataset or
         ``{category: color}`` `palette=` has no sequence to continue, so
         'hls' is continued past the observed count instead; a continuous
-        `hue=` (colormap colours, no palette slots) keeps 'hls' from its
-        first colour. An explicit `forecast_palette=` replaces all of
+        `hue=` (colormap colors, no palette slots) keeps 'hls' from its
+        first color. An explicit `forecast_palette=` replaces all of
         this. With `panels=` the same default is resolved against the
-        whole grid, so each label keeps the colour the single-axes figure
+        whole grid, so each label keeps the color the single-axes figure
         gives it.
-        With NEITHER, there is no forecast grouping to colour by, so it is
-        spent one colour per forecast (see `forecast_hue=` on what counts as
+        With NEITHER, there is no forecast grouping to color by, so it is
+        spent one color per forecast (see `forecast_hue=` on what counts as
         one for a hierarchical `x=`) -- except for a COLLECTION of models
-        (``predict=[...]``), where it is spent one colour per MODEL, shared
+        (``predict=[...]``), where it is spent one color per MODEL, shared
         by that model's forecast of every dataset (see `predict=`).
 
     forecast_fmt : str, sequence of str, or None
@@ -6697,9 +6697,9 @@ def plot(
         `forecast_hue=`).
 
         Overrides ONLY the style: a dotted forecast of a red trace is still
-        red, unless a colour is also given (via `forecast_palette=`,
-        `forecast_hue=`, `forecast_cluster=`, or a colour letter in the
-        format string itself -- an explicit colour beats the format string's,
+        red, unless a color is also given (via `forecast_palette=`,
+        `forecast_hue=`, `forecast_cluster=`, or a color letter in the
+        format string itself -- an explicit color beats the format string's,
         matching matplotlib's own rule). A marker in the format string
         (``'ro:'``) is drawn at the forecast's own steps -- the seam
         observation and each of the `t` forecast rows -- never at the
@@ -6782,7 +6782,7 @@ def plot(
         the FIRST one and hold it again, so a looping player never hard-cuts
         from the last shape to the first. `n` clouds then give
         ``2(n + 1) - 1`` hold/transition segments instead of ``2n - 1``, and
-        the closing hold is titled (and coloured) like the opening one --
+        the closing hold is titled (and colored) like the opening one --
         `title=` still takes one entry per DATASET, not one per segment.
 
         The closing cloud reuses the FIRST cloud's already-sampled points,
@@ -6791,7 +6791,7 @@ def plot(
         independent dataset, so whenever `morph_samples=` actually bites it
         draws a FRESH random subset for the repeat and the loop point
         visibly jumps (and, separately, the duplicate shifts the shared
-        mean-centring every dataset is drawn through). Default ``False``.
+        mean-centering every dataset is drawn through). Default ``False``.
         Raises ``ValueError`` for every other `animate` mode -- the reveal
         styles already end where a repeat would start, so there is nothing
         for it to close. Supported on both backends.
@@ -6858,7 +6858,7 @@ def plot(
             ``True`` (default) puts a dot on the head.
         ``hue``
             One value per row: the revealed line is drawn as a
-            colour-mapped ``LineCollection`` through the PLOT's own colour
+            color-mapped ``LineCollection`` through the PLOT's own color
             scale when it has one (a continuous ``hue=``), else a linear
             scale over these values. Default None (a solid ``color``).
         ``position``
@@ -6872,9 +6872,9 @@ def plot(
             How much of `size` is left for the panel's own ticks and label
             (default 0.10, in figure fractions).
         ``color``
-            Line and head-marker colour. Default: the colour the first
-            dataset's trajectory is drawn in (its ``fmt=`` colour letter,
-            ``color=``, or its palette colour).
+            Line and head-marker color. Default: the color the first
+            dataset's trajectory is drawn in (its ``fmt=`` color letter,
+            ``color=``, or its palette color).
         ``xlabel``, ``ylabel``
             Axis labels.
 
@@ -7068,17 +7068,17 @@ def plot(
         `TypeError`. A matplotlib Axes under plotly raises `ValueError`.
 
         The datasets are drawn in the `palette` exactly as on a figure of
-        their own (a caller's Axes used to keep the colour cycle of the
+        their own (a caller's Axes used to keep the color cycle of the
         figure it came from), and a second call into the SAME Axes or
         plotly Figure continues the palette past the datasets the earlier
         call drew, on both backends -- so composing two calls does not
-        draw both in the first colour. A fixed-sequence palette (a colour
-        list, 'deep', 'Set2') gives its next colours; an evenly re-sampled
-        one ('hls', 'husl', a colormap) fills the gaps between the colours
+        draw both in the first color. A fixed-sequence palette (a color
+        list, 'deep', 'Set2') gives its next colors; an evenly re-sampled
+        one ('hls', 'husl', a colormap) fills the gaps between the colors
         already drawn rather than repeating one ('hls' drawn as 2 datasets
-        and then 2 more gives the four 4-colour 'hls' hues). The
+        and then 2 more gives the four 4-color 'hls' hues). The
         return_model bundle's ``'colors'`` (and a colorbar) report the
-        colours drawn. Pass `color=` to choose instead.
+        colors drawn. Pass `color=` to choose instead.
 
         STATIC PLOTS ONLY. An animated plot (any truthy ``animate=``) owns
         its own figure: it creates one, draws there, and returns it, so an
@@ -7161,7 +7161,7 @@ def plot(
         collection's one-per-MODEL `forecast_fmt=` is forwarded whole,
         since every panel draws every model), `forecast_palette=` is
         resolved against the whole grid so a dataset or a `forecast_hue=`
-        label keeps the colour the single-axes figure gives it, and a
+        label keeps the color the single-axes figure gives it, and a
         forecaster already FITTED on every dataset
         (``hyp.predict(x, return_model=True)``) is bound to each panel's
         dataset (`Forecaster.for_dataset`) so its learned parameters are
@@ -7202,7 +7202,7 @@ def plot(
         How `panels=` fits the analysis pipeline (GH #285). Ignored without
         `panels=`/`subplots=`.
 
-        ``'shared'`` (default, and the only behaviour before 1.1.x) fits
+        ``'shared'`` (default, and the only behavior before 1.1.x) fits
         `manip`/`normalize`/`reduce`/`align` ONCE across every dataset and
         gives each panel its slice of the result, so the panels share one
         set of components and are directly comparable.
@@ -7536,7 +7536,7 @@ def plot(
         ``{'fig': ..., 'colors': ..., 'xform_data': ..., 'trace_data': ...,
         'trace_metadata': ..., 'animation': ..., 'pipeline': ...,
         'models': ..., 'predict': ...}`` instead of the bare figure, where
-        ``colors`` is the RESOLVED colour scale this figure draws with (see
+        ``colors`` is the RESOLVED color scale this figure draws with (see
         below), ``xform_data`` is the normalized/reduced/aligned data,
         ``animation``
         is the ``matplotlib.animation.Animation`` handle (``None`` unless
@@ -7545,7 +7545,7 @@ def plot(
         ``.on_frame()``; pass ``on_frame=`` to this call instead, which
         still fires regardless of ``return_model=``.
 
-        ``colors`` is the colour scale hypertools actually resolved, so a
+        ``colors`` is the color scale hypertools actually resolved, so a
         caller can reproduce this figure's mapping in a companion panel
         instead of guessing at it: ``{'kind': 'continuous'|'discrete'|
         'blend', 'palette': ..., 'cmap': <matplotlib Colormap>, 'norm':
@@ -7603,8 +7603,8 @@ def plot(
         additionally requires at least 2 rows in EVERY final trace, on
         either axis, and raises otherwise; see `predict`.
 
-        ``xform_data`` vs ``trace_data``. ``xform_data`` is the analysed
-        pipeline output, one entry per analysed INPUT dataset.
+        ``xform_data`` vs ``trace_data``. ``xform_data`` is the analyzed
+        pipeline output, one entry per analyzed INPUT dataset.
         ``trace_data`` is the final PRE-CENTER/PRE-SCALE plotted
         trajectories -- for a hierarchical input, the leaves followed by the
         per-level means, which are presentation artifacts built in display
@@ -7649,7 +7649,7 @@ def plot(
            per dataset, each anchored at that dataset's last observation and
            taking the style of the trace holding it, which is the trace it
            visually continues. That holds for a categorical `hue=`, a
-           continuous `hue=` (where the colour is taken at the anchor, since
+           continuous `hue=` (where the color is taken at the anchor, since
            the trace has many) and `cluster=`. Drawn, and ``drawn`` is True.
 
         3. **An ANIMATED plot with** `hue=` **or** `cluster=`. Not drawn, and
@@ -7915,7 +7915,7 @@ def plot(
             f"labels (one per drawn trace/group); got "
             f"{type(legend).__name__}: {legend!r}.")
 
-    # ...and every non-list container the check above ACCEPTS is normalised
+    # ...and every non-list container the check above ACCEPTS is normalized
     # to a plain list right here, so the label handling downstream (all of
     # which tests `isinstance(legend, (list, tuple))`, or just `list`) sees
     # one type. Measured on `hyp.plot([A, B], legend=<container>)`:
@@ -7923,7 +7923,7 @@ def plot(
     # "legend= was given as a list of length ..." below and were handed to
     # matplotlib WHOLE as each artist's label, so both traces came out
     # named "['a' 'b']" / "Index(['a', 'b'], dtype='str')" plus two
-    # "Passing label as a length 2 sequence" UserWarnings; a tuple labelled
+    # "Passing label as a length 2 sequence" UserWarnings; a tuple labeled
     # the traces correctly but missed `_build_colorbar_info`'s
     # `isinstance(legend, list)` branch, so `legend=('A', 'B'),
     # colorbar=True` drew a colorbar reading ['1', '2']. The hierarchy path
@@ -7950,7 +7950,7 @@ def plot(
     # kwarg the hierarchy overrides warns), and `names=` ALONE raised
     # "pass dataset names via names= OR a legend= list, not both" on a
     # call that never mentioned legend=.
-    # (every accepted container was normalised to a list just above)
+    # (every accepted container was normalized to a list just above)
     _legend_user_list = isinstance(legend, (list, tuple))
     # ...and the entries themselves, for the plotly hover names of a path
     # that drops the drawn legend (a continuous hue; `_plotly_hover_names`)
@@ -8112,7 +8112,7 @@ def plot(
         _axis_scale = axis_scale
     else:
         raise ValueError(
-            f"axis_scale must be 'unit' (mean-centre and rescale into the "
+            f"axis_scale must be 'unit' (mean-center and rescale into the "
             f"[-1, 1] frame box -- what hypertools has always done) or "
             f"'data' (draw the pipeline's own coordinates, with real "
             f"ticks); got {axis_scale!r}.")
@@ -8181,7 +8181,7 @@ def plot(
     _title_color, _title_segment_colors = _validate_title_color(
         title_color, _segment_titles, _title_kwargs)
     # `label_anchor=` is checked here whether or not `labels=` is set (an
-    # unrecognised anchor used to pass silently when there was nothing to
+    # unrecognized anchor used to pass silently when there was nothing to
     # anchor), and a BARE STRING `labels=` is rejected outright rather than
     # counted character by character ("labels has 4 entries" for 'only').
     _validate_label_anchor_value(label_anchor)
@@ -8693,7 +8693,7 @@ def plot(
     # depth; these drive multilevel styling below (color by outer group,
     # thinner/fainter lines per deeper level)
     nested_groups = nested_depths = None
-    # set when the nested-list branch below colours every leaf by its outer
+    # set when the nested-list branch below colors every leaf by its outer
     # group -- the legend then names the GROUPS (see "handle legend")
     _nested_group_colored = False
     if isinstance(x, list) and any(isinstance(el, list) for el in x) \
@@ -8752,7 +8752,7 @@ def plot(
     # for the return_model bundle's pipeline; None on every other input.
     _mi_feature_labels = None
     if is_frame_dataset(x):
-        # every dataframe backend datawrangler recognises, as hypertools'
+        # every dataframe backend datawrangler recognizes, as hypertools'
         # own pandas frame (the same object when it already is one): the
         # row/column-hierarchy checks below read pandas indexes
         x = as_pandas_dataframe(x)
@@ -8814,8 +8814,8 @@ def plot(
         if hue is not None:
             # Classify hue HERE, before the MultiIndex branch below wins the
             # cluster/hue/nested_groups chain outright. A CONTINUOUS hue is
-            # normalised to one value sequence per leaf and carried through
-            # `FinalTraces.aux`, so a mean trace's colour is derived from
+            # normalized to one value sequence per leaf and carried through
+            # `FinalTraces.aux`, so a mean trace's color is derived from
             # its members' hue by the same operation that derives its data.
             # A categorical hue still defers: it REGROUPS traces, so the
             # leaves the hierarchy names would stop existing.
@@ -8833,7 +8833,7 @@ def plot(
             # `_mi_hue_per_leaf`, which the branch below hands to the trace
             # builder as auxiliary values.
             hue = None
-        # Hand the pipeline plain arrays rather than the labelled leaves.
+        # Hand the pipeline plain arrays rather than the labeled leaves.
         # format_data matches DataFrame features BY COLUMN NAME across
         # datasets (GH #132), which would duplicate the matching just done
         # -- and would reject the legitimate duplicate-label case (two share
@@ -8843,7 +8843,7 @@ def plot(
         # feature-label mismatch, reported by name.
         #
         # Keep the labels first, though: they are the ONLY record of what
-        # each analysed column means once the leaves become bare arrays,
+        # each analyzed column means once the leaves become bare arrays,
         # and the `return_model=True` bundle's pipeline needs them to match
         # features by name on re-application too (see
         # `Pipeline._fit_feature_order`). Every leaf shares this order --
@@ -9039,8 +9039,8 @@ def plot(
                 xform, _ = analyze(raw, pipeline=pipeline, internal=True,
                                    impute=impute, return_model=True)
                 # analyze returns DATA; a fitted trailing cluster step
-                # colours the figure through the cluster branch below, as
-                # it coloured the figure it was fit for, unless hue= says
+                # colors the figure through the cluster branch below, as
+                # it colored the figure it was fit for, unless hue= says
                 # otherwise (it used to be dropped silently; 1.1 release
                 # review, L13)
                 if hue is None:
@@ -9129,9 +9129,9 @@ def plot(
     # `trace_data` is whatever the PLOTTED trajectories are at the last point
     # before centering/scaling; `xform_data` is never reassigned after this
     # line. They start as the same object and diverge only where the drawn
-    # trajectories stop being the analysed ones: the display-dimensionality
+    # trajectories stop being the analyzed ones: the display-dimensionality
     # projection below (which rebinds `xform`), and the hierarchy branch,
-    # which draws per-level means that the analysed leaf list does not
+    # which draws per-level means that the analyzed leaf list does not
     # contain. `trace_metadata` describes those traces, or is None for
     # non-hierarchical input.
     trace_data = xform_data
@@ -9198,12 +9198,12 @@ def plot(
     # NOT validated/written here (unlike color/linewidth/marker/
     # markersize above), even though it is resolved against this same
     # INPUT dataset count -- validating here would run BEFORE `hue` is
-    # finalised (the animate='morph' hue-drop, below, can still null it)
+    # finalized (the animate='morph' hue-drop, below, can still null it)
     # and BEFORE the MultiIndex/cluster/hue/nested_groups chain that may
     # override alpha internally has picked its branch, either of which
     # can disagree with a lookahead taken this early (task-6 second
     # review, NEW ISSUE). See the alpha= block right before that chain,
-    # after hue is finalised, for the validation, the
+    # after hue is finalized, for the validation, the
     # `_alpha_overridden_internally` lookahead, and the full explanation.
 
     # reduce data to <=3 dims for DISPLAY. `analyze` above already applied
@@ -9249,9 +9249,9 @@ def plot(
                             reduce="IncrementalPCA", internal=True,
                             format_data=False)
         # a display-ONLY projection just ran: the plotted trajectories are no
-        # longer the analysed ones, so re-point `trace_data` at the rebound
+        # longer the analyzed ones, so re-point `trace_data` at the rebound
         # list. `xform_data` deliberately keeps the pre-projection arrays --
-        # it was captured before this block and is the analysed pipeline
+        # it was captured before this block and is the analyzed pipeline
         # output, which is what `pipeline.transform()` reproduces.
         trace_data = xform
 
@@ -9773,7 +9773,7 @@ def plot(
     # discrete colorbar can label every trace without a length mismatch.
     hue_group_labels = None
     # GH #285: proxy legend entries [(label, color), ...] built for a
-    # matrix/mixture hue, whose blended per-observation colours have no
+    # matrix/mixture hue, whose blended per-observation colors have no
     # drawn trace to carry a legend label. None on every other path.
     _hue_legend_entries = None
     _hue_column_names = None
@@ -9812,7 +9812,7 @@ def plot(
     # return_model bundle's pipeline encodes the parameters the figure
     # was actually drawn with (F13-004)
     _bundle_cluster_stage = None
-    # the per-observation cluster labels the FIGURE was coloured/grouped
+    # the per-observation cluster labels the FIGURE was colored/grouped
     # by (over every input dataset's rows, in order; None without
     # clustering), handed back as ``models['cluster_labels']`` -- and what
     # a `panels=` grid replays into each panel, so a panel never
@@ -9822,7 +9822,7 @@ def plot(
     # alpha= (1.1): a first-class per-dataset style, promoted out of the
     # GH #206 `**kwargs` passthrough (where a list raised matplotlib's bare
     # "alpha must be numeric or None"). Resolved against the INPUT dataset
-    # count and validated/written HERE -- after `hue` has been finalised
+    # count and validated/written HERE -- after `hue` has been finalized
     # (the animate='morph'/list-animate hue-drop just above already ran)
     # but still before the MultiIndex/cluster/hue/nested_groups chain
     # below, and still before `_expand_styles_to_runs` (see its
@@ -10062,12 +10062,12 @@ def plot(
                 _model_forecast_owner = [_d for _ in _predict_names
                                          for _d in range(len(_ft.arrays))]
         # legend=[...] under a hierarchy RENAMES the top-level groups
-        # rather than being discarded: the labelled traces are exactly the
+        # rather than being discarded: the labeled traces are exactly the
         # top-level ones, so the caller's entries land on them one-for-one
         # (in `unique_top` first-appearance order, the same convention
         # `linestyles=` uses) and the leaves/intermediate means stay
-        # unlabelled. This is the one hierarchy-overridden kwarg that is
-        # HONOURED instead of warned away -- color/linewidth/alpha encode
+        # unlabeled. This is the one hierarchy-overridden kwarg that is
+        # HONORED instead of warned away -- color/linewidth/alpha encode
         # the hierarchy's structure (which group, which level), so a
         # caller's value would contradict the drawing, whereas legend text
         # names groups the hierarchy has no opinion about.
@@ -10084,7 +10084,7 @@ def plot(
         xform = _ft.arrays
         # Contract 5: `trace_data` is the pre-center/pre-scale plotted
         # trajectory list, which for a hierarchy includes the derived means
-        # -- deliberately NOT in `xform_data`, which holds only the analysed
+        # -- deliberately NOT in `xform_data`, which holds only the analyzed
         # leaves the returned pipeline can reproduce.
         trace_data = _ft.arrays
         trace_metadata = {'keys': _ft.keys, 'level_idx': _ft.level_idx,
@@ -10097,13 +10097,13 @@ def plot(
         if _mi_hue_per_leaf is None:
             mpl_kwargs["color"] = _mi_style["colors"]
         else:
-            # The hierarchy contributes width/alpha/label only: colour comes
+            # The hierarchy contributes width/alpha/label only: color comes
             # from the hue, mapped over the CONCATENATION of every trace's
             # aux (leaves AND means) so one scale spans the whole figure.
             # `_mi_style['colors']` is dropped on this path only -- setting
-            # it would give each line artist a flat colour that the
+            # it would give each line artist a flat color that the
             # per-segment collections then replace, i.e. dead state that a
-            # later reader would reasonably take for the real colours.
+            # later reader would reasonably take for the real colors.
             # `np.concatenate` on the observation axis: a 1-D aux gives the
             # flat vector this has always produced, and a 2-D (matrix) aux
             # keeps its weight columns, which `_multicolor_line_colors`
@@ -10157,7 +10157,7 @@ def plot(
         if _mi_hue_per_leaf is None:
             # The COLORBAR's copy of the hierarchy's per-trace labels, kept
             # in its own variable because it must survive `legend=False`:
-            # the colorbar is the colour key for the drawn groups, not a
+            # the colorbar is the color key for the drawn groups, not a
             # legend, so opting out of the legend must not change which
             # groups it names. `_build_colorbar_info` reads BOTH the group
             # names AND the '_nolegend_' entries that collapse leaves and
@@ -10207,10 +10207,10 @@ def plot(
             # probe is the caller's own seeded single-axes call, and
             # re-clustering the analyzed rows here, once per panel and
             # without the caller's random_state, drew different clusters
-            # from the ones the individual call draws. ...and colour them
+            # from the ones the individual call draws. ...and color them
             # under the probe's COMPLETE label set (round 9): a shared
-            # fit's slice can lack a cluster, and colouring it from its
-            # own label set drew global cluster 1 in cluster 0's colour.
+            # fit's slice can lack a cluster, and coloring it from its
+            # own label set drew global cluster 1 in cluster 0's color.
             _replayed_labels = cluster.labels
             _replayed_categories = cluster.categories
             model = cluster.model
@@ -10393,7 +10393,7 @@ def plot(
                 # LINE animation: segment each dataset into contiguous
                 # same-group runs (never merging a group's non-adjacent
                 # points or crossing a dataset boundary; GH #291), each run
-                # coloured by its quantized blended group colour.
+                # colored by its quantized blended group color.
                 blended = mat2colors(cluster_labels, palette=palette)
                 group_ids, group_colors = colors2groups(blended)
                 _cat_color = {gid: group_colors[gid]
@@ -10423,7 +10423,7 @@ def plot(
             # LINE clustering: contiguous-run segmentation so a cluster's
             # non-adjacent points are NOT joined into one polyline and
             # separate datasets are never bridged (GH #291); each run is
-            # coloured + labelled by its cluster id in sorted order, one
+            # colored + labeled by its cluster id in sorted order, one
             # legend/colorbar entry per cluster.
             _shared_colors = None
             if _replayed_categories is not None:
@@ -10466,7 +10466,7 @@ def plot(
             hue_group_labels = [str(_cats[i]) for i in _order]
             hue_category_names = list(hue_group_labels)
             if _replayed_categories is not None and "color" not in mpl_kwargs:
-                # the shared mapping's colours for the clusters THIS cell
+                # the shared mapping's colors for the clusters THIS cell
                 # draws (a missing cluster leaves a gap, not a shift)
                 _shared_colors = _replayed_cluster_colors(
                     [_cats[i] for i in _order], _replayed_categories,
@@ -10640,7 +10640,7 @@ def plot(
         # arbitrary matrix hue -> RGB. Shared with the column-hierarchy
         # path below so that `hue=` and `color_reduce=` mean the SAME thing
         # whether or not the frame has a hierarchy (they did not: measured,
-        # color_reduce= changed a flat figure's colours and was silently
+        # color_reduce= changed a flat figure's colors and was silently
         # ignored under a hierarchy).
         if hue_is_matrix and _matrix_hue_wants_rgb(hue_array,
                                                    color_reduce,
@@ -10673,7 +10673,7 @@ def plot(
             if legend is True or isinstance(legend, (list, tuple)):
                 if hue_is_matrix and not multicolor_hue_is_rgb:
                     # GH #285: a MATRIX hue has a finite key after all --
-                    # one palette colour per column -- so draw proxy
+                    # one palette color per column -- so draw proxy
                     # swatches instead of discarding the legend.
                     _hue_legend_entries = _matrix_hue_legend_entries(
                         hue_array, palette, legend, _hue_column_names)
@@ -10772,7 +10772,7 @@ def plot(
                     _run_cat_names = ['the unlabeled group' if c is None
                                       else str(c) for c in _cats]
                     # by NAME, not by position (GH #285), so a
-                    # `palette={'a': '#E4572E', ...}` dict colours the
+                    # `palette={'a': '#E4572E', ...}` dict colors the
                     # categories it names and leaves the rest on the
                     # default palette at their own positions.
                     _base = resolve_category_colors(palette,
@@ -10805,7 +10805,7 @@ def plot(
                 # category into one line, and collapse a category that
                 # recurs along a trajectory (A A B B A A) into a tangled
                 # polyline joining non-adjacent points. Segmenting keeps each
-                # run separate, colours it by its category, bridges only runs
+                # run separate, colors it by its category, bridges only runs
                 # adjacent within one dataset, and gives each category ONE
                 # legend entry.
                 _cat_color, _cat_label = _categorical_color_label_maps(
@@ -10833,7 +10833,7 @@ def plot(
                     xform = [xform[i] for i in _order]
                     labels = [labels[i] for i in _order]
             # palette= as a {category: color} DICT (GH #285): the MARKER
-            # (globally regrouped) categorical path takes its colours from
+            # (globally regrouped) categorical path takes its colors from
             # the ambient seaborn cycle, which knows nothing about category
             # names -- so resolve them explicitly here, in drawn-group
             # order. The line path already did this via
@@ -10867,14 +10867,14 @@ def plot(
                     and hue_group_labels is not None
                     and len(hue_group_labels) == len(xform)):
                 # ...and every other palette on the MARKER path (round 9):
-                # the category colours are the palette's first
+                # the category colors are the palette's first
                 # `n_groups` entries, in drawn-group order -- exactly what
                 # the ambient cycle assigns on a fresh axes -- resolved
                 # here so they belong to the CATEGORIES: on a composed
                 # axes the cycle continues past the datasets an earlier
-                # call drew, so the groups' colours shifted with it, and a
-                # colour letter in fmt= (``'ro'``) painted every group
-                # red where the line path (``'r-'``) kept the hue colours.
+                # call drew, so the groups' colors shifted with it, and a
+                # color letter in fmt= (``'ro'``) painted every group
+                # red where the line path (``'r-'``) kept the hue colors.
                 import seaborn as sns
                 _n_groups = len(xform)
                 mpl_kwargs["color"] = [
@@ -11233,7 +11233,7 @@ def plot(
             # overwritten here, so the legend was drawn anyway)
             legend = names
 
-    # nested-list input coloured by OUTER group: every leaf's plotly hover
+    # nested-list input colored by OUTER group: every leaf's plotly hover
     # name (and so its legendgroup) is its group's label -- the label the
     # legend shows on the group's summary leaf, or would under legend=True
     # -- exactly as a hierarchy's leaves are named by their top-level group.
@@ -11273,11 +11273,11 @@ def plot(
                     isinstance(legend, (list, tuple))
                     and len(legend) == len(set(nested_groups))
                     and len(legend) != len(xform)))):
-            # nested-list input colours every leaf by its OUTER group, so
+            # nested-list input colors every leaf by its OUTER group, so
             # the legend names the groups, as a hierarchy's does
-            # (docs/hierarchy.rst: one labelled entry per top-level group,
+            # (docs/hierarchy.rst: one labeled entry per top-level group,
             # every other trace '_nolegend_'). legend=True numbered the
-            # LEAVES 1..n, so four swatches came in two identical colour
+            # LEAVES 1..n, so four swatches came in two identical color
             # pairs (1.1 release review, figure QA). The entry goes on the
             # group's SUMMARY leaf (its shallowest, which the depth styling
             # draws thickest and most opaque); a legend= list with one
@@ -11322,7 +11322,7 @@ def plot(
     # GH #285: the legend entries hypertools draws as explicit proxy
     # handles. `legend_colors=` given as (label, color) pairs REPLACES the
     # legend outright; otherwise the matrix/mixture-hue palette swatches
-    # (if any) are used, and a plain `legend_colors=` colour LIST recolours
+    # (if any) are used, and a plain `legend_colors=` color LIST recolors
     # whichever of the two ends up drawn.
     _final_legend_entries = _legend_entries or _hue_legend_entries
     if _final_legend_entries is not None and _legend_recolor is not None:
@@ -11345,17 +11345,17 @@ def plot(
     # gated on colorbar=, for `return_model=True`'s bundle['colors'] and
     # `HyperAnimation.colors`. Computed HERE, at the same point in the
     # pipeline as colorbar_info, so the two can never disagree about what
-    # the figure is coloured by.
+    # the figure is colored by.
     colors_info = _build_colors_info(
         hue, multicolor_hue, cluster, n_clusters, xform, mpl_kwargs,
         legend, palette, hue_group_labels=hue_group_labels,
         hierarchy_labels=_mi_colorbar_labels,
         legend_entries=_final_legend_entries)
-    # ...which, for datasets coloured from the palette CYCLE (no color=,
+    # ...which, for datasets colored from the palette CYCLE (no color=,
     # hue=, cluster=, palette mapping), reads the palette's fresh sampling;
-    # the colours actually drawn differ when a composed `ax=` continues the
-    # palette or a fmt= colour letter colours a dataset, so each backend
-    # branch below re-syncs both scales to the drawn colours
+    # the colors actually drawn differ when a composed `ax=` continues the
+    # palette or a fmt= color letter colors a dataset, so each backend
+    # branch below re-syncs both scales to the drawn colors
     # (`_sync_color_scales`; 1.1 release review)
     _color_scales_from_cycle = (
         "color" not in mpl_kwargs and hue is None and cluster is None
@@ -11579,13 +11579,13 @@ def plot(
             # ...or MARKER-only categorical regrouping, whose traces are
             # CATEGORIES, never datasets -- even when the counts coincide
             # (2 datasets under 2 categories silently drew dataset 1's
-            # forecast in category 1's colour; 1.1 release review)
+            # forecast in category 1's color; 1.1 release review)
             or _global_regrouped
             # ...or a COLLECTION under hue=/cluster= regrouping: one
             # dataset split into two runs under two models gives two
             # forecasts for two runs, so the counts coincide by accident
             # while forecast i does NOT continue run i (Codex round 3:
-            # Kalman took the earlier run's colour, ARIMA the final run's)
+            # Kalman took the earlier run's color, ARIMA the final run's)
             or (_model_forecast_owner is not None and _seg_ds is not None
                 and len(_seg_ds) == len(xform))):
         # A forecast belongs to a DATASET and is anchored at that dataset's
@@ -11619,7 +11619,7 @@ def plot(
             # regrouping, which goes through `reshape_data` and groups
             # GLOBALLY by category, so 3 datasets under 2 categories become 2
             # traces that are not datasets at all. (A CONTINUOUS hue, named
-            # here previously, is NOT an example: it colours one line artist
+            # here previously, is NOT an example: it colors one line artist
             # per dataset through a LineCollection overlay without changing
             # the trace count, so the correspondence holds and its forecasts
             # draw -- measured, and pinned by
@@ -11674,7 +11674,7 @@ def plot(
     # Animated predict= (CASE A -- STATIC data revealed over time): every
     # observation is known before the first frame, so every forecast the
     # animation will ever draw is knowable now. Precompute the whole schedule
-    # HERE so (a) it can go into the centre/scale statistics below and land
+    # HERE so (a) it can go into the center/scale statistics below and land
     # inside the cube BY CONSTRUCTION -- no clamping, unlike the streaming
     # path in hypertools/io/streaming.py, where the box is frozen from the
     # head samples -- and (b) every frame is a pure lookup, so ani.save() and
@@ -11736,7 +11736,7 @@ def plot(
         # full-history forecast as a STATIC overlay on the plotly backend
         # (whose static block fires whenever there is no schedule), i.e. the
         # final forecast visible from frame 0 -- on a figure whose warning
-        # says none is drawn. It also inflated the centre/scale statistics
+        # says none is drawn. It also inflated the center/scale statistics
         # below to fit a forecast that is never rendered. `bundle_forecasts`
         # is untouched: the fit succeeded and is still reported.
         raw_forecasts = None
@@ -11822,7 +11822,7 @@ def plot(
                 # the animation grid ITSELF, so each frame's forecast starts
                 # at the vertex that frame actually draws last rather than at
                 # the last raw observation behind it (maintainer report,
-                # 2026-09-11). Passed pre-centre/scale, exactly like
+                # 2026-09-11). Passed pre-center/scale, exactly like
                 # `analyze_histories`; `to_display` maps both below.
                 grids=xform,
                 **_time_kwargs)
@@ -11855,7 +11855,7 @@ def plot(
             max(1, int(round(frame_rate * duration))))
 
     # Display space (GH #285): axis_scale='unit' -- what hypertools has
-    # always done -- mean-centres every drawn vertex (data, forecasts, and
+    # always done -- mean-centers every drawn vertex (data, forecasts, and
     # every forecast a schedule will ever draw) and rescales it into the
     # [-1, 1] frame box with ONE shared affine transform. axis_scale='data'
     # skips it entirely and keeps the pipeline's own coordinates, so the
@@ -11926,7 +11926,7 @@ def plot(
         # the static forecast overlays, truth overlays and every polyline
         # in an animation's forecast schedule), so an animated viewport
         # never jumps as the reveal grows -- the same job the joint
-        # centre/scale statistics do for 'unit'.
+        # center/scale statistics do for 'unit'.
         _bounds_rows = [np.vstack(xform)]
         if raw_forecasts is not None:
             _bounds_rows.append(np.vstack(raw_forecasts))
@@ -12113,19 +12113,19 @@ def plot(
                             for _ in range(_n_ds)]
         if _fc_fmt is None:
             # several models on one series: each forecast keeps its
-            # dataset's colour (which series it continues) and takes a
+            # dataset's color (which series it continues) and takes a
             # dash per MODEL (which model made it) -- two encodings for
             # two questions. An explicit forecast_fmt= replaces the dash.
             from .forecast import forecast_model_fmts
             _fc_fmt = forecast_model_fmts(len(_predict_names), _n_ds)
         if _fc_hue is None and forecast_cluster is None \
                 and _fc_palette is not None:
-            # forecast_palette= on a collection colours by MODEL: "one
-            # colour per model" is exactly what forecast_hue= already
-            # means -- datasets sharing a hue value share a colour -- so
+            # forecast_palette= on a collection colors by MODEL: "one
+            # color per model" is exactly what forecast_hue= already
+            # means -- datasets sharing a hue value share a color -- so
             # the model name IS the hue. (Without a palette the forecasts
-            # inherit their datasets' colours; a per-model palette used to
-            # be the default, and its first colour was the first dataset's
+            # inherit their datasets' colors; a per-model palette used to
+            # be the default, and its first color was the first dataset's
             # own, so two datasets x two models were four lines in two
             # indistinguishable pairs.)
             _fc_hue = _forecast_labels
@@ -12176,10 +12176,10 @@ def plot(
                    for v in _forecast_style_kwargs.values())):
         from .forecast import resolve_forecast_overrides
         # a forecast_hue=/forecast_cluster= grouping without
-        # forecast_palette= continues the figure's palette PAST the colours
+        # forecast_palette= continues the figure's palette PAST the colors
         # the observed data takes (maintainer decision, 1.1 review), so
-        # cluster 0 is no longer dataset 0's colour. A continuous hue
-        # colours the data from a colormap, not palette slots: unchanged.
+        # cluster 0 is no longer dataset 0's color. A continuous hue
+        # colors the data from a colormap, not palette slots: unchanged.
         _fc_default_palette = None
         if (_fc_palette is None and line_colors is None
                 and (_fc_hue is not None or forecast_cluster is not None)):
@@ -12237,11 +12237,11 @@ def plot(
                              title_kwargs=_title_kwargs)
         _frame_hooks.add_internal(_update_dynamic_title)
 
-    # the colour-cycle slots this call's datasets take (what a later `ax=`
+    # the color-cycle slots this call's datasets take (what a later `ax=`
     # call into the same axes/figure/cell continues the palette from):
     # counted HERE, before the plotly branch below hands the palette to its
     # backend as explicit per-dataset ``color=`` entries, which would make
-    # every dataset look explicitly coloured (round 7)
+    # every dataset look explicitly colored (round 7)
     _palette_slots_taken = _palette_slots_consumed(
         len(xform), mpl_kwargs, line_colors, draw_fmt,
         category_colored=hue is not None or cluster is not None
@@ -12260,12 +12260,12 @@ def plot(
                 "title_color= as a callable is matplotlib-only: the "
                 "plotly backend builds every animation frame up front and "
                 "has no per-frame context to call it with. Pass a LIST of "
-                "colours (one per title segment) for backend='plotly'.")
+                "colors (one per title segment) for backend='plotly'.")
         if _legend_recolor is not None and _final_legend_entries is None:
             raise NotImplementedError(
-                "legend_colors= as a plain colour list recolours the "
+                "legend_colors= as a plain color list recolors the "
                 "legend handles matplotlib builds; the plotly backend has "
-                "no separate legend handles to recolour (its legend "
+                "no separate legend handles to recolor (its legend "
                 "swatches come from the traces themselves). Pass "
                 "legend_colors=[(label, color), ...] to define the "
                 "entries outright for backend='plotly'.")
@@ -12290,13 +12290,13 @@ def plot(
         # (`ax=<cell>`): the palette slots the calls drawn THERE already
         # took (a cell keeps its own count, like a matplotlib axes of its
         # own; Codex round 3). Read for EVERY call -- the count is written
-        # back below for every call -- not only for one that colours from
+        # back below for every call -- not only for one that colors from
         # the cycle: a pinned ``color=`` or categorical ``hue=`` call used
         # to skip the read and write the count back as its own zero, so
         # the next ordinary call restarted the palette (round 8; the
         # matplotlib `ax=` path keeps the axes' count across such calls)
         _plotly_palette_offset = 0
-        # ...and the COLOURS those slots took (`_palette_continuation`
+        # ...and the COLORS those slots took (`_palette_continuation`
         # fills the gaps of an evenly re-sampled palette with them)
         _plotly_palette_used = None
         if _plotly_into is not None:
@@ -12316,7 +12316,7 @@ def plot(
                 _plotly_palette_offset = int(
                     _meta.get('hyp_datasets_drawn', 0))
                 _plotly_palette_used = _meta.get('hyp_palette_used')
-        # the palette colours this call's cycle-coloured datasets take,
+        # the palette colors this call's cycle-colored datasets take,
         # recorded below for the next `ax=` call into the same figure/cell
         _palette_taken_colors = []
         if "color" not in mpl_kwargs:
@@ -12333,16 +12333,16 @@ def plot(
                 palette, len(xform), _cycle_offset,
                 _plotly_palette_used if _cycle_offset else None)
             _palette_taken_colors = _palette_colors[:_palette_slots_taken]
-            # a colour letter in fmt= ('r-', ['g--', 'b:']) colours its
+            # a color letter in fmt= ('r-', ['g--', 'b:']) colors its
             # dataset, exactly as on matplotlib, where the letter beats the
-            # axes' colour cycle (an explicit color=/hue= is the other
+            # axes' color cycle (an explicit color=/hue= is the other
             # branch of this `if`, and still wins over the letter on both
-            # backends). A lettered dataset consumes no colour-cycle slot
+            # backends). A lettered dataset consumes no color-cycle slot
             # there either, so here the unlettered datasets take the
-            # palette colours in order, past the ones an earlier call into
+            # palette colors in order, past the ones an earlier call into
             # the same figure/cell already used (1.1 release review, round
             # 6: plotly drew every fmt-lettered dataset in the palette
-            # colour, on the single-axes path, animated, and per panel).
+            # color, on the single-axes path, animated, and per panel).
             _fmt_letters = [
                 _fmt_color_letter(draw_fmt[_i]) if _i < len(draw_fmt)
                 else None for _i in range(len(xform))]
@@ -12378,7 +12378,7 @@ def plot(
             # the same run -> dataset -> rows mapping the matplotlib updaters
             # pace their reveal with, so neither backend re-derives it
             ownership=_ownership,
-            # ...and the same reveal schedule its per-frame forecast colours
+            # ...and the same reveal schedule its per-frame forecast colors
             # come from (Decision R3)
             forecast_reveal=_reveal,
             fmt=draw_fmt,
@@ -12463,13 +12463,13 @@ def plot(
             forecast_labels=_forecast_labels,
             forecast_datasets=_model_forecast_owner,
             # what a later `ax=<this figure>` call continues the palette
-            # from (see the colour block above) -- recorded on EVERY
+            # from (see the color block above) -- recorded on EVERY
             # figure, since the first call is the one composed into; only
-            # the datasets coloured from the cycle count
+            # the datasets colored from the cycle count
             # (`_palette_slots_consumed`)
             datasets_drawn=_plotly_palette_offset + _palette_slots_taken,
-            # ...and, before the figure is saved or shown, the colours of
-            # those slots beside the count (read back by the colour block
+            # ...and, before the figure is saved or shown, the colors of
+            # those slots beside the count (read back by the color block
             # above on the next `ax=` call) and the categorical legend's
             # order (`_rank_plotly_legend`)
             before_show=_plotly_before_show,
@@ -12491,23 +12491,23 @@ def plot(
             sns.set_style(style="whitegrid")
             _palette_offset = 0
             _palette_used = None
-            # this call's cycle colours: the palette's own sampling on a
+            # this call's cycle colors: the palette's own sampling on a
             # fresh axes (what `sns.set_palette` above gives it), continued
             # past an earlier call's slots on a reused one (below)
             _cycle = _palette_continuation(palette, len(xform))
             if ax is not None and hasattr(ax, 'set_prop_cycle'):
                 # a caller's axes (`ax=`, every `panels=` cell) captured
-                # ITS figure's colour cycle when it was created, so the
+                # ITS figure's color cycle when it was created, so the
                 # rc-scoped palette above never reached it and datasets
                 # drew in matplotlib's default C0/C1 cycle while the
                 # returned `colors` and the plotly grid said hls (1.1
                 # release review, feature-tour 4/9.8). Set the axes' own
                 # cycle to the palette -- CONTINUING it past the datasets
                 # an earlier hypertools call drew there, so composing two
-                # calls on one axes does not draw both in the first colour
+                # calls on one axes does not draw both in the first color
                 # (the plotly `ax=<figure>` path keeps the same count).
                 # `_palette_continuation` continues it without repeating an
-                # earlier call's colour, from the colours those slots took.
+                # earlier call's color, from the colors those slots took.
                 if not (isinstance(palette, collections.abc.Mapping)
                         or _looks_like_dataset_palettes(palette)):
                     _palette_offset = int(getattr(
@@ -12518,8 +12518,8 @@ def plot(
                 ax.set_prop_cycle(color=_cycle or _palette_continuation(
                     palette, 1))
             if _color_scales_from_cycle:
-                # what each dataset is drawn in: its fmt= colour letter
-                # (which takes no cycle slot) or the next cycle colour
+                # what each dataset is drawn in: its fmt= color letter
+                # (which takes no cycle slot) or the next cycle color
                 _cycle_iter = iter(_cycle)
                 _drawn_colors = []
                 for _i in range(len(xform)):
@@ -12577,7 +12577,7 @@ def plot(
             # the lines an earlier call left on a reused `ax=`: the
             # overlays below take their style from THIS call's lines only
             # (Codex round 4: every forecast on a thrice-drawn axes wore
-            # the first call's colour)
+            # the first call's color)
             _n_lines_before = len(ax.lines) if ax is not None else 0
             fig, ax, data, line_ani = _draw(
                 xform,
@@ -12625,10 +12625,10 @@ def plot(
                 legend_kwargs=_legend_kwargs,
                 legend_entries=_final_legend_entries,
                 legend_order=_legend_order,
-                # a plain colour list recolours the FINAL legend, so it is
+                # a plain color list recolors the FINAL legend, so it is
                 # applied after the forecast/truth entries below when
                 # there are any (Codex round 3: validated too early, it
-                # refused three colours for a legend that would list three)
+                # refused three colors for a legend that would list three)
                 legend_colors=(None if _final_legend_entries is not None
                                or raw_forecasts is not None
                                or raw_truths is not None
@@ -12649,7 +12649,7 @@ def plot(
                 # as composing into a `hyp.subplots` cell does (round 7)
                 ax._hyp_palette_offset = (_palette_offset
                                           + _palette_slots_taken)
-                # ...and the colours of those slots
+                # ...and the colors of those slots
                 ax._hyp_palette_used = _extend_palette_used(
                     _palette_offset, _palette_used,
                     _cycle[:_palette_slots_taken])
@@ -12671,7 +12671,7 @@ def plot(
                         _axis.set_tick_params(labelfontfamily=_font_stack)
 
             # predict=: overlay one forecast trace per input dataset
-            # (GH #169), styled to match its source line -- same colour,
+            # (GH #169), styled to match its source line -- same color,
             # linestyle and linewidth, at half its alpha
             # (`_forecast_style_from`). Added AFTER `_draw` has built the
             # legend
@@ -12759,7 +12759,7 @@ def plot(
                     and (raw_forecasts is not None or raw_truths is not None)
                     and animate in (False, None, 'spin')
                     and ax.get_legend() is not None):
-                # the deferred plain-colour-list recolouring (see the
+                # the deferred plain-color-list recoloring (see the
                 # `legend_colors=` argument to `_draw` above)
                 _recolor_overlay_legend(
                     ax, _legend_recolor,
@@ -12779,10 +12779,10 @@ def plot(
             # forecast for a dataset (too little history revealed), and
             # emptiness -- not alpha -- is how "nothing to draw" is said.
             if forecast_schedule is not None:
-                # Colours come from the trajectory lines as they stand
+                # Colors come from the trajectory lines as they stand
                 # BEFORE any forecast artist is added: `ax.lines` grows as
                 # this loop runs, so snapshot it first or artist i would take
-                # its colour from forecast i-1. (Same guard
+                # its color from forecast i-1. (Same guard
                 # `_draw_forecast_overlays` opens with.)
                 from .forecast import trail_alpha, trail_frames
                 _src_lines = _observed_run_lines(
@@ -12811,25 +12811,25 @@ def plot(
                     # which drawn run this dataset's forecast continues: the
                     # run holding its LAST observation, the same trace the
                     # static overlay inherits from. Per FRAME the live artist
-                    # re-takes the colour of whichever run is drawing the head
+                    # re-takes the color of whichever run is drawing the head
                     # (Decision R3); this is its build-time default.
                     _fc_src = (_forecast_owner[_i]
                                if _forecast_owner is not None
                                and _i < len(_forecast_owner) else _i)
                     # the SAME styling policy `_draw_forecast_overlays` uses
-                    # (colour/linestyle/linewidth inherited from the observed
+                    # (color/linestyle/linewidth inherited from the observed
                     # trace, alpha halved), from the SAME helper -- so a
                     # paused animation is indistinguishable from the static
                     # plot and the two paths cannot drift.
                     # Under a CONTINUOUS hue the observed trace has many
-                    # colours and `_src_lines[_fc_src]` is the HIDDEN
-                    # single-colour artist that drives the reveal -- its
-                    # palette colour is drawn nowhere. Anchor on the final
-                    # observed hue colour instead, exactly as the static
+                    # colors and `_src_lines[_fc_src]` is the HIDDEN
+                    # single-color artist that drives the reveal -- its
+                    # palette color is drawn nowhere. Anchor on the final
+                    # observed hue color instead, exactly as the static
                     # overlay does (`_apply_multicolor_lines`). Before this,
                     # a paused animation and a static plot of the same call
-                    # showed the forecast in different colours, and the
-                    # animated one continued a colour its trajectory never
+                    # showed the forecast in different colors, and the
+                    # animated one continued a color its trajectory never
                     # visibly had.
                     _fc_anchor = None
                     if (line_colors is not None and _fc_src < len(line_colors)
@@ -12843,7 +12843,7 @@ def plot(
                                   and _i < len(_forecast_overrides)
                                   else None),
                         anchor_color=_fc_anchor)
-                    # an explicit forecast_*= colour, which a continuous
+                    # an explicit forecast_*= color, which a continuous
                     # hue= must not repaint (`_apply_multicolor_lines`)
                     from .forecast import override_has_color as _pins
                     _fc_pinned = bool(_pins(
@@ -12917,27 +12917,27 @@ def plot(
                         and _final_legend_entries is None
                         and ax.get_legend() is not None
                         and _forecast_artists is None):
-                    # the deferred plain-colour-list recolouring for the
+                    # the deferred plain-color-list recoloring for the
                     # animated modes (the static path does it below)
                     _recolor_overlay_legend(
                         ax, _legend_recolor,
                         close_fig=None if _user_supplied_ax else fig)
 
-                # whether the user pinned this dataset's forecast colour
+                # whether the user pinned this dataset's forecast color
                 # (`forecast_hue=`/`forecast_cluster=`/`forecast_palette=`);
                 # an explicit grouping is resolved once from the full-history
                 # forecasts and must stay fixed for every frame, so it wins
-                # over the per-frame head-run colour below.
+                # over the per-frame head-run color below.
                 # A CONTINUOUS hue pins it too, for the same reason: the
                 # forecast's identity is the hue value where its trajectory
                 # ends, which does not change frame to frame. Decision R3's
-                # per-frame head-run colour remains correct for CATEGORICAL
-                # regrouping, where the run colour is what the viewer sees.
+                # per-frame head-run color remains correct for CATEGORICAL
+                # regrouping, where the run color is what the viewer sees.
                 # `line_colors is not None` is DEFENSIVE, not load-bearing:
                 # measured 2026-08-16, a continuous hue never regroups, so
                 # `_reveal` above is None and `_run_colour` already returns
                 # None on every frame. What actually gives an animated
-                # continuous-hue forecast the anchor colour is the
+                # continuous-hue forecast the anchor color is the
                 # `anchor_color=` at its build site. The clause states the
                 # policy where the policy is decided, so that widening
                 # `_reveal` to non-regrouped animations cannot silently
@@ -12945,9 +12945,9 @@ def plot(
                 # is pinned by `test_a_continuous_hue_animation_is_NEVER_
                 # regrouped_into_runs`.
                 from .forecast import override_has_color as _has_color
-                # a colour letter in forecast_fmt= pins the colour as an
+                # a color letter in forecast_fmt= pins the color as an
                 # explicit forecast_hue=/palette= does (Codex round 4:
-                # 'ro:' forecasts were repainted in the head run's colour)
+                # 'ro:' forecasts were repainted in the head run's color)
                 _override_colour = [
                     bool(_has_color(_forecast_overrides[_i]
                                     if _forecast_overrides is not None
@@ -12967,7 +12967,7 @@ def plot(
                                       _pinned=_override_colour,
                                       _sources=_model_forecast_owner):
                     def _run_colour(dataset, frame):
-                        """Decision R3: the colour of the run DRAWING the
+                        """Decision R3: the color of the run DRAWING the
                         head at `frame` -- the CURRENT frame for the live
                         forecast, and the frame it was FIT at for a retained
                         one, so crossing a category boundary does not repaint
@@ -13106,7 +13106,7 @@ def plot(
                     _marker_colors = _multicolor_line_colors(
                         multicolor_hue, pre_interp_lengths, raw_xform,
                         palette, is_rgb=multicolor_hue_is_rgb,
-                        # the line colours above already warned about
+                        # the line colors above already warned about
                         # any non-finite hue observation
                         warn_non_finite=False)
                     _apply_multicolor_markers(ax, raw_xform, _marker_colors,
@@ -13169,8 +13169,8 @@ def plot(
             # frame (the plot() docstring's own example does; 1.1 visual
             # review L11: that title rendered at y=484-500 on a 480 px
             # canvas) -- so a 3-D animation with neither keeps the exact
-            # same maximised canvas as before; and on ndims >= 3 so 2-D
-            # animations (whose default, non-maximised axes already leave
+            # same maximized canvas as before; and on ndims >= 3 so 2-D
+            # animations (whose default, non-maximized axes already leave
             # normal title room) are never touched.
             if (ax is not None and line_ani is not None
                     and xform[0].shape[1] >= 3
@@ -13269,9 +13269,9 @@ def plot(
                 if colorbar_info is not None:
                     _cmap = colorbar_info.get('cmap')
                     _cnorm = colorbar_info.get('norm')
-                # a panel without its own color= takes the colour of the
+                # a panel without its own color= takes the color of the
                 # trajectory it accompanies (the first drawn dataset): an
-                # fmt= colour letter, else the resolved per-dataset colour
+                # fmt= color letter, else the resolved per-dataset color
                 # (1.1 visual review L12: it fell back to matplotlib's
                 # global 'C0' blue, beside a trajectory in the palette's
                 # red)
@@ -13557,7 +13557,7 @@ def plot(
     if line_ani is not None:
         from .hyper_animation import HyperAnimation
         _hyper_anim = HyperAnimation(fig, line_ani, frame_hooks=_frame_hooks)
-        # GH #285: the resolved colour scale, so a companion panel can
+        # GH #285: the resolved color scale, so a companion panel can
         # reuse hypertools' own mapping instead of rebuilding it (see
         # `_build_colors_info`). Same object the return_model bundle
         # exposes as bundle['colors'].
@@ -13604,7 +13604,7 @@ def _build_colorbar_info(colorbar, hue, multicolor_hue, cluster, n_clusters,
     if multicolor_hue is not None and multicolor_hue.ndim == 1 and hue is None:
         vals = np.asarray(multicolor_hue, dtype=np.float64)
         # NaN/inf hue values are drawn in `NAN_COLOR` and EXCLUDED from the
-        # colour mapping (see the hue= docstring), so they must not reach
+        # color mapping (see the hue= docstring), so they must not reach
         # the range either: `np.min` over a NaN is NaN, and a colorbar (or
         # bundle['colors']) spanning nan..nan is a colorbar over nothing.
         finite = vals[np.isfinite(vals)]
@@ -13641,7 +13641,7 @@ def _build_colorbar_info(colorbar, hue, multicolor_hue, cluster, n_clusters,
         )
 
     # labels FIRST (GH #285): a `palette=` dict is keyed by category name,
-    # so the colours cannot be resolved until the group names are known.
+    # so the colors cannot be resolved until the group names are known.
     if isinstance(legend, list):
         labels = list(legend)
     elif (hierarchy_labels is not None
@@ -13665,12 +13665,12 @@ def _build_colorbar_info(colorbar, hue, multicolor_hue, cluster, n_clusters,
         # the mixture-blend paths (cluster=<mixture model> or matrix hue,
         # animated) set an EXPLICIT per-group color list -- reuse it
         # verbatim so the colorbar swatches exactly match the drawn lines.
-        # Resolved through matplotlib's own colour parser rather than
+        # Resolved through matplotlib's own color parser rather than
         # `np.asarray(...)[:, :3]`, which only works for a list of numeric
         # RGB(A) tuples: a user-supplied `color=['red', 'green']` is a list
         # of NAMES, and indexing that 1-D array of strings raised
         # "IndexError: too many indices for array" (GH #285, found by the
-        # always-on colour-scale resolution `bundle['colors']` added there).
+        # always-on color-scale resolution `bundle['colors']` added there).
         from matplotlib.colors import to_rgba_array
         colors = to_rgba_array(explicit_colors)[:, :3]
     elif isinstance(palette, collections.abc.Mapping):
@@ -13684,8 +13684,8 @@ def _build_colorbar_info(colorbar, hue, multicolor_hue, cluster, n_clusters,
         # in dataset/group order -- exactly what sns.set_palette (mpl) /
         # the per-trace sns.color_palette (plotly) assign when drawing.
         # `dataset_colors` (not `get_palette_colors`) so a PER-DATASET
-        # `palette=` list resolves to each dataset's own lead colour, the
-        # same colour the drawn trace gets (GH #285).
+        # `palette=` list resolves to each dataset's own lead color, the
+        # same color the drawn trace gets (GH #285).
         colors = dataset_colors(palette, n_groups)
 
     # A trace labeled '_nolegend_' (e.g. every MultiIndex leaf and
@@ -13718,7 +13718,7 @@ def _build_colorbar_info(colorbar, hue, multicolor_hue, cluster, n_clusters,
 def _build_colors_info(hue, multicolor_hue, cluster, n_clusters, xform,
                        mpl_kwargs, legend, palette, hue_group_labels=None,
                        hierarchy_labels=None, legend_entries=None):
-    """The RESOLVED colour scale this figure draws with (GH #285).
+    """The RESOLVED color scale this figure draws with (GH #285).
 
     `_build_colorbar_info` already computes exactly this mapping, but only
     when a `colorbar=` was asked for -- and it raises when there is nothing
@@ -13755,15 +13755,15 @@ def _build_colors_info(hue, multicolor_hue, cluster, n_clusters, xform,
     if info is None:
         if multicolor_hue is not None:
             # `categories` is documented as {label: rgb}: the legend
-            # entries carry the user's own colour specs ('k', '#ff00ff'),
-            # so normalise them the way every other path does.
+            # entries carry the user's own color specs ('k', '#ff00ff'),
+            # so normalize them the way every other path does.
             from matplotlib.colors import to_rgb
             return {'kind': 'blend', 'palette': palette, 'cmap': None,
                     'norm': None, 'vmin': None, 'vmax': None,
                     'colors': None, 'labels': None,
                     'categories': {str(label): tuple(to_rgb(color))
                                    for label, color in (legend_entries or [])}}
-        # no grouping at all: one dataset, one colour
+        # no grouping at all: one dataset, one color
         colors = np.asarray(dataset_colors(palette, max(len(xform), 1)))
         return {'kind': 'discrete', 'palette': palette,
                 'cmap': ListedColormap(colors), 'norm': None,
@@ -13919,7 +13919,7 @@ def _measurement_renderer(fig):
 
     Without this guard (release QC for the patch line that shipped as
     1.1.0, found while verifying the 3-D title-margin fix's
-    "neighbours"): a measurement draw here is often
+    "neighbors"): a measurement draw here is often
     `fig`'s first draw ever, since `hyp.plot(..., show=False)` never draws
     the canvas itself -- and an unguarded first draw silently ran
     `FuncAnimation._init_draw()` -> a real, premature frame-0 update
@@ -14176,7 +14176,7 @@ def _reserve_animated_3d_title_margin(fig, ax, pad_in=0.08, fontsize=None,
                                       n_lines=1):
     """Grow the figure so an animated 3-D plot's title has room to render.
 
-    `matplotlib_backend.animate_plot3D` deliberately maximises the 3-D axes
+    `matplotlib_backend.animate_plot3D` deliberately maximizes the 3-D axes
     to ``ax.set_position([0, 0, 1, 1])`` (full canvas -- see its own
     comment) so a rotating zoomed cube never overflows the axes viewport
     and clips at some rotation angles. `Axes.set_title()` draws ABOVE the
@@ -14210,7 +14210,7 @@ def _reserve_animated_3d_title_margin(fig, ax, pad_in=0.08, fontsize=None,
     ABSOLUTE size it already had -- not a smaller, re-shrunk one -- at the
     BOTTOM of the now-taller canvas, leaving a blank strip above it for the
     title. This mirrors `_fit_right_legend`/`_add_right_colorbar` (same
-    file), which already grow the canvas rather than shrink the maximised
+    file), which already grow the canvas rather than shrink the maximized
     axes to make room for a legend/right-side colorbar, for the identical
     reason (see their docstrings).
 
@@ -14348,7 +14348,7 @@ def _multicolor_line_colors(hue_src, orig_lengths, xform, palette, is_rgb=False,
     Non-finite hue values are drawn gray (`colors.mat2colors`); one
     ``UserWarning`` counting the non-finite ORIGINAL observations, attributed
     to the caller, is issued unless `warn_non_finite` is False (a second call
-    for the same hue, e.g. the marker colours of an ``'o-'`` combo).
+    for the same hue, e.g. the marker colors of an ``'o-'`` combo).
 
     hue_src holds one value (or one row) per ORIGINAL observation; the
     trajectories in xform have since been interpolated to a higher temporal
@@ -14388,7 +14388,7 @@ def _multicolor_line_colors(hue_src, orig_lengths, xform, palette, is_rgb=False,
     else:
         # `mat2colors` warns about the non-finite rows it is handed -- here
         # the INTERPOLATED vertices, every one a NaN observation's
-        # neighbourhood touches (one NaN in 30 rows reported "61
+        # neighborhood touches (one NaN in 30 rows reported "61
         # observation(s)"), attributed to this module rather than the
         # caller. Silence it and say it once, below, about the
         # observations (1.1 release review).
@@ -14440,18 +14440,18 @@ def _apply_multicolor_lines(ax, xform, line_colors, kwargs_list,
         else:
             _kept_forecasts.append(line)
 
-    # A continuous hue gives the observed data MANY colours, so "the same
-    # colour as its trace" resolves to the colour where the forecast starts:
+    # A continuous hue gives the observed data MANY colors, so "the same
+    # color as its trace" resolves to the color where the forecast starts:
     # the last segment of the trace it continues.
     #
     # Paired by the artist's DATASET tag, not by its position in
     # `_kept_forecasts`: position is only the right key while forecasts stay
     # one-per-dataset in dataset order, which anything that reorders or
     # filters them (`forecast_cluster=`, a per-dataset refusal) breaks
-    # silently -- each forecast would simply take a neighbour's colour.
+    # silently -- each forecast would simply take a neighbor's color.
     for _fi, _fc_line in enumerate(_kept_forecasts):
         if getattr(_fc_line, '_hyp_forecast_pinned', False):
-            # an explicit forecast_*= colour wins over the anchor, as
+            # an explicit forecast_*= color wins over the anchor, as
             # `_forecast_style_from` documents and plotly already draws
             continue
         _ds = getattr(_fc_line, '_hyp_forecast_dataset', _fi)
@@ -14472,7 +14472,7 @@ def _apply_multicolor_lines(ax, xform, line_colors, kwargs_list,
             pts = xi[:, :3] if is_3d else xi[:, :2]
         segments = np.stack([pts[:-1], pts[1:]], axis=1)
         seg_colors = (ci[:-1] + ci[1:]) / 2.0
-        # Per-trace opacity has to travel WITH the colours: these
+        # Per-trace opacity has to travel WITH the colors: these
         # collections replace the line artists, so an `alpha` left on the
         # discarded `Line2D` is simply lost. That is how a hierarchy's
         # level-derived alphas -- and a plain `hue=` + `alpha=` -- silently
@@ -14516,9 +14516,9 @@ def _make_title_updater(titles, axes, font=None, title_kwargs=None,
     `on_frame=` callback whose only job was to restyle the title after this
     updater ran. `font` fixes the bug that a resolved `font=` reached the
     STATIC title but never a per-segment one; `title_kwargs` carries
-    size/weight/colour/y (a bare `font=` is only ever a family, so before
+    size/weight/color/y (a bare `font=` is only ever a family, so before
     this those could come from nothing but rcParams); `segment_colors` is
-    `title_color=`'s per-segment form -- one colour per segment, or a
+    `title_color=`'s per-segment form -- one color per segment, or a
     callable taking the frame context. All three default to None, in which
     case this makes the exact bare `axes.set_title(text)` call it always
     did.
@@ -14567,7 +14567,7 @@ def _apply_multicolor_animation(ax, xform, line_colors, kwargs_list,
 
     `frame_hooks` is the `FrameHooks` registry the backend's updater just
     called ``record(artists=...)`` on. Its recorded artists are the HIDDEN
-    single-colour lines, so the collections drawn here are swapped in for
+    single-color lines, so the collections drawn here are swapped in for
     them after every frame: `dataset_fade=` and any `on_frame=` mutation
     then reach what is actually rendered. Without the swap, setting alpha
     on ``ctx.artists`` changed invisible artists and rendered nothing.
@@ -14600,7 +14600,7 @@ def _apply_multicolor_animation(ax, xform, line_colors, kwargs_list,
         # also ride along in **kwargs_list[idx] and collide) and pass it
         # explicitly to ax.plot. Reading it back off kwargs_list here found
         # nothing and silently fell through to rcParams['lines.linewidth'],
-        # so every animated multicolour collection rendered at 1.5 regardless
+        # so every animated multicolor collection rendered at 1.5 regardless
         # of what the caller asked for. Reading the artist also guarantees the
         # overlay always matches the artist it replaces.
         if i < len(head_lines):
@@ -14823,12 +14823,12 @@ def _apply_multicolor_markers(ax, xform, point_colors, kwargs_list,
             _kept_forecasts.append(line)
 
     # ...and, as in `_apply_multicolor_lines`, re-anchor each kept forecast
-    # on the colour its own trace ENDS in (F14). This loop used to exist only
+    # on the color its own trace ENDS in (F14). This loop used to exist only
     # on the line path, so a MARKER-only fmt drew the forecast in the
-    # per-dataset palette colour of an artist that was just removed -- and
+    # per-dataset palette color of an artist that was just removed -- and
     # since plotly anchors unconditionally (`_hue_anchor_color`, applied at
     # every trace's build regardless of fmt), the two backends drew the same
-    # forecast in different colours for exactly `fmt='o'` (measured, at every
+    # forecast in different colors for exactly `fmt='o'` (measured, at every
     # `ndims`: matplotlib rgb(59,82,139) vs plotly rgb(72,38,119) for the
     # first trace of a viridis column hierarchy). Same dataset-tag keying and
     # same reason as the line path: position breaks as soon as anything
@@ -14836,7 +14836,7 @@ def _apply_multicolor_markers(ax, xform, point_colors, kwargs_list,
     # refusal).
     for _fi, _fc_line in enumerate(_kept_forecasts):
         if getattr(_fc_line, '_hyp_forecast_pinned', False):
-            # an explicit forecast_*= colour wins over the anchor, as
+            # an explicit forecast_*= color wins over the anchor, as
             # `_forecast_style_from` documents and plotly already draws
             continue
         _ds = getattr(_fc_line, '_hyp_forecast_dataset', _fi)
@@ -14855,10 +14855,10 @@ def _apply_multicolor_markers(ax, xform, point_colors, kwargs_list,
         ms = float(tkwargs.get('markersize')
                    or plt.rcParams['lines.markersize'])
         s = ms ** 2  # scatter sizes are areas in points^2
-        # the trace's alpha= travels WITH the per-point colours, as on the
+        # the trace's alpha= travels WITH the per-point colors, as on the
         # line path (`_apply_multicolor_lines`): the scatter replaces the
         # marker artist the alpha was set on, so hue= + alpha=0.7 markers
-        # drew fully opaque while the same plot without hue= honoured it
+        # drew fully opaque while the same plot without hue= honored it
         # (1.1 release review)
         _alpha = tkwargs.get('alpha')
         if _alpha is not None:

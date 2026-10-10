@@ -399,7 +399,7 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True,
             fig.update_layout(title=title, xaxis_title='Number of components',
                               yaxis_title='Correlation')
             # component counts are whole numbers: pin the ticks to integers
-            # (plotly's auto ticks labelled 2.5, 3.5, ... on short sweeps)
+            # (plotly's auto ticks labeled 2.5, 3.5, ... on short sweeps)
             fig.update_xaxes(tickmode='array',
                              tickvals=_integer_ticks(n_components))
             # plotly axes have no top/right spines by default (Jeremy's despine
@@ -433,7 +433,7 @@ def describe(x, reduce='IncrementalPCA', max_dims=None, show=True,
             ax.set_ylabel('Correlation')
             ax.set_xlabel('Number of components')
             # component counts are whole numbers: no fractional ticks
-            # (matplotlib's auto locator labelled 2.25, 2.5, ...)
+            # (matplotlib's auto locator labeled 2.25, 2.5, ...)
             from matplotlib.ticker import MaxNLocator
             ax.xaxis.set_major_locator(MaxNLocator(integer=True))
             # drop the top and right spines (Jeremy's despine request)
@@ -562,7 +562,7 @@ def _sweep_spec(reduce):
     `describe` evaluates one reduction per candidate dimensionality, so
     the dimensionality in the spec itself must never win over the sweep's:
     a reducer pinned to 2 components would be evaluated at 2 components
-    for every point while the curve labelled them 2, 3, 4, ... (1.1
+    for every point while the curve labeled them 2, 3, 4, ... (1.1
     release review).
 
     Parameters

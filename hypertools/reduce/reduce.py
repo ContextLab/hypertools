@@ -610,7 +610,7 @@ def reduce_list(x, model, reuse=None):
     else:
         fitted = Reducer(model)
         with warnings.catch_warnings():
-            # scikit-learn's Isomap completes a disconnected neighbour graph
+            # scikit-learn's Isomap completes a disconnected neighbor graph
             # by writing into a CSR matrix cell by cell, and scipy warns
             # about ITS sparsity-structure changes a dozen times per fit.
             # Nothing the user passed causes or can stop that, so it stays

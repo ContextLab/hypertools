@@ -861,7 +861,7 @@ def vertex_colors_from_points(verts, points, point_colors, power=2.0, eps=1e-9,
     The blend is LOCAL on purpose: over ALL points, ``1/d**2`` weights in
     3-D let the many distant points outweigh the few near ones (each shell
     of radius ``r`` holds ~``r**2`` points), so every vertex drifted toward
-    the dataset's mean colour -- washed out and locally wrong under a
+    the dataset's mean color -- washed out and locally wrong under a
     ``hue=`` gradient (maintainer report, 2026-09-11).
 
     Parameters

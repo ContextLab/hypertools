@@ -58,7 +58,7 @@ they are drawn as a side branch rather than as ordinary stages. See
 - **Mean traces are built after reduce/align**, in the plotted space, from
   the already-transformed leaves. That is why they appear in ``trace_data``
   and never in ``xform_data``: they are presentation artifacts of the
-  drawing step, not analysed input datasets. Averaging in the plotted space
+  drawing step, not analyzed input datasets. Averaging in the plotted space
   is also what makes a mean sit where the eye expects it -- between its
   members on screen.
 

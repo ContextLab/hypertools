@@ -2,7 +2,7 @@
 
 An Aligner wraps a (fitter, transformer, required-params) triple operating on
 a *list* of DataFrames: `fit` coerces its input (arrays, DataFrames of any
-backend datawrangler recognises, or a list of these) into that list, trims to
+backend datawrangler recognizes, or a list of these) into that list, trims to
 common rows and pads to common columns, runs the fitter, and stores the returned
 dict as attributes; `transform` re-derives the list and runs the transformer with
 those params, handing each dataset back in its input's form. Child classes
@@ -296,7 +296,7 @@ class Aligner(BaseEstimator):
         data : DataFrame, array, or list (or tuple) of these
             The dataset(s) to fit the alignment on: numpy arrays, pandas
             DataFrames, DataFrames of any other backend datawrangler
-            recognises (polars, ...), or a mix, each one dataset of
+            recognizes (polars, ...), or a mix, each one dataset of
             observations x features; a single row-`MultiIndex` DataFrame
             (``datawrangler.stack`` output) holds one dataset per
             top-level index value. Rows are matched across datasets by

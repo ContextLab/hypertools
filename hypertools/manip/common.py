@@ -254,7 +254,7 @@ def stack_for_shared_fit(datasets, name):
     anyway. Datasets of different widths cannot share statistics and
     raise. Nothing here touches the datasets themselves, so every frame
     keeps its own labels and index through the transform (Codex round
-    12, R12-3: relabelling the inputs in the dispatcher renamed a named
+    12, R12-3: relabeling the inputs in the dispatcher renamed a named
     frame's features for the independent manipulators too).
     """
     frames = list(datasets)

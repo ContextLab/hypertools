@@ -33,9 +33,9 @@ def pipeline_cluster_labels(pipeline, data):
     ends in a fitted cluster step (see `pipeline=` in `analyze`); the
     labels are that step applied to the returned data -- the recovery the
     docstring documents, ``p.named_steps['cluster'].transform(data)``.
-    `hyp.plot(x, pipeline=p)` runs it to colour the figure by the fitted
-    clusters, as the figure `p` was fit for was coloured: skipping it drew
-    one colour with no warning (1.1 release review, 2026-09-11).
+    `hyp.plot(x, pipeline=p)` runs it to color the figure by the fitted
+    clusters, as the figure `p` was fit for was colored: skipping it drew
+    one color with no warning (1.1 release review, 2026-09-11).
 
     Parameters
     ----------
@@ -50,9 +50,9 @@ def pipeline_cluster_labels(pipeline, data):
         `(labels, model, fitted, categories)`: the per-observation labels
         over the stacked datasets (membership proportions for a mixture
         model), the fitted clusterer's class (whose name selects hard vs.
-        mixture colouring), the fitted cluster model itself (the step's
+        mixture coloring), the fitted cluster model itself (the step's
         `Clusterer`), and the label set it was FIT with, sorted (so a
-        dataset missing a cluster keeps the fit figure's colours; None for
+        dataset missing a cluster keeps the fit figure's colors; None for
         mixture proportions). `None` when the pipeline is unfitted or does
         not end in a cluster step, or when the step cannot label `data` --
         a clusterer with no out-of-sample `predict` (e.g.

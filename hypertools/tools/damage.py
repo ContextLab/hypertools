@@ -146,7 +146,7 @@ def _scatter(values, blanked_rows, frac, rng):
 
 def _damage_one(x, frac, rows, row_frac, rng, name='x'):
     """Damage one dataset; returns ``(damaged_copy, mask)``."""
-    # a frame (or Series) of any backend datawrangler recognises -- polars,
+    # a frame (or Series) of any backend datawrangler recognizes -- polars,
     # a LazyFrame, ... -- is damaged as hypertools' internal pandas type,
     # and comes back as one (datatype audit, 2026-09-08)
     if is_frame_dataset(x):
@@ -185,7 +185,7 @@ def damage(x, frac=0.05, rows=None, row_frac=None, seed=None,
     """Set a fraction of cells (and/or whole rows) to NaN, reproducibly.
 
     Returns a damaged *copy*: the input is never modified. Damage comes in
-    two independent flavours, and a call may use either or both:
+    two independent flavors, and a call may use either or both:
 
     - **scattered** cells (`frac`), which is what an imputer conditioned on
       the other columns of the same row (PPCA) can fill; and

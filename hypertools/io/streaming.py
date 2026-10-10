@@ -88,7 +88,7 @@ def is_stream(x):
     """True when x is streaming data: a Python iterator/generator, or a
     Hugging Face ``datasets.IterableDataset``. Materialized data is not a
     stream: containers (lists, tuples, dicts), strings, and every dataset
-    type datawrangler recognises -- arrays, DataFrames of any backend
+    type datawrangler recognizes -- arrays, DataFrames of any backend
     (pandas, polars DataFrame/LazyFrame, dataframe-likes) and Series."""
     if isinstance(x, (list, tuple, dict)) or np.isscalar(x):
         return False

@@ -394,6 +394,11 @@ def _quiet_gallery_only_warnings(gallery_conf, fname):
         'ignore', category=UserWarning,
         message=r'explore=True shows labels on hover, which needs an '
                 r'interactive matplotlib backend')
+    # a warning an example does raise is printed on its page: name the file
+    # by its path in the repository, not the build machine's path to it
+    from _gallery_log_filter import relative_warning_paths
+    relative_warning_paths(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__))))
 
 
 # Gallery page order. sphinx-gallery's default (`NumberOfCodeLinesSortKey`)

@@ -47,3 +47,34 @@ def install(logger_name=GALLERY_LOGGER):
     """Attach the filter to sphinx-gallery's logger (idempotent enough for a
     single docs build). Called from conf.py's ``setup(app)``."""
     logging.getLogger(logger_name).addFilter(TransientDocLinkFetchFilter())
+
+
+def relative_warning_paths(root):
+    """Make Python warnings name files under ``root`` by their path relative
+    to it, e.g. ``examples/plot_impute.py:43: UserWarning: ...``.
+
+    sphinx-gallery prints a warning an example raises into that example's
+    output block, and Python's default format starts with the absolute path
+    of the file that warned. On a gallery page that is the build machine's
+    path to the checkout: noise to a reader, and different on every machine
+    that builds the docs. Returns the installed formatter; installing twice
+    is harmless (conf.py calls this before every example).
+    """
+    import os
+    import warnings
+
+    current = warnings.formatwarning
+    if getattr(current, '_hypertools_root', None) == root:
+        return current
+    prefix = os.path.join(os.path.abspath(root), '')
+
+    def formatwarning(message, category, filename, lineno, line=None):
+        text = current(message, category, filename, lineno, line)
+        if filename.startswith(prefix) and text.startswith(filename):
+            text = (filename[len(prefix):].replace(os.sep, '/')
+                    + text[len(filename):])
+        return text
+
+    formatwarning._hypertools_root = root
+    warnings.formatwarning = formatwarning
+    return formatwarning

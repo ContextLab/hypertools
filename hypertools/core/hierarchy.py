@@ -55,7 +55,7 @@ def _canonical_label(value):
     `dropna=False` keeps a group whose hierarchy LABEL is missing, but that
     group then has to be built and styled as ONE group, and ordinary
     equality cannot do it: ``NaN != NaN``. Measured on the pandas here,
-    `np.nan`, `None` and `pd.NA` in a MultiIndex level all normalise to
+    `np.nan`, `None` and `pd.NA` in a MultiIndex level all normalize to
     plain `float('nan')`, and `groupby` mints a SEPARATE nan object per
     group key -- so a dict keyed on raw labels sees two groups where there
     is one, producing duplicate mean traces, duplicate palette entries and
@@ -64,7 +64,7 @@ def _canonical_label(value):
     `expand_multiindex` avoids it only because `df.index` hands back the
     same object each time -- neither is something to rely on.)
 
-    Every missing spelling canonicalises to the same sentinel, which matches
+    Every missing spelling canonicalizes to the same sentinel, which matches
     what the grouping layer already did: pandas had already merged them into
     one group before these keys were built.
 
@@ -82,7 +82,7 @@ def _canonical_label(value):
 
 
 def _canonical_key(key):
-    """Canonicalise every level of a hierarchy key tuple (see above)."""
+    """Canonicalize every level of a hierarchy key tuple (see above)."""
     return tuple(_canonical_label(value) for value in key)
 
 
@@ -216,8 +216,8 @@ def _match_features_by_name(leaves, leaf_keys):
     feature by NAME. Matching by position instead would quietly make column
     order part of the statistical model: permuting one group's columns would
     move that group's trajectory and every mean derived from it, even though
-    the labelled frame holds identical data. Ordering is usually incidental,
-    so that is not a safe default for a labelled DataFrame.
+    the labeled frame holds identical data. Ordering is usually incidental,
+    so that is not a safe default for a labeled DataFrame.
 
     Reordering moves whole columns, so each group's values stay attached to
     their own labels. Callers who genuinely mean "slot i is the same feature

@@ -24,179 +24,82 @@ Kaggle's now-retired "No Free Hunch" blog
 ([archived copy](http://web.archive.org/web/20191202152212/http://blog.kaggle.com:80/2017/04/10/exploring-the-structure-of-high-dimensional-data-with-hypertools-in-kaggle-kernels/)).
 For a general overview, you may find [this talk](https://www.youtube.com/watch?v=hb_ER9RGtOM) useful (given as part of the [MIND Summer School](https://summer-mind.github.io) at Dartmouth).
 
-## What's new in 1.1
+## What's new
 
-HyperTools 1.1 makes hierarchical (`MultiIndex`) DataFrames a first-class
-input, grows the animation API, installs optional extras on demand, and folds
-into the library the code its own examples used to write by hand:
+**1.1** makes hierarchical (`MultiIndex`) DataFrames a first-class input,
+grows the animation API, adds model comparisons for forecasting and
+imputation, loads text and market data in one line, and installs optional
+extras on demand.
 
-+ **One call, many panels:** `hyp.plot([a, b, c], panels=True, title=[...])`
-  draws one panel per dataset (or `reduce=['PCA', 'UMAP']` one per reducer)
-  with a shared or independent pipeline fit.
-+ **Data in one line:** `hyp.load('random_walk' | 'helix' | 'lorenz' | 'blobs'
-  | ...)` generates seeded example data; `hyp.load('wikipedia:<Title>')`,
-  `hyp.load('yahoo:<TICKER>', start=, end=)` and `hyp.load('sec:<TICKER>')`
-  fetch live text and market data; `cache=True` / `offline=True` keep URL
-  downloads on disk.
-+ **Forecast comparisons:** `hyp.predict(x, model=['Kalman', 'ARIMA', 'GP'],
-  holdout=30)` scores every model against a naive baseline; `hyp.plot(x,
-  predict=[...], truth=held_out)` overlays them with the actual continuation.
-+ **Helpers for the data you feed in:** `hyp.text_windows` (sliding text
-  windows), `hyp.damage` (reproducible missing data), `hyp.stack`
-  (hierarchical frames), `Smooth(center=False)` (trailing means), the `Delay`
-  embedding, and `hyp.align(..., return_score=True)`.
-+ **Animations that know where they are:** `ctx.progress` and populated
-  reveal counts in `on_frame` callbacks, titles from a callable or a
-  `'{index:%B %Y}'` date pattern, `dataset_fade=`, `companion=` panels,
-  `loop=True` morphs, and `title_kwargs=` / `title_wrap=` styling.
+**1.0** was a ground-up rewrite that keeps the familiar API. It added an
+optional interactive (plotly) backend, `hyp.Pipeline`, `hyp.manip`,
+`hyp.predict` and `hyp.impute`, morph and 2-D animations, and more text
+embedding models, and it runs on Python 3.10–3.13. A few long-deprecated
+arguments were removed.
 
-See the [changelog](https://github.com/ContextLab/hypertools/blob/master/CHANGELOG.md) for the complete list, and the
-[optional dependencies guide](https://hypertools.readthedocs.io/en/latest/optional_dependencies.html)
-for how extras install themselves.
+The [changelog](https://github.com/ContextLab/hypertools/blob/master/CHANGELOG.md)
+has the complete list for both releases, including what changed for code and
+saved data from earlier versions.
 
-## What's new in 1.0
+## A quick tour
 
-HyperTools 1.0 modernizes the toolbox while keeping the familiar API:
+Each clip below is one of the animated examples from the
+[tutorials](https://hypertools.readthedocs.io/en/latest/tutorials.html); follow
+the link under a clip for the full code and the full-length animation.
 
-+ **Interactive plotting (optional):** `hyp.plot(..., backend='plotly')`
-  renders interactive figures. With the default `backend='auto'`, HyperTools
-  automatically uses plotly on Google Colab and Kaggle (where interactive
-  figures work best and plotly is preinstalled) and matplotlib everywhere
-  else — existing workflows are unchanged. The two backends produce visually
-  matched output: identical colors, line/marker styles and sizes, format
-  strings, and the signature cube/square framing.
-+ **Multicolored lines:** passing continuous values (or a per-observation
-  matrix) as `hue` together with a line format colors each trajectory
-  continuously along its length, on both backends.
-+ **`hyp.apply_model`:** a unified stack → fit-once → unstack core for
-  applying any scikit-learn style model (or pipeline of models) across one
-  or more datasets, with `return_model=True` for reuse on held-out data.
-+ **Mixture-model ("soft") clustering:** `cluster` and `plot` support
-  `GaussianMixture`, `BayesianGaussianMixture`, `LatentDirichletAllocation`,
-  and `NMF`. `hyp.cluster` returns per-observation membership proportions,
-  and `hyp.plot` colors each observation by blending component colors
-  according to its mixture weights.
-+ **Richer coloring:** the `hue` argument now accepts categorical labels,
-  continuous values, or entire matrices (e.g. mixture proportions or model
-  weights), which are mapped to colors via the new `mat2colors` helper
-  (`from hypertools.plot.colors import mat2colors`).
-+ **Nested-list input:** `hyp.plot([[a, b], [c]])` colors datasets by their
-  outermost grouping and renders more deeply nested datasets with thinner,
-  fainter lines.
-+ **Hull surfaces (optional):** `hyp.plot(..., surface=True)` overlays a
-  smooth, lit surface over each dataset's convex hull — a filled outline in
-  2D, or a shaded, Taubin-smoothed "blob" in 3D. A dict of scalar options
-  (e.g. `surface={'alpha': 0.6}`) customizes all surfaces at once; a list
-  of bools/dicts (e.g. `surface=[{'alpha': 0.2}, {'alpha': 0.8}]`) controls
-  alpha/color/lighting/smoothing per dataset.
-+ **Morph animation:** `hyp.plot(datasets, animate='morph')` treats each
-  dataset as a point cloud and morphs smoothly between them (Hungarian-
-  matched, smoothstep-eased), holding on each one along the way; `rotations`
-  accepts a per-segment list for independent camera control over each hold
-  and transition, and `surface=True` composes with it to morph a lit hull
-  instead of raw points. See `examples/animate_morph_zoo.py` and
-  `examples/animate_surface_morph.py`.
-+ **More animation styles, and 2-D animation:** in addition to `True`/
-  `'parallel'`, `animate='spin'` keeps all the data drawn and spins the
-  camera, `'serial'` reveals each dataset one at a time in list order, and
-  `'window'` (`hyp.plot(traj, animate='window', focused=2)`) slides a fixed-
-  length, fully-opaque window along each trajectory. Every style except
-  `'spin'` (which is inherently a 3-D camera move) now also works for
-  `ndims=2` data, using a fixed (non-rotating) viewport.
-+ **`hyp.Pipeline`:** a scikit-learn-style `Pipeline` chains
-  `manip`/`normalize`/`reduce`/`align`/`cluster` stages, fit once and reused
-  on new data without refitting -- `hyp.plot(A, ..., return_model=True)`
-  returns a bundle whose `'pipeline'` entry can be passed back in as
-  `hyp.plot(B, pipeline=bundle['pipeline'])` to apply the exact same fitted
-  transformation to a structurally-identical dataset `B`.
-+ **`hyp.manip` and manip chaining:** `hyp.manip(data, model='ZScore')`
-  applies a manipulation (`Normalize`, `ZScore`, `Smooth`, `Resample`) to
-  each dataset. `Smooth` and `Resample` run independently per dataset
-  (kernels never cross dataset boundaries); `ZScore` and `Normalize` also
-  transform each dataset separately but fit one shared set of statistics
-  across all datasets in a list (like `normalize='across'`). A `list` of
-  specs chains several manipulations as a `Pipeline`, and
-  `hyp.plot(data, manip=[...])` runs the chain at the canonical `manip`
-  stage -- first, before `normalize`/`reduce`/`align`/`cluster` -- e.g.
-  `hyp.plot(data, manip=[{'model': 'Smooth', 'kwargs': {'kernel_width': 5}},
-  'ZScore'], reduce='PCA')`.
-+ **Autoencoder reducers (optional):** `hyp.reduce`/`hyp.plot(..., reduce=
-  'Autoencoder')` supports six torch-backed autoencoder reducers
-  (`Autoencoder`, `DeepAutoencoder`, `SparseAutoencoder`,
-  `ConvolutionalAutoencoder`, `SequenceAutoencoder`,
-  `VariationalAutoencoder`), from the `[torch]` extra (installed on demand
-  the first time one is fit).
-+ **gensim text vectorizers/semantic models (optional):** `hyp.plot(texts,
-  vectorizer='Word2Vec', semantic=None, reduce='PCA')` (and
-  `hyp.tools.text2mat`) add `Word2Vec`/`Doc2Vec`/`FastText` vectorizers and
-  `LdaModel`/`LsiModel`/`HdpModel` semantic models, from the `[gensim]`
-  extra (installed on demand) -- with an embedding vectorizer (gensim, or a
-  Hugging Face model id like `'all-MiniLM-L6-v2'`) the default LDA semantic
-  stage is skipped automatically (gensim warns; pass `semantic=None` to
-  silence it) and `corpus` is unused. Note that non-default vectorizers
-  train on the default `corpus='wiki'` corpus the first time, which can
-  take a couple of minutes even for tiny inputs; pass `corpus=` a list of
-  your own documents to train on those instead.
-+ **LSL streaming (optional):** `hyp.io.lsl_stream(type='EEG')` resolves a
-  live Lab Streaming Layer stream and wraps it for `hyp.plot(...,
-  stream_init=200, stream_chunk=20)`, from the `[lsl]` extra (installed
-  on demand).
-+ **`hyp.predict`/`hyp.impute`:** `hyp.predict(data, model='Kalman', t=10)`
-  forecasts `t` new rows continuing each dataset. `Kalman`, `GaussianProcess`,
-  `AutoRegressor`, and `ARIMA` work with the base install (pykalman/statsmodels
-  are core deps); `Laplace` comes from the `[predict]` extra (skaters) and `Chronos`
-  from `[predict-hf]`, each installed on demand. `hyp.impute(data,
-  model='PPCA')` fills missing (NaN) values in place; the `Kalman` imputer also
-  works with the base install. Both take `return_model=True` for reuse.
-+ **Kaggle loader:** `hyp.load('kaggle/uciml/iris')` downloads a public
-  Kaggle dataset anonymously via `kagglehub`, from the `[kaggle]` extra
-  (installed on demand).
-+ **Density shading (optional):** `hyp.plot(..., density=True)` overlays a
-  subtle KDE "glow" behind the data (a 2D heatmap or 3D volumetric cloud)
-  showing where each dataset's points concentrate; off by default.
-+ **Colorbars:** `hyp.plot(..., colorbar=True)` draws a colorbar matching
-  whatever color mapping is already in use — a continuous gradient for a
-  numeric `hue`, or a segmented, labeled bar for discrete groups/clusters.
-+ **MultiIndex DataFrames:** a DataFrame with a row `MultiIndex` is expanded
-  automatically into one leaf trace per index combination plus a thicker,
-  more opaque mean trace per level of grouping, colored by the top-level
-  index value.
-+ **Per-dataset animation trails:** `chemtrails`/`precog`/`bullettime` each
-  accept a list of bools (one per dataset) so different datasets in the same
-  animation can show different trail styles, in addition to a single bool
-  applied to all of them.
-+ **More `hyp.load` sources:** in addition to the built-in example datasets
-  and local files, `hyp.load` now resolves Hugging Face dataset ids, Google
-  Sheets/Drive links, Dropbox links, and arbitrary URLs, plus more local file
-  formats (`.npy`/`.npz`, `.csv`/`.tsv`/`.txt`, `.json`, `.parquet`, `.mat`,
-  `.xlsx`/`.xls`).
-+ **Faster and cleaner:** `import hypertools` is ~3.5x faster (heavy
-  dependencies load lazily); plotting no longer mutates global matplotlib
-  settings; the unreliable result cache was removed; HDBSCAN now comes from
-  scikit-learn (no extra dependency); packaging follows current standards
-  (pyproject.toml, Python 3.10–3.13).
-+ **Retired legacy arguments:** the long-deprecated `group` (use `hue`),
-  `model`/`model_params` (use `reduce`), and `align(method=...)`/
-  `align=True` (use `align='hyper'`) arguments were removed and now raise
-  errors instead of being silently accepted. `cluster`'s `ndims=` is no longer a
-  standalone reduction step: it is only forwarded to the `reduce=` stage,
-  and a warning fires if it is passed without `reduce=`. **Legacy data:**
-  geo files saved by hypertools **≥0.8** (pickle-format) still load — the
-  internal unpickle-only shim reads them and returns their raw data, with
-  retired arguments translated or skipped with a warning on replay. Older
-  **pre-0.8 `deepdish`/HDF5-format** geos cannot be read directly under
-  HyperTools' required NumPy 2 (the `deepdish` reader is unmaintained and
-  imports only under `numpy<2`); `hyp.load` detects them and raises a
-  message explaining the one-time out-of-process conversion:
+### Many datasets in one space
 
-  ```bash
-  # in a throwaway environment, convert an old .geo to a modern format once
-  python -m venv /tmp/dd && /tmp/dd/bin/pip install "numpy<2" deepdish
-  /tmp/dd/bin/python -c "import deepdish as dd, numpy as np; \
-      d = dd.io.load('old.geo'); np.savez('old_converted.npz', \
-      **{'data': np.asarray(d['data'], dtype=object)})"
-  # then load old_converted.npz with hypertools as usual
-  ```
+Six stock-market sectors, each reduced to 3-D on its own and then hyperaligned
+into a shared space, with a heavier path for the market as a whole.
+
+![Market sectors example](https://raw.githubusercontent.com/ContextLab/hypertools/v1.1.0/images/tour_market_sectors.gif)
+
+[Tutorial: market sectors](https://hypertools.readthedocs.io/en/latest/tutorials/market_sectors.html)
+
+### Text goes in, geometry comes out
+
+Give `hyp.plot` a list of strings and it embeds them, projects them into 2-D
+or 3-D, and plots the result. Here a paragraph about each of five paintings
+becomes its own cloud, drawn in a color pulled from the canvas itself.
+
+![Painting embeddings example](https://raw.githubusercontent.com/ContextLab/hypertools/v1.1.0/images/tour_painting_embeddings.gif)
+
+[Tutorial: painting embeddings](https://hypertools.readthedocs.io/en/latest/tutorials/painting_embeddings.html)
+
+### Reveal a dataset over time
+
+`order='serial'` reveals a dataset one piece at a time. This is the Mad
+Tea-Party from *Alice's Adventures in Wonderland*: each segment is one turn of
+the conversation, colored by speaker and placed by what is being said.
+
+![Conversation example](https://raw.githubusercontent.com/ContextLab/hypertools/v1.1.0/images/tour_conversation_shape.gif)
+
+[Tutorial: the shape of a conversation](https://hypertools.readthedocs.io/en/latest/tutorials/conversation_shape.html)
+
+### Many features, one path
+
+Monthly temperatures in 20 cities around the globe, from 1875 to 2013, drawn as
+a single path and colored by the average temperature that month.
+
+![Weather example](https://raw.githubusercontent.com/ContextLab/hypertools/v1.1.0/images/tour_weather_decades.gif)
+
+[Tutorial: weather across the decades](https://hypertools.readthedocs.io/en/latest/tutorials/weather_decades.html)
+
+### Morph between shapes
+
+`animate='morph'` interpolates between point clouds or meshes. These are some
+of the built-in shapes that `hyp.load` provides.
+
+```python
+import hypertools as hyp
+names = ['bunny', 'cube', 'sphere', 'teapot', 'vase']
+shapes = [hyp.load(n) for n in names]
+hyp.plot(shapes, '.', color='k', animate='morph', title=names)
+```
+
+![Morph example](https://raw.githubusercontent.com/ContextLab/hypertools/v1.1.0/images/tour_morph_shapes_zoo.gif)
+
+[Tutorial: morphing the shapes zoo](https://hypertools.readthedocs.io/en/latest/tutorials/morph_shapes_zoo.html)
 
 ## Try it!
 

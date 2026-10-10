@@ -62,9 +62,9 @@ from .density import (
 
 def _label_callout_kwargs(label_alpha, arrowstyle='-', facecolor='white'):
     """`ax.annotate` box and connector styling for an observation label,
-    in the colours plotly's annotations use (`plotly_backend`: connector
+    in the colors plotly's annotations use (`plotly_backend`: connector
     rgba(0,0,0,0.6), box edge rgba(0,0,0,0.4), a white box at
-    `label_alpha`). Both colours are EXPLICIT: seaborn's whitegrid style
+    `label_alpha`). Both colors are EXPLICIT: seaborn's whitegrid style
     sets ``patch.edgecolor='w'``, so the defaults drew a white connector
     and a white box edge -- an invisible link that cut white notches
     through the markers (1.1 release review, figure QA). `label_alpha` stays
@@ -140,7 +140,7 @@ def _apply_title(ax, text, font=None, title_kwargs=None, family=None):
 #: that is left for the panel's own ticks and label).
 COMPANION_GAP = 0.02
 
-#: The full, unrevealed series is drawn once underneath in this grey, so the
+#: The full, unrevealed series is drawn once underneath in this gray, so the
 #: revealed part reads against the shape it is filling in.
 COMPANION_GHOST_COLOR = '0.85'
 
@@ -171,7 +171,7 @@ def _grow_for_companion(fig, spec):
 
     Growing rather than shrinking is the same decision (and the same
     reasoning) as `plot._reserve_animated_3d_title_margin`: an animated 3-D
-    axes is deliberately maximised to the full canvas so a rotating zoomed
+    axes is deliberately maximized to the full canvas so a rotating zoomed
     cube never clips, and shrinking it to make room would shrink the
     rendered cube with it.
     """
@@ -220,12 +220,12 @@ def add_companion_panel(fig, spec, cmap=None, norm=None, font=None,
     updater needs (GH #285).
 
     The panel shows the whole series once, faintly, then reveals it: a line
-    (or, with ``hue=``, a `LineCollection` coloured through the plot's own
-    colour scale) up to the reveal head, an optional trailing rolling mean,
+    (or, with ``hue=``, a `LineCollection` colored through the plot's own
+    color scale) up to the reveal head, an optional trailing rolling mean,
     and an optional marker on the head itself.
 
     The line and head marker are drawn in ``spec['color']``, else in
-    `default_color` -- `plot()` passes the colour of the trajectory the
+    `default_color` -- `plot()` passes the color of the trajectory the
     panel accompanies -- else in matplotlib's ``'C0'`` (only a direct
     caller that passes neither reaches that last fallback; 1.1 visual
     review L12).
@@ -241,7 +241,7 @@ def add_companion_panel(fig, spec, cmap=None, norm=None, font=None,
     points = np.column_stack([x, y])
     segments = np.stack([points[:-1], points[1:]], axis=1)
     if spec['hue'] is not None:
-        # the PLOT's own resolved colour scale when there is one (a
+        # the PLOT's own resolved color scale when there is one (a
         # continuous `hue=` gives `colorbar_info` a cmap and a norm), so the
         # panel and the trajectory it accompanies read the same value the
         # same way; otherwise a plain linear scale over the panel's own
@@ -378,7 +378,7 @@ def legend_call_kwargs(is_3d=False, zlabel=None, font=None,
     """The `ax.legend(...)` keyword arguments hypertools draws a legend with.
 
     Factored out of `_draw` (GH #285) so `plot()` can REBUILD the legend
-    with identical placement/styling after it adds a labelled overlay
+    with identical placement/styling after it adds a labeled overlay
     (a multi-model `predict=` fan, or `truth=`) -- the legend is built
     inside `_draw`, before those artists exist, and a rebuild that guessed
     at the placement would move the legend on exactly the figures that
@@ -417,7 +417,7 @@ def legend_call_kwargs(is_3d=False, zlabel=None, font=None,
 
 
 def _recolor_legend_handles(legend, colors):
-    """Apply `legend_colors=`'s plain colour list to an already-built
+    """Apply `legend_colors=`'s plain color list to an already-built
     legend, in entry order (GH #285)."""
     handles = legend.legend_handles
     if len(colors) != len(handles):
@@ -909,16 +909,16 @@ def _draw(
     not correspond to input datasets (marker-only categorical regrouping
     groups globally by category), and those keep `anim_window_bounds` directly.
 
-    `axis_scale` (GH #285): ``'unit'`` (the historical behaviour) draws the
+    `axis_scale` (GH #285): ``'unit'`` (the historical behavior) draws the
     hypertools frame square (half-width `UNIT_FRAME_SCALE`) and pins the 2-D axes to ``+-UNIT_FRAME_LIMIT`` --
-    `plot()` has already mean-centred and rescaled the data into ``[-1, 1]``
+    `plot()` has already mean-centered and rescaled the data into ``[-1, 1]``
     for it. ``'data'`` draws NO frame square, leaves matplotlib's own ticks
     and spines visible, and takes its limits from `xlim`/`ylim` (which
     `plot()` computes from the full data, forecasts included, so an
     animation's viewport never jumps) or from matplotlib's autoscale when
     both are None. 3-D is always ``'unit'`` (`plot()` refuses the other).
 
-    `xlim`/`ylim` (GH #285): explicit ``(low, high)`` axis limits, honoured
+    `xlim`/`ylim` (GH #285): explicit ``(low, high)`` axis limits, honored
     on every non-``'unit'`` 2-D/1-D path (static and animated). ``None``
     leaves the axis alone.
 
@@ -1555,7 +1555,7 @@ def _draw(
             )
 
         _explore_font_kwargs = {} if font is None else dict(fontproperties=font)
-        # put the label on the side of the point facing the axes centre, so a
+        # put the label on the side of the point facing the axes center, so a
         # point near an edge never pushes its label out of the window
         fx, fy = ax.transAxes.inverted().transform(
             ax.transData.transform((x2, y2)))
@@ -3313,7 +3313,7 @@ def _draw(
     # gridlines seaborn's 'whitegrid' style (applied by `plot()`) puts on
     # hypertools' own axes are removed, matching the plotly backend's
     # `showgrid=False` (1.1 release review: the matplotlib data-scale plot
-    # drew a grey grid the plotly one never had). A caller's `ax=` keeps
+    # drew a gray grid the plotly one never had). A caller's `ax=` keeps
     # whatever grid its owner gave it.
     # the font stack in force NOW (`plot()` draws inside the rc_context
     # that sets it), given explicitly to the axis labels and title below:

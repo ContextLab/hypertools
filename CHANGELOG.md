@@ -46,7 +46,7 @@ and a matplotlib Axes passed as `ax=` under the plotly backend.
 - **A column MultiIndex frame expands into one trace per group.** The
   innermost column level is the feature axis; every level above it groups,
   so a `(Market, Sector, Ticker)` frame draws one trajectory per sector plus
-  a heavier market-mean trajectory. Widths, opacities, colours and legend
+  a heavier market-mean trajectory. Widths, opacities, colors and legend
   labels follow the same documented formulas as row expansion. Unlike the
   row rule, every group keeps all `len(df)` rows -- column grouping never
   shortens a trace. A two-level `(Group, Feature)` hierarchy has no
@@ -66,7 +66,7 @@ and a matplotlib Axes passed as `ax=` under the plotly backend.
   matching would make column ORDER part of the statistical model (measured:
   permuting one group's columns moved that group's trajectory and every mean
   derived from it, on label-equivalent frames), which is not a safe default
-  for a labelled frame. **Duplicate feature names inside a group are
+  for a labeled frame. **Duplicate feature names inside a group are
   permitted**, matched across groups by `(label, occurrence)`: no column is
   dropped and no group is merged.
 
@@ -77,7 +77,7 @@ and a matplotlib Axes passed as `ax=` under the plotly backend.
   caller to predict how many mean traces expansion creates. A mean trace
   takes the element-wise mean of its leaves' hue, and hue is truncated by
   the same operation that truncates the data. A forecast overlay takes the
-  final observed hue colour of its source trace, static and animated alike
+  final observed hue color of its source trace, static and animated alike
   and on both backends (see *Documented limitations* for how this differs
   from a categorical regrouping). Categorical hue still defers to the
   grouping, with a warning: it regroups traces, so the named leaves would
@@ -142,8 +142,8 @@ and a matplotlib Axes passed as `ax=` under the plotly backend.
   describing every plotted trajectory. `trace_data` holds the final
   pre-center/pre-scale trajectories -- the drawn artists are centered,
   scaled and (by default) antialiased copies of them, so they hold neither
-  array. `xform_data` is unchanged: it remains the analysed pipeline output
-  for the input datasets, one entry per analysed dataset, and derived means
+  array. `xform_data` is unchanged: it remains the analyzed pipeline output
+  for the input datasets, one entry per analyzed dataset, and derived means
   never enter it. The two are the same object only when no display-only
   projection occurred; a `reduce=` spec pinning more than three components
   makes them differ (`n_components=5` leaves `xform_data` 5-D while
@@ -157,7 +157,7 @@ and a matplotlib Axes passed as `ax=` under the plotly backend.
   `coll._hyp_trace_index` -- so a caller can tell the data traces apart from
   the wireframe cube, density/surface layers, forecast overlays and the
   colorbar's phantom trace. It is propagated to the per-segment 2-D traces,
-  so a multicoloured 2-D line still reads as ONE trajectory. Documented in
+  so a multicolored 2-D line still reads as ONE trajectory. Documented in
   `docs/animation.rst` beside the forecast tags.
 
 - **New guide:** *Hierarchical DataFrames* (`docs/hierarchy.rst`), covering
@@ -176,28 +176,28 @@ and a matplotlib Axes passed as `ax=` under the plotly backend.
   runs after the display reduce -- which is why means reach `trace_data` and
   never `xform_data`.
 
-- **A plot can take its colours from an image.**
+- **A plot can take its colors from an image.**
   `hypertools.plot.colors.image_palette(image, n_colors=6)` extracts a
   palette from a LOCAL image -- a path, a PIL image, or an `(H, W, 3)` array
   -- ordered most visually salient first. Salience is
   `pixel_fraction * chroma`, so a painting's vivid subject leads and its
   muted background follows but is kept; ordering by pixel share alone (the
   obvious "largest k-means cluster" rule) returns the background, which is
-  the whole reason this helper exists. A greyscale image has no colour to be
+  the whole reason this helper exists. A grayscale image has no color to be
   salient about, so it falls back to population order. The same extraction
   is reachable declaratively from any plotting call as
-  `palette='image:<path>'`, on both backends and on every colour path
+  `palette='image:<path>'`, on both backends and on every color path
   (categorical, continuous, matrix hue, and the colorbar): a categorical hue
   pulls one anchor per category, so the number of groups is not capped, and
   a continuous hue blends six anchors into a gradient exactly as any short
-  colour list is blended. An image with fewer distinct colours than there
+  color list is blended. An image with fewer distinct colors than there
   are categories is interpolated up rather than cycled, so no two categories
-  share a colour; a single-colour image raises instead of inventing them.
+  share a color; a single-color image raises instead of inventing them.
   hypertools never downloads the image -- fetch and cache it yourself, then
   pass the path.
 
 - **`hue_mode=` says how a matrix `hue` is read.** `'mixture'` blends each
-  row through `palette` as weights, one palette colour per COLUMN whatever
+  row through `palette` as weights, one palette color per COLUMN whatever
   the width, which is what a hierarchy needs to give each leaf one primary
   and every derived mean the blend of its children. `'rgb'` reduces the
   matrix to three min-max scaled channels used directly as (r, g, b), which
@@ -207,14 +207,14 @@ and a matplotlib Axes passed as `ax=` under the plotly backend.
   `color_reduce=` raises rather than picking a winner. Documented in
   `docs/hierarchy.rst`.
 
-- **`Normalize` gains `mode='isotropic'`: one shared centre and scale for the
+- **`Normalize` gains `mode='isotropic'`: one shared center and scale for the
   whole table.** The default `mode='minmax'` rescales every column on its own
   and so distorts a point cloud's shape; `mode='isotropic'` subtracts the
   centroid and divides EVERY column by one scalar (the largest absolute
   deviation from the centroid), mapping the cloud into `[min, max]` with the
   centroid at the midpoint and its shape (angles, distance ratios) intact.
-  `min=-1, max=1` is exactly the "centre and scale into the unit cube" recipe
-  the morph gallery examples used to hand-roll. Lists share one centre and
+  `min=-1, max=1` is exactly the "center and scale into the unit cube" recipe
+  the morph gallery examples used to hand-roll. Lists share one center and
   scale; `return_model=True` reuse and `inverse_transform` work.
 - **Gallery and tutorials reorganized and completed (issue #284).** The
   gallery merges its duplicate pages (digits/TSNE/UMAP into one; PPCA into
@@ -237,7 +237,7 @@ and a matplotlib Axes passed as `ax=` under the plotly backend.
   pipeline output's own coordinates (for `reduce=None` the raw columns) with
   fixed joint limits for animations, on both backends; `xlim=`/`ylim=` set
   them explicitly. `axis_scale='unit'` (the default) is unchanged and now
-  documented: 2-D plots are mean-centred and rescaled into [-1, 1], inside
+  documented: 2-D plots are mean-centered and rescaled into [-1, 1], inside
   a frame square of half-width 1.125, with both axes pinned to +/-1.2375
   (10 % beyond the square) (GH #285).
 - **`ndims=1` is a time-series mode.** With `reduce=None`, each column
@@ -252,7 +252,7 @@ and a matplotlib Axes passed as `ax=` under the plotly backend.
   distinctly and role-tagged `'truth'`, static and animated, on both
   backends; `truth` is validated against `t` (GH #285).
 - **Several forecasters on one plot.** `predict=['Kalman', 'ARIMA', 'GP']` (or
-  `{name: spec}`) draws one legend-labelled overlay per model, coloured from
+  `{name: spec}`) draws one legend-labeled overlay per model, colored from
   `forecast_palette`, with `forecast_fmt` per model; works with `truth=`,
   animations and plotly. The `return_model` bundle keys the forecasts by
   model name (GH #285).
@@ -289,7 +289,7 @@ and a matplotlib Axes passed as `ax=` under the plotly backend.
   `pipeline` (GH #285).
 - **Title styling on every frame.** `title_kwargs=dict(size=, weight=,
   family=, color=, y=)` is applied by hypertools' own title updater,
-  including per-segment `title=` lists; `title_color=` takes one colour per
+  including per-segment `title=` lists; `title_color=` takes one color per
   segment or a callable; `title_wrap=N` hard-wraps titles (`\n` on
   matplotlib, `<br>` on plotly). A resolved `font=` now reaches per-segment
   animation titles too (previously only rcParams could size them) (GH #285).
@@ -299,9 +299,9 @@ and a matplotlib Axes passed as `ax=` under the plotly backend.
 - **Legends under matrix / mixture hue.** A matrix-valued `hue=` (or
   `hue_mode='mixture'`) now draws a legend with one swatch per hue column
   instead of dropping it; `legend_kwargs=` reaches `ax.legend` and
-  `legend_colors=` recolours or replaces the entries (GH #285).
-- **The resolved colour scale is exposed.** `return_model=True` bundles
-  `['colors']` (kind, palette, cmap, norm, vmin, vmax, per-group colours,
+  `legend_colors=` recolors or replaces the entries (GH #285).
+- **The resolved color scale is exposed.** `return_model=True` bundles
+  `['colors']` (kind, palette, cmap, norm, vmin, vmax, per-group colors,
   labels) and `HyperAnimation.colors` carries the same object, so a companion
   panel can reuse the library's mapping (GH #285).
 - **Synthetic datasets from `hyp.load`.** `hyp.load('random_walk' | 'helix' |
@@ -351,9 +351,9 @@ and a matplotlib Axes passed as `ax=` under the plotly backend.
   dispersion (or `score_metric='isc'`) before and after alignment;
   `hypertools.align.score.alignment_score` is the standalone form (GH #285).
 - **`palette=` takes a `{category: color}` dict and per-dataset palette
-  specs.** Unnamed categories keep their default-palette colour and unknown
+  specs.** Unnamed categories keep their default-palette color and unknown
   keys raise; a list with one palette spec per dataset (`['image:a.png',
-  'image:b.png', 'viridis']`) colours each dataset from its own palette;
+  'image:b.png', 'viridis']`) colors each dataset from its own palette;
   `image_palette()` gains `max_luminance=`/`min_luminance=`, also as
   `palette='image:p.png?max_luminance=0.6'` (GH #285).
 - **A synthetic LSL outlet.** `hypertools.io.lsl.synthetic_outlet(name,
@@ -378,7 +378,7 @@ and a matplotlib Axes passed as `ax=` under the plotly backend.
   non-string raised.
 - **Input datatype handling defers to datawrangler.** The shared coercion
   layer (`format_data`, `get_type`/`get_dtype`, `as_dataframe`, the
-  `predict`/`impute` normalisation, `io.streaming.is_stream`) classifies
+  `predict`/`impute` normalization, `io.streaming.is_stream`) classifies
   inputs with `dw.zoo` predicates and converts with `dw.wrangle` instead of
   its own `isinstance` ladders, so polars DataFrames, LazyFrames and Series
   are accepted wherever pandas is -- `plot`, `reduce`, `align`, `cluster`,
@@ -390,7 +390,7 @@ and a matplotlib Axes passed as `ax=` under the plotly backend.
   `Pipeline` steps directly), `align`, `stack`, `damage`, `apply_model`,
   the fitted `Normalizer`, `save`/`load`, `text2mat` and the impute
   backtest's `truth=`/`mask=` read any frame backend datawrangler
-  recognises through the shared predicates; a one-column DataFrame of
+  recognizes through the shared predicates; a one-column DataFrame of
   labels as `hue=` no longer raises `IndexError`, and `text2mat` accepts a
   Series of documents. A static test (`tests/test_datatype_gate.py`) keeps
   hand-rolled pandas/numpy type checks out of the library, and
@@ -473,7 +473,7 @@ previously ambiguous or silently lossy.
   index type: MultiIndex` from deep inside pandas (row axis) or forecast the
   flattened frame (column axis). **This is deliberately asymmetric:** a
   ROW-hierarchical frame inside a list passed to `hyp.plot` keeps its
-  documented warn-and-flatten behaviour, unchanged in 1.1. Hierarchy
+  documented warn-and-flatten behavior, unchanged in 1.1. Hierarchy
   expansion is defined for a bare frame only.
 
 - **`hyp.predict` now rejects a column hierarchy whose groups do not name
@@ -520,8 +520,8 @@ previously ambiguous or silently lossy.
   disappearing. Because `nan != nan` and pandas mints a separate NaN object
   per group key, keeping them was not enough on its own: a two-sector frame
   with a missing Market label produced two duplicate means and two `'nan'`
-  legend entries. Labels are now canonicalised NA-aware (`np.nan`, `None`
-  and `pd.NA` all normalise to one sentinel) for prefix grouping, top-level
+  legend entries. Labels are now canonicalized NA-aware (`np.nan`, `None`
+  and `pd.NA` all normalize to one sentinel) for prefix grouping, top-level
   uniqueness and style lookup, on both axes. The original label values are
   preserved in the returned keys and in the legend; the sentinel is never
   user-visible.
@@ -659,10 +659,10 @@ input too.
   toolkit's error chained as the cause.
 - **`alpha=` was ignored by `animate='morph'`.** The value landed on the
   per-dataset line artists, which a morph keeps hidden, and never on the one
-  travelling point cloud that is drawn (plotly dropped it the same way), so
+  traveling point cloud that is drawn (plotly dropped it the same way), so
   fading the cloud meant reaching into the figure with `set_alpha` after the
   call. The cloud now takes the alpha on the same hold/transition schedule as
-  its colour: a hold draws the held dataset's alpha, a transition eases from
+  its color: a hold draws the held dataset's alpha, a transition eases from
   the departing dataset's alpha to the arriving one's, and a scalar `alpha=`
   is constant throughout. Plots that pass no `alpha=` are unchanged.
 - **Drawing into a caller-supplied `ax=` warned `Glyph 8722 (MINUS SIGN)
@@ -689,7 +689,7 @@ input too.
   sign-flipped value; it now uses `slogdet`, identical to rounding wherever
   the old value was representable.
 - **`labels=` annotations were drawn on pyplot's current axes, not the `ax=`
-  passed in,** so panel labels stacked on one axes; and a colour-list
+  passed in,** so panel labels stacked on one axes; and a color-list
   colorbar (`color=['red', ...]`) raised `IndexError` (GH #285).
 - **`hyp.plot(docs, vectorizer='all-MiniLM-L6-v2')` crashed with the default
   `semantic=`/`corpus=`.** The gensim-only auto-skip of the topic-model stage
@@ -704,7 +704,7 @@ input too.
 - **Every continuous-hue matplotlib plot rendered fully opaque**, whatever
   `alpha=` was set to. `_apply_multicolor_lines` never read alpha from its
   per-trace kwargs, and the artists carrying the alpha are exactly the
-  `Line2D`s it removes and replaces with a colour-graded collection.
+  `Line2D`s it removes and replaces with a color-graded collection.
 
 - **The `return_model=True` pipeline could not be re-applied to a
   column-hierarchical frame.** Its steps are fit on the frame's GROUPS, each
@@ -722,10 +722,10 @@ input too.
   passed through.
 
 - **plotly discarded the per-trace alpha under a continuous `hue=`** for the
-  same figures, from the other direction: the colour serializer drops the
+  same figures, from the other direction: the color serializer drops the
   4th channel and nothing set the trace `opacity`, so a hue plot that
   matplotlib drew at `alpha=0.7` rendered fully opaque on plotly. Line and
-  marker colours now carry the alpha on both backends (hue-coloured markers
+  marker colors now carry the alpha on both backends (hue-colored markers
   ignored `alpha=` on matplotlib too until the release review).
 
 - **With `ndims=1`, matplotlib drew the `predict=` overlay at x = 0..t**
@@ -737,13 +737,13 @@ input too.
   now draw the continuation.
 
 - **A marker-only `fmt` (e.g. `'o'`) with `hue=` and `predict=` drew the
-  forecast in a different colour on each backend.** The final-observed-hue
+  forecast in a different color on each backend.** The final-observed-hue
   anchor was applied on matplotlib's line path only, and on plotly for every
   `fmt`. It is now on both paths on both backends.
 
-- **plotly's 1-D marker branch drew a continuous hue in one flat colour.**
-  The 2-D and 3-D branches already passed the per-point colour array
-  through; the 1-D one fell back to the single trace colour, so all points
+- **plotly's 1-D marker branch drew a continuous hue in one flat color.**
+  The 2-D and 3-D branches already passed the per-point color array
+  through; the 1-D one fell back to the single trace color, so all points
   came out identical while matplotlib scattered them per point.
 
 - **A hierarchy silently discarded `legend=[...]`, and `legend=False`.**
@@ -751,13 +751,13 @@ input too.
   unconditionally, so a caller's list vanished without a word (while every
   SIBLING kwarg the hierarchy overrides -- `color`/`colors`, `linewidth`,
   `alpha` -- warns) and an explicit opt-out still drew a legend. `legend=` is
-  now HONOURED under a hierarchy: a list **renames the top-level groups**
+  now HONORED under a hierarchy: a list **renames the top-level groups**
   (one entry per unique top-level index value, in first-appearance order --
   the same convention `linestyle=` already used; any other length raises
   `ValueError` naming both counts), and `legend=False` suppresses the
   automatic legend. `legend=True`/omitted still labels by index value.
   `legend=False` suppresses the LEGEND only: `colorbar=True` still names one
-  segment per top-level group, since the colorbar is the colour key for the
+  segment per top-level group, since the colorbar is the color key for the
   drawn groups rather than a legend.
 
 - **`names=` ALONE raised "pass dataset names via names= OR a legend= list,
@@ -779,21 +779,21 @@ input too.
   `name=None`. Any leading-underscore label now becomes `name=None`; which
   traces appear in the legend is unchanged.
 
-- **plotly and matplotlib serialized colours differently.** plotly's two
-  colour helpers disagreed -- one truncated each channel where the other
-  rounded -- so the same colour came out `rgb(219,95,87)` on matplotlib and
+- **plotly and matplotlib serialized colors differently.** plotly's two
+  color helpers disagreed -- one truncated each channel where the other
+  rounded -- so the same color came out `rgb(219,95,87)` on matplotlib and
   `rgb(219,94,86)` on plotly, and an anchored forecast could not equal the
-  per-point colour it was copied from. Both round now.
+  per-point color it was copied from. Both round now.
 
-- **`legend=` as an ndarray/Series/Index mislabelled every trace.** All
+- **`legend=` as an ndarray/Series/Index mislabeled every trace.** All
   three are accepted label containers, but the per-trace length check and
   the label assignment tested for `list`/`tuple` only, so the whole
   container was handed to matplotlib as EACH artist's label -- two traces
   both named `['a' 'b']`, plus a matplotlib "Passing label as a length 2
   sequence" warning -- while the hierarchy path handled the same containers
-  correctly. A `tuple` labelled the traces but missed the colorbar's
+  correctly. A `tuple` labeled the traces but missed the colorbar's
   narrower `list` test, so `legend=('A', 'B'), colorbar=True` drew a
-  colorbar reading `1`, `2`. Every accepted container is now normalised to a
+  colorbar reading `1`, `2`. Every accepted container is now normalized to a
   list where it is type-checked, so one rule covers them all; a 0-d array
   (`np.array('a')`) counts as ONE label, exactly as `legend='a'` does.
 
@@ -825,17 +825,17 @@ Because 1.1.0 had not been published, they ship in it.
   complete, `attrs['best']` is `None`, `attrs['best_score']` is NaN and
   `attrs['beats_baseline']` is `None`; `attrs['beats_baseline']` is also
   `None` when the baseline row is itself incomplete. Each case warns.
-- **`hyp.impute(truth=, mask=)` matches labelled data by label.** `truth`
+- **`hyp.impute(truth=, mask=)` matches labeled data by label.** `truth`
   and `mask` were checked for shape and then compared cell by position, so
   a truth DataFrame with its columns or rows in another order was scored
   against the wrong cells without a word (an MAE of 18.83 or 1.83 where the
-  answer is 3.67). When the data and `truth`/`mask` are both labelled, the
+  answer is 3.67). When the data and `truth`/`mask` are both labeled, the
   same labels in a different order are now reordered to the data's, and
   labels that differ (or are repeated and not in identical order) raise a
   `ValueError` naming the axis and the labels. A default `0..n-1` index
   counts as labels; a polars frame is matched by column name and row
   position. Bare arrays are compared by position as before, so
-  `truth.to_numpy()` is the way to compare two differently-labelled frames
+  `truth.to_numpy()` is the way to compare two differently-labeled frames
   cell for cell. A wrong-shaped array `truth` now gets hypertools' shape
   message instead of a pandas internals error.
 - **A backtest pairs forecast and held-out columns by label.** A custom
@@ -863,7 +863,7 @@ Because 1.1.0 had not been published, they ship in it.
 - **`explore=True` hover labels stay inside the window.** The label was
   always drawn up and to the left of the hovered point, so a point near the
   left edge of a native window had its label cut off. It now opens toward
-  the centre of the axes.
+  the center of the axes.
 - **plotly names and groups every leaf of a nested dataset list by its
   group.** For `hyp.plot([[a, b], [c, d]], backend='plotly')` only each
   group's first leaf carried the group's label; the others fell back to
@@ -909,28 +909,28 @@ Because 1.1.0 had not been published, they ship in it.
   `'truth'` legend entry is on every frame, and static plots and
   `animate='spin'` still draw it in full.
 
-- **Default forecast group colours no longer repeat an observed line's
-  colour.** `forecast_hue=`/`forecast_cluster=` without
+- **Default forecast group colors no longer repeat an observed line's
+  color.** `forecast_hue=`/`forecast_cluster=` without
   `forecast_palette=` started the palette over, so forecast group 0 was
-  drawn in exactly dataset 0's colour: `hyp.plot([a, b, a + 2, b + 2],
+  drawn in exactly dataset 0's color: `hyp.plot([a, b, a + 2, b + 2],
   predict='Kalman', t=6, forecast_cluster='KMeans', forecast_n_clusters=2)`
-  drew its two groups in `#db5f57` and `#57d3db`, the colours of datasets
-  0 and 2. The groups now continue the figure's `palette=` past the colour
+  drew its two groups in `#db5f57` and `#57d3db`, the colors of datasets
+  0 and 2. The groups now continue the figure's `palette=` past the color
   slots the observed data takes (its datasets or `hue=`/`cluster=` groups,
   plus any an earlier call took on a reused `ax=`): the same call draws
   `#dbc257` and `#57db80`, the free slots of 'hls' at 8, and `palette='Set2'`
-  gives Set2's fifth and sixth colours. Same on both backends, static and
+  gives Set2's fifth and sixth colors. Same on both backends, static and
   animated; `panels=` resolves the default against the whole grid, so each
-  label keeps the single-axes figure's colour. An explicit
+  label keeps the single-axes figure's color. An explicit
   `forecast_palette=` overrides exactly as before.
 
-- **A continuous `hue=` no longer repaints an explicitly coloured
+- **A continuous `hue=` no longer repaints an explicitly colored
   forecast on matplotlib.** Under a continuous `hue=` the matplotlib
-  backend recoloured every forecast in its trace's final hue colour,
+  backend recolored every forecast in its trace's final hue color,
   discarding `forecast_hue=`/`forecast_cluster=`/`forecast_palette=` (and a
-  colour letter in `forecast_fmt=`), static and animated, while plotly kept
-  them -- the two backends drew the same call in different colours. The
-  explicit colour now wins on both, as `forecast_fmt=`'s docs say.
+  color letter in `forecast_fmt=`), static and animated, while plotly kept
+  them -- the two backends drew the same call in different colors. The
+  explicit color now wins on both, as `forecast_fmt=`'s docs say.
 
 - **No leftover "install the extra first" instructions.** Every optional
   dependency goes through the on-demand installer, and the stale prose
@@ -956,7 +956,7 @@ Because 1.1.0 had not been published, they ship in it.
   sooner). Also fixed the `hypertools.load` docstring example, which failed
   under Sphinx's doctest builder (`NameError: hypertools`); the docs CI job
   now runs that builder.
-- **Plotly animation export honours `hyp.set_autoinstall(False)` and
+- **Plotly animation export honors `hyp.set_autoinstall(False)` and
   raises the documented exception types.** The frames of a plotly
   animation's GIF/PNG/video export are rendered in a separate worker
   process, which now inherits the caller's installation setting: with
@@ -989,14 +989,14 @@ Because 1.1.0 had not been published, they ship in it.
   them; a superseded direct call is now released. A handle made for a
   `with` block is never collapsed before it is entered, so creating a block
   in one thread and entering it later is safe.
-- **The plotly backend honours the colour letter of a data `fmt=` string**
+- **The plotly backend honors the color letter of a data `fmt=` string**
   (`'r-'`, `['g--', 'b:']`) exactly as matplotlib does, including animated
-  plots and `panels=` cells; it drew the palette colour before.
+  plots and `panels=` cells; it drew the palette color before.
 - **Matrix colormaps, image palettes and mixed `manip` lists.** The
-  matrix colormap honours every inherited Colormap operation (integer
+  matrix colormap honors every inherited Colormap operation (integer
   sampling, `resampled()`, `reversed()`, `set_under`/`set_over`, bad and
   NaN entries per element); image palettes interpolate exactly at any
-  count, so more than 256 categories still get distinct colours; a polars
+  count, so more than 256 categories still get distinct colors; a polars
   `forecast_hue` Series is partitioned under `panels=` like a pandas one;
   and `manip` lists mixing an unnamed array with named frames keep every
   frame's index (dated or irregular) while lists of named frames pass
@@ -1015,10 +1015,10 @@ Because 1.1.0 had not been published, they ship in it.
   relabel anything. A 1-D array is one column (n observations of one
   feature) for `hyp.manip`, as it already was for `hyp.normalize`,
   `hyp.reduce` and the Manipulator classes; `hyp.manip` used to read it as
-  a single row. `MatrixColormap` follows matplotlib's full extreme-colour
+  a single row. `MatrixColormap` follows matplotlib's full extreme-color
   rules (under/over/bad keep the alpha they were set with, `-inf`/`+inf`
   are under/over rather than bad, and an `alpha=` override reaches the
-  extremes but not a transparent bad colour). `legend=` accepts a polars
+  extremes but not a transparent bad color). `legend=` accepts a polars
   Series (any series-like) of labels, on both backends.
 - **A repeated metric in `metrics=` raises `ValueError` that says which
   metric is repeated.** `hyp.predict(..., holdout=k, metrics=['mae', 'MAE'])`
@@ -1046,13 +1046,13 @@ Because 1.1.0 had not been published, they ship in it.
   (`hyp.predict(x, return_model=True)`) now reach each panel as its own
   entry, in both `panel_fit` modes and on both backends, matching the
   single-axes figure; previously they raised inside the panel or drew
-  every forecast in the first colour. Shared-fit grids also hand back
+  every forecast in the first color. Shared-fit grids also hand back
   their one fitted pipeline as `bundle['pipeline']` and in every
   `panel_models[i]['pipeline']`, so held-out data can be projected without
   refitting (it was `None`).
-- **`panels=` keeps forecast labels that share a colour.** `forecast_hue=` /
+- **`panels=` keeps forecast labels that share a color.** `forecast_hue=` /
   `forecast_cluster=` with a `forecast_palette=` that gives two labels the
-  same colour (`['red', 'red']`, or a palette name that cycles) raised
+  same color (`['red', 'red']`, or a palette name that cycles) raised
   `ValueError: palette= supplies N color(s)` inside the panels; each panel
   now receives one palette slot per label, matching the single-axes figure.
 - **`panels=` on 2-column or 1-column data with the default `ndims=` draws
@@ -1068,16 +1068,16 @@ Because 1.1.0 had not been published, they ship in it.
   across a `color=` or categorical `hue=` call. Independent panels mixing
   one- and three-column datasets draw the series as row index against value
   on the 3-D cell's floor instead of crashing.
-- **`panels=` keeps the joint figure's cluster colours, forecasts narrow
+- **`panels=` keeps the joint figure's cluster colors, forecasts narrow
   panels in their own space, and a marker-only hue no longer advances the
-  palette.** Shared clustered panels keep the joint cluster-to-colour
+  palette.** Shared clustered panels keep the joint cluster-to-color
   mapping and legend names when a slice lacks a cluster (two panels each
   drew red); a 1-/2-column panel of a mixed-width independent grid
   forecasts, reads `truth=` and reports its bundle on its own analyzed
   rows (the individual call's numbers; the display padding used to feed
   the forecaster) and only its drawing is lifted into the 3-D cell; a
   categorical `hue=` with a marker-only fmt consumes no palette slot on a
-  composed axes/figure/cell, and its group colours beat a fmt colour letter
+  composed axes/figure/cell, and its group colors beat a fmt color letter
   on the marker path as on the line path.
 - **`panels=` decides each cell's projection from the analyzed data** (after
   `manip=`/`pipeline=`/`reduce=`), not the raw column count: a Delay-expanded
@@ -1116,7 +1116,7 @@ Because 1.1.0 had not been published, they ship in it.
   3-D cells back the camera off so the cube stays
   inside a narrow cell; room for the legends/colorbars is reserved
   beside every cell (the default-sized figure is widened by it, an
-  explicit `size=` is honoured verbatim).
+  explicit `size=` is honored verbatim).
 - **`panels=` colorbars on matplotlib take their room from their own
   panel.** A `colorbar=True` panel grid ran the single-axes
   figure-widening placement once per panel, stacking every colorbar over
@@ -1130,7 +1130,7 @@ Because 1.1.0 had not been published, they ship in it.
   further than a narrow cell needed (the constant was the cube's width
   relative to its OWN height rather than the scene's), so three 3-D
   panels sat far apart with small cubes and titles floating well above
-  them. 3-D cells are now square and centred (an `Axes3D`'s equal box
+  them. 3-D cells are now square and centered (an `Axes3D`'s equal box
   aspect), the gaps are `tight_layout`'s 20 px (40 px between 2-D cells,
   for tick labels), each row reserves what its titles need, and the cube
   fills its cell within a few pixels of the matplotlib panel's.
@@ -1138,18 +1138,18 @@ Because 1.1.0 had not been published, they ship in it.
   colorbars.** Three 10-entry legends beside three default-size panels
   shrank the cubes to 1.3 in; the matplotlib figure now widens by the
   same 1.1 in per column the plotly grid reserves, and an explicit
-  `size=` is honoured verbatim.
-- **`palette=` colour lists behave as in 1.0.0 again.** A list shorter than
+  `size=` is honored verbatim.
+- **`palette=` color lists behave as in 1.0.0 again.** A list shorter than
   the dataset count cycles when there is no `hue=`; an empty palette raises
   `ValueError` instead of `StopIteration`; a per-dataset list whose entries
   are `{category: color}` dicts merges them by category name; and any other
   per-dataset form under a categorical `hue=` raises an error carrying the
   real dataset and category counts.
-- **NaN in a continuous `hue=` no longer poisons the colour range.** The
-  `vmin`/`vmax` of the colour scale and the colorbar are computed over the
+- **NaN in a continuous `hue=` no longer poisons the color range.** The
+  `vmin`/`vmax` of the color scale and the colorbar are computed over the
   finite values only.
-- **Legend and colour details.** `legend_kwargs={'fontsize': ...}` is
-  honoured together with `font=`; `bundle['colors']['categories']` contains
+- **Legend and color details.** `legend_kwargs={'fontsize': ...}` is
+  honored together with `font=`; `bundle['colors']['categories']` contains
   RGB tuples for the blend kind when `legend_colors=` is passed; and a nested
   `hue=` whose sub-list does not match its dataset is identified in the
   error.
@@ -1226,7 +1226,7 @@ Because 1.1.0 had not been published, they ship in it.
   (floats are matplotlib day numbers on both); no `'dataset 1'` y label
   after a reducing `reduce=`; a 3-D `ax=` with `ndims<=2` raises instead
   of drawing a flat 3-D line; a `TimedeltaIndex` is drawn in a readable
-  unit with a labelled axis.
+  unit with a labeled axis.
 - **NaN rows introduced by a trailing `Smooth(center=False)`** are reported
   as the manip stage's doing, with the `min_periods=1` hint, instead of
   the all-features-missing message.
@@ -1250,10 +1250,10 @@ Because 1.1.0 had not been published, they ship in it.
 - **Isomap fits stay quiet about scipy's sparse-matrix efficiency.** The
   dozen `SparseEfficiencyWarning`s scikit-learn's graph completion
   triggers are silenced during the fit; sklearn's own warning about a
-  disconnected neighbour graph (the user's `n_neighbors`) still shows.
+  disconnected neighbor graph (the user's `n_neighbors`) still shows.
 - **A `truth=` overlay's legend glyph shows its markers.** The truth is
   drawn as a solid line with a marker on every observation, but its
-  `'truth'` legend entry was a bare solid line in the trace's own colour,
+  `'truth'` legend entry was a bare solid line in the trace's own color,
   identical to the observed trace's entry. The curve now keeps the marker
   (drawing none of its own) so the legend can tell them apart.
 - **2-D `density=` layers fade out inside their own grid.** Each KDE grid
@@ -1289,18 +1289,18 @@ Because 1.1.0 had not been published, they ship in it.
   dotted line. The single-model form now lists its forecast once, under
   the model's name (the name `hyp.predict(x, model=[spec])` gives it),
   static and animated, on both backends, in the order data, forecasts,
-  truth. The entry's glyph wears the forecasts' own style, in their colour
+  truth. The entry's glyph wears the forecasts' own style, in their color
   when they share one and in a neutral gray when one model's forecasts of
-  several datasets are drawn in several colours (the first dataset's
-  colour used to pose as the model's).
-- **A collection of models keeps each dataset's colour and takes a
-  linestyle per model.** `predict=['Kalman', 'ARIMA']` coloured every
-  forecast by model from a `'husl'` palette whose first colour was the
+  several datasets are drawn in several colors (the first dataset's
+  color used to pose as the model's).
+- **A collection of models keeps each dataset's color and takes a
+  linestyle per model.** `predict=['Kalman', 'ARIMA']` colored every
+  forecast by model from a `'husl'` palette whose first color was the
   first dataset's own, so two datasets under two models were four lines
   in two indistinguishable pairs, and which series a forecast continued
-  could not be read at all. Forecasts now inherit their dataset's colour
+  could not be read at all. Forecasts now inherit their dataset's color
   (as the single-model form always did) and cycle solid, dashed, dotted,
-  dash-dot by model; `forecast_palette=` opts back into one colour per
+  dash-dot by model; `forecast_palette=` opts back into one color per
   model, and `forecast_fmt=` still replaces the cycle.
 - **`truth=` on plotly marks every observation, not every vertex.** The
   antialiased truth curve carried a marker on each of its ~900 drawn
@@ -1308,16 +1308,16 @@ Because 1.1.0 had not been published, they ship in it.
   rows only, at the size the matplotlib overlay draws them.
 - **A caller's axes draw in the palette, and a second call continues
   it.** `hyp.plot(x, ax=ax)` and every matplotlib `panels=` cell drew
-  the datasets in the colour cycle their figure was created with
+  the datasets in the color cycle their figure was created with
   (matplotlib's default blue/orange) while `return_model`'s `colors` and
   the plotly grid reported the hls palette; the axes now take the
   palette. Drawing a second time into the same axes or plotly figure
   restarted the palette, so two composed walks were both red; the second
   call now continues it from where the first stopped, on both backends.
-- **A recoloured forecast keeps its trace's alpha.** `forecast_palette=`,
-  `forecast_hue=` and `forecast_cluster=` recoloured the forecasts and
+- **A recolored forecast keeps its trace's alpha.** `forecast_palette=`,
+  `forecast_hue=` and `forecast_cluster=` recolored the forecasts and
   still halved their alpha, so Set1 forecasts at 0.35 over a hierarchy's
-  0.7 leaves could not be found; the colour is what tells them apart, so
+  0.7 leaves could not be found; the color is what tells them apart, so
   they are drawn at the trace's own alpha. The forecast legend glyph is
   never drawn below 0.8 alpha either (it copied its forecasts' 0.35 and
   vanished).
@@ -1342,7 +1342,7 @@ Because 1.1.0 had not been published, they ship in it.
   the right run.** One dataset split into two runs under two models gives
   two forecasts for two runs, so the step that matches each forecast to
   its run -- which only ran when the counts differed -- was skipped and
-  forecast i continued run i: Kalman took the earlier run's colour, ARIMA
+  forecast i continued run i: Kalman took the earlier run's color, ARIMA
   the final run's. It runs for every collection under regrouping now. The
   animated modes also looked the reveal schedule up by forecast index
   rather than by source dataset, so two models x regrouping x
@@ -1352,23 +1352,23 @@ Because 1.1.0 had not been published, they ship in it.
   `hyp.predict([a, b], return_model=True)` forecaster refused as a
   dataset-count mismatch; `Forecaster.for_dataset(i)` now binds the view
   the schedule needs.
-- **Plotly honours a colour letter and markers in `forecast_fmt=`.**
+- **Plotly honors a color letter and markers in `forecast_fmt=`.**
   `forecast_fmt='ro:'` drew red dotted forecasts with round markers on
-  matplotlib and inherited-colour dotted lines without markers on plotly,
+  matplotlib and inherited-color dotted lines without markers on plotly,
   static and animated, legend keys included.
-- **Plotly animations keep a recoloured forecast's alpha too.** The
-  animated branch computed the halved alpha before the recolouring rule
+- **Plotly animations keep a recolored forecast's alpha too.** The
+  animated branch computed the halved alpha before the recoloring rule
   applied, so `forecast_palette=` forecasts animated at 0.35 while the
   static figure drew them at 0.7.
 - **A second call into the same plotly grid cell continues the palette**,
   as a second call into the same matplotlib axes does.
-- **Plotly forecast legend keys compare colour, not opacity.** With
+- **Plotly forecast legend keys compare color, not opacity.** With
   `alpha=[1, .4]` and an all-red forecast palette every key turned gray
   because the RGBA strings differed only in alpha.
 - **`legend_colors=` keeps its contract beside forecasts.** Explicit
   `(label, color)` pairs define the legend outright, so no forecast or
   `truth` entry is added to them (and on plotly the data traces stay out
-  of it too); a plain colour list is applied to the FINAL legend, after
+  of it too); a plain color list is applied to the FINAL legend, after
   the forecast/truth entries, instead of being refused against the data
   entries alone.
 - **Matplotlib panel legends clear their colorbars.** A panel with
@@ -1380,13 +1380,13 @@ Because 1.1.0 had not been published, they ship in it.
   of being replaced by the default placement beside the cell, and
   re-laying out the grid keeps the top margin a multi-line title had
   reserved.
-- **A `forecast_fmt=` colour letter survives a regrouped animation.**
+- **A `forecast_fmt=` color letter survives a regrouped animation.**
   Under `hue=`/`cluster=` the animated modes repaint each live forecast
-  in its head run's colour unless the colour is pinned, and only
+  in its head run's color unless the color is pinned, and only
   `forecast_hue=`/`forecast_cluster=`/`forecast_palette=` counted as
   pinning: `forecast_fmt='ro:'` forecasts animated cyan under red legend
-  keys on matplotlib, and plotly's per-frame colours halved the alpha a
-  recoloured forecast keeps.
+  keys on matplotlib, and plotly's per-frame colors halved the alpha a
+  recolored forecast keeps.
 - **Mixture-hue legends list forecasts and `truth`.** A matrix `hue=`
   builds its legend from swatches (clearing `legend=` on the way), and
   the forecast/truth entries were only added when `legend=` was still
@@ -1434,7 +1434,7 @@ Because 1.1.0 had not been published, they ship in it.
 - **A `hue=` surface matches the points beneath it.** Each hull vertex
   blended every point in its dataset with inverse-squared-distance weights;
   in 3-D the many distant points outweighed the near ones, so the hull took
-  the dataset's washed-out mean colour. Vertices now blend their nearest
+  the dataset's washed-out mean color. Vertices now blend their nearest
   points, on both backends.
 - **Markers sit on the observations.** `'o-'`, `markers=` and
   `forecast_fmt='ro:'` put a marker on every antialiased vertex (about 900
@@ -1443,12 +1443,12 @@ Because 1.1.0 had not been published, they ship in it.
   nearest each sample), on both backends. An explicit `marker=` wins over
   the fmt marker on matplotlib, and a continuous hue with `'o-'` in 1-D/2-D
   shows its markers on plotly.
-- **Hue transparency.** Continuous-hue markers honour `alpha=` on both
-  backends, and translucent plotly 3-D lines keep their colour instead of
+- **Hue transparency.** Continuous-hue markers honor `alpha=` on both
+  backends, and translucent plotly 3-D lines keep their color instead of
   washing out to cyan.
 - **Plotly hover labels name what you point at.** They read "trace 0"; every
   data trace now carries its legend label (category, dataset, series column,
-  model or 'truth'), a lone unlabelled dataset shows only its coordinates,
+  model or 'truth'), a lone unlabeled dataset shows only its coordinates,
   and animated legends no longer grow entry by entry.
 - **Plotly subplot cells.** Colorbars no longer land on the next cell, an
   untitled call keeps the cell's title, a dimensionality mismatch raises a
@@ -1461,18 +1461,18 @@ Because 1.1.0 had not been published, they ship in it.
 - **Plotly date axes show the same dates in every time zone.** Numeric dates
   were drawn in the viewer's local time, so a series starting at midnight on
   1 January began on the evening of 31 December in New York.
-- **Composing into `ax=` no longer repeats a palette colour.** `'hls'` drawn
-  2 + 2 now gives the four-colour `'hls'` set, and the bundle's `colors` and
-  the colorbar show the colours actually drawn.
-- **Dict-list palettes colour marker plots.** `fmt='o'` ignored a per-
+- **Composing into `ax=` no longer repeats a palette color.** `'hls'` drawn
+  2 + 2 now gives the four-color `'hls'` set, and the bundle's `colors` and
+  the colorbar show the colors actually drawn.
+- **Dict-list palettes color marker plots.** `fmt='o'` ignored a per-
   dataset list of `{category: color}` dicts.
 - **Per-dataset and nested `labels=` survive `hue=`/`cluster=`** instead of
   crashing on both backends; label arrays and Series are accepted.
 - **Legends.** A nested-list input's legend names its outer groups instead
-  of four leaves in two colours; cluster and integer-hue line legends list
+  of four leaves in two colors; cluster and integer-hue line legends list
   categories in order (0, 1, 2), as the marker path did; `legend=False` wins
   over `names=`; `panels=` splits a plain `legend_colors=` list per panel;
-  and `legend_colors=` accepts one colour per data entry beside forecast and
+  and `legend_colors=` accepts one color per data entry beside forecast and
   truth entries.
 - **Label connectors and box edges are visible on matplotlib.** Under the
   seaborn style they were drawn white, so labels floated with no visible
@@ -1482,8 +1482,8 @@ Because 1.1.0 had not been published, they ship in it.
   fresh process.
 - **Two-column data draws into a 2-D `ax=`** instead of raising "the plot is
   3D".
-- **0-255 colour lists raise `ValueError`.** `palette=[[255, 128, 0], ...]`
-  was silently read as a data matrix, reordering and rescaling the colours;
+- **0-255 color lists raise `ValueError`.** `palette=[[255, 128, 0], ...]`
+  was silently read as a data matrix, reordering and rescaling the colors;
   the error says to divide by 255 or pass a DataFrame.
 - **The NaN-hue warning counts observations** (it counted antialiased
   vertices) and points at the caller's line.
@@ -1498,9 +1498,9 @@ Because 1.1.0 had not been published, they ship in it.
   now raises `ValueError`.
 - **Marker-only `hue=`/`cluster=` always refuses forecasts and warns**, even
   when the category count equals the dataset count (the forecasts were
-  silently drawn in the wrong category's colour).
-- **The 'truth' legend key is gray when truths span several colours**,
-  instead of always showing dataset 0's colour.
+  silently drawn in the wrong category's color).
+- **The 'truth' legend key is gray when truths span several colors**,
+  instead of always showing dataset 0's color.
 - **Animated forecasts on two-column data no longer crash** with "too many
   values to unpack".
 - **`xlim=(None, date)` works on date axes**; the open side takes the data
@@ -1542,7 +1542,7 @@ Because 1.1.0 had not been published, they ship in it.
   dict spec now reach `manip`/`align` models, and a spec's `'args'` reach
   streaming and `text2mat` models.
 - **`hyp.plot(x, pipeline=p)` draws the pipeline's clusters.** A fitted
-  trailing cluster step colours the figure with the fit figure's colours; it
+  trailing cluster step colors the figure with the fit figure's colors; it
   was dropped silently.
 - **Aligner classes accept arrays.** `HyperAlign().fit(xs).transform(ys)` on
   a list of NumPy arrays, or a single array, raised "Unsupported datatype";
@@ -1592,23 +1592,23 @@ Because 1.1.0 had not been published, they ship in it.
   the rows unchanged, and reveal timing and frame counts are unchanged.
 - **Every morph transition frame moves.** Transitions sampled their own
   endpoints, so a 2-frame transition only repeated the hold clouds.
-  Transition frames now fall strictly between the clouds in position, colour
+  Transition frames now fall strictly between the clouds in position, color
   and `alpha=`. The default morph dot is 4 pt on both backends (it was 1.5
   pt, sub-pixel on plotly).
 - **Titles set in an `on_frame=` callback are visible on 3-D animations.**
   With no `title=`, the `plot()` docstring's own example drew its title
   above the canvas on matplotlib and cut it off on plotly; `on_frame=` now
   reserves the title margin.
-- **`companion=` panels use the trajectory's colour** instead of
+- **`companion=` panels use the trajectory's color** instead of
   matplotlib's default blue; an explicit `color=` still wins.
 - **Short streams warn about clamped samples.** The warning needed 20 post-
   head samples, so a short stream could draw most of its points on the box
   surface silently; the clamped fraction is now checked again when streaming
   stops.
 - **Plotly animations keep a continuous hue on the moving data.** 3-D
-  windows were painted in the trajectory's first colours, and 2-D lines
+  windows were painted in the trajectory's first colors, and 2-D lines
   never animated: the whole trajectory stayed on screen while one segment
-  flickered. Heads and trails now carry their own colours in every reveal
+  flickered. Heads and trails now carry their own colors in every reveal
   style.
 - **Plotly 3-D lines are as thick as you ask.** WebGL drew Scatter3d lines
   at half the requested width; they now match the 2-D line and matplotlib,
@@ -1643,7 +1643,7 @@ Because 1.1.0 had not been published, they ship in it.
   and return `fig=None`, so `show=False` now costs the (small) drawing time
   as well.
 - **matplotlib `axis_scale='data'` plots have no grid.** Seaborn's
-  `whitegrid` style, which hypertools draws under, left a grey grid on
+  `whitegrid` style, which hypertools draws under, left a gray grid on
   data-scale axes (static, animated and `ndims=1` series plots)
   that the plotly backend never drew. Both backends now draw none. A
   caller's own `ax=` keeps whatever grid it already has.
@@ -1658,7 +1658,7 @@ Because 1.1.0 had not been published, they ship in it.
   configured instance such as `reduce=PCA(n_components=2)`, and a dict spec
   that pins it (`{'model': 'PCA', 'kwargs': {'n_components': 2}}`), were
   reduced to that one dimensionality at every point of the sweep while the
-  curve labelled the points 2, 3, 4, ... (on 60 x 6 random data: 0.739 four
+  curve labeled the points 2, 3, 4, ... (on 60 x 6 random data: 0.739 four
   times, against 0.739, 0.852, 0.930, 0.974 for `reduce='PCA'`; also in
   1.0). The sweep's dimensionality now always wins: an unfitted instance is
   cloned for each point with `n_components` set to that point, keeping its
@@ -1692,7 +1692,11 @@ Because 1.1.0 had not been published, they ship in it.
   absolute coordinate deviation from the centroid, which depends on the
   cloud's orientation (9.03 for a 200-point 2-D cloud, 7.21 for the same
   cloud turned 45 degrees). The shape is preserved either way; the
-  behaviour is unchanged.
+  behavior is unchanged.
+- **Gallery pages name example files by their repository path.** A warning
+  an example raises is printed on its gallery page, and it used to start
+  with the build machine's absolute path to the example. It now reads
+  `examples/plot_impute.py:43: UserWarning: ...`.
 
 ### Documented limitations
 
@@ -1714,7 +1718,7 @@ Because 1.1.0 had not been published, they ship in it.
   `trace_metadata` is `None`. There is no public
   `plot(feature_correspondence=...)` in 1.1, so opting out stays visible at
   the call site.
-- The order of the **groups** is not neutralised the way the order of
+- The order of the **groups** is not neutralized the way the order of
   features within a group is. Groups become datasets, `reduce=` row-stacks
   every dataset and fits one model on the stack, so group order is row order
   in that stack -- and a reducer whose fit depends on it embeds a
@@ -1731,16 +1735,16 @@ Because 1.1.0 had not been published, they ship in it.
   did before 1.1 -- so it is documented (`hyp.plot`'s `x` entry,
   docs/hierarchy.rst) and pinned by a test rather than worked around. A
   canonical group order would mean inventing a total ordering over
-  arbitrary, mixed-type, NA-bearing labels, and would make a labelled
+  arbitrary, mixed-type, NA-bearing labels, and would make a labeled
   hierarchy behave differently from the equivalent positional list of
   datasets. Pass `reduce='PCA'` when block order must not matter.
 - Continuous `hue=` over a **row** hierarchy is still warned-and-ignored;
-  only column hierarchies honour it in 1.1.
+  only column hierarchies honor it in 1.1.
 - Under a **categorical** `hue=`/`cluster=` regrouping, an animated live
-  forecast takes the colour of the run drawing the head, which is what the
-  viewer actually sees, so its colour can change as the head crosses a
+  forecast takes the color of the run drawing the head, which is what the
+  viewer actually sees, so its color can change as the head crosses a
   category boundary. Under a continuous `hue=` a forecast instead takes its
-  source trajectory's final observed hue colour, animated and static alike
+  source trajectory's final observed hue color, animated and static alike
   (see *Added*).
 - Duplicate innermost feature names inside one group are **kept** rather
   than rejected or de-duplicated, and matched across groups by
@@ -1760,14 +1764,14 @@ Because 1.1.0 had not been published, they ship in it.
 Small, additive plotting features and fixes. Public APIs are unchanged;
 three changes alter how existing figures LOOK: smoothed lines
 (`antialias=True`, the new default, under **New features**) and the two
-items under **Changed**. Where 1.1.0 later refined one of these behaviours,
+items under **Changed**. Where 1.1.0 later refined one of these behaviors,
 the entry below says so.
 
 > 1.0.1 was never published on its own. These changes were developed as a
 > patch release and now ship as part of 1.1.0, which is what `pyproject.toml`
 > declares; they are kept in their own section because they are separable
 > from the hierarchy work above. Because 1.0.1 is not a version anyone can
-> install, every guide and docstring that dates one of these behaviours dates
+> install, every guide and docstring that dates one of these behaviors dates
 > it to **1.1.0**; this section is the only user-facing place that names
 > the patch line. If you are upgrading from 1.0.0, everything from here down
 > to the `## 1.0.0` heading is new to you as well.
@@ -1820,7 +1824,7 @@ the entry below says so.
   of standing still. Because the data is static -- all of it known before the
   first frame, merely revealed over time -- every forecast the animation will
   ever draw is computed up front. Two things follow: the whole fan is folded
-  into the plot's centre/scale statistics, so it lands inside the cube **by
+  into the plot's center/scale statistics, so it lands inside the cube **by
   construction** and is never clipped or clamped; and each frame is a table
   lookup, so `ani.save()` and `to_jshtml()` replay identically no matter what
   order matplotlib asks for frames in. Fits are memoized per (dataset,
@@ -1833,7 +1837,7 @@ the entry below says so.
   axis to forecast along.
 
 - **`forecast_trail=`: keep earlier forecasts on screen as a fading fan.** The
-  forecast analogue of `chemtrails=`. With `predict=` and a time-progressing
+  forecast analog of `chemtrails=`. With `predict=` and a time-progressing
   animation, `forecast_trail=True` retains the last 16 forecasts (an int sets
   the cap), each in its dataset's style, exactly like the live one, at an
   alpha that decays with age from that dataset's live forecast alpha down to
@@ -1878,18 +1882,18 @@ the entry below says so.
   trace projected forward at half its alpha -- and each of these replaces
   exactly one aspect of it, so observed and forecast data may differ in
   style, grouping, palette, or any combination. (1.1.0 refines this: a
-  forecast recoloured by `forecast_palette=`, `forecast_hue=` or
+  forecast recolored by `forecast_palette=`, `forecast_hue=` or
   `forecast_cluster=` keeps its trace's full alpha, and a collection of
   models takes one linestyle per model; see *Fixed during the release
   review*.)
 
   **`forecast_cluster=` clusters the forecast ENDPOINTS**, so a forecast's
-  colour answers *which of these series are heading to the same place?* --
+  color answers *which of these series are heading to the same place?* --
   a question the observed data cannot answer, which is the point of a
   separate kwarg. It deliberately does not recluster the observed data
   (inheriting that assignment is what the default already gives, so the
   kwarg would be a no-op), nor cluster every predicted point (one forecast
-  would change colour along its own short path), nor flatten whole
+  would change color along its own short path), nor flatten whole
   trajectories (sensitive to `t`, to sampling and to dimensionality, where
   an endpoint has one stable meaning). Endpoints are taken in the space the
   figure draws, after `reduce=`/`align=`.
@@ -1898,7 +1902,7 @@ the entry below says so.
   full-history forecasts (the ones `return_model=True` returns), and stay
   fixed for every frame -- they are not reclustered as the reveal
   progresses. Cluster labels are arbitrary names for groups, so per-frame
-  reclustering would let a forecast change colour whenever a fit nudged its
+  reclustering would let a forecast change color whenever a fit nudged its
   endpoint across a boundary, and would repaint a retained
   `forecast_trail=` fan drawn under the old grouping.
 
@@ -1926,9 +1930,9 @@ the entry below says so.
   used to advance at once -- so one trajectory animated in several disjoint
   time windows simultaneously (three runs of a 30-row dataset were all 27%
   drawn on frame 3 of 12). Runs of one input dataset now share a single reveal
-  clock, so the head sweeps the trajectory once and changes colour at each
+  clock, so the head sweeps the trajectory once and changes color at each
   category boundary, matching both the un-regrouped and `order='serial'`
-  behaviour. Animations without `hue=`/`cluster=` are unchanged row for row.
+  behavior. Animations without `hue=`/`cluster=` are unchanged row for row.
   A `precog=` trail on a not-yet-reached run now shows that run's whole future
   rather than a single stray point.
 
@@ -1936,8 +1940,8 @@ the entry below says so.
   the fit succeeded and the forecasts were returned in the `return_model=True`
   bundle with `drawn=False`, but no overlay was drawn. Each frame's forecast is
   fit from exactly the observations visible for that dataset. A live forecast
-  inherits the colour of the run drawing the head; a retained
-  `forecast_trail=` member keeps the colour it was fit with;
+  inherits the color of the run drawing the head; a retained
+  `forecast_trail=` member keeps the color it was fit with;
   `forecast_hue=`/`forecast_cluster=`/`forecast_palette=` override both with a
   grouping fixed for the whole animation. Both backends draw it identically at
   every frame. Marker-only categorical regrouping (which groups globally by
@@ -1954,7 +1958,7 @@ the entry below says so.
 
   This uncovered a further way a forecast could vanish. Under a continuous
   `hue=` the overlays were drawn and then **deleted**: the code that swaps
-  data lines for a colour-graded `LineCollection` cleared every line on the
+  data lines for a color-graded `LineCollection` cleared every line on the
   axes, forecasts included.
 
   Letting forecasts reach the drawing layer under regrouping for the first
@@ -1968,7 +1972,7 @@ the entry below says so.
   An interim build had refused them with a reason instead of failing
   silently, and plotly's static block, which fires whenever there is no
   per-frame schedule, had warned "no forecast is drawn" and then drawn the
-  full-history forecast, visible from frame 0; both behaviours are
+  full-history forecast, visible from frame 0; both behaviors are
   superseded.
 
 - **`return_model=True` reports forecasts it could not draw, and says so.**
@@ -2048,15 +2052,15 @@ the entry below says so.
 
 - **`predict=` forecast overlays now inherit the style of the observed trace
   they continue.** A forecast reads as the *same series projected forward*,
-  so it takes that trace's **colour, linestyle and linewidth**, and differs
+  so it takes that trace's **color, linestyle and linewidth**, and differs
   only in transparency: `forecast_alpha = observed_alpha * 0.5` (an unset
   `alpha=` is matplotlib's opaque 1.0, so the default forecast alpha is
   `0.5`). Per-dataset styling carries through dataset by dataset --
   `alpha=[1.0, 0.4]` gives forecasts at `[0.5, 0.2]`, and a dotted dataset
-  gets a dotted forecast. (1.1.0 refines this: a forecast recoloured by
+  gets a dotted forecast. (1.1.0 refines this: a forecast recolored by
   `forecast_palette=`, `forecast_hue=` or `forecast_cluster=` is drawn at
   its trace's own alpha, and a collection of models keeps each dataset's
-  colour and cycles the linestyle per model; see *Fixed during the release
+  color and cycles the linestyle per model; see *Fixed during the release
   review*.)
 
   This is a **visible change to existing forecast figures**, and it
@@ -2181,14 +2185,14 @@ the entry below says so.
   `simplify=` above for which of your data actually reaches the plot.
 
 - **`title=` is now actually visible on animated 3-D matplotlib plots.**
-  `animate_plot3D` maximises the 3-D axes to the full canvas (so a rotating
+  `animate_plot3D` maximizes the 3-D axes to the full canvas (so a rotating
   zoomed cube never clips at some rotation angles) -- but that left zero
   margin above the axes for `axes.set_title()` to render into, so both a
   scalar `title=` and a per-segment `title=` list rendered entirely
   off-canvas (the title *state* was always correct; only the pixels were
   missing). Matplotlib animated 3-D plots now reserve a top strip -- sized
   to the real measured title-line height, growing the figure rather than
-  shrinking the maximised axes -- whenever a title will actually be drawn;
+  shrinking the maximized axes -- whenever a title will actually be drawn;
   a titleless 3-D animation, a static 3-D plot, and 2-D animations (which
   never had this problem) are all unaffected. The plotly backend already
   had the equivalent fix.

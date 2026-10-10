@@ -37,7 +37,7 @@ def label_flags(x):
     default ``0..n-1`` index included, since a reordered frame carries
     those integers with it. A pandas Series labels its rows only (it is one
     column). Other dataframes (polars) name their columns but have no row
-    labels. Arrays and everything else are unlabelled.
+    labels. Arrays and everything else are unlabeled.
     """
     if is_frame_dataset(x):
         import datawrangler as dw
@@ -53,7 +53,7 @@ def data_label_flags(raw, n_datasets):
     """`label_flags` for each dataset the caller passed to `impute`.
 
     `raw` is the caller's ``data`` BEFORE wrangling (wrangling turns every
-    dataset into a labelled pandas frame, erasing the difference between
+    dataset into a labeled pandas frame, erasing the difference between
     an array and a frame).
     """
     if isinstance(raw, (list, tuple)) and len(raw) == n_datasets:
@@ -81,7 +81,7 @@ def _align_axis(frame, target, axis, what):
     if own.equals(target):
         return frame
     kind = 'column' if axis else 'row'
-    hint = (f' Labelled {what} is aligned to the data by label; to compare '
+    hint = (f' Labeled {what} is aligned to the data by label; to compare '
             'by position instead, pass it as a bare array '
             f'(e.g. {what.split("[")[0]}.to_numpy()).')
     duplicated = []
@@ -115,13 +115,13 @@ def _as_frame(x, like, what, labelled=(False, False)):
     """Coerce `truth`/`mask`-shaped input to a DataFrame matching `like`.
 
     `labelled` says which axes of the DATA carry labels (`label_flags`).
-    On an axis where both the data and `x` are labelled, `x` is aligned to
+    On an axis where both the data and `x` are labeled, `x` is aligned to
     the data BY LABEL (release red-team 2026-10-09: a truth frame with its
     columns or rows in another order used to be compared cell-by-position
     and silently mis-scored). Otherwise the comparison is positional.
     """
     rows, columns = label_flags(x)
-    if rows and not columns:               # a row-labelled Series
+    if rows and not columns:               # a row-labeled Series
         frame = x.to_frame()
     elif is_frame_dataset(x):
         frame = as_pandas_dataframe(x)     # any backend datawrangler knows
@@ -200,7 +200,7 @@ def score_imputations(datasets, impute_fn, names, specs, truth, mask=None,
     one-element list); `impute_fn` is the public `impute`, injected to keep
     this module import-free of the dispatcher. `labelled` is
     `data_label_flags` of the caller's un-wrangled data (None: treat every
-    dataset as unlabelled, i.e. compare `truth`/`mask` by position).
+    dataset as unlabeled, i.e. compare `truth`/`mask` by position).
     """
     metrics = resolve_metrics(metrics)
     kwargs = dict(kwargs or {})

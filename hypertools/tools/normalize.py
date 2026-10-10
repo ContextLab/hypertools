@@ -40,7 +40,7 @@ def _as_list_2d(x):
         (so callers can return single-in -> single-out).
     """
     def _as_float_2d(a):
-        # a frame of any backend datawrangler recognises (polars, a
+        # a frame of any backend datawrangler recognizes (polars, a
         # LazyFrame, ...) goes through the shared pandas coercion first;
         # everything else is whatever `np.asarray` makes of it (datatype
         # audit, 2026-09-08)

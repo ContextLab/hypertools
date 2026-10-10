@@ -56,7 +56,7 @@ import hypertools as hyp
 # is essentially all-unique (bunny 35947/35947, vase 36022/36022, cube
 # 30034/30246, sphere 29891/30135). Its segment therefore draws with a few
 # hundred distinct dots rather than a couple of thousand and reads sparser than
-# its neighbours. That is the shipped dataset, not a fault in this example.
+# its neighbors. That is the shipped dataset, not a fault in this example.
 SHAPES = ['bunny', 'cube', 'sphere', 'teapot', 'vase']
 # The isotropic Normalize in assemble() is NOT redundant with hyp.plot: plot
 # rescales every dataset with ONE shared affine, so clouds left in their own
@@ -104,7 +104,7 @@ def assemble(clouds, n, source, seed=0):
     rng = np.random.default_rng(seed)
     sampled = []
     for name, points in clouds.items():
-        # one shared centre and scale per cloud (mode='isotropic'): the shape
+        # one shared center and scale per cloud (mode='isotropic'): the shape
         # keeps its proportions and its largest extent touches the cube
         points = np.asarray(hyp.manip(points, model='Normalize',
                                       mode='isotropic', min=-1, max=1),

@@ -257,26 +257,26 @@ Where artists are **shared**, anything you set persists until something
 overwrites it::
 
     # MATPLOTLIB ONLY (set_color is a matplotlib Artist method).
-    # Shared artists, so this colours the WHOLE animation, not frame 0.
+    # Shared artists, so this colors the WHOLE animation, not frame 0.
     def broken(ctx):
         if ctx.frame == 0:
             ctx.artists[0].set_color('red')
 
     def correct(ctx):
-        ctx.artists[0].set_color(COLOURS[ctx.frame])   # set it every frame
+        ctx.artists[0].set_color(COLORS[ctx.frame])   # set it every frame
 
 Where they are **per-frame**, the very same conditional does the opposite
 -- it touches an independent payload that only that frame keeps::
 
     # PLOTLY ONLY -- ctx.artists are that frame's traces, and
     # parallel/serial/window/morph frames are independent, so this
-    # colours ONLY frame 0.
+    # colors ONLY frame 0.
     def also_broken(ctx):
         if ctx.frame == 0:
             ctx.artists[0].line.color = 'red'
 
     def also_correct(ctx):
-        ctx.artists[0].line.color = COLOURS[ctx.frame]
+        ctx.artists[0].line.color = COLORS[ctx.frame]
 
 Writing a callback as though each frame had its own artists is the common
 mistake, and writing one as though they were shared is the mirror image of
@@ -297,8 +297,8 @@ call, so the attribute is still assigned on every frame::
     HIGHLIGHT, DEFAULT = 'red', 'steelblue'
 
     def highlight_one_frame(ctx):                   # correct on both backends
-        colour = HIGHLIGHT if ctx.frame == TARGET else DEFAULT
-        ctx.artists[0].set_color(colour)            # matplotlib spelling
+        color = HIGHLIGHT if ctx.frame == TARGET else DEFAULT
+        ctx.artists[0].set_color(color)            # matplotlib spelling
 
 Assign on every invocation and none of this can bite you.
 
@@ -445,7 +445,7 @@ Animating static data means every observation is known before drawing starts,
 so every forecast the animation will *ever* draw is knowable up front. Two
 things follow, and both are contracts rather than implementation details:
 
-- The whole fan is folded into the plot's centre/scale statistics, so it lands
+- The whole fan is folded into the plot's center/scale statistics, so it lands
   inside the cube **by construction**. Nothing is clipped or clamped.
 - Each frame is a table lookup, so ``ani.save()`` and ``to_jshtml()`` replay
   identically no matter what order matplotlib asks for frames in.
@@ -456,7 +456,7 @@ Fits are memoized per (dataset, revealed-count), so a 900-frame animation of a
 Keeping earlier forecasts on screen
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-``forecast_trail=`` is the forecast analogue of ``chemtrails=``: earlier
+``forecast_trail=`` is the forecast analog of ``chemtrails=``: earlier
 forecasts stay visible and fade, so a viewer can see how the prediction
 *changed* as history accumulated.
 
@@ -477,7 +477,7 @@ How a forecast is styled
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
 A forecast is the *same series projected forward*, so it inherits the identity
-of the observed trace it continues -- the same **colour**, **linestyle** and
+of the observed trace it continues -- the same **color**, **linestyle** and
 **linewidth** -- and differs only in transparency:
 
 .. code-block:: text
@@ -488,8 +488,8 @@ An observed line with no ``alpha=`` set is matplotlib's *opaque*, i.e. 1.0, so
 the default forecast alpha is 0.5. Per-dataset styling carries through
 dataset by dataset: ``alpha=[1.0, 0.4]`` gives forecasts at ``[0.5, 0.2]``, and
 a dotted dataset gets a dotted forecast. Both backends apply the identical
-rule. On plotly the forecast trace copies the colour, width and dash, and
-carries the alpha in the ``rgba(...)`` line colour of a 2-D trace or in the
+rule. On plotly the forecast trace copies the color, width and dash, and
+carries the alpha in the ``rgba(...)`` line color of a 2-D trace or in the
 trace ``opacity`` of a 3-D one; either way the value is echoed in
 ``meta['hyp_forecast_alpha']``.
 
@@ -503,24 +503,24 @@ trace ``opacity`` of a 3-D one; either way the value is echoed in
 a floor proportional to it -- so a retained forecast is never more opaque than
 the live forecast it decays from, however faint the dataset.
 
-A forecast given its **own colour** -- by ``forecast_palette=``,
-``forecast_hue=``, ``forecast_cluster=``, or a colour letter in
-``forecast_fmt=`` -- keeps its trace's alpha instead of halving it: the colour
+A forecast given its **own color** -- by ``forecast_palette=``,
+``forecast_hue=``, ``forecast_cluster=``, or a color letter in
+``forecast_fmt=`` -- keeps its trace's alpha instead of halving it: the color
 is then what tells it apart, and fading it as well hid it among translucent
 traces.
 
 A **collection of models** (``predict=['Kalman', 'ARIMA', ...]``) draws one
-overlay per model on every trace. Each keeps its dataset's colour (which series
+overlay per model on every trace. Each keeps its dataset's color (which series
 it continues) and takes a linestyle per model -- solid, dashed, dotted,
 dash-dot, in model order -- so the two questions are answered by two
-encodings; ``forecast_palette=`` colours by model instead, and
+encodings; ``forecast_palette=`` colors by model instead, and
 ``forecast_fmt=`` (one entry per model) replaces the cycle.
 
 Every ``predict=`` form lists its forecast **once in the legend**, static or
 animated, under the model's name (the same name ``hyp.predict(x, model=[...])``
 gives it), after the data entries and before ``truth``. The key wears the
-forecasts' linestyle and their colour when they share one; when one model's
-forecasts of several datasets wear several colours the key is a neutral gray,
+forecasts' linestyle and their color when they share one; when one model's
+forecasts of several datasets wear several colors the key is a neutral gray,
 and it is never drawn below 0.8 alpha, so it stays legible however faint the
 forecasts are.
 
@@ -530,7 +530,7 @@ Animated forecasts under ``hue=``/``cluster=``
 When ``hue=`` or ``cluster=`` splits a trajectory into per-category runs, each
 run is drawn as its own trace, but the reveal still follows the **dataset**:
 one run finishes as the next begins, so the trajectory sweeps once and changes
-colour as it crosses a category boundary. (Before 1.1.0 every run advanced
+color as it crosses a category boundary. (Before 1.1.0 every run advanced
 at once, so one trajectory animated in several places simultaneously.) A forecast
 is fit per dataset from exactly the observations on screen, so it means the
 same thing it does without ``hue=``:
@@ -541,8 +541,8 @@ same thing it does without ``hue=``:
     hyp.plot(data, '-', predict='Kalman', t=10, hue=categories)
     hyp.plot(data, '-', predict='Kalman', t=10, hue=categories, animate=True)
 
-A live forecast inherits the colour of the run drawing the head, and therefore
-changes colour with it; a retained ``forecast_trail=`` member keeps the colour
+A live forecast inherits the color of the run drawing the head, and therefore
+changes color with it; a retained ``forecast_trail=`` member keeps the color
 it was drawn with, so the fan records the history rather than being repainted.
 Pass ``forecast_hue=``, ``forecast_cluster=`` or ``forecast_palette=`` to give
 the forecasts a grouping of their own; those are resolved once from the
@@ -590,11 +590,11 @@ Everything they do not name stays inherited.
    :widths: 30 70
 
    * - Setting
-     - What a forecast's colour means
+     - What a forecast's color means
    * - *(nothing)*
      - the identity of the observed trace it continues
    * - ``forecast_palette=``
-     - one colour per forecast from a palette of its own (one per *model*
+     - one color per forecast from a palette of its own (one per *model*
        for a collection), drawn at the trace's own alpha
    * - ``forecast_hue=``
      - a grouping you supply, one value per forecast (see below)
@@ -608,25 +608,25 @@ wants one value per leaf group **plus** one per derived mean.
 
 ``forecast_fmt=`` sets the line/marker style, in the same format-string
 grammar as ``fmt``, and changes nothing else -- unless the string carries a
-colour letter (``'r:'``), which recolours the forecast too, on both backends:
+color letter (``'r:'``), which recolors the forecast too, on both backends:
 
 .. code-block:: python
 
-    # dotted forecasts, still in each trace's own colour
+    # dotted forecasts, still in each trace's own color
     hyp.plot(data, '-', predict='Kalman', t=10, forecast_fmt=':')
 
-    # observed data grouped by condition; forecasts coloured by destination
+    # observed data grouped by condition; forecasts colored by destination
     hyp.plot(data, '-', predict='Kalman', t=10, hue=conditions,
              forecast_cluster='KMeans', forecast_n_clusters=3,
              forecast_palette='viridis')
 
 ``forecast_cluster=`` clusters the forecast **endpoints** -- where each series
-is predicted to end up -- so its colours answer a question the observed data
+is predicted to end up -- so its colors answer a question the observed data
 cannot: *which of these are heading to the same place?* That is why it does
 not simply recluster the observed data; inheriting the observed assignment is
 what the default already gives, so defining it that way would make the kwarg
 a no-op. Nor does it cluster every predicted point (one forecast would then
-change colour along its own short path) or whole flattened trajectories
+change color along its own short path) or whole flattened trajectories
 (sensitive to ``t``, to sampling and to dimensionality, where an endpoint has
 one stable meaning). Endpoints are taken in the space the figure draws, after
 ``reduce=``/``align=``, so the grouping matches the geometry on screen.
@@ -634,12 +634,12 @@ one stable meaning). Endpoints are taken in the space the figure draws, after
 In an **animation**, forecast endpoint groups are resolved once from the
 full-history forecasts -- the same forecasts ``return_model=True`` hands back
 in the model bundle -- and stay fixed for every frame. They are not
-reclustered per frame, so the colours hold still while the forecast geometry
+reclustered per frame, so the colors hold still while the forecast geometry
 evolves.
 
 That is a deliberate choice rather than an implementation detail. Cluster
 labels are arbitrary names for groups, so reclustering each frame would let
-a forecast change colour whenever the fit shifted a point across a boundary,
+a forecast change color whenever the fit shifted a point across a boundary,
 and would repaint a whole retained ``forecast_trail=`` fan whose earlier
 members were drawn under the old grouping. A fixed assignment also keeps a
 saved animation identical to a played one, which is the same reason the
@@ -678,7 +678,7 @@ per drawn dataset) that a variable number of forecast overlays would violate.
 
 The *observed* trajectories are tagged the same way, and for the same reason:
 neither ``ax.collections`` nor ``fig.data`` is a list of data artists. On
-matplotlib a multicoloured (continuous ``hue=``) trace is a
+matplotlib a multicolored (continuous ``hue=``) trace is a
 ``Line3DCollection`` carrying ``collection._hyp_trace_index``, alongside the
 six wireframe collections that draw the bounding cube; on plotly every data
 trace carries ``trace.meta['hyp_trace_index']``, alongside the cube trace, any
@@ -687,12 +687,12 @@ carrier -- none of which is named. Both tags are the trace's index in the
 drawn data, so a callback can pair a trace with its source without counting
 positions.
 
-A multicoloured trace also carries its ``alpha=`` **inside** those per-point
-colours, on both backends: matplotlib folds it into the segment colours of the
+A multicolored trace also carries its ``alpha=`` **inside** those per-point
+colors, on both backends: matplotlib folds it into the segment colors of the
 collection that replaces the line artist (an alpha left on the discarded
-artist would simply be lost), and plotly serialises the line's colour array as
-``rgba(...)`` for the same reason. Per-point **marker** colours carry no alpha
-on either backend -- a hue-coloured scatter is drawn at full opacity.
+artist would simply be lost), and plotly serializes the line's color array as
+``rgba(...)`` for the same reason. Per-point **marker** colors carry no alpha
+on either backend -- a hue-colored scatter is drawn at full opacity.
 
 What ``animate='morph'`` does
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

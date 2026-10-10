@@ -375,7 +375,7 @@ def calendar_points(origin, offset, first, last):
 
 def _calendar_coordinates(index, origin, offset):
     """Positions of `index` on the grid ``origin + k * offset``: integer on
-    grid points, linear in elapsed time between neighbouring points."""
+    grid points, linear in elapsed time between neighboring points."""
     index = pd.DatetimeIndex(index)
     origin = pd.Timestamp(origin)
     if not len(index):

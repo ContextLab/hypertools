@@ -37,7 +37,7 @@ def fitter(data, axis=0, min=0, max=1, mode='minmax'):
         Upper bound of the target range (default: 1).
     mode : {'minmax', 'isotropic'}, optional
         `'minmax'` (default) rescales each column (or row) independently;
-        `'isotropic'` centres on the centroid and divides every column by
+        `'isotropic'` centers on the centroid and divides every column by
         one shared scalar (see `Normalize`).
 
     Returns
@@ -86,7 +86,7 @@ def _fitter(data, axis=0, min=0, max=1, mode='minmax'):
         data = stack_for_shared_fit(data, 'Normalize')
 
     if mode == 'isotropic':
-        # one shared centre + scale for the whole table (and, for a list,
+        # one shared center + scale for the whole table (and, for a list,
         # for every dataset in it): subtract the per-column centroid, then
         # divide EVERY column by the same scalar -- the largest absolute
         # deviation from the centroid across all entries. Row-wise fitting
@@ -94,7 +94,7 @@ def _fitter(data, axis=0, min=0, max=1, mode='minmax'):
         # not one point), so refuse it rather than silently ignore `axis`.
         if axis != 0:
             raise ValueError(
-                "Normalize(mode='isotropic') centres and rescales the whole "
+                "Normalize(mode='isotropic') centers and rescales the whole "
                 'table with one scalar, so it only supports axis=0; got '
                 f'axis={axis!r}')
         baseline = data.mean(axis=0).astype(float)
@@ -260,7 +260,7 @@ def inverter(data, **kwargs):
 
 class Normalize(Manipulator):
     """Normalize data into a `[min, max]` range: min-max per column or per
-    row (default), or isotropically (one shared centre and scale for the
+    row (default), or isotropically (one shared center and scale for the
     whole table, preserving its shape).
 
     Parameters
@@ -279,7 +279,7 @@ class Normalize(Manipulator):
         feature gets its own offset and scale, so the data's shape is
         (deliberately) distorted.
 
-        ``'isotropic'``: the whole table is centred on its CENTROID (the
+        ``'isotropic'``: the whole table is centered on its CENTROID (the
         per-column mean, ``data.mean(axis=0)``) and then every column is
         divided by the SAME scalar -- the largest absolute deviation from
         the centroid over all entries, ``abs(data - centroid).max()`` --
@@ -295,9 +295,9 @@ class Normalize(Manipulator):
         coordinate lies in `[min, max]`, with at least one coordinate
         touching `min` or `max`. With ``min=-1, max=1`` this is exactly
         ``(x - x.mean(axis=0)) / abs(x - x.mean(axis=0)).max()`` -- the
-        "centre and scale a point cloud into the unit cube" recipe. A
+        "center and scale a point cloud into the unit cube" recipe. A
         degenerate table (a single point, or all rows identical) is only
-        centred (its zero deviations are not divided).
+        centered (its zero deviations are not divided).
 
     Notes
     -----

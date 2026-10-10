@@ -22,7 +22,7 @@ _MISSING = object()
 
 def as_dataframe(data):
     """Coerce `data` to a pandas DataFrame (returned as-is if it already
-    is one; a DataFrame of another backend datawrangler recognises --
+    is one; a DataFrame of another backend datawrangler recognizes --
     polars DataFrame/LazyFrame, modin, ... -- is converted via
     ``dw.wrangle(..., backend='pandas')``; a Series (pandas, polars, or
     anything series-like) becomes ONE column that keeps the Series' index

@@ -44,7 +44,7 @@ REQUIRED_SECTIONS = [
     'Limitations',
     'Dual-axis and list inputs',
     'Return shapes',
-    'Fitted model behaviour',
+    'Fitted model behavior',
     'Backend parity',
     'Feature names and duplicates',
 ]
