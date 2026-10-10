@@ -103,10 +103,10 @@ def test_branch_name_is_per_version_and_rejects_unsafe_versions():
 
 
 def test_project_version_reads_this_checkouts_pyproject():
-    import tomllib
-    with open(_REPO / 'pyproject.toml', 'rb') as f:
-        want = tomllib.load(f)['project']['version']
-    assert fpg.project_version(_REPO) == want
+    # an independent reading of the same number: the package's own version
+    # (tomllib would do, but it does not exist on Python 3.10)
+    import hypertools
+    assert fpg.project_version(_REPO) == hypertools.__version__
 
 
 def test_source_md5_is_the_md5_sphinx_gallery_compares():

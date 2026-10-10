@@ -211,3 +211,14 @@ Branch `fix/1.1-release-review`; PR #286 still OPEN and unmerged. Nothing merged
   check kept. Release order is now: build gallery -> publish_prebuilt_gallery --push -> commit the pin
   -> publish notebooks -> artifacts. Gate checks the pin, the branch head, that only the pin changed
   since the build, and the manifest md5s.
+- cef40569 binds the record to the gallery branch head and the manifest. PR #288 CI on it: the three
+  Python 3.10 jobs FAILED (my new test imported tomllib, 3.11+); RTD's PR build timed out as expected
+  (no record committed yet) but its pre_build step ran and printed "none recorded for 1.1.0".
+- Jeremy: "several times now the gallery commit hasn't matched the expected tests ... carefully think
+  through the *full* logic and do a test run"; lesson commit-pinned-checks-dry-run-first recorded.
+  Also: "install the latest [sphinx-gallery] to match readthedocs" -> local 0.21.0 -> 0.22.1, floor raised
+  in docs/doc_requirements.txt. (RTD's other docs packages are newer than the local venv too:
+  matplotlib 3.11.2 vs 3.10.8, plotly 7.1.0 vs 6.8.0, numpy 2.4.6 vs 2.3.5; not changed.)
+- scripts/rehearse_prebuilt_gallery.sh: end-to-end rehearsal against a local bare remote. Mini run
+  (three examples, real sphinx-gallery 0.22.1) PASSED: fetch 3 of 3 current, RTD recipe 36 s, 0 examples
+  executed, overwritten branch rejected. Changed tests also run under a real Python 3.10 (uv): 61 passed.

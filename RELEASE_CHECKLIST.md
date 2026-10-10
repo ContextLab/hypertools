@@ -138,6 +138,16 @@ detached tag checkout — the notebook migrator detects the branch via
       do NOT commit afterward** — any later commit changes HEAD, so you must
       rebuild the gallery and re-publish (the gate fails until you do). The same
       gate re-runs on the master push (step 4) and the tag (step 5).
+- [ ] **Rehearse the gallery hand-off before publishing anything.**
+      `scripts/rehearse_prebuilt_gallery.sh "$PWD" /tmp/gallery-rehearsal`
+      runs the whole sequence below against a local bare remote, using the
+      gallery you just built: publish, record, commit, fetch into a fresh
+      clone, build with the Read the Docs recipe (no example may execute),
+      then overwrite the branch and confirm the fetch refuses it. It must end
+      with `REHEARSAL PASSED`. Add `mini` to rehearse with three examples in a
+      few minutes, before the long gallery build. Build the docs with the
+      sphinx-gallery version Read the Docs installs (the latest; the floor in
+      `docs/doc_requirements.txt`).
 - [ ] **Publish the built gallery for Read the Docs to reuse, and record
       it.** Read the Docs ends a build after 15 minutes and executing the
       gallery takes about 25, so its build fetches the gallery you just built
