@@ -34,7 +34,8 @@ repo `.venv` (matplotlib 3.10.8) and in a scratch env with matplotlib 3.11.2.
   call's arguments are inspected only when a warning is pending.
 - #291: `fig.tight_layout()` (never `plt.`) and only for a figure hypertools
   made: no `ax=`, or a `hyp.subplots` grid (marked with the private figure
-  attribute `_hypertools_grid`). `panels=` builds its grid with `subplots()`,
+  attribute `_hypertools_figure`, also set on
+  every figure a `hyp.plot` call without `ax=` creates). `panels=` builds its grid with `subplots()`,
   so it is unchanged. The right-legend fit (which widens the figure and
   switches off its layout engine) is skipped for every caller-built figure.
 - #292: `_families_with_a_regular_face()` scores each registered face of a
@@ -88,6 +89,36 @@ Not changed, by decision: the font filter is not gated on the matplotlib
 version (same families under 3.10 and 3.11); an ignored first warning counts
 as issued; a title on a tiny caller figure (3x2 in) can touch the top edge
 because the figure is no longer tightened.
+
+## Red team, round 2 (2026-11-21)
+
+Codex CLI again and a third fresh subagent, on the revised design. No
+blockers. Acted on:
+
+- A second call into hypertools' own figure (`hyp.plot(more,
+  ax=fig.axes[0], legend=...)`) was treated as a caller figure and lost its
+  legend fit (subagent C, MAJOR). hypertools now marks every figure it
+  creates, not only `hyp.subplots` grids; test added.
+- Argument inspection for the warning ran before the `try/finally` that
+  restores rcParams, so a rejected `backend=` left `pdf.fonttype` at 42
+  (Codex). Moved inside the `try`; test covers in and out of the context.
+- A plotly Figure passed as `ax=` with `backend='auto'` still got the
+  matplotlib warning (Codex). Any non-matplotlib `ax=` now counts as plotly.
+- Wording: the colorbar and `size=` exceptions are stated in the changelog
+  and the `ax` docstring; the checklist preface no longer says
+  `publish_prebuilt_gallery.py` takes `--ref` (it does not).
+- `test_animation_guide_docs.py` accepts an `(unreleased)` heading for a
+  claimed version, so it can pass during development of a feature release.
+
+Reviewer C confirmed: all three issue scripts fixed on both matplotlib
+versions; own-figure, `panels=` and `hyp.subplots` PNGs pixel-identical to
+master; 6 gifs byte-identical; 8 plotly figure JSONs identical.
+
+Flagged, kept: the fixture `light_only_family` registers a real font file
+under a made-up family with stated weights (300/600). Reviewer C called it a
+test double. It is the only way to exercise the filter on Linux/Windows
+runners, which have no installed family of that shape; on macOS with
+matplotlib >= 3.11 the real Hiragino family is exercised by the other tests.
 
 ## Not done in the pull request (release steps, RELEASE_CHECKLIST.md)
 

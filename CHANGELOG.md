@@ -25,11 +25,14 @@ draws into a figure the caller built, found by executing notebooks with
   Axes that are not compatible with tight_layout" for axes placed with
   `fig.add_axes`; and, being a pyplot call, acted on pyplot's current
   figure, which need not be the one that owns `ax`. A figure the caller
-  built is now left exactly as the caller arranged it: its axes, its
-  margins, its layout engine and its size. Figures hypertools makes are
-  laid out as before: its own figure, a `panels=` grid, and a
-  `hyp.subplots` grid (each `hyp.plot(..., ax=axes[i])` call still tightens
-  it). **If you relied on the automatic layout** of a figure made with
+  built is now left as the caller arranged it: its other axes, its
+  margins, its layout engine and its size (a colorbar still takes its room
+  out of the axes it belongs to, as matplotlib's `fig.colorbar(ax=ax)`
+  does, and an explicit `size=` still resizes the figure). Figures
+  hypertools makes are
+  laid out as before: its own figure (including a later call that draws
+  into it with `ax=fig.axes[0]`), a `panels=` grid, and a `hyp.subplots`
+  grid (each `hyp.plot(..., ax=axes[i])` call still tightens it). **If you relied on the automatic layout** of a figure made with
   `plt.subplots`, call `fig.tight_layout()` after plotting, create the
   figure with `layout='constrained'`, or build the grid with
   `hyp.subplots`. This matters most with `legend=`: the legend beside a

@@ -137,6 +137,35 @@ def test_backend_warning_inside_a_set_interactive_backend_context(
         assert _backend_warnings(_record(animate=True, show=True)) == []
 
 
+def test_backend_warning_is_silent_when_ax_is_a_plotly_figure(
+        backend_warning):
+    """A plotly Figure passed as `ax=` makes plotly the renderer even with
+    the default ``backend='auto'``."""
+    go = pytest.importorskip('plotly.graph_objects')
+    caught = _record(ax=go.Figure(), interactive=True, show=True,
+                     mpl_backend='disable')
+    assert _backend_warnings(caught) == []
+
+
+def test_a_rejected_argument_inside_the_context_restores_rcparams(
+        backend_warning):
+    """Inspecting the call for the warning happens under the same
+    `finally` that puts the caller's rcParams back."""
+    before = (matplotlib.rcParams['pdf.fonttype'],
+              matplotlib.rcParams['ps.fonttype'])
+    assert before != (42, 42), 'this test needs the stock fonttype'
+    for in_context in (True, False):
+        with pytest.raises(ValueError, match='backend must be one of'):
+            if in_context:
+                with hyp.set_interactive_backend(
+                        B.HYPERTOOLS_BACKEND.normalize()):
+                    hyp.plot(_walk(), animate=True, backend='invalid')
+            else:
+                hyp.plot(_walk(), animate=True, backend='invalid')
+        assert (matplotlib.rcParams['pdf.fonttype'],
+                matplotlib.rcParams['ps.fonttype']) == before
+
+
 def test_an_array_valued_animate_gets_plots_own_error(backend_warning):
     """Deciding whether the warning applies must not trip over an argument
     with no single truth value: `plot` rejects it with its own message, in
@@ -332,6 +361,19 @@ def test_hypertools_own_figure_is_still_tightened():
     plt.close(default)
 
 
+def test_a_second_call_into_hypertools_own_figure_still_fits_its_legend():
+    """`fig = hyp.plot(x); hyp.plot(more, ax=fig.axes[0], legend=...)`: the
+    figure is hypertools' own, so the second call lays it out and widens
+    it for the legend exactly as 1.1.0 did."""
+    fig = hyp.plot(_walk(), show=False, backend='matplotlib')
+    width = fig.get_size_inches()[0]
+    hyp.plot(_walk() + 1, ax=fig.axes[0], show=False,
+             legend=['the second walk, overlaid'])
+    assert _legend_report(fig, [fig.axes[0]]) == [(False, False)]
+    assert fig.get_size_inches()[0] > width
+    plt.close(fig)
+
+
 def test_a_hyp_subplots_grid_is_tightened_whatever_figure_is_current():
     """The layout goes to the figure that owns the axes, not to pyplot's
     current figure: with another figure made current BEFORE the call, the
@@ -424,10 +466,14 @@ def test_every_default_stack_family_resolves_at_regular_weight(findfont_log):
 
 @pytest.fixture
 def light_only_family():
-    """A REAL installed family with no regular face, on any machine: the
-    bundled Noto Sans Bold file registered a second time under its own
-    family name, as the 300- and 600-weight faces of one family -- the shape
-    matplotlib >= 3.11 reports for macOS's 'Hiragino Kaku Gothic ProN'."""
+    """A family with no regular face, on any machine: the bundled Noto
+    Sans Bold file (a real font file) registered a second time with the
+    real font manager, under a family name of its own, as that family's
+    300- and 600-weight faces -- the shape matplotlib >= 3.11 reports for
+    macOS's 'Hiragino Kaku Gothic ProN'. The weights are stated for the
+    test, not read from the file: Linux and Windows runners have no
+    installed family of this shape. On macOS with matplotlib >= 3.11 the
+    tests above exercise the real one."""
     name = 'Hypertools Test No Regular Face'
     bold = [p for p in fonts.bundled_font_files() if 'Bold' in p][0]
     fonts.register_bundled_fonts()

@@ -155,11 +155,13 @@ def test_animation_guide_version_claims_match_the_package_version():
             f'docs/animation.rst dates a feature to {version}, but the '
             f'package is {hyp.__version__}. Retarget the guide (or the '
             'version); a version a user cannot install is not a useful date.')
+        # `(unreleased)` while the release that carries the feature is
+        # still in development, a date once it ships
         assert re.search(
-            r'(?m)^## %s \(\d{4}-\d{2}-\d{2}\)$' % re.escape(version),
-            changelog), (
+            r'(?m)^## %s \((unreleased|\d{4}-\d{2}-\d{2})\)$'
+            % re.escape(version), changelog), (
             f'docs/animation.rst dates a feature to {version}, which has no '
-            'dated section in CHANGELOG.md')
+            'section in CHANGELOG.md')
     feature_release = '%d.%d.0' % current[:2]
     assert feature_release in claimed, (
         f'docs/animation.rst dates features to {claimed} but none to '

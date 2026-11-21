@@ -9,7 +9,8 @@ keep its history. For 1.1.1, follow the same steps in the same order and read
 differences:
 
 - **Nothing is in release form yet.** The 1.1.1 pull request changes code,
-  tests, the changelog and the version only. `readme.md` still pins its
+  tests, the changelog, the version, this checklist and a session note,
+  and nothing that puts the repository in release form. `readme.md` still pins its
   images to the `v1.1.0` tag (the `v1.1.1` tag does not exist until step 5,
   so flipping earlier would break the images), and
   `docs/prebuilt_gallery.json` still records the 1.1.0 gallery. Until step 2
@@ -23,7 +24,9 @@ differences:
   earlier than the release commit's date.
 - **Step 2, galleries:** `docs-notebooks/v1.1.1/` and the
   `docs-gallery-v1.1.1` branch do not exist yet; the two publish scripts
-  create them (`--ref v1.1.1`). The generated gallery notebooks install
+  create them (`publish_gallery_notebooks.py --ref v1.1.1`;
+  `publish_prebuilt_gallery.py` takes the version from `pyproject.toml`).
+  The generated gallery notebooks install
   `hypertools[interactive]>=1.1.1` (`docs/conf.py` reads the package
   version), so they cannot be run on Colab until the PyPI upload. The
   committed tutorials keep their `>=1.1.0` floor.

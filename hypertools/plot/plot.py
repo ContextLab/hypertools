@@ -3258,10 +3258,11 @@ def _normalize_legend_colors(legend_colors):
     return items, None
 
 
-#: Set (to True) on a matplotlib figure that `hyp.subplots` created: the
-#: mark by which `hyp.plot(..., ax=)` tells a grid hypertools made, and may
-#: lay out, from a figure the caller built (GH #291).
-_HYP_GRID_FIGURE_ATTR = '_hypertools_grid'
+#: Set (to True) on every matplotlib figure hypertools creates -- the one a
+#: `hyp.plot` call without `ax=` returns, and a `hyp.subplots` grid: the
+#: mark by which a later `hyp.plot(..., ax=)` tells a figure hypertools
+#: made, and may lay out, from a figure the caller built (GH #291).
+_HYP_FIGURE_ATTR = '_hypertools_figure'
 
 
 def subplots(nrows=1, ncols=1, ndims=3, size=None, backend='auto',
@@ -3371,7 +3372,7 @@ def subplots(nrows=1, ncols=1, ndims=3, size=None, backend='auto',
     # laying it out (`tight_layout`) after each static panel, as it does for
     # a figure it creates itself; a figure the caller built is left as the
     # caller arranged it (GH #291)
-    setattr(fig, _HYP_GRID_FIGURE_ATTR, True)
+    setattr(fig, _HYP_FIGURE_ATTR, True)
     flat = np.empty(nrows * ncols, dtype=object)
     flat[:] = list(np.ravel(np.asarray(axes, dtype=object)))
     return fig, flat
@@ -7086,18 +7087,21 @@ def plot(
 
         The LAYOUT of a matplotlib figure you built yourself stays yours:
         the call draws into `ax` and leaves that figure's other axes, its
-        ``subplots_adjust`` margins and its layout engine
-        (``layout='constrained'``, ...) as they were -- call
-        ``fig.tight_layout()`` yourself if you want one. (Through 1.1.0
-        every such call ran ``plt.tight_layout()``, which moved all of the
-        figure's axes.) A figure hypertools made -- its own, or a
-        `hyp.subplots` grid -- is still tightened after each static panel.
-        That includes its size: a `legend=` drawn beside `ax` is not
-        fitted into your figure (through 1.1.0 the figure was widened), so
-        on a figure with no layout of its own it can cover the next panel
-        or run off the canvas. ``fig.tight_layout()`` after plotting, or
-        ``layout='constrained'`` when you create the figure, makes room
-        for it.
+        ``subplots_adjust`` margins, its layout engine
+        (``layout='constrained'``, ...) and its size (unless you pass
+        `size=`) as they were -- call ``fig.tight_layout()`` yourself if
+        you want one. (Through 1.1.0 every such call ran
+        ``plt.tight_layout()``, which moved all of the figure's axes.)
+        Two consequences. A colorbar takes its room out of `ax` itself, as
+        matplotlib's ``fig.colorbar(..., ax=ax)`` does. And a `legend=`
+        drawn beside `ax` is not fitted into your figure (through 1.1.0
+        the figure was widened), so on a figure with no layout of its own
+        it can cover the next panel or run off the canvas:
+        ``fig.tight_layout()`` after plotting, or ``layout='constrained'``
+        when you create the figure, makes room for it.
+        A figure hypertools made -- one an earlier `hyp.plot` call
+        returned, or a `hyp.subplots` grid -- is still tightened, and its
+        legend fitted, by each static call that draws into it.
 
         The datasets are drawn in the `palette` exactly as on a figure of
         their own (a caller's Axes used to keep the color cycle of the
@@ -13263,8 +13267,12 @@ def plot(
             # `fig.add_axes` (GH #291). Called on the figure that owns the
             # axes, never through pyplot: the current figure can be another
             # one.
+            if not _user_supplied_ax and isinstance(fig, plt.Figure):
+                # hypertools' own figure: a later call that draws into it
+                # (`hyp.plot(more, ax=fig.axes[0])`) keeps laying it out
+                setattr(fig, _HYP_FIGURE_ATTR, True)
             _caller_figure = _user_supplied_ax and not getattr(
-                fig, _HYP_GRID_FIGURE_ATTR, False)
+                fig, _HYP_FIGURE_ATTR, False)
             if (not animate and not _caller_figure
                     and isinstance(fig, plt.Figure)):
                 fig.tight_layout()

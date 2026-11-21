@@ -1005,6 +1005,14 @@ def _needs_interactive_display(plot_kwargs):
                     and not _truthy(plot_kwargs.get("save_path")))
     if not (want_interactive and will_display):
         return False
+    # anything but a matplotlib Axes passed as `ax=` is a plotly Figure or
+    # grid cell, which makes plotly the renderer whatever `backend=` says
+    # (or is invalid, which `plot` reports)
+    target = plot_kwargs.get("ax")
+    if target is not None:
+        import matplotlib.axes as _mpl_axes
+        if not isinstance(target, _mpl_axes.Axes):
+            return False
     from .plotly_backend import resolve_backend as _resolve_backend
     return _resolve_backend(plot_kwargs.get("backend", "auto")) != "plotly"
 
@@ -1395,30 +1403,33 @@ def manage_backend(plot_func):
         backend_context = _null_backend_context
         tmp_backend = None
 
-        # Whether this call will DISPLAY an interactive or animated plot
-        # that matplotlib renders: the only kind of call that needs an
-        # interactive matplotlib backend, and so the only kind the
-        # import-time `BACKEND_WARNING` is about (GH #290). Inside a
-        # `set_interactive_backend` context the call's arguments are only
-        # inspected when there is a warning that might need issuing.
-        needs_interactive_display = False
-        if not IN_SET_CONTEXT or BACKEND_WARNING is not None:
-            plot_kwargs = _get_runtime_args(plot_func, *args, **kwargs)
-            needs_interactive_display = _needs_interactive_display(plot_kwargs)
-
-        if needs_interactive_display and not IN_SET_CONTEXT:
-            curr_backend = HypertoolsBackend(mpl.get_backend()).normalize()
-            tmp_backend = plot_kwargs.get("mpl_backend")
-            if tmp_backend == "auto":
-                tmp_backend = HYPERTOOLS_BACKEND.normalize()
-
-            # 'plotly' is a render backend, not a matplotlib backend --
-            # never try to switch matplotlib to it
-            if tmp_backend not in ("disable", "plotly", curr_backend):
-                # if all conditions are met, use the real context
-                backend_context = set_interactive_backend
-
         try:
+            # Whether this call will DISPLAY an interactive or animated plot
+            # that matplotlib renders: the only kind of call that needs an
+            # interactive matplotlib backend, and so the only kind the
+            # import-time `BACKEND_WARNING` is about (GH #290). Inside a
+            # `set_interactive_backend` context the call's arguments are only
+            # inspected when there is a warning that might need issuing.
+            # Done inside the `try`, so an argument that cannot be
+            # inspected (an unknown `backend=`) still leaves through the
+            # `finally` that restores the caller's rcParams.
+            needs_interactive_display = False
+            if not IN_SET_CONTEXT or BACKEND_WARNING is not None:
+                plot_kwargs = _get_runtime_args(plot_func, *args, **kwargs)
+                needs_interactive_display = _needs_interactive_display(plot_kwargs)
+
+            if needs_interactive_display and not IN_SET_CONTEXT:
+                curr_backend = HypertoolsBackend(mpl.get_backend()).normalize()
+                tmp_backend = plot_kwargs.get("mpl_backend")
+                if tmp_backend == "auto":
+                    tmp_backend = HYPERTOOLS_BACKEND.normalize()
+
+                # 'plotly' is a render backend, not a matplotlib backend --
+                # never try to switch matplotlib to it
+                if tmp_backend not in ("disable", "plotly", curr_backend):
+                    # if all conditions are met, use the real context
+                    backend_context = set_interactive_backend
+
             try:
                 from ..predict.time import warn_once_per_call
                 with backend_context(tmp_backend), warn_once_per_call():
