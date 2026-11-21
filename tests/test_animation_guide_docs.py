@@ -119,20 +119,50 @@ def test_animation_guide_version_claims_match_the_package_version():
 
     So the assertion is no longer against a hard-coded string: it is against
     `hypertools.__version__`, which is the one number a reader can check with
-    `pip show`. Whatever the package calls itself, the guide must agree."""
+    `pip show`, and against the releases CHANGELOG.md records.
+
+    1.1.1 (a patch release) retired a second premise: that the guide's
+    features are all dated to the CURRENT version. A feature that arrived in
+    1.1.0 stays "new in 1.1.0" under 1.1.1. What must hold is that every
+    version the guide names is one a user can install: a dated release in
+    CHANGELOG.md, no newer than the package, and never the unpublished
+    1.0.1. The feature release of the current line must be among them, so
+    the guide cannot fall a whole feature release behind unnoticed."""
     import hypertools as hyp
+
+    def _parse(version):
+        parts = [int(p) for p in version.split('.')]
+        return tuple(parts + [0] * (3 - len(parts)))
 
     text = GUIDE.read_text()
     claimed = sorted(set(_VERSION_CLAIM.findall(text)))
     assert claimed, (
         'sanity check: the guide must date at least one behaviour change, '
         'or this test asserts nothing')
-    assert claimed == [hyp.__version__], (
-        f'docs/animation.rst dates features to {claimed}, but the package '
-        f'is {hyp.__version__}. Retarget the guide (or the version); a '
-        'version a user cannot install is not a useful date.')
-
     changelog = (DOCS.parent / 'CHANGELOG.md').read_text()
+    current = _parse(hyp.__version__)
+    for version in claimed:
+        assert re.fullmatch(r'\d+\.\d+\.\d+', version), (
+            f'docs/animation.rst dates a feature to {version!r}; name the '
+            'full release (X.Y.Z) so a reader can install exactly it')
+        assert version != '1.0.1', (
+            'docs/animation.rst dates a feature to 1.0.1, which was never '
+            'published')
+        assert _parse(version) <= current, (
+            f'docs/animation.rst dates a feature to {version}, but the '
+            f'package is {hyp.__version__}. Retarget the guide (or the '
+            'version); a version a user cannot install is not a useful date.')
+        assert re.search(
+            r'(?m)^## %s \(\d{4}-\d{2}-\d{2}\)$' % re.escape(version),
+            changelog), (
+            f'docs/animation.rst dates a feature to {version}, which has no '
+            'dated section in CHANGELOG.md')
+    feature_release = '%d.%d.0' % current[:2]
+    assert feature_release in claimed, (
+        f'docs/animation.rst dates features to {claimed} but none to '
+        f'{feature_release}, the feature release of the {hyp.__version__} '
+        'line')
+
     assert f'## {hyp.__version__}' in changelog, (
         "sanity check: CHANGELOG.md must carry a section for the declared "
         "version for the assertion above to mean anything")

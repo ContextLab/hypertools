@@ -1,5 +1,61 @@
 # Changelog
 
+## 1.1.1 (2026-11-21)
+
+A patch release: three fixes for noise and side effects met when `hyp.plot`
+draws into a figure the caller built, found by executing notebooks with
+`jupyter nbconvert` under matplotlib 3.11. No API changes.
+
+### Fixed
+
+- **The backend warning is issued once, and only when it applies (GH #290).**
+  When hypertools cannot set up an interactive matplotlib backend at import
+  (for example in a notebook kernel without `ipympl`), it keeps a warning to
+  show "upon trying to create an interactive or animated plot". `hyp.plot`
+  issued it on every call instead, including static plots and calls that
+  display nothing (`show=False`, `save_path=`, `ax=`), so a notebook showed
+  it under every plotting cell. It is now issued only by a call that
+  displays an animated or interactive plot that matplotlib renders, and once
+  per session per message. A plot rendered by plotly never issues it.
+- **`hyp.plot(..., ax=ax)` leaves the layout of the caller's figure alone
+  (GH #291).** Static plots ended with `plt.tight_layout()` even when the
+  caller passed its own axes. That moved every axes of the caller's figure,
+  not only the one passed; discarded `fig.subplots_adjust(...)` margins;
+  replaced a `layout='constrained'` engine; warned "This figure includes
+  Axes that are not compatible with tight_layout" for axes placed with
+  `fig.add_axes`; and, being a pyplot call, acted on pyplot's current
+  figure, which need not be the one that owns `ax`. A figure the caller
+  built is now left as the caller arranged it, and a right-side `legend=`
+  no longer switches off that figure's layout engine. Figures hypertools
+  makes are laid out as before: its own figure, a `panels=` grid, and a
+  `hyp.subplots` grid (each `hyp.plot(..., ax=axes[i])` call still tightens
+  it). **If you relied on the automatic layout** of a figure made with
+  `plt.subplots`, call `fig.tight_layout()` after plotting, or build the
+  grid with `hyp.subplots`.
+- **No `findfont` log lines for ordinary text under matplotlib 3.11
+  (GH #292).** matplotlib 3.11 registers every face of a `.ttc` font
+  collection, which on macOS surfaces 'Hiragino Kaku Gothic ProN' as a
+  family with light (W3) and semibold (W6) faces only, and logs "findfont:
+  Failed to find font weight normal for Hiragino Kaku Gothic ProN, now
+  using 300." each time a family in the font list has no face at a text's
+  exact weight. hypertools listed that family among its per-glyph fallback
+  fonts, so every figure logged the line several times. Fallback families
+  with no regular-weight face are now left out of the list (on macOS the
+  same glyphs are still reached through 'Hiragino Sans'); a font named with
+  `font=`, and a font found to be the only one covering the text, are kept
+  regardless.
+
+### Documented limitations
+
+- **Text at other weights can still log under matplotlib 3.11.** The line
+  above is matplotlib's, and it is logged for any family in the list that
+  lacks the exact weight asked for. Regular-weight text, which is all
+  hypertools draws unless asked otherwise, is quiet. Bold text (for example
+  `title_kwargs={'fontweight': 'bold'}`) logs one line per installed
+  fallback family that ships a regular face only, such as 'Arial Unicode
+  MS' on macOS; those families stay in the list because dropping them would
+  cost glyph coverage. matplotlib 3.10 does not log the line.
+
 ## 1.1.0 (2026-10-10)
 
 Hierarchical (`MultiIndex`) DataFrames become a first-class input. A frame

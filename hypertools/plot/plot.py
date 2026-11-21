@@ -3283,6 +3283,12 @@ def subplots(nrows=1, ncols=1, ndims=3, size=None, backend='auto',
     pass ``panels=`` to `hyp.plot` instead; this helper is for grids you
     want to fill yourself (mixing hypertools panels with your own).
 
+    Each static `hyp.plot(..., ax=ax)` call into a matplotlib grid made here
+    re-runs ``fig.tight_layout()`` on it, as `hyp.plot` does for a figure it
+    creates itself. A figure you build with `matplotlib.pyplot.subplots` (or
+    ``fig.add_axes``) is not laid out by `hyp.plot`: its layout stays as you
+    set it.
+
     The same loop works on the plotly backend: ``backend='plotly'`` (or
     ``'auto'`` while `hyp.set_interactive_backend('plotly')` is active)
     returns a `plotly.subplots.make_subplots` figure and a flat array of
@@ -7077,6 +7083,18 @@ def plot(
         A plotly Figure or cell with the default ``backend='auto'`` draws
         with plotly; with an explicit ``backend='matplotlib'`` it raises
         `TypeError`. A matplotlib Axes under plotly raises `ValueError`.
+
+        The LAYOUT of a matplotlib figure you built yourself stays yours:
+        the call draws into `ax` and leaves that figure's other axes, its
+        ``subplots_adjust`` margins and its layout engine
+        (``layout='constrained'``, ...) as they were -- call
+        ``fig.tight_layout()`` yourself if you want one. (Through 1.1.0
+        every such call ran ``plt.tight_layout()``, which moved all of the
+        figure's axes.) A figure hypertools made -- its own, or a
+        `hyp.subplots` grid -- is still tightened after each static panel.
+        One exception: with no layout engine on the figure, a `legend=`
+        too wide for the canvas still widens the figure to fit, so it is
+        not clipped when saved.
 
         The datasets are drawn in the `palette` exactly as on a figure of
         their own (a caller's Axes used to keep the color cycle of the

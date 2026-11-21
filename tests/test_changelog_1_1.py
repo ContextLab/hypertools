@@ -1,4 +1,5 @@
-"""The 1.1.0 section exists, is on top, and records the behaviour changes.
+"""The 1.1.0 section exists, under later releases only, and records the
+behaviour changes.
 
 A validation change that only appears under "New features" is a change users
 will meet as a crash. `## 1.1.0 (unreleased)` did not exist when the plan was
@@ -69,9 +70,19 @@ def _heading_1_1_0(text):
 def test_changelog_has_a_1_1_0_section():
     text = _changelog()
     heading = _heading_1_1_0(text)
-    # exactly one 1.1.0 heading, and it is the first version section
+    # exactly one 1.1.0 heading, and nothing but LATER releases above it
+    # (it was the first version section until the 1.1.1 patch release; a
+    # section for an older or an unnumbered release above it would still
+    # bury it)
     assert len(_HEADING_1_1_0_RE.findall(text)) == 1
-    assert text.index(heading) == text.index('\n## ') + 1
+    above = re.findall(r'^## (.+)$', text[:text.index(heading)], re.MULTILINE)
+    for other in above:
+        match = re.fullmatch(
+            r'(\d+)\.(\d+)\.(\d+) \((unreleased|\d{4}-\d{2}-\d{2})\)', other)
+        assert match, f'unrecognized section above 1.1.0: `## {other}`'
+        assert tuple(int(g) for g in match.groups()[:3]) > (1, 1, 0), (
+            f'`## {other}` sits above `{heading}` but is not a later release')
+    assert len(above) == len(set(above))
 
 
 def test_1_1_0_precedes_1_0_1():
