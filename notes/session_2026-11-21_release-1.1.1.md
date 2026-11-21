@@ -151,3 +151,22 @@ upload is irreversible and needs Jeremy's go.
 ## Verification log
 
 See the end of this file; updated as checks finish.
+
+### Final local pass, head 59be174c (2026-11-21, 15:55-16:19 EST)
+
+Both suites and the docs build ran at the same time on one machine.
+
+- `.venv` (Python 3.12, matplotlib 3.10.8, pytest 9.0.2): 6845 passed,
+  23 skipped, 3 deselected, 1 failed. The failure was
+  `tests/test_lsl_streaming.py::test_lsl_stream_resolves_any_stream`
+  ("nothing received for ~10.0s"): the test resolves ANY stream on the
+  network and the other suite's LSL outlets were live at the same time.
+  Rerun alone straight after: `tests/test_lsl_streaming.py` 27 passed,
+  1 skipped. The earlier pass of the same suite (head 0e4a924c) was
+  6842 passed, 0 failed.
+- Fresh env (Python 3.12, matplotlib 3.11.2, pytest 9.2.0, pylsl 1.18.7):
+  6822 passed, 33 skipped, 3 deselected, 0 failed.
+- `ruff check .`: All checks passed.
+- Sphinx `-b html -W`: full build with all 51 gallery examples executed at
+  head 0e4a924c, "build succeeded"; incremental rebuild of the changed API
+  pages at 59be174c, "build succeeded".
