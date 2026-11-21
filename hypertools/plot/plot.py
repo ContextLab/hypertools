@@ -3258,6 +3258,12 @@ def _normalize_legend_colors(legend_colors):
     return items, None
 
 
+#: Set (to True) on a matplotlib figure that `hyp.subplots` created: the
+#: mark by which `hyp.plot(..., ax=)` tells a grid hypertools made, and may
+#: lay out, from a figure the caller built (GH #291).
+_HYP_GRID_FIGURE_ATTR = '_hypertools_grid'
+
+
 def subplots(nrows=1, ncols=1, ndims=3, size=None, backend='auto',
              **fig_kw):
     """Create a figure and a FLAT array of hypertools-ready axes (GH #285).
@@ -3355,6 +3361,11 @@ def subplots(nrows=1, ncols=1, ndims=3, size=None, backend='auto',
     if size is not None:
         fig_kw.setdefault('figsize', tuple(size))
     fig, axes = plt.subplots(nrows, ncols, subplot_kw=subplot_kw, **fig_kw)
+    # hypertools made this figure, so `hyp.plot(..., ax=axes[i])` keeps
+    # laying it out (`tight_layout`) after each static panel, as it does for
+    # a figure it creates itself; a figure the caller built is left as the
+    # caller arranged it (GH #291)
+    setattr(fig, _HYP_GRID_FIGURE_ATTR, True)
     flat = np.empty(nrows * ncols, dtype=object)
     flat[:] = list(np.ravel(np.asarray(axes, dtype=object)))
     return fig, flat
@@ -13222,9 +13233,19 @@ def plot(
 
             # tighten layout (static plots only: animated axes are given
             # the full canvas so rotating zoomed cubes don't clip, and
-            # tight_layout would shrink them back into subplot margins)
-            if not animate:
-                plt.tight_layout()
+            # tight_layout would shrink them back into subplot margins).
+            # Only a figure hypertools made is laid out: its own figure, or
+            # a `hyp.subplots` grid. The layout of a figure the caller built
+            # is the caller's -- `tight_layout` moves EVERY axes of a figure
+            # (not only the one passed as `ax=`), replaces the figure's
+            # layout engine, and warns about axes placed with
+            # `fig.add_axes` (GH #291). Called on the figure that owns the
+            # axes, never through pyplot: the current figure can be another
+            # one.
+            if not animate and isinstance(fig, plt.Figure) and (
+                    not _user_supplied_ax
+                    or getattr(fig, _HYP_GRID_FIGURE_ATTR, False)):
+                fig.tight_layout()
 
             # colorbar (GH #100): built once, here, from the (frame-
             # independent) color mapping. For animated plots this is never
@@ -13249,8 +13270,15 @@ def plot(
             # `_draw` above regardless of `animate`, and is static across
             # every animation frame, so fitting it once here -- exactly like
             # the colorbar above -- is enough; no per-frame work needed).
+            #
+            # A figure the CALLER built with a layout engine (constrained,
+            # compressed, tight) is left to that engine, which makes room
+            # for the legend itself at every draw: the fit would switch the
+            # caller's engine off for good (GH #291).
             if ((legend is not None or _final_legend_entries is not None)
-                    and ax is not None):
+                    and ax is not None
+                    and not (_user_supplied_ax
+                             and _has_caller_layout_engine(fig))):
                 _fit_right_legend(fig, ax)
 
             # companion= panels (GH #285): extra 2-D panels laid out beside
@@ -14250,6 +14278,20 @@ def _reserve_animated_3d_title_margin(fig, ax, pad_in=0.08, fontsize=None,
     fig.set_size_inches(w_in, new_h_in)
     ax.set_position([pos.x0, bottom_in / new_h_in,
                      pos.width, height_in / new_h_in])
+
+
+def _has_caller_layout_engine(fig):
+    """Whether `fig` is a matplotlib figure the caller built (not a
+    `hyp.subplots` grid) that carries an active layout engine --
+    ``layout='constrained'``/``'compressed'``/``'tight'`` -- which arranges
+    the figure, legends beside the axes included, at every draw."""
+    if not isinstance(fig, plt.Figure) or getattr(
+            fig, _HYP_GRID_FIGURE_ATTR, False):
+        return False
+    from matplotlib.layout_engine import PlaceHolderLayoutEngine
+    engine = fig.get_layout_engine()
+    return engine is not None and not isinstance(
+        engine, PlaceHolderLayoutEngine)
 
 
 def _fit_right_legend(fig, ax, pad_in=0.15, max_iter=3):

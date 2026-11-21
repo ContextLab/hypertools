@@ -21,6 +21,7 @@ map) ships with matplotlib itself.
 
 import os
 import warnings
+from numbers import Integral
 
 import numpy as np
 
@@ -78,7 +79,8 @@ _BUNDLED_FONT_DIR = os.path.join(
 # the rest are common system faces that users may prefer/recognize. Anything
 # NOT installed is filtered out before reaching matplotlib, because naming a
 # missing family makes matplotlib log a `findfont: ... not found` message for
-# every text artist.
+# every text artist. So is a family with no regular-weight face (see
+# `_families_with_a_regular_face`).
 _NICE_SANS_FAMILIES = [
     _BUNDLED_FAMILY,
     'Helvetica Neue',
@@ -142,6 +144,51 @@ def installed_families():
     return {entry.name for entry in font_manager.fontManager.ttflist}
 
 
+def _families_with_a_regular_face(families):
+    """The subset of `families` whose best match for ordinary text is a
+    regular-weight (400) face.
+
+    matplotlib resolves every family of a ``font.family`` list for every
+    text it draws, at that text's weight -- 'normal' unless the caller asks
+    otherwise. When the family's closest face has another weight,
+    `findfont` logs "Failed to find font weight normal for <family>, now
+    using <weight>" at WARNING level, once per resolution. matplotlib >=
+    3.11 registers every face of a ``.ttc`` collection, which on macOS
+    surfaces 'Hiragino Kaku Gothic ProN' with W3 (300) and W6 (600) faces
+    only, so every figure logged that line several times (GH #292).
+
+    The choice of face is matplotlib's own: this scores each registered
+    face of a family with the font manager's `score_*` methods, exactly as
+    `findfont` does for default `FontProperties`, and asks whether the
+    winner's weight is 400. A family that cannot be scored is kept --
+    a font-manager quirk must never cost glyph coverage.
+    """
+    manager = font_manager.fontManager
+    wanted = {family.lower() for family in families if family}
+    best = {}                       # lowercased family -> (score, weight)
+    for entry in manager.ttflist:
+        key = entry.name.lower()
+        if key not in wanted:
+            continue
+        try:
+            score = (manager.score_style('normal', entry.style)
+                     + manager.score_variant('normal', entry.variant)
+                     + manager.score_weight('normal', entry.weight)
+                     + manager.score_stretch('normal', entry.stretch)
+                     + manager.score_size(10.0, entry.size))
+            weight = entry.weight
+            if not isinstance(weight, Integral):
+                weight = font_manager.weight_dict[weight]
+        except Exception:  # noqa: BLE001 - unscorable: keep the family
+            best[key] = (-1.0, 400)
+            continue
+        # strict `<`: findfont keeps the FIRST of equally scored faces
+        if key not in best or score < best[key][0]:
+            best[key] = (score, weight)
+    return {family for family in families
+            if family and best.get(family.lower(), (0, 400))[1] == 400}
+
+
 def sans_serif_stack(first=None, extra=None):
     """Ordered font families for matplotlib's PER-GLYPH fallback.
 
@@ -157,8 +204,16 @@ def sans_serif_stack(first=None, extra=None):
 
     Every entry is filtered against what is actually installed, so matplotlib
     never logs a ``findfont: ... not found`` message for a family in the stack.
+    The families hypertools adds on its own initiative (the good-looking sans
+    faces and the pan-Unicode/CJK ones) are also left out when they have no
+    regular-weight face, so ordinary text never logs ``findfont: Failed to
+    find font weight normal ...`` either (GH #292). `first` and `extra` are
+    kept regardless: the caller asked for the one, and the other is the only
+    font found that covers the text.
     """
     available = installed_families()
+    regular = _families_with_a_regular_face(
+        _NICE_SANS_FAMILIES + _PREFERRED_FAMILIES)
     stack = []
 
     def _add(name):
@@ -167,9 +222,11 @@ def sans_serif_stack(first=None, extra=None):
 
     _add(first)                              # an explicit font= wins outright
     for family in _NICE_SANS_FAMILIES:
-        _add(family)
+        if family in regular:
+            _add(family)
     for family in _PREFERRED_FAMILIES:       # pan-Unicode / CJK coverage
-        _add(family)
+        if family in regular:
+            _add(family)
     _add(extra)                              # auto gap-filler: fallback only
     _add(_LAST_RESORT_FAMILY)
     if _LAST_RESORT_FAMILY not in stack:     # matplotlib always ships it, but
