@@ -3258,6 +3258,13 @@ def _normalize_legend_colors(legend_colors):
     return items, None
 
 
+#: Set (to True) on every matplotlib figure hypertools creates -- the one a
+#: `hyp.plot` call without `ax=` returns, and a `hyp.subplots` grid: the
+#: mark by which a later `hyp.plot(..., ax=)` tells a figure hypertools
+#: made, and may lay out, from a figure the caller built (GH #291).
+_HYP_FIGURE_ATTR = '_hypertools_figure'
+
+
 def subplots(nrows=1, ncols=1, ndims=3, size=None, backend='auto',
              **fig_kw):
     """Create a figure and a FLAT array of hypertools-ready axes (GH #285).
@@ -3276,6 +3283,12 @@ def subplots(nrows=1, ncols=1, ndims=3, size=None, backend='auto',
     For the common case -- one dataset per panel, one shared reduction --
     pass ``panels=`` to `hyp.plot` instead; this helper is for grids you
     want to fill yourself (mixing hypertools panels with your own).
+
+    Each static `hyp.plot(..., ax=ax)` call into a matplotlib grid made here
+    re-runs ``fig.tight_layout()`` on it, as `hyp.plot` does for a figure it
+    creates itself. A figure you build with `matplotlib.pyplot.subplots` (or
+    ``fig.add_axes``) is not laid out by `hyp.plot`: its layout stays as you
+    set it.
 
     The same loop works on the plotly backend: ``backend='plotly'`` (or
     ``'auto'`` while `hyp.set_interactive_backend('plotly')` is active)
@@ -3355,6 +3368,11 @@ def subplots(nrows=1, ncols=1, ndims=3, size=None, backend='auto',
     if size is not None:
         fig_kw.setdefault('figsize', tuple(size))
     fig, axes = plt.subplots(nrows, ncols, subplot_kw=subplot_kw, **fig_kw)
+    # hypertools made this figure, so `hyp.plot(..., ax=axes[i])` keeps
+    # laying it out (`tight_layout`) after each static panel, as it does for
+    # a figure it creates itself; a figure the caller built is left as the
+    # caller arranged it (GH #291)
+    setattr(fig, _HYP_FIGURE_ATTR, True)
     flat = np.empty(nrows * ncols, dtype=object)
     flat[:] = list(np.ravel(np.asarray(axes, dtype=object)))
     return fig, flat
@@ -7066,6 +7084,24 @@ def plot(
         A plotly Figure or cell with the default ``backend='auto'`` draws
         with plotly; with an explicit ``backend='matplotlib'`` it raises
         `TypeError`. A matplotlib Axes under plotly raises `ValueError`.
+
+        The LAYOUT of a matplotlib figure you built yourself stays yours:
+        the call draws into `ax` and leaves that figure's other axes, its
+        ``subplots_adjust`` margins, its layout engine
+        (``layout='constrained'``, ...) and its size (unless you pass
+        `size=`) as they were -- call ``fig.tight_layout()`` yourself if
+        you want one. (Through 1.1.0 every such call ran
+        ``plt.tight_layout()``, which moved all of the figure's axes.)
+        Two consequences. A colorbar takes its room out of `ax` itself, as
+        matplotlib's ``fig.colorbar(..., ax=ax)`` does. And a `legend=`
+        drawn beside `ax` is not fitted into your figure (through 1.1.0
+        the figure was widened), so on a figure with no layout of its own
+        it can cover the next panel or run off the canvas:
+        ``fig.tight_layout()`` after plotting, or ``layout='constrained'``
+        when you create the figure, makes room for it.
+        A figure hypertools made -- one an earlier `hyp.plot` call
+        returned, or a `hyp.subplots` grid -- is still tightened, and its
+        legend fitted, by each static call that draws into it.
 
         The datasets are drawn in the `palette` exactly as on a figure of
         their own (a caller's Axes used to keep the color cycle of the
@@ -13222,9 +13258,24 @@ def plot(
 
             # tighten layout (static plots only: animated axes are given
             # the full canvas so rotating zoomed cubes don't clip, and
-            # tight_layout would shrink them back into subplot margins)
-            if not animate:
-                plt.tight_layout()
+            # tight_layout would shrink them back into subplot margins).
+            # Only a figure hypertools made is laid out: its own figure, or
+            # a `hyp.subplots` grid. The layout of a figure the caller built
+            # is the caller's -- `tight_layout` moves EVERY axes of a figure
+            # (not only the one passed as `ax=`), replaces the figure's
+            # layout engine, and warns about axes placed with
+            # `fig.add_axes` (GH #291). Called on the figure that owns the
+            # axes, never through pyplot: the current figure can be another
+            # one.
+            if not _user_supplied_ax and isinstance(fig, plt.Figure):
+                # hypertools' own figure: a later call that draws into it
+                # (`hyp.plot(more, ax=fig.axes[0])`) keeps laying it out
+                setattr(fig, _HYP_FIGURE_ATTR, True)
+            _caller_figure = _user_supplied_ax and not getattr(
+                fig, _HYP_FIGURE_ATTR, False)
+            if (not animate and not _caller_figure
+                    and isinstance(fig, plt.Figure)):
+                fig.tight_layout()
 
             # colorbar (GH #100): built once, here, from the (frame-
             # independent) color mapping. For animated plots this is never
@@ -13249,8 +13300,17 @@ def plot(
             # `_draw` above regardless of `animate`, and is static across
             # every animation frame, so fitting it once here -- exactly like
             # the colorbar above -- is enough; no per-frame work needed).
+            #
+            # A figure the CALLER built is not fitted: the fit resizes the
+            # figure, which stretches its other axes, and switches off its
+            # layout engine -- and a figure it has widened no longer lays
+            # out cleanly with the caller's own `fig.tight_layout()`
+            # (measured: the last panel's legend ends up clipped). Left
+            # alone, `fig.tight_layout()` or `layout='constrained'` places
+            # every panel's legend without overlap or clipping, in 2-D and
+            # 3-D (GH #291).
             if ((legend is not None or _final_legend_entries is not None)
-                    and ax is not None):
+                    and ax is not None and not _caller_figure):
                 _fit_right_legend(fig, ax)
 
             # companion= panels (GH #285): extra 2-D panels laid out beside

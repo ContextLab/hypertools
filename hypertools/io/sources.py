@@ -1213,6 +1213,16 @@ def yahoo_source(name, start=None, end=None, interval='1d', timeout=30):
     url = _YAHOO_CHART_URL.format(ticker=ticker)
     resp = _web_get(url, params=params, timeout=timeout,
                     label=f"Yahoo Finance's chart API for {ticker!r}")
+    if resp.status_code == 429:
+        # Yahoo throttles anonymous clients per network address and answers
+        # with a plain-text body, which used to surface as "returned a
+        # non-JSON response ... JSONDecodeError" -- a parser complaint about
+        # what is really a "come back later" (seen 2026-11-21 on one CI
+        # runner while eleven others loaded the same tickers).
+        raise HypertoolsIOError(
+            f'Yahoo Finance is rate-limiting requests from this network '
+            f'address (HTTP 429, too many requests) for {ticker!r}. '
+            'Wait a few minutes and try again.')
     try:
         payload = resp.json()
     except ValueError as e:

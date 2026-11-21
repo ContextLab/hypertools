@@ -127,6 +127,10 @@ TRANSIENT_PHRASES = (
     'name resolution', 'failed to resolve', 'getaddrinfo',
     'nodename nor servname', 'network is unreachable',
     'failed to establish',
+    # HTTP 429: the host throttling this address, which clears on its own.
+    # Only as this two-word phrase beside no exception name -- a 429 reported
+    # through an `HTTPError:` token still reads as a defect, like any 4xx.
+    'too many requests',
 )
 
 # What decides an `SSLError` line: a peer closing the TLS connection mid-read

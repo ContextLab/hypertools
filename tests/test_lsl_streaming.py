@@ -158,12 +158,29 @@ def _require_outlets():
     pytest.skip(message)
 
 
+#: How long a test waits for `_start_outlet`'s thread to END after `stop` is
+#: set. The thread's closure holds the only reference to the outlet, so its
+#: exit includes `StreamOutlet.__del__` -> liblsl's `lsl_destroy_outlet`, and
+#: the join therefore waits for the outlet to be gone from the network too
+#: (which is what keeps one test's outlet out of the next test's resolve).
+#: That call's duration is liblsl's, not the pusher loop's -- measured
+#: 2026-11-21 with a bare pylsl script (no hypertools), same machine:
+#: 0.03-0.04 s in every case on pylsl 1.18.2 (liblsl 1.17.7); on pylsl
+#: 1.18.7 (bundled liblsl 1.18.0.b7) 0.03 s for an outlet nothing ever
+#: contacted, a constant 2.0 s once it has answered a resolve query, and a
+#: constant 7.0 s once an inlet has connected to it -- even an inlet
+#: destroyed 10 s earlier. The old 5 s budget sat below that 7 s, so every
+#: test that opened an inlet failed its teardown there. The budget is for a
+#: wedged thread, not a slow destroy.
+_OUTLET_TEARDOWN_WAIT = 30.0
+
+
 def _start_outlet(name, stream_type='EEG', n_channels=N_CHANNELS,
                   rate=100.0, push_interval=0.01):
     """Start a REAL pylsl.StreamOutlet on a background daemon thread,
     continuously pushing `_sample_for_index` samples until `stop` is set.
-    Returns (thread, stop_event); caller must `stop.set(); thread.join(...)`
-    when done."""
+    Returns (thread, stop_event); caller must `stop.set();
+    thread.join(_OUTLET_TEARDOWN_WAIT)` when done."""
     _require_outlets()
     info = pylsl.StreamInfo(name, stream_type, n_channels, rate, 'float32',
                             f'hypertools-test-{name}')
@@ -193,7 +210,7 @@ def outlet_stream():
         yield name
     finally:
         stop.set()
-        thread.join(timeout=5.0)
+        thread.join(timeout=_OUTLET_TEARDOWN_WAIT)
         assert not thread.is_alive(), \
             'outlet-pushing background thread failed to stop in time'
 
@@ -264,7 +281,7 @@ def test_lsl_stream_resolves_by_type():
         assert len(sample) == N_CHANNELS
     finally:
         stop.set()
-        thread.join(timeout=5.0)
+        thread.join(timeout=_OUTLET_TEARDOWN_WAIT)
         assert not thread.is_alive()
 
 

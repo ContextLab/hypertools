@@ -394,3 +394,65 @@ def test_yahoo_live_24h_future_across_the_fall_back_hour_is_unique():
     assert len(df) > 24
     assert not df.index.duplicated().any()
     assert df.index.is_monotonic_increasing
+
+
+# ---------------------------------------------------------------------------
+# Yahoo rate limiting (HTTP 429)
+# ---------------------------------------------------------------------------
+
+def test_yahoo_rate_limit_is_reported_as_one_and_reads_as_transient(
+        monkeypatch):
+    """A real HTTP 429 with Yahoo's plain-text body, served locally: the
+    loader says "rate-limiting", not "non-JSON response ... JSONDecodeError"
+    (2026-11-21: one CI runner got 429s for every ticker and eight live
+    tests failed on what read as a parser defect), and the shared classifier
+    treats it as an outage -- so the live tests above skip on it, and fail
+    on it under HYPERTOOLS_REQUIRE_LIVE_SOURCES=1."""
+    import http.server
+    import threading
+
+    from hypertools.io import sources
+    from tests._netskip import is_transient_network
+
+    hits = []
+
+    class _Throttled(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):                            # noqa: N802
+            hits.append(self.path)
+            body = b'Too Many Requests\r\n'
+            self.send_response(429)
+            self.send_header('Content-Type', 'text/plain')
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args):                # keep pytest output clean
+            pass
+
+    server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), _Throttled)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        monkeypatch.setattr(
+            sources, '_YAHOO_CHART_URL',
+            f'http://127.0.0.1:{server.server_address[1]}/chart/{{ticker}}')
+        with pytest.raises(hyp.HypertoolsIOError) as raised:
+            hyp.load('yahoo:AAPL')
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(5)
+    message = str(raised.value)
+    assert hits and hits[0].startswith('/chart/AAPL')
+    assert 'rate-limiting' in message and 'HTTP 429' in message
+    assert 'AAPL' in message and 'JSONDecodeError' not in message
+    assert is_transient_network(raised.value)
+    assert is_transient_network(message)
+    # a 200 that is not JSON is still a defect: the payload changed
+    assert not is_transient_network(
+        "HypertoolsIOError: Yahoo Finance returned a non-JSON response "
+        "(HTTP 200) for 'AAPL': JSONDecodeError: Expecting value: line 1 "
+        "column 1 (char 0)")
+    # ...and so is a 429 that arrives as an HTTPError, like any other 4xx
+    assert not is_transient_network(
+        'HTTPError: 429 Client Error: Too Many Requests for url: x')

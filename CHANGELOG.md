@@ -1,5 +1,77 @@
 # Changelog
 
+## 1.1.1 (2026-11-21)
+
+A patch release: three fixes for noise and side effects met when `hyp.plot`
+draws into a figure the caller built, found by executing notebooks with
+`jupyter nbconvert` under matplotlib 3.11. No API changes.
+
+### Fixed
+
+- **The backend warning is issued once, and only when it applies (GH #290).**
+  When hypertools cannot set up an interactive matplotlib backend at import
+  (for example in a notebook kernel without `ipympl`), it keeps a warning to
+  show "upon trying to create an interactive or animated plot". `hyp.plot`
+  issued it on every call instead, including static plots and calls that
+  show no live figure (`show=False`, `save_path=`, `ax=`), so a notebook showed
+  it under every plotting cell. It is now issued only by a call that
+  displays an animated or interactive plot that matplotlib renders, and once
+  per session per message. A plot rendered by plotly never issues it.
+- **`hyp.plot(..., ax=ax)` leaves the layout of the caller's figure alone
+  (GH #291).** Static plots ended with `plt.tight_layout()` even when the
+  caller passed its own axes. That moved every axes of the caller's figure,
+  not only the one passed; discarded `fig.subplots_adjust(...)` margins;
+  replaced a `layout='constrained'` engine; warned "This figure includes
+  Axes that are not compatible with tight_layout" for axes placed with
+  `fig.add_axes`; and, being a pyplot call, acted on pyplot's current
+  figure, which need not be the one that owns `ax`. A figure the caller
+  built is now left as the caller arranged it: its other axes, its
+  margins, its layout engine and its size (a colorbar still takes its room
+  out of the axes it belongs to, as matplotlib's `fig.colorbar(ax=ax)`
+  does, and an explicit `size=` still resizes the figure). Figures
+  hypertools makes are
+  laid out as before: its own figure (including a later call that draws
+  into it with `ax=fig.axes[0]`), a `panels=` grid, and a `hyp.subplots`
+  grid (each `hyp.plot(..., ax=axes[i])` call still tightens it). **If you relied on the automatic layout** of a figure made with
+  `plt.subplots`, call `fig.tight_layout()` after plotting, create the
+  figure with `layout='constrained'`, or build the grid with
+  `hyp.subplots`. This matters most with `legend=`: the legend beside a
+  caller's axes is no longer fitted by widening the caller's figure (that
+  stretched the figure's other axes and switched off its layout engine),
+  so without a layout it can cover the next panel or run off the canvas.
+- **No `findfont` log lines for ordinary text under matplotlib 3.11
+  (GH #292).** matplotlib 3.11 registers every face of a `.ttc` font
+  collection, which on macOS surfaces 'Hiragino Kaku Gothic ProN' as a
+  family with light (W3) and semibold (W6) faces only, and logs "findfont:
+  Failed to find font weight normal for Hiragino Kaku Gothic ProN, now
+  using 300." each time a family in the font list has no face at a text's
+  exact weight. hypertools listed that family among its per-glyph fallback
+  fonts, so every figure logged the line several times. Fallback families
+  with no regular-weight face are now left out of the list (on macOS the
+  same glyphs are still reached through 'Hiragino Sans'); a font named with
+  `font=`, and a font found to be the only one covering the text, are kept
+  regardless.
+
+- **A Yahoo Finance rate limit is reported as one.** When Yahoo throttles
+  an address it answers HTTP 429 with a plain-text body, which
+  `hyp.load('yahoo:<TICKER>')` reported as "returned a non-JSON response
+  (HTTP 429) ... JSONDecodeError". The error now says that Yahoo is
+  rate-limiting the address and to try again later.
+
+### Documented limitations
+
+- **Some text can still log under matplotlib 3.11.** The line above is
+  matplotlib's, logged for any family in the list that lacks the exact
+  weight a text asks for. Regular-weight text drawn with the fonts
+  hypertools picks on its own is quiet. Three cases still log, several
+  lines per figure: bold or other non-regular text (for example
+  `title_kwargs={'fontweight': 'bold'}`) when an installed fallback family
+  ships a regular face only, such as 'Arial Unicode MS' on macOS; a
+  `font=` that names a family with no regular face; and text whose only
+  covering font has none (on macOS, a few rare CJK characters reached only
+  through 'Hiragino Sans GB'). Those families stay in the list because
+  dropping them would cost glyphs. matplotlib 3.10 does not log the line.
+
 ## 1.1.0 (2026-10-10)
 
 Hierarchical (`MultiIndex`) DataFrames become a first-class input. A frame

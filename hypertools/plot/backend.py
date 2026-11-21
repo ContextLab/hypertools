@@ -25,8 +25,11 @@ BACKEND_KEYS : dict
     the "preferred" key (the one `BACKEND_MAPPING` will funnel others
     into) is the first in the list.
 BACKEND_WARNING : str or None
-    The warning to be issued upon trying to create an interactive or
-    animated plot, if any. This is set under three conditions:
+    The warning to be issued upon trying to display an interactive or
+    animated plot that matplotlib renders, if any (once per session; a
+    static plot, a plot that is saved or drawn with `show=False`, and a
+    plot rendered by plotly never issue it). This is set under three
+    conditions:
       1. No compatible interactive backends are available
       2. Hypertools was imported into a notebook that uses the "classic"
          notebook JS frontend, and the notebook-native interactive
@@ -965,6 +968,79 @@ def _get_runtime_args(func, *func_args, **func_kwargs):
     return bound_args.arguments
 
 
+def _needs_interactive_display(plot_kwargs):
+    """Whether a `hypertools.plot` call will DISPLAY an interactive or
+    animated plot that matplotlib renders.
+
+    A GUI/interactive matplotlib backend is only needed to display a live
+    figure. Rendering an animation to a file (``save_path=``) or with
+    ``show=False`` works on any non-interactive backend (Agg included), so
+    switching to a GUI backend in those cases is unnecessary -- and aborts
+    uncatchably on headless systems (release audit 2026-07). A plot that
+    plotly renders embeds its frames in the plotly Figure and needs no
+    matplotlib backend at all -- treating a render preference of 'plotly'
+    as a matplotlib backend name crashed (QC 2026-07).
+
+    Parameters
+    ----------
+    plot_kwargs : dict
+        {parameter: value} mapping of the call's runtime values, from
+        `_get_runtime_args`
+
+    Returns
+    -------
+    bool
+    """
+    def _truthy(value):
+        # an argument with no single truth value (an array) is for
+        # `plot` itself to reject, with its own message
+        try:
+            return bool(value)
+        except Exception:  # noqa: BLE001
+            return True
+
+    want_interactive = (_truthy(plot_kwargs.get("animate"))
+                        or _truthy(plot_kwargs.get("interactive")))
+    will_display = (_truthy(plot_kwargs.get("show", True))
+                    and not _truthy(plot_kwargs.get("save_path")))
+    if not (want_interactive and will_display):
+        return False
+    # anything but a matplotlib Axes passed as `ax=` is a plotly Figure or
+    # grid cell, which makes plotly the renderer whatever `backend=` says
+    # (or is invalid, which `plot` reports)
+    target = plot_kwargs.get("ax")
+    if target is not None:
+        import matplotlib.axes as _mpl_axes
+        if not isinstance(target, _mpl_axes.Axes):
+            return False
+    from .plotly_backend import resolve_backend as _resolve_backend
+    return _resolve_backend(plot_kwargs.get("backend", "auto")) != "plotly"
+
+
+# The `BACKEND_WARNING` messages already shown in this session. Python's own
+# once-per-location registry cannot be relied on for this: any
+# `warnings.catch_warnings()` block (hypertools and matplotlib both use them
+# while plotting) resets it, so the same message came back under every
+# notebook cell that plotted (GH #290).
+_BACKEND_WARNINGS_ISSUED = set()
+
+
+def _issue_backend_warning():
+    """Issue `BACKEND_WARNING`, if there is one, once per session.
+
+    A different message (e.g., after the notebook frontend changes) is
+    issued once in its turn.
+    """
+    message = BACKEND_WARNING
+    if message is None or message in _BACKEND_WARNINGS_ISSUED:
+        return
+    warnings.warn(message)
+    # recorded only once `warnings.warn` has returned: under an "error"
+    # filter it raises, and the next call must raise again rather than pass
+    # quietly. (A warning the caller's filters ignore counts as issued.)
+    _BACKEND_WARNINGS_ISSUED.add(message)
+
+
 def _valid_matplotlib_backends():
     """
     Build the set of recognized matplotlib backend names (lowercased),
@@ -1327,46 +1403,38 @@ def manage_backend(plot_func):
         backend_context = _null_backend_context
         tmp_backend = None
 
-        if not IN_SET_CONTEXT:
-            plot_kwargs = _get_runtime_args(plot_func, *args, **kwargs)
-            want_interactive = (plot_kwargs.get("animate")
-                                or plot_kwargs.get("interactive"))
-            # A GUI/interactive matplotlib backend is only needed to DISPLAY
-            # a live figure. Rendering an animation to a file (save_path=) or
-            # with show=False works on any non-interactive backend (Agg
-            # included), so switching to a GUI backend in those cases is
-            # unnecessary -- and aborts uncatchably on headless systems
-            # (release audit 2026-07). Only switch when the figure will
-            # actually be shown interactively.
-            will_display = (plot_kwargs.get("show", True)
-                            and not plot_kwargs.get("save_path"))
-            if want_interactive and will_display:
-                # Only matplotlib-rendered plots need an interactive/animation-
-                # capable matplotlib backend. When the plot renders with plotly
-                # (the frames are embedded in the plotly Figure), skip the
-                # matplotlib backend switch entirely -- otherwise a render
-                # preference of 'plotly' resolved to a matplotlib backend name
-                # and crashed (QC 2026-07).
-                from .plotly_backend import resolve_backend as _resolve_backend
-                _render = _resolve_backend(plot_kwargs.get("backend", "auto"))
-                if _render != "plotly":
-                    curr_backend = HypertoolsBackend(mpl.get_backend()).normalize()
-                    tmp_backend = plot_kwargs.get("mpl_backend")
-                    if tmp_backend == "auto":
-                        tmp_backend = HYPERTOOLS_BACKEND.normalize()
-
-                    # 'plotly' is a render backend, not a matplotlib backend --
-                    # never try to switch matplotlib to it
-                    if tmp_backend not in ("disable", "plotly", curr_backend):
-                        # if all conditions are met, use the real context
-                        backend_context = set_interactive_backend
-
         try:
+            # Whether this call will DISPLAY an interactive or animated plot
+            # that matplotlib renders: the only kind of call that needs an
+            # interactive matplotlib backend, and so the only kind the
+            # import-time `BACKEND_WARNING` is about (GH #290). Inside a
+            # `set_interactive_backend` context the call's arguments are only
+            # inspected when there is a warning that might need issuing.
+            # Done inside the `try`, so an argument that cannot be
+            # inspected (an unknown `backend=`) still leaves through the
+            # `finally` that restores the caller's rcParams.
+            needs_interactive_display = False
+            if not IN_SET_CONTEXT or BACKEND_WARNING is not None:
+                plot_kwargs = _get_runtime_args(plot_func, *args, **kwargs)
+                needs_interactive_display = _needs_interactive_display(plot_kwargs)
+
+            if needs_interactive_display and not IN_SET_CONTEXT:
+                curr_backend = HypertoolsBackend(mpl.get_backend()).normalize()
+                tmp_backend = plot_kwargs.get("mpl_backend")
+                if tmp_backend == "auto":
+                    tmp_backend = HYPERTOOLS_BACKEND.normalize()
+
+                # 'plotly' is a render backend, not a matplotlib backend --
+                # never try to switch matplotlib to it
+                if tmp_backend not in ("disable", "plotly", curr_backend):
+                    # if all conditions are met, use the real context
+                    backend_context = set_interactive_backend
+
             try:
                 from ..predict.time import warn_once_per_call
                 with backend_context(tmp_backend), warn_once_per_call():
-                    if BACKEND_WARNING is not None:
-                        warnings.warn(BACKEND_WARNING)
+                    if needs_interactive_display:
+                        _issue_backend_warning()
 
                     return plot_func(*args, **kwargs)
 
