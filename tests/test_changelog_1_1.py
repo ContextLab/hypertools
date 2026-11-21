@@ -1,5 +1,5 @@
 """The 1.1.0 section exists, under later releases only, and records the
-behaviour changes.
+behavior changes.
 
 A validation change that only appears under "New features" is a change users
 will meet as a crash. `## 1.1.0 (unreleased)` did not exist when the plan was

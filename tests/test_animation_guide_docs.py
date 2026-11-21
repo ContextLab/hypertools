@@ -131,7 +131,10 @@ def test_animation_guide_version_claims_match_the_package_version():
     import hypertools as hyp
 
     def _parse(version):
-        parts = [int(p) for p in version.split('.')]
+        # leading X.Y.Z only: a pre-release suffix (`1.2.0rc1`) is not
+        # part of the release a guide can name
+        parts = [int(p) for p in
+                 re.match(r'\d+(?:\.\d+){0,2}', version).group(0).split('.')]
         return tuple(parts + [0] * (3 - len(parts)))
 
     text = GUIDE.read_text()

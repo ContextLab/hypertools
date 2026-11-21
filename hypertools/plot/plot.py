@@ -7092,9 +7092,12 @@ def plot(
         every such call ran ``plt.tight_layout()``, which moved all of the
         figure's axes.) A figure hypertools made -- its own, or a
         `hyp.subplots` grid -- is still tightened after each static panel.
-        One exception: with no layout engine on the figure, a `legend=`
-        too wide for the canvas still widens the figure to fit, so it is
-        not clipped when saved.
+        That includes its size: a `legend=` drawn beside `ax` is not
+        fitted into your figure (through 1.1.0 the figure was widened), so
+        on a figure with no layout of its own it can cover the next panel
+        or run off the canvas. ``fig.tight_layout()`` after plotting, or
+        ``layout='constrained'`` when you create the figure, makes room
+        for it.
 
         The datasets are drawn in the `palette` exactly as on a figure of
         their own (a caller's Axes used to keep the color cycle of the
@@ -13260,9 +13263,10 @@ def plot(
             # `fig.add_axes` (GH #291). Called on the figure that owns the
             # axes, never through pyplot: the current figure can be another
             # one.
-            if not animate and isinstance(fig, plt.Figure) and (
-                    not _user_supplied_ax
-                    or getattr(fig, _HYP_GRID_FIGURE_ATTR, False)):
+            _caller_figure = _user_supplied_ax and not getattr(
+                fig, _HYP_GRID_FIGURE_ATTR, False)
+            if (not animate and not _caller_figure
+                    and isinstance(fig, plt.Figure)):
                 fig.tight_layout()
 
             # colorbar (GH #100): built once, here, from the (frame-
@@ -13289,14 +13293,16 @@ def plot(
             # every animation frame, so fitting it once here -- exactly like
             # the colorbar above -- is enough; no per-frame work needed).
             #
-            # A figure the CALLER built with a layout engine (constrained,
-            # compressed, tight) is left to that engine, which makes room
-            # for the legend itself at every draw: the fit would switch the
-            # caller's engine off for good (GH #291).
+            # A figure the CALLER built is not fitted: the fit resizes the
+            # figure, which stretches its other axes, and switches off its
+            # layout engine -- and a figure it has widened no longer lays
+            # out cleanly with the caller's own `fig.tight_layout()`
+            # (measured: the last panel's legend ends up clipped). Left
+            # alone, `fig.tight_layout()` or `layout='constrained'` places
+            # every panel's legend without overlap or clipping, in 2-D and
+            # 3-D (GH #291).
             if ((legend is not None or _final_legend_entries is not None)
-                    and ax is not None
-                    and not (_user_supplied_ax
-                             and _has_caller_layout_engine(fig))):
+                    and ax is not None and not _caller_figure):
                 _fit_right_legend(fig, ax)
 
             # companion= panels (GH #285): extra 2-D panels laid out beside
@@ -14296,20 +14302,6 @@ def _reserve_animated_3d_title_margin(fig, ax, pad_in=0.08, fontsize=None,
     fig.set_size_inches(w_in, new_h_in)
     ax.set_position([pos.x0, bottom_in / new_h_in,
                      pos.width, height_in / new_h_in])
-
-
-def _has_caller_layout_engine(fig):
-    """Whether `fig` is a matplotlib figure the caller built (not a
-    `hyp.subplots` grid) that carries an active layout engine --
-    ``layout='constrained'``/``'compressed'``/``'tight'`` -- which arranges
-    the figure, legends beside the axes included, at every draw."""
-    if not isinstance(fig, plt.Figure) or getattr(
-            fig, _HYP_GRID_FIGURE_ATTR, False):
-        return False
-    from matplotlib.layout_engine import PlaceHolderLayoutEngine
-    engine = fig.get_layout_engine()
-    return engine is not None and not isinstance(
-        engine, PlaceHolderLayoutEngine)
 
 
 def _fit_right_legend(fig, ax, pad_in=0.15, max_iter=3):

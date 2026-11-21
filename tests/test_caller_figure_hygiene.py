@@ -132,6 +132,24 @@ def test_backend_warning_inside_a_set_interactive_backend_context(
         assert B.BACKEND_WARNING == MESSAGE      # same backend: kept
         fig, ax = plt.subplots(subplot_kw={'projection': '3d'})
         assert _backend_warnings(_record(ax=ax, show=False)) == []
+        assert _backend_warnings(_record(animate=True, show=True)) == [
+            MESSAGE]
+        assert _backend_warnings(_record(animate=True, show=True)) == []
+
+
+def test_an_array_valued_animate_gets_plots_own_error(backend_warning):
+    """Deciding whether the warning applies must not trip over an argument
+    with no single truth value: `plot` rejects it with its own message, in
+    and out of a `set_interactive_backend` context."""
+    def _error():
+        with pytest.raises(Exception) as raised:
+            hyp.plot(_walk(), animate=np.array([1, 0]), show=False)
+        return str(raised.value)
+
+    outside = _error()
+    assert 'truth value' not in outside
+    with hyp.set_interactive_backend(B.HYPERTOOLS_BACKEND.normalize()):
+        assert _error() == outside
 
 
 # ---------------------------------------------------------------------------
@@ -200,16 +218,78 @@ def test_plot_into_caller_axes_keeps_the_callers_layout_engine(plot_kwargs):
     plt.close(fig)
 
 
-def test_a_legend_on_caller_axes_without_an_engine_is_still_fitted():
-    """Unchanged by GH #291: a right-side legend that would overflow the
-    canvas still widens the figure, so it is not clipped on save."""
-    fig, ax = plt.subplots(figsize=(4, 4), subplot_kw={'projection': '3d'})
-    hyp.plot(_walk(), ax=ax, show=False,
-             legend=['a very long legend label that cannot fit beside it'])
+def _legend_report(fig, axs):
+    """Per axes: (legend runs off the canvas, legend covers another axes)."""
     fig.canvas.draw()
-    legend_box = ax.get_legend().get_window_extent(fig.canvas.get_renderer())
-    assert legend_box.x1 <= fig.bbox.x1 + 1
-    assert fig.get_size_inches()[0] > 4.0
+    renderer = fig.canvas.get_renderer()
+    report = []
+    for ax in axs:
+        box = ax.get_legend().get_window_extent(renderer)
+        covers = any(box.overlaps(other.get_window_extent(renderer))
+                     for other in axs if other is not ax)
+        report.append((bool(box.x1 > fig.bbox.x1 + 1), covers))
+    return report
+
+
+def _two_walks():
+    rng = np.random.default_rng(0)
+    return [rng.normal(size=(50, 3)).cumsum(0) for _ in range(2)]
+
+
+@pytest.mark.parametrize('ndims', [2, 3])
+@pytest.mark.parametrize('n_panels', [1, 2])
+def test_legends_on_caller_axes_leave_the_figure_alone_and_lay_out_cleanly(
+        ndims, n_panels):
+    """A legend beside a caller's axes changes nothing about the caller's
+    figure (1.1.0 widened it, stretching its other axes), and the caller's
+    own `fig.tight_layout()` then places every legend on the canvas, clear
+    of the other panels. (On a figure hypertools had widened, that same
+    call left the last legend clipped.)"""
+    fig, axs = plt.subplots(
+        1, n_panels, figsize=(4 * n_panels, 4), squeeze=False,
+        subplot_kw={'projection': '3d'} if ndims == 3 else {})
+    axs = list(axs.ravel())
+    before = _positions(fig)
+    for ax in axs:
+        hyp.plot(_two_walks(), ax=ax, ndims=ndims, show=False,
+                 legend=['walk A', 'walk B'])
+    assert _positions(fig) == before
+    assert fig.get_size_inches().tolist() == [4.0 * n_panels, 4.0]
+    assert fig.get_layout_engine() is None
+    fig.tight_layout()
+    assert _legend_report(fig, axs) == [(False, False)] * n_panels
+    plt.close(fig)
+
+
+@pytest.mark.parametrize('ndims', [2, 3])
+def test_legends_on_caller_axes_fit_under_the_callers_constrained_layout(
+        ndims):
+    fig, axs = plt.subplots(
+        1, 2, figsize=(8, 4), layout='constrained',
+        subplot_kw={'projection': '3d'} if ndims == 3 else {})
+    engine = fig.get_layout_engine()
+    for ax in axs:
+        hyp.plot(_two_walks(), ax=ax, ndims=ndims, show=False,
+                 legend=['walk A', 'walk B'])
+    assert _legend_report(fig, list(axs)) == [(False, False)] * 2
+    assert fig.get_layout_engine() is engine
+    assert fig.get_size_inches().tolist() == [8.0, 4.0]
+    plt.close(fig)
+
+
+def test_plot_with_a_legend_into_subfigure_axes():
+    """An axes that lives in a SubFigure: the legend fit crashed on it
+    (`'SubFigure' object has no attribute 'get_size_inches'`), in 1.1.0
+    too."""
+    fig = plt.figure(figsize=(8, 4))
+    left, right = fig.subfigures(1, 2)
+    ax = left.add_subplot(projection='3d')
+    other = right.add_subplot()
+    before = _positions(fig)
+    hyp.plot(_two_walks(), ax=ax, show=False, legend=['walk A', 'walk B'])
+    assert ax.get_legend() is not None
+    assert _positions(fig) == before and other in fig.axes
+    fig.canvas.draw()
     plt.close(fig)
 
 
@@ -241,17 +321,45 @@ def test_hyp_subplots_grids_are_still_laid_out_by_each_plot_call():
     plt.close(own)
 
 
-def test_hypertools_own_figure_is_still_tightened_whatever_is_current():
+def test_hypertools_own_figure_is_still_tightened():
     """Without `ax=` the figure is hypertools' own and is laid out as
-    before -- on that figure, not on whichever one pyplot calls current."""
+    before."""
     fig = hyp.plot(_walk(), show=False, backend='matplotlib')
-    ax = fig.axes[0]
-    tightened = ax.get_position().bounds
-    plt.figure(fig)
+    tightened = fig.axes[0].get_position().bounds
     default, default_ax = plt.subplots(subplot_kw={'projection': '3d'})
     assert tightened != default_ax.get_position().bounds
     plt.close(fig)
     plt.close(default)
+
+
+def test_a_hyp_subplots_grid_is_tightened_whatever_figure_is_current():
+    """The layout goes to the figure that owns the axes, not to pyplot's
+    current figure: with another figure made current BEFORE the call, the
+    grid is tightened and the bystander is not touched."""
+    grid, axes = hyp.subplots(1, 2, size=[8, 4], backend='matplotlib')
+    loose = _positions(grid)
+    bystander, _ = plt.subplots(1, 2, figsize=(8, 4))
+    bystander.subplots_adjust(left=0.3, right=0.6, wspace=0.9)
+    before = _positions(bystander)
+    assert plt.gcf() is bystander
+    hyp.plot(_walk(), ax=axes[0], show=False, backend='matplotlib')
+    assert _positions(bystander) == before
+    assert not np.allclose(_positions(grid), loose, atol=1e-2)
+    plt.close(grid)
+    plt.close(bystander)
+
+
+def test_backend_warning_is_raised_again_under_an_error_filter(
+        backend_warning):
+    """A warning turned into an error has not been delivered: it must not
+    be recorded as shown and then pass silently the next time."""
+    for _ in range(2):
+        with warnings.catch_warnings():
+            warnings.simplefilter('error')
+            with pytest.raises(UserWarning, match='GH #290 test'):
+                hyp.plot(_walk(), animate=True, show=True,
+                         mpl_backend='disable')
+        plt.close('all')
 
 
 # ---------------------------------------------------------------------------

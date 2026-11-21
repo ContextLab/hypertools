@@ -1,5 +1,40 @@
 # HyperTools 1.1 release checklist
 
+## The 1.1.1 patch release: read this first
+
+`pyproject.toml` and `CHANGELOG.md` declare **1.1.1** (fixes for GH #290,
+#291 and #292; no API changes). The steps below were written for 1.1.0 and
+keep its history. For 1.1.1, follow the same steps in the same order and read
+`1.1.1` for `1.1.0` (and `v1.1.1` for `v1.1.0`) in every command, with these
+differences:
+
+- **Nothing is in release form yet.** The 1.1.1 pull request changes code,
+  tests, the changelog and the version only. `readme.md` still pins its
+  images to the `v1.1.0` tag (the `v1.1.1` tag does not exist until step 5,
+  so flipping earlier would break the images), and
+  `docs/prebuilt_gallery.json` still records the 1.1.0 gallery. Until step 2
+  is done on `master`, the `release-gate` job fails there on those two
+  checks and on the gallery manifest; that is the expected state between
+  the merge and the release.
+- **Step 2, README:** this time it is a real flip, not a verify-only step:
+  `sed -E -i '' 's#(/ContextLab/hypertools/)[^/]+(/images/)#\1v1.1.1\2#g' readme.md`,
+  then `grep -c '/ContextLab/hypertools/v1.1.1/images/' readme.md` → 13.
+- **Step 2, CHANGELOG date:** the `## 1.1.1 (YYYY-MM-DD)` heading must not be
+  earlier than the release commit's date.
+- **Step 2, galleries:** `docs-notebooks/v1.1.1/` and the
+  `docs-gallery-v1.1.1` branch do not exist yet; the two publish scripts
+  create them (`--ref v1.1.1`). The generated gallery notebooks install
+  `hypertools[interactive]>=1.1.1` (`docs/conf.py` reads the package
+  version), so they cannot be run on Colab until the PyPI upload. The
+  committed tutorials keep their `>=1.1.0` floor.
+- **Step 5, tag:** there is no draft tag to move. Create it:
+  `git tag -a v1.1.1 -m "HyperTools 1.1.1" <sha>` and
+  `git push origin refs/tags/v1.1.1` (no `--force`).
+- **Step 6, GitHub Release:** there is no draft release. Create one for
+  `v1.1.1` from the `## 1.1.1` section of `CHANGELOG.md` and attach the
+  step-3 wheel and sdist.
+- **Step 6, Read the Docs:** point "stable" at `v1.1.1`, replacing `v1.1.0`.
+
 The docs, notebooks, and README ship in **release form** on `master` (the 1.1.0
 draft: `master` == tag `v1.1.0` == `96ac8b7f`, gallery published under
 `docs-notebooks/v1.1.0/` from that commit, a DRAFT GitHub release with wheel +
@@ -94,9 +129,9 @@ detached tag checkout — the notebook migrator detects the branch via
       `docs/conf.py` on each build, which emits the identical PyPI line on a
       `master`/tag build (the migrator only retargets any on-disk copy, and the
       `docs-clean` CI job release-gates the generated gallery).
-- [ ] **README images: pinned to the `v1.1.0` tag (8 URLs).** The 1.1.0
+- [ ] **README images: pinned to the `v1.1.0` tag (13 URLs).** The 1.1.0
       README already pins `v1.1.0`, so this is a verify-only step: check
-      `grep -c '/ContextLab/hypertools/v1.1.0/images/' readme.md` → 8
+      `grep -c '/ContextLab/hypertools/v1.1.0/images/' readme.md` → 13
       and `grep -Ec '/ContextLab/hypertools/[0-9a-f]{7,40}/images/' readme.md` → 0.
       Only if a ref has drifted, retarget it:
       `sed -E -i '' 's#(/ContextLab/hypertools/)[^/]+(/images/)#\1v1.1.0\2#g' readme.md`
@@ -274,7 +309,7 @@ same artifacts you verify are the ones you publish.
       `%pip install -q "hypertools[interactive]"` (no `git+`) —
       `docs/conf.py` emits this automatically on a tag build; the tutorials
       carry the version-guarded `%pip install -q "hypertools[...]>=1.1.0"`.
-- [ ] PyPI project page renders the README with all 8 images resolving (they
+- [ ] PyPI project page renders the README with all 13 images resolving (they
       now point at the `v1.1.0` tag).
 - [ ] **Published-wheel smoke (only AFTER approved publication).** In a fresh
       environment, install `hypertools[interactive]==1.1.0` with

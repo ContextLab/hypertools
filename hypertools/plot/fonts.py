@@ -209,7 +209,10 @@ def sans_serif_stack(first=None, extra=None):
     regular-weight face, so ordinary text never logs ``findfont: Failed to
     find font weight normal ...`` either (GH #292). `first` and `extra` are
     kept regardless: the caller asked for the one, and the other is the only
-    font found that covers the text.
+    font found that covers the text (either can still make matplotlib log
+    that line, if it has no regular face). The filter is applied under every
+    matplotlib version, although only >= 3.11 logs, so the same families
+    draw the same text everywhere.
     """
     available = installed_families()
     regular = _families_with_a_regular_face(

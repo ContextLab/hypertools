@@ -991,10 +991,18 @@ def _needs_interactive_display(plot_kwargs):
     -------
     bool
     """
-    want_interactive = (plot_kwargs.get("animate")
-                        or plot_kwargs.get("interactive"))
-    will_display = (plot_kwargs.get("show", True)
-                    and not plot_kwargs.get("save_path"))
+    def _truthy(value):
+        # an argument with no single truth value (an array) is for
+        # `plot` itself to reject, with its own message
+        try:
+            return bool(value)
+        except Exception:  # noqa: BLE001
+            return True
+
+    want_interactive = (_truthy(plot_kwargs.get("animate"))
+                        or _truthy(plot_kwargs.get("interactive")))
+    will_display = (_truthy(plot_kwargs.get("show", True))
+                    and not _truthy(plot_kwargs.get("save_path")))
     if not (want_interactive and will_display):
         return False
     from .plotly_backend import resolve_backend as _resolve_backend
@@ -1018,8 +1026,11 @@ def _issue_backend_warning():
     message = BACKEND_WARNING
     if message is None or message in _BACKEND_WARNINGS_ISSUED:
         return
-    _BACKEND_WARNINGS_ISSUED.add(message)
     warnings.warn(message)
+    # recorded only once `warnings.warn` has returned: under an "error"
+    # filter it raises, and the next call must raise again rather than pass
+    # quietly. (A warning the caller's filters ignore counts as issued.)
+    _BACKEND_WARNINGS_ISSUED.add(message)
 
 
 def _valid_matplotlib_backends():
