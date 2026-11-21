@@ -120,6 +120,25 @@ test double. It is the only way to exercise the filter on Linux/Windows
 runners, which have no installed family of that shape; on macOS with
 matplotlib >= 3.11 the real Hiragino family is exercised by the other tests.
 
+## Dependency drift found by the fresh matplotlib 3.11 environment
+
+`master` CI last ran on 2026-10-10. A fresh install on 2026-11-21 pulled
+pytest 9.2.0, pylsl 1.18.7, numpy 2.5.5, pandas 3.1.1, plotly 7.1.0, and two
+test files failed there with or without this branch's changes:
+
+- `tests/test_figure_review_gaps.py::test_plotly_subplots_grid_starts_without_gutters`:
+  pytest 9.2 refuses a nested list of tuples in `pytest.approx`. Compared as
+  numpy arrays now; same tolerance.
+- `tests/test_lsl_streaming.py` (1 failed, 9 errors): pylsl 1.18.7 bundles
+  liblsl 1.18.0.b7, whose `lsl_destroy_outlet` takes a constant 2 s for an
+  outlet that answered a resolve query and 7 s for one an inlet connected to
+  (0.03 s on pylsl 1.18.2). The fixture's thread holds the only reference
+  to the outlet, so its exit includes that destroy, and the fixture joined
+  with a 5 s budget. The budget is now 30 s (`_OUTLET_TEARDOWN_WAIT`); the
+  assertions are unchanged. Measured on macOS arm64 only. Users on pylsl
+  1.18.7 see the same delay when a `SyntheticOutlet` is dropped; that is
+  liblsl's and may merit an upstream report (not filed).
+
 ## Not done in the pull request (release steps, RELEASE_CHECKLIST.md)
 
 The README images stay pinned to `v1.1.0` and `docs/prebuilt_gallery.json`

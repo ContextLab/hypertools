@@ -253,8 +253,9 @@ def test_plotly_subplots_grid_starts_without_gutters():
     grid = hyp.plot(_walks(2), panels=True, show=False, backend='plotly')
     # the same cells as a legend-less panels= grid draws
     assert fig.layout.width == grid.layout.width
-    assert _plotly_cells_px(fig) == pytest.approx(_plotly_cells_px(grid),
-                                                  abs=1.0)
+    # as arrays: pytest >= 9.2 rejects a nested list of tuples in `approx`
+    assert np.asarray(_plotly_cells_px(fig)) == pytest.approx(
+        np.asarray(_plotly_cells_px(grid)), abs=1.0)
     assert fig.layout.margin.r == grid.layout.margin.r
 
 
