@@ -52,6 +52,12 @@ draws into a figure the caller built, found by executing notebooks with
   `font=`, and a font found to be the only one covering the text, are kept
   regardless.
 
+- **A Yahoo Finance rate limit is reported as one.** When Yahoo throttles
+  an address it answers HTTP 429 with a plain-text body, which
+  `hyp.load('yahoo:<TICKER>')` reported as "returned a non-JSON response
+  (HTTP 429) ... JSONDecodeError". The error now says that Yahoo is
+  rate-limiting the address and to try again later.
+
 ### Documented limitations
 
 - **Some text can still log under matplotlib 3.11.** The line above is

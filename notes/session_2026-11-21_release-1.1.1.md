@@ -170,3 +170,25 @@ Both suites and the docs build ran at the same time on one machine.
 - Sphinx `-b html -W`: full build with all 51 gallery examples executed at
   head 0e4a924c, "build succeeded"; incremental rebuild of the changed API
   pages at 59be174c, "build succeeded".
+
+## PR #293, first CI run (head d41e4fe1): 16 green, 2 red
+
+- `test (ubuntu-latest, 3.10)`: 8 failed, 6812 passed. All eight are live
+  Yahoo Finance tests on that one runner: "Yahoo Finance returned a non-JSON
+  response (HTTP 429) for 'AAPL': JSONDecodeError". The other eleven matrix
+  jobs loaded the same tickers and passed. Fixed in the library: a 429 is now
+  reported as a rate limit ("Yahoo Finance is rate-limiting requests from
+  this network address (HTTP 429, too many requests)"), and
+  `tests/_netskip.py` reads the phrase "too many requests" as transient, so
+  the live tests skip on it (and still fail under
+  `HYPERTOOLS_REQUIRE_LIVE_SOURCES=1`). New test serves a real 429 from a
+  local HTTP server.
+- `docs/readthedocs.org:hypertools` (PR preview build 36071248): ran 1850 s
+  and was ended. `python docs/fetch_prebuilt_gallery.py` found no gallery
+  recorded for 1.1.1 (`docs/prebuilt_gallery.json` records 1.1.0), so sphinx
+  executed all 51 examples and hit Read the Docs' time limit. This is by the
+  repository's design (an existing test,
+  `test_fetch_ignores_a_record_that_is_not_a_full_commit_id_for_this_version`,
+  pins that a record for another release is ignored) and it stays red for
+  any version bump until the gallery for the new version is published from
+  the release commit (checklist step 2). Not fixed in the PR; asked Jeremy.
