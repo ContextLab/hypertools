@@ -1155,7 +1155,10 @@ def test_render_script_exits_NO_BROWSER_when_the_browser_never_answers(
         # a session of its own, used to outlive the script by the stand-in's
         # whole 600 s, reparented to init -- in real use, a hung Chrome
         # left behind after hypertools gave up
-        assert any('silent-browser' in command
+        # the stand-in `exec`s `sleep 600`, so its own command line reads
+        # "sleep 600"; only the wrapper's arguments name the script, and
+        # under load `ps` reports a bare "(sleep)" with no arguments at all
+        assert any('silent-browser' in command or 'sleep' in command
                    for command in started.values()), (
             f'the stand-in browser was never seen running: {started}')
         deadline = time.monotonic() + 10
