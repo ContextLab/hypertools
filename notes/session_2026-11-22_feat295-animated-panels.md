@@ -89,3 +89,41 @@ removing the panels' own legends both under-reserve a 3-D panel's title room
 Tests: `tests/test_panels_shared_legend_colors.py` (new); the tests that
 asserted per-panel legends/colorbars/colors were rewritten, each with a
 "CHANGED for 1.2.0" comment.
+
+## Review round 1 fixes (2026-11-22, after the shared-legend commits)
+
+Source list: the scratchpad's `feat295/fix_round1.md` (C1-C5, T1-T6, S1) plus
+A1-A3. Tests: `tests/test_animated_panels_review.py` (contexts, leaks,
+captions, titles, warnings) and `tests/test_panel_layout_review.py` (3-D axis
+labels, explicit sizes, shared-legend placement).
+
+- `_resolve_animate_argument` is the one resolver of `animate=` (dict form,
+  sugar styles, scalars); `plot()` and `_plot_panels_impl` both call it.
+- `_plot_panels` is now a wrapper that closes every pyplot figure a failed
+  grid call registered; the implementation is `_plot_panels_impl`.
+- Captions: `_wrap_caption` wraps to the figure width (per frame, through
+  `_set_caption_text`); `_add_caption(samples=)` sizes the room for the
+  first/middle/last frames (`_caption_sample_frames`). `caption=''` is no
+  caption. Contexts are real: `_real_frame_context` in `plot()`,
+  `_static_grid_context` for a static grid.
+- Grid `{index}` caption: `_make_title_pattern_resolver` reads the context of
+  the panel that draws the first indexed dataset (panel 0 for reducer grids).
+- A panel cell with a per-frame title draws frame 0 before `tight_layout`, so
+  the title has room.
+- `_fit_panel_cubes` (was `_fit_rotating_cubes`): matplotlib's 3-D label
+  offset SCALES with the cube (measured: label reach ~1.45 x cube reach in a
+  3.2 in cell), so labels are fitted by shrinking the cube proportionally;
+  the figure grows only when a cube would fall under 70% of an unlabeled one
+  (`_PANEL_LABELED_CUBE_REACH`), in steps of at most 20%, in the limiting
+  direction. Static grids use the same fitter through
+  `_fit_static_cube_labels` (floor `_STATIC_LABELED_CUBE_REACH`, explicit
+  `size=` honored). The camera views come from `_camera_azimuths`
+  (`rotations=0` is one view).
+- Shared legend placement: `_shared_legend_side` maps a `legend_kwargs` `loc`
+  to a strip side; `_grow_figure` adds room on any side; `bbox_to_anchor` /
+  `loc='center'` / plotly `x`/`y` reserve nothing.
+- `analyze(internal=True)` no longer warns about the display `ndims` on its
+  Pipeline path.
+- `tests/test_animated_panels.py::test_axis_labels_enlarge_the_figure...`
+  still asserts labeled > plain width for long labels; it passes because the
+  70% floor makes long labels grow the figure slightly. It was not edited.

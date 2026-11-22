@@ -18,12 +18,22 @@ draws into a figure the caller built, found by executing notebooks with
   `HyperAnimation` is returned for the figure. The combination used to
   raise `ValueError`. Styles and orderings play per panel, not as a
   sequence across panels. Each 3-D panel's cube is zoomed out as far as it
-  takes to stay inside its own cell through the whole rotation, and with
-  axis labels the figure is enlarged so the rotating labels fit.
+  takes to stay inside its own cell through the whole rotation. With axis
+  labels (`xlabel=`/`ylabel=`/`zlabel=`, or DataFrame column names) the
+  cube is drawn smaller still so the labels stay inside the panel's own
+  cell at every view the animation takes (one view for `rotations=0`); the
+  figure is enlarged only where that would leave a cube under 70% of an
+  unlabeled one's size, and an explicit `size=` that would leave cubes
+  under half their unlabeled size raises, naming a size that works (`xlabel='', ylabel='', zlabel=''` drops the
+  labels). Per-frame titles (a callable, an `'{index...}'` pattern, or a
+  list with one per panel) get their room above each panel, and
+  `animate={...}` dictionaries work as for a single plot.
   Without `size=`, the figure is sized by the grid (3.2 in per panel each
   way, at least 6.4 in wide) instead of matplotlib's fixed 6.4 x 4.8 in, so a
-  saved clip of a row of panels is not mostly blank canvas; a static grid's
-  default size is unchanged.
+  saved clip of a row of panels is not mostly blank canvas; it is then
+  widened by a shared legend or colorbar strip and made taller by a
+  caption. A static grid's default size is unchanged, except as noted for
+  axis labels under "Fixed".
   `on_frame=` is called once per frame for the whole figure, with a
   `FrameContext` whose `axes` is a tuple of the panel axes and whose new
   `panels` field holds one per-panel context each. `return_model=True`
@@ -41,8 +51,16 @@ draws into a figure the caller built, found by executing notebooks with
   `caption=lambda ctx: f'timepoint {ctx.frame + 1} of {ctx.n_frames}'`. It
   sits just below the lowest thing drawn, and the figure is made taller
   where there is no blank room for it, so it never overlaps a panel, a
-  legend or a colorbar and never leaves the canvas. On a static plot it is
-  drawn once. Matplotlib only: `backend='plotly'` raises
+  legend or a colorbar and never leaves the canvas. A caption wider than
+  the figure is wrapped to its width on every frame; room is made for the
+  tallest of the first, middle and last frames' wrapped captions; an empty
+  caption adds nothing. On a static plot it is drawn once. A callable gets
+  the frame's real `FrameContext` (a static grid's has `datasets`,
+  `artists`, `axes` and `panels` filled in). Under a grid, an `{index}`
+  pattern shows the index of the first indexed dataset at the reveal head
+  of the panel that draws it, so it agrees with that panel's own
+  `title='{index}'` in every `animate=` style and `order=`.
+  Matplotlib only: `backend='plotly'` raises
   `NotImplementedError`, and a caller-supplied `ax=` raises `ValueError`.
 
 ### Changed
@@ -75,6 +93,13 @@ draws into a figure the caller built, found by executing notebooks with
     legend (gid `'hypertools-shared-legend'`) and a colorbar axes (gid
     `'hypertools-shared-colorbar'`); on plotly, `layout.legend` and one
     colorbar trace.
+  - *Placing the shared legend.* `legend_kwargs={'loc': ...}` picks the
+    side of the grid the legend's strip is on (`'upper right'`,
+    `'center left'`, `'upper center'`, `'lower center'`, ...), and room is
+    reserved on that side only. `bbox_to_anchor` (matplotlib, in figure
+    fractions) or `x`/`y` (plotly, paper fractions of the whole grid)
+    place it yourself: no strip is reserved, and the panels are laid out
+    as without a legend.
   - *Where panels keep their own.* Clusters fit separately per panel
     (`cluster=`/`n_clusters=` with `panel_fit='independent'` or with a
     list-valued `reduce=`), `forecast_cluster=`/`forecast_n_clusters=`,
@@ -95,6 +120,26 @@ draws into a figure the caller built, found by executing notebooks with
 
 ### Fixed
 
+- **Axis labels of a static 3-D `panels=` grid stay inside their own
+  panel.** matplotlib hangs a 3-D axes' labels outside its cube, where no
+  layout accounts for them, so in a grid they were drawn over the next
+  panel's cube, over the title of the panel below, over the legend, or off
+  the canvas. A labeled panel's cube is now drawn smaller until its labels
+  fit its own cell; where that would leave the cubes very small the
+  default figure grows in the direction that limits them (a 1 x 4 grid of
+  labeled 3-D panels is wider than 6.4 in), and an explicit `size=` is
+  honored as given. Grids without axis labels are unchanged.
+- **A failed `panels=` call leaves no figure behind.** Whatever makes a
+  grid call raise (a refused combination, an unknown `predict=` model, a
+  `title=`/`caption=` callable that raises, a failed save), every figure
+  the call registered with pyplot is closed first, with `show=True` as
+  with `show=False`. Static grids leaked one figure per failed call.
+- **No `ndims` warning the caller did not cause.** `hyp.plot` on data with
+  fewer than three columns warned "ndims/n_components was set to 3 but the
+  data only has 2 feature(s)" in any `panels=` grid and with
+  `return_model=True`, `manip=` or `cluster=`, although `ndims` was never
+  passed and the plain call is silent. `hyp.reduce`/`hyp.analyze` still
+  warn when asked for more dimensions than the data has.
 - **`labels=` in a panel grid stay with their own panel.** The annotations'
   bookkeeping was one module-level list holding only the most recently
   drawn plot's labels, so in a grid only the last panel's labels were

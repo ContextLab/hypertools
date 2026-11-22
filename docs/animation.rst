@@ -728,21 +728,40 @@ A few things are specific to a grid:
 
 * Without ``size=`` the figure is sized by the grid -- 3.2 in per panel each
   way, and at least 6.4 in wide -- so a saved clip of a row of panels is not
-  mostly blank canvas. (A static grid keeps matplotlib's 6.4 x 4.8 in
+  mostly blank canvas. It is then widened by the strip of a shared legend or
+  colorbar, made taller by a ``caption=``, and enlarged for axis labels where
+  they need it (below). (A static grid keeps matplotlib's 6.4 x 4.8 in
   default.) ``size=`` sets the whole figure's size as usual.
+* ``animate=`` may be given in its dictionary form
+  (``animate={'style': 'spin', 'rotations': 2}``) exactly as for a single
+  plot; per-dataset values inside it go to their panels, and
+  ``{'style': False}`` is a static grid.
 * Every panel must draw the same number of frames, or the call raises
   ``ValueError`` (``animate='morph'`` needs the same number of datasets in
   each panel).
 * Each 3-D panel's cube is zoomed out as far as it takes to stay inside its
   own cell through the whole rotation, so ``zoom=`` can shrink a panel's
-  cube but not enlarge it past its cell. With ``xlabel=``/``ylabel=``/
-  ``zlabel=`` the figure is enlarged so the rotating axis labels fit too;
-  an explicit ``size=`` too small for them raises, naming a size that fits.
+  cube but not enlarge it past its cell. With axis labels (``xlabel=``/
+  ``ylabel=``/``zlabel=``, or a DataFrame's column names) the cube is drawn
+  smaller still, so the labels stay inside the panel's own cell at every
+  view the animation takes (the whole turn, or the one view of
+  ``rotations=0``). The figure is enlarged only where that would leave a
+  cube under 70% of an unlabeled one's size, and by no more than restores
+  that. An explicit ``size=`` is honored down to cubes half their unlabeled
+  size and raises below that, naming a size that works; pass ``xlabel='', ylabel='', zlabel=''`` to drop the labels instead.
+* A per-frame ``title=`` (a callable or an ``'{index...}'`` pattern, one for
+  every panel or a list with one per panel) gets its room above each panel
+  like a fixed title.
 * Colors, the legend and the colorbar belong to the whole grid, as in a
   static grid: each dataset keeps the color the single-axes call of all the
   datasets gives it, ``hue=`` is mapped through one scale, and one legend
   and/or one colorbar is drawn in a strip right of the panels. They are
   static across frames, and every rotating cube stays clear of the strip.
+  ``legend_kwargs={'loc': ...}`` moves the legend's strip to another side of
+  the grid (``'upper center'`` above it, ``'lower center'`` below it,
+  ``'center left'`` left of it, ``'upper right'`` at the top of the right-hand
+  strip); ``bbox_to_anchor`` places it yourself in figure fractions, with no
+  room reserved.
   (Clusters fit per panel -- ``panel_fit='independent'`` or a list-valued
   ``reduce=`` with ``cluster=``/``n_clusters=`` -- keep a legend per panel,
   because their colors mean something different in each one.)
@@ -775,9 +794,19 @@ index under the reveal head, or a callable given the frame's
 The caption sits a small gap below the lowest thing drawn; where the figure
 has no blank room there (an animated 3-D plot fills its canvas) the figure
 is made taller by the caption's height, so the caption never overlaps a
-panel, a legend or a colorbar and never leaves the canvas. Room is made for
-as many lines as the first frame's caption has. On a static plot the caption
+panel, a legend or a colorbar and never leaves the canvas. A caption wider
+than the figure is wrapped to the figure's width, on every frame. Room is
+made for the tallest of the first, middle and last frames' wrapped captions,
+so a caption that grows as the animation runs has its room from the start
+(a frame in between that needs more lines than all three runs below it). An
+empty caption draws nothing and adds no room. On a static plot the caption
 is drawn once, a pattern or callable being resolved for the finished figure.
+
+A callable receives the frame's real ``FrameContext`` (for a grid, the
+figure-level one, with one context per panel in ``ctx.panels``). Under a grid
+an ``'{index...}'`` pattern shows what a panel's own ``title='{index}'``
+shows: the first dataset that carries an index is read, at the reveal head of
+the panel that draws it (the first panel under a list-valued ``reduce=``).
 ``caption=`` raises ``NotImplementedError`` under ``backend='plotly'`` (a
 per-frame ``title=`` works on both backends) and ``ValueError`` with a
 caller-supplied ``ax=``.
