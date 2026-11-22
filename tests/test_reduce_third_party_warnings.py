@@ -23,6 +23,30 @@ def test_seeded_umap_does_not_warn_about_n_jobs():
     assert not [m for m in w if 'n_jobs' in str(m.message)]
 
 
+def test_umap_seeded_through_the_reduce_dict_does_not_warn_about_n_jobs():
+    """A seed passed as ``reduce={'model': 'UMAP', 'kwargs':
+    {'random_state': ...}}`` (the form several gallery examples use) is the
+    same request as the top-level ``random_state=``: neither names n_jobs,
+    so neither should draw umap's n_jobs warning, and both give the same
+    embedding."""
+    pytest.importorskip('umap')
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter('always')
+        out = hyp.reduce(
+            _digits400(),
+            reduce={'model': 'UMAP', 'kwargs': {'random_state': 0}}, ndims=3)
+        plotted = hyp.plot(
+            _digits400(), '.',
+            reduce={'model': 'UMAP', 'kwargs': {'random_state': 0}}, ndims=3,
+            show=False)
+    assert not [m for m in w if 'n_jobs' in str(m.message)]
+    assert plotted is not None
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore')
+        top = hyp.reduce(_digits400(), reduce='UMAP', ndims=3, random_state=0)
+    np.testing.assert_allclose(np.asarray(out), np.asarray(top))
+
+
 def test_seeded_umap_honours_an_explicit_n_jobs():
     pytest.importorskip('umap')
     from hypertools.reduce.common import resolve_reducer

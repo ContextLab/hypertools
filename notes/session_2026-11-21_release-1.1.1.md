@@ -346,3 +346,12 @@ unattended; the user is on a phone.
   because `master`'s docs build fetches it by id), record it, publish the
   notebooks, build wheel + sdist, create a DRAFT GitHub release (no tag).
   Tag, PyPI and the `master` push wait for the user's go.
+- Found while running the examples gate: `animate_painting_embeddings.py`
+  and `animate_conversation.py` seed UMAP through the `reduce` dict, which
+  drew umap's "n_jobs value 1 overridden to 1 by setting random_state"
+  warning (not shown on the docs pages, but shown to anyone running the
+  example). Fixed in `hypertools/reduce/reduce.py`: the dict form now passes
+  `n_jobs=1` when the model is seeded and the caller named no `n_jobs`
+  (same as the bare-name form already did). Regression test in
+  `tests/test_reduce_third_party_warnings.py`; changelog entry. The first
+  gallery build from the release commit was stopped for this and restarted.

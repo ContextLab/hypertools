@@ -328,6 +328,17 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, return_model=False,
                     and inspect.isclass(c_model)
                     and 'random_state' in inspect.signature(c_model).parameters):
                 c_kwargs['random_state'] = random_state
+            # a seeded UMAP runs single-threaded and warns "n_jobs value
+            # ... overridden to 1"; whoever set the seed (the user in
+            # 'kwargs', or the top-level random_state just injected) did
+            # not choose n_jobs, so pass the value umap will use anyway
+            # (see the same step for the bare-name form below)
+            if (inspect.isclass(c_model)
+                    and getattr(c_model, '__name__', '') == 'UMAP'
+                    and c_kwargs.get('random_state') is not None
+                    and 'n_jobs' not in c_kwargs and len(c_args) == 0
+                    and 'n_jobs' in inspect.signature(c_model).parameters):
+                c_kwargs['n_jobs'] = 1
             # construct immediately; the resulting instance flows through
             # the same already-constructed-instance handling below as a
             # bare instance passed directly as `reduce=`. An ALREADY-
@@ -484,14 +495,19 @@ def reduce(x, reduce='IncrementalPCA', ndims=None, return_model=False,
             and 'random_state' not in model_params
             and 'random_state' in inspect.signature(model).parameters):
         model_params['random_state'] = random_state
-        # umap-learn forces n_jobs=1 whenever a random_state is set and
-        # warns that it did ("n_jobs value -1 overridden to 1 ..."), which
-        # would blame the user for a seed hypertools injected. Pass the
-        # n_jobs umap is going to use anyway, unless the user chose one.
-        if (getattr(model, '__name__', '') == 'UMAP'
-                and 'n_jobs' not in model_params
-                and 'n_jobs' in inspect.signature(model).parameters):
-            model_params['n_jobs'] = 1
+
+    # umap-learn forces n_jobs=1 whenever a random_state is set and warns
+    # that it did ("n_jobs value -1 overridden to 1 ..."). The user asked
+    # for a seed (top-level `random_state=`, or in the `reduce` dict's
+    # kwargs), not for a number of jobs, so the warning tells them nothing
+    # they chose: pass the n_jobs umap is going to use anyway. A user who
+    # set n_jobs themselves still gets umap's warning about it.
+    if (not model_is_instance
+            and getattr(model, '__name__', '') == 'UMAP'
+            and model_params.get('random_state') is not None
+            and 'n_jobs' not in model_params
+            and 'n_jobs' in inspect.signature(model).parameters):
+        model_params['n_jobs'] = 1
 
     # sklearn TSNE's default perplexity (30) requires n_samples > 30, so
     # small datasets crashed on a parameter the user never set

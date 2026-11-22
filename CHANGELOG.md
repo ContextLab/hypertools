@@ -80,6 +80,14 @@ draws into a figure the caller built, found by executing notebooks with
   `hyp.load('yahoo:<TICKER>')` reported as "returned a non-JSON response
   (HTTP 429) ... JSONDecodeError". The error now says that Yahoo is
   rate-limiting the address and to try again later.
+- **A seeded UMAP no longer warns about `n_jobs`.** umap-learn runs
+  single-threaded whenever it is seeded and says so with "n_jobs value 1
+  overridden to 1 by setting random_state". hypertools already kept that
+  warning away for the top-level `random_state=`; a seed passed in the
+  `reduce` dict (`reduce={'model': 'UMAP', 'kwargs': {'random_state':
+  0}}`, as several gallery examples do) still drew it. Both forms are now
+  quiet and give the same embedding. A call that sets `n_jobs` itself
+  still gets umap's warning.
 
 ### Documentation
 
