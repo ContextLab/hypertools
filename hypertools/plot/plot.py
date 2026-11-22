@@ -35,7 +35,7 @@ from .colors import (mat2colors, colors2groups, get_palette_colors,
                      _looks_like_dataset_palettes)
 from ..reduce.reduce import reduce as reducer
 from ..tools.format_data import format_data
-from .matplotlib_backend import _draw, _apply_title
+from .matplotlib_backend import _draw, _apply_title, show_legend_keys
 from .backend import manage_backend
 from .plotly_backend import resolve_backend
 from .animation_context import FrameContext, FrameHooks
@@ -908,7 +908,7 @@ def _add_overlay_legend_entries(ax, forecast_artists=None, truth_artists=None,
             marker=first.get_marker(), markersize=first.get_markersize(),
             markevery=None, label=truth_label))
         labels.append(truth_label)
-    ax.legend(handles, labels, **legend_call)
+    show_legend_keys(ax.legend(handles, labels, **legend_call))
 
 
 def _recolor_overlay_legend(ax, colors, close_fig=None):
@@ -5559,7 +5559,7 @@ def _add_shared_furniture(fig, panel_axes, legend_spec, colorbar_info,
             _call = dict(call)
             if not fixed_columns and columns > 1:
                 _call['ncols'] = columns
-            legend = fig.legend(handles, labels, **_call)
+            legend = show_legend_keys(fig.legend(handles, labels, **_call))
             box = legend.get_window_extent(_measurement_renderer(fig))
             size_in = (box.width / fig.dpi, box.height / fig.dpi)
             if side is None or side == 'over' or fixed_columns:
@@ -5741,7 +5741,7 @@ def _wrap_shared_legend(fig, handles, labels, call, limit_in):
         wrapped = [label if label.count('$') >= 2
                    else (textwrap.fill(label, width=chars) or label)
                    for label in labels]
-        legend = fig.legend(handles, wrapped, **call)
+        legend = show_legend_keys(fig.legend(handles, wrapped, **call))
         box = legend.get_window_extent(_measurement_renderer(fig))
         size_in = (box.width / fig.dpi, box.height / fig.dpi)
         if size_in[0] <= limit_in or chars <= _SHARED_LEGEND_MIN_WRAP:

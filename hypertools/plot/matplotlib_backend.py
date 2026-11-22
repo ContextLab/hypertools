@@ -416,6 +416,23 @@ def legend_call_kwargs(is_3d=False, zlabel=None, font=None,
     return call
 
 
+def show_legend_keys(legend):
+    """Make every key of `legend` visible, and return the legend.
+
+    matplotlib builds a legend key as a copy of the artist it stands for,
+    visibility included. An ``animate='morph'`` animation HIDES each
+    morphing dataset's own artist for good -- the one traveling cloud is
+    all that is drawn -- so every key of its legend was an invisible copy:
+    labels with nothing beside them (1.2.0 review, round 3; also in
+    1.1.0). A listed entry always shows its key: the dataset's marker in
+    its color."""
+    if legend is not None:
+        for handle in legend.legend_handles:
+            if handle is not None and not handle.get_visible():
+                handle.set_visible(True)
+    return legend
+
+
 def _recolor_legend_handles(legend, colors):
     """Apply `legend_colors=`'s plain color list to an already-built
     legend, in entry order (GH #285)."""
@@ -3503,8 +3520,9 @@ def _draw(
             # explicit entries (matrix/mixture hue palette swatches, or
             # `legend_colors=[(label, color), ...]`): proxy handles, since
             # no drawn artist carries these labels.
-            ax.legend(handles=_legend_proxy_handles(legend_entries, fmt),
-                      **_legend_call)
+            show_legend_keys(ax.legend(
+                handles=_legend_proxy_handles(legend_entries, fmt),
+                **_legend_call))
         else:
             if legend_order:
                 _handles, _labels = ax.get_legend_handles_labels()
@@ -3518,7 +3536,7 @@ def _draw(
                     _legend_call = dict(
                         _legend_call, handles=[_handles[j] for j in _perm],
                         labels=[_labels[j] for j in _perm])
-            _legend_artist = ax.legend(**_legend_call)
+            _legend_artist = show_legend_keys(ax.legend(**_legend_call))
             if legend_colors is not None:
                 _recolor_legend_handles(_legend_artist, legend_colors)
 
