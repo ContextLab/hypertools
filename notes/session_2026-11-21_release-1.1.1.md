@@ -293,3 +293,15 @@ follower takes itself off); recoloring the frame of an inside legend was
 not recognized as the caller's edit (frame colors and line width are part
 of the compared state). 100 tests in tests/test_caller_figure_hygiene.py
 pass on matplotlib 3.10.8 and 3.11.2.
+
+### Final local checks for the fit (2026-11-21, 20:06-20:45 EST)
+
+- Full suite at 49165c09 (.venv, matplotlib 3.10.8): 6904 passed, 24 skipped,
+  1 failed: `tests/test_docstrings.py::test_no_undocumented_public_definitions`
+  (7 helper functions of the new locators had no docstring). Docstrings
+  added; that test and the 24 test files that draw into caller axes then
+  pass on the final code (1088 passed, 6 skipped).
+- matplotlib 3.11.2 env: docstring gate + caller-figure file, 103 passed.
+- Sphinx `-b html -W -E -a` with every gallery example re-executed, at
+  49165c09: build succeeded.
+- `ruff check`: all checks passed.

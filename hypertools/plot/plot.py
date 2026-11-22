@@ -14420,6 +14420,7 @@ class _FollowLeaderLocator:
         self._leader = weakref.ref(leader)
 
     def get_subplotspec(self):
+        """The leader's subplot cell (``tight_layout`` asks the locator)."""
         leader = self._leader()
         return None if leader is None else leader.get_subplotspec()
 
@@ -14482,6 +14483,7 @@ class _CallerSlotLocator:
         self._busy = False
 
     def get_subplotspec(self):
+        """The axes' subplot cell, for ``tight_layout``."""
         # `tight_layout` asks an axes' LOCATOR (when it has one) for the
         # subplot cell, and leaves an axes whose locator cannot answer out
         # of the layout with a "not compatible with tight_layout" warning
@@ -14653,6 +14655,7 @@ class _CallerSlotLocator:
         lifted = bool(titles)
 
         def place(wf, hf, for_title=False):
+            """Apply the slot scaled to (wf, hf) of its width / height."""
             if view is not None:
                 ax.viewLim.set(view)
             ax.apply_aspect(Bbox.from_bounds(
@@ -14664,6 +14667,7 @@ class _CallerSlotLocator:
                     pass
 
         def title_left():
+            """Left edge (px) of the leftmost title, None without one."""
             return min((float(t.get_window_extent(renderer).x0)
                         for t in titles), default=None)
 
@@ -14671,6 +14675,7 @@ class _CallerSlotLocator:
         full_title_left = title_left()
 
         def over_right(wf, hf):
+            """Pixels by which the legends pass the right limit there."""
             place(wf, hf)
             over = max((float(g.get_window_extent(renderer).x1)
                         for g in legends), default=right_lim) - right_lim
@@ -14682,6 +14687,7 @@ class _CallerSlotLocator:
             return over
 
         def over_top(wf, hf):
+            """Pixels by which the titles pass the top limit there."""
             place(wf, hf, for_title=True)
             if not titles:
                 return 0.0
@@ -14695,6 +14701,7 @@ class _CallerSlotLocator:
             so one interpolation usually lands it; a fixed aspect or a
             3-D box does not follow the line and is bisected."""
             def probe(frac):
+                """The overhang with `frac` as the varied share."""
                 return over(*((frac, other) if vary_width else (other, frac)))
 
             lo, hi = self.min_fraction, 1.0
