@@ -101,7 +101,12 @@ never published.
     A matrix `hue=` is resolved once for the grid too: RGB rows
     (`hue_mode='rgb'`, or a wide matrix reduced to RGB) are reduced and
     scaled over every panel's rows, and signed mixture weights are shifted
-    by one rule, so one hue row is one color in every panel. A category
+    by one rule, so one hue row is one color in every panel. The matrix is
+    reduced exactly once per grid call, so a seeded call with a stochastic
+    `color_reduce=` draws the single-axes call's colors; that holds for a
+    one-panel-per-reducer grid as well, where 1.1.0 reduced the matrix
+    again for every panel and a stochastic reducer could give one hue row
+    a different color in each. A category
     keeps its own color when a `legend=` list gives two categories the
     same name, and DataFrames with a row MultiIndex passed as a list are
     colored per dataset like any other.

@@ -317,3 +317,18 @@ Other rules chosen:
 Scratch `repro.py` once wrote `tmp*/x.mp4` into the repo root; moved out to the scratchpad (`fix3/stray/`).
 
 Final run of the brief's test list (99 files, 8 shards) at 03f986ef: 4132 passed, 13 skipped (release gate x6, example smoke x6, CI-only font check x1), 0 failed, no warnings. `ruff check .` clean.
+
+## Review round 4 fixes (2026-11-22, after 35d515d2)
+
+Brief: scratchpad `feat295/fix_round4.md` (Codex fourth review, 3 items). All fixed; tests in `tests/test_panel_color_invariant.py`.
+
+| Commit | Item | Tests |
+|-|-|-|
+| 92d5ac93 | 1: matrix `hue=` + `color_reduce=` reduced twice per grid | `test_matrix_hue_is_reduced_once_per_grid`, `test_seeded_tsne_hue_colors_are_the_single_axes_calls`, `test_reducer_list_grid_reduces_its_matrix_hue_once` |
+| b18c34af | 2: named mixture hue columns lost in the shared legend | `test_mixture_hue_column_names_reach_the_shared_legend`, `..._reach_an_animated_grids_legend`, `test_mixture_hue_names_are_in_the_grids_color_scale` |
+| dc30f14c | 3: `ndims=1` series names lost under `panel_fit='independent'` with differing column names | `test_independent_series_grid_keeps_its_series_names`, `..._names_its_color_scale_by_series`, `test_independent_two_column_series_grid_keeps_its_series_names` |
+
+How:
+- Item 1: `_plot_panels` owns one `matrix_cache` dict per grid call, passed in `_panel_shared['matrix_cache']` to every call made on the WHOLE matrix (shared probe, early and final resolution, and a reducer-list grid's probes and panel draws). `_matrix_hue_to_rgb_once` reduces on the first call and returns the stored RGB (matched by value) afterwards. Reducer-list grids went from 2 fits per panel to 1 per grid (noted in CHANGELOG, since 1.1.0 behavior changes there for a stochastic reducer).
+- Item 2: the resolution reports `hue_columns`; `_panel_apply_hue_scale` puts them in `shared['hue_columns']`, which `plot()` uses as `_hue_column_names` when the panel's hue is a bare array.
+- Item 3: the single-axes call REFUSES frames with differing column names (GH #132), so there is no single-axes legend to match for that exact data. Rule chosen: each series is called by its column name, which is what each dataset's own call and the single-axes call of same-named series read. The names are captured before the rows are stripped and handed to the resolution as `_panel_shared['series_columns']`, so legend labels, legend order and the bundle's `colors['labels']` all carry them.
