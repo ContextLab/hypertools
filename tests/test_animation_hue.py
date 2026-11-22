@@ -45,8 +45,10 @@ def test_animate_hue_uses_per_point_colors():
     captured = {}
     orig = plot_mod._multicolor_line_colors
 
-    def _spy(hue_src, orig_lengths, xform, palette, is_rgb=False):
-        res = orig(hue_src, orig_lengths, xform, palette, is_rgb=is_rgb)
+    def _spy(*args, **kwargs):
+        # a pass-through recorder: forwards whatever the call passes, so it
+        # does not pin the helper's signature
+        res = orig(*args, **kwargs)
         captured['colors'] = res
         return res
 
