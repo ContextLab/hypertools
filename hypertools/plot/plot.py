@@ -9670,7 +9670,10 @@ def plot(
         plotted -- so the notice exists to make a long wait expected rather
         than mysterious. It is emitted once fits at two or more history
         lengths (one of at least 10 rows, or the longest available) have
-        been timed, not after the wait.
+        been timed, not after the wait. An animated `panels=` grid emits
+        ONE notice, for the whole grid: the total number of fits and the
+        projected time of all its panels, taking each panel still to come
+        to cost what the first one timed does.
 
     frame_rate (animation only) : int or float
         Frame rate for animation in frames per second (default: 30).
@@ -10269,7 +10272,10 @@ def plot(
         finite value, or no labeled observation, is drawn in the neutral
         gray under the grid's scale; and a warning about the whole call
         (the number of non-finite `hue=` values, a legend asked of a
-        continuous `hue=`) is issued once, not once per panel.
+        continuous `hue=`, a forecast argument that has no effect) is
+        issued once, not once per panel. A matrix `hue=` is resolved once
+        as well: RGB rows are reduced and scaled over every panel's rows,
+        so one hue row is one color in every panel.
 
         The legend and the colorbar are then drawn ONCE for the figure:
         one legend holding the union of the panels' entries without

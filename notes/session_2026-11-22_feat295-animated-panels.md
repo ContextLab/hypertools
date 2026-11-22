@@ -286,3 +286,32 @@ and animated through one path.
 - docs/prebuilt_gallery.json and docs/tutorials notebooks NOT touched:
   static and animated `panels=` gallery figures with axis labels change and
   need republishing at release.
+
+## Review round 3 fixes (2026-11-22, after c7b6d0b2)
+
+Brief: scratchpad `feat295/fix_round3.md` (Codex 1-8, tester Q1-Q5, suite Q6). All fixed; commits in order:
+
+| Commit | Items | Tests |
+|-|-|-|
+| ed4a491d | Codex 1, 2, 4, 5, 7, 8 (grid color resolution) | tests/test_panel_color_invariant.py (403 cases), tests/test_panels_review_round3.py |
+| ba7f9ddc | Codex 3 (RGB(A) tuple under colorbar=) | tests/test_panels_review_round3.py |
+| bca7c05d | Codex 6 (animated title at loc left/right) | tests/test_panels_review_round3.py |
+| 56c82d34 | Q1 (per-frame caption added an on_frame= call) | tests/test_panels_review_round3.py |
+| 936ce719 | Q2, Q3, Q4 (predict= grids) | tests/test_panels_forecast_review_round3.py |
+| (next) | Q5 (morph legend keys) | tests/test_morph_legend_keys.py |
+| (next) | Q6 (process tree on browser give-up) | tests/test_multibyte.py, tests/test_animation_export.py |
+
+How the color resolution works now:
+- `_resolve_grid_colors` re-enters `plot()` with `_panel_shared={'resolve_only': True, ...}`; `plot()` returns right after `colorbar_info`/`colors_info` are built, before interpolation, figure creation or drawing. Arguments are forwarded by blacklist (`_GRID_RESOLUTION_DROPPED_KWARGS`), so `animate=`, `font=`, `antialias=` and the rest reach it.
+- `_grid_needs_color_resolution`: no `hue=`/cluster/legend/colorbar means no resolution call at all.
+- Categories are keyed by the category (never the legend label). Matrix hue: the resolver returns the resolved rows (`matrix_hue`: RGB rows, or shifted mixture weights) and the quantized blend groups (`blend_groups`); `_panel_apply_hue_scale` slices them per panel.
+- Rule chosen: two categories given one `legend=` name keep their colors; the shared legend cannot show one name for two colors, so each panel keeps its own legend (existing conflict rule).
+- Timings (best of 3/2, same machine, back to back): 12 panels x 5,000 rows with continuous hue 0.57 s -> 0.50 s; two 500,000-row datasets, no hue 0.24 s -> 0.18 s.
+
+Other rules chosen:
+- Q3: identical draw-time warnings from several panels are re-issued once (`_reemit_panel_warnings`); the forecast-cost notice is issued by the first schedule able to project, as spent + that schedule's projection x schedules still to come (`forecast.grid_cost_report`).
+- Q5: every legend hypertools builds forces its keys visible (`show_legend_keys`).
+- Q6: `_descendant_pids` reads one `ps` snapshot (PowerShell on Windows; untested there) and `_kill_process_tree` now also kills descendants outside the process group.
+- Q1 cause: `_wrap_caption` measured through `_measurement_renderer`, which replaces the figure's canvas; mid-save that drops matplotlib's `_is_saving` guard and the animation starts (extra frame 0). Now measured on a bare `RendererAgg` (`_text_metrics_renderer`).
+
+Scratch `repro.py` once wrote `tmp*/x.mp4` into the repo root; moved out to the scratchpad (`fix3/stray/`).

@@ -6,8 +6,9 @@ A feature release. `animate=` now works with `panels=` (one animation of the
 whole grid, GH #295), `caption=` adds a figure-level caption that can change
 every frame, and saved `.mp4` files start playing before they have fully
 downloaded. Panel grids changed in look: each dataset keeps one color across
-the figure, the grid has one legend and one colorbar, and the default figure
-is sized by the grid (see "Changed"). The release also carries the fixes for
+the figure, the grid has one legend and one colorbar, shared axis labels are
+drawn on the outer panels only, and the default figure is sized by the grid
+(see "Changed"). The release also carries the fixes for
 noise and side effects met when `hyp.plot` draws into a figure the caller
 built (GH #290, #291, #292), first drafted as a 1.1.1 patch release that was
 never published.
@@ -97,6 +98,13 @@ never published.
     every panel; a categorical `hue=` uses one category-to-color mapping
     (in 1.1.0 each panel mapped its own values and its own categories, so
     the same color could mean different things in neighboring panels).
+    A matrix `hue=` is resolved once for the grid too: RGB rows
+    (`hue_mode='rgb'`, or a wide matrix reduced to RGB) are reduced and
+    scaled over every panel's rows, and signed mixture weights are shifted
+    by one rule, so one hue row is one color in every panel. A category
+    keeps its own color when a `legend=` list gives two categories the
+    same name, and DataFrames with a row MultiIndex passed as a list are
+    colored per dataset like any other.
     Clusters from a shared fit already used one mapping.
   - *Resolved once, for the whole grid.* Everything the colors mean is
     resolved once, exactly as the single-axes call of all the datasets
@@ -119,6 +127,11 @@ never published.
     `colorbar=True`; the second took the first palette color). Warnings
     about the whole call (the number of non-finite `hue=` values, a legend
     asked of a continuous `hue=`) are issued once, not once per panel.
+    Resolving the colors draws nothing: it stops before any geometry is
+    built, and is skipped when there is no `hue=`, clustering, legend or
+    colorbar to resolve. An animated grid is resolved as animated (a
+    mixture clustering's quantized groups take a discrete colorbar there,
+    as on one axes), and `font=` reaches the grid's one colorbar.
   - *Legend and colorbar.* The grid draws one legend (the union of the
     panels' entries, each once, in the order the single-axes call lists
     them: datasets in dataset order, categories and clusters in their own
@@ -235,7 +248,29 @@ never published.
 - **A colorbar for datasets drawn in one explicit color shows that
   color.** `hyp.plot([a, b], color='red', colorbar=True)` drew red lines
   beside a colorbar of the palette's first two colors, and reported those
-  in the bundle's `'colors'`; both now show the color drawn.
+  in the bundle's `'colors'`; both now show the color drawn. An RGB or
+  RGBA tuple as long as the dataset count (`color=(0.2, 0.4, 0.6)` with
+  three datasets) is one color here as it is for the drawing; it was read
+  as one entry per dataset and the colorbar failed on its tick count.
+- **An `animate='morph'` legend shows its keys.** The legend listed the
+  datasets' names with no marker beside them (the morphing datasets' own
+  artists are hidden, and the keys copied that); each key now shows the
+  dataset's marker in its color, on one axes and in a grid.
+- **Forecast warnings are issued once per `panels=` call.** A warning
+  every panel repeated word for word (`forecast_n_clusters=` without
+  `forecast_cluster=`, "forecast_cluster= needs at least two forecasts")
+  is issued once, and an animated `predict=` grid's forecast-cost notice
+  is one warning giving the whole grid's fits and projected time (it was
+  one per panel, each projecting that panel alone).
+- **A per-observation `forecast_hue=` in a grid gets the single-axes
+  error.** A list of arrays raised `TypeError: unhashable type:
+  'numpy.ndarray'`; it now raises the `ValueError` that says
+  `forecast_hue=` takes one scalar per dataset.
+- **Giving up on a browser that never answers no longer leaves it
+  running.** When a plotly image export is abandoned (a stalled
+  animation export, or `scripts/render_multibyte_plotly.py` at its
+  deadline), every process started for it is killed, including the
+  browser wrapper that runs in a session of its own.
 - **`names=` alone shows the legend on a plotly `panels=` grid.**
   `hyp.plot([a, b], panels=True, names=['a', 'b'], backend='plotly')`
   named the traces but hid the legend; it is shown, as on one axes and on
@@ -271,7 +306,8 @@ never published.
   first, middle and last frames' titles (it was sized for frame 0), in a
   grid and in a single plot; a 2-D animation's figure grows upward for a
   title taller than its default margin (a fixed eight-line title left the
-  canvas).
+  canvas), also when `title_kwargs={'loc': 'left'}` or `'right'` places
+  it.
 - **A shared grid legend too wide for its figure is wrapped.** With a
   small explicit `size=`, long legend labels were clipped at the canvas
   edge; they are wrapped onto more lines instead.
