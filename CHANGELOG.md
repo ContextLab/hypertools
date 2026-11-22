@@ -81,14 +81,37 @@ draws into a figure the caller built, found by executing notebooks with
     (in 1.1.0 each panel mapped its own values and its own categories, so
     the same color could mean different things in neighboring panels).
     Clusters from a shared fit already used one mapping.
+  - *Resolved once, for the whole grid.* Everything the colors mean is
+    resolved once, exactly as the single-axes call of all the datasets
+    resolves it, and each panel draws its share; no panel decides any of
+    it from its own data. Whether an integer `hue=` is categorical or
+    continuous is decided from every panel's values together (20 distinct
+    integers split over two panels are continuous, as on one axes). A
+    `{category: color}` `palette=` names the categories of the whole grid
+    in either `panel_fit=` mode. A `legend=` list has one entry per
+    dataset or, under a categorical `hue=` or a shared clustering, one per
+    category of the whole grid, and each panel labels the categories it
+    draws; a list of any other length raises the single-axes call's
+    `ValueError`, which counts the grid's datasets or groups (a short
+    list used to be accepted and repeated in every panel, and a list
+    naming every category of the grid was refused by the panels that hold
+    only some). `colorbar=True` with nothing grouping the data draws one
+    discrete colorbar of the datasets' colors (it raised). A panel whose
+    `hue=` has no finite value, or no labeled observation, is drawn in
+    the neutral gray under the grid's scale (the first raised with
+    `colorbar=True`; the second took the first palette color). Warnings
+    about the whole call (the number of non-finite `hue=` values, a legend
+    asked of a continuous `hue=`) are issued once, not once per panel.
   - *Legend and colorbar.* The grid draws one legend (the union of the
-    panels' entries, in dataset order, each once; `predict=`/`truth=`
-    entries are listed once too) and/or one colorbar, in a strip to the
+    panels' entries, each once, in the order the single-axes call lists
+    them: datasets in dataset order, categories and clusters in their own
+    order; `predict=`/`truth=` entries are listed once too) and/or one colorbar, in a strip to the
     right of the grid, vertically centered, clear of every panel, title
     and `caption=`. In 1.1.0 every panel carried its own. The default
     figure is widened by that one strip instead of 1.1 in per column; an
     explicit `size=` is honored. `legend=True` numbers the datasets 1..n
-    (every panel used to say `1`). No legend or colorbar appears that the
+    (every panel used to say `1`; an `ndims=1` series grid names them
+    `dataset 1`..`dataset n`). No legend or colorbar appears that the
     call did not ask for. On the matplotlib figure they are a figure-level
     legend (gid `'hypertools-shared-legend'`) and a colorbar axes (gid
     `'hypertools-shared-colorbar'`); on plotly, `layout.legend` and one
@@ -103,9 +126,12 @@ draws into a figure the caller built, found by executing notebooks with
   - *Where panels keep their own.* Clusters fit separately per panel
     (`cluster=`/`n_clusters=` with `panel_fit='independent'` or with a
     list-valued `reduce=`), `forecast_cluster=`/`forecast_n_clusters=`,
-    and a legend label that would look different in two panels: there the
-    colors mean something different in every panel, so each panel keeps
-    its own legend and colorbar.
+    and a legend label that would look different in two panels (in color,
+    line style, line width, marker or marker size, on both backends):
+    there the colors mean something different in every panel, so each
+    panel keeps its own legend and colorbar. (Where only a legend label
+    looks different, the legends stay per panel and the colorbar is still
+    the grid's one.)
   - *`return_model=True`.* The grid bundle's `'colors'` is the one scale
     the panels share (every dataset's color in panel order, the grid-wide
     range of a continuous `hue=`, or the union of the categories) instead
@@ -120,6 +146,23 @@ draws into a figure the caller built, found by executing notebooks with
 
 ### Fixed
 
+- **A `legend=` list names the categories of a categorical `hue=` on line
+  plots too.** With a line format, a category that recurs (along one
+  trajectory, or in two datasets) is drawn as several line segments, and a
+  list with one name per category was refused ("list of length 3, but
+  there are 4 dataset(s)/group(s)"), or, when the counts happened to
+  match, named the segments in data order rather than the categories. A
+  list now has one entry per category, in the order `legend=True` lists
+  them, for lines as for markers, and a list of the wrong length is
+  refused with the number of categories.
+- **A colorbar for datasets drawn in one explicit color shows that
+  color.** `hyp.plot([a, b], color='red', colorbar=True)` drew red lines
+  beside a colorbar of the palette's first two colors, and reported those
+  in the bundle's `'colors'`; both now show the color drawn.
+- **`names=` alone shows the legend on a plotly `panels=` grid.**
+  `hyp.plot([a, b], panels=True, names=['a', 'b'], backend='plotly')`
+  named the traces but hid the legend; it is shown, as on one axes and on
+  matplotlib, and `legend=False` still suppresses it.
 - **Axis labels of a static 3-D `panels=` grid stay inside their own
   panel.** matplotlib hangs a 3-D axes' labels outside its cube, where no
   layout accounts for them, so in a grid they were drawn over the next
