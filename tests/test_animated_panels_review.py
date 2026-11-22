@@ -612,3 +612,30 @@ def test_a_tall_per_segment_title_of_a_2d_animation_stays_on_the_canvas():
     anim = hyp.plot([d[:, :2] for d in DATA[:2]], reduce=None, ndims=2,
                     order='serial', title=['short', TALL], **ANIM)
     assert _assert_titles_on_canvas(anim, 1) == 8
+
+
+# --------------------------------------------------------------------------
+# Round 2 (R8): how often on_frame= is called when an animation is saved
+# --------------------------------------------------------------------------
+
+@pytest.mark.parametrize('grid', [{}, dict(panels=(1, 2))],
+                         ids=['single', 'grid'])
+def test_a_save_calls_on_frame_for_frame_0_twice(tmp_path, grid):
+    """What docs/animation.rst ("Backend scheduling") and `on_frame=`'s
+    docstring say: matplotlib's `Animation.save` draws the first frame
+    once to initialize the figure (`FuncAnimation._init_draw`) and then
+    draws every frame, so a callback sees frame 0 twice -- ``n_frames +
+    1`` calls -- and must be idempotent per frame. Building the animation
+    calls it for no frame at all."""
+    seen = []
+    anim = hyp.plot(DATA[:2], on_frame=lambda ctx: seen.append(ctx.frame),
+                    **dict(ANIM, **grid))
+    assert seen == []
+    anim.save(str(tmp_path / 'saved.gif'))
+    assert seen == [0] + list(range(anim.n_frames))
+
+    seen.clear()
+    saved = hyp.plot(DATA[:2], on_frame=lambda ctx: seen.append(ctx.frame),
+                     save_path=str(tmp_path / 'direct.gif'),
+                     **dict(ANIM, **grid))
+    assert seen == [0] + list(range(saved.n_frames))

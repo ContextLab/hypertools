@@ -56,11 +56,13 @@ for title, loader, clean in sources:
 # These four sources are unrelated domains with different column counts and
 # meanings (iris measurements, penguin measurements, Bechdel-test numeric
 # columns, ...), so there is no single shared pipeline fit that would make
-# sense across them -- hyp.plot's panels= draws one dataset per panel through
-# ONE shared fit, which requires a common column space. We keep the
-# explicit-axes form instead, via hyp.subplots (a thin wrapper over
-# plt.subplots that pre-sets the 3-D projection and hands back a flat axes
-# array), and fit each source's own pipeline independently as before.
+# sense across them. hyp.plot's panels= draws one dataset per panel and by
+# default fits ONE shared pipeline across them, which requires a common
+# column space; panel_fit='independent' fits each panel's own pipeline
+# instead and draws a grid like this one too. Here we show the
+# explicit-axes form, via hyp.subplots (a thin wrapper over plt.subplots
+# that pre-sets the 3-D projection and hands back a flat axes array): each
+# hyp.plot(..., ax=ax) call fits its own source's pipeline independently.
 n = max(len(loaded), 1)
 ncols = 2 if n > 1 else 1
 nrows = (n + ncols - 1) // ncols

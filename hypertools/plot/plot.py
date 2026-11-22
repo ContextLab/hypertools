@@ -2952,8 +2952,8 @@ def _validate_dynamic_title(title, animate, row_indices, name='title'):
 
     Two dynamic forms are accepted:
 
-    * a **callable** ``ctx -> str``, evaluated once per frame with that
-      frame's `FrameContext`;
+    * a **callable** ``ctx -> str``, evaluated every time a frame is
+      drawn, with that frame's `FrameContext`;
     * a **format pattern** containing ``{index`` -- e.g.
       ``title='{index:%B %Y}'`` -- formatted per frame with ``index=`` set
       to the input's own row-index value under the reveal head.
@@ -5735,8 +5735,8 @@ def _plot_panels_impl(x, panels, call_kwargs, _name='panels'):
                 'subplots', 'ax', 'panel_fit', 'caption'):
         shared.pop(key, None)
     shared['show'] = False
-    # on_frame= on an animated grid is called once per frame for the whole
-    # FIGURE (see `_animate_panel_grid`), not once per panel
+    # on_frame= on an animated grid is called once per DRAWN frame for the
+    # whole FIGURE (see `_animate_panel_grid`), not once per panel
     grid_hooks = None
     if animated:
         grid_hooks = FrameHooks()
@@ -9174,8 +9174,11 @@ def plot(
         Supported on BOTH backends, with the same per-frame context
         metadata but different call schedules: matplotlib calls back at
         render time, so a frame index may recur across a looping animation
-        or a save; plotly calls back exactly once per frame index, while
-        the frames are built. **Callbacks must be deterministic and
+        or a save -- and a save always draws frame 0 twice (matplotlib's
+        ``Animation.save`` runs ``FuncAnimation._init_draw``, which draws
+        the first frame, before its own frame loop), so a callback is
+        called ``n_frames + 1`` times there; plotly calls back exactly
+        once per frame index, while the frames are built. **Callbacks must be deterministic and
         idempotent for a given frame context. They must not depend on call
         count, call order, wall-clock time, or accumulated external
         state.**

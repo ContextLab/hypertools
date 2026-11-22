@@ -182,9 +182,13 @@ backends.
 Per-frame callbacks
 -------------------
 
-``on_frame=`` runs your function once per frame with a
-:class:`~hypertools.FrameContext`. **Passing it to** ``plot()`` **works on
-both backends** and is the portable form:
+``on_frame=`` runs your function for every frame that is drawn, with that
+frame's :class:`~hypertools.FrameContext`. On plotly that is exactly once
+per frame, while the frames are built; on matplotlib it is every time a
+frame is rendered, so a frame can come around more than once -- see
+:ref:`the callback contract <animation-callback-contract>` below.
+**Passing it to** ``plot()`` **works on both backends** and is the portable
+form:
 
 .. code-block:: python
 
@@ -384,6 +388,16 @@ contract exists:
    * - plotly
      - at build time, before ``plot()`` returns
      - exactly once
+
+One repeat on matplotlib is certain: a save (``save_path=``, or ``.save()``
+on the returned animation) draws frame 0 twice, so a callback is called
+``n_frames + 1`` times for an animation of ``n_frames`` frames, single plot
+or ``panels=`` grid alike. That is matplotlib's own doing:
+``Animation.save`` first calls ``FuncAnimation._init_draw``, which draws
+the first frame to initialize the figure, and then draws every frame, the
+first included. (``Animation._start``, which starts an animation shown in
+a window, makes the same initial draw.) A callback that is idempotent per
+frame cannot tell.
 
 Both backends deliver the same *context metadata* for a given frame index.
 They do **not** produce interchangeable rendered output from a mutating
@@ -777,7 +791,10 @@ A few things are specific to a grid:
   (Clusters fit per panel -- ``panel_fit='independent'`` or a list-valued
   ``reduce=`` with ``cluster=``/``n_clusters=`` -- keep a legend per panel,
   because their colors mean something different in each one.)
-* ``on_frame=`` is called once per frame for the whole figure. Its
+* ``on_frame=`` is called once for the whole figure each time a frame is
+  drawn, not once per panel (a save draws frame 0 twice, so a callback
+  sees it twice; see
+  :ref:`the callback contract <animation-callback-contract>`). Its
   ``FrameContext`` has ``axes`` as a tuple of the panel axes, ``artists``
   and ``datasets`` as every panel's in panel order, and ``panels`` as one
   ordinary per-panel ``FrameContext`` each (that panel's own axes, artists,

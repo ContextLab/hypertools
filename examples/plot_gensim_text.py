@@ -37,9 +37,11 @@ docs = [
 topics = (['pets'] * 3) + (['finance'] * 3) + (['astronomy'] * 3)
 
 # These two panels differ in vectorizer=/semantic= -- upstream embedding
-# choices that panels=/reduce=[...] cannot express (both only vary the
-# final reduce= step of ONE shared pipeline, not the text-embedding stage
-# itself), so we keep the explicit-axes form, via hyp.subplots (a thin
+# choices that panels=/reduce=[...] cannot express (panels= varies the
+# dataset from panel to panel and reduce=[...] the final reduce= step; the
+# text-embedding stage is the same in every panel under both, whether the
+# panels share one fit or each fits its own with panel_fit='independent'),
+# so we keep the explicit-axes form, via hyp.subplots (a thin
 # wrapper over plt.subplots that pre-sets the 3-D projection and hands back
 # a flat axes array).
 # backend='matplotlib' on the grid and on each call: fig.tight_layout() is
