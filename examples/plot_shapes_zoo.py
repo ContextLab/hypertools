@@ -25,6 +25,10 @@ shapes = ['bunny', 'cube', 'dragon', 'sphere', 'teapot', 'vase', 'biplane']
 # fits each panel's own reduction separately, exactly as the equivalent
 # per-panel hyp.plot(shape, ax=ax) loop did, since these clouds differ
 # enough in scale that one shared fit would be dominated by the largest.
+# The biplane loads as a DataFrame with columns x, y and z, which hypertools
+# would write beside that one panel as axis labels; the empty labels keep
+# all seven panels alike.
 hyp.plot([hyp.load(shape) for shape in shapes], ',', color='k',
          panels=(2, 4), panel_fit='independent',
-         title=[shape.capitalize() for shape in shapes], size=(12, 6))
+         title=[shape.capitalize() for shape in shapes], size=(12, 6),
+         xlabel='', ylabel='', zlabel='')

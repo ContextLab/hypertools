@@ -355,3 +355,14 @@ unattended; the user is on a phone.
   (same as the bare-name form already did). Regression test in
   `tests/test_reduce_third_party_warnings.py`; changelog entry. The first
   gallery build from the release commit was stopped for this and restarted.
+- Own review of all 89 figures (contact sheets, 117 tiles: every still,
+  middle and last frame of every animation): everything matches 1.1.0
+  apart from the three explained cases. One defect that 1.1.0 has too:
+  `plot_shapes_zoo_001.png` showed stray x/y/z axis labels beside the
+  Biplane panel (the biplane loads as a DataFrame, the other six shapes as
+  arrays; column names become axis labels by design). Example now passes
+  `xlabel='', ylabel='', zlabel=''`. Second gallery build stopped and
+  restarted for this.
+- Observed, left as is (faithful rendering of raw data, same as 1.1.0):
+  in `plot_datasets_tour_001.png` the penguins and Kaggle-iris panels are
+  near-lines because one unnormalized column dominates.

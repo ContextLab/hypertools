@@ -96,6 +96,10 @@ draws into a figure the caller built, found by executing notebooks with
   different on every docs build (cluster colors permuted; a different UMAP
   layout). Both now pass `random_state=0`, so every gallery figure that
   does not read live data is the same from build to build.
+- **`plot_shapes_zoo.py`: no stray axis labels.** The biplane is the one
+  shape that loads as a DataFrame (columns `x`, `y`, `z`), so its panel
+  alone carried axis labels, one of them out in the grid's empty cell. The
+  example now passes empty labels.
 
 ### Documented limitations
 
