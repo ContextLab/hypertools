@@ -562,9 +562,10 @@ def test_animated_labels_stay_in_their_cells_through_a_full_rotation(
         shape, ndims, extras):
     n = GRIDS[shape][0]
     cols = ('first axis', 'second axis', 'third axis')[:ndims]
+    turn = dict(rotations=1) if ndims == 3 else {}
     anim = hyp.plot(_frames(n, cols), ndims=ndims, panels=shape,
-                    rotations=1, **dict(ANIM, frame_rate=12,
-                                        **_extras(extras, n)))
+                    **dict(ANIM, frame_rate=12, **turn,
+                           **_extras(extras, n)))
     assert anim.n_frames >= 12
     for frame in range(anim.n_frames):
         anim.draw_frame(frame)
@@ -735,8 +736,10 @@ def test_static_layout_is_the_animated_layout_without_rotation(
     extras = _extras(LAYOUTS[layout], n)
     static = hyp.plot(data, ndims=ndims, panels=shape, show=False,
                       **extras)
-    anim = hyp.plot(data, ndims=ndims, panels=shape, rotations=0,
-                    **dict(ANIM, **extras))
+    # (`rotations=` is the 3-D camera's; a 2-D grid has one view anyway)
+    still = dict(rotations=0) if ndims == 3 else {}
+    anim = hyp.plot(data, ndims=ndims, panels=shape,
+                    **dict(ANIM, **extras, **still))
     anim.draw_frame(0)
     moving = anim.figure
     size_a, boxes_a = _layout(static, n)
@@ -781,8 +784,9 @@ def test_a_2d_grid_is_laid_out_the_same_static_or_rotating(layout, labels):
             else [_walk(i, cols=2) for i in range(4)])
     extras = _extras(LAYOUTS[layout], 4)
     static = hyp.plot(data, ndims=2, panels=(2, 2), show=False, **extras)
-    moving = hyp.plot(data, ndims=2, panels=(2, 2), rotations=1,
-                      **dict(ANIM, **extras)).figure
+    with pytest.warns(UserWarning, match='no effect on 2-D animations'):
+        moving = hyp.plot(data, ndims=2, panels=(2, 2), rotations=1,
+                          **dict(ANIM, **extras)).figure
     size_a, boxes_a = _layout(static, 4)
     size_b, boxes_b = _layout(moving, 4)
     assert np.allclose(size_a, size_b, atol=1e-6)
