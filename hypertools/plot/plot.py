@@ -5035,23 +5035,43 @@ def _add_shared_furniture(fig, panel_axes, legend_spec, colorbar_info,
     # (`_grow_figure_rightward`), so the layout is exactly the legend-less
     # grid's. (`tight_layout(rect=...)` is not: it drops the room a 3-D
     # panel's title needs, which then pokes out of the top of the canvas.)
-    grid_in = width_in if widen else max(width_in - strip_in,
-                                         0.3 * width_in)
-    strip_in = (width_in + strip_in if widen else width_in) - grid_in
-    fig.set_size_inches(grid_in, height_in)
-    with warnings.catch_warnings():
-        # the colorbar's axes is placed by hand (below), which
-        # `tight_layout` reports as an axes it cannot lay out
-        warnings.filterwarnings(
-            'ignore', message='This figure includes Axes that are not '
-            'compatible with tight_layout')
-        # the panels were last laid out around their own legends, which
-        # are gone: one pass from there under-reserves a 3-D panel's
-        # title room (its box is aspect-constrained), a second settles it
+    total_in = width_in + strip_in if widen else width_in
+    grid_in = max(total_in - strip_in, 0.3 * total_in)
+
+    def _lay_out(width):
+        """Lay the panels out in a `width`-inch figure and return how far
+        (inches) what they draw reaches past its right edge."""
+        fig.set_size_inches(width, height_in)
+        with warnings.catch_warnings():
+            # the colorbar's axes is placed by hand (below), which
+            # `tight_layout` reports as an axes it cannot lay out
+            warnings.filterwarnings(
+                'ignore', message='This figure includes Axes that are not '
+                'compatible with tight_layout')
+            # the panels were last laid out around their own legends,
+            # which are gone: one pass from there under-reserves a 3-D
+            # panel's title room (its box is aspect-constrained), a second
+            # settles it
+            for _ in range(3):
+                fig.tight_layout()
+        return max(0.0, _panels_right_edge_in(fig, panel_axes) - width)
+
+    # what the last column draws right of its own box (a 3-D panel's
+    # z-axis label hangs in its right margin) must stay clear of the
+    # strip: the strip starts right of it
+    overhang_in = _lay_out(grid_in) if strip_in else 0.0
+    if not strip_in:
+        _lay_out(grid_in)
+    elif widen:
+        total_in += overhang_in
+    else:
         for _ in range(3):
-            fig.tight_layout()
-    _grow_figure_rightward(fig, strip_in)
-    strip['rect_right'] = grid_in / (grid_in + strip_in)
+            if overhang_in <= 0.01 or grid_in <= 0.3 * total_in:
+                break
+            grid_in = max(grid_in - overhang_in, 0.3 * total_in)
+            overhang_in = _lay_out(grid_in)
+    _grow_figure_rightward(fig, total_in - grid_in)
+    strip['rect_right'] = (total_in - strip_in) / total_in
     if mappable is not None and not in_strip:
         _finish(fig.colorbar(
             mappable, ax=list(panel_axes),
@@ -5060,6 +5080,27 @@ def _add_shared_furniture(fig, panel_axes, legend_spec, colorbar_info,
             **({} if ticks is None else {'ticks': ticks})))
     _place_shared_furniture(fig, strip)
     return strip
+
+
+def _panels_right_edge_in(fig, panel_axes):
+    """How far right (inches from the figure's left edge) the panels
+    `panel_axes` draw, measured on a real draw: each visible panel's box
+    and its axis labels (a 3-D panel's hang outside the box)."""
+    renderer = _measurement_renderer(fig)
+    right = 0.0
+    for ax in panel_axes:
+        if not ax.get_visible():
+            continue
+        boxes = [ax.get_window_extent(renderer)]
+        axis_map = getattr(ax, '_axis_map', None) or {
+            'x': ax.xaxis, 'y': ax.yaxis}
+        for axis in axis_map.values():
+            label = axis.label
+            if label.get_text() and label.get_visible():
+                boxes.append(label.get_window_extent(renderer))
+        right = max([right] + [float(box.x1) for box in boxes
+                               if np.isfinite(box.x1)])
+    return right / fig.dpi
 
 
 def _place_shared_furniture(fig, strip):
@@ -13060,7 +13101,9 @@ def plot(
     if multicolor_hue is not None:
         line_colors = _multicolor_line_colors(
             multicolor_hue, pre_interp_lengths, xform, palette,
-            is_rgb=multicolor_hue_is_rgb, limits=_hue_limits)
+            is_rgb=multicolor_hue_is_rgb,
+            # only a `panels=` grid pins the range (its shared scale)
+            **({} if _hue_limits is None else {'limits': _hue_limits}))
 
     # handle explore flag (a real ValueError, not an assert -- asserts are
     # stripped under `python -O`, F01-016/F10-013)

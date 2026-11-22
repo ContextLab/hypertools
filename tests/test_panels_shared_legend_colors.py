@@ -187,6 +187,29 @@ def test_legend_kwargs_style_the_one_legend_and_can_place_it():
         _quiet_plot(x, panels=True).get_size_inches()[0])
 
 
+def test_shared_legend_clears_a_3d_panels_axis_labels():
+    """A 3-D panel's z-axis label hangs right of its box: the strip starts
+    right of the last column's label, not on top of it."""
+    import pandas as pd
+    rng = np.random.default_rng(3)
+    x = [pd.DataFrame(rng.normal(size=(40, 3)).cumsum(0),
+                      columns=['first axis', 'second axis', 'third axis'])
+         for _ in range(3)]
+    grid = _quiet_plot(x, reduce=None, legend=['a', 'b', 'c'],
+                       panels=(1, 3), return_model=True)
+    fig = grid['fig']
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    legend = _shared_legend(fig).get_window_extent(renderer)
+    assert legend.x1 <= fig.bbox.x1
+    labels = [axis.label.get_window_extent(renderer)
+              for ax in grid['axes'] for axis in ax._axis_map.values()
+              if axis.label.get_text()]
+    assert len(labels) == 9
+    for box in labels:
+        assert not box.overlaps(legend)
+
+
 def test_legend_false_or_absent_adds_nothing():
     x = _walks()
     for kw in ({}, dict(legend=False), dict(legend=None)):
