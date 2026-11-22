@@ -27,8 +27,9 @@ shapes = ['bunny', 'cube', 'dragon', 'sphere', 'teapot', 'vase', 'biplane']
 # enough in scale that one shared fit would be dominated by the largest.
 # The biplane loads as a DataFrame with columns x, y and z, which hypertools
 # would write beside that one panel as axis labels; the empty labels keep
-# all seven panels alike.
+# all seven panels alike. No size= is needed: the figure is sized by the
+# grid (3.2 in per panel each way, so 12.8 x 6.4 in here).
 hyp.plot([hyp.load(shape) for shape in shapes], ',', color='k',
          panels=(2, 4), panel_fit='independent',
-         title=[shape.capitalize() for shape in shapes], size=(12, 6),
+         title=[shape.capitalize() for shape in shapes],
          xlabel='', ylabel='', zlabel='')

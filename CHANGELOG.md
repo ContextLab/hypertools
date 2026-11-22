@@ -33,8 +33,8 @@ draws into a figure the caller built, found by executing notebooks with
   way, at least 6.4 in wide) instead of matplotlib's fixed 6.4 x 4.8 in, so a
   saved clip of a row of panels is not mostly blank canvas; it is then
   widened by a shared legend or colorbar strip and made taller by a
-  caption. A static grid's default size is unchanged, except as noted for
-  axis labels under "Fixed".
+  caption. A static grid's default figure is now sized the same way (see
+  "Changed").
   `on_frame=` is called once per frame drawn, for the whole figure (a
   save draws frame 0 twice: matplotlib draws it once while setting up and
   again as the first frame, so a callback must give the same result when
@@ -147,6 +147,33 @@ draws into a figure the caller built, found by executing notebooks with
     works in a one-panel-per-dataset grid whose panels each hold only some
     of the categories (it raised "names a category this plot does not
     have").
+  - *Default figure size.* A static `panels=`/`subplots=` grid drawn
+    without `size=` is now sized by its grid, as an animated one is: 3.2 in
+    per panel each way and at least 6.4 in wide, then widened by the shared
+    legend or colorbar strip and made taller by a `caption=`. In 1.1.0
+    every static grid was 6.4 x 4.8 in whatever its shape, so a 1 x 4 row
+    of cubes was small between white bands above and below. Every static
+    grid drawn without `size=` therefore changes size from 1.1.0:
+
+    | grid | 1.1.0 | now |
+    |-|-|-|
+    | 1 x 2 | 6.4 x 4.8 in | 6.4 x 3.2 in |
+    | 1 x 3 | 6.4 x 4.8 in | 9.6 x 3.2 in |
+    | 1 x 4 | 6.4 x 4.8 in | 12.8 x 3.2 in |
+    | 2 x 2 | 6.4 x 4.8 in | 6.4 x 6.4 in |
+    | 2 x 3 | 6.4 x 4.8 in | 9.6 x 6.4 in |
+    | 3 x 1 | 6.4 x 4.8 in | 6.4 x 9.6 in |
+
+    The plotly grid follows the same rule at 100 px per inch (a 1 x 4 row
+    is 1280 x 320 px; it was 640 x 480 px). An explicit `size=` is honored
+    exactly as before, so `size=(6.4, 4.8)` restores the old figure.
+    `panels=True`/`'auto'` still chooses the grid's shape from the aspect
+    of `size=` or of the default 6.4 x 4.8 in figure; the default figure is
+    then sized by the shape chosen. A static and an animated grid of the
+    same call have the same default size, except with axis labels on 3-D
+    panels, which need more room around a rotating cube. A grid built with
+    `hyp.subplots()` and filled by hand keeps matplotlib's default size.
+    The gallery example `plot_shapes_zoo.py` no longer passes `size=`.
 
 ### Fixed
 
@@ -172,14 +199,14 @@ draws into a figure the caller built, found by executing notebooks with
   layout accounts for them, so in a grid they were drawn over the next
   panel's cube, over the title of the panel below, over the legend, or off
   the canvas. A labeled panel's cube is now drawn smaller until its labels
-  fit its own cell; where that would leave the cubes very small the
-  default figure grows in the direction that limits them (a 1 x 4 grid of
-  labeled 3-D panels is wider than 6.4 in). An explicit `size=` is
+  fit its own cell; where that would leave the cubes very small (under
+  65% of an unlabeled cube's size) the default figure grows in the
+  direction that limits them. An explicit `size=` is
   honored as given; where it cannot hold the labeled grid legibly, the
   cubes are kept at half their unlabeled size at least and one
   `UserWarning` names a size that works (and
   `xlabel='', ylabel='', zlabel=''` as the alternative). Grids without
-  axis labels are unchanged.
+  axis labels are not zoomed or enlarged by this.
 - **An animated title that grows after the first frame stays on the
   canvas.** Room for a per-frame `title=` is sized for the tallest of the
   first, middle and last frames' titles (it was sized for frame 0), in a

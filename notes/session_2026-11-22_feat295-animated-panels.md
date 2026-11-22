@@ -180,3 +180,34 @@ single-axes too (2-D figure grows upward); R11 `_wrap_shared_legend`,
 `FuncAnimation._init_draw` draws frame 0 before the loop (documented); R9
 example text. Left open: an animated grid's figure is not enlarged for a
 tall title (panels shrink under it).
+
+## Static grids sized by the grid (owner decision 2026-11-22, for 1.2.0)
+
+Owner chose: static `panels=` grids get 3.2 in per panel, like animated ones;
+explicit `size=` still honored.
+
+- `_PANEL_CELL_INCHES` (was `_ANIMATED_PANEL_CELL_INCHES`) and
+  `_default_panel_grid_size(nrows, ncols)` =
+  `(max(6.4, 3.2 * ncols), 3.2 * nrows)`; `_plot_panels_impl` uses it for
+  static and animated alike. The grid's shape is still chosen first
+  (`_auto_panel_grid` from `size=` or the 6.4 x 4.8 in aspect).
+- Plotly: `make_panel_grid(default_size=)`; `_plot_panels_plotly` passes the
+  same inches (x 100 px), gutters/strip added as before.
+  `hyp.subplots()` (both backends) keeps its own default (6.4 x 4.8 in /
+  640 x 480 px).
+- Static vs animated default size differ only for 3-D panels WITH axis
+  labels (measured on 1x4, 2x2, 3x1 with titles, captions, legends,
+  colorbars, per-panel legends, 2-D labels: all equal). Animated: labels
+  swing with the cube, floor 70% (`_PANEL_LABELED_CUBE_SHARE`), cube drawn at
+  the animation zoom; static: one view, floor 65%
+  (`_STATIC_LABELED_CUBE_SHARE`). Also differs with `rotations=0`.
+- New tests: tests/test_static_panel_grid_size.py. Rewritten (old default
+  asserted): tests/test_animated_panels.py
+  (`test_a_static_grid_is_sized_by_its_grid_too`),
+  tests/test_panel_layout_review.py.
+- examples/plot_shapes_zoo.py: dropped `size=(12, 6)` (a workaround for the
+  old default). docs/tutorials/reduce.ipynb: the one static `panels=` cell's
+  stored output re-executed (scripts/execute_tutorial.py --out-dir, cell 19
+  copied in).
+- docs/prebuilt_gallery.json NOT touched: every static `panels=` gallery
+  figure changes size and needs republishing at release.

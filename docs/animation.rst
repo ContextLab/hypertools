@@ -753,8 +753,11 @@ A few things are specific to a grid:
   way, and at least 6.4 in wide -- so a saved clip of a row of panels is not
   mostly blank canvas. It is then widened by the strip of a shared legend or
   colorbar, made taller by a ``caption=``, and enlarged for axis labels where
-  they need it (below). (A static grid keeps matplotlib's 6.4 x 4.8 in
-  default.) ``size=`` sets the whole figure's size as usual.
+  they need it (below). A static grid is sized the same way (since 1.2.0; it
+  was a fixed 6.4 x 4.8 in before), so a still and a clip of the same grid
+  have the same default size unless axis labels are drawn: labels swing
+  around a rotating cube and need more room than they do at a static grid's
+  one view. ``size=`` sets the whole figure's size as usual.
 * ``animate=`` may be given in its dictionary form
   (``animate={'style': 'spin', 'rotations': 2}``) exactly as for a single
   plot; per-dataset values inside it go to their panels, and
