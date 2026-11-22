@@ -298,8 +298,8 @@ Brief: scratchpad `feat295/fix_round3.md` (Codex 1-8, tester Q1-Q5, suite Q6). A
 | bca7c05d | Codex 6 (animated title at loc left/right) | tests/test_panels_review_round3.py |
 | 56c82d34 | Q1 (per-frame caption added an on_frame= call) | tests/test_panels_review_round3.py |
 | 936ce719 | Q2, Q3, Q4 (predict= grids) | tests/test_panels_forecast_review_round3.py |
-| (next) | Q5 (morph legend keys) | tests/test_morph_legend_keys.py |
-| (next) | Q6 (process tree on browser give-up) | tests/test_multibyte.py, tests/test_animation_export.py |
+| 4fa57422 | Q5 (morph legend keys) | tests/test_morph_legend_keys.py |
+| 69d1db57 | Q6 (process tree on browser give-up) | tests/test_multibyte.py, tests/test_animation_export.py |
 
 How the color resolution works now:
 - `_resolve_grid_colors` re-enters `plot()` with `_panel_shared={'resolve_only': True, ...}`; `plot()` returns right after `colorbar_info`/`colors_info` are built, before interpolation, figure creation or drawing. Arguments are forwarded by blacklist (`_GRID_RESOLUTION_DROPPED_KWARGS`), so `animate=`, `font=`, `antialias=` and the rest reach it.
@@ -315,3 +315,5 @@ Other rules chosen:
 - Q1 cause: `_wrap_caption` measured through `_measurement_renderer`, which replaces the figure's canvas; mid-save that drops matplotlib's `_is_saving` guard and the animation starts (extra frame 0). Now measured on a bare `RendererAgg` (`_text_metrics_renderer`).
 
 Scratch `repro.py` once wrote `tmp*/x.mp4` into the repo root; moved out to the scratchpad (`fix3/stray/`).
+
+Final run of the brief's test list (99 files, 8 shards) at 03f986ef: 4132 passed, 13 skipped (release gate x6, example smoke x6, CI-only font check x1), 0 failed, no warnings. `ruff check .` clean.
