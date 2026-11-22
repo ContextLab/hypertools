@@ -69,11 +69,16 @@ def test_panels_colorbars_do_not_land_on_the_next_panel():
     X = _walks(k=2)
     fig = hyp.plot(X, panels=True, backend='plotly', show=False,
                    hue=[np.linspace(0, 1, 40)] * 2, colorbar=True)
-    cbs = {t.scene: t.marker.colorbar for t in _colorbar_traces(fig)}
-    x1 = fig.layout.scene.domain.x[1]
-    assert cbs['scene'].x == pytest.approx(
-        x1 + PANEL_GUTTER_PAD_PX / _plot_w(fig))
-    assert cbs['scene'].x + 60 / _plot_w(fig) < fig.layout.scene2.domain.x[0]
+    # CHANGED for 1.2.0 (owner decision 2026-11-22): each panel carried
+    # its own colorbar, which had to sit beside its own cell rather than
+    # on the next one. A `panels=` grid now draws ONE colorbar for the
+    # figure, right of the LAST panel -- so it lands on no panel at all.
+    (cb,) = [t.marker.colorbar for t in _colorbar_traces(fig)]
+    assert cb.x == pytest.approx(1.0 + PANEL_GUTTER_PAD_PX / _plot_w(fig))
+    assert cb.xanchor == 'left'
+    assert cb.x > fig.layout.scene2.domain.x[1]
+    # ...inside the canvas: the strip reserved in the right margin holds it
+    assert (cb.x - 1.0) * _plot_w(fig) + 60 <= fig.layout.margin.r
 
 
 def test_colorbar_after_a_legend_in_the_same_cell_still_moves_right():

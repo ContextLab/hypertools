@@ -51,3 +51,41 @@ old-refusal tests in `tests/test_plot_panels.py` and
 `tests/test_plot_panels_audit.py` now assert the new behavior. The full
 suite was not run (about 25 minutes); the panel, animation, hook, title,
 docs and example test files were.
+
+## Shared colors, legend and colorbar for panel grids (branch feat/295-shared-legend)
+
+Owner requirement (2026-11-22): "Legends and colorbars should be consolidated
+(shown once across panels) and coloring should not be repeated to mean
+different things across panels".
+
+What was built (all in `hypertools/plot/plot.py` unless noted):
+
+- `_plot_panels` resolves what the single-axes call of every dataset draws and
+  hands each panel its share: `_panel_dataset_colors` (dataset i = palette
+  position i of n, passed as `color=`), `legend=True` -> `[i + 1]`, and the
+  grid's `hue=` scale (`_panel_apply_hue_scale`: `_panel_shared['limits']` for
+  a continuous hue, a narrowed `{category: color}` palette for a categorical
+  one). The scale is the shared probe's `'colors'` (`_panel_probe` now returns
+  it) or, for `panel_fit='independent'`, `_panel_color_probe`.
+- `plot()` takes an internal `_panel_shared` dict: `'limits'` pins the
+  continuous hue range (`_multicolor_line_colors(limits=)`,
+  `_build_colorbar_info(limits=)`), and `'colorbars'` collects the panel's
+  colorbar instead of drawing it (and skips `_fit_right_legend`).
+- After the panels are drawn: `_merge_panel_legends`, `_merge_panel_colorbars`,
+  `_add_shared_furniture` (strip right of the grid; grid laid out without the
+  strip, then `_grow_figure_rightward`), `_place_shared_furniture` (re-run
+  after the caption and the animated cube fit).
+- Per-panel legends/colorbars remain when `_panel_meanings_differ` (clusters
+  fit per panel, forecast clusters) or on `_PanelFurnitureConflict` (a label
+  that looks different in two panels: the grid is drawn again per panel).
+- Plotly: `merge_panel_legends`, `place_shared_furniture` and
+  `make_panel_grid(strip_px=)` in `plotly_backend.py`.
+- Bundle `'colors'`: `_merge_panel_color_scales`.
+
+Gotchas met: `tight_layout(rect=...)` and a single `tight_layout()` pass after
+removing the panels' own legends both under-reserve a 3-D panel's title room
+(titles left the canvas); three passes on a strip-less figure settle it.
+
+Tests: `tests/test_panels_shared_legend_colors.py` (new); the tests that
+asserted per-panel legends/colorbars/colors were rewritten, each with a
+"CHANGED for 1.2.0" comment.

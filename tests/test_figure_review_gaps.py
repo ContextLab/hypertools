@@ -61,9 +61,15 @@ def test_caller_axes_draw_in_the_palette():
 
 def test_panels_draw_in_the_palette():
     fig = hyp.plot(_walks(3), panels=True, show=False)
-    first = _own_colors(1)[0]
-    for ax in fig.axes[:3]:
-        assert to_rgb(_data_lines(ax)[0].get_color()) == first
+    # CHANGED for 1.2.0 (owner decision 2026-11-22): every panel drew its
+    # dataset in the palette's FIRST color, so one color named three
+    # different datasets. Each panel still draws in the palette (not
+    # matplotlib's C0/C1 cycle, the point of this test), but dataset i now
+    # takes the color the single-axes call of all three gives it.
+    expected = [tuple(c) for c in _own_colors(3)]
+    assert len(set(expected)) == 3
+    for ax, color in zip(fig.axes[:3], expected):
+        assert to_rgb(_data_lines(ax)[0].get_color()) == pytest.approx(color)
 
 
 def test_explicit_palette_reaches_a_caller_axes():
@@ -229,8 +235,12 @@ def test_plotly_legend_keys_use_a_constant_item_size():
     assert fig.layout.legend.itemsizing == 'constant'
     grid = hyp.plot(_walks(2), '.', panels=True, legend=True, show=False,
                     backend='plotly')
+    # CHANGED for 1.2.0 (owner decision 2026-11-22): each cell had its own
+    # legend (`layout.legend`, `layout.legend2`). The grid now has ONE,
+    # `layout.legend`, which keeps the constant item size.
     assert grid.layout.legend.itemsizing == 'constant'
-    assert grid.layout.legend2.itemsizing == 'constant'
+    assert 'legend2' not in grid.layout.to_plotly_json()
+    assert {t.legend for t in grid.data if t.showlegend} <= {None, 'legend'}
 
 
 # --- G9: a plotly hyp.subplots grid grows its gutters only when needed ---

@@ -717,8 +717,8 @@ figure, so one ``save_path=`` writes one video of all the panels:
                     title=['A', 'B', 'C', 'D'], save_path='grid.mp4')
 
 Each panel is animated exactly as the single-axes call for its data is:
-every ``animate=`` style and ``order=`` value, the trail flags, ``predict=``,
-per-frame titles, legends and colorbars apply per panel. The ordering is per
+every ``animate=`` style and ``order=`` value, the trail flags, ``predict=``
+and per-frame titles apply per panel. The ordering is per
 panel too, not a sequence across panels: ``order='serial'`` reveals the
 datasets *within* each panel one after another, and the panels never take
 turns. ``panel_fit=`` and a list-valued ``reduce=`` (one panel per reducer)
@@ -738,6 +738,14 @@ A few things are specific to a grid:
   cube but not enlarge it past its cell. With ``xlabel=``/``ylabel=``/
   ``zlabel=`` the figure is enlarged so the rotating axis labels fit too;
   an explicit ``size=`` too small for them raises, naming a size that fits.
+* Colors, the legend and the colorbar belong to the whole grid, as in a
+  static grid: each dataset keeps the color the single-axes call of all the
+  datasets gives it, ``hue=`` is mapped through one scale, and one legend
+  and/or one colorbar is drawn in a strip right of the panels. They are
+  static across frames, and every rotating cube stays clear of the strip.
+  (Clusters fit per panel -- ``panel_fit='independent'`` or a list-valued
+  ``reduce=`` with ``cluster=``/``n_clusters=`` -- keep a legend per panel,
+  because their colors mean something different in each one.)
 * ``on_frame=`` is called once per frame for the whole figure. Its
   ``FrameContext`` has ``axes`` as a tuple of the panel axes, ``artists``
   and ``datasets`` as every panel's in panel order, and ``panels`` as one

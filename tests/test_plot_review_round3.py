@@ -237,13 +237,22 @@ def test_panel_legend_and_colorbar_do_not_overlap(ndims):
                             'kwargs': {'n_clusters': 2, 'random_state': 0}})
     fig.canvas.draw()
     renderer = fig.canvas.get_renderer()
-    panels = [a for a in fig.axes if a.get_legend() is not None]
-    bars = [a for a in fig.axes if a.get_label() == '<colorbar>']
-    assert len(panels) == len(bars) == 2
-    for panel, bar in zip(panels, bars):
-        legend_box = panel.get_legend().get_window_extent(renderer)
-        assert Bbox.intersection(legend_box,
-                                 bar.get_window_extent(renderer)) is None
+    # CHANGED for 1.2.0 (owner decision 2026-11-22): each of the two panels
+    # had its own legend and its own colorbar, which must not overlap. The
+    # clusters come from ONE shared fit, so the grid now draws one legend
+    # and one colorbar for the figure -- which must not overlap each
+    # other, or either panel.
+    assert not [a for a in fig.axes if a.get_legend() is not None]
+    (legend,) = fig.legends
+    (bar,) = [a for a in fig.axes if a.get_label() == '<colorbar>']
+    legend_box = legend.get_window_extent(renderer)
+    bar_box = bar.get_tightbbox(renderer)
+    assert Bbox.intersection(legend_box, bar_box) is None
+    for panel in [a for a in fig.axes if a is not bar and a.get_visible()]:
+        panel_box = panel.get_window_extent(renderer)
+        assert Bbox.intersection(legend_box, panel_box) is None
+        assert Bbox.intersection(bar_box, panel_box) is None
+    assert bar_box.x1 <= fig.bbox.x1 and legend_box.x0 >= 0
 
 
 # --- 9 and 10: plotly cells keep title room and explicit legend positions --
@@ -266,14 +275,17 @@ def test_plotly_panels_keep_an_explicit_legend_position():
     fig = hyp.plot([x, x + 2], panels=True, legend=True, show=False,
                    legend_kwargs={'x': .02, 'y': .98, 'xanchor': 'left',
                                   'yanchor': 'top'}, backend='plotly')
-    from hypertools.plot.plotly_backend import cell_layout_keys
-    for i in range(2):
-        keys = cell_layout_keys(i)
-        d = fig.layout[keys['scene']].domain
-        legend = fig.layout[keys['legend']]
-        assert legend.x == pytest.approx(d.x[0] + .02 * (d.x[1] - d.x[0]))
-        assert legend.y == pytest.approx(d.y[0] + .98 * (d.y[1] - d.y[0]))
-        assert legend.yanchor == 'top'
+    # CHANGED for 1.2.0 (owner decision 2026-11-22): each panel had its
+    # own legend, placed at the explicit position INSIDE its own cell. A
+    # `panels=` grid now has ONE legend, and an explicit position places
+    # it in the FIGURE's paper coordinates, as on a single plot. (A
+    # `hyp.subplots` cell, below, still keeps its own legend in the cell.)
+    assert not [key for key in fig.layout.to_plotly_json()
+                if key.startswith('legend') and key != 'legend']
+    assert fig.layout.legend.x == pytest.approx(.02)
+    assert fig.layout.legend.y == pytest.approx(.98)
+    assert fig.layout.legend.yanchor == 'top'
+    assert [t.name for t in fig.data if t.showlegend] == ['1', '2']
     fig, cells = hyp.subplots(1, 2, backend='plotly')
     hyp.plot(x, ax=cells[0], legend=True, names=['a'], show=False,
              backend='plotly',

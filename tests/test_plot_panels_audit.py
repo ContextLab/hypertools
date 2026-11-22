@@ -247,9 +247,16 @@ def test_legend_list_naming_the_datasets_is_partitioned(backend):
             artists = data_artists(grid, i, backend)
             assert [a[3] for a in artists] == [name]
             if backend == 'matplotlib':
-                legend = grid['axes'][i].get_legend()
-                assert legend is not None
-                assert [t.get_text() for t in legend.get_texts()] == [name]
+                # CHANGED for 1.2.0 (owner decision 2026-11-22): each
+                # panel carried a one-entry legend with its own name. The
+                # list is still partitioned (each panel's artist is
+                # labeled with its own name, above), and the names are
+                # listed in ONE legend for the figure.
+                assert grid['axes'][i].get_legend() is None
+        if backend == 'matplotlib':
+            (legend,) = grid['fig'].legends
+            assert [t.get_text() for t in legend.get_texts()] == [
+                'alpha', 'beta', 'gamma']
     finally:
         close_all()
 

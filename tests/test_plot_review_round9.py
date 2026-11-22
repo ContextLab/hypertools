@@ -90,17 +90,31 @@ def _labelled_colors(fig, backend, models):
     out = []
     if backend == 'matplotlib':
         cells = [ax for ax in fig.axes if ax.get_visible() and ax.lines]
+        # CHANGED for 1.2.0 (owner decision 2026-11-22): every cell of a
+        # `panels=` grid had its own legend. A shared-fit grid now draws
+        # ONE legend for the figure, so a cell's legend is read as the
+        # figure legend's entries for the clusters that cell draws (a
+        # single-axes figure still has its legend on the axes).
         for ax, m in zip(cells, models):
+            labels = sorted(set(np.asarray(
+                m['models']['cluster_labels']).tolist()))
             legend = ax.get_legend()
+            if legend is None:
+                (legend,) = fig.legends
+                keep = {str(label) for label in labels}
+            else:
+                keep = None
             names = [t.get_text() for t in legend.get_texts()]
             handles = [_rgb255(h.get_color()) for h in legend.legend_handles]
             out.append({
-                'labels': sorted(set(np.asarray(
-                    m['models']['cluster_labels']).tolist())),
-                'legend': dict(zip(names, handles)),
+                'labels': labels,
+                'legend': {name: color for name, color
+                           in zip(names, handles)
+                           if keep is None or name in keep},
                 'lines': [_rgb255(ln.get_color()) for ln in ax.lines],
             })
         return out
+
     by_scene = {}
     for tr in _plotly_data_traces(fig):
         by_scene.setdefault(tr.scene, []).append(tr)
@@ -114,6 +128,20 @@ def _labelled_colors(fig, backend, models):
             'lines': [_rgb255(_trace_color(tr)) for tr in traces],
         })
     return out
+
+
+def _shared_legend_map(fig, backend):
+    """{label: colour} of a `panels=` grid's ONE figure-wide legend, and
+    a check that no panel carries a legend of its own (1.2.0)."""
+    if backend == 'matplotlib':
+        (legend,) = fig.legends
+        assert all(ax.get_legend() is None for ax in fig.axes)
+        return {t.get_text(): _rgb255(h.get_color()) for t, h
+                in zip(legend.get_texts(), legend.legend_handles)}
+    shown = [tr for tr in fig.data if tr.showlegend]
+    assert {tr.legend for tr in shown} <= {None, 'legend'}
+    assert len({tr.name for tr in shown}) == len(shown)
+    return {tr.name: _rgb255(_trace_color(tr)) for tr in shown}
 
 
 @pytest.mark.parametrize('backend', BACKENDS)
@@ -150,6 +178,9 @@ def test_shared_panels_colour_each_cluster_as_the_joint_figure_does(
     # the three panels draw three DIFFERENT colours (no two clusters
     # collapsed onto the first palette entry)
     assert len({cell['lines'][0] for cell in cells}) == 3
+    # 1.2.0 (owner decision 2026-11-22): the grid's ONE legend is the
+    # joint figure's legend, every cluster once
+    assert _shared_legend_map(grid['fig'], backend) == joint_map
 
 
 @pytest.mark.parametrize('backend', BACKENDS)
@@ -171,6 +202,8 @@ def test_shared_panel_missing_a_cluster_keeps_the_others_colours(backend):
         assert cell['legend'] == {str(label): joint_map[str(label)]}
     assert {cell['lines'][0] for cell in cells} == {
         _rgb255('red'), _rgb255('blue')}
+    # 1.2.0 (owner decision 2026-11-22): one legend for the figure
+    assert _shared_legend_map(grid['fig'], backend) == joint_map
 
 
 @pytest.mark.parametrize('backend', BACKENDS)

@@ -45,6 +45,54 @@ draws into a figure the caller built, found by executing notebooks with
   drawn once. Matplotlib only: `backend='plotly'` raises
   `NotImplementedError`, and a caller-supplied `ax=` raises `ValueError`.
 
+### Changed
+
+- **Panel grids share their colors, one legend and one colorbar.** In a
+  `panels=` (alias `subplots=`) grid, color now means one thing across the
+  whole figure, and what explains it is drawn once. This changes how
+  static grids look compared with 1.1.0, on both backends, and applies to
+  the new animated grids too.
+  - *Colors.* With one panel per dataset, each dataset is drawn in the
+    color the equivalent single-axes call of all the datasets gives it
+    (palette position i of n). In 1.1.0 every panel restarted the palette,
+    so every dataset was drawn in the same first color. An explicit
+    `color=`, a color letter in `fmt=` and a per-dataset `palette=` are
+    honored as before. A continuous `hue=` is mapped over one value range
+    (the range of every panel's values), so a color is the same value in
+    every panel; a categorical `hue=` uses one category-to-color mapping
+    (in 1.1.0 each panel mapped its own values and its own categories, so
+    the same color could mean different things in neighboring panels).
+    Clusters from a shared fit already used one mapping.
+  - *Legend and colorbar.* The grid draws one legend (the union of the
+    panels' entries, in dataset order, each once; `predict=`/`truth=`
+    entries are listed once too) and/or one colorbar, in a strip to the
+    right of the grid, vertically centered, clear of every panel, title
+    and `caption=`. In 1.1.0 every panel carried its own. The default
+    figure is widened by that one strip instead of 1.1 in per column; an
+    explicit `size=` is honored. `legend=True` numbers the datasets 1..n
+    (every panel used to say `1`). No legend or colorbar appears that the
+    call did not ask for. On the matplotlib figure they are a figure-level
+    legend (gid `'hypertools-shared-legend'`) and a colorbar axes (gid
+    `'hypertools-shared-colorbar'`); on plotly, `layout.legend` and one
+    colorbar trace.
+  - *Where panels keep their own.* Clusters fit separately per panel
+    (`cluster=`/`n_clusters=` with `panel_fit='independent'` or with a
+    list-valued `reduce=`), `forecast_cluster=`/`forecast_n_clusters=`,
+    and a legend label that would look different in two panels: there the
+    colors mean something different in every panel, so each panel keeps
+    its own legend and colorbar.
+  - *`return_model=True`.* The grid bundle's `'colors'` is the one scale
+    the panels share (every dataset's color in panel order, the grid-wide
+    range of a continuous `hue=`, or the union of the categories) instead
+    of the first panel's, and each `panel_models[i]['colors']` reports the
+    colors that panel drew. A single dataset drawn with an explicit
+    `color=` now reports that color in `'colors'` (it reported the
+    palette's first color).
+  - A `palette=` dict naming every category of a categorical `hue=` now
+    works in a one-panel-per-dataset grid whose panels each hold only some
+    of the categories (it raised "names a category this plot does not
+    have").
+
 ### Fixed
 
 - **`labels=` in a panel grid stay with their own panel.** The annotations'

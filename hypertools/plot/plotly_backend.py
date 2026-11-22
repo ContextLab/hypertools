@@ -3256,6 +3256,7 @@ def _legend_trace_look(trace, color=True):
             marker.get('symbol') if 'markers' in mode else None]
     if color:
         def _plain(value):
+            """A color as a comparable plain value."""
             return value if (value is None or isinstance(value, str)) \
                 else repr(np.asarray(value).tolist())
         look += [_plain(line.get('color')) if 'lines' in mode else None,
@@ -3328,8 +3329,15 @@ def _color_alpha(color):
     return 1.0
 
 
+#: room (pixels) a `panels=` grid reserves above or below itself for a
+#: shared HORIZONTAL colorbar (``location='top'``/``'bottom'``): the bar,
+#: its tick labels and its title
+PANEL_COLORBAR_ROW_PX = 70
+
+
 def place_shared_furniture(target, legend, colorbar_trace, ndims,
-                           legend_position=None, font=None):
+                           legend_position=None, font=None, title_px=0,
+                           widen=True):
     """Give a filled `panels=` grid ONE legend and/or ONE colorbar, in
     the strip `make_panel_grid` reserved right of the whole grid
     (`strip_px`). With `legend`, every trace is attached to the figure's
@@ -3339,11 +3347,32 @@ def place_shared_furniture(target, legend, colorbar_trace, ndims,
     `legend_position` (``{'x', 'y'}``, paper fractions), a caller's own
     `legend_kwargs` placement. `colorbar_trace` (`_colorbar_trace`'s
     phantom trace, carrying the merged colorbar) is added to the first
-    cell and, when vertical on the right, placed right of the legend;
-    `font` is the panels' inherited text font."""
+    cell and, when vertical on the right, placed right of the legend. A
+    colorbar on another side (``location='left'``/``'top'``/``'bottom'``)
+    is placed on that side of the WHOLE grid, in room added to that
+    margin -- and to the figure's size with `widen` (no explicit `size=`)
+    -- above the `title_px` of title room when on top. `font` is the
+    panels' inherited text font."""
+    side = None
+    if colorbar_trace is not None:
+        cb = colorbar_trace.marker.colorbar
+        if cb.orientation in (None, 'v'):
+            side = 'l' if cb.xanchor == 'right' else None
+        else:
+            side = 't' if (cb.y is not None and cb.y > 0.5) else 'b'
+    if side is not None:
+        extra = PANEL_COLORBAR_PX if side == 'l' else PANEL_COLORBAR_ROW_PX
+        target.layout.margin[side] = (target.layout.margin[side] or 0) + extra
+        if widen and side == 'l':
+            target.layout.width = target.layout.width + extra
+        elif widen:
+            target.layout.height = target.layout.height + extra
     plot_w = max((target.layout.width or int(DEFAULT_FIGSIZE[0] * 100))
                  - (target.layout.margin.l or 0)
                  - (target.layout.margin.r or 0), 1)
+    plot_h = max((target.layout.height or int(DEFAULT_FIGSIZE[1] * 100))
+                 - (target.layout.margin.t or 0)
+                 - (target.layout.margin.b or 0), 1)
     if legend:
         style = target.layout.legend.to_plotly_json()
         for trace in target.data:
@@ -3358,11 +3387,19 @@ def place_shared_furniture(target, legend, colorbar_trace, ndims,
                          xanchor='left', yanchor='middle')
         target.layout.legend = style
     if colorbar_trace is not None:
-        cb = colorbar_trace.marker.colorbar
-        if cb.orientation in (None, 'v') and cb.xanchor != 'right':
+        if side is None:
             offset = PANEL_GUTTER_PAD_PX + (PANEL_LEGEND_PX if legend else 0)
             cb.update(x=1.0 + offset / plot_w, xanchor='left', y=0.5,
                       yanchor='middle')
+        elif side == 'l':
+            cb.update(x=-PANEL_GUTTER_PAD_PX / plot_w, xanchor='right',
+                      y=0.5, yanchor='middle')
+        elif side == 't':
+            cb.update(x=0.5, xanchor='center', yanchor='bottom',
+                      y=1.0 + (title_px + PANEL_GUTTER_PAD_PX) / plot_h)
+        else:
+            cb.update(x=0.5, xanchor='center', yanchor='top',
+                      y=-PANEL_GUTTER_PAD_PX / plot_h)
         if font:
             cb.tickfont = _with_base_font(cb.tickfont.to_plotly_json(), font)
             if cb.title is not None and cb.title.text:

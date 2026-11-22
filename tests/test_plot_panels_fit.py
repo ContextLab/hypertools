@@ -379,11 +379,30 @@ def test_P3_nested_per_dataset_hue_is_narrowed_per_panel(panel_fit):
                       show=False)
     try:
         assert len(bundle['axes']) == 2
-        # each panel's colour scale spans ITS OWN hue values
-        for model, values in zip(bundle['panel_models'], hue):
+        # CHANGED for 1.2.0 (owner decision 2026-11-22): this asserted that
+        # each panel's color scale spans ITS OWN hue values, so one color
+        # meant 1.0 in the first panel and 9.0 in the second. A grid now
+        # maps every panel over ONE range -- all the panels' values -- so
+        # a color is the same value in every panel. The hue is still
+        # narrowed per panel (the point of P3): each panel draws its own
+        # dataset's values, read here off the colors it drew.
+        for model in bundle['panel_models']:
             colors = model['colors']
-            assert colors['vmin'] == pytest.approx(values.min())
-            assert colors['vmax'] == pytest.approx(values.max())
+            assert colors['vmin'] == pytest.approx(0.0)
+            assert colors['vmax'] == pytest.approx(9.0)
+        assert bundle['colors']['vmin'] == pytest.approx(0.0)
+        assert bundle['colors']['vmax'] == pytest.approx(9.0)
+        cmap, norm = bundle['colors']['cmap'], bundle['colors']['norm']
+        for ax, values in zip(bundle['axes'], hue):
+            drawn = np.vstack([np.asarray(c.get_colors())
+                               for c in ax.collections
+                               if len(c.get_colors()) > 1])[:, :3]
+            # the panel's first and last drawn colors are its OWN first
+            # and last values under the shared scale
+            assert np.allclose(drawn[0], cmap(norm(values[0]))[:3],
+                               atol=0.03)
+            assert np.allclose(drawn[-1], cmap(norm(values[-1]))[:3],
+                               atol=0.03)
     finally:
         plt.close(bundle['fig'])
 

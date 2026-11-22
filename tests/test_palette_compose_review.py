@@ -255,6 +255,15 @@ def _legend_colours(ax):
             for t, h in zip(legend.get_texts(), legend.legend_handles)]
 
 
+def _grid_legend_colours(fig):
+    """The entries of a `panels=` grid's ONE figure-wide legend (1.2.0),
+    after checking no panel carries a legend of its own."""
+    assert all(ax.get_legend() is None for ax in fig.axes)
+    (legend,) = fig.legends
+    return [(t.get_text(), _r3(h.get_color()))
+            for t, h in zip(legend.get_texts(), legend.legend_handles)]
+
+
 @pytest.mark.parametrize('panel_fit', ['shared', 'independent'])
 def test_panels_split_a_plain_legend_colors_list(panel_fit):
     data = _walks(2, rows=30)
@@ -264,8 +273,11 @@ def test_panels_split_a_plain_legend_colors_list(panel_fit):
                                                ('b', _r3('b'))]
     fig = hyp.plot(data, legend=['a', 'b'], legend_colors=['r', 'b'],
                    panels=True, panel_fit=panel_fit, show=False)
-    assert _legend_colours(fig.axes[0]) == [('a', _r3('r'))]
-    assert _legend_colours(fig.axes[1]) == [('b', _r3('b'))]
+    # CHANGED for 1.2.0 (owner decision 2026-11-22): each panel had its
+    # own one-entry legend, so the list was split one color per panel. The
+    # grid now draws ONE legend for the figure, and the list recolors its
+    # entries exactly as it recolors the single-axes legend's.
+    assert _grid_legend_colours(fig) == _legend_colours(single.axes[0])
 
 
 def test_panels_keep_the_shared_legend_colours_after_the_datasets():
@@ -276,17 +288,20 @@ def test_panels_keep_the_shared_legend_colours_after_the_datasets():
     assert _legend_colours(single.axes[0]) == [
         ('a', _r3('r')), ('b', _r3('b')), ('Kalman', _r3('k'))]
     fig = hyp.plot(data, panels=True, **kw)
-    assert _legend_colours(fig.axes[0]) == [('a', _r3('r')),
-                                            ('Kalman', _r3('k'))]
-    assert _legend_colours(fig.axes[1]) == [('b', _r3('b')),
-                                            ('Kalman', _r3('k'))]
+    # CHANGED for 1.2.0 (owner decision 2026-11-22): each panel's legend
+    # listed its own dataset and then the shared forecast entry. The grid
+    # now draws ONE legend, with the forecast entry once, after the
+    # datasets -- the single-axes legend.
+    assert _grid_legend_colours(fig) == _legend_colours(single.axes[0])
 
 
 def test_panels_forward_legend_colour_pairs_whole():
     fig = hyp.plot(_walks(2, rows=30), legend=True,
                    legend_colors=[('Key', 'k')], panels=True, show=False)
-    for ax in fig.axes[:2]:
-        assert _legend_colours(ax) == [('Key', _r3('k'))]
+    # CHANGED for 1.2.0 (owner decision 2026-11-22): the pair list was
+    # drawn whole in EVERY panel's legend; it now defines the grid's one
+    # figure-wide legend, drawn once.
+    assert _grid_legend_colours(fig) == [('Key', _r3('k'))]
 
 
 # --- 5: two-column data into a 2-D ax= at the default ndims ----------------

@@ -635,11 +635,15 @@ def test_plot_panels_with_polars_input(frame3):
     ref = hyp.plot([pdf3, other], panels=True, ndims=1, reduce=None,
                    legend=True, show=False)
     _assert_same_figure(out, ref, 'matplotlib')
-    legends = [[t.get_text() for t in ax.get_legend().get_texts()]
-               for ax in out.axes if ax.get_legend()]
-    assert legends == [['a', 'b', 'c'], ['a', 'b', 'c']]
-    assert legends == [[t.get_text() for t in ax.get_legend().get_texts()]
-                       for ax in ref.axes if ax.get_legend()]
+    # CHANGED for 1.2.0 (owner decision 2026-11-22): both panels carried
+    # the same three-entry legend. The columns are colored alike in every
+    # panel, so the grid now draws that legend ONCE for the figure.
+    assert not any(ax.get_legend() for ax in out.axes)
+    legends = [[t.get_text() for t in legend.get_texts()]
+               for legend in out.legends]
+    assert legends == [['a', 'b', 'c']]
+    assert legends == [[t.get_text() for t in legend.get_texts()]
+                       for legend in ref.legends]
 
 
 def test_plot_series_mode_names_polars_columns_like_pandas(frame3):

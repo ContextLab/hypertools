@@ -284,21 +284,30 @@ def test_a_callable_title_is_updated_per_panel_every_frame():
         ['frame 5'] * 4)
 
 
-def test_every_panel_gets_its_legend():
+def test_the_grid_gets_one_legend_naming_every_panel():
+    # CHANGED for 1.2.0 (owner decision 2026-11-22; was
+    # `test_every_panel_gets_its_legend`): every panel carried a one-entry
+    # legend. An animated grid now draws ONE legend for the figure, listing
+    # every dataset once, as a static grid does.
     anim = _grid(legend=['a', 'b', 'c', 'd'])
-    legends = [ax.get_legend() for ax in _panel_axes(anim.figure)]
-    assert all(legend is not None for legend in legends)
-    assert [legend.get_texts()[0].get_text() for legend in legends] == (
+    assert all(ax.get_legend() is None for ax in _panel_axes(anim.figure))
+    (legend,) = anim.figure.legends
+    assert [text.get_text() for text in legend.get_texts()] == (
         ['a', 'b', 'c', 'd'])
 
 
-def test_every_panel_gets_its_colorbar():
+def test_the_grid_gets_one_colorbar():
+    # CHANGED for 1.2.0 (owner decision 2026-11-22; was
+    # `test_every_panel_gets_its_colorbar`): every panel carried its own
+    # colorbar (six axes). The panels share one color scale, so the grid
+    # draws ONE colorbar for the figure.
     hue = [np.arange(len(d), dtype=float) for d in DATA[:3]]
     anim = _grid(DATA[:3], panels=(1, 3), hue=hue, colorbar=True)
     fig = anim.figure
-    # three panels and three colorbar axes
-    assert len(fig.axes) == 6
+    # three panels and one colorbar axes
+    assert len(fig.axes) == 4
     assert sum(ax.name == '3d' for ax in fig.axes) == 3
+    assert sum(ax.get_label() == '<colorbar>' for ax in fig.axes) == 1
 
 
 # --- fits ---------------------------------------------------------------
@@ -424,24 +433,26 @@ def test_titles_and_legends_stay_on_the_canvas_and_clear_of_the_cubes():
                  frame_rate=6)
     fig = anim.figure
     axes = _panel_axes(fig)
+    # CHANGED for 1.2.0 (owner decision 2026-11-22): every panel had its
+    # own legend, which had to sit right of its own cube and short of the
+    # next panel's. The grid now draws ONE legend, which must sit right of
+    # EVERY panel's cube, on the canvas, at every frame.
+    (shared,) = fig.legends
     for frame in (0, anim.n_frames // 2, anim.n_frames - 1):
         anim.draw_frame(frame)
         fig.canvas.draw()
         renderer = fig.canvas.get_renderer()
         canvas = fig.bbox
+        legend = shared.get_window_extent(renderer)
+        assert _inside(legend, canvas), (frame, 'legend')
         for i, ax in enumerate(axes):
+            assert ax.get_legend() is None
             title = ax.title.get_window_extent(renderer)
-            legend = ax.get_legend().get_window_extent(renderer)
             assert _inside(title, canvas), (frame, i, 'title')
-            assert _inside(legend, canvas), (frame, i, 'legend')
             corners = _cube_corners_px(ax)
-            # the title is above the cube, the legend to its right
+            # the title is above the cube, the legend right of every cube
             assert title.y0 >= corners[:, 1].max(), (frame, i)
             assert legend.x0 >= corners[:, 0].max(), (frame, i)
-            # ...and the legend stops short of the next panel's cube
-            if i + 1 < len(axes):
-                next_corners = _cube_corners_px(axes[i + 1])
-                assert legend.x1 <= next_corners[:, 0].min(), (frame, i)
 
 
 def test_axis_labels_enlarge_the_figure_and_stay_inside_their_cells():

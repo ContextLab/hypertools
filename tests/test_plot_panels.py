@@ -216,9 +216,13 @@ def test_panels_names_are_narrowed_per_panel():
     data = _datasets(3, rows=20)
     fig = hyp.plot(data, panels=(1, 3), names=['a', 'b', 'c'], legend=True,
                    reduce='PCA', show=False)
-    got = [[t.get_text() for t in ax.get_legend().get_texts()]
-           for ax in fig.axes]
-    assert got == [['a'], ['b'], ['c']]
+    # CHANGED for 1.2.0 (owner decision 2026-11-22): each panel carried a
+    # one-entry legend naming its own dataset. `names=` is still narrowed
+    # per panel (each dataset is named once, by its own name), but the
+    # entries are now listed in ONE legend for the whole figure.
+    assert all(ax.get_legend() is None for ax in fig.axes)
+    (legend,) = fig.legends
+    assert [t.get_text() for t in legend.get_texts()] == ['a', 'b', 'c']
 
 
 def test_panels_color_list_is_narrowed_per_panel():
@@ -502,14 +506,17 @@ def test_plotly_panels_get_one_legend_each_with_their_own_entries():
     for trace in fig.data:
         if trace.showlegend:
             by_legend.setdefault(trace.legend, []).append(trace.name)
-    assert by_legend == {'legend': ['p'], 'legend2': ['q'],
-                         'legend3': ['r']}
-    # each legend sits just right of its own cell, not at the figure edge
-    for key, scene in (('legend', 'scene'), ('legend2', 'scene2'),
-                       ('legend3', 'scene3')):
-        x1 = fig.layout[scene].domain.x[1]
-        assert fig.layout[key].x > x1
-        assert fig.layout[key].x < x1 + 0.2
+    # CHANGED for 1.2.0 (owner decision 2026-11-22): each cell had its own
+    # one-entry legend beside it (`legend`, `legend2`, `legend3`). The grid
+    # now lists every dataset in ONE legend, right of the last cell, in the
+    # strip reserved for it in the right margin.
+    assert by_legend == {'legend': ['p', 'q', 'r']}
+    assert not [key for key in fig.layout.to_plotly_json()
+                if key.startswith('legend') and key != 'legend']
+    assert fig.layout.legend.x > fig.layout.scene3.domain.x[1]
+    assert fig.layout.legend.xanchor == 'left'
+    plot_w = fig.layout.width - fig.layout.margin.l - fig.layout.margin.r
+    assert (fig.layout.legend.x - 1.0) * plot_w + 100 <= fig.layout.margin.r
     assert fig.layout.showlegend is True
 
 
@@ -523,7 +530,10 @@ def test_plotly_panels_hue_legend_lists_each_group_once_per_panel():
     for trace in fig.data:
         if trace.showlegend:
             names.setdefault(trace.legend, []).append(trace.name)
-    assert names == {'legend': ['x', 'y'], 'legend2': ['x', 'y']}
+    # CHANGED for 1.2.0 (owner decision 2026-11-22): both panels listed
+    # 'x' and 'y' in a legend of their own. The categories mean the same
+    # thing in both panels, so each is listed once, in the grid's legend.
+    assert names == {'legend': ['x', 'y']}
 
 
 def test_plotly_panels_without_legend_have_none():
@@ -541,11 +551,12 @@ def test_plotly_panels_place_each_colorbar_beside_its_own_panel():
                    backend='plotly', show=False)
     colorbars = [t.marker.colorbar for t in fig.data
                  if t.marker is not None and t.marker.showscale]
-    assert len(colorbars) == 2
-    assert colorbars[0].x < colorbars[1].x
-    assert colorbars[0].x > fig.layout.scene.domain.x[1]
-    assert colorbars[1].x > fig.layout.scene2.domain.x[1]
-    assert colorbars[0].x < fig.layout.scene2.domain.x[0]
+    # CHANGED for 1.2.0 (owner decision 2026-11-22): each panel had its
+    # own colorbar beside its own cell. Both panels share one color scale,
+    # so the grid draws ONE colorbar, right of the last cell.
+    assert len(colorbars) == 1
+    assert colorbars[0].x > fig.layout.scene2.domain.x[1]
+    assert colorbars[0].xanchor == 'left'
 
 
 def test_plotly_panels_reserve_a_gutter_only_when_needed():
@@ -618,14 +629,17 @@ def test_matplotlib_panels_draw_one_colorbar_per_panel_without_warnings():
     try:
         panels = [ax for ax in fig.axes if ax.get_label() != '<colorbar>']
         cbars = [ax for ax in fig.axes if ax.get_label() == '<colorbar>']
-        assert len(panels) == 2 and len(cbars) == 2
-        # each colorbar sits to the right of its own panel and left of the
-        # next panel: no two share a position
-        xs = sorted(ax.get_position().x0 for ax in panels + cbars)
-        assert len(set(round(x, 3) for x in xs)) == 4
+        # CHANGED for 1.2.0 (owner decision 2026-11-22): this asserted one
+        # colorbar per panel, each right of its own panel. Both panels
+        # share one color scale, so the grid draws ONE colorbar, right of
+        # both panels -- still without a layout warning.
+        assert len(panels) == 2 and len(cbars) == 1
         order = sorted(panels + cbars, key=lambda ax: ax.get_position().x0)
         assert [ax.get_label() == '<colorbar>' for ax in order] == [
-            False, True, False, True]
+            False, False, True]
+        assert cbars[0].get_position().x0 > max(
+            ax.get_position().x1 for ax in panels)
+        assert cbars[0].get_position().x1 < 1.0
     finally:
         matplotlib.pyplot.close(fig)
 
@@ -669,11 +683,14 @@ def test_plotly_panels_keep_a_left_colorbar_on_the_left():
                    show=False)
     colorbars = [t.marker.colorbar for t in fig.data
                  if t.marker is not None and t.marker.showscale]
-    assert len(colorbars) == 2
+    # CHANGED for 1.2.0 (owner decision 2026-11-22): each panel had its
+    # own colorbar on its own left. The grid now draws ONE colorbar, on
+    # the LEFT of the whole grid, in room reserved in the left margin.
+    assert len(colorbars) == 1
     assert colorbars[0].xanchor == 'right'
     assert colorbars[0].x <= fig.layout.scene.domain.x[0]
-    assert colorbars[1].xanchor == 'right'
-    assert colorbars[1].x <= fig.layout.scene2.domain.x[0]
+    plot_w = fig.layout.width - fig.layout.margin.l - fig.layout.margin.r
+    assert -colorbars[0].x * plot_w + 60 <= fig.layout.margin.l
 
 
 def test_plotly_panel_titles_go_through_the_title_path():
@@ -702,8 +719,10 @@ def test_plotly_panels_carry_the_font_into_the_grid():
     single = hyp.plot(_datasets(1, rows=20)[0], legend=True, names=['p'],
                       font='DejaVu Serif', backend='plotly', show=False)
     assert fig.layout.font.family == single.layout.font.family
+    # CHANGED for 1.2.0 (owner decision 2026-11-22): the grid has ONE
+    # legend (`layout.legend`), not one per cell; it carries the font.
     assert fig.layout.legend.font.family == single.layout.font.family
-    assert fig.layout.legend2.font.family == single.layout.font.family
+    assert 'legend2' not in fig.layout.to_plotly_json()
 
 
 def test_plotly_grid_png_draws_something_in_every_cell(tmp_path):

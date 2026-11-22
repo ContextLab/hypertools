@@ -4669,6 +4669,8 @@ def _hue_label_strings(hue):
     out = []
 
     def _walk(value):
+        """Collect the labels of `value`, a label or a (nested)
+        sequence of them, in first-appearance order."""
         if isinstance(value, (str, bytes)) or np.ndim(value) == 0:
             if not is_missing_label(value) and str(value) not in out:
                 out.append(str(value))
@@ -4720,6 +4722,7 @@ def _legend_handle_signature(handle, color=True):
     from matplotlib.colors import to_rgba_array
 
     def _plain(value):
+        """`value` as plain rounded numbers, or its repr."""
         try:
             return np.round(np.asarray(value, dtype=float), 4).tolist()
         except (TypeError, ValueError):
@@ -4999,6 +5002,7 @@ def _add_shared_furniture(fig, panel_axes, legend_spec, colorbar_info,
     in_strip = mappable is not None and colorbar_info['location'] == 'right'
 
     def _finish(cbar):
+        """Label, style and tag the shared colorbar `cbar`."""
         if ticklabels is not None:
             cbar.set_ticklabels(ticklabels)
         if colorbar_info['label']:
@@ -5009,6 +5013,8 @@ def _add_shared_furniture(fig, panel_axes, legend_spec, colorbar_info,
             # first group at the top, as the legend reads (`_add_colorbar`)
             cbar.ax.invert_yaxis()
         cbar.ax.set_gid(SHARED_COLORBAR_GID)
+        # matplotlib's own label for a colorbar's axes
+        cbar.ax.set_label('<colorbar>')
         strip['colorbar'] = cbar
 
     if in_strip:
@@ -5348,7 +5354,8 @@ def _plot_panels(x, panels, call_kwargs, _name='panels'):
             kw = panel_kwargs[i]
             if own_colors[i] is not None:
                 kw['color'] = [own_colors[i]]
-            if kw.get('legend') is True and ungrouped and panel_ndims != 1:
+            if (kw.get('legend') is True and ungrouped and panel_ndims != 1
+                    and kw.get('names') is None):
                 # the single-axes call numbers its datasets 1..n; every
                 # panel numbered its own dataset 1
                 kw['legend'] = [i + 1]
@@ -6123,7 +6130,8 @@ def _plot_panels_plotly(panel_data, panel_kwargs, titles, nrows, ncols,
             legend_position=(None if _position is None else
                              {'x': _position['lx'], 'y': _position['ly']}),
             font=(panel_figs[0].layout.font.to_plotly_json()
-                  if panel_figs[0].layout.font is not None else None))
+                  if panel_figs[0].layout.font is not None else None),
+            title_px=title_px, widen=call_kwargs.get('size') is None)
     fig.update_layout(showlegend=bool(call_kwargs.get('legend')))
     # the SAME figure class the single-axes plotly path returns, displayed
     # through the same one-shot end-of-cell queue: a bare `go.Figure` shown
@@ -6789,7 +6797,11 @@ def plot(
         the None-labeled points are drawn in the same de-emphasized
         neutral gray, get no legend entry, and do not consume a palette
         slot (the named categories keep the first palette colors, in
-        first-appearance order).
+        first-appearance order). In a `panels=` grid the mapping is the
+        whole figure's: a continuous hue is mapped over the range of
+        every panel's values and a categorical hue through one
+        category-to-color mapping, exactly as the single-axes call of
+        all the datasets maps them (see `panels=`).
 
         The categorical-vs-continuous choice: string labels always take
         the CATEGORICAL path (one trace per category, legend-able,
@@ -6948,6 +6960,8 @@ def plot(
         item); the list must have exactly one entry per drawn dataset/
         group (``ValueError`` naming legend otherwise). A bare string is
         treated as a single-entry list (valid only for a single dataset).
+        A `panels=` grid draws ONE legend for the whole figure, right of
+        the grid (see `panels=`).
 
         Under a MultiIndex HIERARCHY the drawn traces are leaves plus
         derived per-level means, and only the TOP-level groups carry a
@@ -6999,9 +7013,9 @@ def plot(
         swatches). Mixing the two forms raises ``ValueError``. Under
         `panels=`, a plain list naming the datasets (one color per
         dataset, then one per shared entry such as a forecast model or
-        ``truth``) is split so each panel's legend gets its own dataset's
-        color followed by the shared ones; a pair list is drawn whole in
-        every panel. Default None.
+        ``truth``) recolors those entries of the grid's one shared
+        legend; a pair list defines that one legend outright. Default
+        None.
 
     colorbar : bool or dict
         If True, draws a colorbar reflecting the color mapping in use
@@ -7021,7 +7035,9 @@ def plot(
         a right-side colorbar are shown, the figure is widened so neither
         is clipped or overlaps the other). Raises ``ValueError`` if
         requested with no color mapping available at all (e.g. a single
-        dataset with no `hue`/`cluster`). Default None (no colorbar).
+        dataset with no `hue`/`cluster`). A `panels=` grid draws ONE
+        colorbar for the whole figure, over one color scale shared by
+        every panel (see `panels=`). Default None (no colorbar).
 
     title : str or list of str
         A title for the plot. Normally a single string. For serial-style
@@ -8581,10 +8597,67 @@ def plot(
         `names=`, `color=`, `fmt=`, `alpha=`, `marker(s)=`,
         `linestyle(s)=`, `surface=`, `density=`, `truth=`, a per-dataset
         `palette=` list such as ``['viridis', 'magma']``, ...) are
-        narrowed to each panel's own dataset, in either `panel_fit=` mode;
-        `legend=`/`colorbar=` are drawn per panel, and a `legend=` LIST
-        naming the datasets (no `hue=`/`cluster=` grouping) gives each
-        panel its own entry. Forecast arguments partition the same way:
+        narrowed to each panel's own dataset, in either `panel_fit=` mode.
+
+        COLORS, THE LEGEND AND THE COLORBAR ARE SHARED BY THE WHOLE GRID
+        (1.2; a static grid looks different from 1.1, where every panel
+        restarted the palette and carried its own legend and colorbar).
+        Color means one thing across the figure. With one panel per
+        dataset, dataset i is drawn in the color the equivalent
+        single-axes call of ALL the datasets gives it (palette position i
+        of n -- not the first palette color in every panel); an explicit
+        `color=`, a color letter in `fmt=` and a per-dataset `palette=`
+        are honored exactly as that call honors them. A continuous `hue=`
+        is mapped over ONE value range, the range of every panel's
+        values, so a color is the same value in every panel; a categorical
+        `hue=`, and clusters from a shared fit, use ONE label-to-color
+        mapping. (A list-valued `reduce=` grid draws every dataset in
+        every panel and always colored them alike.)
+
+        The legend and the colorbar are then drawn ONCE for the figure:
+        one legend holding the union of the panels' entries without
+        duplicates -- the data entries in dataset order, then the
+        `predict=`/`truth=` entries, where two entries are one when they
+        have the same label and look the same (a forecast or truth key
+        that differs between panels only in color is one key in the
+        neutral gray the single-axes legend uses for a model that
+        continues several datasets) -- and/or one colorbar. They sit in
+        a strip to the right of the grid, vertically centered on it,
+        clear of every panel, title and `caption=`; the default figure
+        is widened by the strip's width (an explicit `size=` is honored
+        and the grid is laid out beside the strip), and in an animated
+        grid they are static across frames. ``legend=True`` numbers the
+        datasets ``1..n`` as the single-axes call does, and a `legend=`
+        LIST naming the datasets (no `hue=`/`cluster=` grouping) gives
+        one entry per dataset. `legend_kwargs=` styles the one legend; a
+        ``loc``/``bbox_to_anchor`` (plotly: ``x``/``y``) in it places
+        that legend in FIGURE coordinates and no strip is reserved for
+        it. A `colorbar=` ``location`` other than ``'right'`` attaches
+        the one colorbar to that side of the whole grid. No legend or
+        colorbar is added that the call did not ask for. On the returned
+        matplotlib figure the shared legend is a figure-level legend
+        (``fig.legends``, gid ``'hypertools-shared-legend'``) and the
+        colorbar an axes with gid ``'hypertools-shared-colorbar'``; on
+        plotly they are ``layout.legend`` and one colorbar trace.
+
+        The exception is a grid whose colors do NOT mean the same thing
+        in every panel: clusters (`cluster=`/`n_clusters=`) fit
+        separately per panel -- under ``panel_fit='independent'``, or
+        with a list-valued `reduce=`, where each panel clusters its own
+        embedding -- and `forecast_cluster=`/`forecast_n_clusters=`,
+        which group each panel's own forecasts. Cluster 1 of one panel is
+        then not cluster 1 of the next, so every panel keeps its own
+        legend and colorbar beside it (as does a grid in which one legend
+        label would look different in two panels); one shared key would
+        claim a meaning that is false. With `return_model=True` the
+        bundle's ``'colors'`` is the one scale the panels share (every
+        dataset's color, in panel order, for a one-panel-per-dataset
+        grid; the grid-wide range of a continuous `hue=`; the union of
+        the categories), and each ``panel_models[i]['colors']`` holds
+        the colors that panel drew. In the exception above ``'colors'``
+        is the first panel's own scale, as before.
+
+        Forecast arguments partition the same way:
         `forecast_fmt=` and `forecast_hue=` given per forecast (per
         dataset for one `predict=` model, model-major for a collection --
         see `predict=`) reach each panel as its own forecasts' entries (a
@@ -8598,7 +8671,8 @@ def plot(
         reused rather than refit -- a forecaster fitted on a different
         number of datasets than there are panels raises ``ValueError``.
         `forecast_cluster=` groups each panel's own forecast endpoints
-        (with a single model, one per panel -- it then warns and inherits).
+        (with a single model, one per panel -- it then warns and inherits),
+        which is why its panels keep their own legends (above).
 
         ANIMATED GRIDS (matplotlib only). With a truthy `animate=` the
         whole grid is ONE animation: every panel runs on the same clock

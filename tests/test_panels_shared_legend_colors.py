@@ -144,6 +144,49 @@ def test_one_legend_for_the_figure_with_every_dataset():
     assert [label for label, _ in _entries(legend)] == names
 
 
+def test_legend_true_numbers_the_datasets_as_the_single_axes_call_does():
+    x = _walks()
+    single = _quiet_plot(x, legend=True)
+    grid = _quiet_plot(x, legend=True, panels=True, return_model=True)
+    legend = _shared_legend(grid['fig'])
+    assert _entries(legend) == _entries(single.axes[0].get_legend())
+    assert [label for label, _ in _entries(legend)] == ['1', '2', '3', '4']
+
+
+def test_a_label_that_looks_different_in_two_panels_keeps_panel_legends():
+    """One shared entry would be wrong for one of the panels, so the grid
+    does not claim one."""
+    x = _walks(2)
+    grid = _quiet_plot(x, legend=['same', 'same'], panels=True,
+                       return_model=True)
+    fig = grid['fig']
+    assert fig.legends == []
+    assert [[t.get_text() for t in ax.get_legend().get_texts()]
+            for ax in grid['axes']] == [['same'], ['same']]
+    # ...and the datasets still keep their own colors
+    assert _line_colors(grid['axes'][0]) != _line_colors(grid['axes'][1])
+
+
+def test_legend_kwargs_style_the_one_legend_and_can_place_it():
+    x = _walks(3)
+    fig = _quiet_plot(x, legend=['a', 'b', 'c'], panels=True,
+                      legend_kwargs={'title': 'who', 'fontsize': 14})
+    legend = _shared_legend(fig)
+    assert legend.get_title().get_text() == 'who'
+    assert legend.get_texts()[0].get_fontsize() == 14
+    _assert_strip_clear(fig, fig.axes[:3])
+    placed = _quiet_plot(x, legend=['a', 'b', 'c'], panels=True,
+                         legend_kwargs={'loc': 'lower center', 'ncol': 3})
+    legend = _shared_legend(placed)
+    placed.canvas.draw()
+    box = legend.get_window_extent(placed.canvas.get_renderer())
+    # figure coordinates: centered under the whole grid, and no strip
+    assert abs(0.5 * (box.x0 + box.x1) - 0.5 * placed.bbox.width) < 2
+    assert box.y0 < 0.1 * placed.bbox.height
+    assert placed.get_size_inches()[0] == pytest.approx(
+        _quiet_plot(x, panels=True).get_size_inches()[0])
+
+
 def test_legend_false_or_absent_adds_nothing():
     x = _walks()
     for kw in ({}, dict(legend=False), dict(legend=None)):
@@ -269,6 +312,37 @@ def test_categorical_hue_colorbar_is_one_bar_with_every_category():
     assert [t.get_text() for t in bars[0].get_yticklabels()] == ['p', 'q',
                                                                  'r']
     _assert_strip_clear(grid['fig'], grid['axes'])
+
+
+def test_palette_dict_names_every_category_of_the_grid():
+    """A `palette=` dict names the whole grid's categories; a panel that
+    holds only some of them used to refuse the others' keys."""
+    x = _walks(3)
+    hue = [['p'] * 30, ['q'] * 30, ['r'] * 15 + ['p'] * 15]
+    palette = {'p': 'red', 'q': 'green', 'r': 'blue'}
+    grid = _quiet_plot(x, hue=hue, fmt='o', legend=True, palette=palette,
+                       panels=True, return_model=True)
+    assert _entries(_shared_legend(grid['fig'])) == [
+        ('p', (1.0, 0.0, 0.0)), ('q', (0.0, 0.502, 0.0)),
+        ('r', (0.0, 0.0, 1.0))]
+
+
+@pytest.mark.parametrize('location', ['left', 'top', 'bottom'])
+def test_colorbar_on_another_side_is_still_one_bar(location):
+    x = _walks(3, rows=21)
+    hue = [np.linspace(k, k + 2, 21) for k in range(3)]
+    grid = _quiet_plot(x, hue=hue, colorbar={'location': location},
+                       panels=True, ndims=2, return_model=True)
+    fig = grid['fig']
+    (bar,) = _shared_colorbars(fig)
+    assert len(fig.axes) == 4
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    box = bar.get_tightbbox(renderer)
+    assert box.x0 >= 0 and box.x1 <= fig.bbox.x1
+    assert box.y0 >= 0 and box.y1 <= fig.bbox.y1
+    for ax in grid['axes']:
+        assert not box.overlaps(ax.get_window_extent(renderer))
 
 
 # -- clusters -----------------------------------------------------------------
@@ -476,6 +550,42 @@ def test_plotly_grid_categorical_hue_and_legend_false():
     bare = _quiet_plot(x, panels=True, backend='plotly')
     assert not any(t.showlegend for t in bare.data)
     assert not bare.layout.showlegend
+
+
+@pytest.mark.parametrize('location', ['right', 'left', 'top', 'bottom'])
+def test_plotly_shared_colorbar_stays_on_the_canvas(location):
+    x = _walks(3, rows=21)
+    hue = [np.linspace(k, k + 2, 21) for k in range(3)]
+    fig = _quiet_plot(x, hue=hue, colorbar={'location': location},
+                      panels=True, backend='plotly',
+                      title=['one', 'two', 'three'])
+    (bar,) = [t.marker.colorbar for t in fig.data
+              if getattr(getattr(t, 'marker', None), 'showscale', None)]
+    margin = fig.layout.margin
+    plot_w = fig.layout.width - margin.l - margin.r
+    plot_h = fig.layout.height - margin.t - margin.b
+    if location == 'right':
+        assert bar.x >= 1.0 and (bar.x - 1.0) * plot_w + 60 <= margin.r
+    elif location == 'left':
+        assert bar.x <= 0.0 and -bar.x * plot_w + 60 <= margin.l
+    elif location == 'top':
+        assert bar.y >= 1.0 and (bar.y - 1.0) * plot_h + 50 <= margin.t
+    else:
+        assert bar.y <= 0.0 and -bar.y * plot_h + 50 <= margin.b
+
+
+def test_plotly_forecast_keys_are_listed_once():
+    x = _walks(3, rows=40, cols=2)
+    kw = dict(predict='ARIMA', t=5, legend=['a', 'b', 'c'], ndims=2,
+              backend='plotly')
+    single = _quiet_plot(x, **kw)
+    fig = _quiet_plot(x, panels=True, **kw)
+    assert sorted(_plotly_legend_names(fig)) == sorted(
+        _plotly_legend_names(single)) == ['ARIMA', 'a', 'b', 'c']
+    key = [t for t in fig.data if t.showlegend and t.name == 'ARIMA'][0]
+    ref = [t for t in single.data if t.showlegend and t.name == 'ARIMA'][0]
+    # one model continuing three datasets: the neutral key, as on one axes
+    assert _plotly_rgb(key.line.color) == _plotly_rgb(ref.line.color)
 
 
 def test_plotly_independent_clusters_keep_per_panel_legends():
