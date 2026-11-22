@@ -2054,6 +2054,130 @@ _SERIAL_CAPABLE_STYLES = (True, 'parallel', 'serial', 'morph')
 _INHERENTLY_SERIAL_STYLES = ('serial', 'morph')
 
 
+#: the flat animation kwargs an ``animate={...}`` dict may carry, with each
+#: one's literal default in `plot`'s signature
+_ANIMATE_DICT_DEFAULTS = {
+    'duration': 30,
+    'tail_duration': 2,
+    'rotations': 1,
+    'zoom': 1,
+    'chemtrails': False,
+    'precog': False,
+    'bullettime': False,
+    'frame_rate': 30,
+    'focused': None,
+    'morph_samples': None,
+}
+
+
+def _resolve_animate_argument(animate, flat):
+    """Resolve `plot`'s ``animate=`` into ``(animate, flat)``: the style
+    (True/False/None, a style string, or a per-dataset morph list) and the
+    flat animation kwargs it implies.
+
+    `flat` holds the call's own flat animation kwargs (the keys of
+    `_ANIMATE_DICT_DEFAULTS`); a copy is returned with an ``animate={...}``
+    dict's entries and the trail-effect sugar styles
+    (``animate='chemtrails'`` etc.) folded in. This is the ONE place the
+    forms of ``animate=`` are understood: `plot` calls it at its top, and a
+    `panels=` grid calls it before it splits its kwargs per panel, so the
+    grid decides "animated" -- and narrows per-dataset values given inside
+    the dict -- exactly as the single-axes call does.
+    """
+    flat = dict(flat)
+    # animate= dict form (GH #154 resolution): unpacked into the flat
+    # animation kwargs HERE, at the very top of the function, before
+    # anything else runs -- so every downstream code path (all of which
+    # predates this feature) only ever sees the flat kwargs it already
+    # understands; `animate` itself becomes the resolved style string/
+    # bool/list from here on. `'style'` plays the role of `model` in
+    # hypertools' usual spec-dict grammar; every other key must be one of
+    # the flat animation kwargs below. A dict key CONFLICTING with the
+    # same flat kwarg passed explicitly (a different value) is almost
+    # certainly a mistake -- raise rather than silently pick one; compared
+    # against each flat kwarg's own LITERAL default (mirroring the
+    # pipeline=/stage-kwarg conflict check below) since there is no other
+    # way to tell "explicitly passed, coincidentally equal to the default"
+    # from "never passed" from inside the function body.
+    if isinstance(animate, dict):
+        if 'style' not in animate:
+            raise ValueError(
+                "animate= dict form requires a 'style' key naming the "
+                "animation style (e.g. animate={'style': 'spin', "
+                "'rotations': 2, 'duration': 15}); got a dict with keys "
+                f"{sorted(animate.keys())}."
+            )
+        _animate_dict = dict(animate)
+        _animate_style = _animate_dict.pop('style')
+        _unknown_animate_keys = set(_animate_dict) - set(_ANIMATE_DICT_DEFAULTS)
+        if _unknown_animate_keys:
+            raise ValueError(
+                f"animate= dict got unknown key(s) "
+                f"{sorted(_unknown_animate_keys)}; valid keys are 'style' "
+                f"plus {sorted(_ANIMATE_DICT_DEFAULTS)}."
+            )
+        _animate_flat_locals = dict(flat)
+        for _key, _dict_value in _animate_dict.items():
+            _default_value = _ANIMATE_DICT_DEFAULTS[_key]
+            _flat_value = _animate_flat_locals[_key]
+            if _flat_value != _default_value and _flat_value != _dict_value:
+                raise ValueError(
+                    f"animate= dict specifies {_key}={_dict_value!r} but "
+                    f"{_key}={_flat_value!r} was also passed explicitly as "
+                    f"a flat kwarg with a different value; pass {_key}= in "
+                    "only one place (either inside animate= or as its own "
+                    "kwarg)."
+                )
+        for _key, _dict_value in _animate_dict.items():
+            flat[_key] = _dict_value
+        animate = _animate_style
+
+    # animate='chemtrails'/'precog'/'bullettime' sugar (QC 2026-07): these are
+    # trail EFFECTS, not animation styles. Historically, passing one as the
+    # animate STYLE silently produced a STATIC plot (the style whitelist in the
+    # matplotlib backend did not recognize them). Map each to animate='parallel'
+    # with the matching trail flag on -- what the effect actually needs (trails
+    # apply to animate=True/'parallel').
+    if isinstance(animate, str) and animate in ('chemtrails', 'precog',
+                                                'bullettime'):
+        flat[animate] = True
+        animate = 'parallel'
+
+    # validate the animate style: an unrecognized string used to fall through
+    # to a silent static plot (QC 2026-07). Fail fast with a clear message.
+    if isinstance(animate, str) and animate not in ('parallel', 'spin',
+                                                    'serial', 'morph', 'window'):
+        raise ValueError(
+            f"unknown animate style {animate!r}; valid styles are 'parallel', "
+            "'spin', 'serial', 'morph', 'window' (or True/False). The trail "
+            "effects 'chemtrails'/'precog'/'bullettime' are boolean kwargs, not "
+            "styles -- e.g. animate='parallel', chemtrails=True.")
+
+    # non-bool/non-string scalars (release-1.0 audit, F04-006/F05-004):
+    # anything ==True/==False (np.True_, 1, 0, ...) is normalized to a real
+    # bool; every OTHER scalar (e.g. animate=2 -- perhaps meant as
+    # "2 rotations"?) used to slip past the string whitelist above, silently
+    # render a STATIC plot (the backend dispatch is `animate in [True,
+    # 'parallel', ...]`), and then crash with `AttributeError: 'NoneType'
+    # object has no attribute 'save'` if save_path= was also set.
+    if isinstance(animate, np.ndarray):
+        animate = animate.tolist()  # per-dataset morph tags as an array
+    if animate is not None and not isinstance(animate, (bool, str, dict,
+                                                        list, tuple)):
+        if animate == True or animate == False:  # noqa: E712 (np.bool_/0/1)
+            animate = bool(animate)
+        else:
+            raise ValueError(
+                f"animate={animate!r} is not a recognized animate value; "
+                "use True/False, a style string ('parallel', 'spin', "
+                "'serial', 'morph', 'window', or the sugar styles "
+                "'chemtrails'/'precog'/'bullettime'), the dict form "
+                "(animate={'style': ..., ...}), or a per-dataset list for "
+                "animate='morph'. For extra camera rotations, pass "
+                "rotations= instead.")
+    return animate, flat
+
+
 def _raw_animate_style(animate):
     """The STYLE `animate=` names, before dataset-count-dependent resolution.
 
@@ -2912,9 +3036,27 @@ def _make_title_pattern_resolver(pattern, row_indices, name='title'):
     if row_indices is not None:
         index = next((i for i in row_indices if i is not None), None)
 
+    #: which input carries that index: in a one-panel-per-dataset grid,
+    #: the panel that draws it
+    position = 0
+    if row_indices is not None:
+        position = next((k for k, i in enumerate(row_indices)
+                         if i is not None), 0)
+
     def _resolve(ctx):
         if index is None:
             return pattern
+        if ctx.panels:
+            # a `panels=` grid's own context (a grid-level `caption=`):
+            # the reveal head is a PANEL's, so the pattern shows the index
+            # that panel's own `title='{index}'` shows. The panel read is
+            # the one drawing the dataset whose index this is (the first
+            # dataset that carries one) -- or the first panel, when every
+            # panel draws every dataset (a list-valued `reduce=`). Panels
+            # whose own indexes or lengths differ therefore never make
+            # this ambiguous: one panel is read, by this rule.
+            ctx = ctx.panels[position
+                             if len(ctx.panels) == len(row_indices) else 0]
         value = index[_title_head_row(ctx, len(index))]
         try:
             return pattern.format(index=value)
@@ -4329,6 +4471,10 @@ def _validate_caption(caption, row_indices, backend_name, ax=None):
         return None, None
     if isinstance(caption, bytes):
         caption = caption.decode('utf-8')
+    if isinstance(caption, str) and not caption.strip():
+        # an empty caption is no caption: nothing is drawn and no room is
+        # made for it
+        return None, None
     if not (isinstance(caption, str) or callable(caption)):
         raise TypeError(
             "caption= must be a string, a '{index...}' format pattern, or a "
@@ -4413,18 +4559,107 @@ def _blank_bottom_in(fig):
     return max(0.0, bottom)
 
 
-def _add_caption(fig, text, font=None, family=None):
+#: blank room (inches) kept between the caption and the canvas' side edges
+_CAPTION_SIDE_PAD_IN = 0.1
+
+
+def _caption_sample_frames(n_frames):
+    """The frames whose captions size an animated caption's room: the
+    first, the middle and the last (see `_add_caption`)."""
+    n_frames = max(int(n_frames), 1)
+    return sorted({0, n_frames // 2, n_frames - 1})
+
+
+def _static_axes_artists(ax):
+    """The data artists a finished static axes holds (its lines, then its
+    collections): a static plot's ``FrameContext.artists``."""
+    if ax is None:
+        return ()
+    return tuple(ax.lines) + tuple(ax.collections)
+
+
+def _wrap_caption(artist, text):
+    """`text` broken into lines no wider than the caption's figure (less
+    `_CAPTION_SIDE_PAD_IN` on each side), measured in the caption's own
+    font on the figure's renderer.
+
+    Lines break at spaces; a single word wider than the figure is broken
+    between characters. The caller's own ``'\n'`` line breaks are kept. A
+    line holding mathtext (``$...$``) is left whole: breaking it could
+    split a formula.
+    """
+    fig = artist.figure
+    renderer = _measurement_renderer(fig)
+    room_px = (fig.get_size_inches()[0] - 2 * _CAPTION_SIDE_PAD_IN) * fig.dpi
+    shown, visible = artist.get_text(), artist.get_visible()
+    # (an invisible Text reports no extent)
+    artist.set_visible(True)
+
+    def _fits(candidate):
+        artist.set_text(candidate)
+        return artist.get_window_extent(renderer).width <= room_px
+
+    lines = []
+    try:
+        for paragraph in str(text).split('\n'):
+            if paragraph.count('$') >= 2 or _fits(paragraph):
+                lines.append(paragraph)
+                continue
+            current = ''
+            for word in paragraph.split(' '):
+                trial = word if not current else current + ' ' + word
+                if _fits(trial):
+                    current = trial
+                    continue
+                if current:
+                    lines.append(current)
+                while len(word) > 1 and not _fits(word):
+                    # the longest leading piece of the word that fits
+                    low, high = 1, len(word) - 1
+                    while low < high:
+                        middle = (low + high + 1) // 2
+                        if _fits(word[:middle]):
+                            low = middle
+                        else:
+                            high = middle - 1
+                    lines.append(word[:low])
+                    word = word[low:]
+                current = word
+            lines.append(current)
+    finally:
+        artist.set_text(shown)
+        artist.set_visible(visible)
+    return '\n'.join(lines)
+
+
+def _set_caption_text(artist, text):
+    """Show `text` in the caption `artist`, wrapped to its figure's width
+    (`_wrap_caption`): how every frame of a per-frame caption is set."""
+    artist.set_text(_wrap_caption(artist, text))
+
+
+def _add_caption(fig, text, font=None, family=None, samples=()):
     """Draw `text` as `fig`'s caption (GH #295) and return its ``Text``.
 
     The caption is centered under everything the figure holds, a small gap
-    below the lowest thing drawn (`_blank_bottom_in`). Where the figure has
-    no blank room there for it -- an animated 3-D plot fills its canvas --
-    the figure grows downward by what is missing
+    below the lowest thing drawn (`_blank_bottom_in`). It is WRAPPED to
+    the figure's width (`_wrap_caption`), so it never leaves the canvas at
+    the sides however long it is. Where the figure has no blank room
+    under its content for the wrapped text -- an animated 3-D plot fills
+    its canvas -- the figure grows downward by what is missing
     (`_grow_figure_downward`), so the caption never overlaps a panel, a
     legend, a colorbar or a companion panel and always lies inside the
-    canvas. The room is sized for the number of lines `text` has; a
-    per-frame caption should keep that many lines (or fewer) on every
-    frame.
+    canvas.
+
+    HOW THE ROOM'S HEIGHT IS DECIDED. The room holds as many lines as the
+    tallest of `text` and `samples` has once wrapped. `text` is what the
+    figure shows now: a fixed caption, a static figure's resolved one, or
+    frame 0's. `samples` are a per-frame caption's texts on the frames
+    `_caption_sample_frames` names (first, middle, last), so a caption
+    that gets longer as the animation runs has its room from the start. A
+    frame in between whose caption wraps to MORE lines than all three is
+    still wrapped to the figure's width, and its extra lines run below the
+    reserved room.
 
     `font` is the resolved explicit ``font=`` (a ``FontProperties``), and
     `family` the fallback font stack used without one -- the caption is
@@ -4437,7 +4672,15 @@ def _add_caption(fig, text, font=None, family=None):
     else:
         props = FontProperties(family=family or sans_serif_stack())
         props.set_size(plt.rcParams['font.size'])
-    n_lines = text.count('\n') + 1
+    # placed for good below, once its wrapped height is known
+    artist = fig.text(0.5, 0.0, '', ha='center', va='top',
+                      fontproperties=props, gid=CAPTION_GID)
+    # excluded from the "lowest thing drawn" measurement
+    artist.set_visible(False)
+    wrapped = _wrap_caption(artist, text)
+    n_lines = max(candidate.count('\n') + 1 for candidate in
+                  [wrapped] + [_wrap_caption(artist, str(sample))
+                               for sample in samples])
     line_in = 1.2 * props.get_size_in_points() / 72.0
     strip_in = n_lines * line_in + 2 * _CAPTION_PAD_IN
     blank_in = _blank_bottom_in(fig)
@@ -4445,9 +4688,9 @@ def _add_caption(fig, text, font=None, family=None):
         _grow_figure_downward(fig, strip_in - blank_in)
         blank_in = strip_in
     _, h_in = fig.get_size_inches()
-    artist = fig.text(0.5, (blank_in - _CAPTION_PAD_IN) / h_in, text,
-                      ha='center', va='top', fontproperties=props,
-                      gid=CAPTION_GID)
+    artist.set_position((0.5, (blank_in - _CAPTION_PAD_IN) / h_in))
+    artist.set_text(wrapped)
+    artist.set_visible(True)
     return artist
 
 
@@ -4675,7 +4918,9 @@ def _hue_label_strings(hue):
             if not is_missing_label(value) and str(value) not in out:
                 out.append(str(value))
             return
-        for item in (value.tolist() if isinstance(value, np.ndarray)
+        # (numpy and pandas containers give plain Python labels)
+        for item in (value.tolist() if callable(getattr(value, 'tolist',
+                                                        None))
                      else list(value)):
             _walk(item)
 
@@ -5129,6 +5374,24 @@ def _place_shared_furniture(fig, strip):
 
 
 def _plot_panels(x, panels, call_kwargs, _name='panels'):
+    """`_plot_panels_impl` (the `panels=` implementation), leaving no figure
+    behind when it fails: whatever the reason a grid call raises -- a
+    refused combination, a panel's own error, a caption or title callable
+    that raises, a failed save -- every figure the call registered with
+    pyplot on the way is closed before the exception leaves, with
+    ``show=True`` as with ``show=False``. ``plt.get_fignums()`` after a
+    failed call is what it was before it."""
+    before = set(plt.get_fignums())
+    try:
+        return _plot_panels_impl(x, panels, call_kwargs, _name=_name)
+    except BaseException:
+        for number in plt.get_fignums():
+            if number not in before:
+                plt.close(number)
+        raise
+
+
+def _plot_panels_impl(x, panels, call_kwargs, _name='panels'):
     """Draw one panel per dataset (or per `reduce=` entry) in a single
     figure -- the implementation behind `hyp.plot(..., panels=)`. With
     `animate=` the panels are animated together, on one clock, by a single
@@ -5147,9 +5410,18 @@ def _plot_panels(x, panels, call_kwargs, _name='panels'):
       Each panel's box is scaled to its own contents, exactly as a
       per-panel `hyp.plot(..., ax=ax)` call is today.
     """
-    _animate = call_kwargs.get('animate')
-    animated = (isinstance(_animate, (list, tuple, dict, np.ndarray))
-                or bool(_animate))
+    # `animate=` is resolved the way `plot()` itself resolves it, BEFORE the
+    # kwargs are split per panel: an ``animate={...}`` dict is unpacked into
+    # the flat animation kwargs (so a per-dataset value inside it, e.g.
+    # ``'chemtrails': [True, False]``, is narrowed per panel like the flat
+    # kwarg), and ``{'style': False}`` is the static grid it asks for
+    call_kwargs = dict(call_kwargs)
+    _animate, _animate_flat = _resolve_animate_argument(
+        call_kwargs.get('animate'),
+        {key: call_kwargs.get(key, default)
+         for key, default in _ANIMATE_DICT_DEFAULTS.items()})
+    call_kwargs.update(_animate_flat, animate=_animate)
+    animated = isinstance(_animate, (list, tuple)) or bool(_animate)
     backend = resolve_backend(call_kwargs.get('backend', 'auto'))
     if animated and backend == 'plotly':
         raise NotImplementedError(
@@ -5622,8 +5894,11 @@ def _plot_panels(x, panels, call_kwargs, _name='panels'):
         # a static grid's caption: fixed text, or the dynamic forms
         # resolved once for the finished figure (as a dynamic title= is on
         # a static plot)
-        _add_grid_caption(fig, caption, dynamic_caption, panel_axes,
-                          call_kwargs.get('font'))
+        _add_grid_caption(
+            fig, caption, dynamic_caption, call_kwargs.get('font'),
+            context=(_static_grid_context(
+                fig, panel_axes, panel_xforms, order='parallel')
+                if dynamic_caption is not None else None))
         # the caption's room was added under the grid: re-center the
         # shared legend/colorbar on the panels
         _place_shared_furniture(fig, strip)
@@ -5691,21 +5966,54 @@ def _grid_caption_font(font, text):
         extra=resolved.get_name() if resolved is not None else None)
 
 
-def _add_grid_caption(fig, caption, dynamic_caption, panel_axes, font,
-                      context=None):
+def _add_grid_caption(fig, caption, dynamic_caption, font, context,
+                      sample_contexts=()):
     """Draw a panel grid's caption and return its ``Text``. A dynamic
     caption (pattern or callable) is resolved for `context` -- frame 0 of
-    an animated grid -- or, without one, for the finished static figure."""
-    text = caption
+    an animated grid (`_panel_grid_context`), or the finished static
+    figure (`_static_grid_context`) -- and its room is sized for that text
+    and for `sample_contexts`' (see `_add_caption`)."""
+    text, samples = caption, []
     if dynamic_caption is not None:
-        if context is None:
-            context = FrameContext(
-                frame=None, n_frames=None, figure=fig,
-                axes=tuple(panel_axes), style=False, progress=1.0)
         text = _resolve_dynamic_title_text(dynamic_caption, context,
                                            name='caption')
+        samples = [_resolve_dynamic_title_text(dynamic_caption, sample,
+                                               name='caption')
+                   for sample in sample_contexts]
     resolved_font, family = _grid_caption_font(font, text)
-    return _add_caption(fig, text, font=resolved_font, family=family)
+    return _add_caption(fig, text, font=resolved_font, family=family,
+                        samples=samples)
+
+
+def _static_grid_context(fig, panel_axes, panel_rows, order=None):
+    """The `FrameContext` of a FINISHED static panel grid, for a dynamic
+    `caption=`: the static counterpart of `_panel_grid_context`.
+
+    `panel_rows` holds, per panel, the analyzed rows of every dataset the
+    panel draws. As for any static plot, ``frame``/``n_frames`` are None
+    and ``progress`` is 1.0; ``panels`` holds one such context per panel
+    (its own ``axes``, its data ``artists``, its ``datasets``, and every
+    row revealed), and the grid's own ``axes``/``artists``/``datasets``/
+    ``revealed_counts``/``window_bounds`` are the panels' in panel order.
+    """
+    def _context(axes, artists, datasets, panels=()):
+        return FrameContext(
+            frame=None, n_frames=None, figure=fig, axes=axes,
+            artists=tuple(artists), datasets=tuple(datasets), style=False,
+            order=order,
+            revealed_counts=tuple(len(d) for d in datasets),
+            window_bounds=tuple((0, len(d)) for d in datasets),
+            progress=1.0, panels=tuple(panels))
+
+    panel_contexts = [
+        _context(ax, _static_axes_artists(ax),
+                 [np.asarray(rows) for rows in datasets])
+        for ax, datasets in zip(panel_axes, panel_rows)]
+    return _context(
+        tuple(panel_axes),
+        [artist for ctx in panel_contexts for artist in ctx.artists],
+        [rows for ctx in panel_contexts for rows in ctx.datasets],
+        panels=panel_contexts)
 
 
 def _panel_grid_context(fig, cells, frame, n_frames):
@@ -5963,13 +6271,19 @@ def _animate_panel_grid(fig, cells, panel_axes, panel_models, grid,
     caption_artist = None
     if caption is not None or dynamic_caption is not None:
         try:
-            # frame 0's text sizes the caption strip, and is what a still
-            # of the figure shows; the panels are drawn at frame 0 to get
-            # its context (frames are idempotent, see `FrameContext`)
+            # frame 0's text is what a still of the figure shows, and with
+            # the middle and last frames' it sizes the caption's room; the
+            # panels are drawn at each to get its real context (frames are
+            # idempotent, see `FrameContext`)
+            contexts = ([_draw_panels(frame)
+                         for frame in _caption_sample_frames(n_frames)]
+                        if dynamic_caption is not None else [None])
             caption_artist = _add_grid_caption(
-                fig, caption, dynamic_caption, panel_axes, font,
+                fig, caption, dynamic_caption, font,
                 context=(_draw_panels(0) if dynamic_caption is not None
-                         else None))
+                         else None),
+                sample_contexts=contexts if dynamic_caption is not None
+                else ())
             _place_shared_furniture(fig, strip)
         except Exception:
             _abandon()
@@ -5978,7 +6292,7 @@ def _animate_panel_grid(fig, cells, panel_axes, panel_models, grid,
     def _grid_frame(num, *_):
         context = _draw_panels(num)
         if dynamic_caption is not None:
-            caption_artist.set_text(_resolve_dynamic_title_text(
+            _set_caption_text(caption_artist, _resolve_dynamic_title_text(
                 dynamic_caption, context, name='caption'))
         for callback in grid_hooks.callbacks:
             callback(context)
@@ -9556,132 +9870,28 @@ def plot(
     # that drops the drawn legend (a continuous hue; `_plotly_hover_names`)
     _legend_user_labels = list(legend) if _legend_user_list else None
 
-    # animate= dict form (GH #154 resolution): unpacked into the flat
-    # animation kwargs HERE, at the very top of the function, before
-    # anything else runs -- so every downstream code path (all of which
-    # predates this feature) only ever sees the flat kwargs it already
-    # understands; `animate` itself becomes the resolved style string/
-    # bool/list from here on. `'style'` plays the role of `model` in
-    # hypertools' usual spec-dict grammar; every other key must be one of
-    # the flat animation kwargs below. A dict key CONFLICTING with the
-    # same flat kwarg passed explicitly (a different value) is almost
-    # certainly a mistake -- raise rather than silently pick one; compared
-    # against each flat kwarg's own LITERAL default (mirroring the
-    # pipeline=/stage-kwarg conflict check below) since there is no other
-    # way to tell "explicitly passed, coincidentally equal to the default"
-    # from "never passed" from inside the function body.
-    if isinstance(animate, dict):
-        _ANIMATE_DICT_DEFAULTS = {
-            'duration': 30,
-            'tail_duration': 2,
-            'rotations': 1,
-            'zoom': 1,
-            'chemtrails': False,
-            'precog': False,
-            'bullettime': False,
-            'frame_rate': 30,
-            'focused': None,
-            'morph_samples': None,
-        }
-        if 'style' not in animate:
-            raise ValueError(
-                "animate= dict form requires a 'style' key naming the "
-                "animation style (e.g. animate={'style': 'spin', "
-                "'rotations': 2, 'duration': 15}); got a dict with keys "
-                f"{sorted(animate.keys())}."
-            )
-        _animate_dict = dict(animate)
-        _animate_style = _animate_dict.pop('style')
-        _unknown_animate_keys = set(_animate_dict) - set(_ANIMATE_DICT_DEFAULTS)
-        if _unknown_animate_keys:
-            raise ValueError(
-                f"animate= dict got unknown key(s) "
-                f"{sorted(_unknown_animate_keys)}; valid keys are 'style' "
-                f"plus {sorted(_ANIMATE_DICT_DEFAULTS)}."
-            )
-        _animate_flat_locals = {
-            'duration': duration,
-            'tail_duration': tail_duration,
-            'rotations': rotations,
-            'zoom': zoom,
-            'chemtrails': chemtrails,
-            'precog': precog,
-            'bullettime': bullettime,
-            'frame_rate': frame_rate,
-            'focused': focused,
-            'morph_samples': morph_samples,
-        }
-        for _key, _dict_value in _animate_dict.items():
-            _default_value = _ANIMATE_DICT_DEFAULTS[_key]
-            _flat_value = _animate_flat_locals[_key]
-            if _flat_value != _default_value and _flat_value != _dict_value:
-                raise ValueError(
-                    f"animate= dict specifies {_key}={_dict_value!r} but "
-                    f"{_key}={_flat_value!r} was also passed explicitly as "
-                    f"a flat kwarg with a different value; pass {_key}= in "
-                    "only one place (either inside animate= or as its own "
-                    "kwarg)."
-                )
-        duration = _animate_dict.get('duration', duration)
-        tail_duration = _animate_dict.get('tail_duration', tail_duration)
-        rotations = _animate_dict.get('rotations', rotations)
-        zoom = _animate_dict.get('zoom', zoom)
-        chemtrails = _animate_dict.get('chemtrails', chemtrails)
-        precog = _animate_dict.get('precog', precog)
-        bullettime = _animate_dict.get('bullettime', bullettime)
-        frame_rate = _animate_dict.get('frame_rate', frame_rate)
-        focused = _animate_dict.get('focused', focused)
-        morph_samples = _animate_dict.get('morph_samples', morph_samples)
-        animate = _animate_style
-
-    # animate='chemtrails'/'precog'/'bullettime' sugar (QC 2026-07): these are
-    # trail EFFECTS, not animation styles. Historically, passing one as the
-    # animate STYLE silently produced a STATIC plot (the style whitelist in the
-    # matplotlib backend did not recognize them). Map each to animate='parallel'
-    # with the matching trail flag on -- what the effect actually needs (trails
-    # apply to animate=True/'parallel').
-    if isinstance(animate, str) and animate in ('chemtrails', 'precog',
-                                                'bullettime'):
-        if animate == 'chemtrails':
-            chemtrails = True
-        elif animate == 'precog':
-            precog = True
-        else:
-            bullettime = True
-        animate = 'parallel'
-
-    # validate the animate style: an unrecognized string used to fall through
-    # to a silent static plot (QC 2026-07). Fail fast with a clear message.
-    if isinstance(animate, str) and animate not in ('parallel', 'spin',
-                                                    'serial', 'morph', 'window'):
-        raise ValueError(
-            f"unknown animate style {animate!r}; valid styles are 'parallel', "
-            "'spin', 'serial', 'morph', 'window' (or True/False). The trail "
-            "effects 'chemtrails'/'precog'/'bullettime' are boolean kwargs, not "
-            "styles -- e.g. animate='parallel', chemtrails=True.")
-
-    # non-bool/non-string scalars (release-1.0 audit, F04-006/F05-004):
-    # anything ==True/==False (np.True_, 1, 0, ...) is normalized to a real
-    # bool; every OTHER scalar (e.g. animate=2 -- perhaps meant as
-    # "2 rotations"?) used to slip past the string whitelist above, silently
-    # render a STATIC plot (the backend dispatch is `animate in [True,
-    # 'parallel', ...]`), and then crash with `AttributeError: 'NoneType'
-    # object has no attribute 'save'` if save_path= was also set.
-    if isinstance(animate, np.ndarray):
-        animate = animate.tolist()  # per-dataset morph tags as an array
-    if animate is not None and not isinstance(animate, (bool, str, dict,
-                                                        list, tuple)):
-        if animate == True or animate == False:  # noqa: E712 (np.bool_/0/1)
-            animate = bool(animate)
-        else:
-            raise ValueError(
-                f"animate={animate!r} is not a recognized animate value; "
-                "use True/False, a style string ('parallel', 'spin', "
-                "'serial', 'morph', 'window', or the sugar styles "
-                "'chemtrails'/'precog'/'bullettime'), the dict form "
-                "(animate={'style': ..., ...}), or a per-dataset list for "
-                "animate='morph'. For extra camera rotations, pass "
-                "rotations= instead.")
+    # animate= dict form (GH #154 resolution), the trail-effect sugar
+    # styles and scalar normalization: resolved HERE, at the very top of the
+    # function, before anything else runs -- so every downstream code path
+    # only ever sees the flat kwargs it already understands; `animate`
+    # itself becomes the resolved style string/bool/list from here on (see
+    # `_resolve_animate_argument`, which a `panels=` grid calls too).
+    animate, _animate_flat = _resolve_animate_argument(animate, {
+        'duration': duration, 'tail_duration': tail_duration,
+        'rotations': rotations, 'zoom': zoom, 'chemtrails': chemtrails,
+        'precog': precog, 'bullettime': bullettime,
+        'frame_rate': frame_rate, 'focused': focused,
+        'morph_samples': morph_samples})
+    duration = _animate_flat['duration']
+    tail_duration = _animate_flat['tail_duration']
+    rotations = _animate_flat['rotations']
+    zoom = _animate_flat['zoom']
+    chemtrails = _animate_flat['chemtrails']
+    precog = _animate_flat['precog']
+    bullettime = _animate_flat['bullettime']
+    frame_rate = _animate_flat['frame_rate']
+    focused = _animate_flat['focused']
+    morph_samples = _animate_flat['morph_samples']
 
     # fail-fast on hue_mode= for the same reason title= fails fast here: a
     # typo or a contradictory pair should not survive the reduce pipeline.
@@ -14760,6 +14970,16 @@ def plot(
 
                 line_ani._func = _hyp_frame_with_hooks
 
+            def _real_frame_context(frame):
+                """Draw `frame` of the animation (its updater only: no
+                internal or user hook runs) and return that frame's REAL
+                `FrameContext`, the one an `on_frame=` callback receives
+                for it. Frames are idempotent (see `FrameContext`), so
+                drawing one here changes nothing a later draw shows."""
+                _orig_frame_func(int(frame), *line_ani._args)
+                return FrameContext(figure=fig, axes=ax,
+                                    **_frame_hooks.state)
+
             # title= per-segment sequence (plan 1.1 Task 8): registered on
             # the SAME `_frame_hooks` registry as `on_frame=` (added last
             # above, so this callback also only ever sees final artists --
@@ -14791,8 +15011,9 @@ def plot(
                          or _dynamic_title is not None
                          or on_frame is not None)):
                 # a dynamic (callable / `{index...}`) title has no text yet:
-                # resolve FRAME 0's, purely to count its lines. That is a
-                # real frame-0 context, not a synthetic one, and the
+                # resolve FRAME 0's, purely to count its lines. That is the
+                # real frame-0 context (`_real_frame_context`: the frame is
+                # drawn to get it), not a synthetic one, and the
                 # resolver is a pure function of the context by contract
                 # (`FrameContext`), so this cannot disagree with what the
                 # per-frame updater will set a moment later -- and if the
@@ -14803,16 +15024,7 @@ def plot(
                     try:
                         _probe_title = _wrap_title_text(
                             _resolve_dynamic_title_text(
-                                _dynamic_title, FrameContext(
-                                    frame=0,
-                                    n_frames=int(line_ani._save_count),
-                                    figure=fig, axes=ax,
-                                    datasets=tuple(xform),
-                                    style=animate, order=order,
-                                    current_index=(0 if order == 'serial'
-                                                   else None),
-                                    revealed_counts=tuple(
-                                        1 for _ in xform))),
+                                _dynamic_title, _real_frame_context(0)),
                             _title_wrap, _wrap_break)
                     except Exception:
                         # the user's title raised before the animation
@@ -14866,6 +15078,15 @@ def plot(
                 for _artist in (list(ax.lines) + list(ax.collections)
                                 + list(ax.patches)):
                     _artist.set_in_layout(False)
+                if _dynamic_title is not None and line_ani is not None:
+                    # a per-frame title (callable or `{index...}` pattern)
+                    # has no text until a frame is drawn, so the layout
+                    # below reserved no room for it and every frame's
+                    # title was then drawn off the top of the canvas (top
+                    # row) or over the x-axis labels of the row above:
+                    # draw frame 0, whose title the layout then arranges
+                    # like a fixed one
+                    line_ani._func(0, *line_ani._args)
             if ((not animate or _panel_animation is not None)
                     and not _caller_figure
                     and isinstance(fig, plt.Figure)):
@@ -14975,29 +15196,39 @@ def plot(
             if (caption is not None or _dynamic_caption is not None) \
                     and isinstance(fig, plt.Figure):
                 _caption_text = caption
+                _caption_samples = ()
+                _animated_caption = bool(animate) and line_ani is not None
                 if _dynamic_caption is not None:
-                    _static_ctx = not animate or line_ani is None
                     try:
-                        _caption_text = _resolve_dynamic_title_text(
-                            _dynamic_caption, FrameContext(
-                                frame=None if _static_ctx else 0,
-                                n_frames=(None if _static_ctx
-                                          else int(line_ani._save_count)),
-                                figure=fig, axes=ax,
-                                datasets=tuple(xform),
-                                style=animate if animate else False,
-                                order=order,
-                                current_index=(
-                                    0 if order == 'serial'
-                                    and not _static_ctx else None),
-                                revealed_counts=tuple(
-                                    len(d) if _static_ctx else 1
-                                    for d in xform),
-                                window_bounds=(
-                                    tuple((0, len(d)) for d in xform)
-                                    if _static_ctx else None),
-                                progress=1.0 if _static_ctx else None),
-                            name='caption')
+                        if _animated_caption:
+                            # the REAL contexts of the first, middle and
+                            # last frames (each is drawn to get it): frame
+                            # 0's text is what a still shows, and the three
+                            # together size the caption's room
+                            _n = int(line_ani._save_count)
+                            _caption_samples = [
+                                _resolve_dynamic_title_text(
+                                    _dynamic_caption,
+                                    _real_frame_context(_frame),
+                                    name='caption')
+                                for _frame in _caption_sample_frames(_n)]
+                            _real_frame_context(0)
+                            _caption_text = _caption_samples[0]
+                        else:
+                            # a static plot: the finished figure
+                            _caption_text = _resolve_dynamic_title_text(
+                                _dynamic_caption, FrameContext(
+                                    frame=None, n_frames=None,
+                                    figure=fig, axes=ax,
+                                    artists=_static_axes_artists(ax),
+                                    datasets=tuple(xform),
+                                    style=False, order=order,
+                                    revealed_counts=tuple(
+                                        len(d) for d in xform),
+                                    window_bounds=tuple(
+                                        (0, len(d)) for d in xform),
+                                    progress=1.0),
+                                name='caption')
                     except Exception:
                         # see the dynamic-title probe above: the user's
                         # callable raised before any animation was handed
@@ -15011,11 +15242,12 @@ def plot(
                         raise
                 _caption_artist = _add_caption(
                     fig, _caption_text, font=_artist_font,
-                    family=list(plt.rcParams['font.family']))
-                if _dynamic_caption is not None and line_ani is not None:
+                    family=list(plt.rcParams['font.family']),
+                    samples=_caption_samples)
+                if _dynamic_caption is not None and _animated_caption:
                     def _update_caption(ctx, _fn=_dynamic_caption,
                                         _artist=_caption_artist):
-                        _artist.set_text(_resolve_dynamic_title_text(
+                        _set_caption_text(_artist, _resolve_dynamic_title_text(
                             _fn, ctx, name='caption'))
                     _frame_hooks.add_internal(_update_caption)
 
