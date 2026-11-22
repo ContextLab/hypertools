@@ -474,3 +474,95 @@ def test_static_long_axis_labels_do_not_run_into_each_other(shape, n):
                  for axis in (ax.xaxis, ax.yaxis, ax.zaxis)]
         for a, b in itertools.combinations(boxes, 2):
             assert not a.overlaps(b)
+
+
+# --------------------------------------------------------------------------
+# Round 2, R1: a static labeled 3-D grid at an explicit size= too small
+# --------------------------------------------------------------------------
+
+WORDY = [pd.DataFrame(d, columns=['first component', 'second comp',
+                                  'third']) for d in DATA]
+NO_LABELS = dict(xlabel='', ylabel='', zlabel='')
+
+
+def _plot_recording(*args, **kwargs):
+    """``(figure, [warning messages])`` of one static `hyp.plot` call."""
+    import warnings
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter('always')
+        fig = hyp.plot(*args, show=False, **kwargs)
+    return fig, [str(w.message) for w in caught]
+
+
+def _own_label_overlaps(fig, n):
+    """How many pairs of a panel's OWN axis labels are drawn over each
+    other, over the first `n` panels."""
+    renderer = _draw(fig)
+    count = 0
+    for ax in fig.axes[:n]:
+        boxes = [_shrunk(axis.label.get_window_extent(renderer))
+                 for axis in (ax.xaxis, ax.yaxis, ax.zaxis)
+                 if axis.label.get_text()]
+        count += sum(a.overlaps(b)
+                     for a, b in itertools.combinations(boxes, 2))
+    return count
+
+
+def _cube_widths(fig, n):
+    _draw(fig)
+    return [_cube_box(ax).width for ax in fig.axes[:n]]
+
+
+@pytest.mark.parametrize('frames,shape,size', [
+    (WORDY, (1, 4), (8, 3)), (WORDY, (1, 4), (5, 4)),
+    (WORDY, (2, 2), (5, 4)), (XYZ, (1, 4), (4, 3)),
+    (LONG, (2, 2), (4, 3)),
+], ids=['wordy-1x4-8x3', 'wordy-1x4-5x4', 'wordy-2x2-5x4', 'xyz-1x4-4x3',
+        'long-2x2-4x3'])
+def test_a_static_labeled_grid_too_small_warns_once_with_a_size_that_works(
+        frames, shape, size):
+    """R1: the cubes shrank to 10-40 px with each panel's labels drawn
+    over each other, silently. The call still draws (it always did), at
+    the size asked for, with cubes no smaller than half their unlabeled
+    size, and ONE warning names a size that works."""
+    fig, messages = _plot_recording(frames, '-', panels=shape, legend=True,
+                                    size=size)
+    assert tuple(fig.get_size_inches()) == tuple(float(v) for v in size)
+    assert len(messages) == 1, messages
+    message = messages[0]
+    assert "xlabel='', ylabel='', zlabel=''" in message
+    match = re.search(r'larger size= \(\(([\d.]+), ([\d.]+)\) or more\)',
+                      message)
+    assert match, message
+    suggested = (float(match.group(1)), float(match.group(2)))
+    assert suggested[0] > size[0] and suggested[1] > size[1]
+
+    # the legible floor: half the cube the same call draws without labels
+    bare, bare_messages = _plot_recording(
+        frames, '-', panels=shape, legend=True, size=size, **NO_LABELS)
+    assert not bare_messages  # ...which is the other way out the warning names
+    for labeled, plain in zip(_cube_widths(fig, 4), _cube_widths(bare, 4)):
+        assert labeled >= 0.47 * plain
+
+    # the size the warning names: no warning, and a legible grid
+    again, again_messages = _plot_recording(
+        frames, '-', panels=shape, legend=True, size=suggested)
+    assert not again_messages
+    assert tuple(again.get_size_inches()) == suggested
+    _assert_labels_clear(again, 4)
+    assert _own_label_overlaps(again, 4) == 0
+    bare = hyp.plot(frames, '-', panels=shape, legend=True, size=suggested,
+                    show=False, **NO_LABELS)
+    for labeled, plain in zip(_cube_widths(again, 4), _cube_widths(bare, 4)):
+        assert labeled >= 0.47 * plain
+
+
+@pytest.mark.parametrize('frames,shape,size', [
+    (LONG, (1, 4), (8, 3)), (XYZ, (2, 2), (5, 4)), (WORDY, (2, 2), (8, 6)),
+], ids=['long-1x4-8x3', 'xyz-2x2-5x4', 'wordy-2x2-8x6'])
+def test_a_static_labeled_grid_that_fits_its_size_does_not_warn(
+        frames, shape, size):
+    fig, messages = _plot_recording(frames, '-', panels=shape, size=size)
+    assert not messages
+    _assert_labels_clear(fig, 4)
+    assert _own_label_overlaps(fig, 4) == 0

@@ -6373,9 +6373,10 @@ _PANEL_LABELED_CUBE_SHARE = 0.7
 #: grid, so it is enlarged only where the cubes would become very small)...
 _STATIC_LABELED_CUBE_SHARE = 0.65
 
-#: ...and the share under which an explicit `size=` is refused for an
-#: animated grid (a size the caller chose is honored down to cubes half
-#: their unlabeled size)
+#: ...and the legible floor at an explicit `size=` (a size the caller chose
+#: is honored down to cubes half their unlabeled size): under it an
+#: animated grid is refused, and a static grid is drawn with its cubes AT
+#: the floor and a warning
 _REFUSED_LABELED_CUBE_SHARE = 0.5
 
 
@@ -6471,6 +6472,24 @@ def _has_axis_labels(axis):
                for axis3d in axis._axis_map.values())
 
 
+def _axis_labels_collide(fig, cells):
+    """Whether any 3-D panel in `cells` draws two of its own axis labels
+    over each other (their drawn boxes, less two pixels of antialiasing a
+    side, overlap) at its current view and zoom."""
+    renderer = _measurement_renderer(fig)
+    for cell in cells:
+        boxes = [axis3d.label.get_window_extent(renderer)
+                 for axis3d in cell['axes']._axis_map.values()
+                 if axis3d.label.get_text() and axis3d.label.get_visible()]
+        for i, one in enumerate(boxes):
+            for other in boxes[i + 1:]:
+                if (min(one.x1, other.x1) - max(one.x0, other.x0) > 4.0
+                        and min(one.y1, other.y1)
+                        - max(one.y0, other.y0) > 4.0):
+                    return True
+    return False
+
+
 def _fit_static_cube_labels(fig, panel_axes, resize=True):
     """Keep every STATIC 3-D panel's axis labels inside the panel's own
     box (`_fit_panel_cubes`): matplotlib hangs a 3-D axes' labels outside
@@ -6479,7 +6498,9 @@ def _fit_static_cube_labels(fig, panel_axes, resize=True):
     shared legend. A labeled panel's cube is drawn smaller until its
     labels fit, and where that would leave the cube too small the figure
     is enlarged instead (`resize`: no explicit `size=`, which is honored
-    as given). Panels without axis labels are not touched."""
+    as given -- with a warning that names a size that works when it cannot
+    hold the labeled grid legibly, see `_fit_panel_cubes`). Panels without
+    axis labels are not touched."""
     cells = [{'axes': ax, 'stub': _StaticCubeZoom(ax)}
              for ax in panel_axes
              if ax.get_visible() and hasattr(ax, 'get_proj')
@@ -6521,8 +6542,14 @@ def _fit_panel_cubes(fig, cells, resize=True, rotations=1, static=False,
 
     `static` fits a STATIC grid's labeled panels (see
     `_fit_static_cube_labels`): only the labels are fitted, at the one
-    view, and an explicit `size=` too small for them is honored (smaller
-    cubes) instead of refused.
+    view. An explicit `size=` is never refused for a static grid (the call
+    always drew). Where it cannot hold the labeled grid legibly -- a cube
+    would fall under `_REFUSED_LABELED_CUBE_SHARE` of its unlabeled size,
+    or a panel's own labels would be drawn over each other
+    (`_axis_labels_collide`) -- the cubes are kept at that share at least,
+    the labels fall where they fall, and ONE `UserWarning` names a size
+    that works (found the same way) and the alternative of dropping the
+    labels.
     """
     cubes = [cell for cell in cells if hasattr(cell['axes'], 'get_proj')]
     limit = 0.5 * _PANEL_CUBE_FILL
@@ -6541,10 +6568,12 @@ def _fit_panel_cubes(fig, cells, resize=True, rotations=1, static=False,
                 break
             cell['stub'].zoom_scale[0] *= target / cell['reach']
 
-    def _fit():
+    def _fit(least=0.0):
         """Fit every cube, then every labeled cube's labels, at the
         figure's current size; returns the smallest share of its
-        unlabeled size a labeled cube is left with."""
+        unlabeled size a labeled cube is left with. No labeled cube is
+        drawn smaller than the share `least` of its unlabeled size (its
+        labels then reach past the panel's box)."""
         for cell in cubes:
             cell['stub'].zoom_scale[0] = 1.0
             # (a static cube is only ever moved for its labels)
@@ -6561,18 +6590,32 @@ def _fit_panel_cubes(fig, cells, resize=True, rotations=1, static=False,
                 if label_reach - limit <= 0.004:
                     continue
                 # the labels' distance from the cube scales with the cube
-                _fit_cube(cell, max(0.02, cell['reach'] * limit
-                                    / label_reach))
+                target = cell['reach'] * limit / label_reach
+                if target < least * cell['free']:
+                    # the legible floor: the labels overflow instead
+                    _fit_cube(cell, least * cell['free'])
+                    continue
+                _fit_cube(cell, max(0.02, target))
                 over.append(cell)
             pending = over
         return min([1.0] + [cell['reach'] / cell['free']
                             for cell in labeled])
 
     smallest = _fit()
-    floor = (_STATIC_LABELED_CUBE_SHARE if static
-             else _PANEL_LABELED_CUBE_SHARE if resize
-             else _REFUSED_LABELED_CUBE_SHARE)
-    if labeled and smallest < floor - 0.02 and (resize or not static):
+    floor = (_REFUSED_LABELED_CUBE_SHARE if not resize
+             else _STATIC_LABELED_CUBE_SHARE if static
+             else _PANEL_LABELED_CUBE_SHARE)
+    # a static grid at an explicit `size=` must also keep each panel's own
+    # labels off each other (around a small cube they converge)
+    explicit_static = static and not resize
+
+    def _illegible():
+        return (smallest < floor - (0.02 if size_checked else 0.004)
+                or (explicit_static and _axis_labels_collide(fig, labeled)))
+
+    size_checked = True
+    if labeled and _illegible():
+        size_checked = False
         width, height = fig.get_size_inches()
         new_width, new_height = width, height
         # (a refusal's suggestion may be generous; it must be reached)
@@ -6602,26 +6645,45 @@ def _fit_panel_cubes(fig, cells, resize=True, rotations=1, static=False,
             if not resize:
                 # a size to SUGGEST keeps the caller's proportions: the
                 # grid is laid out afresh at an explicit size, and only a
-                # figure of the same shape is laid out the same way
-                grow_w = grow_h = max(grow_w, grow_h)
+                # figure of the same shape is laid out the same way. (Cubes
+                # big enough whose labels still collide: a tenth more.)
+                grow_w = grow_h = max(grow_w, grow_h,
+                                      1.1 if explicit_static else 1.0)
             new_width, new_height = new_width * grow_w, new_height * grow_h
             fig.set_size_inches(new_width, new_height)
             smallest = _fit()
-            if smallest >= floor - 0.004:
+            if not _illegible():
                 break
         if not resize:
             fig.set_size_inches(width, height)
-            raise ValueError(
-                f"the axis labels (xlabel=/ylabel=/zlabel=) of this "
-                f"animated 3-D {_name}= grid hang outside each panel's "
-                f"cube, and a {width:g} x {height:g} inch figure leaves "
-                f"too little of each panel for the cube itself. Pass a "
-                f"larger size= "
-                f"(({np.ceil(new_width * 10) / 10:g}, "
-                f"{np.ceil(new_height * 10) / 10:g}) or more), leave "
-                "size= out to have the figure sized for them, or drop the "
-                "axis labels (xlabel='', ylabel='', zlabel='' also drops "
-                "the ones taken from DataFrame column names).")
+            suggested = (f"({np.ceil(new_width * 10) / 10:g}, "
+                         f"{np.ceil(new_height * 10) / 10:g})")
+            if static:
+                # a static grid is drawn all the same (it always was):
+                # cubes no smaller than the floor, labels where they fall
+                _fit(least=floor)
+                warnings.warn(
+                    f"the axis labels (xlabel=/ylabel=/zlabel=) of this 3-D "
+                    f"{_name}= grid do not fit legibly in a {width:g} x "
+                    f"{height:g} inch figure: each panel's cube is drawn "
+                    f"no smaller than "
+                    f"{round(100 * floor)}% of its unlabeled size, so "
+                    f"its labels may overlap each other or the next panel. "
+                    f"Pass a larger size= ({suggested} or more), leave "
+                    f"size= out to have the figure sized for them, or drop "
+                    f"the axis labels (xlabel='', ylabel='', zlabel='' also "
+                    f"drops the ones taken from DataFrame column names).",
+                    UserWarning, stacklevel=external_stacklevel())
+            else:
+                raise ValueError(
+                    f"the axis labels (xlabel=/ylabel=/zlabel=) of this "
+                    f"animated 3-D {_name}= grid hang outside each panel's "
+                    f"cube, and a {width:g} x {height:g} inch figure leaves "
+                    f"too little of each panel for the cube itself. Pass a "
+                    f"larger size= ({suggested} or more), leave "
+                    "size= out to have the figure sized for them, or drop "
+                    "the axis labels (xlabel='', ylabel='', zlabel='' also "
+                    "drops the ones taken from DataFrame column names).")
     for cell in cubes:
         # leave every panel showing frame 0 at its final zoom
         cell['stub'].draw(0)
