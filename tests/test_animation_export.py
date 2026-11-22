@@ -720,3 +720,52 @@ def test_plotly_animation_export_honours_set_autoinstall_on_over_the_environment
         [str(py), '-c', "import importlib.util; print(importlib.util.find_spec('kaleido') is None)"],
         capture_output=True, text=True, check=True, timeout=120)
     assert still.stdout.strip() == 'True'
+
+
+# --- stale parent links (hosted Windows CI, 2026-11-22) ----------------------
+
+def test_a_stale_parent_link_is_not_followed():
+    """Windows keeps a dead parent's id in its children and reuses ids: here
+    the test runner (pid 500, started at t=10) still names pid 900 as its
+    parent, and pid 900 now belongs to a render worker started at t=50. The
+    runner is NOT the worker's descendant -- on 2026-11-22 a hosted Windows
+    job died mid-suite, with no pytest summary, in the first test that kills
+    a render worker. The worker's real child (pid 901, t=60) and grandchild
+    are still found, parents first."""
+    from hypertools.plot.plotly_backend import _descendants_in_table
+    rows = [(4, 0, 1), (500, 900, 10), (501, 500, 20),
+            (900, 500, 50), (901, 900, 60), (902, 901, 61),
+            (903, 900, None)]            # no creation time: never trusted
+    assert _descendants_in_table(rows, 900) == [901, 902]
+
+
+def test_this_process_and_its_ancestors_are_never_descendants():
+    """Whatever the table claims (equal creation ticks, a link cycle), the
+    asking process and its ancestors are excluded and not walked through."""
+    from hypertools.plot.plotly_backend import (_ancestors_in_table,
+                                                _descendants_in_table)
+    rows = [(100, 300, 5), (200, 100, 5), (300, 200, 5), (301, 300, 6)]
+    assert _ancestors_in_table(rows, 200) == [200, 100, 300]
+    exclude = _ancestors_in_table(rows, 200)
+    assert _descendants_in_table(rows, 300, exclude) == [301]
+    # a POSIX table has no creation times and is walked as it is
+    posix = [(10, 1, None), (11, 10, None), (12, 11, None), (13, 1, None)]
+    assert _descendants_in_table(posix, 10) == [11, 12]
+
+
+def test_descendant_pids_finds_a_real_child_and_never_this_process():
+    """Against the real process table: a child this process started is found
+    as its descendant; asking about that child returns neither this process
+    nor any of its ancestors."""
+    import subprocess
+    import sys
+    from hypertools.plot.plotly_backend import _descendant_pids
+    child = subprocess.Popen([sys.executable, '-c',
+                              'import time; time.sleep(60)'])
+    try:
+        assert child.pid in _descendant_pids()
+        below = _descendant_pids(child.pid)
+        assert os.getpid() not in below and os.getppid() not in below
+    finally:
+        child.kill()
+        child.wait()

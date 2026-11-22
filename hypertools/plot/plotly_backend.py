@@ -4143,20 +4143,76 @@ def _export_ceiling(n_frames):
     return max(_KALEIDO_MIN_CEILING, n_frames * _KALEIDO_CEILING_PER_FRAME)
 
 
+def _descendants_in_table(rows, pid, exclude=()):
+    """The descendants of `pid` in one process-table snapshot, parents before
+    children. `rows` are ``(pid, parent pid, creation time or None)``.
+
+    A parent link is only trusted when it cannot be stale. Windows never
+    clears a process's recorded parent id when the parent exits, and reuses
+    process ids freely, so a long-running process can name as its "parent"
+    an id that now belongs to a much younger, unrelated process (hosted
+    Windows CI, 2026-11-22: the test runner itself was killed as a
+    "descendant" of a render worker that had been handed the id of the
+    runner's dead launcher). When creation times are known, a child must
+    therefore not be older than its parent; a row without a creation time is
+    then never taken for a child. Tables without creation times (POSIX
+    ``ps``, where an orphan is re-parented at once and the link is always
+    current) are walked as they are.
+
+    `exclude` (this process, its ancestors, the lister) is never returned
+    and never walked through, whatever the table says."""
+    created = {row[0]: row[2] for row in rows}
+    timed = any(value is not None for value in created.values())
+    children = {}
+    for child, parent, _ in rows:
+        children.setdefault(parent, []).append(child)
+    barred = set(exclude)
+    found, queue = [], [pid]
+    while queue:
+        parent = queue.pop(0)
+        for child in children.get(parent, []):
+            if child in barred or child in found or child == pid:
+                continue
+            if timed:
+                born, parent_born = created.get(child), created.get(parent)
+                if born is None or parent_born is None or born < parent_born:
+                    continue
+            found.append(child)
+            queue.append(child)
+    return found
+
+
+def _ancestors_in_table(rows, pid):
+    """`pid` and every ancestor the snapshot `rows` records for it (see
+    `_descendants_in_table`), nearest first. Bounded by the table size."""
+    parent_of = {row[0]: row[1] for row in rows}
+    chain = [pid]
+    while parent_of.get(chain[-1]) not in (None, 0) and len(chain) <= len(rows):
+        nxt = parent_of[chain[-1]]
+        if nxt in chain:
+            break
+        chain.append(nxt)
+    return chain
+
+
 def _descendant_pids(pid=None):
     """Every live descendant of process `pid` (this process when None), as
     process ids, parents before children. Read from ONE snapshot of the
     process table (``ps`` on POSIX, PowerShell's ``Win32_Process`` on
     Windows), so it also finds descendants that left the process group:
     choreographer starts its browser wrapper in a session of its own,
-    which a ``killpg`` never reaches. Bounded, and an empty list when the
-    table cannot be read."""
+    which a ``killpg`` never reaches. Stale parent links are not followed,
+    and this process and its ancestors are never returned unless they are
+    what was asked about (see `_descendants_in_table`). Bounded, and an
+    empty list when the table cannot be read."""
     import subprocess
-    pid = os.getpid() if pid is None else int(pid)
+    own = os.getpid()
+    pid = own if pid is None else int(pid)
     if os.name == 'nt':
         command = ['powershell', '-NoProfile', '-Command',
                    'Get-CimInstance Win32_Process | ForEach-Object '
-                   '{ "$($_.ProcessId) $($_.ParentProcessId)" }']
+                   '{ "$($_.ProcessId) $($_.ParentProcessId) '
+                   '$($_.CreationDate.Ticks)" }']
     else:
         command = ['ps', '-A', '-o', 'pid=,ppid=']
     try:
@@ -4170,19 +4226,19 @@ def _descendant_pids(pid=None):
         lister.kill()
         lister.communicate()
         return []
-    children = {}
+    rows = []
     for line in listing.splitlines():
         fields = line.split()
-        if len(fields) == 2 and fields[0].isdigit() and fields[1].isdigit():
-            children.setdefault(int(fields[1]), []).append(int(fields[0]))
-    found, queue = [], [pid]
-    while queue:
-        for child in children.get(queue.pop(0), []):
-            # (the lister itself is a child of this process)
-            if child != lister.pid and child not in found:
-                found.append(child)
-                queue.append(child)
-    return found
+        if (len(fields) in (2, 3) and fields[0].isdigit()
+                and fields[1].isdigit()):
+            born = (int(fields[2]) if len(fields) == 3
+                    and fields[2].isdigit() else None)
+            rows.append((int(fields[0]), int(fields[1]), born))
+    # (the lister itself is a child of this process)
+    exclude = {lister.pid}
+    if pid != own:
+        exclude.update(_ancestors_in_table(rows, own))
+    return _descendants_in_table(rows, pid, exclude)
 
 
 def _kill_pids(pids):
