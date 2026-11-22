@@ -80,6 +80,7 @@ never published.
   is still downloading instead of fetching the whole file first. This applies
   to `save_path=`, `HyperAnimation.save`, the streaming recorder and the
   plotly export; `.avi` and `.mkv` files are unchanged.
+  The videos in the documentation's example gallery are fast start as well.
 
 ### Changed
 

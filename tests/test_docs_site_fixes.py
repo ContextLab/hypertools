@@ -145,6 +145,67 @@ def test_managed_animations_are_scraped_once_per_block(tmp_path):
     assert _scrape_blocks(tmp_path, blocks) == [1, 1, 0]
 
 
+def _top_level_atoms(path):
+    """The top-level atom names of an ISO media file, in file order."""
+    import struct
+    names = []
+    with open(path, 'rb') as f:
+        while True:
+            head = f.read(8)
+            if len(head) < 8:
+                break
+            size, name = struct.unpack('>I4s', head)
+            if size == 1:
+                size = struct.unpack('>Q', f.read(8))[0]
+                f.seek(size - 16, 1)
+            elif size == 0:
+                names.append(name.decode('latin-1'))
+                break
+            else:
+                f.seek(size - 8, 1)
+            names.append(name.decode('latin-1'))
+    return names
+
+
+def test_gallery_videos_are_fast_start(tmp_path):
+    """The gallery's own videos start playing before they have fully
+    downloaded, like the ones `save_path=` writes (GH #295): the index
+    (`moov`) comes before the media data (`mdat`). sphinx-gallery's stock
+    writer puts it last; the scraper remuxes what each block wrote. Covers
+    both paths: a pyplot-managed animation (sphinx-gallery's scraper writes
+    it) and a `show=False` one (ours does), and the remux keeps every
+    frame."""
+    import shutil
+    import subprocess
+    import hypertools as hyp
+
+    def blocks(ns):
+        ns['fig'], ns['ani'] = hyp.plot(_data(), animate=True,
+                                        backend='matplotlib', duration=1)
+        yield
+        ns['hidden'] = hyp.plot(_data(), animate=True, show=False,
+                                backend='matplotlib', duration=1)
+        yield
+
+    assert _scrape_blocks(tmp_path, blocks) == [1, 1]
+    videos = sorted((tmp_path / 'images').glob('*.mp4'))
+    assert len(videos) == 2
+    for video in videos:
+        atoms = _top_level_atoms(video)
+        assert atoms.index('moov') < atoms.index('mdat'), (video.name, atoms)
+        if shutil.which('ffprobe'):
+            frames = subprocess.run(
+                ['ffprobe', '-v', 'error', '-select_streams', 'v:0',
+                 '-count_frames', '-show_entries', 'stream=nb_read_frames',
+                 '-of', 'csv=p=0', str(video)],
+                check=True, capture_output=True, text=True).stdout.strip()
+            assert int(frames) == 30, (video.name, frames)
+    # no temporary file is left beside the videos (the remux writes its
+    # output to a temporary .mp4 first; the gif thumbnails are the build's)
+    assert sorted(p.suffix for p in (tmp_path / 'images').iterdir()) == [
+        '.gif', '.gif', '.mp4', '.mp4']
+
+
 def test_unmanaged_show_false_animation_is_still_scraped_once(tmp_path):
     """The reason the HyperAnimation scraper exists: ``show=False`` leaves the
     figure unmanaged by pyplot, so the matplotlib scraper never sees it. It
