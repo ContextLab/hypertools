@@ -4530,6 +4530,11 @@ def _reemit_panel_warnings(probe_caught, draw_caught):
                                registry=registry)
 
 
+#: side (inches) of one panel's cell in an animated `panels=` grid's default
+#: figure (no `size=`); see `_plot_panels`
+_ANIMATED_PANEL_CELL_INCHES = 3.2
+
+
 def _plot_panels(x, panels, call_kwargs, _name='panels'):
     """Draw one panel per dataset (or per `reduce=` entry) in a single
     figure -- the implementation behind `hyp.plot(..., panels=)`. With
@@ -4828,8 +4833,18 @@ def _plot_panels(x, panels, call_kwargs, _name='panels'):
         _reemit_panel_warnings(probe_warnings, draw_warnings)
         return grid
 
+    _grid_size = call_kwargs.get('size')
+    if animated and _grid_size is None:
+        # an animated grid's default figure is sized BY the grid, one
+        # square cell per panel: every frame of the saved clip carries the
+        # figure's whole canvas, and matplotlib's 6.4 x 4.8 in default
+        # leaves a 1 x 4 row of cubes with more blank canvas above and
+        # below it than the cubes themselves fill (GH #295). Never narrower
+        # than that default, so a single column keeps its usual width.
+        _grid_size = (max(6.4, _ANIMATED_PANEL_CELL_INCHES * ncols),
+                      _ANIMATED_PANEL_CELL_INCHES * nrows)
     fig, axes = subplots(nrows, ncols, ndims=panel_ndims,
-                         size=call_kwargs.get('size'), backend='matplotlib')
+                         size=_grid_size, backend='matplotlib')
     panel_axes = []
     panel_models = []
     #: an animated grid's panels, in panel order: each animated panel call
@@ -7861,7 +7876,10 @@ def plot(
         it past its cell; with axis labels (`xlabel=`/`ylabel=`/`zlabel=`)
         the figure is enlarged so the rotating labels fit as well (an
         explicit `size=` too small for them raises, naming a size that
-        fits). `caption=` adds a line of text under the grid, updated
+        fits). Without `size=` the figure is sized BY THE GRID -- 3.2 in
+        per panel each way, at least 6.4 in wide -- so a saved clip of a
+        row of panels is not mostly blank canvas (a static grid keeps the
+        6.4 x 4.8 in default). `caption=` adds a line of text under the grid, updated
         every frame. `on_frame=` is called ONCE per frame for the whole
         figure: its ``FrameContext`` has ``axes`` as a tuple of the panel
         axes, ``artists`` and ``datasets`` as every panel's in panel

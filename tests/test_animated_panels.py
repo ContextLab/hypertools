@@ -97,6 +97,41 @@ def test_the_grid_draws_duration_times_frame_rate_frames(duration,
     assert anim.n_frames == int(round(duration * frame_rate))
 
 
+@pytest.mark.parametrize('shape, expected', [
+    ((1, 4), (12.8, 3.2)), ((2, 2), (6.4, 6.4)), ((4, 1), (6.4, 12.8)),
+    ((1, 3), (9.6, 3.2))])
+def test_the_default_figure_is_sized_by_the_grid(shape, expected):
+    """No `size=`: one 3.2 in square cell per panel (never narrower than
+    matplotlib's 6.4 in), so a saved clip of a 1 x 4 row is not mostly blank
+    canvas above and below the panels. Bare panels (no title, legend,
+    labels or caption) need no extra room, so the size is exactly that."""
+    ani = _grid(DATA[:shape[0] * shape[1]], panels=shape)
+    assert tuple(ani.figure.get_size_inches()) == pytest.approx(expected)
+
+
+def test_the_default_grid_figure_is_mostly_panel_not_blank_canvas():
+    """What the sizing is for: in a 1 x 4 row, the panels' cubes span most
+    of the figure's height on a real draw (they spanned about a fifth of
+    it on the 6.4 x 4.8 in default)."""
+    ani = _grid()
+    fig = ani.figure
+    ani.draw_frame(0)
+    fig.canvas.draw()
+    ink = np.asarray(fig.canvas.buffer_rgba())[..., :3].min(axis=2) < 128
+    rows = np.flatnonzero(ink.any(axis=1))
+    assert (rows[-1] - rows[0]) / ink.shape[0] > 0.45
+
+
+def test_an_explicit_size_is_kept_for_a_bare_grid():
+    ani = _grid(size=(9, 4))
+    assert tuple(ani.figure.get_size_inches()) == pytest.approx((9, 4))
+
+
+def test_a_static_grid_keeps_its_default_size():
+    fig = hyp.plot(DATA, panels=(1, 4), show=False)
+    assert tuple(fig.get_size_inches()) == pytest.approx((6.4, 4.8))
+
+
 def test_subplots_alias_animates_the_same_grid():
     anim = hyp.plot(DATA, subplots=(2, 2), animate=True, duration=1,
                     frame_rate=8, show=False)

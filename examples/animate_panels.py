@@ -32,4 +32,4 @@ def timepoint(ctx):
 # (on Colab the default backend would be plotly)
 fig, ani = hyp.plot(data, panels=(1, 3), animate=True, duration=10,
                     title=['Participant 1', 'Participant 2', 'Participant 3'],
-                    caption=timepoint, size=(10, 3.6), backend='matplotlib')
+                    caption=timepoint, backend='matplotlib')

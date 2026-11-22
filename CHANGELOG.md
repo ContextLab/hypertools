@@ -20,6 +20,10 @@ draws into a figure the caller built, found by executing notebooks with
   sequence across panels. Each 3-D panel's cube is zoomed out as far as it
   takes to stay inside its own cell through the whole rotation, and with
   axis labels the figure is enlarged so the rotating labels fit.
+  Without `size=`, the figure is sized by the grid (3.2 in per panel each
+  way, at least 6.4 in wide) instead of matplotlib's fixed 6.4 x 4.8 in, so a
+  saved clip of a row of panels is not mostly blank canvas; a static grid's
+  default size is unchanged.
   `on_frame=` is called once per frame for the whole figure, with a
   `FrameContext` whose `axes` is a tuple of the panel axes and whose new
   `panels` field holds one per-panel context each. `return_model=True`

@@ -726,6 +726,10 @@ work as they do for a static grid.
 
 A few things are specific to a grid:
 
+* Without ``size=`` the figure is sized by the grid -- 3.2 in per panel each
+  way, and at least 6.4 in wide -- so a saved clip of a row of panels is not
+  mostly blank canvas. (A static grid keeps matplotlib's 6.4 x 4.8 in
+  default.) ``size=`` sets the whole figure's size as usual.
 * Every panel must draw the same number of frames, or the call raises
   ``ValueError`` (``animate='morph'`` needs the same number of datasets in
   each panel).
