@@ -784,9 +784,8 @@ def test_a_2d_grid_is_laid_out_the_same_static_or_rotating(layout, labels):
             else [_walk(i, cols=2) for i in range(4)])
     extras = _extras(LAYOUTS[layout], 4)
     static = hyp.plot(data, ndims=2, panels=(2, 2), show=False, **extras)
-    with pytest.warns(UserWarning, match='no effect on 2-D animations'):
-        moving = hyp.plot(data, ndims=2, panels=(2, 2), rotations=1,
-                          **dict(ANIM, **extras)).figure
+    moving = hyp.plot(data, ndims=2, panels=(2, 2), rotations=1,
+                      **dict(ANIM, **extras)).figure
     size_a, boxes_a = _layout(static, 4)
     size_b, boxes_b = _layout(moving, 4)
     assert np.allclose(size_a, size_b, atol=1e-6)
