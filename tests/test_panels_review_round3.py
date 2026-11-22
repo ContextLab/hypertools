@@ -22,7 +22,8 @@ from matplotlib.colors import to_rgb
 import hypertools as hyp
 from hypertools.plot import matplotlib_backend, plotly_backend
 from hypertools.plot import plot as plot_module
-from hypertools.plot.plot import SHARED_COLORBAR_GID, SHARED_LEGEND_GID
+from hypertools.plot.plot import (SHARED_COLORBAR_GID, SHARED_LEGEND_GID,
+                                  _title_artist)
 
 X = np.random.default_rng(0).normal(size=(20, 2)).cumsum(0)
 ANIM = dict(animate=True, duration=1, frame_rate=4)
@@ -322,3 +323,27 @@ def test_a_color_tuple_as_long_as_the_dataset_count_is_one_color(
     assert len(lines) == len(data)
     assert all(to_rgb(line.get_color()) == tuple(color[:3])
                for line in lines)
+
+
+# --------------------------------------------------------------------------
+# Codex 6 (single axes): room for a tall left/right animated title
+# --------------------------------------------------------------------------
+
+@pytest.mark.parametrize('loc', ['left', 'right', 'center'])
+@pytest.mark.parametrize('ndims', [2, 3])
+def test_a_tall_animated_title_at_any_loc_is_inside_the_canvas(loc, ndims):
+    rng = np.random.default_rng(0)
+    data = rng.normal(size=(20, ndims)).cumsum(0)
+    title = '\n'.join(['Tall title'] * 12)
+    anim = _quiet(data, reduce=None, ndims=ndims, title=title,
+                  title_kwargs={'loc': loc}, **ANIM)
+    fig = anim.figure
+    anim.draw_frame(0)
+    fig.canvas.draw()
+    artist = _title_artist(fig.axes[0], {'loc': loc})
+    assert artist.get_text() == title
+    box = artist.get_window_extent()
+    assert box.height > 150
+    assert box.y0 >= 0 and box.y1 <= fig.bbox.height + 0.5, (
+        f'the title spans y={box.y0:.0f}..{box.y1:.0f} px on a '
+        f'{fig.bbox.height:.0f} px canvas')

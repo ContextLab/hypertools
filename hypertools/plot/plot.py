@@ -16618,7 +16618,9 @@ def plot(
                     and xform[0].shape[1] < 3
                     and (title is not None or _segment_titles is not None
                          or _dynamic_title is not None)):
-                _shown_title = ax.get_title()
+                # (the title `title_kwargs`' ``loc`` selects: matplotlib
+                # keeps a center, a left and a right one)
+                _shown_title = _title_artist(ax, _title_kwargs).get_text()
                 if _dynamic_title is not None:
                     _title_candidates = _sampled_dynamic_titles()
                 elif _segment_titles is not None:
@@ -17728,6 +17730,18 @@ def _tallest_title(texts):
     return best
 
 
+def _title_artist(ax, title_kwargs=None):
+    """The ``Text`` that `ax.set_title` writes with `title_kwargs`:
+    matplotlib keeps three titles per axes -- center, left and right --
+    and ``loc`` (default: ``rcParams['axes.titlelocation']``) selects
+    one. Reading, measuring or restoring "the title" has to use this one;
+    `ax.title` and `ax.get_title()` are the CENTER title only."""
+    loc = (title_kwargs or {}).get('loc') \
+        or plt.rcParams['axes.titlelocation']
+    return {'left': ax._left_title,
+            'right': ax._right_title}.get(str(loc).lower(), ax.title)
+
+
 def _reserve_animated_2d_title_room(fig, ax, tallest, shown, font=None,
                                     title_kwargs=None, pad_in=0.08):
     """Give an animated 2-D plot's title the room its TALLEST text needs.
@@ -17747,7 +17761,11 @@ def _reserve_animated_2d_title_room(fig, ax, tallest, shown, font=None,
     if not tallest:
         return
     _apply_title(ax, tallest, font=font, title_kwargs=title_kwargs)
-    top = ax.title.get_window_extent(_measurement_renderer(fig)).y1
+    # the artist `title_kwargs`' ``loc`` wrote to: with ``loc='left'`` the
+    # center title is empty, so measuring it reserved nothing and a tall
+    # left/right title stayed clipped
+    top = _title_artist(ax, title_kwargs).get_window_extent(
+        _measurement_renderer(fig)).y1
     over_in = (top - fig.bbox.height) / fig.dpi
     if np.isfinite(over_in) and over_in > 0:
         _grow_figure(fig, top=over_in + pad_in)
