@@ -6,8 +6,47 @@ A patch release: three fixes for noise and side effects met when `hyp.plot`
 draws into a figure the caller built, found by executing notebooks with
 `jupyter nbconvert` under matplotlib 3.11. No API changes.
 
+### Added
+
+- **Animated panel grids: `animate=` with `panels=` (GH #295).**
+  `hyp.plot([a, b, c, d], panels=(1, 4), animate=True, save_path='grid.mp4')`
+  now gives ONE animation of the whole grid (matplotlib): every panel runs
+  on the same clock, each panel is animated exactly as the single-axes call
+  for its data is (every `animate=` style and `order=` value, trails,
+  `tail_duration=`, `rotations=`, `predict=`, per-panel titles, legends and
+  colorbars, `panel_fit=`, a list-valued `reduce=`), and one
+  `HyperAnimation` is returned for the figure. The combination used to
+  raise `ValueError`. Styles and orderings play per panel, not as a
+  sequence across panels. Each 3-D panel's cube is zoomed out as far as it
+  takes to stay inside its own cell through the whole rotation, and with
+  axis labels the figure is enlarged so the rotating labels fit.
+  `on_frame=` is called once per frame for the whole figure, with a
+  `FrameContext` whose `axes` is a tuple of the panel axes and whose new
+  `panels` field holds one per-panel context each. `return_model=True`
+  returns the panel bundle with `'animation'` added. Refused with an error
+  that says what to do instead: `backend='plotly'`
+  (`NotImplementedError`; static plotly grids are unchanged), `companion=`,
+  panels whose analyzed data differ in width, and panels that would draw
+  different numbers of frames. `ax=` with `animate=` is still refused.
+  New gallery example: `examples/animate_panels.py`.
+- **`caption=`: a figure-level caption, updated every frame (GH #295).**
+  One line of text centered under the figure -- a single plot or a whole
+  `panels=` grid -- given as a plain string, a `'{index...}'` pattern or a
+  callable taking the frame's `FrameContext` (the forms a per-frame
+  `title=` takes), for example
+  `caption=lambda ctx: f'timepoint {ctx.frame + 1} of {ctx.n_frames}'`. It
+  sits just below the lowest thing drawn, and the figure is made taller
+  where there is no blank room for it, so it never overlaps a panel, a
+  legend or a colorbar and never leaves the canvas. On a static plot it is
+  drawn once. Matplotlib only: `backend='plotly'` raises
+  `NotImplementedError`, and a caller-supplied `ax=` raises `ValueError`.
+
 ### Fixed
 
+- **`labels=` in a panel grid stay with their own panel.** The annotations'
+  bookkeeping was one module-level list holding only the most recently
+  drawn plot's labels, so in a grid only the last panel's labels were
+  repositioned or hidden on a mouse press; each axes now keeps its own.
 - **The backend warning is issued once, and only when it applies (GH #290).**
   When hypertools cannot set up an interactive matplotlib backend at import
   (for example in a notebook kernel without `ipympl`), it keeps a warning to

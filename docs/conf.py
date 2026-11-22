@@ -438,7 +438,7 @@ GALLERY_ORDER = [
     'plot_text', 'plot_corpus', 'plot_sotus', 'plot_gensim_text',
     # animation basics
     'animate', 'animate_spin', 'animate_trails', 'animate_trails_mix',
-    'save_movie', 'animate_plotly',
+    'animate_panels', 'save_movie', 'animate_plotly',
     # animated showcases
     'plot_story_trajectories', 'animate_morph_zoo', 'animate_surface_morph',
     'animate_conversation', 'animate_painting_embeddings',

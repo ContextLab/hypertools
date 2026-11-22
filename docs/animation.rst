@@ -702,6 +702,74 @@ What ``animate='morph'`` does
 *clouds*, so there is no time axis to forecast along -- this is a statement
 about what a morph means, not a gap to be filled later.
 
+Animated panel grids
+--------------------
+
+``panels=`` (alias ``subplots=``) draws one panel per dataset, and with
+``animate=`` the whole grid is ONE animation (matplotlib only): every panel
+runs on the same clock, and a single ``HyperAnimation`` is returned for the
+figure, so one ``save_path=`` writes one video of all the panels:
+
+.. code-block:: python
+
+    anim = hyp.plot([a, b, c, d], '-', panels=(1, 4), animate=True,
+                    duration=10, tail_duration=2, rotations=1,
+                    title=['A', 'B', 'C', 'D'], save_path='grid.mp4')
+
+Each panel is animated exactly as the single-axes call for its data is:
+every ``animate=`` style and ``order=`` value, the trail flags, ``predict=``,
+per-frame titles, legends and colorbars apply per panel. The ordering is per
+panel too, not a sequence across panels: ``order='serial'`` reveals the
+datasets *within* each panel one after another, and the panels never take
+turns. ``panel_fit=`` and a list-valued ``reduce=`` (one panel per reducer)
+work as they do for a static grid.
+
+A few things are specific to a grid:
+
+* Every panel must draw the same number of frames, or the call raises
+  ``ValueError`` (``animate='morph'`` needs the same number of datasets in
+  each panel).
+* Each 3-D panel's cube is zoomed out as far as it takes to stay inside its
+  own cell through the whole rotation, so ``zoom=`` can shrink a panel's
+  cube but not enlarge it past its cell. With ``xlabel=``/``ylabel=``/
+  ``zlabel=`` the figure is enlarged so the rotating axis labels fit too;
+  an explicit ``size=`` too small for them raises, naming a size that fits.
+* ``on_frame=`` is called once per frame for the whole figure. Its
+  ``FrameContext`` has ``axes`` as a tuple of the panel axes, ``artists``
+  and ``datasets`` as every panel's in panel order, and ``panels`` as one
+  ordinary per-panel ``FrameContext`` each (that panel's own axes, artists,
+  ``revealed_counts`` and so on).
+* ``backend='plotly'`` raises ``NotImplementedError`` (a static plotly grid
+  works), ``companion=`` raises ``ValueError``, and so do panels whose
+  analyzed data differ in width.
+
+Captions
+--------
+
+``caption=`` (matplotlib only) draws one line of text centered under the
+figure -- under a single plot, or under a whole ``panels=`` grid -- and
+updates it on every frame. It takes the forms a per-frame ``title=`` takes:
+a plain string, a ``'{index...}'`` pattern formatted with the input's own row
+index under the reveal head, or a callable given the frame's
+``FrameContext``:
+
+.. code-block:: python
+
+    hyp.plot([a, b, c, d], '-', panels=(1, 4), animate=True,
+             caption=lambda ctx: f'timepoint {ctx.frame + 1} of {ctx.n_frames}')
+
+    hyp.plot(df, '-', animate=True, caption='{index:%B %Y}')
+
+The caption sits a small gap below the lowest thing drawn; where the figure
+has no blank room there (an animated 3-D plot fills its canvas) the figure
+is made taller by the caption's height, so the caption never overlaps a
+panel, a legend or a colorbar and never leaves the canvas. Room is made for
+as many lines as the first frame's caption has. On a static plot the caption
+is drawn once, a pattern or callable being resolved for the finished figure.
+``caption=`` raises ``NotImplementedError`` under ``backend='plotly'`` (a
+per-frame ``title=`` works on both backends) and ``ValueError`` with a
+caller-supplied ``ax=``.
+
 Companion panels
 -----------------
 

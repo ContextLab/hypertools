@@ -28,6 +28,7 @@
       ~FrameContext.current_index
       ~FrameContext.datasets
       ~FrameContext.order
+      ~FrameContext.panels
       ~FrameContext.progress
       ~FrameContext.revealed_counts
       ~FrameContext.segment_index
