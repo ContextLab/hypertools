@@ -4603,10 +4603,35 @@ def _static_axes_artists(ax):
     return tuple(ax.lines) + tuple(ax.collections)
 
 
+def _text_metrics_renderer(artist):
+    """A renderer that measures the text `artist` (a figure-level
+    ``Text``) WITHOUT drawing its figure and without touching the figure's
+    canvas: a bare Agg renderer of the figure's pixel size, kept on the
+    artist while that size stands.
+
+    A per-frame caption is wrapped on every frame of an animation, a save
+    included. Measuring it through `_measurement_renderer` drew the whole
+    figure once more per frame and, worse, REPLACED the figure's canvas in
+    the middle of the save: matplotlib's guard against starting the
+    animation during a save (``canvas._is_saving``) sits on the canvas the
+    save began with, so the next frame's draw on the new canvas started
+    the animation, which drew frame 0 again and called every `on_frame=`
+    callback a third time for it (1.2.0 review, round 3)."""
+    from matplotlib.backends.backend_agg import RendererAgg
+    fig = artist.figure
+    width, height = fig.get_size_inches() * fig.dpi
+    key = (int(round(width)), int(round(height)), float(fig.dpi))
+    cached = getattr(artist, '_hyp_metrics_renderer', None)
+    if cached is None or cached[0] != key:
+        cached = (key, RendererAgg(max(key[0], 1), max(key[1], 1), key[2]))
+        artist._hyp_metrics_renderer = cached
+    return cached[1]
+
+
 def _wrap_caption(artist, text):
     """`text` broken into lines no wider than the caption's figure (less
     `_CAPTION_SIDE_PAD_IN` on each side), measured in the caption's own
-    font on the figure's renderer.
+    font (`_text_metrics_renderer`: nothing is drawn).
 
     Lines break at spaces; a single word wider than the figure is broken
     between characters. The caller's own ``'\n'`` line breaks are kept. A
@@ -4614,7 +4639,7 @@ def _wrap_caption(artist, text):
     split a formula.
     """
     fig = artist.figure
-    renderer = _measurement_renderer(fig)
+    renderer = _text_metrics_renderer(artist)
     room_px = (fig.get_size_inches()[0] - 2 * _CAPTION_SIDE_PAD_IN) * fig.dpi
     shown, visible = artist.get_text(), artist.get_visible()
     # (an invisible Text reports no extent)

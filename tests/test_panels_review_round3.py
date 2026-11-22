@@ -347,3 +347,39 @@ def test_a_tall_animated_title_at_any_loc_is_inside_the_canvas(loc, ndims):
     assert box.y0 >= 0 and box.y1 <= fig.bbox.height + 0.5, (
         f'the title spans y={box.y0:.0f}..{box.y1:.0f} px on a '
         f'{fig.bbox.height:.0f} px canvas')
+
+
+# --------------------------------------------------------------------------
+# Q1: a per-frame caption adds no on_frame= call
+# --------------------------------------------------------------------------
+
+@pytest.mark.parametrize('grid', [{}, dict(panels=(1, 2))],
+                         ids=['single', 'grid'])
+@pytest.mark.parametrize('caption', [None, 'fixed',
+                                     lambda ctx: f'frame {ctx.frame}'],
+                         ids=['no-caption', 'fixed', 'per-frame'])
+def test_a_caption_does_not_change_how_often_on_frame_is_called(
+        tmp_path, grid, caption):
+    """A save calls `on_frame=` for frame 0 twice (docs/animation.rst):
+    ``n_frames + 1`` calls, with or without a caption, fixed or per frame.
+    Wrapping a per-frame caption used to replace the figure's canvas in
+    the middle of the save, which made matplotlib start the animation and
+    draw frame 0 a third time. Building the animation calls it for no
+    frame at all."""
+    data = [X, X + 3]
+    seen = []
+    anim = _quiet(data, reduce=None, ndims=2, caption=caption,
+                  on_frame=lambda ctx: seen.append(ctx.frame),
+                  **ANIM, **grid)
+    assert seen == []
+    canvas = anim.figure.canvas
+    anim.save(str(tmp_path / 'later.gif'))
+    assert seen == [0] + list(range(anim.n_frames))
+    # (the save drew on the canvas it started with)
+    assert anim.figure.canvas is canvas
+
+    seen.clear()
+    saved = _quiet(data, reduce=None, ndims=2, caption=caption,
+                   on_frame=lambda ctx: seen.append(ctx.frame),
+                   save_path=str(tmp_path / 'direct.mp4'), **ANIM, **grid)
+    assert seen == [0] + list(range(saved.n_frames))
