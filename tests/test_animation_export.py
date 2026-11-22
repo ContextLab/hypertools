@@ -4,6 +4,7 @@
 import importlib
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -285,6 +286,56 @@ def test_kill_process_tree_terminates_a_hung_subprocess_bounded():
     _pb._kill_process_tree(proc)
     assert proc.poll() is not None            # actually dead
     assert time.time() - t0 < 20              # ... and bounded
+
+
+@pytest.mark.skipif(os.name == 'nt', reason='sessions are a POSIX notion')
+def test_kill_process_tree_reaches_a_descendant_in_its_own_session(tmp_path):
+    """choreographer runs the browser under a wrapper it starts in a NEW
+    session, which the group kill never reaches: after the render worker
+    was killed, the wrapper (and a hung Chrome) lived on, reparented to
+    init (1.2.0 review, round 3). Real processes: a child that starts a
+    grandchild in a session of its own and reports its pid."""
+    pid_file = tmp_path / 'grandchild.pid'
+    child = (
+        'import subprocess, sys, time\n'
+        'g = subprocess.Popen([sys.executable, "-c", '
+        '"import time; time.sleep(600)"], start_new_session=True)\n'
+        f'open({str(pid_file)!r}, "w").write(str(g.pid))\n'
+        'time.sleep(600)\n')
+    proc = subprocess.Popen([sys.executable, '-c', child],
+                            start_new_session=True)
+    grandchild = None
+    try:
+        deadline = time.time() + 30
+        while time.time() < deadline:
+            if pid_file.exists() and pid_file.read_text().strip():
+                grandchild = int(pid_file.read_text())
+                break
+            time.sleep(0.1)
+        assert grandchild is not None
+        assert grandchild in _pb._descendant_pids(proc.pid)
+        os.kill(grandchild, 0)                    # alive
+        _pb._kill_process_tree(proc)
+        assert proc.poll() is not None
+        deadline = time.time() + 10
+        while time.time() < deadline and _is_running(grandchild):
+            time.sleep(0.25)
+        assert not _is_running(grandchild)
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
+        if grandchild is not None and _is_running(grandchild):
+            os.kill(grandchild, signal.SIGKILL)
+
+
+def _is_running(pid):
+    """Whether process `pid` is listed as running (a zombie awaiting its
+    reaper is not), from the real process table."""
+    listing = subprocess.run(['ps', '-o', 'stat=', '-p', str(pid)],
+                             capture_output=True, text=True, timeout=30)
+    state = listing.stdout.strip()
+    return bool(state) and not state.startswith('Z')
 
 
 def test_wait_with_progress_kills_a_stalled_render():

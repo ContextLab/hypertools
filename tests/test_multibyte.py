@@ -22,8 +22,10 @@ notes/issues-to-close-on-merge.md).
 import importlib.util
 import json
 import os
+import signal
 import subprocess
 import sys
+import time
 import warnings
 
 import numpy as np
@@ -1052,6 +1054,79 @@ def test_a_real_RuntimeError_that_is_NOT_plotly_s_is_NOT_the_browser():
         f'{caught!r} is unrelated to the browser: {caught}')
 
 
+def _process_table():
+    """The live processes as ``{pid: (parent pid, command line)}``, from
+    one ``ps`` snapshot (POSIX)."""
+    listing = subprocess.run(['ps', '-A', '-o', 'pid=,ppid=,command='],
+                             capture_output=True, text=True, timeout=30)
+    table = {}
+    for line in listing.stdout.splitlines():
+        fields = line.split(None, 2)
+        if len(fields) >= 2 and fields[0].isdigit() and fields[1].isdigit():
+            table[int(fields[0])] = (int(fields[1]),
+                                     fields[2] if len(fields) > 2 else '')
+    return table
+
+
+def _descendants(pid):
+    """``{pid: command line}`` of every live descendant of process `pid`
+    (the ``ps`` that listed them excluded)."""
+    table = _process_table()
+    found, queue = {}, [pid]
+    while queue:
+        parent = queue.pop()
+        for child, (ppid, command) in table.items():
+            if ppid == parent and child not in found \
+                    and not command.startswith('ps -A'):
+                found[child] = command
+                queue.append(child)
+    return found
+
+
+def _alive(started):
+    """The entries of `started` (``{pid: command line}``) still running
+    the same command."""
+    table = _process_table()
+    return {pid: command for pid, command in started.items()
+            if pid in table and table[pid][1] == command}
+
+
+def _run_render_watching_its_processes(out_path, env, tmp_path):
+    """`_run_render`, also returning every process the render script was
+    seen to start while it ran (``{pid: command line}``, polled from the
+    real process table twice a second)."""
+    full = dict(os.environ)
+    full.update(env or {})
+    started = {}
+    with open(tmp_path / 'render.out', 'w+') as out, \
+            open(tmp_path / 'render.err', 'w+') as err:
+        proc = subprocess.Popen(
+            [sys.executable, _RENDER_PLOTLY_SCRIPT, json.dumps(['a', 'b']),
+             '', out_path], stdout=out, stderr=err, env=full)
+        limit = time.monotonic() + _KALEIDO_TIMEOUT_S
+        try:
+            while proc.poll() is None:
+                started.update(_descendants(proc.pid))
+                if time.monotonic() > limit:
+                    proc.kill()
+                    proc.wait()
+                    err.seek(0)
+                    pytest.fail(
+                        f'the render script did not finish in '
+                        f'{_KALEIDO_TIMEOUT_S} s.\n--- stderr ---\n'
+                        f'{err.read()[-6000:]}')
+                time.sleep(0.5)
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait()
+        out.seek(0)
+        err.seek(0)
+        result = subprocess.CompletedProcess(proc.args, proc.returncode,
+                                             out.read(), err.read())
+    return result, started
+
+
 @requires_covering_font
 @pytest.mark.skipif(os.name == 'nt', reason='the stand-in browser is a POSIX shell script')
 def test_render_script_exits_NO_BROWSER_when_the_browser_never_answers(
@@ -1066,10 +1141,34 @@ def test_render_script_exits_NO_BROWSER_when_the_browser_never_answers(
     silent = tmp_path / 'silent-browser'
     silent.write_text('#!/bin/sh\nexec sleep 600\n')
     silent.chmod(0o755)
-    result = _run_render(str(tmp_path / 'never.png'),
-                         {_BROWSER_PATH_ENV: str(silent),
-                          _render_mod.DEADLINE_ENV: '15'})
-    assert result.returncode == _NO_BROWSER_EXIT, (
-        f'expected exit {_NO_BROWSER_EXIT}, got {result.returncode}\n'
-        f'stderr:\n{result.stderr[-800:]}')
-    assert 'NO_BROWSER:' in result.stderr
+    result, started = _run_render_watching_its_processes(
+        str(tmp_path / 'never.png'),
+        {_BROWSER_PATH_ENV: str(silent), _render_mod.DEADLINE_ENV: '15'},
+        tmp_path)
+    try:
+        assert result.returncode == _NO_BROWSER_EXIT, (
+            f'expected exit {_NO_BROWSER_EXIT}, got {result.returncode}\n'
+            f'stderr:\n{result.stderr[-800:]}')
+        assert 'NO_BROWSER:' in result.stderr
+        # ...and it takes down what it started (review round 3, Q6): the
+        # stand-in browser, and the wrapper choreographer runs it under in
+        # a session of its own, used to outlive the script by the stand-in's
+        # whole 600 s, reparented to init -- in real use, a hung Chrome
+        # left behind after hypertools gave up
+        assert any('silent-browser' in command
+                   for command in started.values()), (
+            f'the stand-in browser was never seen running: {started}')
+        deadline = time.monotonic() + 10
+        alive = _alive(started)
+        while alive and time.monotonic() < deadline:
+            time.sleep(0.25)
+            alive = _alive(started)
+        assert not alive, (
+            f'processes the render script started outlived it: {alive}')
+    finally:
+        # whatever the verdict, this test leaves nothing running
+        for pid in _alive(started):
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except OSError:
+                pass

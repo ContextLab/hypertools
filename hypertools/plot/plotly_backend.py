@@ -4143,14 +4143,89 @@ def _export_ceiling(n_frames):
     return max(_KALEIDO_MIN_CEILING, n_frames * _KALEIDO_CEILING_PER_FRAME)
 
 
+def _descendant_pids(pid=None):
+    """Every live descendant of process `pid` (this process when None), as
+    process ids, parents before children. Read from ONE snapshot of the
+    process table (``ps`` on POSIX, PowerShell's ``Win32_Process`` on
+    Windows), so it also finds descendants that left the process group:
+    choreographer starts its browser wrapper in a session of its own,
+    which a ``killpg`` never reaches. Bounded, and an empty list when the
+    table cannot be read."""
+    import subprocess
+    pid = os.getpid() if pid is None else int(pid)
+    if os.name == 'nt':
+        command = ['powershell', '-NoProfile', '-Command',
+                   'Get-CimInstance Win32_Process | ForEach-Object '
+                   '{ "$($_.ProcessId) $($_.ParentProcessId)" }']
+    else:
+        command = ['ps', '-A', '-o', 'pid=,ppid=']
+    try:
+        lister = subprocess.Popen(command, stdout=subprocess.PIPE,
+                                  stderr=subprocess.DEVNULL, text=True)
+    except OSError:
+        return []
+    try:
+        listing, _ = lister.communicate(timeout=15)
+    except subprocess.TimeoutExpired:
+        lister.kill()
+        lister.communicate()
+        return []
+    children = {}
+    for line in listing.splitlines():
+        fields = line.split()
+        if len(fields) == 2 and fields[0].isdigit() and fields[1].isdigit():
+            children.setdefault(int(fields[1]), []).append(int(fields[0]))
+    found, queue = [], [pid]
+    while queue:
+        for child in children.get(queue.pop(0), []):
+            # (the lister itself is a child of this process)
+            if child != lister.pid and child not in found:
+                found.append(child)
+                queue.append(child)
+    return found
+
+
+def _kill_pids(pids):
+    """Kill each process in `pids` (children first), ignoring the ones
+    already gone. Best-effort and bounded."""
+    import signal
+    import subprocess
+    for pid in reversed(list(pids)):
+        try:
+            if os.name == 'nt':
+                subprocess.run(['taskkill', '/F', '/PID', str(pid)],
+                               capture_output=True, timeout=15)
+            else:
+                os.kill(pid, signal.SIGKILL)
+        except Exception:  # noqa: BLE001 - teardown is best-effort
+            pass
+
+
+def _kill_descendants(pid=None):
+    """Kill every descendant of process `pid` (this process when None) --
+    what a process does before it gives up on a browser it started, so no
+    hung Chrome (or its wrapper) outlives it. Returns the process ids it
+    signaled."""
+    pids = _descendant_pids(pid)
+    _kill_pids(pids)
+    return pids
+
+
 def _kill_process_tree(proc):
     """Kill a render subprocess AND its headless-Chrome children. On POSIX the
     subprocess is its own session leader, so the whole group is signaled; on
-    Windows ``taskkill /T`` walks the tree. Best-effort and BOUNDED at every
+    Windows ``taskkill /T`` walks the tree. Descendants that left the group
+    (choreographer's browser wrapper starts a session of its own) are found
+    in the process table BEFORE the kill -- afterwards they are orphans no
+    one can trace -- and killed too. Best-effort and BOUNDED at every
     step -- including `taskkill` itself, which is a subprocess that can stall
     and would otherwise block the recovery path indefinitely."""
     import signal
     import subprocess
+    try:
+        strays = _descendant_pids(proc.pid)
+    except Exception:  # noqa: BLE001 - teardown is best-effort
+        strays = []
     try:
         if os.name == 'nt':
             try:
@@ -4174,6 +4249,7 @@ def _kill_process_tree(proc):
             proc.kill()
         except Exception:  # noqa: BLE001
             pass
+    _kill_pids(strays)
     try:
         proc.wait(timeout=15)
     except Exception:  # noqa: BLE001

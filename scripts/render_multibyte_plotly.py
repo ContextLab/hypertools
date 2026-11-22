@@ -96,8 +96,22 @@ def _write_image(fig, out_png):
                            kopts={'path': override, 'timeout': 30})
 
 
+def _kill_started_processes():
+    """Kill every process this script started (the browser, and the
+    wrapper choreographer runs it under in a session of its own) before
+    giving up on the browser: `os._exit` runs no cleanup, and a browser
+    that never answers would otherwise outlive the script, reparented to
+    init, for as long as it hangs. Never raises."""
+    try:
+        from hypertools.plot.plotly_backend import _kill_descendants
+        _kill_descendants()
+    except Exception:
+        pass
+
+
 def _exit_now(code):
-    """Leave with `code` WITHOUT joining other threads.
+    """Leave with `code` WITHOUT joining other threads, after killing the
+    processes this script started (`_kill_started_processes`).
 
     After a failed browser launch choreographer leaves non-daemon worker
     threads blocked on a queue and a pipe read, and a normal exit waits for
@@ -112,6 +126,7 @@ def _exit_now(code):
             stream.flush()
         except Exception:
             pass
+    _kill_started_processes()
     os._exit(code)
 
 
@@ -142,6 +157,7 @@ def main():
         # os.write, not print: another thread may hold sys.stderr's lock
         os.write(2, (f'NO_BROWSER: TimeoutError: the browser did not answer '
                      f'within {deadline:g} s\n').encode())
+        _kill_started_processes()
         os._exit(NO_BROWSER_EXIT)    # the export thread cannot be interrupted
 
     watchdog = threading.Timer(deadline, _give_up)
