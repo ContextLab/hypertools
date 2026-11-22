@@ -394,3 +394,29 @@ unattended; the user is on a phone.
 - Issue #295 (animate= with panels=, per-frame caption, +faststart) was
   filed 2026-11-22 from the timecorr work. It is a feature request, not in
   this build; whether it goes into 1.1.1 is the user's decision.
+
+### Release commit, first cut (d743ff5d) and its CI
+
+- Fourth build (from 46c3bb39): all 140 media files byte-identical to the
+  third, no kagglehub notice. Full suite on 46c3bb39: 6910 passed, 24
+  skipped, 0 failed. Rehearsal: REHEARSAL PASSED (full).
+- Published `docs-gallery-v1.1.1` (2cf4fd0d), recorded it (d743ff5d),
+  pushed as `release/1.1.1` (PR #296), published `docs-notebooks/v1.1.1/`.
+  All 25 release gates passed locally and in a depth-1 clone with only
+  pytest, nbformat and nbclient installed. Built wheel + sdist, smoke
+  tested, created the DRAFT GitHub release (no tag).
+- The user looked at the review page
+  (https://claude.ai/artifact/W1YfFGsWHoKsxh3ofWgmuj): "Updated gallery
+  looks good; changes all go in the right direction".
+- CI on d743ff5d: 14 jobs green, `test (windows-latest, 3.11)` failed in
+  `tests/plot/test_predict_animation.py::test_the_plotly_backend_DRAWS_the_same_case_the_same_way`:
+  it asserts no warnings at all, and on that runner two Kalman fits took
+  0.5 s, so hypertools' own "needs 8 forecast fits ... roughly 12.8 s"
+  notice fired. Machine-speed dependent, nothing to do with this change.
+  Fix: that test and its matplotlib twin pass `slow_warning_seconds=None`,
+  as `tests/plot/test_forecast_schedule.py` does.
+- A new commit invalidates everything pinned to d743ff5d, so the gallery is
+  rebuilt from the new commit and both galleries, the dist files and the
+  draft release's assets are redone.
+- Gap in the automatic "work in flight" check: it did not see the running
+  `wait-for-ci.py` waiter and asked for another.

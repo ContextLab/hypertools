@@ -401,9 +401,12 @@ def test_hue_regrouping_now_ANIMATES_its_forecasts_like_the_static_plot():
     labels = np.array(['a', 'a', 'b', 'b'] * 15)
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter('always')
+        # slow_warning_seconds=None: the "these forecast fits will take
+        # N s" notice depends on how fast the machine is (it fired on a
+        # slow Windows CI runner) and is not what this test is about
         fig, ani = hyp.plot(data, '-', predict='Kalman', t=3, hue=labels,
                             animate=True, duration=2, frame_rate=4,
-                            show=False)
+                            show=False, slow_warning_seconds=None)
     assert not caught, [str(w.message) for w in caught]
     ax = _ax(fig)
     ani._func(6, *ani._args)          # must not raise
@@ -433,9 +436,10 @@ def test_the_plotly_backend_DRAWS_the_same_case_the_same_way():
     with hyp.set_interactive_backend('plotly'):
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter('always')
+            # slow_warning_seconds=None: see the matplotlib twin above
             fig = hyp.plot(data, '-', predict='Kalman', t=3, hue=labels,
                            animate=True, duration=2, frame_rate=4,
-                           show=False)
+                           show=False, slow_warning_seconds=None)
     assert not caught, [str(w.message) for w in caught]
     roles = [(tr.meta or {}).get('hyp_forecast_role') for tr in fig.data]
     assert 'live' in [r for r in roles if r is not None], roles
