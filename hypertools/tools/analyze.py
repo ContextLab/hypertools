@@ -88,6 +88,32 @@ def pipeline_cluster_labels(pipeline, data):
     return labels, type(model), fitted, categories
 
 
+def _fit_steps_capturing_data(pipe, data):
+    """Fit `pipe` (a Pipeline ending in a cluster step) on `data` and
+    return the data as it stood BEFORE the cluster step."""
+    # analyze returns the TRANSFORMED DATA, not cluster labels, even
+    # when cluster= is given -- the labels live in the fitted
+    # 'cluster' step of the returned Pipeline (see `analyze`'s
+    # docstring). Fit the steps one at a time (exactly what
+    # Pipeline.fit_transform does), CAPTURING the pre-cluster data
+    # along the way: re-deriving it afterwards via .transform breaks
+    # for embedding models with no transform method (TSNE / MDS /
+    # SpectralEmbedding -- QC 2026-07: these crashed with
+    # "'TSNE' object has no attribute 'transform'" after all the
+    # fitting work was done).
+    result = data
+    for name, step in pipe.steps:
+        if name == 'cluster':
+            step.fit(result)
+        else:
+            result = step.fit_transform(result)
+    # every step is now fitted; mark the Pipeline itself fitted the
+    # same way Pipeline.fit_transform does, so it is reusable via
+    # .transform / pipeline= (there is no public "mark fitted" API)
+    pipe._is_fitted = True
+    return result
+
+
 def analyze(data, manip=None, normalize=None, reduce=None, ndims=None, align=None,
            cluster=None, pipeline=None, return_model=False, internal=False, impute=None,
            random_state=None):
@@ -359,29 +385,24 @@ def analyze(data, manip=None, normalize=None, reduce=None, ndims=None, align=Non
         pipe = build_pipeline(manip=manip, normalize=normalize, reduce=reduce,
                               ndims=ndims, align=align, cluster=cluster,
                               random_state=random_state)
-        if cluster is None:
-            result = pipe.fit_transform(data)
-        else:
-            # analyze returns the TRANSFORMED DATA, not cluster labels, even
-            # when cluster= is given -- the labels live in the fitted
-            # 'cluster' step of the returned Pipeline (see this function's
-            # docstring). Fit the steps one at a time (exactly what
-            # Pipeline.fit_transform does), CAPTURING the pre-cluster data
-            # along the way: re-deriving it afterwards via .transform breaks
-            # for embedding models with no transform method (TSNE / MDS /
-            # SpectralEmbedding -- QC 2026-07: these crashed with
-            # "'TSNE' object has no attribute 'transform'" after all the
-            # fitting work was done).
-            result = data
-            for name, step in pipe.steps:
-                if name == 'cluster':
-                    step.fit(result)
-                else:
-                    result = step.fit_transform(result)
-            # every step is now fitted; mark the Pipeline itself fitted the
-            # same way Pipeline.fit_transform does, so it is reusable via
-            # .transform / pipeline= (there is no public "mark fitted" API)
-            pipe._is_fitted = True
+        with warnings.catch_warnings():
+            if internal:
+                # an internal (display-path) call legitimately no-ops on
+                # data already at or below the display dimensionality, and
+                # the legacy chain below is silent about it
+                # (`reducer(..., internal=True)`); this Pipeline path --
+                # taken for return_model=True, manip= or cluster= -- warned
+                # "ndims/n_components was set to 3 but the data only has 2
+                # feature(s)" for an ndims= the caller never passed (every
+                # `hyp.plot(..., panels=)` grid of 2-column data, and
+                # `hyp.plot(two_column_data, return_model=True)`)
+                warnings.filterwarnings(
+                    'ignore', message=r'ndims/n_components was set to .* '
+                    r'but the data only has', category=UserWarning)
+            if cluster is None:
+                result = pipe.fit_transform(data)
+            else:
+                result = _fit_steps_capturing_data(pipe, data)
         if internal and not isinstance(result, list):
             result = [result]
         return (result, pipe) if return_model else result
