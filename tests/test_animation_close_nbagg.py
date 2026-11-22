@@ -52,6 +52,10 @@ def test_plain_matplotlib_stop_is_not_idempotent_so_the_guard_is_needed():
     line, = ax.plot([0, 1], [0, 1])
     fa = matplotlib.animation.FuncAnimation(
         fig, lambda i: (line.set_ydata([0, i % 2]),), frames=2, interval=50)
+    # (never drawn, on purpose: only `_stop` is under test. Without this,
+    # matplotlib warns "Animation was deleted without rendering anything"
+    # when `fa` is collected)
+    fa._draw_was_started = True
     fa._stop()
     with pytest.raises(AttributeError, match='remove_callback'):
         fa._stop()
