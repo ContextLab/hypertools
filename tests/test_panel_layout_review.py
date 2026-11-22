@@ -145,8 +145,11 @@ def test_static_grid_without_axis_labels_is_not_resized_or_rezoomed():
     plain = hyp.plot(DATA, panels=(2, 2), show=False)
     unlabeled = hyp.plot(XYZ, panels=(2, 2), xlabel='', ylabel='',
                          zlabel='', show=False)
-    assert tuple(plain.get_size_inches()) == (6.4, 4.8)
-    assert tuple(unlabeled.get_size_inches()) == (6.4, 4.8)
+    # CHANGED for 1.2.0 (owner decision 2026-11-22): static grids are sized
+    # by the grid -- 3.2 in per panel, so 6.4 x 6.4 in for 2 x 2 (this
+    # compared to the fixed 6.4 x 4.8 in default)
+    assert tuple(plain.get_size_inches()) == (6.4, 6.4)
+    assert tuple(unlabeled.get_size_inches()) == (6.4, 6.4)
     for a, b in zip(plain.axes, unlabeled.axes):
         assert np.allclose(a.get_box_aspect(), b.get_box_aspect())
 

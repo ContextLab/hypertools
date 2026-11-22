@@ -3160,11 +3160,14 @@ class PlotlyCell:
 
 def make_panel_grid(nrows, ncols, ndims, titles=None, size=None,
                     gutter_px=0, title_px=None, strip_px=0,
-                    **make_subplots_kw):
+                    default_size=None, **make_subplots_kw):
     """The empty plotly grid `panels=` and `hyp.subplots(backend='plotly')`
     fill: a `plotly.subplots.make_subplots` figure with ``'scene'`` cells
     for 3-D and ``'xy'`` cells otherwise, sized like the matplotlib grid
-    (`size` inches x 100 px, default `DEFAULT_FIGSIZE`), with `gutter_px`
+    (`size` inches x 100 px; without one, `default_size` inches -- what
+    `panels=` passes: one 3.2 in square per cell, see
+    `plot._default_panel_grid_size` -- or `DEFAULT_FIGSIZE`, which is what
+    `hyp.subplots(backend='plotly')` keeps), with `gutter_px`
     reserved to the right of EVERY cell (and in the right margin) for a
     per-panel legend/colorbar (see `panel_gutter_px`). When `size` is not
     given the figure is widened by the gutters, so the default grid stays
@@ -3193,8 +3196,10 @@ def make_panel_grid(nrows, ncols, ndims, titles=None, size=None,
     if size is not None:
         width, height = int(size[0] * 100), int(size[1] * 100)
     else:
-        width = int(DEFAULT_FIGSIZE[0] * 100) + gutter_px * ncols + strip_px
-        height = int(DEFAULT_FIGSIZE[1] * 100)
+        base_w, base_h = (DEFAULT_FIGSIZE if default_size is None
+                          else default_size)
+        width = int(round(base_w * 100)) + gutter_px * ncols + strip_px
+        height = int(round(base_h * 100))
     # the strip is taken off the right; the grid is laid out in the rest
     full_width, width = width, max(width - int(strip_px), 1)
     titles = list(titles) if titles is not None else []

@@ -3459,7 +3459,10 @@ def subplots(nrows=1, ncols=1, ndims=3, size=None, backend='auto',
         3 (default) gives every panel a 3-D projection; 1 or 2 gives
         ordinary 2-D axes. Matches `hyp.plot`'s `ndims=`.
     size : [width, height] or None
-        Figure size in inches (`figsize`); `None` keeps matplotlib's.
+        Figure size in inches (`figsize`); `None` keeps matplotlib's
+        default (6.4 x 4.8 in; 640 x 480 px on plotly) whatever the grid's
+        shape. (Only `hyp.plot(..., panels=)` sizes its default figure by
+        the grid, 3.2 in per panel.)
     **fig_kw
         Forwarded to `matplotlib.pyplot.subplots` (`sharex=`, `dpi=`,
         `gridspec_kw=`, an explicit `subplot_kw=`, ...) or, under plotly,
@@ -4789,9 +4792,19 @@ def _reemit_panel_warnings(probe_caught, draw_caught):
                                registry=registry)
 
 
-#: side (inches) of one panel's cell in an animated `panels=` grid's default
-#: figure (no `size=`); see `_plot_panels`
-_ANIMATED_PANEL_CELL_INCHES = 3.2
+#: side (inches) of one panel's cell in a `panels=` grid's default figure
+#: (no `size=`), static or animated; see `_default_panel_grid_size`
+_PANEL_CELL_INCHES = 3.2
+
+
+def _default_panel_grid_size(nrows, ncols):
+    """The default figure (inches) of an `nrows` x `ncols` `panels=` grid,
+    before any room for a legend/colorbar, axis labels or a caption is
+    added: one `_PANEL_CELL_INCHES` square cell per panel, and never
+    narrower than hypertools' default single figure (6.4 in), so a single
+    column keeps the usual width. The plotly grid uses the same size at
+    its 100 px per inch."""
+    return (max(6.4, _PANEL_CELL_INCHES * ncols), _PANEL_CELL_INCHES * nrows)
 
 
 # --------------------------------------------------------------------------
@@ -6139,15 +6152,15 @@ def _plot_panels_impl(x, panels, call_kwargs, _name='panels'):
         return grid
 
     _grid_size = call_kwargs.get('size')
-    if animated and _grid_size is None:
-        # an animated grid's default figure is sized BY the grid, one
-        # square cell per panel: every frame of the saved clip carries the
-        # figure's whole canvas, and matplotlib's 6.4 x 4.8 in default
-        # leaves a 1 x 4 row of cubes with more blank canvas above and
-        # below it than the cubes themselves fill (GH #295). Never narrower
-        # than that default, so a single column keeps its usual width.
-        _grid_size = (max(6.4, _ANIMATED_PANEL_CELL_INCHES * ncols),
-                      _ANIMATED_PANEL_CELL_INCHES * nrows)
+    if _grid_size is None:
+        # a grid's default figure is sized BY the grid, one square cell
+        # per panel, static or animated (static since 1.2.0): matplotlib's
+        # 6.4 x 4.8 in default leaves a 1 x 4 row of cubes with more blank
+        # canvas above and below it than the cubes themselves fill, and
+        # every frame of a saved clip carries that canvas (GH #295). The
+        # grid's SHAPE was chosen before this, from `size=` or the default
+        # figure's aspect (`_auto_panel_grid`).
+        _grid_size = _default_panel_grid_size(nrows, ncols)
 
     def _draw_grid(consolidate):
         """Draw every panel into a fresh grid figure. With `consolidate`
@@ -6462,8 +6475,8 @@ _PANEL_CUBE_FILL = 0.96
 _PANEL_LABELED_CUBE_SHARE = 0.7
 
 #: ...the least a labeled STATIC panel cube may be before its default figure
-#: grows (a static grid's default figure is one fixed size whatever the
-#: grid, so it is enlarged only where the cubes would become very small)...
+#: grows (a static cube has one view, so its labels need less room than a
+#: rotating one's and the figure is enlarged a little later)...
 _STATIC_LABELED_CUBE_SHARE = 0.65
 
 #: ...and the legible floor at an explicit `size=` (a size the caller chose
@@ -7062,6 +7075,10 @@ def _plot_panels_plotly(panel_data, panel_kwargs, titles, nrows, ncols,
     strip_px += PANEL_GUTTER_PAD_PX if strip_px else 0
     fig = make_panel_grid(nrows, ncols, ndims,
                           size=call_kwargs.get('size'),
+                          # no `size=`: sized by the grid, as the matplotlib
+                          # grid is (the gutters/strip are added to it)
+                          default_size=_default_panel_grid_size(nrows,
+                                                                ncols),
                           gutter_px=(0 if consolidate else panel_gutter_px(
                               legend_present, colorbar_present)),
                           title_px=title_px, strip_px=strip_px)
@@ -8227,7 +8244,12 @@ def plot(
 
     size : list
         A [width, height] pair of numbers, in inches, to resize the figure
-        (anything else raises ``ValueError`` naming size)
+        (anything else raises ``ValueError`` naming size). Default: 6.4 x
+        4.8 in for a single plot. A `panels=` grid without `size=` is
+        sized by its grid instead -- 3.2 in per panel each way, at least
+        6.4 in wide, plus room for a shared legend or colorbar, a caption
+        and axis labels (see `panels=`) -- and with `size=` it is drawn
+        at exactly that size.
 
     elev : int or float
         The camera elevation angle, in degrees, for 3-D plots: the angle
@@ -9571,7 +9593,24 @@ def plot(
         tall one, four form 2x2, six form 2x3; an ``int`` is
         the number of COLUMNS; an ``(nrows, ncols)`` pair is used verbatim
         and must have room for every panel. Spare cells are hidden, the
-        layout is tightened, and the one `Figure` is returned. Every cell
+        layout is tightened, and the one `Figure` is returned.
+
+        THE FIGURE IS SIZED BY THE GRID when `size=` is not given, static
+        or animated, on matplotlib and on plotly (1.2; a static grid was
+        a fixed 6.4 x 4.8 in before, whatever its shape): 3.2 in per
+        panel each way and at least 6.4 in wide, so a 1 x 4 row is 12.8 x
+        3.2 in, a 2 x 2 grid 6.4 x 6.4 in and a 2 x 3 grid 9.6 x 6.4 in
+        (plotly: 100 px per inch). To that is added the strip of a shared
+        legend or colorbar (wider), a `caption=` (taller) and, for 3-D
+        panels, room for axis labels where they need it (see below). The
+        grid's shape is chosen first -- for ``True``/``'auto'``, from the
+        aspect of `size=` or of the default 6.4 x 4.8 in figure -- and
+        the default figure is then sized by that shape. An explicit
+        `size=` is the whole figure's size, as for a single plot. Only
+        `panels=` does this: a grid from `hyp.subplots()` keeps
+        matplotlib's default figure size (or the `size=` given to it).
+
+        Every cell
         has ONE projection, decided from the ANALYZED data (the rows the
         pipeline hands each panel to draw, not the raw column count: two
         raw columns through a feature-expanding ``manip='Delay'`` come out
@@ -9749,14 +9788,14 @@ def plot(
         cubes half their unlabeled size and raises below that, naming a
         size that works; ``xlabel='', ylabel='',
         zlabel=''`` drops the labels instead. Without `size=` the figure
-        is sized BY THE GRID -- 3.2 in per panel each way, at least
-        6.4 in wide -- so a saved clip of a row of panels is not mostly
-        blank canvas (a static grid keeps the 6.4 x 4.8 in default); it
-        is then widened by the strip of a shared legend or colorbar,
-        made taller by a `caption=`, and enlarged for axis labels as
-        just described. A STATIC 3-D grid keeps its axis labels inside
-        each panel the same way (its default figure grows where the
-        cubes would otherwise become very small). An explicit `size=` is
+        is sized by the grid, as a static grid's is (above) -- so a
+        saved clip of a row of panels is not mostly blank canvas -- then
+        widened by the strip of a shared legend or colorbar, made taller
+        by a `caption=`, and enlarged for axis labels as just described.
+        A STATIC 3-D grid keeps its axis labels inside each panel the
+        same way, at its one view (its default figure grows only where a
+        cube would otherwise be under 65% of an unlabeled one's size,
+        which the grid-sized cells seldom need). An explicit `size=` is
         always honored for a static grid: where it cannot hold the
         labeled grid legibly -- a cube would be under half its unlabeled
         size, or a panel's own labels would be drawn over each other --

@@ -127,9 +127,14 @@ def test_an_explicit_size_is_kept_for_a_bare_grid():
     assert tuple(ani.figure.get_size_inches()) == pytest.approx((9, 4))
 
 
-def test_a_static_grid_keeps_its_default_size():
+def test_a_static_grid_is_sized_by_its_grid_too():
+    # CHANGED for 1.2.0 (owner decision 2026-11-22): static grids are sized
+    # by the grid (this asserted the fixed 6.4 x 4.8 in default)
     fig = hyp.plot(DATA, panels=(1, 4), show=False)
-    assert tuple(fig.get_size_inches()) == pytest.approx((6.4, 4.8))
+    assert tuple(fig.get_size_inches()) == pytest.approx((12.8, 3.2))
+    animated = _grid()
+    assert tuple(fig.get_size_inches()) == pytest.approx(
+        tuple(animated.figure.get_size_inches()))
 
 
 def test_subplots_alias_animates_the_same_grid():
