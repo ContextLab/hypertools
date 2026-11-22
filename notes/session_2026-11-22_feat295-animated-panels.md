@@ -114,10 +114,12 @@ labels, explicit sizes, shared-legend placement).
   offset SCALES with the cube (measured: label reach ~1.45 x cube reach in a
   3.2 in cell), so labels are fitted by shrinking the cube proportionally;
   the figure grows only when a cube would fall under 70% of an unlabeled one
-  (`_PANEL_LABELED_CUBE_REACH`), in steps of at most 20%, in the limiting
-  direction. Static grids use the same fitter through
-  `_fit_static_cube_labels` (floor `_STATIC_LABELED_CUBE_REACH`, explicit
-  `size=` honored). The camera views come from `_camera_azimuths`
+  (`_PANEL_LABELED_CUBE_SHARE`), in steps of at most 20%, in the limiting
+  direction. An explicit `size=` is refused only under 50%
+  (`_REFUSED_LABELED_CUBE_SHARE`); the suggested size keeps the caller's
+  proportions and is found by fitting at that size. Static grids use the
+  same fitter through `_fit_static_cube_labels` (65%,
+  `_STATIC_LABELED_CUBE_SHARE`; explicit `size=` honored, never refused). The camera views come from `_camera_azimuths`
   (`rotations=0` is one view).
 - Shared legend placement: `_shared_legend_side` maps a `legend_kwargs` `loc`
   to a strip side; `_grow_figure` adds room on any side; `bbox_to_anchor` /
