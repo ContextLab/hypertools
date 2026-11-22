@@ -242,3 +242,22 @@ engine are untouched. Details:
 After the fix all 18 probe cases report OK; tests added in
 `tests/test_caller_figure_hygiene.py` (65 tests, pass on matplotlib 3.10.8
 and 3.11.2).
+
+### Red team of the fit (Codex + one fresh subagent), round 1
+
+No blockers; reworked the locator for all of these (each now has a test):
+twins undid the fit (twins get a follower locator); a memoized fit went
+stale after `savefig(bbox_inches='tight')`, legend/title edits, neighbor
+moves (memo removed: the fit is recomputed on every draw); feeding the
+fitted box back into `tight_layout`/engines made panels shrink draw after
+draw (while matplotlib's layout code is on the call stack the locator now
+answers with the unfitted box, so slots are identical to a figure without
+it, draw for draw); "inside" was sticky (now decided afresh on each draw,
+legend state saved on the legend and restored when room appears); own/caller
+colorbars skipped the fit (now ordinary neighbors); neighbor's axis label
+ignored and invisible tick labels counted (only visible, non-empty texts
+count); title measured before matplotlib's own repositioning; narrowing
+pushed a wide title off the left; tall legend not reported (warning).
+Not fixed: an inset axes placed by hand where the legend goes (stated in
+the changelog). matplotlib's own tight engine keeps moving 3-D rows for
+6+ draws with or without hypertools.

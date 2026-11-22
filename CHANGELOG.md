@@ -48,12 +48,16 @@ draws into a figure the caller built, found by executing notebooks with
   canvas. No call is needed, and the fit follows the caller's own later
   `fig.tight_layout()`, `fig.subplots_adjust(...)`, resize or save (a 3-D
   panel's legend, for which `tight_layout` reserves no room, included).
-  Nothing moves when the legend already fits, and a figure with a
-  `layout='constrained'` engine is left to that engine. A legend with no
-  room beside the axes is drawn inside it; one larger than its whole panel
-  is left in place with a `UserWarning` naming the remedies. The fit is an
-  axes locator, so on such an axes `ax.get_position()` reports the
-  position of the last draw.
+  Nothing moves when the legend and title already fit. `tight_layout` and
+  the layout engines (`'tight'`, `'constrained'`, `'compressed'`) still
+  measure the unfitted figure, so they give every panel the room they
+  always did and the fit takes up only what is still missing. A legend
+  with no room beside the axes is drawn inside it (and goes back out when
+  room appears); one too large for its panel either way, or taller than
+  the figure, is left in place with a `UserWarning` naming the remedies.
+  Twin axes follow the fitted axes. Not covered: an inset or other axes
+  placed by hand in the legend's place. The fit is an axes locator, so on
+  such an axes `ax.get_position()` reports the position of the last draw.
 - **No `findfont` log lines for ordinary text under matplotlib 3.11
   (GH #292).** matplotlib 3.11 registers every face of a `.ttc` font
   collection, which on macOS surfaces 'Hiragino Kaku Gothic ProN' as a
