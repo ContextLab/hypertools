@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.1.1 (2026-11-21)
+## 1.1.1 (2026-11-22)
 
 A patch release: three fixes for noise and side effects met when `hyp.plot`
 draws into a figure the caller built, found by executing notebooks with

@@ -366,3 +366,31 @@ unattended; the user is on a phone.
 - Observed, left as is (faithful rendering of raw data, same as 1.1.0):
   in `plot_datasets_tour_001.png` the penguins and Kaggle-iris panels are
   near-lines because one unnormalized column dominates.
+
+### 2026-11-22 (after midnight)
+
+- Independent reviews of all 117 tiles (fresh subagent; Codex CLI with the
+  ten contact sheets attached): no regression from 1.1.0; the three
+  differing figures judged harmless; both flagged the shapes-zoo labels
+  (fixed). Minor points they raised that are IDENTICAL in the released
+  1.1.0 and were left for the user to decide: conversation clip's box
+  touches the left canvas edge; teapot is faint under the one-pixel
+  marker; two label boxes overlap in `plot_labels`; market-sectors legend
+  sits close to the box in the GIF thumbnail; weather clip's last marker is
+  half clipped at the right edge.
+- Third build (from a7dfad3a, 51 of 51 executed): 136 of 140 media files
+  byte-identical to the reviewed e3abb840 build; the four that differ are
+  the three changed examples (colorbar_002, digits_003, shapes_zoo_001 and
+  its thumbnail). Viewed all three: correct.
+- Page-text diff against 1.1.0 (versions and timings normalized) found one
+  environment artifact: `plot_datasets_tour` printed kagglehub's "outdated
+  version (installed: 1.0.2)" notice. Upgraded kagglehub in the build venv
+  to 1.0.3.
+- The date rolled over during the build. The release gate requires the
+  CHANGELOG heading not to be earlier than the release commit, and the
+  gallery record commit would be dated 2026-11-22, so the heading is now
+  2026-11-22 and the gallery is rebuilt once more from this commit (the
+  gate allows only the record commit after the build).
+- Issue #295 (animate= with panels=, per-frame caption, +faststart) was
+  filed 2026-11-22 from the timecorr work. It is a feature request, not in
+  this build; whether it goes into 1.1.1 is the user's decision.

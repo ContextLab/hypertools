@@ -19,6 +19,11 @@ Python 3.10 through 3.13. Extras are unchanged from 1.1.0.
 - **A legend or title added to the caller's axes is fitted automatically, inside that axes' own room.** Through 1.1.0 a `legend=` beside a caller's axes was fitted by widening the caller's figure, which stretched its other axes and switched off its layout engine. Now, when the figure is drawn, only the axes passed as `ax=` is narrowed just far enough that its legend ends before the canvas edge or the next panel, and lowered just far enough that its title stays on the canvas. No call is needed, and the fit follows a later `fig.tight_layout()`, `fig.subplots_adjust(...)`, resize or save. A legend with no room beside the axes is drawn inside it; one too large for its panel either way is left in place with a `UserWarning` naming the remedies.
 - **No `findfont` log lines for ordinary text under matplotlib 3.11 ([#292](https://github.com/ContextLab/hypertools/issues/292)).** matplotlib 3.11 logs a line each time a family in the font list has no face at a text's exact weight; one of the fallback families hypertools listed has no regular face on macOS, so every figure logged the line several times. Fallback families with no regular-weight face are now left out of the list.
 - **A Yahoo Finance rate limit is reported as one.** `hyp.load('yahoo:<TICKER>')` reported an HTTP 429 from Yahoo as a JSON decoding failure. The error now says that Yahoo is rate-limiting the address and to try again later.
+- **A seeded UMAP no longer warns about `n_jobs`.** A seed passed in the `reduce` dict (`reduce={'model': 'UMAP', 'kwargs': {'random_state': 0}}`) drew umap-learn's "n_jobs value 1 overridden to 1" warning; it is now quiet, like the top-level `random_state=`.
+
+## Documentation
+
+- Two gallery examples (`plot_colorbar.py`, `plot_digits.py`) are now seeded, so their figures are the same on every docs build, and `plot_shapes_zoo.py` no longer shows stray axis labels beside one panel.
 
 ## Upgrading from 1.1.0
 
