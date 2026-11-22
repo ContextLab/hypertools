@@ -332,3 +332,28 @@ How:
 - Item 1: `_plot_panels` owns one `matrix_cache` dict per grid call, passed in `_panel_shared['matrix_cache']` to every call made on the WHOLE matrix (shared probe, early and final resolution, and a reducer-list grid's probes and panel draws). `_matrix_hue_to_rgb_once` reduces on the first call and returns the stored RGB (matched by value) afterwards. Reducer-list grids went from 2 fits per panel to 1 per grid (noted in CHANGELOG, since 1.1.0 behavior changes there for a stochastic reducer).
 - Item 2: the resolution reports `hue_columns`; `_panel_apply_hue_scale` puts them in `shared['hue_columns']`, which `plot()` uses as `_hue_column_names` when the panel's hue is a bare array.
 - Item 3: the single-axes call REFUSES frames with differing column names (GH #132), so there is no single-axes legend to match for that exact data. Rule chosen: each series is called by its column name, which is what each dataset's own call and the single-axes call of same-named series read. The names are captured before the rows are stripped and handed to the resolution as `_panel_shared['series_columns']`, so legend labels, legend order and the bundle's `colors['labels']` all carry them.
+
+## matplotlib 3.11 text metrics (2026-11-22, branch fix/mpl311, after b81e1d2d)
+
+Hosted CI "test (ubuntu-latest, 3.13)" failed 9 tests on b81e1d2d with matplotlib 3.11.2; all passed locally on 3.10.8. Reproduced on macOS with a Python 3.13 venv pinned to matplotlib 3.11.2, numpy 2.5.5, pillow 13.0.0, fonttools 4.68.0 (no Docker needed: the default face is the bundled Noto Sans on every OS).
+
+Cause: two behavior changes in matplotlib 3.11, three places in hypertools that assumed the older behavior.
+
+- `Text._get_layout`: a line's height is now the font's own ascent + descent (+ line gap between lines), read from its `OS/2`/`hhea` tables. Through 3.10 it was the measured height of the glyphs `lp` (times 1.2 between lines). Noto Sans: 1.362 em per line, against about 1.0 em (1.2 em between lines) before.
+- `Axis3D._update_all_positions`: a label with no text (or hidden) is no longer positioned on a draw.
+
+| What failed | Why | Fix (`hypertools/plot/plot.py`) |
+|-|-|-|
+| `caption=` ended below the canvas (7 tests) | `_add_caption` reserved `lines * 1.2 * font size` | `_caption_text_height_in` measures the wrapped text with the caption's own font at the figure's DPI; the room is the larger of that and the nominal line grid (so 3.10 output is unchanged) |
+| `test_axis_labels_enlarge_the_figure_and_stay_inside_their_cells`, `(0, 0, '')` | a shared label emptied on an inner 3-D panel kept the position of the draw before the cube fit | `_place_emptied_cube_labels`: one measurement draw of the finished layout with a stand-in text in the emptied labels, then emptied again |
+| `test_a_static_labeled_grid_that_fits_its_size_does_not_warn[long-1x4-8x3]` | the taller label boxes of the last panel's y and z labels overlap by more than the 4 px allowed, inside the panel's square, at any cube size | `_label_gutter_room`: when a static grid at an explicit `size=` has big enough cubes but colliding labels, it is fitted once more with the labels let into the blank room beside each square (half the gutter to the next panel, or up to the canvas edge / a legend / a colorbar less the label pad); kept only if the labels then clear, otherwise the grid is put back and the warning is raised as before |
+
+Tried and dropped: comparing the labels' painted pixels instead of their layout boxes (the tests' own overlap count uses layout boxes, so the library must too); pushing colliding labels out with `labelpad` (the fit shrinks the cube by exactly as much, the labels do not move).
+
+Not changed: `_axis_label_reach` still measures layout boxes, so labeled 3-D cubes are a few percent smaller under 3.11 than under 3.10 (taller boxes need more room). No CHANGELOG entry: all of this is 1.2.0 code that 1.1.0 does not have.
+
+Tests: `tests/test_text_room_measured.py` (caption room against the real renderer in four fonts; emptied labels against matplotlib's own placement; gutter room; the 1x4 grid at three sizes).
+
+Pixel check under matplotlib 3.10.8, before/after: `examples/animate_panels.py` (frames 0, 150, 299), `plot_datasaurus.py`, `plot_shapes_zoo.py`, `plot_impute.py`, `plot_autoencoders.py` are byte-identical (canvas RGBA buffers).
+
+Final checks after the last change (panel, caption, animation, plot-review, docstring and datatype-gate files plus the new one; `ruff check .` clean): matplotlib 3.11.2 / Python 3.13: 3053 passed, 0 failed; matplotlib 3.10.8 / Python 3.12: 3053 passed, 0 failed.

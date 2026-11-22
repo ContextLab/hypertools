@@ -4712,6 +4712,34 @@ def _wrap_caption(artist, text):
     return '\n'.join(lines)
 
 
+def _caption_text_height_in(artist, text):
+    """The height (inches) the caption `artist` takes when it shows the
+    already wrapped `text`: the extent matplotlib lays that text out in,
+    in the caption's own font at its figure's DPI (`_text_metrics_renderer`:
+    nothing is drawn, and the artist is left as it was).
+
+    The room under a figure is reserved from THIS, not from a line count
+    times a nominal line height: how tall a line of text is belongs to
+    matplotlib and to the font. Up to matplotlib 3.10 a line is 1.2 times
+    the measured height of the glyphs ``lp``; from 3.11 on it is the
+    font's own ascent, descent and line gap (its ``OS/2``/``hhea``
+    tables), which for many fonts is more than 1.2 times the font size --
+    a room of ``lines * 1.2 * size`` then ended above the caption's last
+    line, which ran off the bottom of the canvas.
+    """
+    shown, visible = artist.get_text(), artist.get_visible()
+    # (an invisible Text reports no extent)
+    artist.set_visible(True)
+    try:
+        artist.set_text(text)
+        height_px = artist.get_window_extent(
+            _text_metrics_renderer(artist)).height
+    finally:
+        artist.set_text(shown)
+        artist.set_visible(visible)
+    return float(height_px) / float(artist.figure.dpi)
+
+
 def _set_caption_text(artist, text):
     """Show `text` in the caption `artist`, wrapped to its figure's width
     (`_wrap_caption`): how every frame of a per-frame caption is set."""
@@ -4731,8 +4759,12 @@ def _add_caption(fig, text, font=None, family=None, samples=()):
     legend, a colorbar or a companion panel and always lies inside the
     canvas.
 
-    HOW THE ROOM'S HEIGHT IS DECIDED. The room holds as many lines as the
-    tallest of `text` and `samples` has once wrapped. `text` is what the
+    HOW THE ROOM'S HEIGHT IS DECIDED. The room holds the tallest of
+    `text` and `samples` once wrapped, at the height matplotlib lays it
+    out in (`_caption_text_height_in`, measured in the caption's own font
+    at the figure's DPI) and never less than 1.2 times the font size per
+    line, so a caption of as many lines gets the same room whatever its
+    glyphs are. `text` is what the
     figure shows now: a fixed caption, a static figure's resolved one, or
     frame 0's. `samples` are a per-frame caption's texts on the frames
     `_caption_sample_frames` names (first, middle, last), so a caption
@@ -4758,11 +4790,13 @@ def _add_caption(fig, text, font=None, family=None, samples=()):
     # excluded from the "lowest thing drawn" measurement
     artist.set_visible(False)
     wrapped = _wrap_caption(artist, text)
-    n_lines = max(candidate.count('\n') + 1 for candidate in
-                  [wrapped] + [_wrap_caption(artist, str(sample))
-                               for sample in samples])
+    candidates = [wrapped] + [_wrap_caption(artist, str(sample))
+                              for sample in samples]
     line_in = 1.2 * props.get_size_in_points() / 72.0
-    strip_in = n_lines * line_in + 2 * _CAPTION_PAD_IN
+    text_in = max(max((candidate.count('\n') + 1) * line_in,
+                      _caption_text_height_in(artist, candidate))
+                  for candidate in candidates)
+    strip_in = text_in + 2 * _CAPTION_PAD_IN
     blank_in = _blank_bottom_in(fig)
     if blank_in < strip_in:
         _grow_figure_downward(fig, strip_in - blank_in)
@@ -5986,7 +6020,11 @@ def _apply_outer_labels(fig, panel_axes, nrows, ncols):
     so nothing downstream -- `tight_layout`, the 3-D cube fit
     (`_fit_panel_cubes`), a ``bbox_inches='tight'`` save -- reserves room
     for a label that is not drawn. Called once the panels are drawn and
-    BEFORE the grid is laid out. Tick labels are not touched."""
+    BEFORE the grid is laid out. Tick labels are not touched.
+
+    An emptied 3-D label is marked (``_hyp_emptied``) for
+    `_place_emptied_cube_labels`, which keeps it where matplotlib would
+    draw it once the grid is laid out."""
     if not panel_axes:
         return
     cubes = hasattr(panel_axes[0], 'get_proj')
@@ -6002,6 +6040,39 @@ def _apply_outer_labels(fig, panel_axes, nrows, ncols):
         for name, label in found.items():
             if name not in keep and label.get_text():
                 label.set_text('')
+                label._hyp_emptied = cubes
+
+
+def _place_emptied_cube_labels(fig, panel_axes):
+    """Put every 3-D axis label `_apply_outer_labels` emptied where
+    matplotlib would draw it in the grid's FINAL layout, so the
+    (zero-size) extent it reports is the place of the label the panel
+    shares, in every matplotlib version.
+
+    A 3-D axis label is positioned by matplotlib during a draw. Through
+    matplotlib 3.10 that was done for every label; from 3.11 on a label
+    with no text (or a hidden one) is skipped
+    (``Axis3D._update_all_positions``), so a label emptied after a draw
+    kept that draw's position -- once the cubes were refitted and the
+    figure resized, a point outside its own panel, and a label out of
+    place for anything that asks where a panel's labels are. The emptied
+    labels are therefore given a stand-in text for ONE measurement draw of
+    the laid-out figure (`_measurement_renderer`: nothing is shown or
+    saved) and emptied again: matplotlib itself places them, and
+    ``ax.get_xlabel()`` stays ``''``."""
+    emptied = [label for ax in panel_axes if hasattr(ax, 'get_proj')
+               for label in _axis_label_artists(ax).values()
+               if getattr(label, '_hyp_emptied', False)
+               and not label.get_text()]
+    if not emptied:
+        return
+    for label in emptied:
+        label.set_text('x')
+    try:
+        _measurement_renderer(fig)
+    finally:
+        for label in emptied:
+            label.set_text('')
 
 
 #: room (pixels) a plotly 3-D grid's left margin is given for the z titles
@@ -7110,22 +7181,100 @@ def _has_axis_labels(axis):
                for axis3d in axis._axis_map.values())
 
 
-def _axis_labels_collide(fig, cells):
-    """Whether any 3-D panel in `cells` draws two of its own axis labels
-    over each other (their drawn boxes, less two pixels of antialiasing a
-    side, overlap) at its current view and zoom."""
+def _colliding_axis_labels(fig, cells):
+    """The 3-D axes' ``Axis`` objects (x, y or z) in `cells` whose label
+    is laid out over another label of the SAME panel at the panel's
+    current view and zoom: the boxes matplotlib lays the two labels out
+    in, on a real draw (`_measurement_renderer`), less two pixels of
+    antialiasing a side, overlap. Empty when no panel's labels collide.
+
+    The boxes are matplotlib's own, so they are whatever the running
+    matplotlib makes them: through 3.10 a line of text is as tall as the
+    glyphs ``lp``, from 3.11 on as tall as the font's own ascent plus
+    descent (a third more in Noto Sans, hypertools' default face)."""
     renderer = _measurement_renderer(fig)
+    colliding = []
     for cell in cells:
-        boxes = [axis3d.label.get_window_extent(renderer)
+        found = [(axis3d, axis3d.label.get_window_extent(renderer))
                  for axis3d in cell['axes']._axis_map.values()
                  if axis3d.label.get_text() and axis3d.label.get_visible()]
-        for i, one in enumerate(boxes):
-            for other in boxes[i + 1:]:
+        for i, (one_axis, one) in enumerate(found):
+            for other_axis, other in found[i + 1:]:
                 if (min(one.x1, other.x1) - max(one.x0, other.x0) > 4.0
                         and min(one.y1, other.y1)
                         - max(one.y0, other.y0) > 4.0):
-                    return True
-    return False
+                    colliding.extend(
+                        axis3d for axis3d in (one_axis, other_axis)
+                        if axis3d not in colliding)
+    return colliding
+
+
+def _axis_labels_collide(fig, cells):
+    """Whether any 3-D panel in `cells` draws two of its own axis labels
+    over each other (`_colliding_axis_labels`)."""
+    return bool(_colliding_axis_labels(fig, cells))
+
+
+#: blank room (pixels) kept between an axis label that reaches into the
+#: gutter beside its panel and the middle of that gutter (the next panel's
+#: labels may reach the middle from the other side)
+_GUTTER_LABEL_PAD_PX = 2.0
+
+
+def _label_gutter_room(fig, cubes, limit):
+    """Per cell of `cubes`, ``{'left': reach, 'right': reach}``: how far
+    from the center of its square (0.5 is the square's edge) a 3-D
+    panel's axis labels may reach sideways when they are let into the
+    BLANK room beside the square -- up to the middle of the gutter
+    between it and the next panel's square, or up to anything else drawn
+    there (a colorbar, a legend) or the canvas' edge, less
+    `_OUTER_LABEL_PAD_IN`. Never less than `limit`, the reach allowed
+    inside the square itself, which is all a panel with a legend of its
+    own gets. Measured on a real draw (`_measurement_renderer`). Titles
+    sit above the squares and other rows below them, so there is no such
+    room up or down."""
+    renderer = _measurement_renderer(fig)
+    canvas_width = float(fig.bbox.width)
+    pad = _OUTER_LABEL_PAD_IN * fig.dpi
+    squares = [cell['axes'].bbox for cell in cubes]
+    panels = {id(cell['axes']) for cell in cubes}
+    others = []
+    for axis in fig.axes:
+        if axis.get_visible() and id(axis) not in panels:
+            others.append(axis.get_tightbbox(renderer))
+    others.extend(legend.get_window_extent(renderer)
+                  for legend in fig.legends)
+    rooms = []
+    for cell, square in zip(cubes, squares):
+        if cell['axes'].get_legend() is not None or square.width <= 0:
+            rooms.append({'left': limit, 'right': limit})
+            continue
+        center = 0.5 * (square.x0 + square.x1)
+        left, right = pad, canvas_width - pad
+        for other in squares:
+            if other is square or (other.y1 <= square.y0
+                                   or other.y0 >= square.y1):
+                continue
+            if other.x0 >= square.x1:
+                right = min(right, 0.5 * (square.x1 + other.x0)
+                            - _GUTTER_LABEL_PAD_PX)
+            elif other.x1 <= square.x0:
+                left = max(left, 0.5 * (square.x0 + other.x1)
+                           + _GUTTER_LABEL_PAD_PX)
+        for other in others:
+            if other is None:
+                continue
+            if other.x0 >= center:
+                right = min(right, other.x0 - pad)
+            elif other.x1 <= center:
+                left = max(left, other.x1 + pad)
+            else:
+                # something drawn across the panel itself: no extra room
+                left, right = square.x0, square.x1
+        rooms.append({
+            'left': max(limit, (center - left) / square.width),
+            'right': max(limit, (right - center) / square.width)})
+    return rooms
 
 
 def _fit_panel_cubes(fig, cells, resize=True, rotations=1, static=False,
@@ -7176,7 +7325,9 @@ def _fit_panel_cubes(fig, cells, resize=True, rotations=1, static=False,
     never refused -- the call always drew, before the labels were fitted
     at all: where the size cannot hold the labeled grid legibly (a cube
     would fall under that share, or a panel's own labels would be drawn
-    over each other, `_axis_labels_collide`) the cubes are kept at that
+    over each other, `_axis_labels_collide`, even with the blank room
+    beside the panels' squares given to them, `_label_gutter_room`) the
+    cubes are kept at that
     share at least, the labels fall where they fall, and ONE
     `UserWarning` names a size that works (found the same way) and the
     alternative of dropping the labels.
@@ -7198,12 +7349,15 @@ def _fit_panel_cubes(fig, cells, resize=True, rotations=1, static=False,
                 break
             cell['stub'].zoom_scale[0] *= target / cell['reach']
 
-    def _fit(least=0.0):
+    def _fit(least=0.0, gutters=False):
         """Fit every cube, then every labeled cube's labels, at the
         figure's current size; returns the smallest share of its
         unlabeled size a labeled cube is left with. No labeled cube is
         drawn smaller than the share `least` of its unlabeled size (its
-        labels then reach past the panel's box)."""
+        labels then reach past the panel's box). With `gutters` the
+        labels may reach sideways as far as each cell's ``'gutter'``
+        says (`_label_gutter_room`) instead of staying inside the
+        panel's square."""
         for cell in cubes:
             # every grid cube starts at the size a static panel's is drawn
             # at (matplotlib's default box zoom, times the animation's own
@@ -7221,8 +7375,12 @@ def _fit_panel_cubes(fig, cells, resize=True, rotations=1, static=False,
                     pending, _axis_label_reach(fig, pending, rotations)):
                 # (an open side holds nothing the labels could run into:
                 # `_open_label_sides`)
+                room = cell.get('gutter', {}) if gutters else {}
+                # (a reach into the gutter counts as the reach inside the
+                # square that uses the same share of the room there)
                 label_reach = max([0.0] + [
-                    reach for side, reach in sides.items()
+                    reach * limit / room[side] if side in room else reach
+                    for side, reach in sides.items()
                     if side not in cell.get('open', {})])
                 if label_reach - limit <= 0.004:
                     continue
@@ -7258,6 +7416,23 @@ def _fit_panel_cubes(fig, cells, resize=True, rotations=1, static=False,
         return (smallest < floor - (0.02 if size_checked else 0.004)
                 or (explicit_static and _axis_labels_collide(fig, labeled)))
 
+    if (explicit_static and labeled and smallest >= floor - 0.02
+            and _axis_labels_collide(fig, labeled)):
+        # the cubes are big enough at the caller's size, but a panel's own
+        # labels are laid out over each other. Labels fan out from their
+        # cube, so a slightly larger cube parts them -- and there is
+        # blank room for its labels beside every panel's square
+        # (`_label_gutter_room`). Fit the grid into that room before
+        # calling the size too small; where the labels still collide, the
+        # grid is put back as it was and the size is reported.
+        for cell, room in zip(labeled, _label_gutter_room(
+                fig, labeled, limit)):
+            cell['gutter'] = room
+        widened = _fit(gutters=True)
+        if _axis_labels_collide(fig, labeled):
+            smallest = _fit()
+        else:
+            smallest = widened
     size_checked = True
     if labeled and _illegible():
         size_checked = False
@@ -7407,6 +7582,7 @@ def _lay_out_panel_grid(fig, panel_axes, grid, strip, cells=None,
             # a still of the grid shows frame 0 (a 2-D panel was laid out
             # showing its tallest per-frame title; see `plot`)
             cell['stub'].draw(0)
+    _place_emptied_cube_labels(fig, panel_axes)
     caption_artist = None
     if caption is not None or dynamic_caption is not None:
         dynamic = dynamic_caption is not None
