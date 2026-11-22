@@ -3278,11 +3278,14 @@ def merge_panel_legends(panels, order=None):
     ONCE between them -- the plotly twin of
     `hypertools.plot.plot._merge_panel_legends`, under the same rule: two
     entries with the same name and the same look are one (the later
-    traces keep their name but leave the legend); a forecast/truth key
-    (``meta['hyp_legend_entry']``) that differs between panels only in
-    color becomes one key in the neutral `FORECAST_LEGEND_COLOR`; any
-    other name that looks different in two panels raises
-    `PanelFurnitureConflict`. Same-named traces share a ``legendgroup``,
+    traces keep their name but leave the legend); a forecast/truth entry
+    -- a data-free key (``meta['hyp_legend_entry']``) or a drawn overlay
+    trace that lists itself (``meta['hyp_forecast_role']``: a panel's one
+    `truth=` trace) -- that differs between panels only in color becomes
+    one key in the neutral `FORECAST_LEGEND_COLOR` (a drawn trace keeps
+    its own color and hands the entry to a data-free key,
+    `_neutral_legend_key`); any other name that looks different in two
+    panels raises `PanelFurnitureConflict`. Same-named traces share a ``legendgroup``,
     so clicking the one entry toggles them in every panel, and the
     forecast/truth keys are ranked after the data entries. The data
     entries are listed in `order` -- their names in the order the
@@ -3295,14 +3298,20 @@ def merge_panel_legends(panels, order=None):
             if not trace.showlegend:
                 continue
             name = str(trace.name)
-            overlay = bool((trace.meta or {}).get('hyp_legend_entry')) \
-                if isinstance(trace.meta, dict) else False
+            meta = trace.meta if isinstance(trace.meta, dict) else {}
+            overlay = bool(meta.get('hyp_legend_entry')
+                           or meta.get('hyp_forecast_role'))
             look = _legend_trace_look(trace)
             shape = _legend_trace_look(trace, color=False)
             if trace.legendgroup is None:
                 trace.legendgroup = f'hyp-shared-{name}'
-            if overlay and trace.legendrank is None:
-                trace.legendrank = 2000
+            if overlay and (trace.legendrank is None
+                            or trace.legendrank < 2000):
+                # after every data entry (ranked from 1000 below), in the
+                # order the panel's own legend lists its overlay keys (a
+                # truth key's 1001 follows the forecast keys' default)
+                trace.legendrank = 2000 + max(
+                    0, int(trace.legendrank or 1000) - 1000)
             same = kept.setdefault(name, [])
             match = [e for e in same if e['look'] == look]
             if match:
@@ -3313,18 +3322,28 @@ def merge_panel_legends(panels, order=None):
                        and e['shape'] == shape]
             if neutral:
                 first = neutral[0]['trace']
-                alpha = _color_alpha(first.line.color)
-                first.line.color = _to_plotly_color(FORECAST_LEGEND_COLOR,
-                                                    alpha)
-                if first.marker is not None and first.marker.color is not None:
-                    first.marker.color = first.line.color
+                first_meta = first.meta if isinstance(first.meta, dict) \
+                    else {}
+                if not first_meta.get('hyp_legend_entry'):
+                    # a DRAWN overlay trace listed itself (one panel's
+                    # truth): it keeps its color, and a data-free key
+                    # takes the entry over for every panel
+                    first = _neutral_legend_key(neutral[0]['panel'], first)
+                    neutral[0]['trace'] = first
+                else:
+                    alpha = _color_alpha(first.line.color)
+                    first.line.color = _to_plotly_color(
+                        FORECAST_LEGEND_COLOR, alpha)
+                    if first.marker is not None \
+                            and first.marker.color is not None:
+                        first.marker.color = first.line.color
                 trace.showlegend = False
                 trace.legendgroup = first.legendgroup
                 continue
             if same:
                 raise PanelFurnitureConflict(name)
             same.append({'look': look, 'shape': shape, 'overlay': overlay,
-                         'trace': trace})
+                         'trace': trace, 'panel': panel})
     data = [entry for same in kept.values() for entry in same
             if not entry['overlay']]
     names = [str(entry['trace'].name) for entry in data]
@@ -3335,6 +3354,44 @@ def merge_panel_legends(panels, order=None):
             # default rank, and the overlay keys sit at 2000)
             entry['trace'].legendrank = 1000 + order.index(name)
     return bool(kept)
+
+
+def _neutral_legend_key(panel, trace):
+    """Hand the legend entry of the drawn overlay `trace` (in the panel
+    figure `panel`) to a data-free key in the neutral
+    `FORECAST_LEGEND_COLOR`, and return that key: the same mode, line
+    style and marker, the trace's name, legend group and rank. The trace
+    itself stays as drawn and leaves the legend. For an entry that stands
+    for several panels' overlays of different colors (one `truth=` per
+    panel, each in its dataset's color), as the single-axes legend keys
+    them."""
+    import plotly.graph_objects as go
+    from .forecast import FORECAST_LEGEND_COLOR
+    gray = _to_plotly_color(FORECAST_LEGEND_COLOR,
+                            _color_alpha(trace.line.color))
+    line = dict(trace.line.to_plotly_json(), color=gray)
+    key = dict(mode=trace.mode or 'lines', name=trace.name,
+               showlegend=True, hoverinfo='skip', line=line,
+               legendgroup=trace.legendgroup, legendrank=trace.legendrank,
+               legend=trace.legend,
+               meta=dict(hyp_legend_entry=str(trace.name)))
+    marker = (trace.marker.to_plotly_json()
+              if getattr(trace, 'marker', None) is not None else {})
+    if 'markers' in (trace.mode or '') and marker:
+        size = marker.get('size')
+        if size is not None and np.ndim(size) > 0:
+            # (one size per vertex, where only the observations are
+            # marked: the key shows the marked size)
+            marker['size'] = float(np.max(np.asarray(size, dtype=float)))
+        key['marker'] = dict(marker, color=gray)
+    if isinstance(trace, go.Scatter3d):
+        panel.add_trace(go.Scatter3d(x=[None], y=[None], z=[None], **key))
+    else:
+        panel.add_trace(go.Scatter(x=[None], y=[None],
+                                   xaxis=trace.xaxis, yaxis=trace.yaxis,
+                                   **key))
+    trace.showlegend = False
+    return panel.data[-1]
 
 
 def _color_alpha(color):

@@ -537,6 +537,30 @@ def project_schedule_cost(timings, remaining_rows):
     return projected, per_row, setup, (short, long)
 
 
+def require_scalar_forecast_hue(labels):
+    """Raise the `forecast_hue=` error for a per-observation value: any
+    entry of `labels` that is itself a sequence. Shared by the single-axes
+    call and the `panels=` grid, which reads the labels before any panel
+    is drawn."""
+    if any(isinstance(v, (list, tuple, np.ndarray)) for v in labels):
+        raise ValueError(
+            "forecast_hue= takes one SCALAR value per dataset (a "
+            "forecast is a single trace, so there is no per-observation "
+            "hue to take); got a sequence as one of its values. Pass "
+            "hue= to color the observed data per observation.")
+
+
+def grid_cost_report(n_panels):
+    """The record a `panels=` grid's forecast schedules share so the grid
+    is warned about its forecast cost ONCE, with its total
+    (`ForecastSchedule`'s ``cost_report=``): how many `panels` and
+    `schedules` (one per panel and model; `plot()` sets it) there are,
+    how many are `done`, the seconds `spent` and `fits` counted so far,
+    and whether the grid was `warned`."""
+    return {'panels': int(n_panels), 'schedules': int(n_panels), 'done': 0,
+            'spent': 0.0, 'fits': 0, 'warned': False}
+
+
 class ForecastSchedule:
     """Every forecast an animation will ever draw, computed before drawing.
 
@@ -554,7 +578,8 @@ class ForecastSchedule:
     def __init__(self, histories, counts=None, model=None, t=None, rows=None,
                  min_history=DEFAULT_MIN_HISTORY, transform=None,
                  slow_warning_seconds=DEFAULT_SLOW_WARNING_SECONDS,
-                 forecast_function=None, heads=None, head_positions=None):
+                 forecast_function=None, heads=None, head_positions=None,
+                 cost_report=None):
         if (counts is None) == (rows is None):
             raise ValueError(
                 "pass exactly one of counts= (a revealed ROW COUNT per "
@@ -616,6 +641,14 @@ class ForecastSchedule:
         completed_fits = set()
 
         warned = slow_warning_seconds is None
+        # one of a `panels=` grid's schedules (`cost_report`, see
+        # `grid_cost_report`): the grid is warned about ONCE, with its
+        # total, by the first schedule that can project it
+        if cost_report is not None:
+            if cost_report['done'] >= cost_report['schedules']:
+                # (the grid is drawing its panels a second time)
+                cost_report.update(done=0, spent=0.0, fits=0)
+            warned = warned or cost_report['warned']
         # Seconds keyed by revealed-history LENGTH, for fits that really
         # ran. A mapping rather than a list of samples, because the slope
         # needs two DIFFERENT lengths -- see the sampling comment below.
@@ -677,7 +710,34 @@ class ForecastSchedule:
                     'spent': spent, 'remaining': projected, 'total': total,
                     'timed_fits': timed,
                 }
-                if total > slow_warning_seconds:
+                if cost_report is not None:
+                    # this schedule's cost stands for each one still to
+                    # come: the grid's panels are drawn one after another
+                    left = cost_report['schedules'] - cost_report['done']
+                    grid_total = cost_report['spent'] + total * left
+                    grid_fits = cost_report['fits'] + fit_count * left
+                    if grid_total > slow_warning_seconds:
+                        cost_report['warned'] = True
+                        warnings.warn(
+                            f"predict= over this grid's animation needs "
+                            f"about {grid_fits} forecast fits in all "
+                            f"({cost_report['panels']} panels; one fit per "
+                            f"distinct revealed history length in each), "
+                            f"projected at roughly {grid_total:.1f} s in "
+                            f"total before the first frame can be drawn. "
+                            f"That projection is extrapolated from fits "
+                            f"timed at two history lengths ({lengths[0]} "
+                            f"and {lengths[1]} rows) in one panel, taking "
+                            f"every panel still to come to cost what that "
+                            f"one does, so treat it as an order of "
+                            f"magnitude rather than a countdown. Every fit "
+                            f"is kept: sampling the reveal instead would "
+                            f"change what is plotted. To speed it up, "
+                            f"shorten the series or lower "
+                            f"frame_rate/duration; to silence this notice, "
+                            f"pass slow_warning_seconds=None.",
+                            stacklevel=3)
+                elif total > slow_warning_seconds:
                     warnings.warn(
                         f"predict= over this animation needs {fit_count} "
                         f"forecast fits (one per distinct revealed history "
@@ -695,13 +755,17 @@ class ForecastSchedule:
                         f"slow_warning_seconds=None.",
                         stacklevel=3)
                 warned = True
+        if cost_report is not None:
+            cost_report['done'] += 1
+            cost_report['spent'] += spent
+            cost_report['fits'] += fit_count
 
     # -- construction ------------------------------------------------------
     @classmethod
     def for_parallel(cls, histories, grid_lengths, model, t, n_frames,
                      min_history=DEFAULT_MIN_HISTORY,
                      slow_warning_seconds=DEFAULT_SLOW_WARNING_SECONDS,
-                     forecast_function=None, grids=None):
+                     forecast_function=None, grids=None, cost_report=None):
         """Schedule for a parallel/`'window'` animation.
 
         Every dataset advances together, so each one's revealed row count
@@ -728,13 +792,14 @@ class ForecastSchedule:
                    min_history=min_history,
                    slow_warning_seconds=slow_warning_seconds,
                    forecast_function=forecast_function,
-                   heads=heads or None, head_positions=positions or None)
+                   heads=heads or None, head_positions=positions or None,
+                   cost_report=cost_report)
 
     @classmethod
     def for_serial(cls, histories, grid_lengths, model, t, n_frames,
                    min_history=DEFAULT_MIN_HISTORY,
                    slow_warning_seconds=DEFAULT_SLOW_WARNING_SECONDS,
-                   forecast_function=None, grids=None):
+                   forecast_function=None, grids=None, cost_report=None):
         """Serial reveals one dataset at a time, so its schedule comes from
         the backend's own `serial_reveal_counts` (animation-core Task 7),
         mapped from frame-grid rows onto raw rows dataset by dataset. The
@@ -767,13 +832,14 @@ class ForecastSchedule:
                    min_history=min_history,
                    slow_warning_seconds=slow_warning_seconds,
                    forecast_function=forecast_function,
-                   heads=heads or None, head_positions=positions or None)
+                   heads=heads or None, head_positions=positions or None,
+                   cost_report=cost_report)
 
     @classmethod
     def for_regrouped(cls, histories, reveal, model, t, n_frames,
                       min_history=DEFAULT_MIN_HISTORY,
                       slow_warning_seconds=DEFAULT_SLOW_WARNING_SECONDS,
-                      forecast_function=None, grids=None):
+                      forecast_function=None, grids=None, cost_report=None):
         """Schedule for an animation whose data `hue=`/`cluster=` regrouped.
 
         The revealed rows come from a `DatasetRevealSchedule` rather than from
@@ -808,7 +874,8 @@ class ForecastSchedule:
                    min_history=min_history,
                    slow_warning_seconds=slow_warning_seconds,
                    forecast_function=forecast_function,
-                   heads=heads or None, head_positions=positions or None)
+                   heads=heads or None, head_positions=positions or None,
+                   cost_report=cost_report)
 
     # -- lookups -----------------------------------------------------------
     def revealed_rows(self, dataset, frame):
@@ -1474,12 +1541,7 @@ def resolve_forecast_overrides(n_datasets, forecasts=None, *, hue=None,
         # list of ARRAYS, and grouping by `==` on those raises numpy's
         # "truth value of an array is ambiguous" from deep inside the color
         # code. Say what was actually wrong instead.
-        if any(isinstance(v, (list, tuple, np.ndarray)) for v in labels):
-            raise ValueError(
-                "forecast_hue= takes one SCALAR value per dataset (a "
-                "forecast is a single trace, so there is no per-observation "
-                "hue to take); got a sequence as one of its values. Pass "
-                "hue= to color the observed data per observation.")
+        require_scalar_forecast_hue(labels)
         if len(labels) != n_datasets:
             raise ValueError(
                 f"forecast_hue= must have exactly one value per FORECAST (a "

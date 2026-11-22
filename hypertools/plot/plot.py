@@ -3768,7 +3768,9 @@ def _panel_forecast_labels(hue, n_datasets, n_models):
     n_datasets + d`` is model ``k``'s forecast of dataset ``d``): a
     per-DATASET list is broadcast over every model's forecast of that
     dataset, a model-major list is taken as is. None for any other shape
-    (`plot()` reports it) and for a bare string (`plot()` rejects it)."""
+    (`plot()` reports it) and for a bare string (`plot()` rejects it); a
+    list of per-observation sequences raises `plot()`'s own ValueError
+    (`forecast.require_scalar_forecast_hue`)."""
     if hue is None or isinstance(hue, (str, bytes)):
         return None
     if is_series_like(hue):
@@ -3778,6 +3780,10 @@ def _panel_forecast_labels(hue, n_datasets, n_models):
     if not isinstance(hue, (list, tuple, np.ndarray)):
         return None
     labels = list(hue)
+    # a per-observation value is refused as the single-axes call refuses
+    # it, not by a TypeError from hashing an array further on
+    from .forecast import require_scalar_forecast_hue
+    require_scalar_forecast_hue(labels)
     if len(labels) == n_datasets:
         return [labels[d] for _ in range(n_models) for d in range(n_datasets)]
     if len(labels) == n_datasets * n_models:
@@ -4826,19 +4832,21 @@ def _panel_cluster_model(kw):
 
 def _reemit_panel_warnings(probe_caught, draw_caught):
     """Re-issue the warnings a panel grid's calls raised, each from its
-    original location: every draw-time warning (the panel calls warn from
-    the user's own kwargs, one per panel, as they always have), preceded
-    by the fit-time ones only the probes saw -- each of those ONCE, and
-    not at all when a panel call repeated it (round 7: the panels are
-    drawn through ``transform=``, so a reducer's own warning would
-    otherwise be lost with the probe's figure)."""
+    original location and each ONCE per grid call: the draw-time warnings
+    (the panel calls warn from the user's own kwargs; a warning every
+    panel repeats word for word is about the call, not about a panel),
+    preceded by the fit-time ones only the probes saw -- not at all when
+    a panel call repeated one (round 7: the panels are drawn through
+    ``transform=``, so a reducer's own warning would otherwise be lost
+    with the probe's figure). Warnings that differ in any word (a
+    dataset's name, a count) are all kept."""
     seen = {(w.category, str(w.message)) for w in draw_caught}
     to_emit = [w for w in probe_caught
                if (w.category, str(w.message)) not in seen]
     emitted = set()
     for w in list(to_emit) + list(draw_caught):
         key = (w.category, str(w.message), w.filename, w.lineno)
-        if w in to_emit and key in emitted:
+        if key in emitted:
             continue
         emitted.add(key)
         registry = None
@@ -6221,6 +6229,13 @@ def _plot_panels_impl(x, panels, call_kwargs, _name='panels'):
     #: per panel, what `plot()` reads as ``_panel_shared``: the panel's
     #: share of the grid's color resolution (`_resolve_grid_colors`)
     panel_shared = [{} for _ in range(n_panels)]
+    if shared.get('predict') is not None:
+        # the panels' forecast schedules report to ONE record, so the
+        # forecast-cost warning is issued once, with the grid's total
+        from .forecast import grid_cost_report
+        _forecast_cost = grid_cost_report(n_panels)
+        for _shared in panel_shared:
+            _shared['forecast_cost'] = _forecast_cost
     #: whether a panel's categories turned out not to be the grid scale's
     #: (the grid then cannot claim one shared mapping)
     scale_mismatch = False
@@ -15140,6 +15155,7 @@ def plot(
                 return ForecastSchedule.for_regrouped(
                     analyze_histories, _reveal, model=model_spec, t=t,
                     n_frames=_n_frames, slow_warning_seconds=_slow_secs,
+                    cost_report=_cost_report,
                     # one array per RUN here (hue=/cluster= regrouped the
                     # data), which is exactly what the reveal indexes
                     grids=xform,
@@ -15147,6 +15163,7 @@ def plot(
             return _builder(
                 analyze_histories, _grid_lengths, model=model_spec, t=t,
                 n_frames=_n_frames, slow_warning_seconds=_slow_secs,
+                cost_report=_cost_report,
                 # the animation grid ITSELF, so each frame's forecast starts
                 # at the vertex that frame actually draws last rather than at
                 # the last raw observation behind it (maintainer report,
@@ -15155,6 +15172,10 @@ def plot(
                 grids=xform,
                 **_time_kwargs)
 
+        _cost_report = (_panel_shared or {}).get('forecast_cost')
+        if _cost_report is not None and _predict_names is not None:
+            _cost_report['schedules'] = (
+                _cost_report['panels'] * len(_predict_names))
         if _predict_names is None:
             forecast_schedule = _build_schedule(predict)
         else:
