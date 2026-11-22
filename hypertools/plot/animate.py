@@ -50,10 +50,28 @@ _FFMPEG_EXTENSIONS = ('mp4', 'mov', 'avi', 'm4v', 'mkv')
 VIDEO_CRF = 23
 
 
-def _ffmpeg_quality_kwargs():
+# containers of the ISO/QuickTime family, whose index (the `moov` atom) ffmpeg
+# writes at the END of the file unless told otherwise
+_FASTSTART_EXTENSIONS = ('mp4', 'm4v', 'mov')
+
+
+def _ffmpeg_quality_kwargs(save_path=None):
     """Writer kwargs for a quality-targeted (CRF) h264 encode, shared by
-    ``_save_animation`` and the streaming recorder so both agree."""
-    return dict(codec='h264', extra_args=['-crf', str(VIDEO_CRF)])
+    ``_save_animation`` and the streaming recorder so both agree.
+
+    For ``.mp4``/``.m4v``/``.mov`` targets the file is also written
+    "fast start" (``-movflags +faststart``, GH #295): the index goes to the
+    front, so a browser starts playing the clip while it is still
+    downloading instead of fetching the whole file first. The other ffmpeg
+    containers (``.avi``, ``.mkv``) have no such index and are left alone.
+    """
+    extra_args = ['-crf', str(VIDEO_CRF)]
+    if save_path is not None:
+        import os
+        ext = os.path.splitext(os.fspath(save_path))[1].lower().lstrip('.')
+        if ext in _FASTSTART_EXTENSIONS:
+            extra_args += ['-movflags', '+faststart']
+    return dict(codec='h264', extra_args=extra_args)
 # every extension _save_animation understands, for error messages
 _SUPPORTED_ANIMATION_EXTENSIONS = (
     '.gif, .png/.apng (animated PNG), .svg (animated vector graphics), '
@@ -164,7 +182,8 @@ def _save_animation(line_ani, save_path, frame_rate, dpi=None):
                 os.remove(tmp_path)
     elif ext in _FFMPEG_EXTENSIONS:
         Writer = animation.writers["ffmpeg"]
-        writer = Writer(fps=frame_rate, **_ffmpeg_quality_kwargs())
+        writer = Writer(fps=frame_rate,
+                        **_ffmpeg_quality_kwargs(save_path))
         line_ani.save(save_path, writer=writer, dpi=dpi)
     else:
         what = f"extension {'.' + ext!r}" if ext else "missing extension"

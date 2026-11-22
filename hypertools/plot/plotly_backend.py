@@ -4250,10 +4250,16 @@ def _export_animation_file(fig, save_path, frame_rate, duration, size):
         with tempfile.TemporaryDirectory() as tmpdir:
             for i, img in enumerate(images):
                 img.save(os.path.join(tmpdir, f'frame_{i:04d}.png'))
+            # fast start for mp4/m4v/mov, as the matplotlib writer does
+            # (`animate._ffmpeg_quality_kwargs`, GH #295)
+            from .animate import _FASTSTART_EXTENSIONS
+            ext = os.path.splitext(save_path)[1].lower().lstrip('.')
+            faststart = (['-movflags', '+faststart']
+                         if ext in _FASTSTART_EXTENSIONS else [])
             subprocess.run(
                 ['ffmpeg', '-y', '-framerate', str(fps), '-i',
                  os.path.join(tmpdir, 'frame_%04d.png'),
-                 '-pix_fmt', 'yuv420p', save_path],
+                 '-pix_fmt', 'yuv420p', *faststart, save_path],
                 check=True, capture_output=True)
 
 

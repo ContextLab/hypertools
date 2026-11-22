@@ -68,6 +68,67 @@ def test_matplotlib_mp4_export(tmp_path):
     assert os.path.getsize(out) > 1000
 
 
+def _top_level_atoms(path):
+    """The top-level atom (box) names of an ISO/QuickTime file, in order."""
+    import struct
+    names = []
+    with open(path, 'rb') as f:
+        while True:
+            head = f.read(8)
+            if len(head) < 8:
+                break
+            size, name = struct.unpack('>I4s', head)
+            if size == 1:                      # 64-bit size follows
+                size = struct.unpack('>Q', f.read(8))[0]
+                f.seek(size - 16, 1)
+            elif size == 0:                    # atom runs to end of file
+                names.append(name.decode('latin-1'))
+                break
+            else:
+                f.seek(size - 8, 1)
+            names.append(name.decode('latin-1'))
+    return names
+
+
+@pytest.mark.skipif(not HAS_FFMPEG, reason='ffmpeg not installed')
+@pytest.mark.parametrize('ext', ['mp4', 'm4v', 'mov'])
+def test_saved_video_is_fast_start(tmp_path, ext):
+    """GH #295: the index (`moov`) is written BEFORE the media data
+    (`mdat`), so a browser can start playing while the file downloads.
+    ffmpeg's default puts it last."""
+    out = str(tmp_path / f'anim.{ext}')
+    hyp.plot(walk, animate=True, duration=2, frame_rate=10, size=(4, 4),
+             save_path=out, show=False)
+    plt.close('all')
+    atoms = _top_level_atoms(out)
+    assert 'moov' in atoms and 'mdat' in atoms, atoms
+    assert atoms.index('moov') < atoms.index('mdat'), atoms
+
+
+@pytest.mark.skipif(not HAS_FFMPEG, reason='ffmpeg not installed')
+def test_plotly_saved_mp4_is_fast_start(tmp_path):
+    out = str(tmp_path / 'anim.mp4')
+    hyp.plot(walk, animate=True, duration=1, frame_rate=5,
+             backend='plotly', save_path=out, show=False)
+    atoms = _top_level_atoms(out)
+    assert atoms.index('moov') < atoms.index('mdat'), atoms
+
+
+@pytest.mark.skipif(not HAS_FFMPEG, reason='ffmpeg not installed')
+def test_mkv_export_still_works_without_fast_start(tmp_path):
+    """`.mkv`/`.avi` have no `moov` index; the flag is not passed for them
+    (ffmpeg would warn about an unused option)."""
+    from hypertools.plot.animate import _ffmpeg_quality_kwargs
+    assert '+faststart' not in _ffmpeg_quality_kwargs('a.mkv')['extra_args']
+    assert '+faststart' not in _ffmpeg_quality_kwargs('a.avi')['extra_args']
+    assert '+faststart' in _ffmpeg_quality_kwargs('a.MP4')['extra_args']
+    out = str(tmp_path / 'anim.mkv')
+    hyp.plot(walk, animate=True, duration=1, frame_rate=5, size=(4, 4),
+             save_path=out, show=False)
+    plt.close('all')
+    assert os.path.getsize(out) > 1000
+
+
 @pytest.mark.skipif(not HAS_FFMPEG, reason='ffmpeg not installed')
 def test_mp4_export_is_quality_targeted_not_fixed_bitrate(tmp_path):
     """Until 1.1 every video was written at ``bitrate=1800`` kbit/s, so a

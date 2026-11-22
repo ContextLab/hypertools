@@ -482,8 +482,8 @@ def plot_stream(stream, fmt='-', stream_init=10000, stream_chunk=100,
             writer.setup(fig, target, dpi=fig.dpi)
         else:
             from ..plot.animate import _ffmpeg_quality_kwargs
-            writer = animation.writers['ffmpeg'](fps=frame_rate,
-                                                 **_ffmpeg_quality_kwargs())
+            writer = animation.writers['ffmpeg'](
+                fps=frame_rate, **_ffmpeg_quality_kwargs(save_path))
             writer.setup(fig, save_path, dpi=fig.dpi)
 
     def _redraw():
