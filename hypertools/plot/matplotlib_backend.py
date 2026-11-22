@@ -711,6 +711,37 @@ def _anim_box_zoom(zoom):
 # for the backend divergences a shared callee closed.
 
 
+class PanelAnimationStub:
+    """One panel's share of an animated `panels=` grid (GH #295).
+
+    An ordinary animated plot hands its frame function to a
+    `FuncAnimation`. A panel of an animated grid must not: the grid has ONE
+    animation, whose frame function calls every panel's. So a panel's
+    `_draw` returns this instead -- the frame function, its arguments, the
+    frame count and the frame interval, under the names `FuncAnimation`
+    itself uses (`_func`, `_args`, `_save_count`, `_interval`), so the code
+    in `plot()` that wraps `line_ani._func` (per-point colors, frame hooks)
+    works on either unchanged.
+
+    `zoom_scale` is the panel's handle on its own 3-D camera zoom: the grid
+    lowers ``zoom_scale[0]`` until the panel's rotating cube fits its cell
+    (`plot._fit_rotating_cubes`).
+    """
+
+    def __init__(self, func, args, n_frames, interval, zoom_scale=None):
+        self._func = func
+        self._args = tuple(args)
+        self._save_count = int(n_frames)
+        self._interval = interval
+        #: one-element list holding the factor the panel's frame function
+        #: multiplies its 3-D box zoom by (read on every frame)
+        self.zoom_scale = [1.0] if zoom_scale is None else zoom_scale
+
+    def draw(self, frame):
+        """Draw frame `frame` of this panel."""
+        return self._func(frame, *self._args)
+
+
 def _make_save_dpi_safe(line_ani):
     """Guard every future ``line_ani.save(...)`` call against a real
     matplotlib/canvas-manager interaction that corrupts the rendered pixel
@@ -868,6 +899,7 @@ def _draw(
     ylim=None,
     x_date=False,
     legend_order=None,
+    panel_cell=False,
 ):
     """
     Draws the plot
@@ -943,6 +975,17 @@ def _draw(
     # grid they turned on -- is theirs to keep; see the axis_scale='data'
     # branch below)
     _caller_ax = ax is not None
+    # `panel_cell=True` (GH #295): this call draws ONE PANEL OF AN ANIMATED
+    # `panels=` GRID into the caller's axes. The animated builders below
+    # then draw on that axes instead of creating a figure, and hand back a
+    # `PanelAnimationStub` (the frame function and its arguments) instead of
+    # a `FuncAnimation`: the grid owns the one animation that drives every
+    # panel on a shared clock.
+    _cell_ax = ax if (panel_cell and ax is not None) else None
+    # ...and a factor on the animated 3-D box zoom, which the grid lowers
+    # (through the stub) until the rotating cube stays inside its cell; it
+    # is 1.0, i.e. no change, for every ordinary animated plot.
+    _cell_zoom_scale = [1.0]
 
     # chemtrails/precog/bullettime (GH #127): normalize to one bool per
     # dataset now, at the top of `_draw`, BEFORE any nested closure below is
@@ -1238,6 +1281,15 @@ def _draw(
                 (raw[:, 0], raw[:, 1], raw[:, 2]), i)
         return fig, ax, data
 
+    def _own_labels():
+        """The ``(annotation, x, y[, z])`` entries `annotate_plot` recorded
+        for THIS call's axes (falling back to the module global, which holds
+        the most recently annotated plot's)."""
+        own = getattr(ax, '_hyp_labels_and_points', None)
+        if own is not None:
+            return own
+        return globals().get('labels_and_points') or []
+
     def annotate_plot(data, labels, lengths=None):
         """Create labels in 3d chart
         Args:
@@ -1253,6 +1305,11 @@ def _draw(
 
         global labels_and_points
         labels_and_points = []
+        # ...and on the axes itself: the module global holds only the LAST
+        # annotated plot's labels, so every earlier cell of a panel grid
+        # lost its own (an animated grid then updated the last panel's
+        # labels only; GH #295). `_own_labels` reads this.
+        ax._hyp_labels_and_points = labels_and_points
 
         if lengths is not None:
             within = [j for L in lengths for j in range(int(L))]
@@ -1356,7 +1413,7 @@ def _draw(
                 renderer = fig.canvas.get_renderer()
             except Exception:
                 renderer = None
-        for entry in labels_and_points:
+        for entry in _own_labels():
             if is_3d:
                 label, x, y, z = entry
                 x2, y2, _ = proj3d.proj_transform(x, y, z, proj)
@@ -1395,7 +1452,7 @@ def _draw(
         # `labels_and_points` is a module global set only when annotate_plot ran
         # (i.e. this plot has labels); it may also still hold a PREVIOUS plot's
         # labels, so guard for existence and restrict to THIS axes' labels.
-        laps = [e for e in (globals().get('labels_and_points') or [])
+        laps = [e for e in _own_labels()
                 if getattr(e[0], 'axes', None) is ax]
         if not laps:
             return
@@ -1443,7 +1500,7 @@ def _draw(
             None
         """
 
-        for label in labels_and_points:
+        for label in _own_labels():
             label[0]._visible = False
 
     def add_labels(x, labels, explore=False):
@@ -1771,7 +1828,8 @@ def _draw(
         # Axes3D.dist was removed in matplotlib >= 3.8, silently disabling
         # zoom; set_box_aspect(zoom=...) is the supported equivalent. See
         # _anim_box_zoom for the (slightly zoomed-out) animation mapping.
-        ax.set_box_aspect(None, zoom=_anim_box_zoom(zoom))
+        ax.set_box_aspect(
+            None, zoom=_anim_box_zoom(zoom) * _cell_zoom_scale[0])
 
         # zip_longest: marker-only animations (or datasets with no trail
         # flag set at all -- GH #127) have no trail artist (trail is None
@@ -1899,7 +1957,8 @@ def _draw(
         # Axes3D.dist was removed in matplotlib >= 3.8, silently disabling
         # zoom; set_box_aspect(zoom=...) is the supported equivalent. See
         # _anim_box_zoom for the (slightly zoomed-out) animation mapping.
-        ax.set_box_aspect(None, zoom=_anim_box_zoom(zoom))
+        ax.set_box_aspect(
+            None, zoom=_anim_box_zoom(zoom) * _cell_zoom_scale[0])
 
         for i, (line, data) in enumerate(zip(lines, data_lines)):
             # antialias: 'spin' draws the FULL trajectory every frame
@@ -1967,7 +2026,8 @@ def _draw(
         total_frames = max(1, int(round(frame_rate * duration)))
         azim_now = azim + rotations * 360.0 * num / total_frames
         ax.view_init(elev=elev, azim=azim_now)
-        ax.set_box_aspect(None, zoom=_anim_box_zoom(zoom))
+        ax.set_box_aspect(
+            None, zoom=_anim_box_zoom(zoom) * _cell_zoom_scale[0])
 
         lengths = [d.shape[0] for d in data_lines]
         total_points = sum(lengths)
@@ -2078,7 +2138,8 @@ def _draw(
 
         azim_now = azimuths[num]
         ax.view_init(elev=elev, azim=azim_now)
-        ax.set_box_aspect(None, zoom=_anim_box_zoom(zoom))
+        ax.set_box_aspect(
+            None, zoom=_anim_box_zoom(zoom) * _cell_zoom_scale[0])
 
         seg_idx, step, n_steps = _morph.frame_to_segment(
             morph_state["frame_counts"], num)
@@ -2173,6 +2234,20 @@ def _draw(
                 segment_kind='hold' if seg_idx % 2 == 0 else 'transition')
         return (artist,)
 
+    def _new_animation(fig, func, n_frames, fargs):
+        """The animation object for frame function `func`: the
+        `FuncAnimation` an ordinary animated plot returns, or -- for one
+        cell of an animated panel grid (`panel_cell=True`) -- a
+        `PanelAnimationStub` carrying the same function, arguments, frame
+        count and interval for the grid's single animation to drive."""
+        if _cell_ax is not None:
+            return PanelAnimationStub(func, fargs, n_frames,
+                                      1000 / frame_rate,
+                                      zoom_scale=_cell_zoom_scale)
+        return HyperFuncAnimation(
+            fig, func, n_frames, fargs=fargs,
+            interval=1000 / frame_rate, blit=False, repeat=False)
+
     def dispatch_animate(x, ani_params):
         """Dispatch to `animate_plot3D` or `animate_plot2D` based on `x[0]`'s column count.
 
@@ -2255,12 +2330,18 @@ def _draw(
         """
 
         # initialize plot
-        fig = plt.figure()
-        ax = fig.add_subplot(111, projection="3d")
-        # give the (axis-off) 3D axes the full canvas: with the default
-        # subplot margins, the zoomed cube overflows the axes viewport at
-        # some rotation angles, clipping cube corners and data
-        ax.set_position([0.0, 0.0, 1.0, 1.0])
+        if _cell_ax is not None:
+            # one cell of an animated panel grid: the grid made the figure
+            # and lays its cells out itself
+            ax = _cell_ax
+            fig = ax.figure
+        else:
+            fig = plt.figure()
+            ax = fig.add_subplot(111, projection="3d")
+            # give the (axis-off) 3D axes the full canvas: with the default
+            # subplot margins, the zoomed cube overflows the axes viewport
+            # at some rotation angles, clipping cube corners and data
+            ax.set_position([0.0, 0.0, 1.0, 1.0])
 
         # create lines. Trail artists are created whenever ANY dataset draws
         # lines (previously is_line(fmt) required ALL datasets to be lines,
@@ -2656,7 +2737,7 @@ def _draw(
             # LATER dataset was silently truncated (F04-003), marker-only
             # animations ignored duration= entirely (F04-005/F05-010), and a
             # 1-point FIRST dataset produced a 1-frame "animation" (F05-012).
-            line_ani = HyperFuncAnimation(
+            line_ani = _new_animation(
                 fig,
                 update_lines_parallel,
                 max(1, int(round(frame_rate * duration))),
@@ -2673,30 +2754,21 @@ def _draw(
                     bullettime,
                     elev,
                 ),
-                interval=1000 / frame_rate,
-                blit=False,
-                repeat=False,
             )
         elif style == "serial":
-            line_ani = HyperFuncAnimation(
+            line_ani = _new_animation(
                 fig,
                 update_lines_serial,
                 max(1, int(round(frame_rate * duration))),
                 fargs=(x, lines, trail, cube_scale_anim, window_frames,
                        rotations, zoom, chemtrails, precog, bullettime, elev),
-                interval=1000 / frame_rate,
-                blit=False,
-                repeat=False,
             )
         elif style == "spin":
-            line_ani = HyperFuncAnimation(
+            line_ani = _new_animation(
                 fig,
                 update_lines_spin,
                 max(1, int(round(frame_rate * duration))),
                 fargs=(x, lines, cube_scale_anim, rotations, zoom, elev),
-                interval=1000 / frame_rate,
-                blit=False,
-                repeat=False,
             )
         elif style == "morph":
             n_morph_datasets = len(morph_state["indices"])
@@ -2704,14 +2776,11 @@ def _draw(
             frame_counts, _, azimuths = _morph.morph_schedule(
                 n_morph_datasets, total_frames, rotations, azim)
             morph_state["frame_counts"] = frame_counts
-            line_ani = HyperFuncAnimation(
+            line_ani = _new_animation(
                 fig,
                 update_morph,
                 sum(frame_counts),
                 fargs=(morph_state, cube_scale_anim, azimuths, zoom, elev),
-                interval=1000 / frame_rate,
-                blit=False,
-                repeat=False,
             )
             # `HyperAnimation.n_segments` reads this. Tagged HERE, beside the
             # `sum(frame_counts)` that becomes `_save_count`, so the segment
@@ -2969,8 +3038,13 @@ def _draw(
             )
 
         # initialize plot
-        fig = plt.figure()
-        ax = fig.add_subplot(111)
+        if _cell_ax is not None:
+            # one cell of an animated panel grid (see animate_plot3D)
+            ax = _cell_ax
+            fig = ax.figure
+        else:
+            fig = plt.figure()
+            ax = fig.add_subplot(111)
 
         def _wants_trail(idx):
             # 'serial' composes with the trail flags (see animate_plot3D's
@@ -3126,26 +3200,20 @@ def _draw(
         if style in ["parallel", True, "window"]:
             # frames == round(frame_rate * duration) -- see the identical
             # F04-003/F04-005/F05-010/F05-012 note in `animate_plot3D`.
-            line_ani = HyperFuncAnimation(
+            line_ani = _new_animation(
                 fig,
                 update_lines_parallel_2d,
                 max(1, int(round(frame_rate * duration))),
                 fargs=(x, lines, trail, window_frames, chemtrails, precog,
                       bullettime),
-                interval=1000 / frame_rate,
-                blit=False,
-                repeat=False,
             )
         elif style == "serial":
-            line_ani = HyperFuncAnimation(
+            line_ani = _new_animation(
                 fig,
                 update_lines_serial_2d,
                 max(1, int(round(frame_rate * duration))),
                 fargs=(x, lines, trail, window_frames, chemtrails, precog,
                       bullettime),
-                interval=1000 / frame_rate,
-                blit=False,
-                repeat=False,
             )
         elif style == "morph":
             # 2-D morphs always use even segment timing regardless of
@@ -3159,14 +3227,11 @@ def _draw(
             frame_counts, _, _ = _morph.morph_schedule(
                 n_morph_datasets, total_frames, 1, 0)
             morph_state["frame_counts"] = frame_counts
-            line_ani = HyperFuncAnimation(
+            line_ani = _new_animation(
                 fig,
                 update_morph_2d,
                 sum(frame_counts),
                 fargs=(morph_state,),
-                interval=1000 / frame_rate,
-                blit=False,
-                repeat=False,
             )
             # the 2-D half of the `n_segments` tag -- see the 3-D branch above
             line_ani._hyp_morph_segments = len(frame_counts)
@@ -3450,7 +3515,7 @@ def _draw(
     if size is not None:
         fig.set_size_inches(size)
 
-    if line_ani is not None:
+    if line_ani is not None and not isinstance(line_ani, PanelAnimationStub):
         _make_save_dpi_safe(line_ani)
 
     return fig, ax, data, line_ani

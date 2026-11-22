@@ -52,9 +52,11 @@ class FrameContext:
         ``sum(segment_frame_counts(...))``, which may differ by rounding.
     figure : matplotlib.figure.Figure or plotly.graph_objects.Figure
         The figure being animated. BACKEND-NATIVE.
-    axes : matplotlib.axes.Axes or None
+    axes : matplotlib.axes.Axes, tuple of Axes, or None
         The axes the trajectories are drawn on -- an ``Axes3D`` for 3-D
         plots, a plain ``Axes`` for 2-D ones (which have no ``zaxis``).
+        For an animated ``panels=`` grid, a tuple of every panel's axes in
+        panel order (see `panels`).
         BACKEND-NATIVE: ``None`` on plotly, which has no axes object (its
         equivalent state lives on the figure's ``layout``).
     artists : tuple
@@ -221,6 +223,18 @@ class FrameContext:
         held) and ``'transition'`` for odd (one cloud is easing into the
         next) -- the parity rule `morph.morph_positions` implements.
         ``None`` for non-morph animations.
+    panels : tuple of FrameContext
+        Empty for a single-axes animation. For an animated ``panels=`` grid
+        (matplotlib), where a callback is called ONCE per frame for the
+        whole figure, this holds one `FrameContext` per panel, in panel
+        order -- each exactly the context that panel's single-axes
+        animation would deliver (its own ``axes``, ``artists``,
+        ``datasets``, ``revealed_counts``, ``window_bounds``...). On the
+        grid's own context ``axes`` is then a TUPLE of every panel's axes,
+        ``artists``, ``datasets``, ``revealed_counts`` and
+        ``window_bounds`` are the panels' values concatenated in panel
+        order, and ``current_index``/``current_fraction`` are ``None``
+        (read them per panel).
 
     Notes
     -----
@@ -262,6 +276,7 @@ class FrameContext:
     segment_index: Optional[int] = None
     segment_kind: Optional[str] = None
     progress: Optional[float] = None
+    panels: Tuple[Any, ...] = ()
 
     def __post_init__(self):
         """Canonicalize the container types and derive `progress`.
@@ -279,6 +294,7 @@ class FrameContext:
         """
         object.__setattr__(self, 'artists', tuple(self.artists))
         object.__setattr__(self, 'datasets', tuple(self.datasets))
+        object.__setattr__(self, 'panels', tuple(self.panels))
         if self.revealed_counts is not None:
             object.__setattr__(self, 'revealed_counts',
                                tuple(self.revealed_counts))

@@ -2816,8 +2816,12 @@ def _series_expand_list(value, owner, n_input, key=None):
     return value
 
 
-def _validate_dynamic_title(title, animate, row_indices):
+def _validate_dynamic_title(title, animate, row_indices, name='title'):
     """Split `title=` into its static and DYNAMIC (per-frame) halves.
+
+    `name` is the keyword being validated, for the error messages:
+    ``caption=`` (GH #295) takes exactly the forms `title=` does and is
+    split by this same function.
 
     Returns ``(static_title, dynamic)`` where `dynamic` is ``None`` for the
     ordinary forms and otherwise a callable ``ctx -> str`` (GH #285).
@@ -2842,13 +2846,13 @@ def _validate_dynamic_title(title, animate, row_indices):
         # docstring promises BEFORE the pipeline runs, not a title drawn
         # as its own literal braces.
         raise ValueError(
-            f"title={title!r} is a per-frame format pattern (it contains "
+            f"{name}={title!r} is a per-frame format pattern (it contains "
             f"'{_TITLE_INDEX_FIELD}'), but the data passed to plot() has no "
             "row index to read: pass a pandas DataFrame or Series with a "
             "DatetimeIndex (or any other non-default index), pass a "
-            "callable title (ctx -> str) instead, or drop the braces for a "
-            "fixed title.")
-    return None, _make_title_pattern_resolver(title, row_indices)
+            f"callable {name} (ctx -> str) instead, or drop the braces for "
+            f"a fixed {name}.")
+    return None, _make_title_pattern_resolver(title, row_indices, name=name)
 
 
 def _title_head_row(ctx, n_rows):
@@ -2895,7 +2899,7 @@ def _title_head_row(ctx, n_rows):
     return int(min(n_rows - 1, max(0, round(frac * (n_rows - 1)))))
 
 
-def _make_title_pattern_resolver(pattern, row_indices):
+def _make_title_pattern_resolver(pattern, row_indices, name='title'):
     """A ``ctx -> str`` that formats `pattern` with the row index under the
     reveal head (GH #285). See `_title_head_row` for what "the head" means.
 
@@ -2920,22 +2924,23 @@ def _make_title_pattern_resolver(pattern, row_indices):
             # specifier'), and they surface AFTER the pipeline has run;
             # say which kwarg, which pattern, and which value.
             raise ValueError(
-                f"title={pattern!r} could not be formatted with "
+                f"{name}={pattern!r} could not be formatted with "
                 f"index={value!r} ({type(exc).__name__}: {exc}). The only "
-                "field a pattern title can reference is {index}, with an "
+                f"field a pattern {name} can reference is {{index}}, with an "
                 "optional format spec the index value supports (e.g. "
                 "'{index:%B %Y}' for a DatetimeIndex).") from exc
     return _resolve
 
 
-def _resolve_dynamic_title_text(fn, ctx):
+def _resolve_dynamic_title_text(fn, ctx, name='title'):
     """Call a dynamic `title=` (callable or pattern resolver) for `ctx`
     and insist on a string (1.1 release review T8): a callable returning
-    None or 42 was drawn as the literal 'None'/'42'."""
+    None or 42 was drawn as the literal 'None'/'42'. `name` is the keyword
+    the callable came from (``title`` or ``caption``)."""
     value = fn(ctx)
     if not isinstance(value, str):
         raise TypeError(
-            f"title= callable must return a str for every frame; got "
+            f"{name}= callable must return a str for every frame; got "
             f"{type(value).__name__}: {value!r}.")
     return value
 
@@ -4294,6 +4299,138 @@ def _panel_cluster_labels(probe_labels, model, spec, rows=None,
     return _PanelClusterLabels(labels, model, spec, categories=categories)
 
 
+# --------------------------------------------------------------------------
+# caption= (GH #295): one figure-level line of text under the plot(s),
+# fixed or updated every frame of an animation.
+# --------------------------------------------------------------------------
+
+#: ``gid`` of the caption's matplotlib ``Text`` -- how a caller finds it on
+#: the returned figure (``fig.findobj(lambda a: a.get_gid() ==
+#: 'hypertools-caption')``) to restyle it.
+CAPTION_GID = 'hypertools-caption'
+
+#: blank room (inches) kept above and below the caption's text
+_CAPTION_PAD_IN = 0.1
+
+
+def _validate_caption(caption, row_indices, backend_name, ax=None):
+    """Split `caption=` into ``(static_text, dynamic)`` (GH #295).
+
+    A caption takes the forms a per-frame `title=` takes -- a fixed string,
+    a ``{index...}`` format pattern, or a callable ``ctx -> str`` -- and is
+    split by the same function (`_validate_dynamic_title`). Exactly one of
+    the two results is set; both are None without a caption. Fails here,
+    before the pipeline runs, for a value of the wrong type, for the plotly
+    backend (the caption is a matplotlib artist), and for a caller's own
+    ``ax=`` (a caption belongs to a whole figure, which is then the
+    caller's to lay out).
+    """
+    if caption is None:
+        return None, None
+    if isinstance(caption, bytes):
+        caption = caption.decode('utf-8')
+    if not (isinstance(caption, str) or callable(caption)):
+        raise TypeError(
+            "caption= must be a string, a '{index...}' format pattern, or a "
+            f"callable (ctx -> str); got {type(caption).__name__}: "
+            f"{caption!r}.")
+    if backend_name == 'plotly':
+        raise NotImplementedError(
+            "caption= is matplotlib-only. On plotly an animation is a list "
+            "of go.Frame payloads, so a per-frame caption would have to be "
+            "a layout annotation rebuilt inside every frame's layout -- "
+            "separate work from the matplotlib text this draws. Pass "
+            "backend='matplotlib' for caption=, or drop caption= (a "
+            "per-frame title= works on both backends).")
+    if ax is not None:
+        raise ValueError(
+            "caption= is drawn under the whole figure, which hypertools "
+            "resizes to make room for it, so it cannot be combined with a "
+            "caller-supplied ax=. Drop ax= (or use panels= for a grid), or "
+            "add the text yourself with ax.figure.text(...).")
+    return _validate_dynamic_title(caption, None, row_indices,
+                                   name='caption')
+
+
+def _grow_figure_downward(fig, extra_in):
+    """Make `fig` taller by `extra_in` inches, adding the room at the
+    BOTTOM: every axes keeps its absolute size and its distance from the
+    top and side edges, so nothing already drawn moves relative to anything
+    else or changes size (a 3-D axes' cube included -- its viewport is
+    derived from the axes' size in inches, which is unchanged)."""
+    w_in, h_in = fig.get_size_inches()
+    new_h_in = h_in + float(extra_in)
+    # a persistent layout engine would undo the positions set below on the
+    # next draw (see `_fit_right_legend`)
+    try:
+        fig.set_layout_engine('none')
+    except Exception:
+        pass
+    placed = [(axis, axis.get_position(original=True), axis.get_position())
+              for axis in fig.axes]
+    fig.set_size_inches(w_in, new_h_in)
+    for axis, original, active in placed:
+        for which, pos in (('original', original), ('active', active)):
+            axis.set_position(
+                [pos.x0, (pos.y0 * h_in + extra_in) / new_h_in,
+                 pos.width, pos.height * h_in / new_h_in], which=which)
+
+
+def _blank_bottom_in(fig):
+    """How many inches at the bottom of `fig` hold nothing: the distance
+    from the canvas' bottom edge up to the lowest thing drawn (any axes,
+    with its tick labels, axis labels, legend and unclipped artists, or a
+    figure-level artist), measured on a real draw. 0.0 when something
+    reaches the bottom edge or the figure cannot be measured -- the
+    caption then gets a whole new strip, which is always safe."""
+    try:
+        box = fig.get_tightbbox(_measurement_renderer(fig))
+        bottom = float(box.y0)
+    except Exception:  # noqa: BLE001 - an unmeasurable figure: assume none
+        return 0.0
+    if not np.isfinite(bottom):
+        return 0.0
+    return max(0.0, bottom)
+
+
+def _add_caption(fig, text, font=None, family=None):
+    """Draw `text` as `fig`'s caption (GH #295) and return its ``Text``.
+
+    The caption is centered under everything the figure holds, a small gap
+    below the lowest thing drawn (`_blank_bottom_in`). Where the figure has
+    no blank room there for it -- an animated 3-D plot fills its canvas --
+    the figure grows downward by what is missing
+    (`_grow_figure_downward`), so the caption never overlaps a panel, a
+    legend, a colorbar or a companion panel and always lies inside the
+    canvas. The room is sized for the number of lines `text` has; a
+    per-frame caption should keep that many lines (or fewer) on every
+    frame.
+
+    `font` is the resolved explicit ``font=`` (a ``FontProperties``), and
+    `family` the fallback font stack used without one -- the caption is
+    styled like the title beside it.
+    """
+    from matplotlib.font_manager import FontProperties
+    text = '' if text is None else str(text)
+    if font is not None:
+        props = FontProperties(font) if isinstance(font, str) else font.copy()
+    else:
+        props = FontProperties(family=family or sans_serif_stack())
+        props.set_size(plt.rcParams['font.size'])
+    n_lines = text.count('\n') + 1
+    line_in = 1.2 * props.get_size_in_points() / 72.0
+    strip_in = n_lines * line_in + 2 * _CAPTION_PAD_IN
+    blank_in = _blank_bottom_in(fig)
+    if blank_in < strip_in:
+        _grow_figure_downward(fig, strip_in - blank_in)
+        blank_in = strip_in
+    _, h_in = fig.get_size_inches()
+    artist = fig.text(0.5, (blank_in - _CAPTION_PAD_IN) / h_in, text,
+                      ha='center', va='top', fontproperties=props,
+                      gid=CAPTION_GID)
+    return artist
+
+
 def _panel_probe(data, kw, ndims, caught_warnings):
     """Fit one panel grid's pipeline exactly as the equivalent single-axes
     call fits it -- by MAKING that call (``return_model=True``, figure
@@ -4394,8 +4531,10 @@ def _reemit_panel_warnings(probe_caught, draw_caught):
 
 
 def _plot_panels(x, panels, call_kwargs, _name='panels'):
-    """Draw one STATIC panel per dataset (or per `reduce=` entry) in a
-    single figure -- the implementation behind `hyp.plot(..., panels=)`.
+    """Draw one panel per dataset (or per `reduce=` entry) in a single
+    figure -- the implementation behind `hyp.plot(..., panels=)`. With
+    `animate=` the panels are animated together, on one clock, by a single
+    animation (GH #295; matplotlib only).
 
     Two modes, chosen by `reduce=`:
 
@@ -4410,13 +4549,30 @@ def _plot_panels(x, panels, call_kwargs, _name='panels'):
       Each panel's box is scaled to its own contents, exactly as a
       per-panel `hyp.plot(..., ax=ax)` call is today.
     """
-    if call_kwargs.get('animate'):
+    _animate = call_kwargs.get('animate')
+    animated = (isinstance(_animate, (list, tuple, dict, np.ndarray))
+                or bool(_animate))
+    backend = resolve_backend(call_kwargs.get('backend', 'auto'))
+    if animated and backend == 'plotly':
+        raise NotImplementedError(
+            f"animated {_name}= grids are matplotlib-only. On plotly an "
+            "animation is a list of go.Frame payloads over ONE figure's "
+            "traces, so an animated grid would have to merge every panel's "
+            "per-frame payloads (and each scene's camera) into one frame "
+            "list -- separate work from the matplotlib artists this draws. "
+            f"Pass backend='matplotlib' for an animated {_name}= grid, or "
+            "drop animate= for a static plotly grid.")
+    if animated and call_kwargs.get('companion') is not None:
         raise ValueError(
-            f"{_name}= draws several STATIC panels in one figure and "
-            f"cannot be combined with animate={call_kwargs['animate']!r}: "
-            "an animation owns its whole figure (one axes, one clock). "
-            "Lay several trajectories out in the DATA instead (see the "
-            "ax= docstring), or drop animate= for a static panel grid.")
+            f"companion= cannot be combined with an animated {_name}= grid: "
+            "a companion panel is laid out beside ONE animated axes, and "
+            "the grid lays its own cells out. Give the extra series a "
+            "panel of its own, or drop panels= and use companion= on a "
+            "single animated plot.")
+    # caption= (GH #295) belongs to the whole grid, not to any one panel:
+    # validated here, before any panel is analyzed, and drawn below
+    caption, dynamic_caption = _validate_caption(
+        call_kwargs.get('caption'), _capture_row_indices(x), backend)
     if call_kwargs.get('ax') is not None:
         raise ValueError(
             f"{_name}= creates its own figure and axes, so it cannot also "
@@ -4465,15 +4621,26 @@ def _plot_panels(x, panels, call_kwargs, _name='panels'):
     if save_path is not None:
         save_path = _normalize_save_path(save_path)
     return_model = call_kwargs.get('return_model', False)
-    backend = resolve_backend(call_kwargs.get('backend', 'auto'))
+    if animated and save_path is not None:
+        # an animated grid is saved as an animation: refuse an extension no
+        # animation writer handles now, not after every panel was fitted
+        _check_animation_save_path(save_path)
 
     # every panel call draws into the grid, silently, and never saves or
     # re-shows: this function owns the figure, the save and the display.
     shared = dict(call_kwargs)
     for key in ('title', 'show', 'save_path', 'return_model', 'panels',
-                'subplots', 'ax', 'panel_fit'):
+                'subplots', 'ax', 'panel_fit', 'caption'):
         shared.pop(key, None)
     shared['show'] = False
+    # on_frame= on an animated grid is called once per frame for the whole
+    # FIGURE (see `_animate_panel_grid`), not once per panel
+    grid_hooks = None
+    if animated:
+        grid_hooks = FrameHooks()
+        if shared.get('on_frame') is not None:
+            grid_hooks.add(shared['on_frame'])
+        shared.pop('on_frame', None)
 
     # panel_fit= (GH #285): 'shared' (the default, and everything before
     # 1.1.x) fits ONE pipeline across every dataset and gives each panel its
@@ -4607,6 +4774,17 @@ def _plot_panels(x, panels, call_kwargs, _name='panels'):
             lifts = [_panel_lift_for(xi, src)
                      for xi, src in zip(xf, panel_sources[i])]
             if any(lift is not None for lift in lifts):
+                if animated:
+                    raise ValueError(
+                        f"an animated {_name}= grid needs every panel's "
+                        "analyzed data to have the same number of columns "
+                        "(2 or 3), but panel "
+                        f"{i + 1}'s is narrower than the grid's 3-D cells "
+                        "(a narrower panel is drawn flat on its cell's "
+                        "floor in a STATIC grid, which has no animated "
+                        "counterpart). Give every panel 3 columns (or "
+                        "pass ndims=2 for an all-2-D grid), or drop "
+                        "animate=.")
                 kw['_panel_lift'] = lifts
         # the analysis already ran (above); each panel DRAWS its rows
         kw.update(transform=list(xf), reduce=None, normalize=None,
@@ -4654,12 +4832,17 @@ def _plot_panels(x, panels, call_kwargs, _name='panels'):
                          size=call_kwargs.get('size'), backend='matplotlib')
     panel_axes = []
     panel_models = []
+    #: an animated grid's panels, in panel order: each animated panel call
+    #: appends its frame function, frame hooks and axes here (GH #295)
+    cells = [] if animated else None
     with warnings.catch_warnings(record=True) as draw_warnings:
         warnings.simplefilter('always')
         for i in range(n_panels):
             kw = dict(panel_kwargs[i])
             kw.update(ax=axes[i], title=titles[i], show=False,
                       save_path=None, return_model=return_model, size=None)
+            if animated:
+                kw['_panel_animation'] = cells
             if panel_ndims < (3 if ndims is None else min(ndims, 3)):
                 # cells lowered to the data's width (`_panel_cell_ndims`):
                 # the panel call's `ax=` projection check reads ndims=,
@@ -4696,6 +4879,22 @@ def _plot_panels(x, panels, call_kwargs, _name='panels'):
             fig.set_size_inches(_w + _extra, _h)
     fig.tight_layout()
 
+    if animated:
+        return _animate_panel_grid(
+            fig, cells, panel_axes, panel_models, (nrows, ncols),
+            grid_hooks=grid_hooks, caption=caption,
+            dynamic_caption=dynamic_caption, font=call_kwargs.get('font'),
+            save_path=save_path, show=show, return_model=return_model,
+            shared_pipeline=shared_pipeline,
+            resize=call_kwargs.get('size') is None, _name=_name)
+
+    if caption is not None or dynamic_caption is not None:
+        # a static grid's caption: fixed text, or the dynamic forms
+        # resolved once for the finished figure (as a dynamic title= is on
+        # a static plot)
+        _add_grid_caption(fig, caption, dynamic_caption, panel_axes,
+                          call_kwargs.get('font'))
+
     if save_path is not None:
         fig.savefig(save_path)
     if not show:
@@ -4729,6 +4928,374 @@ def _plot_panels(x, panels, call_kwargs, _name='panels'):
         }
         return bundle
     return fig
+
+
+def _check_animation_save_path(save_path):
+    """Raise the animation writers' own "unsupported format" error for a
+    `save_path` none of them handles (`animate._save_animation` raises it
+    at save time; an animated panel grid checks before it fits anything)."""
+    from .animate import _FFMPEG_EXTENSIONS, _SUPPORTED_ANIMATION_EXTENSIONS
+    ext = os.path.splitext(os.fspath(save_path))[1].lower().lstrip('.')
+    if ext not in ('svg', 'gif', 'png', 'apng') + tuple(_FFMPEG_EXTENSIONS):
+        what = f"extension {'.' + ext!r}" if ext else "missing extension"
+        raise ValueError(
+            f"unsupported animation save format ({what}) for "
+            f"{save_path!r}; supported extensions are "
+            f"{_SUPPORTED_ANIMATION_EXTENSIONS}. (For a static image "
+            "instead, pass animate=False.)")
+
+
+def _grid_caption_font(font, text):
+    """``(font, family)`` for a panel grid's caption, resolved from the
+    call's `font=` exactly as a single plot resolves its text: an explicit
+    font is applied as given, and without one the caption uses hypertools'
+    fallback font stack (plus an auto-detected family when `text` has
+    characters the stack cannot draw)."""
+    resolved = resolve_font(font, [text])
+    if font is not None:
+        return resolved, None
+    return None, sans_serif_stack(
+        extra=resolved.get_name() if resolved is not None else None)
+
+
+def _add_grid_caption(fig, caption, dynamic_caption, panel_axes, font,
+                      context=None):
+    """Draw a panel grid's caption and return its ``Text``. A dynamic
+    caption (pattern or callable) is resolved for `context` -- frame 0 of
+    an animated grid -- or, without one, for the finished static figure."""
+    text = caption
+    if dynamic_caption is not None:
+        if context is None:
+            context = FrameContext(
+                frame=None, n_frames=None, figure=fig,
+                axes=tuple(panel_axes), style=False, progress=1.0)
+        text = _resolve_dynamic_title_text(dynamic_caption, context,
+                                           name='caption')
+    resolved_font, family = _grid_caption_font(font, text)
+    return _add_caption(fig, text, font=resolved_font, family=family)
+
+
+def _panel_grid_context(fig, cells, frame, n_frames):
+    """The figure-level `FrameContext` of an animated panel grid's frame
+    (GH #295), built from what every panel's updater just recorded.
+
+    ``panels`` holds one ordinary `FrameContext` per panel (its own axes,
+    artists, datasets and reveal state). The grid's own fields describe
+    the whole figure: ``axes`` is a tuple of the panel axes, ``artists``
+    and ``datasets`` every panel's in panel order, and ``revealed_counts``
+    / ``window_bounds`` likewise (None when any panel has none). The
+    per-dataset reveal position (``current_index``/``current_fraction``)
+    has no figure-level meaning and is None; read it from ``panels``.
+    """
+    panel_contexts = tuple(
+        FrameContext(figure=fig, axes=cell['axes'],
+                     **{**cell['hooks'].state,
+                        'frame': frame, 'n_frames': n_frames})
+        for cell in cells)
+
+    def _joined(name):
+        values = [getattr(ctx, name) for ctx in panel_contexts]
+        if any(v is None for v in values):
+            return None
+        return tuple(item for v in values for item in v)
+
+    def _common(name):
+        values = {getattr(ctx, name) for ctx in panel_contexts}
+        return values.pop() if len(values) == 1 else None
+
+    first = panel_contexts[0]
+    return FrameContext(
+        frame=frame, n_frames=n_frames, figure=fig,
+        axes=tuple(cell['axes'] for cell in cells),
+        artists=_joined('artists') or (),
+        datasets=_joined('datasets') or (),
+        style=first.style, order=first.order,
+        revealed_counts=_joined('revealed_counts'),
+        window_bounds=_joined('window_bounds'),
+        segment_index=_common('segment_index'),
+        segment_kind=_common('segment_kind'),
+        panels=panel_contexts)
+
+
+#: how much of its axes' square a rotating panel cube may fill, at most
+_PANEL_CUBE_FILL = 0.96
+
+
+def _cube_reach(axis):
+    """How far a 3-D axes' cube reaches from the center of the square the
+    axes is drawn in, at the widest camera angle of a full turn (at the
+    axes' current elevation and box zoom): 0.5 is the square's edge."""
+    import itertools
+    from mpl_toolkits.mplot3d import proj3d
+    elev, azim0 = axis.elev, axis.azim
+    corners = np.array(list(itertools.product(
+        axis.get_xlim3d(), axis.get_ylim3d(), axis.get_zlim3d())))
+    reach = 0.0
+    for azim in np.arange(0.0, 360.0, 3.0):
+        axis.view_init(elev=elev, azim=azim)
+        px, py, _ = proj3d.proj_transform(
+            corners[:, 0], corners[:, 1], corners[:, 2], axis.get_proj())
+        # fractions of the axes' square: 0.5 is its center
+        frac = axis.transLimits.transform(np.column_stack([px, py]))
+        reach = max(reach, float(np.abs(frac - 0.5).max()))
+    axis.view_init(elev=elev, azim=azim0)
+    return reach
+
+
+def _axis_label_reach(fig, cells, step=30.0):
+    """Per cell, how far its 3-D AXIS LABELS reach from the center of the
+    axes' square over a full turn (0.5 is the square's edge; 0.0 for a
+    cell without labels). Label placement is matplotlib's, decided at draw
+    time, so this draws the figure once per sampled camera angle."""
+    reaches = [0.0] * len(cells)
+    views = [(cell['axes'].elev, cell['axes'].azim) for cell in cells]
+    for azim in np.arange(0.0, 360.0, step):
+        for cell, (elev, _) in zip(cells, views):
+            cell['axes'].view_init(elev=elev, azim=azim)
+        renderer = _measurement_renderer(fig)
+        for k, cell in enumerate(cells):
+            axis = cell['axes']
+            to_square = axis.transAxes.inverted()
+            for axis3d in axis._axis_map.values():
+                label = axis3d.label
+                if not (label.get_text() and label.get_visible()):
+                    continue
+                box = label.get_window_extent(renderer)
+                frac = to_square.transform(box.get_points())
+                reaches[k] = max(reaches[k],
+                                 float(np.abs(frac - 0.5).max()))
+    for cell, (elev, azim) in zip(cells, views):
+        cell['axes'].view_init(elev=elev, azim=azim)
+    return reaches
+
+
+#: the least a LABELED rotating panel cube may reach from the center of its
+#: axes' square (0.5 is the square's edge): below this the cube is too
+#: small beside its own axis labels, and the figure grows instead
+_PANEL_LABELED_CUBE_REACH = 0.3
+
+
+def _fit_rotating_cubes(fig, cells, resize=True, _name='panels'):
+    """Zoom every animated 3-D panel out until its cube -- and its axis
+    labels, when it has any -- stay inside the panel's own cell at EVERY
+    camera angle of the rotation (GH #295).
+
+    A single animated 3-D plot gives its axes the whole canvas, because the
+    cube an animation draws -- zoomed, and wider on screen when seen
+    corner-on -- overflows a normal subplot box at some angles (the frame
+    and the data are drawn unclipped). In a grid that overflow would run
+    into the panel's own title and legend and into the next panel. So the
+    cube's projected extent is measured over a full turn, at the panel's
+    own elevation and zoom, and the panel's box zoom is lowered
+    (`PanelAnimationStub.zoom_scale`) until the widest view fits the square
+    matplotlib draws a 3-D axes in -- which the title sits above and the
+    legend beside. A panel whose cube already fits is left alone, and 2-D
+    panels have no camera and are never touched.
+
+    Axis labels (`xlabel=`/`ylabel=`/`zlabel=`) hang a fixed distance
+    outside the cube and swing around with it, so a labeled panel's cube is
+    drawn smaller still, until the labels fit too. That distance does not
+    shrink with the figure: in a small cell the labels would leave the cube
+    almost no room, so the whole figure is enlarged first (`resize`, i.e.
+    no explicit `size=`), and with an explicit `size=` too small for them
+    this raises, naming the size that would do.
+    """
+    cubes = [cell for cell in cells if hasattr(cell['axes'], 'get_proj')]
+    limit = 0.5 * _PANEL_CUBE_FILL
+
+    def _fit_cube(cell, target):
+        # the projection is perspective, so the reach is not exactly linear
+        # in the zoom: correct and re-measure (two passes settle it)
+        for _ in range(4):
+            # frame 0 sets the panel's elevation and applies its box zoom
+            cell['stub'].draw(0)
+            cell['reach'] = _cube_reach(cell['axes'])
+            if abs(cell['reach'] - target) <= 0.001 * target or (
+                    target >= limit and cell['reach'] <= target):
+                break
+            cell['stub'].zoom_scale[0] *= target / cell['reach']
+
+    for cell in cubes:
+        _fit_cube(cell, limit)
+    labeled = [cell for cell in cubes
+               if any(axis3d.label.get_text()
+                      for axis3d in cell['axes']._axis_map.values())]
+    if labeled:
+        # how far the labels stand outside the cube, in square widths
+        gaps = [max(0.0, label_reach - cell['reach'])
+                for cell, label_reach in zip(
+                    labeled, _axis_label_reach(fig, labeled))]
+        width, height = fig.get_size_inches()
+        grow_w = grow_h = 1.0
+        for cell, gap in zip(labeled, gaps):
+            # the side this panel's square needs for its labels to leave
+            # the cube its share, against the cell's own width and height
+            # (the square is the smaller of the two)
+            box = cell['axes'].get_position(original=True)
+            cell_w, cell_h = box.width * width, box.height * height
+            side = (min(cell_w, cell_h) * gap
+                    / (limit - _PANEL_LABELED_CUBE_REACH))
+            grow_w = max(grow_w, side / cell_w)
+            grow_h = max(grow_h, side / cell_h)
+        if grow_w > 1.0 or grow_h > 1.0:
+            if not resize:
+                raise ValueError(
+                    f"the axis labels (xlabel=/ylabel=/zlabel=) of this "
+                    f"animated 3-D {_name}= grid swing around each panel's "
+                    f"rotating cube and need more room than a "
+                    f"{width:g} x {height:g} inch figure gives each panel. "
+                    f"Pass a larger size= (about "
+                    f"({width * grow_w:.1f}, {height * grow_h:.1f}) or "
+                    "more), leave size= out to have the figure sized for "
+                    "them, or drop the axis labels.")
+            # the labels' distance from the cube is fixed in points, so a
+            # larger figure is what gives the cube its share back
+            fig.set_size_inches(width * grow_w, height * grow_h)
+    for _ in range(5):
+        if not labeled:
+            break
+        over = []
+        for cell, label_reach in zip(labeled,
+                                     _axis_label_reach(fig, labeled)):
+            excess = label_reach - limit
+            if excess <= 0.005:
+                continue
+            # pull the cube in by what the labels overshoot
+            _fit_cube(cell, max(0.1, cell['reach'] - excess))
+            over.append(cell)
+        labeled = over
+    for cell in cubes:
+        # leave every panel showing frame 0 at its final zoom
+        cell['stub'].draw(0)
+
+
+def _animate_panel_grid(fig, cells, panel_axes, panel_models, grid,
+                        grid_hooks, caption, dynamic_caption, font,
+                        save_path, show, return_model, shared_pipeline,
+                        resize=True, _name='panels'):
+    """Turn a drawn grid of animated panels into ONE animation (GH #295).
+
+    Every panel call left its frame function in `cells` (a
+    `PanelAnimationStub`, already wrapped with that panel's own per-frame
+    updaters: dynamic title, forecasts, per-point colors). This builds the
+    single `FuncAnimation` whose frame function draws frame ``num`` of
+    every panel -- one clock for the whole figure -- then updates the
+    caption and calls the grid's `on_frame=` callbacks once, with a
+    figure-level `FrameContext` (see `_panel_grid_context`). Saves, closes
+    and returns exactly as an animated single-axes call does: a
+    `HyperAnimation`, or the panel bundle with ``'animation'`` added when
+    `return_model=True`.
+    """
+    from .animate import HyperFuncAnimation
+    from .hyper_animation import HyperAnimation, mark_draw_started
+    from .matplotlib_backend import _make_save_dpi_safe
+
+    def _abandon():
+        # an error before the animation is handed back: leave no figure
+        # registered with pyplot behind (as the single-axes path does)
+        if not show:
+            plt.close(fig)
+
+    frame_counts = [int(cell['stub']._save_count) for cell in cells]
+    if len(set(frame_counts)) != 1:
+        _abandon()
+        raise ValueError(
+            f"an animated {_name}= grid runs every panel on one clock, but "
+            f"the panels would draw different numbers of frames "
+            f"({frame_counts}, in panel order). Give every panel the same "
+            "schedule: the same number of datasets per panel for "
+            "animate='morph', and scalar duration=/frame_rate=/rotations=.")
+    n_frames = frame_counts[0]
+    interval = cells[0]['stub']._interval
+    try:
+        _fit_rotating_cubes(fig, cells, resize=resize, _name=_name)
+    except Exception:
+        _abandon()
+        raise
+
+    def _draw_panels(num):
+        for cell in cells:
+            cell['stub'].draw(num)
+        return _panel_grid_context(fig, cells, num, n_frames)
+
+    caption_artist = None
+    if caption is not None or dynamic_caption is not None:
+        try:
+            # frame 0's text sizes the caption strip, and is what a still
+            # of the figure shows; the panels are drawn at frame 0 to get
+            # its context (frames are idempotent, see `FrameContext`)
+            caption_artist = _add_grid_caption(
+                fig, caption, dynamic_caption, panel_axes, font,
+                context=(_draw_panels(0) if dynamic_caption is not None
+                         else None))
+        except Exception:
+            _abandon()
+            raise
+
+    def _grid_frame(num, *_):
+        context = _draw_panels(num)
+        if dynamic_caption is not None:
+            caption_artist.set_text(_resolve_dynamic_title_text(
+                dynamic_caption, context, name='caption'))
+        for callback in grid_hooks.callbacks:
+            callback(context)
+
+    line_ani = HyperFuncAnimation(
+        fig, _grid_frame, n_frames, interval=interval, blit=False,
+        repeat=False)
+    # a morph grid's panels share one hold/transition schedule (they have
+    # the same frame count); `HyperAnimation.n_segments` reads this
+    segments = {getattr(cell['stub'], '_hyp_morph_segments', None)
+                for cell in cells}
+    if len(segments) == 1 and None not in segments:
+        line_ani._hyp_morph_segments = segments.pop()
+    _make_save_dpi_safe(line_ani)
+    if save_path is not None:
+        frame_rate = 1000.0 / interval
+        if abs(frame_rate - round(frame_rate)) < 1e-6:
+            frame_rate = int(round(frame_rate))
+        try:
+            _save_animation(line_ani, save_path, frame_rate)
+        except Exception:
+            mark_draw_started(line_ani)
+            _abandon()
+            raise
+    if not show:
+        # the same close an animated single-axes call makes (see `plot`):
+        # deregister the figure from pyplot, keep its canvas, and drop the
+        # animation's pending first-draw hook
+        live_canvas = fig.canvas
+        plt.close(fig)
+        if fig.canvas is not live_canvas:
+            fig.set_canvas(live_canvas)
+        first_draw_id = getattr(line_ani, '_first_draw_id', None)
+        if first_draw_id is not None:
+            try:
+                fig.canvas.mpl_disconnect(first_draw_id)
+            except Exception:
+                pass
+            line_ani._first_draw_id = None
+
+    if return_model:
+        mark_draw_started(line_ani)
+        for model in panel_models:
+            # a panel has no animation of its own: the grid's drives it
+            model['animation'] = None
+        return {
+            'fig': fig,
+            'axes': panel_axes,
+            'panels': grid,
+            'panel_models': panel_models,
+            'xform_data': [m['xform_data'][0] if len(m['xform_data']) == 1
+                           else m['xform_data'] for m in panel_models],
+            'colors': panel_models[0].get('colors') if panel_models else None,
+            'pipeline': shared_pipeline,
+            'animation': line_ani,
+        }
+    anim = HyperAnimation(fig, line_ani, frame_hooks=grid_hooks)
+    anim.colors = cells[0]['colors'] if cells else None
+    return anim
+
 
 
 def _plot_panels_plotly(panel_data, panel_kwargs, titles, nrows, ncols,
@@ -4946,6 +5513,7 @@ def plot(
     label_anchor=None,
     legend_kwargs=None,
     legend_colors=None,
+    caption=None,
     **kwargs,
 ):
     """
@@ -6354,6 +6922,8 @@ def plot(
         low-opacity trail (past / future / whole, per its flag) led by a
         short opaque comet-head, while already-revealed datasets stay fully
         drawn and future ones stay invisible -- see `bullettime` below.
+        With `panels=` (matplotlib) the whole grid is one animation and
+        the mode plays in every panel on a shared clock -- see `panels=`.
 
         2-D animations (round17 #9, GH #123): every style EXCEPT `'spin'`
         works for `ndims=2` as well as `ndims=3`, in both backends, using a
@@ -6951,6 +7521,11 @@ def plot(
         portable across backends; every other field is identical across
         backends.
 
+        With an animated `panels=` grid the callback is called once per
+        frame for the whole figure, with ``ctx.axes`` a tuple of the panel
+        axes and ``ctx.panels`` one per-panel ``FrameContext`` each (see
+        `panels=`).
+
         >>> import numpy as np
         >>> import hypertools as hyp
         >>> data = [np.cumsum(np.random.default_rng(0).standard_normal(
@@ -6958,6 +7533,54 @@ def plot(
         >>> def annotate(ctx):
         ...     ctx.axes.set_title(f'frame {ctx.frame} of {ctx.n_frames}')
         >>> anim = hyp.plot(data, animate=True, on_frame=annotate, show=False)
+
+    caption (matplotlib only) : str, callable, or None
+        One line of text centered UNDER the figure -- under the plot, its
+        legend and colorbar, any `companion=` panel, or a whole `panels=`
+        grid -- such as a running "timepoint 201 of 300" or a date beneath
+        a row of animated panels. It takes the forms a per-frame `title=`
+        takes:
+
+        * a plain string, drawn as given on every frame;
+        * a format pattern containing ``{index`` (``'{index}'``,
+          ``'{index:%B %Y}'``), formatted on every frame with the input's
+          own row-index value under the reveal head -- the first dataset
+          that carries an index is read, exactly as for `title=`;
+        * a callable ``ctx -> str`` given that frame's ``FrameContext``,
+          e.g. ``lambda ctx: f'timepoint {ctx.frame + 1} of
+          {ctx.n_frames}'``. It must return a string.
+
+        On an ANIMATED plot the caption is updated on every frame (a
+        `panels=` grid's callable gets the figure-level context described
+        under `panels=`). On a STATIC plot it is drawn once: a pattern or
+        callable is resolved for the finished figure, as a dynamic
+        `title=` is (``frame``/``n_frames`` are None and ``progress`` is
+        1.0, so a pattern shows the LAST row's index).
+
+        The caption sits a small gap below the lowest thing drawn. Where
+        the figure has no blank room there -- an animated 3-D plot fills
+        its canvas -- the figure is made taller by the caption's height,
+        and nothing already drawn moves or shrinks, so the caption never
+        overlaps a panel, a legend or a colorbar and never leaves the
+        canvas. Room is made for as many lines as the first frame's
+        caption has (``'\\n'`` starts a new line); keep later frames to
+        that many. It is drawn in the plot's font (`font=`), at the
+        default text size; it is a matplotlib ``Text`` with
+        ``gid='hypertools-caption'``, should you want to restyle it::
+
+            caption = anim.figure.findobj(
+                lambda a: a.get_gid() == 'hypertools-caption')[0]
+            caption.set_color('gray')
+
+        Raises ``NotImplementedError`` under ``backend='plotly'`` (use a
+        per-frame `title=` there, which both backends support) and
+        ``ValueError`` with a caller-supplied `ax=`, whose figure is the
+        caller's to lay out. Default None (no caption).
+
+        >>> anim = hyp.plot(data, animate=True, duration=1, show=False,
+        ...                 caption=lambda ctx: f'frame {ctx.frame + 1}')
+        >>> anim.draw_frame(4).figure.texts[-1].get_text()
+        'frame 5'
 
     simplify : bool
         Whether hypertools may silently downsample to keep a render
@@ -7138,12 +7761,11 @@ def plot(
         survives both ``draw_frame`` and ``save`` (measured). Use
         ``on_frame=`` for decoration that must CHANGE with the frame, such
         as a marker tracking the head of a trace.
-        Several animated panels in one figure are not supported; lay the
-        panels out in the DATA instead (translate each column group into its
-        own region of one shared frame) and make a single plot call.
+        For several animated panels in one figure, pass ``panels=`` with
+        ``animate=`` (one animation of the whole grid; see `panels=`).
 
     panels : bool, int, (nrows, ncols), or None
-        Draw one STATIC panel per dataset in a single figure, instead of
+        Draw one panel per dataset in a single figure, instead of
         every dataset on one axes -- the built-in form of the
         ``fig, axes = plt.subplots(nrows, ncols,
         subplot_kw={'projection': '3d'}); for ax, d in zip(axes.ravel(),
@@ -7218,10 +7840,42 @@ def plot(
         `forecast_cluster=` groups each panel's own forecast endpoints
         (with a single model, one per panel -- it then warns and inherits).
 
-        STATIC ONLY: combining `panels=` with any truthy `animate=` raises
-        ``ValueError`` (an animation owns its whole figure -- see `ax=`), as
-        does combining it with `ax=` or `explore=True`. Under
-        `backend='plotly'` the same grid is built with
+        ANIMATED GRIDS (matplotlib only). With a truthy `animate=` the
+        whole grid is ONE animation: every panel runs on the same clock
+        (`duration=` x `frame_rate=` frames), and one ``HyperAnimation`` is
+        returned for the figure -- ``hyp.plot([a, b, c, d], panels=(1, 4),
+        animate=True, duration=10, caption='{index}',
+        save_path='grid.mp4')`` writes one video of four panels. Each
+        panel is animated exactly as the single-axes call for its data is:
+        every `animate=` style and `order=` value, `tail_duration=`,
+        `rotations=`, the trail flags, `predict=`, per-frame titles and so
+        on apply PER PANEL. In particular the ordering is per panel, not
+        across panels: ``order='serial'`` reveals the datasets of each
+        panel one after another (with one dataset per panel, every panel
+        simply reveals its own), and the panels never take turns. Every
+        panel must draw the same number of frames (``animate='morph'``
+        needs the same number of datasets in each panel), or the call
+        raises ``ValueError``. Each 3-D panel's cube is zoomed out as far
+        as it takes to stay inside its own cell through the whole
+        rotation, so `zoom=` can shrink a panel's cube but cannot enlarge
+        it past its cell; with axis labels (`xlabel=`/`ylabel=`/`zlabel=`)
+        the figure is enlarged so the rotating labels fit as well (an
+        explicit `size=` too small for them raises, naming a size that
+        fits). `caption=` adds a line of text under the grid, updated
+        every frame. `on_frame=` is called ONCE per frame for the whole
+        figure: its ``FrameContext`` has ``axes`` as a tuple of the panel
+        axes, ``artists`` and ``datasets`` as every panel's in panel
+        order, and ``panels`` as one ordinary per-panel ``FrameContext``
+        each (that panel's own axes, artists and reveal state).
+        `return_model=True` returns the panel bundle described below with
+        ``'animation'`` (the grid's ``FuncAnimation``) added. Not
+        supported, each with an error saying so: ``backend='plotly'``
+        (``NotImplementedError``; a static plotly grid works),
+        `companion=`, and panels whose analyzed data differ in width.
+
+        Combining `panels=` with `ax=` or `explore=True` raises
+        ``ValueError``. Under
+        `backend='plotly'` the same (static) grid is built with
         `plotly.subplots.make_subplots` (3-D panels as ``type='scene'``
         cells), and `return_model=True` returns the SAME bundle keys there
         as on matplotlib (``fig``, ``axes``, ``panels``, ``panel_models``,
@@ -7730,7 +8384,9 @@ def plot(
         of everything the animation draws, measured from rendered pixels
         in figure fractions -- see `HyperAnimation.drawn_extent`) and
         auto-plays inline in notebooks -- keep a reference to it so the
-        underlying ``matplotlib.animation.FuncAnimation`` stays alive.
+        underlying ``matplotlib.animation.FuncAnimation`` stays alive. An
+        animated `panels=` grid returns ONE ``HyperAnimation`` for the
+        whole figure.
         When ``return_model=True``, a dict
         ``{'fig': ..., 'xform_data': ..., 'trace_data': ...,
         'trace_metadata': ..., 'animation': ..., 'pipeline': ...,
@@ -7770,6 +8426,11 @@ def plot(
     # rows in its 3-D cell (`_PanelLift`, one entry per dataset of the
     # panel, None for 3-wide ones): internal, never a user kwarg
     _panel_lift = kwargs.pop('_panel_lift', None)
+    # ...and its marker that this call draws ONE PANEL OF AN ANIMATED GRID
+    # into the given `ax=` (GH #295): a list the call appends its frame
+    # function, frame hooks and axes to (`_plot_animated_panels` collects
+    # them into the grid's single animation). Internal, never a user kwarg.
+    _panel_animation = kwargs.pop('_panel_animation', None)
 
     # early kwarg validation (release-1.0 audit): catch renamed/misspelled/
     # unknown keyword arguments HERE, with a clear TypeError naming the
@@ -7785,8 +8446,8 @@ def plot(
         palette, forecast_palette, sort=palette_sort, reduce=palette_reduce,
         manip=palette_manip, normalize=palette_normalize, align=palette_align)
 
-    # panels=/subplots= (GH #285): compose several STATIC panels in one
-    # figure. Handled by re-entering plot() once per panel, so this branch
+    # panels=/subplots= (GH #285): compose several panels (static, or
+    # animated together, GH #295) in one figure. Handled by re-entering plot() once per panel, so this branch
     # runs BEFORE any other local exists -- `locals()` here is exactly this
     # call's own arguments, which is what each panel call is rebuilt from.
     if panels is not None and subplots is not None:
@@ -7799,7 +8460,7 @@ def plot(
         _panel_call = {k: v for k, v in locals().items()
                        if k not in ('x', 'kwargs', 'panels', 'subplots',
                                     '_panels_spec', '_panels_name',
-                                    '_panel_lift')}
+                                    '_panel_lift', '_panel_animation')}
         _panel_call.update(kwargs)
         return _plot_panels(x, _panels_spec, _panel_call, _name=_panels_name)
 
@@ -8268,6 +8929,10 @@ def plot(
                                            _resolved_order)
     _companion = _validate_companion(companion, animate,
                                      resolve_backend(backend))
+    # GH #295: `caption=` -- a figure-level caption under the plot, in the
+    # forms `title=` takes (fixed text, a `{index...}` pattern, a callable).
+    caption, _dynamic_caption = _validate_caption(
+        caption, _row_indices, resolve_backend(backend), ax=ax)
 
     # fail-fast on on_frame= (plan 1.1 Task 7, same precedent as title=/
     # order= above): needs only its own callability and the raw animate=
@@ -8490,7 +9155,8 @@ def plot(
     # installed fonts. xlabel/ylabel/zlabel are drawn text too (fresh-Colab
     # review 2026-09-11: an axis label alone in a script outside the stack
     # rendered as tofu).
-    _font_texts = [labels, legend, title, hue, xlabel, ylabel, zlabel]
+    _font_texts = [labels, legend, title, hue, xlabel, ylabel, zlabel,
+                   caption]
     if colorbar is not None:
         _font_texts.append(colorbar.get('label'))
         _font_texts.append(colorbar.get('ticks'))
@@ -8695,14 +9361,14 @@ def plot(
         # the DATA instead -- translate each group into its own region of one
         # shared frame -- which keeps it to a single call and a single
         # animation (see `examples/`).
-        if _raw_animate_style(animate):
+        if _raw_animate_style(animate) and _panel_animation is None:
             raise ValueError(
                 "ax= cannot be combined with animate=: an animated plot owns "
                 "its own figure, so the axes you passed would be left empty "
                 "and the animation drawn somewhere else. Drop ax= and use the "
                 "returned animation's .figure (or .figure.axes[0]) to style "
-                "what was drawn; for several panels in one animation, lay the "
-                "panels out in the data and make a single plot call."
+                "what was drawn; for several panels in one animation, pass "
+                "panels= (one animated panel per dataset, on one clock)."
             )
         if ndims > 2:
             # a 2-D axes under the default (3-D) ndims: whether the plot IS
@@ -12685,6 +13351,7 @@ def plot(
                 xlim=_data_xlim,
                 ylim=_data_ylim,
                 x_date=_series_is_date,
+                panel_cell=_panel_animation is not None,
             )
             if ax is not None and hasattr(ax, 'set_prop_cycle'):
                 # what a later `ax=<this axes>` call continues the palette
@@ -13221,6 +13888,7 @@ def plot(
             # animations (whose default, non-maximized axes already leave
             # normal title room) are never touched.
             if (ax is not None and line_ani is not None
+                    and _panel_animation is None
                     and xform[0].shape[1] >= 3
                     and (title is not None or _segment_titles is not None
                          or _dynamic_title is not None
@@ -13285,7 +13953,24 @@ def plot(
                 setattr(fig, _HYP_FIGURE_ATTR, True)
             _caller_figure = _user_supplied_ax and not getattr(
                 fig, _HYP_FIGURE_ATTR, False)
-            if (not animate and not _caller_figure
+            # A cell of an animated panel grid (GH #295) is laid out like a
+            # static cell: the grid's figure is hypertools' own, and the
+            # legend fit below must measure the cell where the layout puts
+            # it (unfitted, it repositioned the cell by hand, which takes
+            # an axes out of every later `tight_layout`).
+            if _panel_animation is not None and ax is not None:
+                # ...but its ANIMATED artists must not drive that layout:
+                # before the first frame they are one-point stubs (a morph
+                # cloud, an unclipped trail) whose extents say nothing
+                # about what the panel will show, and what it will show
+                # stays inside the cell's own box at every frame (see
+                # `_fit_rotating_cubes`). The box, the title, the legend
+                # and the axis labels are what the layout arranges.
+                for _artist in (list(ax.lines) + list(ax.collections)
+                                + list(ax.patches)):
+                    _artist.set_in_layout(False)
+            if ((not animate or _panel_animation is not None)
+                    and not _caller_figure
                     and isinstance(fig, plt.Figure)):
                 fig.tight_layout()
 
@@ -13375,6 +14060,61 @@ def plot(
                 for _panel in _panels_drawn:
                     update_companion_panel(_panel, 0)
 
+            # caption= (GH #295): one figure-level line of text under
+            # everything drawn above -- the plot, its legend and colorbar,
+            # any companion panel -- so it is added LAST, in a strip the
+            # figure grows downward by (nothing already drawn moves or
+            # shrinks). A dynamic caption is driven per frame by an
+            # internal updater, like a dynamic title; frame 0's text (the
+            # finished figure's, for a static plot) is resolved here, both
+            # to size the strip and so a still of the figure carries it.
+            if (caption is not None or _dynamic_caption is not None) \
+                    and isinstance(fig, plt.Figure):
+                _caption_text = caption
+                if _dynamic_caption is not None:
+                    _static_ctx = not animate or line_ani is None
+                    try:
+                        _caption_text = _resolve_dynamic_title_text(
+                            _dynamic_caption, FrameContext(
+                                frame=None if _static_ctx else 0,
+                                n_frames=(None if _static_ctx
+                                          else int(line_ani._save_count)),
+                                figure=fig, axes=ax,
+                                datasets=tuple(xform),
+                                style=animate if animate else False,
+                                order=order,
+                                current_index=(
+                                    0 if order == 'serial'
+                                    and not _static_ctx else None),
+                                revealed_counts=tuple(
+                                    len(d) if _static_ctx else 1
+                                    for d in xform),
+                                window_bounds=(
+                                    tuple((0, len(d)) for d in xform)
+                                    if _static_ctx else None),
+                                progress=1.0 if _static_ctx else None),
+                            name='caption')
+                    except Exception:
+                        # see the dynamic-title probe above: the user's
+                        # callable raised before any animation was handed
+                        # back, so detach it and close the abandoned figure
+                        if line_ani is not None:
+                            from .hyper_animation import mark_draw_started
+                            mark_draw_started(line_ani)
+                        if (not show and not _user_supplied_ax
+                                and isinstance(fig, plt.Figure)):
+                            plt.close(fig)
+                        raise
+                _caption_artist = _add_caption(
+                    fig, _caption_text, font=_artist_font,
+                    family=list(plt.rcParams['font.family']))
+                if _dynamic_caption is not None and line_ani is not None:
+                    def _update_caption(ctx, _fn=_dynamic_caption,
+                                        _artist=_caption_artist):
+                        _artist.set_text(_resolve_dynamic_title_text(
+                            _fn, ctx, name='caption'))
+                    _frame_hooks.add_internal(_update_caption)
+
             # save. `fig.savefig`, NOT `plt.savefig` (release-1.0 audit,
             # F09-001: `plt.savefig` writes pyplot's CURRENT figure, so
             # with a user-supplied ax= whose figure was not current the
@@ -13451,6 +14191,15 @@ def plot(
                 except Exception:
                     pass
                 line_ani._first_draw_id = None
+
+    if _panel_animation is not None:
+        # one panel of an animated grid (GH #295): hand the grid this
+        # panel's frame function (the stub `_draw` returned, wrapped above
+        # exactly as a `FuncAnimation`'s would be), its frame hooks and its
+        # axes. The grid builds the one animation.
+        _panel_animation.append({
+            'stub': line_ani, 'hooks': _frame_hooks, 'axes': ax,
+            'colors': colors_info})
 
     if return_model:
         # gather reduce params (spec, not a fitted instance)
@@ -13632,7 +14381,7 @@ def plot(
     # then `anim.to_html5_video()` works (it used to fail on the bare tuple).
     # HyperAnimation still unpacks as the legacy (figure, animation) tuple, so
     # `fig, anim = hyp.plot(...)` keeps working too.
-    if line_ani is not None:
+    if line_ani is not None and _panel_animation is None:
         from .hyper_animation import HyperAnimation
         _hyper_anim = HyperAnimation(fig, line_ani, frame_hooks=_frame_hooks)
         # GH #285: the resolved color scale, so a companion panel can
