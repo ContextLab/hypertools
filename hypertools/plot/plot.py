@@ -7606,7 +7606,9 @@ def plot(
         higher-cardinality integer hues are always continuous. To force
         grouping, pass the ids as strings (``hue=[str(g) for g in
         ids]``); to force a continuous mapping, cast to float
-        (``hue=np.asarray(ids, dtype=float)``).
+        (``hue=np.asarray(ids, dtype=float)``). In a `panels=` grid the
+        choice is made once, from the values of every panel together,
+        as for the single-axes call of all the datasets.
 
         A SCALAR `hue` (a single string or number, e.g. ``hue='red'``) is
         broadcast to one group covering every observation -- a single
