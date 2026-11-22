@@ -1,42 +1,41 @@
 # HyperTools 1.1 release checklist
 
-## The 1.1.1 patch release: read this first
+## The 1.2.0 release: read this first
 
-`pyproject.toml` and `CHANGELOG.md` declare **1.1.1** (fixes for GH #290,
-#291 and #292; no API changes). The steps below were written for 1.1.0 and
-keep its history. For 1.1.1, follow the same steps in the same order and read
-`1.1.1` for `1.1.0` (and `v1.1.1` for `v1.1.0`) in every command, with these
+`pyproject.toml` and `CHANGELOG.md` declare **1.2.0** (GH #295: animated
+panel grids, `caption=`, fast-start mp4; panel grids with shared colors, one
+legend, one colorbar and a figure sized by the grid; and the fixes for GH
+#290, #291 and #292, first drafted as a 1.1.1 patch release that was never
+tagged or uploaded). The steps below were written for 1.1.0 and keep its
+history. For 1.2.0, follow the same steps in the same order and read `1.2.0`
+for `1.1.0` (and `v1.2.0` for `v1.1.0`) in every command, with these
 differences:
 
-- **Nothing is in release form yet.** The 1.1.1 pull request changes code,
-  tests, the changelog, the version, this checklist and a session note,
-  and nothing that puts the repository in release form. `readme.md` still pins its
-  images to the `v1.1.0` tag (the `v1.1.1` tag does not exist until step 5,
-  so flipping earlier would break the images), and
-  `docs/prebuilt_gallery.json` still records the 1.1.0 gallery. Until step 2
-  is done on `master`, the `release-gate` job fails there on those two
-  checks and on the gallery manifest; that is the expected state between
-  the merge and the release.
-- **Step 2, README:** this time it is a real flip, not a verify-only step:
-  `sed -E -i '' 's#(/ContextLab/hypertools/)[^/]+(/images/)#\1v1.1.1\2#g' readme.md`,
-  then `grep -c '/ContextLab/hypertools/v1.1.1/images/' readme.md` → 13.
-- **Step 2, CHANGELOG date:** the `## 1.1.1 (YYYY-MM-DD)` heading must not be
+- **The release commit is pushed to `master` by fast-forward**, never by a
+  merge commit: the gallery record and the notebook manifest pin the exact
+  commit, and a merge commit would be a different one.
+- **Step 2, README:** the image links name the `v1.2.0` tag:
+  `grep -c '/ContextLab/hypertools/v1.2.0/images/' readme.md` → 13. The tag
+  does not exist until step 5, so the images do not resolve before it.
+- **Step 2, CHANGELOG date:** the `## 1.2.0 (YYYY-MM-DD)` heading must not be
   earlier than the release commit's date.
-- **Step 2, galleries:** `docs-notebooks/v1.1.1/` and the
-  `docs-gallery-v1.1.1` branch do not exist yet; the two publish scripts
-  create them (`publish_gallery_notebooks.py --ref v1.1.1`;
-  `publish_prebuilt_gallery.py` takes the version from `pyproject.toml`).
-  The generated gallery notebooks install
-  `hypertools[interactive]>=1.1.1` (`docs/conf.py` reads the package
-  version), so they cannot be run on Colab until the PyPI upload. The
+- **Step 2, galleries:** `publish_gallery_notebooks.py --ref v1.2.0` creates
+  `docs-notebooks/v1.2.0/`; `publish_prebuilt_gallery.py` takes the version
+  from `pyproject.toml` and creates the `docs-gallery-v1.2.0` branch. Run
+  `scripts/add_colab_install_cell.py` on the `master` branch only (on another
+  branch it retargets the tutorials to that branch). The generated gallery
+  notebooks install `hypertools[interactive]>=1.2.0` (`docs/conf.py` reads the
+  package version), so they cannot be run on Colab until the PyPI upload. The
   committed tutorials keep their `>=1.1.0` floor.
 - **Step 5, tag:** there is no draft tag to move. Create it:
-  `git tag -a v1.1.1 -m "HyperTools 1.1.1" <sha>` and
-  `git push origin refs/tags/v1.1.1` (no `--force`).
-- **Step 6, GitHub Release:** there is no draft release. Create one for
-  `v1.1.1` from the `## 1.1.1` section of `CHANGELOG.md` and attach the
-  step-3 wheel and sdist.
-- **Step 6, Read the Docs:** point "stable" at `v1.1.1`, replacing `v1.1.0`.
+  `git tag -a v1.2.0 -m "HyperTools 1.2.0" <sha>` and
+  `git push origin refs/tags/v1.2.0` (no `--force`).
+- **Step 6, GitHub Release:** a draft release for `v1.2.0` (no tag yet)
+  carries the step-3 wheel and sdist; set its tag and publish it.
+- **Step 6, Read the Docs:** point "stable" at `v1.2.0`, replacing `v1.1.0`.
+- **Leftovers of the 1.1.1 draft** (never released): the draft GitHub release
+  "HyperTools 1.1.1", the `release/1.1.1` branch, the `docs-gallery-v1.1.1`
+  branch and `docs-notebooks/v1.1.1/` can be deleted once 1.2.0 is out.
 
 The docs, notebooks, and README ship in **release form** on `master` (the 1.1.0
 draft: `master` == tag `v1.1.0` == `96ac8b7f`, gallery published under

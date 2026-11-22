@@ -1,10 +1,16 @@
 # Changelog
 
-## 1.1.1 (2026-11-22)
+## 1.2.0 (2026-11-22)
 
-A patch release: three fixes for noise and side effects met when `hyp.plot`
-draws into a figure the caller built, found by executing notebooks with
-`jupyter nbconvert` under matplotlib 3.11. No API changes.
+A feature release. `animate=` now works with `panels=` (one animation of the
+whole grid, GH #295), `caption=` adds a figure-level caption that can change
+every frame, and saved `.mp4` files start playing before they have fully
+downloaded. Panel grids changed in look: each dataset keeps one color across
+the figure, the grid has one legend and one colorbar, and the default figure
+is sized by the grid (see "Changed"). The release also carries the fixes for
+noise and side effects met when `hyp.plot` draws into a figure the caller
+built (GH #290, #291, #292), first drafted as a 1.1.1 patch release that was
+never published.
 
 ### Added
 
@@ -66,6 +72,13 @@ draws into a figure the caller built, found by executing notebooks with
   `title='{index}'` in every `animate=` style and `order=`.
   Matplotlib only: `backend='plotly'` raises
   `NotImplementedError`, and a caller-supplied `ax=` raises `ValueError`.
+
+- **Saved `.mp4`, `.m4v` and `.mov` animations are written "fast start"
+  (GH #295).** The file's index is placed before the media data
+  (`-movflags +faststart`), so a browser starts playing a saved clip while it
+  is still downloading instead of fetching the whole file first. This applies
+  to `save_path=`, `HyperAnimation.save`, the streaming recorder and the
+  plotly export; `.avi` and `.mkv` files are unchanged.
 
 ### Changed
 

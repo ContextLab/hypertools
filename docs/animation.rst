@@ -728,6 +728,8 @@ about what a morph means, not a gap to be filled later.
 Animated panel grids
 --------------------
 
+.. versionadded:: 1.2.0
+
 ``panels=`` (alias ``subplots=``) draws one panel per dataset, and with
 ``animate=`` the whole grid is ONE animation (matplotlib only): every panel
 runs on the same clock, and a single ``HyperAnimation`` is returned for the
@@ -810,6 +812,8 @@ A few things are specific to a grid:
 
 Captions
 --------
+
+.. versionadded:: 1.2.0
 
 ``caption=`` (matplotlib only) draws one line of text centered under the
 figure -- under a single plot, or under a whole ``panels=`` grid -- and

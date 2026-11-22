@@ -5,13 +5,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hypertools"
-# the 1.1 line: this branch's unreleased work now includes the hierarchy
-# features AND seven rejections of previously-accepted input (CHANGELOG 1.1.0,
-# "Changed / validation"), which cannot ship as a patch release. 1.1.1 is a
-# patch release on that line: fixes only (CHANGELOG 1.1.1). The version
-# and the top CHANGELOG heading are held equal by
+# 1.2.0 is a feature release on the 1.x line: animated panel grids,
+# `caption=`, and panel grids that share colors, one legend and one colorbar
+# and are sized by the grid (CHANGELOG 1.2.0, "Added" and "Changed"), plus the
+# fixes first drafted as a 1.1.1 patch release that was never published. The
+# version and the top CHANGELOG heading are held equal by
 # tests/test_release_readiness_gate.py::test_changelog_top_version_matches_pyproject.
-version = "1.1.1"
+version = "1.2.0"
 description = "A python package for visualizing and manipulating high-dimensional data"
 readme = "readme.md"
 # PEP 639 SPDX expression (the `license = { text = ... }` table form is
