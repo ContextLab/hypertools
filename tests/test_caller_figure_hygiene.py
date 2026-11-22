@@ -239,11 +239,21 @@ def test_plot_into_caller_axes_keeps_the_callers_layout_engine(plot_kwargs):
     fig, axs = plt.subplots(1, 2, figsize=(8, 4), layout='constrained',
                             subplot_kw={'projection': '3d'})
     engine = fig.get_layout_engine()
-    hyp.plot(_walk(), ax=axs[0], show=False, **plot_kwargs)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter('always')
+        hyp.plot(_walk(), ax=axs[0], show=False, **plot_kwargs)
+        assert fig.get_layout_engine() is engine
+        assert fig.get_size_inches().tolist() == [8.0, 4.0]
+        fig.canvas.draw()                 # the caller's engine still runs
     assert fig.get_layout_engine() is engine
-    assert fig.get_size_inches().tolist() == [8.0, 4.0]
-    fig.canvas.draw()                     # the caller's engine still runs
-    assert fig.get_layout_engine() is engine
+    # the caller's figure is not resized, so the one legend too wide for
+    # its half of it is reported when the figure is drawn (and nothing
+    # else is)
+    messages = [str(w.message) for w in caught]
+    if 'legend' in plot_kwargs:
+        assert len(messages) == 1 and 'too large to fit' in messages[0]
+    else:
+        assert messages == []
     plt.close(fig)
 
 

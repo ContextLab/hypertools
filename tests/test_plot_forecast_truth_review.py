@@ -448,9 +448,18 @@ def test_shuffled_time_index_is_drawn_in_time_order_and_forecast_joins(
     from the LATEST date, so the forecast did not join the drawn line's
     end. The line is drawn in time order, exactly as the sorted frame."""
     df, shuffled = _shuffled_series()
-    with pytest.warns(UserWarning, match='time order'):
+    # two warnings, both about the shuffled index: the line is drawn in
+    # time order, and the observations are sorted before forecasting
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter('always')
         out = hyp.plot(shuffled, ndims=1, reduce=None, predict='Kalman', t=5,
                        antialias=False, backend=backend, show=False)
+    messages = [str(w.message) for w in caught
+                if issubclass(w.category, UserWarning)]
+    assert any('time order' in m for m in messages)
+    assert any('sorted before forecasting' in m for m in messages)
+    assert all('time order' in m or 'sorted before forecasting' in m
+               for m in messages), messages
     ref = hyp.plot(df, ndims=1, reduce=None, predict='Kalman', t=5,
                    antialias=False, backend=backend, show=False)
 
