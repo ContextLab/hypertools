@@ -20,7 +20,7 @@ from matplotlib.colors import to_rgba, to_rgba_array
 from sklearn.base import BaseEstimator, TransformerMixin
 
 import hypertools as hyp
-from hypertools.plot.plot import SHARED_COLORBAR_GID
+from hypertools.plot.plot import SHARED_COLORBAR_GID, SHARED_LEGEND_GID
 
 ROWS = 12
 N_DATASETS = 3
@@ -317,7 +317,8 @@ def test_panel_colors_are_the_single_axes_calls(kwargs, factory, fmt, mode):
 
 
 # --------------------------------------------------------------------------
-# 1.2.0 review round 4: a matrix `hue=` is reduced ONCE per grid call.
+# 1.2.0 review round 4: a matrix `hue=` is reduced ONCE per grid call, and
+# its column names reach the shared legend.
 # --------------------------------------------------------------------------
 
 class _CountingRandomProjection(BaseEstimator, TransformerMixin):
@@ -417,3 +418,57 @@ def test_reducer_list_grid_reduces_its_matrix_hue_once(backend):
                    for c in to_rgba_array(coll.get_facecolor()))
             for ax in grid.axes[:2])
         assert first and first == second
+
+
+def _legend_entries(figure):
+    """The labels of the legend(s) `figure` shows: a matplotlib figure's
+    one legend (the grid's shared one, or the single axes') -- asserting
+    there is exactly one -- or a plotly figure's legend entries."""
+    if hasattr(figure, 'data'):
+        return [trace.name for trace in figure.data
+                if trace.showlegend is not False and trace.name is not None]
+    legends = list(figure.legends) + [
+        ax.get_legend() for ax in figure.axes if ax.get_legend() is not None]
+    assert len(legends) == 1, f'{len(legends)} legends'
+    return [text.get_text() for text in legends[0].get_texts()]
+
+
+def _named_mixture():
+    """Mixture weights as a DataFrame whose columns are named."""
+    return pd.DataFrame(_mixture(), columns=['signal', 'noise', 'drift'])
+
+
+@pytest.mark.parametrize('backend', ['matplotlib', 'plotly'])
+@pytest.mark.parametrize('fit', ['shared', 'independent'])
+@pytest.mark.parametrize('fmt', ['-', 'o'])
+def test_mixture_hue_column_names_reach_the_shared_legend(fmt, fit, backend):
+    call = dict(hue=_named_mixture(), hue_mode='mixture', legend=True,
+                reduce=None, ndims=2, fmt=fmt, backend=backend)
+    single = _legend_entries(_draw(_datasets(), call))
+    assert single == ['signal', 'noise', 'drift']
+    grid = _draw(_datasets(), dict(call, panels=True, panel_fit=fit))
+    assert _legend_entries(grid) == single
+    if backend == 'matplotlib':
+        assert grid.legends[0].get_gid() == SHARED_LEGEND_GID
+
+
+def test_mixture_hue_column_names_reach_an_animated_grids_legend():
+    call = dict(hue=_named_mixture(), hue_mode='mixture', legend=True,
+                reduce=None, ndims=2, **MODES['reveal'])
+    single = _legend_entries(_draw(_datasets(), call))
+    assert single == ['signal', 'noise', 'drift']
+    assert _legend_entries(_draw(_datasets(), dict(call, panels=True))) \
+        == single
+
+
+def test_mixture_hue_names_are_in_the_grids_color_scale():
+    call = dict(hue=_named_mixture(), hue_mode='mixture', legend=True,
+                reduce=None, ndims=2, return_model=True, show=False)
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore')
+        single = hyp.plot(_datasets(), **call)
+        grid = hyp.plot(_datasets(), panels=True, **call)
+    assert list(single['colors']['categories']) == ['signal', 'noise',
+                                                    'drift']
+    assert list(grid['colors']['categories']) \
+        == list(single['colors']['categories'])

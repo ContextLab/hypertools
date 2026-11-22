@@ -5093,6 +5093,9 @@ def _resolve_grid_colors(rows, grid_kw, ndims, caught_warnings,
     - ``'matrix_hue'``: ``(kind, rows)`` for a matrix `hue=` -- ``'rgb'``
       with the RGB of every observation, reduced and scaled over the whole
       grid, or ``'mixture'`` with its weight rows -- else None;
+    - ``'hue_columns'``: the column names of a matrix `hue=` given as a
+      DataFrame (what a mixture hue's legend entries are called), else
+      None;
     - ``'blend_groups'``: ``{quantized color: drawn color}`` where a
       blended coloring is drawn as quantized groups (animated mixture
       clusters, a matrix hue on markers), else None.
@@ -5133,6 +5136,7 @@ def _resolve_grid_colors(rows, grid_kw, ndims, caught_warnings,
                               else None),
             'legend_order': None if order is None else list(order),
             'matrix_hue': report.get('matrix_hue'),
+            'hue_columns': report.get('hue_columns'),
             'blend_groups': report.get('blend_groups')}
 
 
@@ -5192,7 +5196,9 @@ def _panel_apply_hue_scale(kw, resolution, shared, rows=None):
     draws), and a matrix hue is replaced by the panel's rows (`rows`, its
     ``(start, stop)`` among the grid's observations) of the matrix the
     grid resolved -- RGB reduced and scaled over every panel
-    (``shared['hue_rgb']``), or its mixture weights. A blended coloring
+    (``shared['hue_rgb']``), or its mixture weights, with the matrix's
+    column names (``shared['hue_columns']``: the rows are a bare array,
+    and a mixture hue's legend names its columns). A blended coloring
     drawn as quantized groups takes the grid's group colors
     (``shared['blend_groups']``). Returns False when the panel has a
     category the scale does not know -- the grid then cannot claim one
@@ -5210,6 +5216,8 @@ def _panel_apply_hue_scale(kw, resolution, shared, rows=None):
         values = np.asarray(values)
         if rows[1] <= len(values):
             kw['hue'] = values[rows[0]:rows[1]]
+            if resolution.get('hue_columns') is not None:
+                shared['hue_columns'] = list(resolution['hue_columns'])
             if kind == 'rgb':
                 kw['hue_mode'] = 'rgb'
                 kw['color_reduce'] = None
@@ -11034,7 +11042,9 @@ def plot(
     # whole grid (reduced and scaled over every panel's rows), which the
     # panel draws as it is; and ``'blend_groups'``, the grid's
     # ``{quantized color: drawn color}`` for the groups a blended (mixture)
-    # coloring is quantized into; and ``'matrix_cache'``, a dict
+    # coloring is quantized into; ``'hue_columns'``, the column names of
+    # the grid's matrix `hue=` (this panel's rows of it are a bare array),
+    # which name the mixture legend's entries; ``'matrix_cache'``, a dict
     # the grid shares between its calls so a matrix `hue=` is reduced to
     # RGB once for all of them (`_matrix_hue_to_rgb_once`). The grid's
     # own RESOLUTION call
@@ -13755,6 +13765,11 @@ def plot(
                 _hue_column_names = list(hue.columns)
         elif is_series_like(hue):
             hue = _series_values_list(hue)
+        if (_hue_column_names is None
+                and (_panel_shared or {}).get('hue_columns') is not None):
+            # a `panels=` cell: its matrix hue is its rows of the matrix
+            # the grid resolved, a bare array; the names are the grid's
+            _hue_column_names = list(_panel_shared['hue_columns'])
 
         # NESTED per-dataset hue: when the data is a list of datasets, hue may
         # be given with the SAME nesting -- one hue sub-sequence per dataset,
@@ -14754,6 +14769,8 @@ def plot(
             _grid_report.update(
                 categories=dict(_by_category.get('categories') or {}),
                 matrix_hue=_resolved_matrix_hue,
+                hue_columns=(None if _hue_column_names is None
+                             else list(_hue_column_names)),
                 blend_groups=_blend_group_colors)
         return {'colors': colors_info}
 
