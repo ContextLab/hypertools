@@ -53,11 +53,16 @@ draws into a figure the caller built, found by executing notebooks with
   measure the unfitted figure, so they give every panel the room they
   always did and the fit takes up only what is still missing. A legend
   with no room beside the axes is drawn inside it (and goes back out when
-  room appears); one too large for its panel either way, or taller than
-  the figure, is left in place with a `UserWarning` naming the remedies.
-  Twin axes follow the fitted axes. Not covered: an inset or other axes
-  placed by hand in the legend's place. The fit is an axes locator, so on
-  such an axes `ax.get_position()` reports the position of the last draw.
+  room appears, unless the caller has restyled it meanwhile); one too
+  large for its panel either way, or running off the canvas or over the
+  panel above or below, is left in place with a `UserWarning` naming the
+  remedies. Twin axes follow the fitted axes, whenever they are made. Not
+  covered: an inset or other axes placed by hand in the legend's place,
+  and a legend over the tick labels of its own axes' twin. The fit is an
+  axes locator, so on such an axes `ax.get_position()` reports the
+  position of the last draw; it is recomputed on each draw (measured on a
+  4x4 grid with a legend and title on every panel: 163 ms a redraw in 2-D
+  and 230 ms in 3-D, against 60 and 69 ms with the positions fixed).
 - **No `findfont` log lines for ordinary text under matplotlib 3.11
   (GH #292).** matplotlib 3.11 registers every face of a `.ttc` font
   collection, which on macOS surfaces 'Hiragino Kaku Gothic ProN' as a

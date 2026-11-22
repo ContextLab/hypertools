@@ -7105,9 +7105,12 @@ def plot(
         and reserve the room they always did; the fit takes up only what
         is still missing), and does nothing when the legend already fits.
         A legend with no room beside the axes even then is drawn inside
-        the axes; one too large for the panel either way, or taller than
-        the figure, is left where it is, with a `UserWarning`. Twin axes
-        of `ax` follow it. (Through 1.1.0 the figure was widened instead.)
+        the axes; one too large for the panel either way, or too tall
+        for the room its panel has, is left where it is, with a
+        `UserWarning`. Twin axes of `ax` follow it. The fit is a
+        matplotlib axes locator, so ``ax.get_position()`` on such an axes
+        reports the position of the last draw. (Through 1.1.0 the figure
+        was widened instead.)
         A figure hypertools made -- one an earlier `hyp.plot` call
         returned, or a `hyp.subplots` grid -- is still tightened, and its
         legend fitted, by each static call that draws into it.
@@ -14384,18 +14387,24 @@ def _fit_right_legend(fig, ax, pad_in=0.15, max_iter=3):
                          plot_w_in / new_w, pos.height])
 
 
-_LAYOUT_PASS_FILES = ('_constrained_layout.py', '_tight_layout.py')
+_LAYOUT_PASS_MODULES = frozenset({'matplotlib._constrained_layout',
+                                  'matplotlib._tight_layout'})
 
 
 def _in_a_layout_pass(limit=40):
-    """True while matplotlib's ``tight_layout`` / constrained layout code is
-    measuring the figure (it is somewhere up the call stack)."""
+    """True while a layout is MEASURING the figure: matplotlib's
+    ``tight_layout`` / constrained layout code, or the ``execute`` of any
+    layout engine (the caller's own included), is up the call stack."""
     import sys
+    from matplotlib.layout_engine import LayoutEngine
     frame = sys._getframe(2)
     for _ in range(limit):
         if frame is None:
             return False
-        if frame.f_code.co_filename.endswith(_LAYOUT_PASS_FILES):
+        if frame.f_globals.get('__name__') in _LAYOUT_PASS_MODULES:
+            return True
+        if (frame.f_code.co_name == 'execute'
+                and isinstance(frame.f_locals.get('self'), LayoutEngine)):
             return True
         frame = frame.f_back
     return False
@@ -14466,7 +14475,6 @@ class _CallerSlotLocator:
         self._wrapped = wrapped
         self._warned = False
         self._busy = False
-        self._last = None            # (renderer id, base bounds) -> fitted
 
     def get_subplotspec(self):
         # `tight_layout` asks an axes' LOCATOR (when it has one) for the
@@ -14481,7 +14489,6 @@ class _CallerSlotLocator:
     def __getstate__(self):
         state = self.__dict__.copy()
         state['_ax'] = self._ax()          # weakrefs do not pickle
-        state['_last'] = None
         return state
 
     def __setstate__(self, state):
@@ -14503,22 +14510,22 @@ class _CallerSlotLocator:
     def _axis_edge(axis, renderer, low_side, start):
         """The low (left / bottom) edge of a neighbor's VISIBLE tick labels
         and axis label, starting from `start` (its own box edge)."""
-        which = 0 if low_side == 'x' else 1
-        edge = start
-        texts = list(axis.get_ticklabels()) + [axis.label,
-                                               axis.get_offset_text()]
-        for text in texts:
-            if not (text.get_visible() and text.get_text().strip()):
-                continue
-            try:
-                box = text.get_window_extent(renderer)
-            except Exception:  # noqa: BLE001 - not drawable yet
-                continue
-            low = box.x0 if which == 0 else box.y0
-            high = box.x1 if which == 0 else box.y1
-            if high <= start + 1.0:          # on the neighbor's low side
-                edge = min(edge, low)
-        return edge
+        texts = list(axis.get_ticklabels()) + [axis.label]
+        if not any(t.get_visible() and t.get_text().strip() for t in texts):
+            # nothing a reader sees (an axis hypertools switched off still
+            # reports a box for its empty labels)
+            return start
+        try:
+            # the axis' own measurement: it first puts the ticks and the
+            # axis label where the next draw will (read directly, a label
+            # that has never been drawn is still at its initial spot)
+            box = axis.get_tightbbox(renderer)
+        except Exception:  # noqa: BLE001 - not drawable yet
+            return start
+        if box is None:
+            return start
+        low = box.x0 if low_side == 'x' else box.y0
+        return min(start, low)
 
     def _limits(self, ax, base, renderer):
         """(left, right, top) display-pixel limits for what this axes
@@ -14558,20 +14565,32 @@ class _CallerSlotLocator:
                 if t.get_visible() and t.get_text()]
 
     # -- the legend, outside or inside ---------------------------------------
+    _INSIDE = (0, None, True, 0.85)      # loc 'best', no anchor, framed
+
     @staticmethod
-    def _put_inside(legend):
+    def _legend_state(legend):
+        return (legend._loc, legend._bbox_to_anchor, legend.get_frame_on(),
+                legend.get_frame().get_alpha())
+
+    @classmethod
+    def _put_inside(cls, legend):
         if getattr(legend, '_hyp_outside', None) is None:
-            legend._hyp_outside = (legend._loc, legend._bbox_to_anchor,
-                                   legend.get_frame_on(),
-                                   legend.get_frame().get_alpha())
+            legend._hyp_outside = cls._legend_state(legend)
             legend.set_bbox_to_anchor(None)
             legend.set_loc('best')
             legend.set_frame_on(True)     # readable over the data
             legend.get_frame().set_alpha(0.85)
 
-    @staticmethod
-    def _put_outside(legend):
+    @classmethod
+    def _put_outside(cls, legend):
+        """Undo `_put_inside`. False when the caller has since restyled or
+        moved the legend: it is then the caller's, and is left alone."""
         saved = getattr(legend, '_hyp_outside', None)
+        if saved is not None and cls._legend_state(legend) != cls._INSIDE:
+            legend._hyp_outside = None
+            legend._hyp_callers = True
+        if getattr(legend, '_hyp_callers', False):
+            return False
         if saved is not None:
             loc, anchor, frame_on, alpha = saved
             # (the stored anchor is already a transformed box:
@@ -14582,6 +14601,7 @@ class _CallerSlotLocator:
             legend.set_frame_on(frame_on)
             legend.get_frame().set_alpha(alpha)
             legend._hyp_outside = None
+        return True
 
     def _warn_once(self, what):
         if self._warned:
@@ -14595,19 +14615,40 @@ class _CallerSlotLocator:
             'smaller fontsize) to place it.', UserWarning, stacklevel=2)
 
     # -- the fit -------------------------------------------------------------
+    def _legends(self, ax):
+        """The visible legends of the axes and of its twins (twins share
+        the position, so each one's legend hangs off the same edge)."""
+        found = []
+        for member in [ax] + [t for t in ax._twinned_axes.get_siblings(ax)
+                              if t is not ax]:
+            legend = member.get_legend()
+            if legend is not None and legend.get_visible():
+                found.append(legend)
+        return found
+
     def _fit(self, ax, base, renderer):
         from matplotlib.transforms import Bbox
         left_lim, right_lim, top_lim = self._limits(ax, base, renderer)
-        legend = ax.get_legend()
-        if legend is not None and not legend.get_visible():
-            legend = None
+        legends = self._legends(ax)
         titles = self._titles(ax)
+        # an axes with a fixed aspect and adjustable='datalim' changes its
+        # data limits whenever a position is tried: put them back, so the
+        # search leaves nothing behind
+        view = ax.viewLim.frozen() if ax.name != '3d' else None
 
-        def place(wf, hf):
+        # matplotlib settles a title's height above the axes when it
+        # draws (lifting it over tick labels or an axis label on the top
+        # side); ask for that only where the title is measured against
+        # the top limit -- it is slow, it measures every tick label
+        lifted = bool(titles)
+
+        def place(wf, hf, for_title=False):
+            if view is not None:
+                ax.viewLim.set(view)
             ax.apply_aspect(Bbox.from_bounds(
                 base.x0, base.y0, base.width * wf, base.height * hf))
-            if titles:
-                try:      # the title's final place, above any top labels
+            if for_title and lifted:
+                try:
                     ax._update_title_position(renderer)
                 except Exception:  # noqa: BLE001
                     pass
@@ -14621,9 +14662,8 @@ class _CallerSlotLocator:
 
         def over_right(wf, hf):
             place(wf, hf)
-            over = 0.0
-            if legend is not None:
-                over = float(legend.get_window_extent(renderer).x1) - right_lim
+            over = max((float(g.get_window_extent(renderer).x1)
+                        for g in legends), default=right_lim) - right_lim
             if titles and wf < 1.0:
                 # narrowing slides a centered title left: never further
                 # off its own side than it already was at full width
@@ -14632,57 +14672,115 @@ class _CallerSlotLocator:
             return over
 
         def over_top(wf, hf):
-            place(wf, hf)
+            place(wf, hf, for_title=True)
             if not titles:
                 return 0.0
             return max(float(t.get_window_extent(renderer).y1)
                        for t in titles) - top_lim
 
-        def largest_fitting(over, vary_width, other):
+        def largest_fitting(over, vary_width, other, at_floor, at_full):
+            """Largest share in [floor, 1] whose overhang is <= 0.5 px,
+            given the overhang at both ends (<= 0.5 at the floor, more at
+            1). The overhang is linear in the share for an ordinary axes,
+            so one interpolation usually lands it; a fixed aspect or a
+            3-D box does not follow the line and is bisected."""
+            def probe(frac):
+                return over(*((frac, other) if vary_width else (other, frac)))
+
             lo, hi = self.min_fraction, 1.0
+            guess = lo + (hi - lo) * (0.0 - at_floor) / (at_full - at_floor)
+            guess = min(max(guess, lo), hi)
+            got = probe(guess)
+            if -1.5 <= got <= 0.5:
+                return guess
+            if got > 0.5:
+                hi = guess
+            else:
+                lo = guess
             for _ in range(self.steps):
                 mid = 0.5 * (lo + hi)
-                if over(*((mid, other) if vary_width else (other, mid))) > 0.5:
+                if probe(mid) > 0.5:
                     hi = mid
                 else:
                     lo = mid
             return lo
 
         wf = hf = 1.0
-        if legend is not None:
-            self._put_outside(legend)      # decide afresh on every draw
-            if over_right(1.0, 1.0) > 0.5:
-                if over_right(self.min_fraction, 1.0) <= 0.5:
-                    wf = largest_fitting(over_right, True, 1.0)
+        if legends:
+            ours = [g for g in legends if self._put_outside(g)]
+            at_full = over_right(1.0, 1.0)     # afresh on every draw
+            if at_full > 0.5:
+                at_floor = over_right(self.min_fraction, 1.0)
+                if at_floor <= 0.5:
+                    wf = largest_fitting(over_right, True, 1.0,
+                                         at_floor, at_full)
                 else:
                     # no room beside the axes even at its floor
                     place(1.0, 1.0)
-                    size = legend.get_window_extent(renderer)
-                    if (size.width <= 0.9 * ax.bbox.width
-                            and size.height <= 0.9 * ax.bbox.height):
+                    sizes = [g.get_window_extent(renderer) for g in ours]
+                    if (len(legends) == 1 and ours and all(
+                            size.width <= 0.9 * ax.bbox.width
+                            and size.height <= 0.9 * ax.bbox.height
+                            for size in sizes)):
                         # ...but there is in it: draw the legend inside,
                         # framed so it reads over the data, instead of
                         # clipping it or squeezing the plot to nothing
-                        self._put_inside(legend)
+                        self._put_inside(ours[0])
                     else:
-                        # larger than the panel: no placement is clearly
-                        # right, so say so once and leave it
-                        self._warn_once('too large to fit beside or inside the axes '
-                                        'it was drawn for')
+                        # too large for the panel either way: no placement
+                        # is clearly right, so say so once and leave it
+                        self._warn_once('too large to fit beside or inside '
+                                        'the axes it was drawn for')
             place(wf, 1.0)
-            size = legend.get_window_extent(renderer)
-            if size.height > self._container(ax).bbox.height + 0.5:
-                self._warn_once('taller than the figure')
-        if titles and over_top(wf, 1.0) > 0.5:
-            if over_top(wf, self.min_fraction) <= 0.5:
-                hf = largest_fitting(over_top, False, wf)
+            self._check_vertical_room(ax, legends, renderer)
+        if titles:
+            at_full = over_top(wf, 1.0)
+            if at_full > 0.5:
+                at_floor = over_top(wf, self.min_fraction)
+                if at_floor <= 0.5:
+                    hf = largest_fitting(over_top, False, wf,
+                                         at_floor, at_full)
+        if view is not None:
+            ax.viewLim.set(view)
         return Bbox.from_bounds(base.x0, base.y0, base.width * wf,
                                 base.height * hf)
+
+    def _check_vertical_room(self, ax, legends, renderer):
+        """A legend that runs off the top or bottom of the canvas, or
+        over a panel above or below: nothing about the axes' width fixes
+        that, so it is reported."""
+        if self._warned:
+            return
+        container = self._container(ax)
+        canvas = container.bbox
+        family = set(ax._twinned_axes.get_siblings(ax))
+        others = [o.get_position(original=True).transformed(
+            container.transSubfigure) for o in container.axes
+            if o not in family and o.get_visible()]
+        for legend in legends:
+            box = legend.get_window_extent(renderer)
+            if (box.y1 > canvas.y1 + 0.5 or box.y0 < canvas.y0 - 0.5
+                    or any(box.overlaps(o) for o in others)):
+                self._warn_once('taller than the room its panel has')
+                return
+
+    def _follow(self, ax):
+        # twins made after the plot share the position too
+        for twin in ax._twinned_axes.get_siblings(ax):
+            if twin is not ax and twin.get_axes_locator() is None:
+                twin.set_axes_locator(_FollowLeaderLocator(ax))
 
     def __call__(self, ax, renderer):
         base = (self._wrapped(ax, renderer) if self._wrapped is not None
                 else ax.get_position(original=True))
-        if self._busy or _in_a_layout_pass():
+        if self._busy:
+            return base
+        self._follow(ax)
+        if _in_a_layout_pass():
+            # the layout measures the figure as it is without the fit:
+            # the unfitted position, and the legend back outside
+            for legend in self._legends(ax):
+                self._put_outside(legend)
             return base
         if renderer is None:
             renderer = ax.get_figure(root=True)._get_renderer()
@@ -14705,7 +14803,7 @@ def _keep_inside_caller_slot(ax):
         return
     current = ax.get_axes_locator()
     if isinstance(current, (_CallerSlotLocator, _FollowLeaderLocator)):
-        return
+        return        # (a twin's legend is fitted by its leader's locator)
     # only an axes that carries something to fit: with a locator set,
     # `ax.get_position()` reports the last DRAWN position instead of
     # applying the aspect on the spot, and a caller reading it straight

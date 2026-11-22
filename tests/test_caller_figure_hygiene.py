@@ -783,13 +783,200 @@ def test_the_callers_tight_layout_gives_2d_panels_the_room_it_always_did():
     np.testing.assert_allclose(fitted, [fitted[0]] * 3, rtol=0.03)
 
 
-def test_a_legend_taller_than_the_figure_is_reported():
+def test_a_legend_taller_than_its_room_is_reported():
+    """Running off the top or bottom of the canvas, or over the panel
+    below: narrowing the axes cannot help, so hypertools says so."""
     fig, ax = plt.subplots(figsize=(5, 2))
     data = [np.random.default_rng(i).normal(size=(5, 2)) for i in range(12)]
     hyp.plot(data, 'o', ax=ax, legend=[str(i) for i in range(12)],
              show=False)
-    with pytest.warns(UserWarning, match='taller than the figure'):
+    with pytest.warns(UserWarning, match='taller than the room'):
         fig.canvas.draw()
+    plt.close(fig)
+
+    fig, axs = plt.subplots(2, 1, figsize=(8, 6))
+    data = [np.random.default_rng(i).normal(size=(5, 2)) for i in range(20)]
+    hyp.plot(data, 'o', ax=axs[0], show=False,
+             legend=[f'long legend label {i}' for i in range(20)])
+    with pytest.warns(UserWarning, match='taller than the room') as caught:
+        fig.canvas.draw()
+        fig.canvas.draw()
+    assert len([w for w in caught if 'taller' in str(w.message)]) == 1
+    plt.close(fig)
+
+
+# -- second red-team round ----------------------------------------------------
+
+def test_the_search_leaves_the_data_limits_of_a_datalim_axes_alone():
+    """`set_aspect('equal', adjustable='datalim')` changes the data limits
+    whenever a position is applied; the fit tries several. The plot must
+    not drift from draw to draw."""
+    fig, ax = plt.subplots(figsize=(5, 4))
+    _plot3(ax)
+    ax.set_aspect('equal', adjustable='datalim')
+    seen = []
+    for _ in range(4):
+        fig.canvas.draw()
+        seen.append(ax.get_xlim() + ax.get_ylim())
+    np.testing.assert_allclose(seen[1:], [seen[1]] * 3, rtol=1e-9)
+    assert _decoration_report(fig) == []
+    plt.close(fig)
+
+
+def test_a_twin_made_after_the_plot_follows_the_fit_too():
+    fig, ax = plt.subplots(figsize=(5, 4))
+    _plot3(ax)
+    twin = ax.twinx()
+    fig.canvas.draw()
+    assert _extent(ax.get_legend(), fig).x1 <= fig.bbox.x1
+    np.testing.assert_allclose(twin.get_position().bounds,
+                               ax.get_position().bounds)
+    plt.close(fig)
+
+
+def test_a_legend_on_the_twin_is_kept_on_the_canvas_as_well():
+    fig, ax = plt.subplots(figsize=(6, 4))
+    twin = ax.twinx()
+    _plot3(ax)
+    _plot3(twin, legend=[f'long second axes legend {i}' for i in range(3)])
+    fig.canvas.draw()
+    assert _extent(twin.get_legend(), fig).x1 <= fig.bbox.x1
+    assert _extent(ax.get_legend(), fig).x1 <= fig.bbox.x1
+    plt.close(fig)
+
+
+def test_the_first_draw_already_clears_the_next_panels_axis_label():
+    """A label that has never been drawn is not yet where it will be; the
+    first draw (or a plain `savefig`) must give what every later one does."""
+    fig, axs = plt.subplots(1, 2, figsize=(9, 4))
+    _plot3(axs[0])
+    axs[1].set_ylabel('neighbor label')
+    fig.canvas.draw()
+    first = (axs[0].get_position().bounds,
+             _extent(axs[0].get_legend(), fig).bounds)
+    assert (_extent(axs[0].get_legend(), fig).x1
+            <= _extent(axs[1].yaxis.label, fig).x0)
+    assert _extent(axs[0].get_legend(), fig).x0 > _extent(axs[0], fig).x1
+    fig.canvas.draw()
+    second = (axs[0].get_position().bounds,
+              _extent(axs[0].get_legend(), fig).bounds)
+    np.testing.assert_allclose(first, second, atol=1e-9)
+    plt.close(fig)
+
+
+@pytest.mark.parametrize('layout', ['tight', 'constrained'])
+def test_an_engine_gives_a_mixed_grid_the_room_it_gives_without_the_fit(
+        layout):
+    """hypertools panels beside the caller's own labeled panels: draw for
+    draw, the engine's slots are those of the same figure with the fit
+    taken off (an early draw used to flip a legend inside and widen its
+    slot)."""
+    def slots(strip):
+        fig, axs = plt.subplots(2, 3, figsize=(11, 6), layout=layout)
+        for k, ax in enumerate(axs.ravel()):
+            if k % 2:
+                ax.plot([0, 1], [0, 1000])
+                ax.set_ylabel('the caller\'s own panel')
+            else:
+                _plot3(ax, title='hyp')
+                if strip:
+                    ax.set_axes_locator(None)
+        found = []
+        for _ in range(4):
+            fig.canvas.draw()
+            found.append([ax.get_position(original=True).bounds
+                          for ax in axs.ravel()])
+        plt.close(fig)
+        return found
+
+    np.testing.assert_allclose(slots(False), slots(True), atol=1e-9)
+
+
+def test_tight_layout_measures_the_legend_outside_even_after_it_went_inside():
+    def first_slot(strip):
+        fig, axs = plt.subplots(1, 3, figsize=(10, 3))
+        fig.subplots_adjust(wspace=0.05)
+        _plot3(axs[0])
+        if strip:
+            axs[0].set_axes_locator(None)
+        fig.canvas.draw()
+        fig.tight_layout()
+        slot = axs[0].get_position(original=True).bounds
+        plt.close(fig)
+        return slot
+
+    np.testing.assert_allclose(first_slot(False), first_slot(True),
+                               atol=1e-9)
+
+
+def test_a_legend_the_caller_restyles_after_it_went_inside_is_left_alone():
+    fig, axs = plt.subplots(1, 3, figsize=(10, 3))
+    fig.subplots_adjust(wspace=0.05)
+    _plot3(axs[0])
+    fig.canvas.draw()
+    legend = axs[0].get_legend()
+    assert legend.get_frame_on()                  # moved inside, framed
+    legend.set_loc('lower left')
+    legend.set_frame_on(False)
+    fig.canvas.draw()
+    fig.canvas.draw()
+    assert legend._loc == 3 and not legend.get_frame_on()
+    plt.close(fig)
+
+
+def test_layout_passes_are_recognized_by_module_not_by_file_name():
+    """A draw started from a user file that happens to be called
+    `..._tight_layout.py` is an ordinary draw; the `execute` of the
+    caller's own layout engine is a measuring pass."""
+    from matplotlib.layout_engine import LayoutEngine
+    fig, ax = plt.subplots(figsize=(5, 4))
+    _plot3(ax)
+    exec(compile('fig.canvas.draw()', 'my_tight_layout.py', 'exec'),
+         {'fig': fig})
+    assert _extent(ax.get_legend(), fig).x1 <= fig.bbox.x1
+    fitted_width = ax.get_position().width
+
+    seen = []
+
+    class Recording(LayoutEngine):
+        _adjust_compatible = True
+        _colorbar_gridspec = True
+
+        def execute(self, figure):
+            box = figure.axes[0].get_tightbbox(figure._get_renderer())
+            seen.append(box.x1)
+
+    fig.set_layout_engine(Recording())
+    fig.canvas.draw()
+    assert seen and seen[-1] > fig.bbox.x1        # the unfitted overhang
+    assert _extent(ax.get_legend(), fig).x1 <= fig.bbox.x1
+    assert abs(ax.get_position().width - fitted_width) < 1e-9
+    plt.close(fig)
+
+
+def test_redrawing_a_fitted_grid_costs_a_bounded_number_of_measurements():
+    """Without a cache the fit runs on every draw; it must stay a handful
+    of legend measurements per axes, not a search each time."""
+    from matplotlib.legend import Legend
+    fig, axs = plt.subplots(3, 3, figsize=(14, 10))
+    for ax in axs.ravel():
+        _plot3(ax, title='T')
+    fig.canvas.draw()
+    calls = []
+    original = Legend.get_window_extent
+
+    def counting(self, *args, **kwargs):
+        calls.append(1)
+        return original(self, *args, **kwargs)
+
+    Legend.get_window_extent = counting
+    try:
+        fig.canvas.draw()
+    finally:
+        Legend.get_window_extent = original
+    assert _decoration_report(fig) == []
+    # 9 axes, each asked for its position at most twice per draw
+    assert len(calls) <= 9 * 2 * 8, len(calls)
     plt.close(fig)
 
 

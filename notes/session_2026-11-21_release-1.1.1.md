@@ -261,3 +261,23 @@ pushed a wide title off the left; tall legend not reported (warning).
 Not fixed: an inset axes placed by hand where the legend goes (stated in
 the changelog). matplotlib's own tight engine keeps moving 3-D rows for
 6+ draws with or without hypertools.
+
+### Red team of the fit, round 2 (Codex + a second fresh subagent)
+
+Round-1 items confirmed fixed by both; hypertools' own figures
+pixel-identical to master. New findings, all fixed with a test each:
+data limits drifting on `set_aspect('equal', adjustable='datalim')` (view
+limits restored around the search); tall legends over the row below not
+reported (warning now covers off-canvas top/bottom and overlap with other
+panels); redraw cost 10x on a 4x4 grid (one interpolation instead of a
+bisection for ordinary axes, title height settled only for the top check:
+now 163/230 ms vs 60/69 ms fixed, 2-D/3-D); `tight_layout` after an
+inside legend measured the inside state (layout passes put it back
+outside); twin made after the plot, and a legend on the twin (followers
+installed at draw time; twins' legends counted); caller edits to an
+inside legend overwritten (a restyled legend is left to the caller);
+layout-pass detection by file name (now by module, plus any
+`LayoutEngine.execute`); a never-drawn neighbor axis label read at its
+initial spot, so the first draw differed (the axis' own `get_tightbbox`).
+Left as is: legend over its own twin's tick labels (same on master);
+default 2x3 grids narrow panels to about 40% (legend takes the rest).
