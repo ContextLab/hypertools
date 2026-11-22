@@ -32,13 +32,37 @@ draws into a figure the caller built, found by executing notebooks with
   hypertools makes are
   laid out as before: its own figure (including a later call that draws
   into it with `ax=fig.axes[0]`), a `panels=` grid, and a `hyp.subplots`
-  grid (each `hyp.plot(..., ax=axes[i])` call still tightens it). **If you relied on the automatic layout** of a figure made with
+  grid (each `hyp.plot(..., ax=axes[i])` call still tightens it). **If you
+  relied on the automatic `tight_layout`** of a figure made with
   `plt.subplots`, call `fig.tight_layout()` after plotting, create the
   figure with `layout='constrained'`, or build the grid with
-  `hyp.subplots`. This matters most with `legend=`: the legend beside a
-  caller's axes is no longer fitted by widening the caller's figure (that
-  stretched the figure's other axes and switched off its layout engine),
-  so without a layout it can cover the next panel or run off the canvas.
+  `hyp.subplots`.
+- **A legend or title added to the caller's axes is fitted automatically,
+  inside that axes' own room.** Through 1.1.0 a `legend=` beside a
+  caller's axes was fitted by widening the caller's figure, which
+  stretched the figure's other axes and switched off its layout engine
+  (and crashed for axes in a `SubFigure`). Now, when the figure is drawn,
+  the axes passed as `ax=` -- and nothing else -- is narrowed from the
+  right just far enough that its legend ends before the canvas edge or
+  the next panel, and lowered just far enough that its title stays on the
+  canvas. No call is needed, and the fit follows the caller's own later
+  `fig.tight_layout()`, `fig.subplots_adjust(...)`, resize or save (a 3-D
+  panel's legend, for which `tight_layout` reserves no room, included).
+  Nothing moves when the legend and title already fit. `tight_layout` and
+  the layout engines (`'tight'`, `'constrained'`, `'compressed'`) still
+  measure the unfitted figure, so they give every panel the room they
+  always did and the fit takes up only what is still missing. A legend
+  with no room beside the axes is drawn inside it (and goes back out when
+  room appears, unless the caller has restyled it meanwhile); one too
+  large for its panel either way, or running off the canvas or over the
+  panel above or below, is left in place with a `UserWarning` naming the
+  remedies. Twin axes follow the fitted axes, whenever they are made. Not
+  covered: an inset or other axes placed by hand in the legend's place,
+  and a legend over the tick labels of its own axes' twin. The fit is an
+  axes locator, so on such an axes `ax.get_position()` reports the
+  position of the last draw; it is recomputed on each draw (measured on a
+  4x4 grid with a legend and title on every panel: 163 ms a redraw in 2-D
+  and 230 ms in 3-D, against 60 and 69 ms with the positions fixed).
 - **No `findfont` log lines for ordinary text under matplotlib 3.11
   (GH #292).** matplotlib 3.11 registers every face of a `.ttc` font
   collection, which on macOS surfaces 'Hiragino Kaku Gothic ProN' as a

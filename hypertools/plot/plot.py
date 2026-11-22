@@ -7092,13 +7092,25 @@ def plot(
         `size=`) as they were -- call ``fig.tight_layout()`` yourself if
         you want one. (Through 1.1.0 every such call ran
         ``plt.tight_layout()``, which moved all of the figure's axes.)
-        Two consequences. A colorbar takes its room out of `ax` itself, as
-        matplotlib's ``fig.colorbar(..., ax=ax)`` does. And a `legend=`
-        drawn beside `ax` is not fitted into your figure (through 1.1.0
-        the figure was widened), so on a figure with no layout of its own
-        it can cover the next panel or run off the canvas:
-        ``fig.tight_layout()`` after plotting, or ``layout='constrained'``
-        when you create the figure, makes room for it.
+        A colorbar takes its room out of `ax` itself, as matplotlib's
+        ``fig.colorbar(..., ax=ax)`` does. What the call adds around `ax`
+        -- the `legend=` beside it, the `title=` above it -- is fitted
+        for you, inside the room your layout gave `ax`: when the figure is
+        drawn, `ax` (and only `ax`) is narrowed from the right just far
+        enough that its legend ends before the canvas edge or the next
+        panel, and lowered just far enough that its title stays on the
+        canvas. This follows your own later ``fig.tight_layout()``,
+        ``fig.subplots_adjust(...)``, resize, save or layout engine
+        (``tight_layout`` and the engines still see the unfitted figure
+        and reserve the room they always did; the fit takes up only what
+        is still missing), and does nothing when the legend already fits.
+        A legend with no room beside the axes even then is drawn inside
+        the axes; one too large for the panel either way, or too tall
+        for the room its panel has, is left where it is, with a
+        `UserWarning`. Twin axes of `ax` follow it. The fit is a
+        matplotlib axes locator, so ``ax.get_position()`` on such an axes
+        reports the position of the last draw. (Through 1.1.0 the figure
+        was widened instead.)
         A figure hypertools made -- one an earlier `hyp.plot` call
         returned, or a `hyp.subplots` grid -- is still tightened, and its
         legend fitted, by each static call that draws into it.
@@ -13301,17 +13313,23 @@ def plot(
             # every animation frame, so fitting it once here -- exactly like
             # the colorbar above -- is enough; no per-frame work needed).
             #
-            # A figure the CALLER built is not fitted: the fit resizes the
-            # figure, which stretches its other axes, and switches off its
-            # layout engine -- and a figure it has widened no longer lays
-            # out cleanly with the caller's own `fig.tight_layout()`
-            # (measured: the last panel's legend ends up clipped). Left
-            # alone, `fig.tight_layout()` or `layout='constrained'` places
-            # every panel's legend without overlap or clipping, in 2-D and
-            # 3-D (GH #291).
+            # A figure the CALLER built is not fitted THIS way: this fit
+            # resizes the figure, which stretches its other axes, and
+            # switches off its layout engine -- and a figure it has widened
+            # no longer lays out cleanly with the caller's own
+            # `fig.tight_layout()` (measured: the last panel's legend ends
+            # up clipped) (GH #291).
             if ((legend is not None or _final_legend_entries is not None)
                     and ax is not None and not _caller_figure):
                 _fit_right_legend(fig, ax)
+            # ...but what hypertools added to the caller's axes (the legend
+            # hanging off its right edge, the title above it) must still end
+            # up inside the canvas and clear of the next panel without the
+            # caller doing anything. That is done at draw time, inside the
+            # room the caller's layout gave THIS axes, so no other axes, the
+            # figure's size and its layout engine are all untouched.
+            if _caller_figure and ax is not None:
+                _keep_inside_caller_slot(ax)
 
             # companion= panels (GH #285): extra 2-D panels laid out beside
             # the animated plot and revealed in lockstep with it. Created
@@ -14367,6 +14385,456 @@ def _fit_right_legend(fig, ax, pad_in=0.15, max_iter=3):
         fig.set_size_inches(new_w, h)
         ax.set_position([left_in / new_w, pos.y0,
                          plot_w_in / new_w, pos.height])
+
+
+_LAYOUT_PASS_MODULES = frozenset({'matplotlib._constrained_layout',
+                                  'matplotlib._tight_layout'})
+
+
+def _in_a_layout_pass(limit=40):
+    """True while a layout is MEASURING the figure: matplotlib's
+    ``tight_layout`` / constrained layout code, or the ``execute`` of any
+    layout engine (the caller's own included), is up the call stack."""
+    import sys
+    from matplotlib.layout_engine import LayoutEngine
+    frame = sys._getframe(2)
+    for _ in range(limit):
+        if frame is None:
+            return False
+        if frame.f_globals.get('__name__') in _LAYOUT_PASS_MODULES:
+            return True
+        if (frame.f_code.co_name == 'execute'
+                and isinstance(frame.f_locals.get('self'), LayoutEngine)):
+            return True
+        frame = frame.f_back
+    return False
+
+
+class _FollowLeaderLocator:
+    """Locator for a twin (``twinx``/``twiny``) of a fitted axes: twins
+    share one position, and a twin without this would put the pair back on
+    the unfitted position when its own draw comes."""
+
+    def __init__(self, leader):
+        import weakref
+        self._leader = weakref.ref(leader)
+
+    def get_subplotspec(self):
+        """The leader's subplot cell (``tight_layout`` asks the locator)."""
+        leader = self._leader()
+        return None if leader is None else leader.get_subplotspec()
+
+    def __call__(self, ax, renderer):
+        leader = self._leader()
+        attached = (leader is not None and leader.get_figure() is not None
+                    and leader in ax._twinned_axes.get_siblings(ax))
+        locator = leader.get_axes_locator() if attached else None
+        if isinstance(locator, _CallerSlotLocator):
+            return locator(leader, renderer)
+        # the leader is gone (removed from the figure): this axes is on
+        # its own again
+        ax.set_axes_locator(None)
+        return ax.get_position(original=True)
+
+    def __getstate__(self):
+        return {'leader': self._leader()}
+
+    def __setstate__(self, state):
+        import weakref
+        leader = state['leader']
+        self._leader = (weakref.ref(leader) if leader is not None
+                        else (lambda: None))
+
+
+class _CallerSlotLocator:
+    """Axes locator that keeps what hypertools added to a CALLER's axes --
+    the legend hanging off its right edge, the title above it -- inside the
+    room the caller's layout gave that axes.
+
+    matplotlib calls an axes locator on every draw to ask where the axes
+    goes. This one answers with the axes' own position, narrowed from the
+    right just far enough that the legend ends before the canvas edge or
+    the next panel (its tick labels and axis label included), and lowered
+    from the top just far enough that the title ends below the canvas edge
+    or the panel above. When everything already fits it answers with the
+    position unchanged.
+
+    Because it runs at draw time, from the figure as it then is, it needs
+    no call from the user and holds after ``fig.tight_layout()``,
+    ``fig.subplots_adjust()``, a resize, a save at another dpi or an edit
+    to the legend. While ``tight_layout`` or a layout engine is MEASURING
+    the figure it answers with the unfitted position, so those see the
+    same overhang they would without it and reserve their usual room; the
+    fit then takes up whatever is still missing (for a 3-D axes, all of
+    it: neither reserves room for a 3-D legend). The figure's size, its
+    layout engine and the room of every other axes are never changed
+    (GH #291); twins of the axes follow it, since twins share a position.
+    """
+
+    pad_in = 0.06          # clear space kept at a canvas edge / neighbor
+    min_fraction = 0.3     # never narrow / lower the axes below this share
+    steps = 7              # bisection steps: slot / 128 precision
+
+    def __init__(self, ax, wrapped=None):
+        import weakref
+        self._ax = weakref.ref(ax)
+        self._wrapped = wrapped
+        self._warned = False
+        self._busy = False
+
+    def get_subplotspec(self):
+        """The axes' subplot cell, for ``tight_layout``."""
+        # `tight_layout` asks an axes' LOCATOR (when it has one) for the
+        # subplot cell, and leaves an axes whose locator cannot answer out
+        # of the layout with a "not compatible with tight_layout" warning
+        if self._wrapped is not None and hasattr(self._wrapped,
+                                                 'get_subplotspec'):
+            return self._wrapped.get_subplotspec()
+        ax = self._ax()
+        return None if ax is None else ax.get_subplotspec()
+
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        state['_ax'] = self._ax()          # weakrefs do not pickle
+        return state
+
+    def __setstate__(self, state):
+        import weakref
+        ax = state.pop('_ax')
+        self.__dict__.update(state)
+        self._ax = weakref.ref(ax) if ax is not None else (lambda: None)
+
+    # -- measurements ------------------------------------------------------
+    @staticmethod
+    def _container(ax):
+        # the SubFigure for axes that live in one, else the Figure
+        try:
+            return ax.get_figure(root=False)
+        except TypeError:                              # matplotlib < 3.10
+            return ax.figure
+
+    @staticmethod
+    def _axis_edge(axis, renderer, low_side, start):
+        """The low (left / bottom) edge of a neighbor's VISIBLE tick labels
+        and axis label, starting from `start` (its own box edge)."""
+        texts = list(axis.get_ticklabels()) + [axis.label]
+        if not any(t.get_visible() and t.get_text().strip() for t in texts):
+            # nothing a reader sees (an axis hypertools switched off still
+            # reports a box for its empty labels)
+            return start
+        try:
+            # the axis' own measurement: it first puts the ticks and the
+            # axis label where the next draw will (read directly, a label
+            # that has never been drawn is still at its initial spot)
+            box = axis.get_tightbbox(renderer)
+        except Exception:  # noqa: BLE001 - not drawable yet
+            return start
+        if box is None:
+            return start
+        low = box.x0 if low_side == 'x' else box.y0
+        return min(start, low)
+
+    def _limits(self, ax, base, renderer):
+        """(left, right, top) display-pixel limits for what this axes
+        carries: the canvas, and the nearest panels on each side."""
+        container = self._container(ax)
+        box = container.bbox
+        pad = self.pad_in * ax.get_figure(root=True).dpi
+        left, right, top = box.x0, box.x1 - pad, box.y1 - pad
+        mine = base.transformed(container.transSubfigure)
+        twins = set(ax._twinned_axes.get_siblings(ax))
+        eps = 0.5
+        for other in container.axes:
+            if other in twins or not other.get_visible():
+                continue
+            theirs = other.get_position(original=True).transformed(
+                container.transSubfigure)
+            v_overlap = min(mine.y1, theirs.y1) - max(mine.y0, theirs.y0)
+            h_overlap = min(mine.x1, theirs.x1) - max(mine.x0, theirs.x0)
+            flat = getattr(other, 'name', '') != '3d' and other.axison
+            if theirs.x0 >= mine.x1 - eps and v_overlap > eps:
+                edge = theirs.x0
+                if flat:
+                    edge = self._axis_edge(other.yaxis, renderer, 'x', edge)
+                right = min(right, max(edge - pad, mine.x0))
+            if theirs.y0 >= mine.y1 - eps and h_overlap > eps:
+                edge = theirs.y0
+                if flat:
+                    edge = self._axis_edge(other.xaxis, renderer, 'y', edge)
+                top = min(top, max(edge - pad, mine.y0))
+            if theirs.x1 <= mine.x0 + eps and v_overlap > eps:
+                left = max(left, theirs.x1)
+        return left, right, top
+
+    @staticmethod
+    def _titles(ax):
+        # of the axes and of its twins: they share the position
+        return [t for member in ax._twinned_axes.get_siblings(ax)
+                for t in (member.title, member._left_title,
+                          member._right_title)
+                if t.get_visible() and t.get_text()]
+
+    # -- the legend, outside or inside ---------------------------------------
+    @staticmethod
+    def _legend_state(legend):
+        frame = legend.get_frame()
+        return (legend._loc, legend._bbox_to_anchor, legend.get_frame_on(),
+                frame.get_alpha(), tuple(frame.get_facecolor()),
+                tuple(frame.get_edgecolor()), frame.get_linewidth())
+
+    @classmethod
+    def _put_inside(cls, legend):
+        if getattr(legend, '_hyp_outside', None) is None:
+            legend._hyp_outside = cls._legend_state(legend)
+            legend.set_bbox_to_anchor(None)
+            legend.set_loc('best')
+            legend.set_frame_on(True)     # readable over the data
+            legend.get_frame().set_alpha(0.85)
+            legend._hyp_inside = cls._legend_state(legend)
+
+    @classmethod
+    def _put_outside(cls, legend):
+        """Undo `_put_inside`. False when the caller has since restyled or
+        moved the legend: it is then the caller's, and is left alone."""
+        saved = getattr(legend, '_hyp_outside', None)
+        if saved is not None and cls._legend_state(legend) != getattr(
+                legend, '_hyp_inside', None):
+            legend._hyp_outside = None
+            legend._hyp_callers = True
+        if getattr(legend, '_hyp_callers', False):
+            return False
+        if saved is not None:
+            loc, anchor, frame_on, alpha = saved[:4]
+            # (the stored anchor is already a transformed box:
+            # `set_bbox_to_anchor` would transform it a second time)
+            legend._bbox_to_anchor = anchor
+            legend._loc = loc
+            legend.stale = True
+            legend.set_frame_on(frame_on)
+            legend.get_frame().set_alpha(alpha)
+            legend._hyp_outside = None
+        return True
+
+    def _warn_once(self, what):
+        if self._warned:
+            return
+        self._warned = True
+        warnings.warn(
+            f'the legend is {what}, so it cannot be fitted into that '
+            'panel: it may overlap other panels or run off the figure. '
+            'Use a larger figure or fewer panels, '
+            'fewer or shorter labels, or legend_kwargs= (e.g. ncol= or a '
+            'smaller fontsize) to place it.', UserWarning, stacklevel=2)
+
+    # -- the fit -------------------------------------------------------------
+    def _legends(self, ax):
+        """The visible legends of the axes and of its twins (twins share
+        the position, so each one's legend hangs off the same edge)."""
+        found = []
+        for member in [ax] + [t for t in ax._twinned_axes.get_siblings(ax)
+                              if t is not ax]:
+            legend = member.get_legend()
+            if legend is not None and legend.get_visible():
+                found.append(legend)
+        return found
+
+    def _fit(self, ax, base, renderer):
+        from matplotlib.transforms import Bbox
+        left_lim, right_lim, top_lim = self._limits(ax, base, renderer)
+        legends = self._legends(ax)
+        titles = self._titles(ax)
+        # an axes with a fixed aspect and adjustable='datalim' changes its
+        # data limits whenever a position is tried: put them back, so the
+        # search leaves nothing behind
+        view = ax.viewLim.frozen() if ax.name != '3d' else None
+
+        # matplotlib settles a title's height above the axes when it
+        # draws (lifting it over tick labels or an axis label on the top
+        # side); ask for that only where the title is measured against
+        # the top limit -- it is slow, it measures every tick label
+        lifted = bool(titles)
+
+        def place(wf, hf, for_title=False):
+            """Apply the slot scaled to (wf, hf) of its width / height."""
+            if view is not None:
+                ax.viewLim.set(view)
+            ax.apply_aspect(Bbox.from_bounds(
+                base.x0, base.y0, base.width * wf, base.height * hf))
+            if for_title and lifted:
+                try:
+                    ax._update_title_position(renderer)
+                except Exception:  # noqa: BLE001
+                    pass
+
+        def title_left():
+            """Left edge (px) of the leftmost title, None without one."""
+            return min((float(t.get_window_extent(renderer).x0)
+                        for t in titles), default=None)
+
+        place(1.0, 1.0)
+        full_title_left = title_left()
+
+        def over_right(wf, hf):
+            """Pixels by which the legends pass the right limit there."""
+            place(wf, hf)
+            over = max((float(g.get_window_extent(renderer).x1)
+                        for g in legends), default=right_lim) - right_lim
+            if titles and wf < 1.0:
+                # narrowing slides a centered title left: never further
+                # off its own side than it already was at full width
+                allowed = min(full_title_left, left_lim)
+                over = max(over, allowed - title_left())
+            return over
+
+        def over_top(wf, hf):
+            """Pixels by which the titles pass the top limit there."""
+            place(wf, hf, for_title=True)
+            if not titles:
+                return 0.0
+            return max(float(t.get_window_extent(renderer).y1)
+                       for t in titles) - top_lim
+
+        def largest_fitting(over, vary_width, other, at_floor, at_full):
+            """Largest share in [floor, 1] whose overhang is <= 0.5 px,
+            given the overhang at both ends (<= 0.5 at the floor, more at
+            1). The overhang is linear in the share for an ordinary axes,
+            so one interpolation usually lands it; a fixed aspect or a
+            3-D box does not follow the line and is bisected."""
+            def probe(frac):
+                """The overhang with `frac` as the varied share."""
+                return over(*((frac, other) if vary_width else (other, frac)))
+
+            lo, hi = self.min_fraction, 1.0
+            guess = lo + (hi - lo) * (0.0 - at_floor) / (at_full - at_floor)
+            guess = min(max(guess, lo), hi)
+            got = probe(guess)
+            if -1.5 <= got <= 0.5:
+                return guess
+            if got > 0.5:
+                hi = guess
+            else:
+                lo = guess
+            for _ in range(self.steps):
+                mid = 0.5 * (lo + hi)
+                if probe(mid) > 0.5:
+                    hi = mid
+                else:
+                    lo = mid
+            return lo
+
+        wf = hf = 1.0
+        if legends:
+            ours = [g for g in legends if self._put_outside(g)]
+            at_full = over_right(1.0, 1.0)     # afresh on every draw
+            if at_full > 0.5:
+                at_floor = over_right(self.min_fraction, 1.0)
+                if at_floor <= 0.5:
+                    wf = largest_fitting(over_right, True, 1.0,
+                                         at_floor, at_full)
+                else:
+                    # no room beside the axes even at its floor
+                    place(1.0, 1.0)
+                    sizes = [g.get_window_extent(renderer) for g in ours]
+                    if (len(legends) == 1 and ours and all(
+                            size.width <= 0.9 * ax.bbox.width
+                            and size.height <= 0.9 * ax.bbox.height
+                            for size in sizes)):
+                        # ...but there is in it: draw the legend inside,
+                        # framed so it reads over the data, instead of
+                        # clipping it or squeezing the plot to nothing
+                        self._put_inside(ours[0])
+                    else:
+                        # too large for the panel either way: no placement
+                        # is clearly right, so say so once and leave it
+                        self._warn_once('too large to fit beside or inside '
+                                        'the axes it was drawn for')
+        if titles:
+            at_full = over_top(wf, 1.0)
+            if at_full > 0.5:
+                at_floor = over_top(wf, self.min_fraction)
+                if at_floor <= 0.5:
+                    hf = largest_fitting(over_top, False, wf,
+                                         at_floor, at_full)
+        if legends:
+            # on the final box: lowering the axes for its title moves a
+            # legend anchored to it as well
+            place(wf, hf)
+            self._check_vertical_room(ax, legends, renderer)
+        if view is not None:
+            ax.viewLim.set(view)
+        return Bbox.from_bounds(base.x0, base.y0, base.width * wf,
+                                base.height * hf)
+
+    def _check_vertical_room(self, ax, legends, renderer):
+        """A legend that runs off the top or bottom of the canvas, or
+        over a panel above or below: nothing about the axes' width fixes
+        that, so it is reported."""
+        if self._warned:
+            return
+        container = self._container(ax)
+        canvas = container.bbox
+        family = set(ax._twinned_axes.get_siblings(ax))
+        others = [o.get_position(original=True).transformed(
+            container.transSubfigure) for o in container.axes
+            if o not in family and o.get_visible()]
+        for legend in legends:
+            box = legend.get_window_extent(renderer)
+            if (box.y1 > canvas.y1 + 0.5 or box.y0 < canvas.y0 - 0.5
+                    or any(box.overlaps(o) for o in others)):
+                self._warn_once('taller than the room its panel has')
+                return
+
+    def _follow(self, ax):
+        # twins made after the plot share the position too
+        for twin in ax._twinned_axes.get_siblings(ax):
+            if twin is not ax and twin.get_axes_locator() is None:
+                twin.set_axes_locator(_FollowLeaderLocator(ax))
+
+    def __call__(self, ax, renderer):
+        base = (self._wrapped(ax, renderer) if self._wrapped is not None
+                else ax.get_position(original=True))
+        if self._busy:
+            return base
+        self._follow(ax)
+        if _in_a_layout_pass():
+            # the layout measures the figure as it is without the fit:
+            # the unfitted position, and the legend back outside
+            for legend in self._legends(ax):
+                self._put_outside(legend)
+            return base
+        if renderer is None:
+            renderer = ax.get_figure(root=True)._get_renderer()
+        self._busy = True
+        try:
+            fitted = self._fit(ax, base, renderer)
+        except Exception:  # noqa: BLE001 - never let a fit break a draw
+            fitted = base
+        finally:
+            self._busy = False
+        return fitted
+
+
+def _keep_inside_caller_slot(ax):
+    """Install :class:`_CallerSlotLocator` on a caller-supplied matplotlib
+    axes (once; a locator the caller already set keeps deciding the axes'
+    room and the fit works inside its answer)."""
+    from matplotlib.axes import Axes
+    if not isinstance(ax, Axes):
+        return
+    current = ax.get_axes_locator()
+    if isinstance(current, (_CallerSlotLocator, _FollowLeaderLocator)):
+        return     # (a twin's legend and title: its leader's locator)
+    # only an axes that carries something to fit: with a locator set,
+    # `ax.get_position()` reports the last DRAWN position instead of
+    # applying the aspect on the spot, and a caller reading it straight
+    # after a plain `hyp.plot(data, ax=ax)` should see no difference
+    if ax.get_legend() is None and not any(
+            ax.get_title(loc=loc) for loc in ('center', 'left', 'right')):
+        return
+    ax.set_axes_locator(_CallerSlotLocator(ax, wrapped=current))
+    for twin in ax._twinned_axes.get_siblings(ax):
+        if twin is not ax and twin.get_axes_locator() is None:
+            twin.set_axes_locator(_FollowLeaderLocator(ax))
 
 
 def _flatten_nested(x, _depth=1):

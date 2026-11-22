@@ -192,3 +192,116 @@ Both suites and the docs build ran at the same time on one machine.
   pins that a record for another release is ignored) and it stays red for
   any version bump until the gallery for the new version is published from
   the release commit (checklist step 2). Not fixed in the PR; asked Jeremy.
+
+## After the first CI run (2026-11-21 evening)
+
+- Jeremy asked for the 1.1.1 gallery to be published before merging. Built in
+  release form from 514a12cb (51 examples, `-W`, succeeded), published to
+  `docs-gallery-v1.1.1` (c90dd87e), recorded in `docs/prebuilt_gallery.json`
+  (commit 9dec09f0). Final CI on 9dec09f0: 12 test jobs, docs-clean,
+  wheel-smoke, dataset-gate, live-source-gate, Read the Docs all green.
+- PR #293 merged as 84342161; #290, #291, #292 closed. Not tagged, not on
+  PyPI.
+
+## Follow-up: fit the legend/title on caller axes automatically
+
+Jeremy (2026-11-21, after the merge): "All of those grid/figure/legend layout
+problems need to be fixed. That must happen automatically for the user when
+the 'fix' is clear, rather than requiring them to make an explicit call to
+fix strangeness or broken components that this toolbox created."
+
+Branch `fix/1.1.1-caller-figure-fit` (from master 84342161).
+
+Measured on master first (`scratchpad/probe_fit.py`, 18 cases, 2-D and 3-D):
+every caller figure without a layout call had the legend off the canvas
+(77-156 px) or over the next panel; a 3-D legend stayed clipped even after
+the caller's own `fig.tight_layout()` (single axes 25 px, 2x2 grid 22 px).
+
+Fix: `_CallerSlotLocator` (hypertools/plot/plot.py), a matplotlib axes
+locator installed by `hyp.plot` on a caller-supplied axes that carries a
+legend or title. At draw time it narrows that axes from the right (bisection,
+floor 30% of the slot) until the legend ends before the canvas edge or the
+next panel's tick labels, and lowers it until the title is on the canvas.
+The slot (`get_position(original=True)`), other axes, figure size and layout
+engine are untouched. Details:
+
+- answers `get_subplotspec()` so `tight_layout` keeps including the axes
+  (a locator without it gets "not compatible with tight_layout");
+- defers to a constrained-layout engine (`not engine.adjust_compatible`);
+- decides nothing lasting during measuring passes (renderer with draw
+  methods switched off);
+- no room beside the axes even at the floor: legend drawn inside the axes,
+  framed, if it is at most 90% of the axes; larger than the panel: left in
+  place with one `UserWarning`;
+- skipped when a colorbar of the same axes sits to its right (that pair is
+  already inside the axes' slot);
+- installed only when there is a legend or title: with a locator,
+  `ax.get_position()` reports the last drawn position (matplotlib does not
+  apply the aspect on the spot for located axes).
+
+After the fix all 18 probe cases report OK; tests added in
+`tests/test_caller_figure_hygiene.py` (65 tests, pass on matplotlib 3.10.8
+and 3.11.2).
+
+### Red team of the fit (Codex + one fresh subagent), round 1
+
+No blockers; reworked the locator for all of these (each now has a test):
+twins undid the fit (twins get a follower locator); a memoized fit went
+stale after `savefig(bbox_inches='tight')`, legend/title edits, neighbor
+moves (memo removed: the fit is recomputed on every draw); feeding the
+fitted box back into `tight_layout`/engines made panels shrink draw after
+draw (while matplotlib's layout code is on the call stack the locator now
+answers with the unfitted box, so slots are identical to a figure without
+it, draw for draw); "inside" was sticky (now decided afresh on each draw,
+legend state saved on the legend and restored when room appears); own/caller
+colorbars skipped the fit (now ordinary neighbors); neighbor's axis label
+ignored and invisible tick labels counted (only visible, non-empty texts
+count); title measured before matplotlib's own repositioning; narrowing
+pushed a wide title off the left; tall legend not reported (warning).
+Not fixed: an inset axes placed by hand where the legend goes (stated in
+the changelog). matplotlib's own tight engine keeps moving 3-D rows for
+6+ draws with or without hypertools.
+
+### Red team of the fit, round 2 (Codex + a second fresh subagent)
+
+Round-1 items confirmed fixed by both; hypertools' own figures
+pixel-identical to master. New findings, all fixed with a test each:
+data limits drifting on `set_aspect('equal', adjustable='datalim')` (view
+limits restored around the search); tall legends over the row below not
+reported (warning now covers off-canvas top/bottom and overlap with other
+panels); redraw cost 10x on a 4x4 grid (one interpolation instead of a
+bisection for ordinary axes, title height settled only for the top check:
+now 163/230 ms vs 60/69 ms fixed, 2-D/3-D); `tight_layout` after an
+inside legend measured the inside state (layout passes put it back
+outside); twin made after the plot, and a legend on the twin (followers
+installed at draw time; twins' legends counted); caller edits to an
+inside legend overwritten (a restyled legend is left to the caller);
+layout-pass detection by file name (now by module, plus any
+`LayoutEngine.execute`); a never-drawn neighbor axis label read at its
+initial spot, so the first draw differed (the axis' own `get_tightbbox`).
+Left as is: legend over its own twin's tick labels (same on master);
+default 2x3 grids narrow panels to about 40% (legend takes the rest).
+
+### Round 3 (Codex only, confirmation)
+
+All round-2 items confirmed fixed; hypertools' own figures pixel-identical
+to master. Four narrow P2 edge cases, fixed with a test each: the legend's
+vertical-room check ran before the title fit (now on the final box); a
+title on a twin was not fitted (titles of the whole twin family count); a
+twin kept following a leader that had been removed from the figure (the
+follower takes itself off); recoloring the frame of an inside legend was
+not recognized as the caller's edit (frame colors and line width are part
+of the compared state). 100 tests in tests/test_caller_figure_hygiene.py
+pass on matplotlib 3.10.8 and 3.11.2.
+
+### Final local checks for the fit (2026-11-21, 20:06-20:45 EST)
+
+- Full suite at 49165c09 (.venv, matplotlib 3.10.8): 6904 passed, 24 skipped,
+  1 failed: `tests/test_docstrings.py::test_no_undocumented_public_definitions`
+  (7 helper functions of the new locators had no docstring). Docstrings
+  added; that test and the 24 test files that draw into caller axes then
+  pass on the final code (1088 passed, 6 skipped).
+- matplotlib 3.11.2 env: docstring gate + caller-figure file, 103 passed.
+- Sphinx `-b html -W -E -a` with every gallery example re-executed, at
+  49165c09: build succeeded.
+- `ruff check`: all checks passed.

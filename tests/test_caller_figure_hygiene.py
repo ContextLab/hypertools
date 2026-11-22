@@ -322,6 +322,724 @@ def test_plot_with_a_legend_into_subfigure_axes():
     plt.close(fig)
 
 
+# -- the legend and title hypertools adds are fitted without being asked ----
+
+LONG_LABELS = ['first group', 'second group', 'third long group name']
+
+
+def _three_clouds(ndims):
+    rng = np.random.default_rng(0)
+    return [rng.normal(size=(40, ndims)) + i for i in range(3)]
+
+
+def _decoration_report(fig, axs=None):
+    """Sorted problems with what hypertools added, from a real draw: a
+    legend past the canvas or over another axes, a title past the canvas."""
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    problems = []
+    for i, ax in enumerate(fig.axes if axs is None else axs):
+        legend = ax.get_legend()
+        if legend is not None:
+            box = legend.get_window_extent(renderer)
+            if box.x1 > fig.bbox.x1 + 0.5 or box.x0 < fig.bbox.x0 - 0.5:
+                problems.append(f'legend {i} off canvas')
+            for j, other in enumerate(fig.axes):
+                if other is not ax and box.overlaps(
+                        other.get_window_extent(renderer)):
+                    problems.append(f'legend {i} over axes {j}')
+        if ax.get_title():
+            if ax.title.get_window_extent(renderer).y1 > fig.bbox.y1 + 0.5:
+                problems.append(f'title {i} off canvas')
+    return problems
+
+
+def _caller_figure(shape, ndims, figsize, **fig_kwargs):
+    fig, axs = plt.subplots(
+        *shape, figsize=figsize, squeeze=False,
+        subplot_kw={'projection': '3d'} if ndims == 3 else {}, **fig_kwargs)
+    return fig, list(axs.ravel())
+
+
+@pytest.mark.parametrize('ndims', [2, 3])
+@pytest.mark.parametrize('shape, figsize', [
+    ((1, 1), (5, 4)), ((1, 2), (9, 4)), ((2, 2), (9, 7)), ((1, 3), (15, 4))])
+def test_a_legend_on_caller_axes_fits_without_any_call_from_the_caller(
+        ndims, shape, figsize):
+    """`plt.subplots()` then `hyp.plot(..., ax=ax, legend=...)` and nothing
+    else: every legend is on the canvas and clear of the other panels (it
+    ran off the canvas, or over the next panel, until the caller laid the
+    figure out), with the figure's size, layout engine and every OTHER
+    axes exactly as the caller made them."""
+    fig, axs = _caller_figure(shape, ndims, figsize)
+    slots = [ax.get_position(original=True).bounds for ax in axs]
+    for ax in axs:
+        hyp.plot(_three_clouds(ndims), 'o', ax=ax, legend=LONG_LABELS,
+                 title='A title', show=False)
+    assert _decoration_report(fig) == []
+    assert fig.get_size_inches().tolist() == list(figsize)
+    assert fig.get_layout_engine() is None
+    assert len(fig.axes) == len(axs)
+    for ax, slot in zip(axs, slots):
+        # the room the caller's layout gave the axes is not rewritten...
+        assert ax.get_position(original=True).bounds == slot
+        # ...the drawn axes only ever sits inside it, anchored bottom-left
+        drawn = ax.get_position()
+        assert drawn.x0 >= slot[0] - 1e-9 and drawn.y0 >= slot[1] - 1e-9
+        assert drawn.x1 <= slot[0] + slot[2] + 1e-9
+        assert drawn.y1 <= slot[1] + slot[3] + 1e-9
+        assert ax.get_legend().get_bbox_to_anchor() is not None
+    plt.close(fig)
+
+
+@pytest.mark.parametrize('ndims', [2, 3])
+@pytest.mark.parametrize('later', ['tight_layout', 'subplots_adjust',
+                                   'resize', 'none'])
+def test_the_fit_holds_whatever_the_caller_does_to_the_figure_afterwards(
+        ndims, later):
+    """The fit is worked out when the figure is drawn, so it follows the
+    caller's own later layout calls (a 3-D legend was still clipped after
+    `fig.tight_layout()`, which reserves no room for one)."""
+    fig, axs = _caller_figure((2, 2), ndims, (9, 7))
+    for ax in axs:
+        hyp.plot(_three_clouds(ndims), 'o', ax=ax, legend=LONG_LABELS,
+                 show=False)
+    fig.canvas.draw()
+    with warnings.catch_warnings():
+        warnings.simplefilter('error')    # e.g. "not compatible with tight_layout"
+        if later == 'tight_layout':
+            fig.tight_layout()
+        elif later == 'subplots_adjust':
+            fig.subplots_adjust(left=0.05, right=0.97, wspace=0.6)
+        elif later == 'resize':
+            fig.set_size_inches(12, 6)
+        assert _decoration_report(fig) == []
+    plt.close(fig)
+
+
+@pytest.mark.parametrize('ndims', [2, 3])
+def test_the_fit_holds_in_a_saved_file_at_another_dpi(ndims, tmp_path):
+    from PIL import Image
+    fig, axs = _caller_figure((1, 2), ndims, (9, 4))
+    for ax in axs:
+        hyp.plot(_three_clouds(ndims), 'o', ax=ax, legend=LONG_LABELS,
+                 show=False)
+    path = tmp_path / 'saved.png'
+    fig.savefig(path, dpi=180, facecolor='white')
+    pixels = np.asarray(Image.open(path).convert('L'))
+    assert pixels.shape == (4 * 180, 9 * 180)
+    # nothing is cut by the right edge: its last columns are background
+    assert (pixels[:, -6:] == 255).all()
+    assert (pixels < 250).any()
+    plt.close(fig)
+
+
+def test_a_legend_that_already_fits_moves_nothing():
+    """Room made by the caller is respected: nothing is narrowed when the
+    legend is already inside the canvas and clear of the next panel."""
+    fig, axs = plt.subplots(1, 2, figsize=(12, 4))
+    fig.subplots_adjust(left=0.05, right=0.8, wspace=0.9)
+    slots = [ax.get_position(original=True).bounds for ax in axs]
+    for ax in axs:
+        hyp.plot(_three_clouds(2), 'o', ax=ax, legend=['a', 'b', 'c'],
+                 show=False)
+    assert _decoration_report(fig) == []
+    np.testing.assert_allclose([ax.get_position().bounds for ax in axs],
+                               slots, atol=1e-9)
+    plt.close(fig)
+
+
+def test_a_legend_inside_the_axes_moves_nothing():
+    fig, ax = plt.subplots(figsize=(5, 4))
+    slot = ax.get_position(original=True).bounds
+    hyp.plot(_three_clouds(2), 'o', ax=ax, legend=LONG_LABELS, show=False,
+             legend_kwargs={'loc': 'upper left'})
+    assert _decoration_report(fig) == []
+    np.testing.assert_allclose(ax.get_position().bounds, slot, atol=1e-9)
+    plt.close(fig)
+
+
+def test_a_plot_without_legend_or_title_gets_no_locator():
+    """Nothing to fit, nothing installed: `ax.get_position()` keeps
+    answering the way it does for any plain axes."""
+    fig, ax = plt.subplots()
+    hyp.plot(_walk(), ax=ax, ndims=2, show=False)
+    assert ax.get_axes_locator() is None
+    plt.close(fig)
+
+
+def test_a_legend_with_no_room_beside_the_axes_is_drawn_inside_it():
+    """Three panels across: the first panel's legend cannot sit between it
+    and the second panel however far the axes is narrowed (down to its
+    floor), but it does fit in the axes. It is drawn inside, framed so it
+    reads over the data, instead of covering the next panel or squeezing
+    the plot to nothing; the last panel has the margin and keeps its legend
+    outside."""
+    fig, axs = plt.subplots(1, 3, figsize=(10, 3))
+    fig.subplots_adjust(wspace=0.05)
+    for ax in axs:
+        hyp.plot(_three_clouds(2), 'o', ax=ax, show=False, legend=LONG_LABELS)
+    assert _decoration_report(fig) == []
+    renderer = fig.canvas.get_renderer()
+    first, last = axs[0], axs[-1]
+    box = first.get_legend().get_window_extent(renderer)
+    axes_box = first.get_window_extent(renderer)
+    assert first.get_legend().get_frame_on()
+    assert axes_box.x0 <= box.x0 and box.x1 <= axes_box.x1
+    np.testing.assert_allclose(first.get_position().bounds,
+                               first.get_position(original=True).bounds)
+    outside = last.get_legend().get_window_extent(renderer)
+    assert outside.x0 > last.get_window_extent(renderer).x1
+    assert last.get_position().width < last.get_position(original=True).width
+    plt.close(fig)
+
+
+def test_a_legend_larger_than_its_panel_is_reported_once_and_left():
+    """Six panels across a narrow figure with long labels: the legend is
+    wider than the panel, so there is no placement that is clearly right.
+    hypertools says so, once, and changes nothing."""
+    fig, axs = plt.subplots(1, 6, figsize=(9, 2.5))
+    for ax in axs[:1]:
+        hyp.plot(_three_clouds(2), 'o', ax=ax, show=False,
+                 legend=['a rather long group label number one',
+                         'a rather long group label number two', 'three'])
+    with pytest.warns(UserWarning, match='too large to fit beside or inside') as caught:
+        fig.canvas.draw()
+        fig.canvas.draw()
+        fig.savefig(__import__('io').BytesIO(), format='png')
+    assert len([w for w in caught
+                if 'too large to fit' in str(w.message)]) == 1
+    np.testing.assert_allclose(axs[0].get_position().bounds,
+                               axs[0].get_position(original=True).bounds)
+    assert axs[0].get_legend().get_bbox_to_anchor() is not None
+    plt.close(fig)
+
+
+def test_the_fit_works_inside_a_locator_the_caller_already_set():
+    """An axes whose place is decided by the caller's own locator: that
+    locator keeps deciding, and the legend is fitted inside its answer."""
+    from matplotlib.transforms import Bbox
+    calls = []
+
+    def callers_locator(ax, renderer):
+        calls.append(1)
+        return Bbox.from_bounds(0.1, 0.2, 0.7, 0.6)
+
+    fig, ax = plt.subplots(figsize=(6, 4))
+    ax.set_axes_locator(callers_locator)
+    hyp.plot(_three_clouds(2), 'o', ax=ax, legend=LONG_LABELS, show=False)
+    assert _decoration_report(fig) == []
+    drawn = ax.get_position()
+    assert calls and abs(drawn.x0 - 0.1) < 1e-9 and abs(drawn.y0 - 0.2) < 1e-9
+    assert drawn.width < 0.7 and abs(drawn.height - 0.6) < 1e-9
+    plt.close(fig)
+
+
+@pytest.mark.parametrize('ndims', [2, 3])
+def test_a_colorbar_and_a_legend_on_caller_axes_stay_on_the_canvas(ndims):
+    fig, axs = _caller_figure((1, 2), ndims, (11, 4))
+    for ax in axs:
+        hyp.plot(_three_clouds(ndims), 'o', ax=ax, legend=LONG_LABELS,
+                 hue=list(np.repeat(['a', 'b', 'c'], 40)), colorbar=True,
+                 show=False)
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    for ax in axs:
+        box = ax.get_legend().get_window_extent(renderer)
+        assert box.x1 <= fig.bbox.x1 + 0.5
+    plt.close(fig)
+
+
+def test_a_legend_in_a_subfigure_stays_inside_the_subfigure():
+    fig = plt.figure(figsize=(10, 4))
+    left, right = fig.subfigures(1, 2)
+    ax = left.add_subplot()
+    other = right.add_subplot()
+    hyp.plot(_three_clouds(2), 'o', ax=ax, legend=LONG_LABELS, show=False)
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    box = ax.get_legend().get_window_extent(renderer)
+    assert box.x1 <= left.bbox.x1 + 0.5
+    assert not box.overlaps(other.get_window_extent(renderer))
+    plt.close(fig)
+
+
+def test_a_fitted_caller_figure_pickles():
+    import pickle
+    fig, ax = plt.subplots(figsize=(5, 4))
+    hyp.plot(_three_clouds(2), 'o', ax=ax, legend=LONG_LABELS, show=False)
+    fig.canvas.draw()
+    clone = pickle.loads(pickle.dumps(fig))
+    assert _decoration_report(clone) == []
+    np.testing.assert_allclose(clone.axes[0].get_position().bounds,
+                               ax.get_position().bounds, atol=1e-9)
+    plt.close(fig)
+    plt.close(clone)
+
+
+# -- found by the red team of the automatic fit ------------------------------
+
+def _plot3(ax, ndims=2, **kwargs):
+    kwargs.setdefault('legend', LONG_LABELS)
+    return hyp.plot(_three_clouds(ndims), 'o', ax=ax, show=False, **kwargs)
+
+
+def _extent(artist, fig):
+    return artist.get_window_extent(fig.canvas.get_renderer())
+
+
+def test_a_twinned_axes_does_not_undo_the_fit():
+    fig, ax = plt.subplots(figsize=(5, 4))
+    twin = ax.twinx()
+    _plot3(ax)
+    fig.canvas.draw()
+    assert _extent(ax.get_legend(), fig).x1 <= fig.bbox.x1
+    np.testing.assert_allclose(twin.get_position().bounds,
+                               ax.get_position().bounds)
+    plt.close(fig)
+
+
+def test_a_tight_bbox_save_before_any_draw_does_not_leave_a_stale_fit():
+    import io
+    fig, axs = plt.subplots(1, 3, figsize=(10, 3))
+    fig.subplots_adjust(wspace=0.05)
+    _plot3(axs[0])
+    fig.savefig(io.BytesIO(), format='png', bbox_inches='tight')
+    assert _decoration_report(fig) == []
+    plt.close(fig)
+
+
+def test_a_legend_stays_clear_of_a_colorbar_the_caller_made():
+    fig, ax = plt.subplots(figsize=(5, 4))
+    image = ax.imshow(np.arange(100).reshape(10, 10))
+    bar = fig.colorbar(image, ax=ax)
+    _plot3(ax)
+    assert _decoration_report(fig) == []
+    assert _extent(ax.get_legend(), fig).x1 <= _extent(bar.ax, fig).x0
+    plt.close(fig)
+
+
+def test_a_legend_stays_clear_of_hypertools_colorbar_after_a_resize():
+    fig, ax = plt.subplots(figsize=(8, 4))
+    _plot3(ax, hue=list(np.repeat(['a', 'b', 'c'], 40)), colorbar=True)
+    fig.canvas.draw()
+    fig.set_size_inches(4.5, 4)
+    assert _decoration_report(fig) == []
+    plt.close(fig)
+
+
+def test_a_replaced_legend_is_fitted_again():
+    """The second call replaces the legend the first draw had moved inside
+    the axes; the new one is placed afresh."""
+    fig, axs = plt.subplots(1, 3, figsize=(10, 3))
+    fig.subplots_adjust(wspace=0.05)
+    _plot3(axs[0])
+    fig.canvas.draw()
+    _plot3(axs[0])
+    assert _decoration_report(fig) == []
+    plt.close(fig)
+
+
+def test_the_fit_follows_edits_made_after_a_draw():
+    fig, axs = plt.subplots(1, 2, figsize=(9, 4))
+    _plot3(axs[0], title='T')
+    fig.canvas.draw()
+    for text in axs[0].get_legend().get_texts():
+        text.set_fontsize(15)
+    assert _decoration_report(fig) == []
+    axs[1].set_position([0.5, 0.11, 0.4, 0.77])
+    assert _decoration_report(fig) == []
+    axs[0].title.set_fontsize(40)
+    assert _decoration_report(fig) == []
+    plt.close(fig)
+
+
+def test_a_legend_moved_inside_goes_back_out_when_room_appears():
+    fig, axs = plt.subplots(1, 3, figsize=(10, 3))
+    fig.subplots_adjust(wspace=0.05)
+    _plot3(axs[0])
+    fig.canvas.draw()
+    legend = axs[0].get_legend()
+    assert _extent(legend, fig).x1 <= _extent(axs[0], fig).x1
+    fig.set_size_inches(22, 3)
+    fig.subplots_adjust(wspace=0.6)
+    assert _decoration_report(fig) == []
+    assert _extent(legend, fig).x0 > _extent(axs[0], fig).x1
+    assert not legend.get_frame_on()
+    plt.close(fig)
+
+
+def test_a_title_above_top_tick_labels_stays_on_the_canvas():
+    fig, ax = plt.subplots(figsize=(5, 3))
+    ax.set_position([0.1, 0.1, 0.8, 0.85])
+    _plot3(ax, title='Title', legend=None)
+    ax.set_axis_on()
+    ax.xaxis.tick_top()
+    ax.xaxis.set_label_position('top')
+    ax.set_xlabel('X label')
+    assert _decoration_report(fig) == []
+    assert _decoration_report(fig) == []
+    plt.close(fig)
+
+
+@pytest.mark.parametrize('ndims', [2, 3])
+def test_a_title_with_no_room_above_the_axes_is_given_some(ndims):
+    fig, axs = _caller_figure((1, 1), ndims, (5, 4))
+    fig.subplots_adjust(top=0.99)
+    _plot3(axs[0], ndims=ndims, title='A title', legend=None)
+    assert _decoration_report(fig) == []
+    plt.close(fig)
+
+
+def test_narrowing_for_the_legend_does_not_push_a_wide_title_off_its_side():
+    """A title that fits at the axes' full width is not slid off the left
+    edge by the fit (the legend goes inside the axes instead)."""
+    fig, axs = plt.subplots(1, 2, figsize=(8, 3))
+    title = 'An ordinary title that is too wide for this panel'
+    _plot3(axs[0], title=title)
+    _plot3(axs[1], title='Neighbor title')
+    assert _decoration_report(fig) == []
+    assert _extent(axs[0].title, fig).x0 >= fig.bbox.x0
+    plt.close(fig)
+
+
+def test_a_legend_stays_clear_of_the_next_panels_axis_label():
+    fig, axs = plt.subplots(1, 2, figsize=(9, 4))
+    axs[1].set_ylabel('neighbor label')
+    _plot3(axs[0])
+    assert _decoration_report(fig) == []
+    assert (_extent(axs[0].get_legend(), fig).x1
+            <= _extent(axs[1].yaxis.label, fig).x0)
+    plt.close(fig)
+
+
+def test_hidden_tick_labels_of_the_next_panel_take_no_room():
+    """Both panels drawn by hypertools (axes off): the legend may run up
+    to the next panel's box, not stop short of labels nobody sees."""
+    fig, axs = plt.subplots(1, 2, figsize=(9, 4))
+    for ax in axs:
+        _plot3(ax)
+    fig.canvas.draw()
+    gap = _extent(axs[1], fig).x0 - _extent(axs[0].get_legend(), fig).x1
+    assert 0 <= gap <= 0.06 * fig.dpi + 2
+    plt.close(fig)
+
+
+@pytest.mark.parametrize('ndims', [2, 3])
+@pytest.mark.parametrize('layout', ['tight', 'constrained', 'compressed'])
+def test_the_fit_does_not_disturb_the_callers_layout_engine(ndims, layout):
+    """The engine measures the unfitted figure, so on every draw it gives
+    each panel exactly the room it gives without the fit (with the fit
+    feeding back into it, the panels shrank a little more on each draw),
+    and every legend is on the canvas -- 3-D ones too, for which no engine
+    reserves room."""
+    def slots_per_draw(strip):
+        fig, axs = _caller_figure((2, 2), ndims, (9, 7), layout=layout)
+        engine = fig.get_layout_engine()
+        for ax in axs:
+            _plot3(ax, ndims=ndims)
+            if strip:
+                ax.set_axes_locator(None)
+        slots = []
+        for _ in range(6):
+            fig.canvas.draw()
+            slots.append([ax.get_position(original=True).bounds
+                          for ax in axs])
+        report = _decoration_report(fig)
+        assert fig.get_layout_engine() is engine
+        plt.close(fig)
+        return slots, report
+
+    fitted, report = slots_per_draw(strip=False)
+    plain, _ = slots_per_draw(strip=True)
+    # draw for draw the same as without the fit (matplotlib's engines work
+    # from the figure's current state and take several draws to settle on
+    # their own: the tight engine is still moving 3-D rows on the sixth)
+    np.testing.assert_allclose(fitted, plain, atol=1e-9)
+    assert report == []
+
+
+def test_the_callers_tight_layout_gives_2d_panels_the_room_it_always_did():
+    """`tight_layout` measures the unfitted figure, so it reserves room
+    for each 2-D legend itself and the panels come out the same size --
+    as wide as on a figure hypertools never touched with a locator."""
+    def build(strip):
+        fig, axs = plt.subplots(1, 3, figsize=(12, 3.5))
+        for ax in axs:
+            _plot3(ax)
+            if strip:
+                ax.set_axes_locator(None)
+        fig.tight_layout()
+        fig.canvas.draw()
+        widths = [ax.get_position().width for ax in axs]
+        report = _decoration_report(fig)
+        plt.close(fig)
+        return widths, report
+
+    fitted, report = build(strip=False)
+    plain, _ = build(strip=True)
+    assert report == []
+    np.testing.assert_allclose(fitted, plain, rtol=0.03)
+    np.testing.assert_allclose(fitted, [fitted[0]] * 3, rtol=0.03)
+
+
+def test_a_legend_taller_than_its_room_is_reported():
+    """Running off the top or bottom of the canvas, or over the panel
+    below: narrowing the axes cannot help, so hypertools says so."""
+    fig, ax = plt.subplots(figsize=(5, 2))
+    data = [np.random.default_rng(i).normal(size=(5, 2)) for i in range(12)]
+    hyp.plot(data, 'o', ax=ax, legend=[str(i) for i in range(12)],
+             show=False)
+    with pytest.warns(UserWarning, match='taller than the room'):
+        fig.canvas.draw()
+    plt.close(fig)
+
+    fig, axs = plt.subplots(2, 1, figsize=(8, 6))
+    data = [np.random.default_rng(i).normal(size=(5, 2)) for i in range(20)]
+    hyp.plot(data, 'o', ax=axs[0], show=False,
+             legend=[f'long legend label {i}' for i in range(20)])
+    with pytest.warns(UserWarning, match='taller than the room') as caught:
+        fig.canvas.draw()
+        fig.canvas.draw()
+    assert len([w for w in caught if 'taller' in str(w.message)]) == 1
+    plt.close(fig)
+
+
+# -- second red-team round ----------------------------------------------------
+
+def test_the_search_leaves_the_data_limits_of_a_datalim_axes_alone():
+    """`set_aspect('equal', adjustable='datalim')` changes the data limits
+    whenever a position is applied; the fit tries several. The plot must
+    not drift from draw to draw."""
+    fig, ax = plt.subplots(figsize=(5, 4))
+    _plot3(ax)
+    ax.set_aspect('equal', adjustable='datalim')
+    seen = []
+    for _ in range(4):
+        fig.canvas.draw()
+        seen.append(ax.get_xlim() + ax.get_ylim())
+    np.testing.assert_allclose(seen[1:], [seen[1]] * 3, rtol=1e-9)
+    assert _decoration_report(fig) == []
+    plt.close(fig)
+
+
+def test_a_twin_made_after_the_plot_follows_the_fit_too():
+    fig, ax = plt.subplots(figsize=(5, 4))
+    _plot3(ax)
+    twin = ax.twinx()
+    fig.canvas.draw()
+    assert _extent(ax.get_legend(), fig).x1 <= fig.bbox.x1
+    np.testing.assert_allclose(twin.get_position().bounds,
+                               ax.get_position().bounds)
+    plt.close(fig)
+
+
+def test_a_legend_on_the_twin_is_kept_on_the_canvas_as_well():
+    fig, ax = plt.subplots(figsize=(6, 4))
+    twin = ax.twinx()
+    _plot3(ax)
+    _plot3(twin, legend=[f'long second axes legend {i}' for i in range(3)])
+    fig.canvas.draw()
+    assert _extent(twin.get_legend(), fig).x1 <= fig.bbox.x1
+    assert _extent(ax.get_legend(), fig).x1 <= fig.bbox.x1
+    plt.close(fig)
+
+
+def test_the_first_draw_already_clears_the_next_panels_axis_label():
+    """A label that has never been drawn is not yet where it will be; the
+    first draw (or a plain `savefig`) must give what every later one does."""
+    fig, axs = plt.subplots(1, 2, figsize=(9, 4))
+    _plot3(axs[0])
+    axs[1].set_ylabel('neighbor label')
+    fig.canvas.draw()
+    first = (axs[0].get_position().bounds,
+             _extent(axs[0].get_legend(), fig).bounds)
+    assert (_extent(axs[0].get_legend(), fig).x1
+            <= _extent(axs[1].yaxis.label, fig).x0)
+    assert _extent(axs[0].get_legend(), fig).x0 > _extent(axs[0], fig).x1
+    fig.canvas.draw()
+    second = (axs[0].get_position().bounds,
+              _extent(axs[0].get_legend(), fig).bounds)
+    np.testing.assert_allclose(first, second, atol=1e-9)
+    plt.close(fig)
+
+
+@pytest.mark.parametrize('layout', ['tight', 'constrained'])
+def test_an_engine_gives_a_mixed_grid_the_room_it_gives_without_the_fit(
+        layout):
+    """hypertools panels beside the caller's own labeled panels: draw for
+    draw, the engine's slots are those of the same figure with the fit
+    taken off (an early draw used to flip a legend inside and widen its
+    slot)."""
+    def slots(strip):
+        fig, axs = plt.subplots(2, 3, figsize=(11, 6), layout=layout)
+        for k, ax in enumerate(axs.ravel()):
+            if k % 2:
+                ax.plot([0, 1], [0, 1000])
+                ax.set_ylabel('the caller\'s own panel')
+            else:
+                _plot3(ax, title='hyp')
+                if strip:
+                    ax.set_axes_locator(None)
+        found = []
+        for _ in range(4):
+            fig.canvas.draw()
+            found.append([ax.get_position(original=True).bounds
+                          for ax in axs.ravel()])
+        plt.close(fig)
+        return found
+
+    np.testing.assert_allclose(slots(False), slots(True), atol=1e-9)
+
+
+def test_tight_layout_measures_the_legend_outside_even_after_it_went_inside():
+    def first_slot(strip):
+        fig, axs = plt.subplots(1, 3, figsize=(10, 3))
+        fig.subplots_adjust(wspace=0.05)
+        _plot3(axs[0])
+        if strip:
+            axs[0].set_axes_locator(None)
+        fig.canvas.draw()
+        fig.tight_layout()
+        slot = axs[0].get_position(original=True).bounds
+        plt.close(fig)
+        return slot
+
+    np.testing.assert_allclose(first_slot(False), first_slot(True),
+                               atol=1e-9)
+
+
+def test_a_legend_the_caller_restyles_after_it_went_inside_is_left_alone():
+    fig, axs = plt.subplots(1, 3, figsize=(10, 3))
+    fig.subplots_adjust(wspace=0.05)
+    _plot3(axs[0])
+    fig.canvas.draw()
+    legend = axs[0].get_legend()
+    assert legend.get_frame_on()                  # moved inside, framed
+    legend.set_loc('lower left')
+    legend.set_frame_on(False)
+    fig.canvas.draw()
+    fig.canvas.draw()
+    assert legend._loc == 3 and not legend.get_frame_on()
+    plt.close(fig)
+
+
+def test_layout_passes_are_recognized_by_module_not_by_file_name():
+    """A draw started from a user file that happens to be called
+    `..._tight_layout.py` is an ordinary draw; the `execute` of the
+    caller's own layout engine is a measuring pass."""
+    from matplotlib.layout_engine import LayoutEngine
+    fig, ax = plt.subplots(figsize=(5, 4))
+    _plot3(ax)
+    exec(compile('fig.canvas.draw()', 'my_tight_layout.py', 'exec'),
+         {'fig': fig})
+    assert _extent(ax.get_legend(), fig).x1 <= fig.bbox.x1
+    fitted_width = ax.get_position().width
+
+    seen = []
+
+    class Recording(LayoutEngine):
+        _adjust_compatible = True
+        _colorbar_gridspec = True
+
+        def execute(self, figure):
+            box = figure.axes[0].get_tightbbox(figure._get_renderer())
+            seen.append(box.x1)
+
+    fig.set_layout_engine(Recording())
+    fig.canvas.draw()
+    assert seen and seen[-1] > fig.bbox.x1        # the unfitted overhang
+    assert _extent(ax.get_legend(), fig).x1 <= fig.bbox.x1
+    assert abs(ax.get_position().width - fitted_width) < 1e-9
+    plt.close(fig)
+
+
+def test_redrawing_a_fitted_grid_costs_a_bounded_number_of_measurements():
+    """Without a cache the fit runs on every draw; it must stay a handful
+    of legend measurements per axes, not a search each time."""
+    from matplotlib.legend import Legend
+    fig, axs = plt.subplots(3, 3, figsize=(14, 10))
+    for ax in axs.ravel():
+        _plot3(ax, title='T')
+    fig.canvas.draw()
+    calls = []
+    original = Legend.get_window_extent
+
+    def counting(self, *args, **kwargs):
+        calls.append(1)
+        return original(self, *args, **kwargs)
+
+    Legend.get_window_extent = counting
+    try:
+        fig.canvas.draw()
+    finally:
+        Legend.get_window_extent = original
+    assert _decoration_report(fig) == []
+    # 9 axes, each asked for its position at most twice per draw
+    assert len(calls) <= 9 * 2 * 8, len(calls)
+    plt.close(fig)
+
+
+# -- third review round --------------------------------------------------------
+
+def test_a_legend_pushed_off_the_canvas_by_the_title_fit_is_reported():
+    fig, ax = plt.subplots(figsize=(5, 4))
+    data = [np.random.default_rng(0).normal(size=(10, 2))] * 14
+    hyp.plot(data, 'o', ax=ax, show=False, title='T',
+             legend=[str(i) for i in range(14)],
+             legend_kwargs={'loc': 'upper left'})
+    ax.title.set_fontsize(60)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter('always')
+        fig.canvas.draw()
+    off = _extent(ax.get_legend(), fig).y0 < fig.bbox.y0
+    assert not off or any('taller than the room' in str(w.message)
+                          for w in caught)
+    assert off                      # (the case this test is about)
+    plt.close(fig)
+
+
+def test_a_title_on_the_twin_is_kept_on_the_canvas():
+    fig, ax = plt.subplots(figsize=(5, 3))
+    fig.subplots_adjust(top=0.99)
+    twin = ax.twinx()
+    _plot3(ax, legend=['a', 'b', 'c'])
+    _plot3(twin, legend=None, title='Twin title')
+    fig.canvas.draw()
+    assert _extent(twin.title, fig).y1 <= fig.bbox.y1
+    plt.close(fig)
+
+
+def test_a_twin_is_on_its_own_again_once_the_fitted_axes_is_removed():
+    fig, ax = plt.subplots(figsize=(5, 4))
+    _plot3(ax)
+    twin = ax.twinx()
+    fig.canvas.draw()
+    ax.remove()
+    twin.set_position([0.2, 0.2, 0.5, 0.5])
+    fig.canvas.draw()
+    np.testing.assert_allclose(twin.get_position().bounds,
+                               (0.2, 0.2, 0.5, 0.5))
+    assert twin.get_axes_locator() is None
+    plt.close(fig)
+
+
+def test_recoloring_the_frame_of_an_inside_legend_makes_it_the_callers():
+    fig, axs = plt.subplots(1, 3, figsize=(10, 3))
+    fig.subplots_adjust(wspace=0.05)
+    _plot3(axs[0])
+    fig.canvas.draw()
+    legend = axs[0].get_legend()
+    assert legend.get_frame_on()
+    legend.get_frame().set_facecolor('red')
+    fig.set_size_inches(22, 3)
+    fig.subplots_adjust(wspace=0.6)
+    fig.canvas.draw()
+    assert legend._loc == 0 and legend.get_frame_on()
+    assert tuple(legend.get_frame().get_facecolor())[:3] == (1.0, 0.0, 0.0)
+    plt.close(fig)
+
+
 def test_hyp_subplots_grids_are_still_laid_out_by_each_plot_call():
     """A `hyp.subplots` grid is hypertools' own figure: the documented
     ``fig, axes = hyp.subplots(...); hyp.plot(d, ax=axes[i])`` loop keeps
