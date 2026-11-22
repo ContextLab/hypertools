@@ -14425,9 +14425,14 @@ class _FollowLeaderLocator:
 
     def __call__(self, ax, renderer):
         leader = self._leader()
-        locator = None if leader is None else leader.get_axes_locator()
+        attached = (leader is not None and leader.get_figure() is not None
+                    and leader in ax._twinned_axes.get_siblings(ax))
+        locator = leader.get_axes_locator() if attached else None
         if isinstance(locator, _CallerSlotLocator):
             return locator(leader, renderer)
+        # the leader is gone (removed from the figure): this axes is on
+        # its own again
+        ax.set_axes_locator(None)
         return ax.get_position(original=True)
 
     def __getstate__(self):
@@ -14561,16 +14566,19 @@ class _CallerSlotLocator:
 
     @staticmethod
     def _titles(ax):
-        return [t for t in (ax.title, ax._left_title, ax._right_title)
+        # of the axes and of its twins: they share the position
+        return [t for member in ax._twinned_axes.get_siblings(ax)
+                for t in (member.title, member._left_title,
+                          member._right_title)
                 if t.get_visible() and t.get_text()]
 
     # -- the legend, outside or inside ---------------------------------------
-    _INSIDE = (0, None, True, 0.85)      # loc 'best', no anchor, framed
-
     @staticmethod
     def _legend_state(legend):
+        frame = legend.get_frame()
         return (legend._loc, legend._bbox_to_anchor, legend.get_frame_on(),
-                legend.get_frame().get_alpha())
+                frame.get_alpha(), tuple(frame.get_facecolor()),
+                tuple(frame.get_edgecolor()), frame.get_linewidth())
 
     @classmethod
     def _put_inside(cls, legend):
@@ -14580,19 +14588,21 @@ class _CallerSlotLocator:
             legend.set_loc('best')
             legend.set_frame_on(True)     # readable over the data
             legend.get_frame().set_alpha(0.85)
+            legend._hyp_inside = cls._legend_state(legend)
 
     @classmethod
     def _put_outside(cls, legend):
         """Undo `_put_inside`. False when the caller has since restyled or
         moved the legend: it is then the caller's, and is left alone."""
         saved = getattr(legend, '_hyp_outside', None)
-        if saved is not None and cls._legend_state(legend) != cls._INSIDE:
+        if saved is not None and cls._legend_state(legend) != getattr(
+                legend, '_hyp_inside', None):
             legend._hyp_outside = None
             legend._hyp_callers = True
         if getattr(legend, '_hyp_callers', False):
             return False
         if saved is not None:
-            loc, anchor, frame_on, alpha = saved
+            loc, anchor, frame_on, alpha = saved[:4]
             # (the stored anchor is already a transformed box:
             # `set_bbox_to_anchor` would transform it a second time)
             legend._bbox_to_anchor = anchor
@@ -14731,8 +14741,6 @@ class _CallerSlotLocator:
                         # is clearly right, so say so once and leave it
                         self._warn_once('too large to fit beside or inside '
                                         'the axes it was drawn for')
-            place(wf, 1.0)
-            self._check_vertical_room(ax, legends, renderer)
         if titles:
             at_full = over_top(wf, 1.0)
             if at_full > 0.5:
@@ -14740,6 +14748,11 @@ class _CallerSlotLocator:
                 if at_floor <= 0.5:
                     hf = largest_fitting(over_top, False, wf,
                                          at_floor, at_full)
+        if legends:
+            # on the final box: lowering the axes for its title moves a
+            # legend anchored to it as well
+            place(wf, hf)
+            self._check_vertical_room(ax, legends, renderer)
         if view is not None:
             ax.viewLim.set(view)
         return Bbox.from_bounds(base.x0, base.y0, base.width * wf,
@@ -14803,7 +14816,7 @@ def _keep_inside_caller_slot(ax):
         return
     current = ax.get_axes_locator()
     if isinstance(current, (_CallerSlotLocator, _FollowLeaderLocator)):
-        return        # (a twin's legend is fitted by its leader's locator)
+        return     # (a twin's legend and title: its leader's locator)
     # only an axes that carries something to fit: with a locator set,
     # `ax.get_position()` reports the last DRAWN position instead of
     # applying the aspect on the spot, and a caller reading it straight

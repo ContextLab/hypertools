@@ -980,6 +980,66 @@ def test_redrawing_a_fitted_grid_costs_a_bounded_number_of_measurements():
     plt.close(fig)
 
 
+# -- third review round --------------------------------------------------------
+
+def test_a_legend_pushed_off_the_canvas_by_the_title_fit_is_reported():
+    fig, ax = plt.subplots(figsize=(5, 4))
+    data = [np.random.default_rng(0).normal(size=(10, 2))] * 14
+    hyp.plot(data, 'o', ax=ax, show=False, title='T',
+             legend=[str(i) for i in range(14)],
+             legend_kwargs={'loc': 'upper left'})
+    ax.title.set_fontsize(60)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter('always')
+        fig.canvas.draw()
+    off = _extent(ax.get_legend(), fig).y0 < fig.bbox.y0
+    assert not off or any('taller than the room' in str(w.message)
+                          for w in caught)
+    assert off                      # (the case this test is about)
+    plt.close(fig)
+
+
+def test_a_title_on_the_twin_is_kept_on_the_canvas():
+    fig, ax = plt.subplots(figsize=(5, 3))
+    fig.subplots_adjust(top=0.99)
+    twin = ax.twinx()
+    _plot3(ax, legend=['a', 'b', 'c'])
+    _plot3(twin, legend=None, title='Twin title')
+    fig.canvas.draw()
+    assert _extent(twin.title, fig).y1 <= fig.bbox.y1
+    plt.close(fig)
+
+
+def test_a_twin_is_on_its_own_again_once_the_fitted_axes_is_removed():
+    fig, ax = plt.subplots(figsize=(5, 4))
+    _plot3(ax)
+    twin = ax.twinx()
+    fig.canvas.draw()
+    ax.remove()
+    twin.set_position([0.2, 0.2, 0.5, 0.5])
+    fig.canvas.draw()
+    np.testing.assert_allclose(twin.get_position().bounds,
+                               (0.2, 0.2, 0.5, 0.5))
+    assert twin.get_axes_locator() is None
+    plt.close(fig)
+
+
+def test_recoloring_the_frame_of_an_inside_legend_makes_it_the_callers():
+    fig, axs = plt.subplots(1, 3, figsize=(10, 3))
+    fig.subplots_adjust(wspace=0.05)
+    _plot3(axs[0])
+    fig.canvas.draw()
+    legend = axs[0].get_legend()
+    assert legend.get_frame_on()
+    legend.get_frame().set_facecolor('red')
+    fig.set_size_inches(22, 3)
+    fig.subplots_adjust(wspace=0.6)
+    fig.canvas.draw()
+    assert legend._loc == 0 and legend.get_frame_on()
+    assert tuple(legend.get_frame().get_facecolor())[:3] == (1.0, 0.0, 0.0)
+    plt.close(fig)
+
+
 def test_hyp_subplots_grids_are_still_laid_out_by_each_plot_call():
     """A `hyp.subplots` grid is hypertools' own figure: the documented
     ``fig, axes = hyp.subplots(...); hyp.plot(d, ax=axes[i])`` loop keeps

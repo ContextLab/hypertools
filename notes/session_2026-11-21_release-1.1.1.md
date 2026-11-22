@@ -281,3 +281,15 @@ layout-pass detection by file name (now by module, plus any
 initial spot, so the first draw differed (the axis' own `get_tightbbox`).
 Left as is: legend over its own twin's tick labels (same on master);
 default 2x3 grids narrow panels to about 40% (legend takes the rest).
+
+### Round 3 (Codex only, confirmation)
+
+All round-2 items confirmed fixed; hypertools' own figures pixel-identical
+to master. Four narrow P2 edge cases, fixed with a test each: the legend's
+vertical-room check ran before the title fit (now on the final box); a
+title on a twin was not fitted (titles of the whole twin family count); a
+twin kept following a leader that had been removed from the figure (the
+follower takes itself off); recoloring the frame of an inside legend was
+not recognized as the caller's edit (frame colors and line width are part
+of the compared state). 100 tests in tests/test_caller_figure_hygiene.py
+pass on matplotlib 3.10.8 and 3.11.2.
