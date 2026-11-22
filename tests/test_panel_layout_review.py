@@ -86,7 +86,12 @@ def _assert_labels_clear(fig, n, frame=None):
         labels[i] = [axis.label.get_window_extent(renderer)
                      for axis in (ax.xaxis, ax.yaxis, ax.zaxis)
                      if axis.label.get_text()]
-        assert labels[i], i
+    # CHANGED for 1.2.0 (owner decision 2026-11-22): shared axis labels are
+    # drawn on the outer panels only, so an inner panel may draw none (this
+    # asserted that EVERY panel draws labels); the grid as a whole still
+    # draws each of them
+    assert len({axis.label.get_text() for ax in panels
+                for axis in (ax.xaxis, ax.yaxis, ax.zaxis)} - {''}) == 3
     for i, ax in enumerate(panels):
         for label in labels[i]:
             where = (frame, i)

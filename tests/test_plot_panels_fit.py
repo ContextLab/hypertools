@@ -93,8 +93,12 @@ class TestPerPanelAxisLabels:
         assert want == ('x', 'y')
         fig = hyp.plot([a, b], panels=True, ndims=2, show=False)
         try:
-            for ax in fig.axes:
-                assert (ax.get_xlabel(), ax.get_ylabel()) == want
+            # CHANGED for 1.2.0 (owner decision 2026-11-22): shared axis
+            # labels are drawn on the outer panels only -- in this 1 x 2
+            # row the x label under both panels, the y label on the
+            # left-most (this asserted both labels on every panel)
+            assert [(ax.get_xlabel(), ax.get_ylabel()) for ax in fig.axes] \
+                == [want, (want[0], '')]
         finally:
             plt.close(fig)
 
@@ -110,8 +114,11 @@ class TestPerPanelAxisLabels:
                 pd.DataFrame({'year': t, 'temp': np.cos(t)})]
         fig = hyp.plot(data, panels=True, ndims=2, show=False)
         try:
+            # CHANGED for 1.2.0 (owner decision 2026-11-22): shared axis
+            # labels are drawn on the outer panels only (this asserted
+            # ('year', 'temp') on both panels of the row)
             assert [(ax.get_xlabel(), ax.get_ylabel()) for ax in fig.axes] \
-                == [('year', 'temp'), ('year', 'temp')]
+                == [('year', 'temp'), ('year', '')]
         finally:
             plt.close(fig)
 
@@ -121,7 +128,10 @@ class TestPerPanelAxisLabels:
                        show=False)
         try:
             assert all(ax.get_xlabel() == 'mine' for ax in fig.axes)
-            assert all(ax.get_ylabel() == 'y' for ax in fig.axes)
+            # CHANGED for 1.2.0 (owner decision 2026-11-22): shared axis
+            # labels are drawn on the outer panels only (this asserted the
+            # derived 'y' on both panels of the row)
+            assert [ax.get_ylabel() for ax in fig.axes] == ['y', '']
         finally:
             plt.close(fig)
 
@@ -137,8 +147,11 @@ class TestPerPanelAxisLabels:
         fig = hyp.plot([a, b], panels=True, panel_fit='independent',
                        ndims=2, show=False)
         try:
+            # CHANGED for 1.2.0 (owner decision 2026-11-22): shared axis
+            # labels are drawn on the outer panels only (this asserted
+            # ('x', 'y') on both panels of the row)
             assert [(ax.get_xlabel(), ax.get_ylabel()) for ax in fig.axes] \
-                == [('x', 'y'), ('x', 'y')]
+                == [('x', 'y'), ('x', '')]
         finally:
             plt.close(fig)
 
@@ -348,7 +361,10 @@ def test_P2_series_mode_panels_keep_dates_and_the_column_name(panel_fit):
                        if getattr(ln, '_hyp_forecast_role', None) is None]
             assert np.allclose(np.asarray(line.get_xdata(), dtype=float),
                                date2num(frame.index.to_pydatetime()))
-            assert ax.get_ylabel() == 'val'
+        # CHANGED for 1.2.0 (owner decision 2026-11-22): shared axis labels
+        # are drawn on the outer panels only -- the column's name on the
+        # left-most panel of the row (this asserted 'val' on both panels)
+        assert [ax.get_ylabel() for ax in fig.axes] == ['val', '']
     finally:
         plt.close(fig)
 

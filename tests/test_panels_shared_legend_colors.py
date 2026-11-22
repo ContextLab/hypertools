@@ -205,7 +205,12 @@ def test_shared_legend_clears_a_3d_panels_axis_labels():
     labels = [axis.label.get_window_extent(renderer)
               for ax in grid['axes'] for axis in ax._axis_map.values()
               if axis.label.get_text()]
-    assert len(labels) == 9
+    # CHANGED for 1.2.0 (owner decision 2026-11-22): shared axis labels are
+    # drawn on the outer panels only -- in this 1 x 3 row the two floor
+    # labels under every panel and the z label on the right-most one,
+    # which is the one beside the legend (this asserted all 9)
+    assert len(labels) == 7
+    assert grid['axes'][-1].zaxis.label.get_text() == 'third axis'
     for box in labels:
         assert not box.overlaps(legend)
 

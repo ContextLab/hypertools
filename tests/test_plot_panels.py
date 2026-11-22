@@ -479,7 +479,11 @@ def test_plotly_2d_panels_keep_the_unit_frame_and_column_labels():
     assert list(fig.layout.xaxis.range) == [-UNIT_FRAME_LIMIT, UNIT_FRAME_LIMIT]
     assert list(fig.layout.yaxis2.range) == [-UNIT_FRAME_LIMIT, UNIT_FRAME_LIMIT]
     assert fig.layout.xaxis2.title.text == 'a'
-    assert fig.layout.yaxis2.title.text == 'b'
+    # CHANGED for 1.2.0 (owner decision 2026-11-22): shared axis labels are
+    # drawn on the outer panels only -- in this 1 x 2 row the y title on
+    # the left-most panel alone (this asserted 'b' on the second panel)
+    assert fig.layout.yaxis.title.text == 'b'
+    assert not fig.layout.yaxis2.title.text
     assert fig.layout.xaxis2.showticklabels is False
     # one frame square per panel, each on its own cell's axes
     assert sorted(s.xref for s in fig.layout.shapes) == ['x', 'x2']

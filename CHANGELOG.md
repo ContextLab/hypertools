@@ -182,11 +182,44 @@ never published.
     exactly as before, so `size=(6.4, 4.8)` restores the old figure.
     `panels=True`/`'auto'` still chooses the grid's shape from the aspect
     of `size=` or of the default 6.4 x 4.8 in figure; the default figure is
-    then sized by the shape chosen. A static and an animated grid of the
-    same call have the same default size, except with axis labels on 3-D
-    panels, which need more room around a rotating cube. A grid built with
+    then sized by the shape chosen. A grid built with
     `hyp.subplots()` and filled by hand keeps matplotlib's default size.
     The gallery example `plot_shapes_zoo.py` no longer passes `size=`.
+  - *Shared axis labels on the outer panels only.* An axis label
+    (`xlabel=`/`ylabel=`/`zlabel=`, or the one taken from a DataFrame's
+    column or index name) that is the same in every panel of a column or
+    row is drawn once instead of on every panel, on both backends, static
+    or animated. A label along the bottom of a panel (x in 2-D and
+    `ndims=1` panels; x and y, the floor axes, in 3-D) goes under the
+    lowest panel of each column; a label up the side of a panel (y in 2-D,
+    z in 3-D) goes on one panel of each row: the left-most in 2-D, and in
+    3-D the panel at the end of the row the z label is drawn toward
+    (matplotlib: the right-most at the default view; plotly: the
+    left-most). Where the labels of a column or row differ, every panel of
+    it keeps its own; spare cells count for nothing, so a panel above an
+    empty cell draws the x label; tick labels (`axis_scale='data'`) stay
+    on every panel. In 1.1.0 every panel drew every label. The room of the
+    labels no longer drawn goes back to the panels: 2-D panels are laid
+    out closer and larger, and a 3-D grid seen from one view (static, or
+    animated with `rotations=0`) lets its outer panels' labels hang toward
+    the grid's outer edge, where the default figure is given a little room
+    for them, so its cubes keep nearly their unlabeled size (they were
+    drawn at 65-70% of it). A rotating grid's labels still swing through
+    every side of their cube and are kept inside their own cells, as
+    before. On plotly, the z titles of a 3-D grid's first column are
+    written in the left margin (a scene's own z title falls outside a
+    grid cell and was clipped away on every panel).
+  - *One layout for static and animated grids.* A static grid and the
+    same grid animated with `rotations=0` now have the same figure size,
+    the same panel positions and the same cubes; a rotating grid differs
+    only by the room its cubes' sweep needs. A grid's cubes are drawn at
+    the size a static panel's always was (matplotlib's default box zoom,
+    scaled by an animation's `zoom=`) and zoomed out only as far as their
+    cell requires; every cube of a grid is drawn the same size, labeled or
+    not; and the default figure of a labeled 3-D grid grows where its
+    cubes would be under 70% of their unlabeled size, static or animated.
+    An explicit `size=` too small for a labeled 3-D grid still raises for
+    an animated grid and warns for a static one.
 
 ### Fixed
 
@@ -211,15 +244,28 @@ never published.
   panel.** matplotlib hangs a 3-D axes' labels outside its cube, where no
   layout accounts for them, so in a grid they were drawn over the next
   panel's cube, over the title of the panel below, over the legend, or off
-  the canvas. A labeled panel's cube is now drawn smaller until its labels
-  fit its own cell; where that would leave the cubes very small (under
-  65% of an unlabeled cube's size) the default figure grows in the
+  the canvas. The labels are now kept clear of every other panel, the
+  legend and the caption: at the grid's outer edges the default figure is
+  given room for them, and a label drawn on an inner panel has its cube
+  (and with it every cube of the grid) drawn smaller until it fits its own
+  cell; where that would leave the cubes very small (under
+  70% of an unlabeled cube's size) the default figure grows in the
   direction that limits them. An explicit `size=` is
   honored as given; where it cannot hold the labeled grid legibly, the
   cubes are kept at half their unlabeled size at least and one
   `UserWarning` names a size that works (and
   `xlabel='', ylabel='', zlabel=''` as the alternative). Grids without
   axis labels are not zoomed or enlarged by this.
+- **A `panels=` grid of DataFrames with different column names is drawn
+  with `panel_fit='independent'`.** Each panel then fits its own features,
+  but the grid's color resolution stacked the frames by column name and
+  refused them ("DataFrame columns do not match across datasets"); it now
+  resolves the colors on the bare rows. (With the default shared fit such
+  a list is still refused, as on one axes: features are matched by name.)
+- **3-D panels of a labeled grid no longer overlap.** `tight_layout`
+  measures a 3-D axes that draws axis labels by its cube alone and closed
+  the gaps between such panels past zero, so one panel's square, and the
+  labels fitted inside it, reached into the next panel's.
 - **An animated title that grows after the first frame stays on the
   canvas.** Room for a per-frame `title=` is sized for the tallest of the
   first, middle and last frames' titles (it was sized for frame 0), in a

@@ -230,9 +230,14 @@ def test_2d_grid_furniture_does_not_collide(shape, n, legend):
     renderer = _draw(fig)
     panels = [ax for ax in fig.axes[:n] if ax.get_visible()]
     assert len(panels) == n
-    for ax in panels:
-        assert ax.get_xlabel() == 'first axis'
-        assert ax.get_ylabel() == 'second axis'
+    # CHANGED for 1.2.0 (owner decision 2026-11-22): shared axis labels are
+    # drawn on the outer panels only -- the x label under the lowest panel
+    # of each column, the y label on the left-most panel of each row (this
+    # asserted both labels on every panel)
+    nrows, ncols = shape
+    for i, ax in enumerate(panels):
+        assert ax.get_xlabel() == ('first axis' if i + ncols >= n else '')
+        assert ax.get_ylabel() == ('second axis' if i % ncols == 0 else '')
     width, height = fig.canvas.get_width_height()
     furniture = [_furniture_boxes(ax, renderer) for ax in panels]
     for i, boxes in enumerate(furniture):

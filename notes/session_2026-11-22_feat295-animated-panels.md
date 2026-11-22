@@ -211,3 +211,78 @@ explicit `size=` still honored.
   copied in).
 - docs/prebuilt_gallery.json NOT touched: every static `panels=` gallery
   figure changes size and needs republishing at release.
+
+## Shared axis labels on the outer panels only; one layout path (owner decision 2026-11-22, for 1.2.0)
+
+Branch `feat/295-outer-labels` (worktree), on top of f31a022b. Tests:
+`tests/test_panel_outer_labels.py`.
+
+Owner: "if x and/or y axis labels are shared across panels, we can just show
+them on the left-most columns (shared x labels) and bottom-most rows (shared
+y labels)"; implemented as the usual outer-labels convention (x under the
+lowest panel of each column, y on the left-most panel of each row), static
+and animated through one path.
+
+- `_outer_label_panels(labels, nrows, ncols, ndims, z_side)` is the ONE
+  decision function (`_LABEL_SHARED_ALONG`: 2-D x=column, y=row; 3-D x and y
+  =column, z=row). Same text in every occupied panel of the column/row ->
+  one carrier; texts differ (a missing label counts) -> every panel keeps
+  its own. Spare cells are not occupied.
+- matplotlib: `_apply_outer_labels` (after the panels are drawn and the
+  legends merged, before any layout) empties the other panels' label text.
+  3-D z carrier: the panel at the end of the row matplotlib draws the z
+  label toward, measured on a real layout (`_z_label_side`; right at the
+  default view, left at other azimuths).
+- plotly: `_apply_outer_labels_plotly` (same decision, on the drawn panel
+  figures before the transplant). z titles go to the row's LEFT panel
+  (`_PLOTLY_Z_LABEL_SIDE`); a scene's own z title falls outside a grid
+  cell's scene and was clipped on every panel before, so first-column z
+  titles are written as paper annotations in the left margin
+  (`_add_plotly_z_titles`, `PLOTLY_Z_TITLE_NAME`, 30 px, default figure
+  widened). z titles kept on INNER plotly panels (rows whose z texts
+  differ) are still scene titles and still clipped.
+- One layout: `_tighten_panel_grid` (tight_layout to convergence, negative
+  wspace/hspace set to 0: labeled 3-D boxes used to overlap) ->
+  `_lay_out_panel_grid` (cube fit, outer-label margins, strip, caption) for
+  static and animated alike. `_fit_static_cube_labels` and
+  `_STATIC_LABELED_CUBE_SHARE` (65%) are gone: one 70% floor.
+  Every cube starts at matplotlib's default box zoom (`start_scale` on
+  `PanelAnimationStub` = 1 / `_anim_box_zoom(1)`, on `_StaticCubeZoom` = 1),
+  so static == animated(rotations=0): same figure size, axes positions,
+  cubes, labels, strip and caption boxes (tested). Static cubes are
+  unchanged from 1.1 (plotly parity test kept); an animated grid's cubes
+  are ~7% smaller with rotations=0 and ~1% smaller rotating than in the
+  first 1.2.0 draft.
+- 3-D label room: seen from ONE view (static, rotations=0, default size)
+  the outer panels' labels may hang past their squares toward the grid's
+  outer edge (`_open_label_sides`: 'edge' or 'spare' cell) and the figure
+  grows there by the measured overhang (`_outer_label_margins`,
+  `_grow_figure`; the right-hand strip moves out with it). Otherwise
+  (rotating; explicit `size=`; inner panels; per-panel legends/colorbars;
+  a shared legend left of/under the grid; a shared colorbar not in the
+  right strip) labels are kept inside the panel's own cell by drawing the
+  cube smaller.
+- EVERY cube of a grid is drawn at the same share of its unlabeled size
+  (the smallest any panel's labels leave). Drawing only the label
+  carriers smaller looked broken (kept renders:
+  scratchpad feat295/outer/evidence_uneven_cubes_*.png). So in a ROTATING
+  grid the inner panels do not get their room back (all cubes at >= 70%,
+  as in the first draft); in a one-view grid they do.
+- Still different between static and animated: an explicit `size=` too
+  small for labeled cubes raises for an animated grid and warns for a
+  static one (existing tests assert both; a static labeled grid always
+  drew in 1.1).
+- Side fixes: `panel_fit='independent'` grids of DataFrames with different
+  column names were refused by the grid color resolution (stacked by
+  feature name); it now resolves on the bare rows.
+- No opt-out was added. Labels that differ are all kept, so different
+  column names per panel (needs `panel_fit='independent'`) label every
+  panel; `xlabel=` etc. take one string for the whole grid.
+- Existing tests rewritten to the new behavior (each marked "CHANGED for
+  1.2.0 (owner decision 2026-11-22)"): tests/test_plot_panels_fit.py (5),
+  tests/test_static_panel_grid_size.py (1), tests/test_panel_layout_review.py
+  (`_assert_labels_clear`), tests/test_plot_panels.py (1),
+  tests/test_panels_shared_legend_colors.py (1).
+- docs/prebuilt_gallery.json and docs/tutorials notebooks NOT touched:
+  static and animated `panels=` gallery figures with axis labels change and
+  need republishing at release.

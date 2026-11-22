@@ -465,8 +465,23 @@ def test_axis_labels_enlarge_the_figure_and_stay_inside_their_cells():
     labeled = _grid(DATA[:3], panels=(1, 3), xlabel='first axis',
                     ylabel='second axis', zlabel='third axis', duration=2,
                     frame_rate=6)
+    # CHANGED for 1.2.0 (owner decision 2026-11-22): shared axis labels are
+    # drawn on the outer panels only, and an animated grid's cubes start
+    # at a static panel's size -- so these labels now fit with the cubes
+    # at 70% of their unlabeled size or more, and the figure is enlarged
+    # only when they would not (this asserted that the labeled figure is
+    # always wider than the plain one)
     assert (labeled.figure.get_size_inches()[0]
-            > plain.figure.get_size_inches()[0])
+            >= plain.figure.get_size_inches()[0])
+    plain.draw_frame(0)
+    labeled.draw_frame(0)
+    for bare, ax in zip(_panel_axes(plain.figure),
+                        _panel_axes(labeled.figure)):
+        widths = [np.ptp(_cube_corners_px(a)[:, 0]) / a.bbox.width
+                  for a in (bare, ax)]
+        # (the 70% is of the cube's widest reach over the turn, checked
+        # with a 2% tolerance; its width on frame 0 runs a little under)
+        assert widths[1] >= 0.65 * widths[0]
     fig = labeled.figure
     axes = _panel_axes(fig)
     for frame in range(labeled.n_frames):

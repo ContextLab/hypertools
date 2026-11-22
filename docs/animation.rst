@@ -754,12 +754,16 @@ A few things are specific to a grid:
 * Without ``size=`` the figure is sized by the grid -- 3.2 in per panel each
   way, and at least 6.4 in wide -- so a saved clip of a row of panels is not
   mostly blank canvas. It is then widened by the strip of a shared legend or
-  colorbar, made taller by a ``caption=``, and enlarged for axis labels where
-  they need it (below). A static grid is sized the same way (since 1.2.0; it
-  was a fixed 6.4 x 4.8 in before), so a still and a clip of the same grid
-  have the same default size unless axis labels are drawn: labels swing
-  around a rotating cube and need more room than they do at a static grid's
-  one view. ``size=`` sets the whole figure's size as usual.
+  colorbar, made taller by a ``caption=``, and given room for axis labels where
+  they need it (below). A static grid is laid out by the same code (since
+  1.2.0; it was a fixed 6.4 x 4.8 in before): a still and a clip of the same
+  grid animated with ``rotations=0`` have the same figure size, panel
+  positions and cubes, and a rotating grid differs only by the room its
+  cubes' sweep needs. ``size=`` sets the whole figure's size as usual.
+* Shared axis labels are drawn on the outer panels only, as in a static
+  grid: a label that is the same in every panel of a column is drawn under
+  the column's lowest panel, one that is the same along a row on one panel
+  of the row (see ``panels=`` in :func:`hypertools.plot`).
 * ``animate=`` may be given in its dictionary form
   (``animate={'style': 'spin', 'rotations': 2}``) exactly as for a single
   plot; per-dataset values inside it go to their panels, and
@@ -767,14 +771,18 @@ A few things are specific to a grid:
 * Every panel must draw the same number of frames, or the call raises
   ``ValueError`` (``animate='morph'`` needs the same number of datasets in
   each panel).
-* Each 3-D panel's cube is zoomed out as far as it takes to stay inside its
+* Each 3-D panel's cube starts at the size a static panel's is drawn at
+  (scaled by ``zoom=``) and is zoomed out as far as it takes to stay inside its
   own cell through the whole rotation, so ``zoom=`` can shrink a panel's
-  cube but not enlarge it past its cell. With axis labels (``xlabel=``/
-  ``ylabel=``/``zlabel=``, or a DataFrame's column names) the cube is drawn
-  smaller still, so the labels stay inside the panel's own cell at every
-  view the animation takes (the whole turn, or the one view of
-  ``rotations=0``). The figure is enlarged only where that would leave a
-  cube under 70% of an unlabeled one's size, and by no more than restores
+  cube but not enlarge it past its cell. The axis labels a panel draws
+  (``xlabel=``/``ylabel=``/``zlabel=``, or a DataFrame's column names) swing
+  around its cube, so the cubes are drawn smaller still -- all of them
+  alike -- until the labels stay inside the panel's own cell at every view
+  the animation takes. With ``rotations=0`` there is one view: the outer
+  panels' labels hang toward the grid's outer edge, the figure is given
+  room for them there, and the cubes keep nearly their unlabeled size. The
+  figure is enlarged only where the cubes would be under 70% of their
+  unlabeled size, and by no more than restores
   that. An explicit ``size=`` is honored down to cubes half their unlabeled
   size and raises below that, naming a size that works; pass ``xlabel='', ylabel='', zlabel=''`` to drop the labels instead.
 * A per-frame ``title=`` (a callable or an ``'{index...}'`` pattern, one for

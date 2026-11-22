@@ -5543,17 +5543,7 @@ def _add_shared_furniture(fig, panel_axes, legend_spec, colorbar_info,
     # the panel's own box afterwards -- `_fit_panel_cubes` -- so nothing
     # of an outer column reaches into a strip)
     fig.set_size_inches(grid_w, grid_h)
-    with warnings.catch_warnings():
-        # the colorbar's axes is placed by hand (below), which
-        # `tight_layout` reports as an axes it cannot lay out
-        warnings.filterwarnings(
-            'ignore', message='This figure includes Axes that are not '
-            'compatible with tight_layout')
-        # the panels were last laid out around their own legends, which
-        # are gone: one pass from there under-reserves a 3-D panel's
-        # title room (its box is aspect-constrained), a second settles it
-        for _ in range(3):
-            fig.tight_layout()
+    _tighten_panel_grid(fig)
     if not widen:
         # an explicit size too small for the strips: they keep their size
         # and the grid the 30% floor above
@@ -5709,6 +5699,222 @@ def _place_shared_furniture(fig, strip):
         height = _SHARED_COLORBAR_HEIGHT * (y1 - y0)
         cbar.ax.set_position([x, middle - 0.5 * height,
                               _SHARED_COLORBAR_WIDTH_IN / width_in, height])
+
+
+#: which line of a grid shares each axis label (`_outer_label_panels`): a
+#: label that runs along the BOTTOM of a panel is shared down a column, one
+#: that runs up its SIDE is shared along a row. In 3-D both floor axes (x
+#: and y) are drawn under the cube and z up its side.
+_LABEL_SHARED_ALONG = {
+    2: {'x': 'column', 'y': 'row'},
+    3: {'x': 'column', 'y': 'column', 'z': 'row'},
+}
+
+#: the end of a row a plotly 3-D grid's shared z title is drawn at: at
+#: hypertools' default camera plotly writes a scene's z title at the cube's
+#: left edge (matplotlib's side is measured, `_z_label_side`; a plotly
+#: scene's is decided in the browser and cannot be)
+_PLOTLY_Z_LABEL_SIDE = 'left'
+
+
+def _outer_label_panels(labels, nrows, ncols, ndims=2, z_side='right'):
+    """Which axis labels each panel of a `panels=` grid DRAWS: shared
+    labels go on the outer panels only (owner decision, 1.2.0). The one
+    decision function of every grid -- static and animated matplotlib
+    grids (`_apply_outer_labels`) and the plotly grid
+    (`_plot_panels_plotly`).
+
+    `labels` holds, per occupied panel in row-major order, that panel's
+    ``{'x': text, 'y': text, 'z': text}`` (a missing key, None and ``''``
+    all mean "no label"). Spare cells of the ``nrows x ncols`` grid are not
+    listed and count for nothing. Returns, per panel, the set of axis
+    names whose label it draws:
+
+    - a label shared down a COLUMN (`_LABEL_SHARED_ALONG`: x; in 3-D also
+      y) is drawn by the lowest occupied panel of that column, when every
+      occupied panel of the column has the same text for it;
+    - a label shared along a ROW (y in 2-D, z in 3-D) is drawn by one
+      panel of that row, when every occupied panel of the row has the same
+      text for it: the left-most one, or for a 3-D grid's z label the
+      panel at the `z_side` end of the row (``'right'``: the right-most
+      occupied panel), which is the side of the cube the z label is drawn
+      on, so the label sits at the grid's outer edge;
+    - where the texts of a column (or row) differ -- including a panel
+      with no label beside labeled ones -- every panel of it keeps its
+      own.
+    """
+    n = len(labels)
+    drawn = [set() for _ in range(n)]
+
+    def _text(i, name):
+        value = labels[i].get(name)
+        return '' if value is None else str(value)
+
+    columns = [[i for i in range(n) if i % ncols == col]
+               for col in range(ncols)]
+    rows = [[i for i in range(n) if i // ncols == row]
+            for row in range(nrows)]
+    for name, along in _LABEL_SHARED_ALONG[3 if ndims >= 3 else 2].items():
+        for members in (columns if along == 'column' else rows):
+            if not members:
+                continue
+            texts = {_text(i, name) for i in members}
+            if len(texts) > 1:
+                keepers = [i for i in members if _text(i, name)]
+            elif not texts.pop():
+                keepers = []
+            elif along == 'column':
+                keepers = [members[-1]]
+            else:
+                keepers = [members[-1] if name == 'z' and z_side == 'right'
+                           else members[0]]
+            for i in keepers:
+                drawn[i].add(name)
+    return drawn
+
+
+def _axis_label_artists(ax):
+    """``{'x': Text, 'y': Text[, 'z': Text]}``: the axis-label artists of
+    a matplotlib 2-D or 3-D axes."""
+    return {name: getattr(ax, name + 'axis').label
+            for name in ('x', 'y', 'z') if hasattr(ax, name + 'axis')}
+
+
+def _z_label_side(fig, panel_axes):
+    """``'left'`` or ``'right'``: the side of its cube matplotlib draws a
+    3-D panel's z label on, at the grid's view (it depends on the camera
+    angle, `azim=`/`elev=`). Measured on a real layout of the first panel
+    that has a z label, at frame 0 of an animation; ``'right'`` (the side
+    at hypertools' default view) when no panel has one."""
+    for ax in panel_axes:
+        label = _axis_label_artists(ax).get('z')
+        if label is None or not (label.get_text() and label.get_visible()):
+            continue
+        box = label.get_window_extent(_measurement_renderer(fig))
+        center = ax.get_window_extent()
+        return ('right' if 0.5 * (box.x0 + box.x1)
+                >= 0.5 * (center.x0 + center.x1) else 'left')
+    return 'right'
+
+
+def _apply_outer_labels(fig, panel_axes, nrows, ncols):
+    """Keep a matplotlib grid's SHARED axis labels on its outer panels
+    only (`_outer_label_panels`), static or animated: every other panel's
+    copy of a shared label is emptied (``ax.get_xlabel()`` is then ``''``),
+    so nothing downstream -- `tight_layout`, the 3-D cube fit
+    (`_fit_panel_cubes`), a ``bbox_inches='tight'`` save -- reserves room
+    for a label that is not drawn. Called once the panels are drawn and
+    BEFORE the grid is laid out. Tick labels are not touched."""
+    if not panel_axes:
+        return
+    cubes = hasattr(panel_axes[0], 'get_proj')
+    artists = [_axis_label_artists(ax) for ax in panel_axes]
+    texts = [{name: (label.get_text() if label.get_visible() else '')
+              for name, label in found.items()} for found in artists]
+    if not any(text for found in texts for text in found.values()):
+        return
+    drawn = _outer_label_panels(
+        texts, nrows, ncols, ndims=3 if cubes else 2,
+        z_side=_z_label_side(fig, panel_axes) if cubes else 'left')
+    for found, keep in zip(artists, drawn):
+        for name, label in found.items():
+            if name not in keep and label.get_text():
+                label.set_text('')
+
+
+#: room (pixels) a plotly 3-D grid's left margin is given for the z titles
+#: written beside its first column (`_apply_outer_labels_plotly`)
+_PLOTLY_Z_TITLE_PX = 30
+
+#: the ``name`` of the paper annotation that writes panel ``i``'s z title
+#: beside a plotly 3-D grid's first column
+PLOTLY_Z_TITLE_NAME = 'hyp_panel_ztitle_{}'
+
+
+def _apply_outer_labels_plotly(panel_figs, nrows, ncols, ndims):
+    """The plotly grid's `_apply_outer_labels`: keep SHARED axis titles
+    on the outer panels only, by the same decision
+    (`_outer_label_panels`). `panel_figs` are the drawn single-axes panel
+    figures, before they are transplanted into the grid; every other
+    panel's copy of a shared title is emptied (the axis itself, and its
+    ticks when ``axis_scale='data'`` shows them, are left as drawn). A
+    3-D grid's z title goes to the `_PLOTLY_Z_LABEL_SIDE` end of each
+    row.
+
+    Returns ``{panel index: z title}`` for the FIRST-COLUMN panels of a
+    3-D grid that draw one. plotly writes a scene's z title left of its
+    cube, and a grid's cube fills its cell's width, so there the title
+    fell outside the scene and was clipped away (on every panel, before
+    1.2.0). Those titles are taken out of their scenes, and the caller
+    writes them in the grid's left margin instead
+    (`_add_plotly_z_titles`), where an outer label belongs."""
+    def _axes(panel):
+        holder = panel.layout.scene if ndims >= 3 else panel.layout
+        return {name: holder[name + 'axis']
+                for name in (('x', 'y', 'z') if ndims >= 3 else ('x', 'y'))}
+
+    found = [_axes(panel) for panel in panel_figs]
+    texts = [{name: (axis.title.text if axis.visible is not False else '')
+              for name, axis in axes.items()} for axes in found]
+    drawn = _outer_label_panels(texts, nrows, ncols, ndims=ndims,
+                                z_side=_PLOTLY_Z_LABEL_SIDE)
+    margin_titles = {}
+    for i, (axes, panel_texts, keep) in enumerate(zip(found, texts, drawn)):
+        for name, axis in axes.items():
+            if not panel_texts[name]:
+                continue
+            if name not in keep:
+                axis.title.text = ''
+            elif name == 'z' and i % ncols == 0:
+                margin_titles[i] = panel_texts[name]
+                axis.title.text = ''
+    return margin_titles
+
+
+def _add_plotly_z_titles(fig, margin_titles, scene_keys):
+    """Write a plotly 3-D grid's first-column z titles (`margin_titles`,
+    from `_apply_outer_labels_plotly`) in the left margin, each rotated
+    and centered on its panel's scene (``scene_keys[i]``), as a paper
+    annotation named `PLOTLY_Z_TITLE_NAME`."""
+    for i, text in margin_titles.items():
+        domain = fig.layout[scene_keys[i]].domain
+        fig.add_annotation(
+            text=text, x=domain.x[0], y=0.5 * (domain.y[0] + domain.y[1]),
+            xref='paper', yref='paper', xanchor='center', yanchor='middle',
+            xshift=-0.5 * _PLOTLY_Z_TITLE_PX, textangle=-90,
+            showarrow=False, name=PLOTLY_Z_TITLE_NAME.format(i))
+
+
+def _tighten_panel_grid(fig):
+    """Lay a grid's panels out in the figure as it is (`tight_layout`):
+    the one layout pass of every matplotlib `panels=` grid, with or
+    without a shared legend/colorbar strip, static or animated.
+
+    Run to convergence: the panels were last laid out around what each
+    drew itself (its own legend, since merged into the grid's; axis
+    labels since left to the outer panels), and one pass from there
+    under-reserves a 3-D panel's title room (its box is
+    aspect-constrained); a second settles it.
+
+    The panels' cells never overlap afterwards. `tight_layout` measures a
+    3-D axes that draws axis labels by its cube alone, which is smaller
+    than its box, and so closes the gaps between such panels past zero
+    (negative ``wspace``/``hspace``): the boxes then overlap, a panel's
+    square -- which `_fit_panel_cubes` keeps its cube and labels inside --
+    reaches into the next panel's, and so did its labels. A negative gap
+    is set back to none."""
+    with warnings.catch_warnings():
+        # a shared colorbar's axes is placed by hand, which `tight_layout`
+        # reports as an axes it cannot lay out
+        warnings.filterwarnings(
+            'ignore', message='This figure includes Axes that are not '
+            'compatible with tight_layout')
+        for _ in range(3):
+            fig.tight_layout()
+    pars = fig.subplotpars
+    if pars.wspace < 0 or pars.hspace < 0:
+        fig.subplots_adjust(wspace=max(pars.wspace, 0.0),
+                            hspace=max(pars.hspace, 0.0))
 
 
 def _plot_panels(x, panels, call_kwargs, _name='panels'):
@@ -6025,6 +6231,14 @@ def _plot_panels_impl(x, panels, call_kwargs, _name='panels'):
             # panels of unequal width (independent fits) share no axes
             _rows = _placeholder_rows([len(xf[0]) for xf in panel_xforms],
                                       width=panel_ndims)
+        elif len({tuple(map(str, row.columns)) for row in _rows
+                  if is_frame_dataset(row)}) > 1:
+            # panels whose DataFrames name their columns differently
+            # (independent fits: each panel has its own features) cannot be
+            # stacked by feature name; colors, legend entries and the
+            # colorbar do not depend on the names, so resolve them on the
+            # bare rows (this call refused such a grid outright)
+            _rows = [np.asarray(row) for row in _rows]
         resolution = _resolve_grid_colors(
             _rows, shared, panel_ndims, probe_warnings,
             clustering=grid_clustering)
@@ -6239,6 +6453,10 @@ def _plot_panels_impl(x, panels, call_kwargs, _name='panels'):
     _reemit_panel_warnings(probe_warnings, draw_warnings)
     for spare in axes[n_panels:]:
         spare.set_visible(False)
+    # shared axis labels are drawn on the outer panels only (1.2.0), static
+    # or animated; decided here, before anything is laid out, so every
+    # later step reserves room for the labels actually drawn
+    _apply_outer_labels(fig, panel_axes, nrows, ncols)
     strip = None
     if (consolidate and legend_spec is not None) \
             or colorbar_info is not None:
@@ -6268,7 +6486,7 @@ def _plot_panels_impl(x, panels, call_kwargs, _name='panels'):
             if _extra:
                 _w, _h = fig.get_size_inches()
                 fig.set_size_inches(_w + _extra, _h)
-        fig.tight_layout()
+        _tighten_panel_grid(fig)
 
     #: the bundle's ``'colors'``: the one scale the panels share
     grid_colors = None
@@ -6292,23 +6510,16 @@ def _plot_panels_impl(x, panels, call_kwargs, _name='panels'):
             strip=strip, grid_colors=grid_colors,
             rotations=call_kwargs.get('rotations', 1))
 
-    # a static 3-D panel's axis labels stay inside the panel's own box
-    _fit_static_cube_labels(fig, panel_axes,
-                            resize=call_kwargs.get('size') is None)
-    _place_shared_furniture(fig, strip)
-
-    if caption is not None or dynamic_caption is not None:
-        # a static grid's caption: fixed text, or the dynamic forms
-        # resolved once for the finished figure (as a dynamic title= is on
-        # a static plot)
-        _add_grid_caption(
-            fig, caption, dynamic_caption, call_kwargs.get('font'),
-            context=(_static_grid_context(
-                fig, panel_axes, panel_xforms, order='parallel')
-                if dynamic_caption is not None else None))
-        # the caption's room was added under the grid: re-center the
-        # shared legend/colorbar on the panels
-        _place_shared_furniture(fig, strip)
+    # the layout an animated grid gets, at the one view; a dynamic caption
+    # is resolved once, for the finished figure (as a dynamic title= is on
+    # a static plot)
+    _lay_out_panel_grid(
+        fig, panel_axes, (nrows, ncols), strip,
+        resize=call_kwargs.get('size') is None,
+        caption=caption, dynamic_caption=dynamic_caption,
+        font=call_kwargs.get('font'),
+        frame_context=lambda _frame: _static_grid_context(
+            fig, panel_axes, panel_xforms, order='parallel'), _name=_name)
 
     if save_path is not None:
         fig.savefig(save_path)
@@ -6469,15 +6680,11 @@ def _panel_grid_context(fig, cells, frame, n_frames):
 #: fill, at most
 _PANEL_CUBE_FILL = 0.96
 
-#: the least a LABELED animated panel cube may be, as a share of the size
-#: the same cube has without axis labels: below this the cube is too small
-#: beside its own labels, and the default figure grows instead
+#: the least a panel cube that draws axis labels may be, static or
+#: animated, as a share of the size the same cube has without them: below
+#: this the cube is too small beside its own labels, and the default figure
+#: grows instead...
 _PANEL_LABELED_CUBE_SHARE = 0.7
-
-#: ...the least a labeled STATIC panel cube may be before its default figure
-#: grows (a static cube has one view, so its labels need less room than a
-#: rotating one's and the figure is enlarged a little later)...
-_STATIC_LABELED_CUBE_SHARE = 0.65
 
 #: ...and the legible floor at an explicit `size=` (a size the caller chose
 #: is honored down to cubes half their unlabeled size): under it an
@@ -6526,11 +6733,13 @@ def _cube_reach(axis, azimuths):
 
 def _axis_label_reach(fig, cells, rotations):
     """Per cell, how far its 3-D AXIS LABELS reach from the center of the
-    axes' square over the views the panel is seen from (0.5 is the
-    square's edge; 0.0 for a cell without labels). Label placement is
-    matplotlib's, decided at draw time, so this draws the figure once per
-    sampled camera angle (every 30 degrees of the rotation)."""
-    reaches = [0.0] * len(cells)
+    axes' square in each direction -- ``{'left', 'right', 'down', 'up'}``
+    -- over the views the panel is seen from (0.5 is the square's edge;
+    0.0 where a cell draws no label). Label placement is matplotlib's,
+    decided at draw time, so this draws the figure once per sampled camera
+    angle (every 30 degrees of the rotation)."""
+    reaches = [dict.fromkeys(('left', 'right', 'down', 'up'), 0.0)
+               for _ in cells]
     views = [(cell['axes'].elev, cell['axes'].azim) for cell in cells]
     sweeps = [_camera_azimuths(cell['axes'], rotations, 30.0)
               for cell in cells]
@@ -6539,7 +6748,7 @@ def _axis_label_reach(fig, cells, rotations):
             cell['axes'].view_init(elev=elev,
                                    azim=sweep[min(step, len(sweep) - 1)])
         renderer = _measurement_renderer(fig)
-        for k, cell in enumerate(cells):
+        for reach, cell in zip(reaches, cells):
             axis = cell['axes']
             to_square = axis.transAxes.inverted()
             for axis3d in axis._axis_map.values():
@@ -6547,19 +6756,118 @@ def _axis_label_reach(fig, cells, rotations):
                 if not (label.get_text() and label.get_visible()):
                     continue
                 box = label.get_window_extent(renderer)
-                frac = to_square.transform(box.get_points())
-                reaches[k] = max(reaches[k],
-                                 float(np.abs(frac - 0.5).max()))
+                (x0, y0), (x1, y1) = to_square.transform(box.get_points())
+                for side, value in (('left', 0.5 - min(x0, x1)),
+                                    ('right', max(x0, x1) - 0.5),
+                                    ('down', 0.5 - min(y0, y1)),
+                                    ('up', max(y0, y1) - 0.5)):
+                    reach[side] = max(reach[side], float(value))
     for cell, (elev, azim) in zip(cells, views):
         cell['axes'].view_init(elev=elev, azim=azim)
     return reaches
 
 
+#: blank room (inches) kept between an outer panel's axis label and the
+#: edge of the room the figure is given for it (`_outer_label_margins`)
+_OUTER_LABEL_PAD_IN = 0.06
+
+
+def _open_label_sides(fig, panel_axes, grid, strip):
+    """Per panel of a 3-D grid, the sides of its cell that hold nothing
+    its axis labels could run into, so the labels may hang past the
+    panel's square there instead of the cube being drawn smaller to keep
+    them inside it: ``{side: 'edge' | 'spare'}`` with sides ``'left'``,
+    ``'right'``, ``'down'`` (never up: a title sits above a panel).
+
+    ``'edge'`` is the outer edge of the grid -- the left of the first
+    column, the right of the last one, the bottom of the last row -- where
+    the figure is given the room the labels need (`_outer_label_margins`);
+    ``'spare'`` is a spare (hidden) cell of the grid, right of the last
+    panel or under a panel of the row above. Shared axis labels are drawn
+    on exactly these panels (`_outer_label_panels`), which is what gives
+    the inner panels' room back without drawing the labeled cubes smaller
+    than the rest.
+
+    No side is open where something else is drawn there: a panel's own
+    legend or colorbar (colors that mean something different per panel),
+    a shared legend placed left of or under the grid, a shared colorbar
+    anywhere but the right-hand strip (which starts past the labels'
+    room).
+    """
+    nrows, ncols = grid
+    n = len(panel_axes)
+    closed = [{} for _ in range(n)]
+    known = set(panel_axes)
+    if any(ax.get_legend() is not None for ax in panel_axes) or any(
+            ax.get_visible() and ax not in known
+            and ax.get_gid() != SHARED_COLORBAR_GID for ax in fig.axes):
+        return closed
+    blocked = set()
+    if strip is not None:
+        if strip.get('colorbar') is not None and not strip.get('colorbar_in'):
+            return closed
+        if strip.get('legend') is not None:
+            blocked.add({'left': 'left', 'bottom': 'down'}.get(
+                strip.get('side')))
+    sides = []
+    for i in range(n):
+        row, col = divmod(i, ncols)
+        found = {}
+        if col == 0:
+            found['left'] = 'edge'
+        if col == ncols - 1:
+            found['right'] = 'edge'
+        elif i + 1 >= n:
+            found['right'] = 'spare'
+        if row == nrows - 1:
+            found['down'] = 'edge'
+        elif i + ncols >= n:
+            found['down'] = 'spare'
+        sides.append({side: where for side, where in found.items()
+                      if side not in blocked})
+    return sides
+
+
+def _outer_label_margins(fig, cubes, strip):
+    """``{'left', 'right', 'bottom'}``: the inches a grid's figure must
+    grow by on each side for the axis labels its outer 3-D panels hang
+    past their squares (`_open_label_sides`' ``'edge'`` sides; the reach
+    is the one `_fit_panel_cubes` measured), beyond the blank room already
+    there. On the right the room ends where the shared legend/colorbar
+    strip begins."""
+    width, height = fig.get_size_inches()
+    right_edge = 1.0 if strip is None else float(strip['rect_right'])
+    grow = {'left': 0.0, 'right': 0.0, 'bottom': 0.0}
+    for cell in cubes:
+        reach = cell.get('label_reach')
+        if reach is None:
+            continue
+        box = cell['axes'].get_position()
+        for side, where in cell.get('open', {}).items():
+            if where != 'edge' or reach[side] <= 0.0:
+                continue
+            if side == 'down':
+                need = (reach['down'] - 0.5) * box.height * height
+                have, key = box.y0 * height, 'bottom'
+            else:
+                need = (reach[side] - 0.5) * box.width * width
+                have = ((right_edge - box.x1) if side == 'right'
+                        else box.x0) * width
+                key = side
+            grow[key] = max(grow[key], need + _OUTER_LABEL_PAD_IN - have)
+    return grow
+
+
 class _StaticCubeZoom:
     """A STATIC 3-D panel's zoom handle, in the shape of an animated
-    panel's `PanelAnimationStub` (``zoom_scale`` and ``draw``), so
-    `_fit_panel_cubes` fits either: ``draw`` applies ``zoom_scale[0]`` to
-    the axes' own box aspect."""
+    panel's `PanelAnimationStub` (``zoom_scale``, ``start_scale`` and
+    ``draw``), so `_fit_panel_cubes` fits either: ``draw`` applies
+    ``zoom_scale[0]`` to the axes' own box aspect, whose default zoom
+    (``start_scale`` 1.0) is the size a static cube is drawn at."""
+
+    #: the ``zoom_scale`` the cube fit starts from: matplotlib's default
+    #: box zoom
+    start_scale = 1.0
 
     def __init__(self, axis):
         self._axis = axis
@@ -6596,66 +6904,58 @@ def _axis_labels_collide(fig, cells):
     return False
 
 
-def _fit_static_cube_labels(fig, panel_axes, resize=True):
-    """Keep every STATIC 3-D panel's axis labels inside the panel's own
-    box (`_fit_panel_cubes`): matplotlib hangs a 3-D axes' labels outside
-    its cube, where no layout accounts for them, so in a grid they landed
-    on the next panel's cube, on the title of the panel below and on the
-    shared legend. A labeled panel's cube is drawn smaller until its
-    labels fit, and where that would leave the cube too small the figure
-    is enlarged instead (`resize`: no explicit `size=`, which is honored
-    as given -- with a warning that names a size that works when it cannot
-    hold the labeled grid legibly, see `_fit_panel_cubes`). Panels without
-    axis labels are not touched."""
-    cells = [{'axes': ax, 'stub': _StaticCubeZoom(ax)}
-             for ax in panel_axes
-             if ax.get_visible() and hasattr(ax, 'get_proj')
-             and _has_axis_labels(ax)]
-    if cells:
-        _fit_panel_cubes(fig, cells, resize=resize, rotations=0,
-                         static=True)
-
-
 def _fit_panel_cubes(fig, cells, resize=True, rotations=1, static=False,
                      _name='panels'):
-    """Zoom every 3-D panel out until its cube -- and its axis labels,
-    when it has any -- stay inside the panel's own box at EVERY camera
-    angle the panel is seen from (GH #295).
+    """Zoom every 3-D panel out until its cube -- and the axis labels it
+    draws, when it draws any -- stay inside the panel's own box at EVERY
+    camera angle the panel is seen from (GH #295). The one cube fit of
+    every matplotlib grid, static or animated (`_lay_out_panel_grid`).
 
-    A single animated 3-D plot gives its axes the whole canvas, because the
-    cube an animation draws -- zoomed, and wider on screen when seen
-    corner-on -- overflows a normal subplot box at some angles (the frame
-    and the data are drawn unclipped). In a grid that overflow would run
-    into the panel's own title and legend and into the next panel. So the
-    cube's projected extent is measured over the views the animation
-    takes (`_camera_azimuths`: the whole turn, the arc of a partial one,
-    or the single view of ``rotations=0``), at the panel's own elevation
-    and zoom, and the panel's box zoom is lowered
-    (`PanelAnimationStub.zoom_scale`) until the widest view fits the square
-    matplotlib draws a 3-D axes in -- which the title sits above and the
-    legend beside. A panel whose cube already fits is left alone, and 2-D
-    panels have no camera and are never touched.
+    A grid's cubes start at the size a static panel's is drawn at --
+    matplotlib's default box zoom, times an animation's own `zoom=`
+    (each stub's ``start_scale``: an animated panel's undoes the extra
+    zoom a single animated plot fills its whole canvas with) -- and a
+    cube can overflow a subplot box at some angles, wider on screen when
+    seen corner-on (the frame and the data are drawn unclipped). In a
+    grid that overflow would run into the panel's own title and legend
+    and into the next panel. So the cube's projected
+    extent is measured over the views the panel is seen from
+    (`_camera_azimuths`: the whole turn of a rotating animation, the arc
+    of a partial one, or the single view of ``rotations=0`` and of a
+    static grid), at the panel's own elevation and zoom, and the panel's
+    box zoom is lowered (the stub's ``zoom_scale``) until the widest view
+    fits the square matplotlib draws a 3-D axes in -- which the title
+    sits above and the legend beside. A panel whose cube already fits is
+    left alone, and 2-D panels have no camera and are never touched. The
+    views are the ONLY thing an animation changes here: a static grid and
+    the same grid animated with ``rotations=0`` come out the same.
 
-    Axis labels (`xlabel=`/`ylabel=`/`zlabel=`) hang outside the cube, at
-    a distance that scales with the cube, and swing around with it, so a
-    labeled panel's cube is drawn smaller still, until the labels fit
-    too. The figure is enlarged only where that leaves a cube smaller
-    than `_PANEL_LABELED_CUBE_SHARE` of its unlabeled size -- and then by
-    no more than brings it back to that (`resize`, i.e. no explicit
-    `size=`). An explicit `size=` is honored down to
-    `_REFUSED_LABELED_CUBE_SHARE`; below that this raises, naming a size
-    that works (it is found by fitting the grid at that size).
+    Axis labels hang outside the cube, at a distance that scales with
+    the cube, and swing around with it, so a panel that draws labels has
+    its cube drawn smaller still, until the labels fit too. Only the
+    labels a panel actually draws count (`_apply_outer_labels` leaves
+    shared labels on the outer panels alone), and only where they could
+    run into something: past a cell's ``'open'`` sides
+    (`_open_label_sides`, set by `_lay_out_panel_grid` for a grid seen
+    from one view) a label may hang out of the panel's square, and its
+    final reach is recorded as the cell's ``'label_reach'`` for the room
+    the figure gives it (`_outer_label_margins`). Every cube of the grid
+    is then drawn at the SAME share of its unlabeled size, the smallest
+    any panel's labels leave, so the panels stay comparable. The figure
+    is enlarged only where that share is under
+    `_PANEL_LABELED_CUBE_SHARE` -- and then by no more than brings it
+    back to that (`resize`, i.e. no explicit `size=`).
 
-    `static` fits a STATIC grid's labeled panels (see
-    `_fit_static_cube_labels`): only the labels are fitted, at the one
-    view. An explicit `size=` is never refused for a static grid (the call
-    always drew). Where it cannot hold the labeled grid legibly -- a cube
-    would fall under `_REFUSED_LABELED_CUBE_SHARE` of its unlabeled size,
-    or a panel's own labels would be drawn over each other
-    (`_axis_labels_collide`) -- the cubes are kept at that share at least,
-    the labels fall where they fall, and ONE `UserWarning` names a size
-    that works (found the same way) and the alternative of dropping the
-    labels.
+    An explicit `size=` is honored down to `_REFUSED_LABELED_CUBE_SHARE`.
+    Below that an animated grid raises, naming a size that works (it is
+    found by fitting the grid at that size). A STATIC grid (`static`) is
+    never refused -- the call always drew, before the labels were fitted
+    at all: where the size cannot hold the labeled grid legibly (a cube
+    would fall under that share, or a panel's own labels would be drawn
+    over each other, `_axis_labels_collide`) the cubes are kept at that
+    share at least, the labels fall where they fall, and ONE
+    `UserWarning` names a size that works (found the same way) and the
+    alternative of dropping the labels.
     """
     cubes = [cell for cell in cells if hasattr(cell['axes'], 'get_proj')]
     limit = 0.5 * _PANEL_CUBE_FILL
@@ -6681,9 +6981,11 @@ def _fit_panel_cubes(fig, cells, resize=True, rotations=1, static=False,
         drawn smaller than the share `least` of its unlabeled size (its
         labels then reach past the panel's box)."""
         for cell in cubes:
-            cell['stub'].zoom_scale[0] = 1.0
-            # (a static cube is only ever moved for its labels)
-            _fit_cube(cell, 10.0 * limit if static else limit)
+            # every grid cube starts at the size a static panel's is drawn
+            # at (matplotlib's default box zoom, times the animation's own
+            # `zoom=`): the stub's `start_scale`
+            cell['stub'].zoom_scale[0] = cell['stub'].start_scale
+            _fit_cube(cell, limit)
             # what the cube reaches without labels, over these views
             cell['free'] = cell['reach']
         pending = list(labeled)
@@ -6691,8 +6993,13 @@ def _fit_panel_cubes(fig, cells, resize=True, rotations=1, static=False,
             if not pending:
                 break
             over = []
-            for cell, label_reach in zip(
+            for cell, sides in zip(
                     pending, _axis_label_reach(fig, pending, rotations)):
+                # (an open side holds nothing the labels could run into:
+                # `_open_label_sides`)
+                label_reach = max([0.0] + [
+                    reach for side, reach in sides.items()
+                    if side not in cell.get('open', {})])
                 if label_reach - limit <= 0.004:
                     continue
                 # the labels' distance from the cube scales with the cube
@@ -6704,12 +7011,20 @@ def _fit_panel_cubes(fig, cells, resize=True, rotations=1, static=False,
                 _fit_cube(cell, max(0.02, target))
                 over.append(cell)
             pending = over
-        return min([1.0] + [cell['reach'] / cell['free']
-                            for cell in labeled])
+        share = min([1.0] + [cell['reach'] / cell['free']
+                             for cell in labeled])
+        for cell in cubes:
+            # ONE cube size for the grid: the panels are read side by
+            # side, so every cube is drawn at the share of its unlabeled
+            # size that the panel needing the most room for its labels is
+            # left with (a grid whose labeled cubes alone were drawn
+            # smaller looked broken)
+            if cell['reach'] > (share + 0.002) * cell['free']:
+                _fit_cube(cell, share * cell['free'])
+        return share
 
     smallest = _fit()
     floor = (_REFUSED_LABELED_CUBE_SHARE if not resize
-             else _STATIC_LABELED_CUBE_SHARE if static
              else _PANEL_LABELED_CUBE_SHARE)
     # a static grid at an explicit `size=` must also keep each panel's own
     # labels off each other (around a small cube they converge)
@@ -6793,6 +7108,98 @@ def _fit_panel_cubes(fig, cells, resize=True, rotations=1, static=False,
     for cell in cubes:
         # leave every panel showing frame 0 at its final zoom
         cell['stub'].draw(0)
+    outer = [cell for cell in labeled if cell.get('open')]
+    for cell, sides in zip(outer, _axis_label_reach(fig, outer, rotations)):
+        # what the labels reach past an open side, for the room the
+        # figure gives them there (`_outer_label_margins`)
+        cell['label_reach'] = sides
+
+
+def _lay_out_panel_grid(fig, panel_axes, grid, strip, cells=None,
+                        resize=True, rotations=0, caption=None, dynamic_caption=None,
+                        font=None, frame_context=None, sample_frames=(),
+                        _name='panels'):
+    """Finish the layout of a drawn matplotlib `panels=` grid -- the ONE
+    path of static and animated grids (1.2.0). When this is called the
+    panels are drawn, shared axis labels are on the outer panels only
+    (`_apply_outer_labels`), and the grid has its strip for a shared
+    legend/colorbar (`strip`, from `_add_shared_furniture`) or was laid
+    out by `tight_layout` (titles and 2-D axis labels have their room).
+    This then
+
+    1. fits every 3-D panel's cube, and the axis labels it draws, inside
+       the panel's own cell, enlarging a default-sized figure (`resize`)
+       only as far as legible labeled cubes need (`_fit_panel_cubes`);
+    2. re-centers the shared legend/colorbar on the panels
+       (`_place_shared_furniture`);
+    3. adds the caption's room under the grid and draws it
+       (`_add_grid_caption`), then re-centers the strip again.
+
+    An animated grid passes its `cells` (each panel's
+    `PanelAnimationStub`) and differs in exactly two inputs, both of them
+    things only an animation has: the VIEWS a cube is fitted over (the
+    arc `rotations` sweeps, instead of the one view; ``rotations=0`` is
+    the static grid's layout), and the per-frame texts a dynamic caption's
+    room is sized for (`sample_frames`, each resolved through
+    `frame_context(frame)`; a static grid resolves ``frame_context(0)``,
+    its finished figure, alone). What an explicit `size=` too small for
+    labeled cubes does also differs (an animated grid raises, a static
+    one warns; see `_fit_panel_cubes`).
+
+    Returns the caption's ``Text`` (None without a caption).
+    """
+    animated = cells is not None
+    rotations = rotations if animated else 0
+    cubes = cells if animated else [
+        {'axes': ax, 'stub': _StaticCubeZoom(ax)}
+        for ax in panel_axes if hasattr(ax, 'get_proj')]
+    if cubes and resize and len(cubes) == len(panel_axes) and all(
+            hasattr(ax, 'get_proj')
+            and len(_camera_azimuths(ax, rotations, 30.0)) == 1
+            for ax in panel_axes):
+        # seen from ONE view, the labels of the outer panels hang toward
+        # the grid's outer edge, where the default figure is given room
+        # for them; a rotating panel's labels swing through every side
+        # and are kept inside its own cell (below)
+        for cell, sides in zip(cubes, _open_label_sides(
+                fig, panel_axes, grid, strip)):
+            cell['open'] = sides
+    _fit_panel_cubes(fig, cubes, resize=resize, rotations=rotations,
+                     static=not animated, _name=_name)
+    margins = _outer_label_margins(fig, cubes, strip)
+    if any(value > 0.0 for value in margins.values()):
+        margins = {side: max(value, 0.0) for side, value in margins.items()}
+        _grow_figure(fig, **margins)
+        if strip is not None:
+            # the strip keeps its width, right of the labels' room
+            total = fig.get_size_inches()[0]
+            strip['rect_right'] = (
+                strip['rect_right'] * (total - margins['left']
+                                       - margins['right'])
+                + margins['left'] + margins['right']) / total
+    _place_shared_furniture(fig, strip)
+    if animated:
+        for cell in cells:
+            # a still of the grid shows frame 0 (a 2-D panel was laid out
+            # showing its tallest per-frame title; see `plot`)
+            cell['stub'].draw(0)
+    caption_artist = None
+    if caption is not None or dynamic_caption is not None:
+        dynamic = dynamic_caption is not None
+        # frame 0's text is what a still of the figure shows, and with
+        # the sampled frames' it sizes the caption's room; an animated
+        # grid's panels are drawn at each to get its real context (frames
+        # are idempotent, see `FrameContext`)
+        samples = ([frame_context(frame) for frame in sample_frames]
+                   if dynamic else ())
+        caption_artist = _add_grid_caption(
+            fig, caption, dynamic_caption, font,
+            context=frame_context(0) if dynamic else None,
+            sample_contexts=samples)
+        # the caption's room was added under the grid: re-center the
+        # shared legend/colorbar on the panels
+        _place_shared_furniture(fig, strip)
+    return caption_artist
 
 
 def _animate_panel_grid(fig, cells, panel_axes, panel_models, grid,
@@ -6841,43 +7248,23 @@ def _animate_panel_grid(fig, cells, panel_axes, panel_models, grid,
             "animate='morph', and scalar duration=/frame_rate=/rotations=.")
     n_frames = frame_counts[0]
     interval = cells[0]['stub']._interval
-    try:
-        _fit_panel_cubes(fig, cells, resize=resize, rotations=rotations,
-                         _name=_name)
-        _place_shared_furniture(fig, strip)
-        for cell in cells:
-            # a still of the grid shows frame 0 (a 2-D panel was laid out
-            # showing its tallest per-frame title; see `plot`)
-            cell['stub'].draw(0)
-    except Exception:
-        _abandon()
-        raise
-
     def _draw_panels(num):
         for cell in cells:
             cell['stub'].draw(num)
         return _panel_grid_context(fig, cells, num, n_frames)
 
-    caption_artist = None
-    if caption is not None or dynamic_caption is not None:
-        try:
-            # frame 0's text is what a still of the figure shows, and with
-            # the middle and last frames' it sizes the caption's room; the
-            # panels are drawn at each to get its real context (frames are
-            # idempotent, see `FrameContext`)
-            contexts = ([_draw_panels(frame)
-                         for frame in _caption_sample_frames(n_frames)]
-                        if dynamic_caption is not None else [None])
-            caption_artist = _add_grid_caption(
-                fig, caption, dynamic_caption, font,
-                context=(_draw_panels(0) if dynamic_caption is not None
-                         else None),
-                sample_contexts=contexts if dynamic_caption is not None
-                else ())
-            _place_shared_furniture(fig, strip)
-        except Exception:
-            _abandon()
-            raise
+    try:
+        # the layout a static grid gets, over the views this animation
+        # takes, with the caption's room sized for its per-frame texts
+        caption_artist = _lay_out_panel_grid(
+            fig, panel_axes, grid, strip, cells=cells, resize=resize,
+            rotations=rotations, caption=caption,
+            dynamic_caption=dynamic_caption, font=font,
+            frame_context=_draw_panels,
+            sample_frames=_caption_sample_frames(n_frames), _name=_name)
+    except Exception:
+        _abandon()
+        raise
 
     def _grid_frame(num, *_):
         context = _draw_panels(num)
@@ -7066,6 +7453,10 @@ def _plot_panels_plotly(panel_data, panel_kwargs, titles, nrows, ncols,
         _position = _explicit_legend_position(
             panel_figs[0].layout.legend.to_plotly_json()
             if panel_figs[0].layout.legend is not None else {})
+    # shared axis titles are drawn on the outer panels only, by the same
+    # decision the matplotlib grid makes
+    margin_titles = _apply_outer_labels_plotly(panel_figs, nrows, ncols,
+                                               ndims)
     strip_px = 0
     if shared_legend and _position is None:
         strip_px += PANEL_LEGEND_PX
@@ -7082,12 +7473,21 @@ def _plot_panels_plotly(panel_data, panel_kwargs, titles, nrows, ncols,
                           gutter_px=(0 if consolidate else panel_gutter_px(
                               legend_present, colorbar_present)),
                           title_px=title_px, strip_px=strip_px)
+    if margin_titles:
+        # room in the left margin for the first column's z titles: the
+        # default figure is widened by it, an explicit `size=` is kept
+        _extra = max(0, _PLOTLY_Z_TITLE_PX - int(fig.layout.margin.l or 0))
+        fig.update_layout(
+            margin_l=int(fig.layout.margin.l or 0) + _extra,
+            **({'width': fig.layout.width + _extra}
+               if call_kwargs.get('size') is None else {}))
     panel_axes = []
     for i, panel in enumerate(panel_figs):
         keys = transplant_panel(fig, panel, i // ncols + 1, i % ncols + 1,
                                 i, ndims)
         panel_axes.append(keys['scene'] if ndims >= 3
                           else (keys['xaxis'], keys['yaxis']))
+    _add_plotly_z_titles(fig, margin_titles, panel_axes)
     if shared_legend or colorbar_info is not None:
         place_shared_furniture(
             fig, shared_legend,
@@ -8240,7 +8640,9 @@ def plot(
         (`ndims` < 3, or data that is intrinsically lower-dimensional)
         raises `ValueError` (no z-axis to label) -- pass `ndims=3` (the
         default) to use `zlabel=`, or use `xlabel=`/`ylabel=` for 2-D
-        data.
+        data. In a `panels=` grid an axis label that is the same in every
+        panel of a column (or row) is drawn once, on the grid's outer
+        panels (see `panels=`).
 
     size : list
         A [width, height] pair of numbers, in inches, to resize the figure
@@ -9641,7 +10043,24 @@ def plot(
         Axis labels are derived per panel from that panel's own DataFrame
         column names, under the same rule a single-axes call uses (2-D or
         3-D, one drawn axis per named column); an explicit
-        `xlabel=`/`ylabel=`/`zlabel=` still wins.
+        `xlabel=`/`ylabel=`/`zlabel=` still wins. SHARED axis labels are
+        drawn on the outer panels only (since 1.2.0), on both backends,
+        static or animated. A label drawn along the bottom of a panel --
+        x in 2-D and in ``ndims=1`` panels; x and y, the floor axes, in
+        3-D -- is drawn under the lowest panel of each column when every
+        panel of that column has the same text for it. A label drawn up
+        the side of a panel -- y in 2-D, z in 3-D -- is drawn on one
+        panel of each row when every panel of that row has the same text
+        for it: the left-most panel in 2-D, and in 3-D the panel at the
+        end of the row the z label is drawn toward (matplotlib: the
+        right-most at the default view, the left-most at an `azim=` that
+        puts the z label on the cube's left; plotly: the left-most, its z
+        title written beside the grid). Where the texts of a column (or
+        row) differ, every panel of it keeps its own, and spare cells of
+        the grid count for nothing (a panel above a spare cell draws the
+        x label). Tick labels (``axis_scale='data'``) stay on every
+        panel. The room of the labels that are not drawn is given back
+        to the panels.
 
         Like the single-axes path, ``show=True`` registers the figure with
         pyplot and does NOT call ``plt.show()`` itself (see `show=`).
@@ -9775,33 +10194,41 @@ def plot(
         simply reveals its own), and the panels never take turns. Every
         panel must draw the same number of frames (``animate='morph'``
         needs the same number of datasets in each panel), or the call
-        raises ``ValueError``. Each 3-D panel's cube is zoomed out as far
-        as it takes to stay inside its own cell through the whole
+        raises ``ValueError``. Each 3-D panel's cube starts at the size a
+        static panel's is drawn at (scaled by `zoom=`) and is zoomed out
+        as far as it takes to stay inside its own cell through the whole
         rotation, so `zoom=` can shrink a panel's cube but cannot enlarge
-        it past its cell. With axis labels (`xlabel=`/`ylabel=`/`zlabel=`,
-        or a DataFrame's column names) the cube is drawn smaller still,
-        so the labels stay inside the panel's own cell at every view the
-        animation takes (the whole turn, or the single view of
-        ``rotations=0``); the figure is enlarged only where that would
-        leave a cube under 70% of an unlabeled one's size, and by no
-        more than restores that. An explicit `size=` is honored down to
-        cubes half their unlabeled size and raises below that, naming a
-        size that works; ``xlabel='', ylabel='',
+        it past its cell. A static grid's cubes are drawn the same way,
+        at their one view: a static grid and the same grid animated with
+        ``rotations=0`` have the same figure size, the same panel
+        positions and the same cubes, and a rotating grid differs from
+        them only by the room its cubes' sweep needs. The axis labels a
+        3-D panel draws (`xlabel=`/`ylabel=`/`zlabel=`, or a DataFrame's
+        column names; shared ones on the outer panels only, above) are
+        kept clear of every other panel. Seen from one view (a static
+        grid, or ``rotations=0``) the outer panels' labels hang toward
+        the grid's outer edge, and the default figure is given the room
+        they need there (right of the last column or left of the first
+        for the z label, under the last row for the floor labels), so
+        the cubes keep nearly their unlabeled size. A rotating panel's
+        labels swing through every side of its cube, and a label kept on
+        an inner panel has no outer edge, so there the cubes are drawn
+        smaller, until the labels stay inside the panel's own cell at
+        every view the animation takes. Every cube of a grid is drawn
+        the same size (the one the panel needing the most room is left
+        with). The figure is enlarged only where that would leave the
+        cubes under 70% of their unlabeled size, and by no more than
+        restores that. An explicit `size=` is honored down to cubes half
+        their unlabeled size. Below that an animated grid raises, naming
+        a size that works; a static grid -- also where a panel's own
+        labels would be drawn over each other -- keeps its cubes at half
+        their unlabeled size, so the labels may overlap, and one
+        ``UserWarning`` names a size that works. ``xlabel='', ylabel='',
         zlabel=''`` drops the labels instead. Without `size=` the figure
-        is sized by the grid, as a static grid's is (above) -- so a
-        saved clip of a row of panels is not mostly blank canvas -- then
-        widened by the strip of a shared legend or colorbar, made taller
-        by a `caption=`, and enlarged for axis labels as just described.
-        A STATIC 3-D grid keeps its axis labels inside each panel the
-        same way, at its one view (its default figure grows only where a
-        cube would otherwise be under 65% of an unlabeled one's size,
-        which the grid-sized cells seldom need). An explicit `size=` is
-        always honored for a static grid: where it cannot hold the
-        labeled grid legibly -- a cube would be under half its unlabeled
-        size, or a panel's own labels would be drawn over each other --
-        the cubes are kept at half their unlabeled size, so the labels
-        may overlap, and one ``UserWarning`` names a size that works and
-        the alternative ``xlabel='', ylabel='', zlabel=''``.
+        is sized by the grid (above) -- so a saved clip of a row of
+        panels is not mostly blank canvas -- then widened by the strip
+        of a shared legend or colorbar, made taller by a `caption=`, and
+        given room for axis labels as just described.
         `caption=` adds a line of text under the grid, updated
         every frame. A per-frame `title=` (callable or ``{index}``
         pattern, one for all panels or a list with one per panel) is

@@ -725,8 +725,18 @@ class PanelAnimationStub:
 
     `zoom_scale` is the panel's handle on its own 3-D camera zoom: the grid
     lowers ``zoom_scale[0]`` until the panel's rotating cube fits its cell
-    (`plot._fit_panel_cubes`).
+    (`plot._fit_panel_cubes`), starting from `start_scale`.
     """
+
+    #: the ``zoom_scale`` the grid's cube fit starts from: the one that
+    #: undoes the extra box zoom a single animated plot is drawn with
+    #: (`_anim_box_zoom`, 1.125 at the default ``zoom=1``; it fills a whole
+    #: canvas), so a panel at the default `zoom=` starts at matplotlib's
+    #: default box zoom -- the size a STATIC grid's cube is drawn at. A
+    #: static grid and the same grid animated with ``rotations=0`` then
+    #: draw the same cubes, and `zoom=` still scales a panel's cube
+    #: relative to that.
+    start_scale = 1.0 / _anim_box_zoom(1)
 
     def __init__(self, func, args, n_frames, interval, zoom_scale=None):
         self._func = func
