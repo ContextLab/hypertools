@@ -5045,7 +5045,7 @@ def _grid_needs_color_resolution(grid_kw):
 
 def _resolve_grid_colors(rows, grid_kw, ndims, caught_warnings,
                          clustering=None, furniture=True,
-                         matrix_cache=None):
+                         matrix_cache=None, column_names=None):
     """Resolve, ONCE and for the whole grid, everything a one-panel-per-
     dataset `panels=` grid's colors mean -- exactly as the equivalent
     single-axes call of all the datasets resolves it, by running THAT
@@ -5071,7 +5071,10 @@ def _resolve_grid_colors(rows, grid_kw, ndims, caught_warnings,
     number of non-finite hue values over all the panels, a legend asked of
     a continuous hue). `matrix_cache` is the grid's record of the matrix
     `hue=` it has already reduced to RGB (`_matrix_hue_to_rgb_once`): the
-    call reuses it rather than reducing the matrix again.
+    call reuses it rather than reducing the matrix again. `column_names`
+    is each dataset's column names (`_capture_column_names`) where `rows`
+    are bare arrays that cannot carry them: an `ndims=1` series is named
+    in the legend by its column.
 
     Returns a dict:
 
@@ -5112,6 +5115,8 @@ def _resolve_grid_colors(rows, grid_kw, ndims, caught_warnings,
                    'resolve_only': True}
     if matrix_cache is not None:
         call_shared['matrix_cache'] = matrix_cache
+    if column_names is not None:
+        call_shared['series_columns'] = column_names
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter('always')
         probe = plot(rows, reduce=None, normalize=None, align=None,
@@ -6432,6 +6437,8 @@ def _plot_panels_impl(x, panels, call_kwargs, _name='panels'):
         if _grid_needs_color_resolution(shared):
             _rows = [_panel_frame(src[0], xf[0])
                      for src, xf in zip(panel_sources, panel_xforms)]
+            #: the rows' column names, where the rows cannot carry them
+            _row_columns = None
             if len({int(xf[0].shape[1]) if xf[0].ndim == 2 else 1
                     for xf in panel_xforms}) > 1:
                 # panels of unequal width (independent fits) share no axes
@@ -6441,14 +6448,17 @@ def _plot_panels_impl(x, panels, call_kwargs, _name='panels'):
                       if is_frame_dataset(row)}) > 1:
                 # panels whose DataFrames name their columns differently
                 # (independent fits: each panel has its own features)
-                # cannot be stacked by feature name; colors, legend entries
-                # and the colorbar do not depend on the names, so resolve
-                # them on the bare rows (this call refused such a grid
-                # outright)
+                # cannot be stacked by feature name, so the grid's colors
+                # are resolved on the bare rows (the single-axes call
+                # refuses such frames outright). Only an `ndims=1` series'
+                # legend entry depends on the names -- a series is called
+                # by its column -- so they are handed over beside the rows
+                _row_columns = _capture_column_names(_rows)
                 _rows = [np.asarray(row) for row in _rows]
             resolution = _resolve_grid_colors(
                 _rows, shared, panel_ndims, probe_warnings,
-                clustering=grid_clustering, matrix_cache=matrix_cache)
+                clustering=grid_clustering, matrix_cache=matrix_cache,
+                column_names=_row_columns)
             grid_scale = resolved_scale = resolution['scale']
         elif panel_fit == 'shared':
             resolved_scale = grid_scale
@@ -6474,8 +6484,9 @@ def _plot_panels_impl(x, panels, call_kwargs, _name='panels'):
                     and kw.get('names') is None and _labels is not None
                     and len(_labels) == n_panels):
                 # the single-axes call numbers its datasets 1..n (or, in
-                # ndims=1 series mode, calls them 'dataset 1'..'dataset
-                # n'); every panel called its own dataset the first
+                # ndims=1 series mode, calls each by its column's name,
+                # 'dataset 1'..'dataset n' where it has none); every panel
+                # called its own dataset the first
                 kw['legend'] = [_labels[i]]
             if resolution['legend_names'] is not None:
                 # a `legend=` list naming the grid's categories/clusters:
@@ -11046,8 +11057,9 @@ def plot(
     # the grid's matrix `hue=` (this panel's rows of it are a bare array),
     # which name the mixture legend's entries; ``'matrix_cache'``, a dict
     # the grid shares between its calls so a matrix `hue=` is reduced to
-    # RGB once for all of them (`_matrix_hue_to_rgb_once`). The grid's
-    # own RESOLUTION call
+    # RGB once for all of them (`_matrix_hue_to_rgb_once`); and
+    # ``'series_columns'``, each dataset's column names where the rows the
+    # call is given cannot carry them. The grid's own RESOLUTION call
     # (`_resolve_grid_colors`) passes ``'report'``, a dict this call fills
     # with what it resolved (its legend, its ``{category: color}``, the
     # RGB of a matrix hue, its blend groups), and ``'resolve_only'``: the
@@ -11113,6 +11125,13 @@ def plot(
     # ...and, for the same reason, the COLUMN labels `ndims=1` series mode
     # names its per-column lines with (GH #285).
     _column_names = _capture_column_names(x)
+    if (_column_names is None
+            and (_panel_shared or {}).get('series_columns') is not None):
+        # a `panels=` grid's color resolution, run on bare rows because its
+        # frames name their columns differently: the names are still the
+        # series' names
+        _column_names = list(_panel_shared['series_columns'])
+
     # fmt: accept plain-bytes format strings like np.bytes_ (F01-017) --
     # decoded here once so every downstream fmt consumer sees str.
     if isinstance(fmt, bytes):

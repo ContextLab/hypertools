@@ -317,8 +317,8 @@ def test_panel_colors_are_the_single_axes_calls(kwargs, factory, fmt, mode):
 
 
 # --------------------------------------------------------------------------
-# 1.2.0 review round 4: a matrix `hue=` is reduced ONCE per grid call, and
-# its column names reach the shared legend.
+# 1.2.0 review round 4: a matrix `hue=` is reduced ONCE per grid call, its
+# column names reach the shared legend, and so do `ndims=1` series names.
 # --------------------------------------------------------------------------
 
 class _CountingRandomProjection(BaseEstimator, TransformerMixin):
@@ -472,3 +472,51 @@ def test_mixture_hue_names_are_in_the_grids_color_scale():
                                                     'drift']
     assert list(grid['colors']['categories']) \
         == list(single['colors']['categories'])
+
+
+def _series_frames(names):
+    """One single-column frame per name: a named series each."""
+    return [pd.DataFrame({name: np.sin(np.arange(ROWS) / 2.0 + i)})
+            for i, name in enumerate(names)]
+
+
+@pytest.mark.parametrize('backend', ['matplotlib', 'plotly'])
+def test_independent_series_grid_keeps_its_series_names(backend):
+    """Frames whose columns are named differently share no single-axes
+    call (it matches features by name and refuses them); each is a named
+    series, which the legend of its own call -- and of the single-axes call
+    of same-named series -- names by its column."""
+    call = dict(reduce=None, ndims=1, legend=True, backend=backend)
+    frames = _series_frames(['temperature', 'pressure', 'humidity'])
+    own = [_legend_entries(_draw(frame, call)) for frame in frames]
+    assert own == [['temperature'], ['pressure'], ['humidity']]
+    same = _series_frames(['temperature'] * 3)
+    assert _legend_entries(_draw(same, call)) == ['temperature'] * 3
+    grid = _draw(frames, dict(call, panels=True, panel_fit='independent'))
+    assert _legend_entries(grid) == ['temperature', 'pressure', 'humidity']
+
+
+def test_independent_series_grid_names_its_color_scale_by_series():
+    frames = _series_frames(['temperature', 'pressure', 'humidity'])
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore')
+        grid = hyp.plot(frames, panels=True, panel_fit='independent',
+                        reduce=None, ndims=1, legend=True, show=False,
+                        return_model=True)
+    assert [str(label) for label in grid['colors']['labels']] \
+        == ['temperature', 'pressure', 'humidity']
+    lines = [ax.lines[0] for ax in grid['fig'].axes[:3]]
+    for line, color in zip(lines, grid['colors']['colors']):
+        assert np.allclose(to_rgba(line.get_color())[:3],
+                           np.asarray(color)[:3], atol=1e-6)
+
+
+def test_independent_two_column_series_grid_keeps_its_series_names():
+    frames = [pd.DataFrame({'temperature': np.arange(ROWS, dtype=float),
+                            'humidity': np.arange(ROWS, dtype=float) ** 2}),
+              pd.DataFrame({'pressure': np.arange(ROWS, dtype=float),
+                            'wind': np.sqrt(np.arange(ROWS))})]
+    grid = _draw(frames, dict(reduce=None, ndims=1, legend=True,
+                              panels=True, panel_fit='independent'))
+    assert _legend_entries(grid) == ['temperature', 'humidity', 'pressure',
+                                     'wind']
