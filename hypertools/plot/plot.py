@@ -6739,6 +6739,10 @@ def _animate_panel_grid(fig, cells, panel_axes, panel_models, grid,
         _fit_panel_cubes(fig, cells, resize=resize, rotations=rotations,
                          _name=_name)
         _place_shared_furniture(fig, strip)
+        for cell in cells:
+            # a still of the grid shows frame 0 (a 2-D panel was laid out
+            # showing its tallest per-frame title; see `plot`)
+            cell['stub'].draw(0)
     except Exception:
         _abandon()
         raise
@@ -7953,6 +7957,18 @@ def plot(
           carries an index is the one read. A title with braces that does
           NOT contain ``{index`` is drawn verbatim, as always.
 
+        **Room for a title that changes.** On the matplotlib backend the
+        room above an animated plot (above each panel of a `panels=`
+        grid) is made for the tallest title the animation shows: a fixed
+        title's own lines, the tallest entry of a per-segment list, and,
+        for a per-frame title, the tallest of the titles of the FIRST,
+        MIDDLE and LAST frames -- so a title that grows lines as the
+        animation runs has its room from the start; a frame in between
+        that needs more lines than all three runs above that room. A
+        single animated plot's figure is made taller by what the title
+        needs (nothing already drawn moves or shrinks); a grid's panels
+        are laid out under their titles, as a static grid's are.
+
         **Where the reveal head is.** One rule, so the same pattern means
         the same thing on the same data: for a serial reveal it is the
         rows revealed so far across ALL datasets (finished ones plus the
@@ -8015,9 +8031,9 @@ def plot(
         frame. An animated 3-D title reserves top margin per line on both
         backends: for a per-segment list, the tallest entry; for a
         dynamic title, plotly measures every frame (all frames are built
-        up front) while matplotlib measures FRAME 0's text, so a callable
-        whose title grows lines on later frames can clip there -- give
-        frame 0 the same number of lines. Default None.
+        up front) while matplotlib measures the first, middle and last
+        frames' texts (see `title=`), so only a frame in between that
+        needs more lines than all three can clip there. Default None.
 
     font : None, str, or matplotlib.font_manager.FontProperties
         Controls the font used for every text surface hypertools draws,
@@ -15656,6 +15672,43 @@ def plot(
                 return FrameContext(figure=fig, axes=ax,
                                     **_frame_hooks.state)
 
+            def _sampled_dynamic_titles():
+                """The dynamic `title=`'s wrapped text on the frames that
+                size its room -- the first, the middle and the last
+                (`_caption_sample_frames`, as a per-frame caption's room is
+                sized) -- frame 0's first. Each is resolved against that
+                frame's REAL context (`_real_frame_context`: the frame is
+                drawn to get it), and the resolver is a pure function of
+                the context by contract (`FrameContext`), so these cannot
+                disagree with what the per-frame updater sets later -- and
+                a resolver that is going to fail fails HERE, before the
+                animation runs, instead of inside a frame. The animation
+                is left showing frame 0."""
+                try:
+                    texts = [
+                        _wrap_title_text(
+                            _resolve_dynamic_title_text(
+                                _dynamic_title, _real_frame_context(_frame)),
+                            _title_wrap, _wrap_break)
+                        for _frame in _caption_sample_frames(
+                            int(line_ani._save_count))]
+                    if len(texts) > 1:
+                        _real_frame_context(0)
+                except Exception:
+                    # the user's title raised before the animation was
+                    # ever handed back: detach it (no HyperAnimation
+                    # exists to silence it) so gc does not later warn
+                    # "Animation was deleted without rendering anything"
+                    # about THEIR exception, and close the abandoned
+                    # figure as the save path does.
+                    from .hyper_animation import mark_draw_started
+                    mark_draw_started(line_ani)
+                    if (not show and not _user_supplied_ax
+                            and isinstance(fig, plt.Figure)):
+                        plt.close(fig)
+                    raise
+                return texts
+
             # title= per-segment sequence (plan 1.1 Task 8): registered on
             # the SAME `_frame_hooks` registry as `on_frame=` (added last
             # above, so this callback also only ever sees final artists --
@@ -15687,34 +15740,11 @@ def plot(
                          or _dynamic_title is not None
                          or on_frame is not None)):
                 # a dynamic (callable / `{index...}`) title has no text yet:
-                # resolve FRAME 0's, purely to count its lines. That is the
-                # real frame-0 context (`_real_frame_context`: the frame is
-                # drawn to get it), not a synthetic one, and the
-                # resolver is a pure function of the context by contract
-                # (`FrameContext`), so this cannot disagree with what the
-                # per-frame updater will set a moment later -- and if the
-                # resolver is going to fail, it fails HERE, before the
-                # animation runs, instead of inside the first frame.
+                # the tallest of the first, middle and last frames' titles
+                # sizes the margin (`_sampled_dynamic_titles`)
                 _probe_title = None
                 if _dynamic_title is not None:
-                    try:
-                        _probe_title = _wrap_title_text(
-                            _resolve_dynamic_title_text(
-                                _dynamic_title, _real_frame_context(0)),
-                            _title_wrap, _wrap_break)
-                    except Exception:
-                        # the user's title raised before the animation
-                        # was ever handed back: detach it (no
-                        # HyperAnimation exists to silence it) so gc does
-                        # not later warn "Animation was deleted without
-                        # rendering anything" about THEIR exception, and
-                        # close the abandoned figure as the save path does.
-                        from .hyper_animation import mark_draw_started
-                        mark_draw_started(line_ani)
-                        if (not show and not _user_supplied_ax
-                                and isinstance(fig, plt.Figure)):
-                            plt.close(fig)
-                        raise
+                    _probe_title = _tallest_title(_sampled_dynamic_titles())
                 _reserve_animated_3d_title_margin(
                     fig, ax,
                     fontsize=(_title_kwargs or {}).get('fontsize'),
@@ -15759,10 +15789,15 @@ def plot(
                     # has no text until a frame is drawn, so the layout
                     # below reserved no room for it and every frame's
                     # title was then drawn off the top of the canvas (top
-                    # row) or over the x-axis labels of the row above:
-                    # draw frame 0, whose title the layout then arranges
-                    # like a fixed one
-                    line_ani._func(0, *line_ani._args)
+                    # row) or over the x-axis labels of the row above. The
+                    # layout -- this one and the grid's -- arranges the
+                    # TALLEST of the first, middle and last frames' titles
+                    # like a fixed one (frame 0's alone left a title that
+                    # grows lines later off the canvas); the grid draws
+                    # frame 0 once it is laid out (`_animate_panel_grid`)
+                    _apply_title(ax, _tallest_title(_sampled_dynamic_titles()),
+                                 font=_artist_font,
+                                 title_kwargs=_title_kwargs)
             if (_grid_furniture and ax is not None
                     and ax.get_legend() is not None):
                 # this panel's legend only carries its entries to the
@@ -15776,6 +15811,32 @@ def plot(
                     and not _caller_figure
                     and isinstance(fig, plt.Figure)):
                 fig.tight_layout()
+
+            # an animated 2-D plot's title: the default axes leave room
+            # for about three lines above them, and nothing reserved more,
+            # so a taller title -- fixed, per-segment, or a per-frame one
+            # on any of the frames that size it -- left the canvas. (A 3-D
+            # animation's margin is reserved above; a grid cell's title is
+            # arranged by the layout; a caller's figure is the caller's.)
+            if (animate and ax is not None and line_ani is not None
+                    and _panel_animation is None and not _caller_figure
+                    and isinstance(fig, plt.Figure)
+                    and xform[0].shape[1] < 3
+                    and (title is not None or _segment_titles is not None
+                         or _dynamic_title is not None)):
+                _shown_title = ax.get_title()
+                if _dynamic_title is not None:
+                    _title_candidates = _sampled_dynamic_titles()
+                elif _segment_titles is not None:
+                    _title_candidates = [
+                        _text for _text in _segment_titles
+                        if isinstance(_text, str)]
+                else:
+                    _title_candidates = [_shown_title]
+                _reserve_animated_2d_title_room(
+                    fig, ax, _tallest_title(_title_candidates),
+                    _shown_title, font=_artist_font,
+                    title_kwargs=_title_kwargs)
 
             # colorbar (GH #100): built once, here, from the (frame-
             # independent) color mapping. For animated plots this is never
@@ -16849,6 +16910,45 @@ def _title_line_count(*titles):
             if isinstance(text, str):
                 n = max(n, text.count('\n') + 1)
     return n
+
+
+def _tallest_title(texts):
+    """The entry of `texts` with the most lines (the first of them when
+    several tie; ``''`` for none): the title whose room an animation
+    reserves."""
+    best = ''
+    for text in texts:
+        text = '' if text is None else str(text)
+        if not best or text.count('\n') > best.count('\n'):
+            best = text
+    return best
+
+
+def _reserve_animated_2d_title_room(fig, ax, tallest, shown, font=None,
+                                    title_kwargs=None, pad_in=0.08):
+    """Give an animated 2-D plot's title the room its TALLEST text needs.
+
+    A static plot is laid out around its title (`tight_layout`); an
+    animated one is not laid out at all, so its title has the default
+    axes' top margin (about three lines) and a taller one ran off the top
+    of the canvas. `tallest` is the title's tallest text (a fixed title:
+    itself; a per-segment list: its tallest entry; a per-frame title: the
+    tallest of the first, middle and last frames', as a caption's room is
+    sized). It is set on `ax` and measured on a real draw, and the figure
+    grows UPWARD by what leaves the canvas plus `pad_in` (`_grow_figure`:
+    the axes keeps its size and nothing else moves). A title that already
+    fits changes nothing. `ax` is left showing `shown`, the title it had
+    (a per-frame title has none until a frame is drawn).
+    """
+    if not tallest:
+        return
+    _apply_title(ax, tallest, font=font, title_kwargs=title_kwargs)
+    top = ax.title.get_window_extent(_measurement_renderer(fig)).y1
+    over_in = (top - fig.bbox.height) / fig.dpi
+    if np.isfinite(over_in) and over_in > 0:
+        _grow_figure(fig, top=over_in + pad_in)
+    if shown != tallest:
+        _apply_title(ax, shown, font=font, title_kwargs=title_kwargs)
 
 
 def _reserve_animated_3d_title_margin(fig, ax, pad_in=0.08, fontsize=None,

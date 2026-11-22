@@ -119,6 +119,15 @@ form:
 A multi-line title (explicit newlines, or from ``title_wrap=``) now
 reserves room for every line above an animated 3-D plot, not just one.
 
+On the matplotlib backend the room above an animated plot is made for the
+tallest title the animation shows: a fixed title's own lines, the tallest
+entry of a per-segment list, and, for a callable or ``'{index...}'`` title,
+the tallest of the first, middle and last frames' titles, so a title that
+grows lines as the animation runs has its room from the start (a frame in
+between that needs more lines than all three runs above it). The figure is
+made taller by what the title needs, in 2-D and in 3-D, and nothing already
+drawn moves or shrinks.
+
 Per-dataset styling
 -------------------
 
@@ -751,7 +760,10 @@ A few things are specific to a grid:
   size and raises below that, naming a size that works; pass ``xlabel='', ylabel='', zlabel=''`` to drop the labels instead.
 * A per-frame ``title=`` (a callable or an ``'{index...}'`` pattern, one for
   every panel or a list with one per panel) gets its room above each panel
-  like a fixed title.
+  like a fixed title. The room is made for the tallest of the first, middle
+  and last frames' titles, so a title that grows lines as the animation
+  runs stays on the canvas and clear of the row above (a frame in between
+  that needs more lines than all three runs above its room).
 * Colors, the legend and the colorbar belong to the whole grid, as in a
   static grid: each dataset keeps the color the single-axes call of all the
   datasets gives it, ``hue=`` is mapped through one scale, and one legend

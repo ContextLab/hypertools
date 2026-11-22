@@ -515,3 +515,100 @@ def test_an_explicit_reduce_to_too_many_dimensions_still_warns():
         hyp.reduce(TWO_COLUMNS, reduce='PCA', ndims=3)
     with pytest.warns(UserWarning, match='no reduction was performed'):
         hyp.analyze(TWO_COLUMNS, reduce='PCA', ndims=3, return_model=True)
+
+
+# --------------------------------------------------------------------------
+# Round 2 (Codex 9): a per-frame title whose HEIGHT changes over the frames
+# --------------------------------------------------------------------------
+
+TALL = '\n'.join(['a title line'] * 8)
+GROWING = {
+    # the frame on which the title is eight lines tall (one line elsewhere)
+    'first': lambda ctx: TALL if ctx.frame == 0 else 'short',
+    'middle': lambda ctx: (TALL if ctx.frame == ctx.n_frames // 2
+                           else 'short'),
+    'last': lambda ctx: (TALL if ctx.frame == ctx.n_frames - 1
+                         else 'short'),
+    'after-first': lambda ctx: 'short' if ctx.frame == 0 else TALL,
+}
+
+
+def _assert_titles_on_canvas(anim, n):
+    """On every frame, every one of the first `n` axes' titles is inside
+    the canvas and clear of every other panel's box; returns the most
+    lines a title had."""
+    fig = anim.figure
+    most = 0
+    for frame in range(anim.n_frames):
+        anim.draw_frame(frame)
+        fig.canvas.draw()
+        renderer = fig.canvas.get_renderer()
+        width, height = fig.canvas.get_width_height()
+        panels = fig.axes[:n]
+        boxes = [ax.get_window_extent(renderer) for ax in panels]
+        for i, ax in enumerate(panels):
+            assert ax.get_title(), (frame, i)
+            most = max(most, ax.get_title().count('\n') + 1)
+            title = ax.title.get_window_extent(renderer)
+            assert title.y1 <= height + 0.5 and title.y0 >= 0, (frame, i)
+            assert title.x0 >= -0.5 and title.x1 <= width + 0.5, (frame, i)
+            for j in range(len(panels)):
+                if j != i:
+                    assert not title.overlaps(boxes[j]), (frame, i, j)
+    return most
+
+
+@pytest.mark.parametrize('when', sorted(GROWING))
+@pytest.mark.parametrize('ndims', [2, 3])
+@pytest.mark.parametrize('shape', [(1, 2), (2, 2), (3, 1)])
+def test_a_grid_title_that_grows_after_frame_0_stays_on_the_canvas(
+        shape, ndims, when):
+    """The room was sized for frame 0's title alone: one that became
+    eight lines on a later frame ran 114 px off the top of a 320 px
+    canvas. It is sized for the tallest of the first, middle and last
+    frames' titles, as a caption's room is."""
+    n = shape[0] * shape[1]
+    anim = hyp.plot([d[:, :ndims] for d in DATA[:n]], reduce=None,
+                    ndims=ndims, panels=shape, title=GROWING[when],
+                    backend='matplotlib', **ANIM)
+    # a still of the figure shows frame 0's title
+    expected = TALL if when == 'first' else 'short'
+    assert [ax.get_title() for ax in anim.figure.axes[:n]] == [expected] * n
+    assert _assert_titles_on_canvas(anim, n) == 8
+
+
+@pytest.mark.parametrize('when', sorted(GROWING))
+@pytest.mark.parametrize('ndims', [2, 3])
+def test_a_single_axes_title_that_grows_after_frame_0_stays_on_the_canvas(
+        ndims, when):
+    """The same callable on one axes: a 2-D animation reserved no title
+    room at all beyond the default margin, and a 3-D one frame 0's."""
+    anim = hyp.plot([d[:, :ndims] for d in DATA[:2]], reduce=None,
+                    ndims=ndims, title=GROWING[when], backend='matplotlib',
+                    **ANIM)
+    assert _assert_titles_on_canvas(anim, 1) == 8
+
+
+def test_a_tall_fixed_title_of_a_2d_animation_stays_on_the_canvas():
+    """Eight fixed lines above an animated 2-D plot left the canvas too
+    (the default margin holds about three); the figure grows upward by
+    what is missing and the axes keeps its size."""
+    plain = hyp.plot(DATA[0][:, :2], reduce=None, ndims=2, title='one line',
+                     **ANIM)
+    tall = hyp.plot(DATA[0][:, :2], reduce=None, ndims=2, title=TALL, **ANIM)
+    # a title that fits changes nothing
+    assert tuple(plain.figure.get_size_inches()) == (6.4, 4.8)
+    assert _assert_titles_on_canvas(tall, 1) == 8
+    plain_w, plain_h = plain.figure.get_size_inches()
+    tall_w, tall_h = tall.figure.get_size_inches()
+    assert tall_w == plain_w and tall_h > plain_h
+    a = plain.figure.axes[0].get_position()
+    b = tall.figure.axes[0].get_position()
+    assert np.isclose(a.height * plain_h, b.height * tall_h)
+    assert np.isclose(a.y0 * plain_h, b.y0 * tall_h)
+
+
+def test_a_tall_per_segment_title_of_a_2d_animation_stays_on_the_canvas():
+    anim = hyp.plot([d[:, :2] for d in DATA[:2]], reduce=None, ndims=2,
+                    order='serial', title=['short', TALL], **ANIM)
+    assert _assert_titles_on_canvas(anim, 1) == 8
