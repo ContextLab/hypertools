@@ -15,7 +15,7 @@ the same data and compares them against PCA: three 2-D embeddings of a
 noisy spiral manifold embedded in 10-D, with each point colored by its
 position along the spiral, so a reducer that unfolds the manifold shows a
 smooth color gradient. Passing `reduce=` a LIST gives one panel per reducer
-(`panels=True`), so all three embeddings are computed and drawn by a single
+(here `panels=(1, 3)`, one row), so all three embeddings are computed and drawn by a single
 `hyp.plot` call instead of three separate `hyp.reduce` calls plus a
 hand-built grid.
 """

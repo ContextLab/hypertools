@@ -25,8 +25,8 @@ for i, df in enumerate(datasets):
           f'sd=({df.x.std():.2f}, {df.y.std():.2f}), '
           f'r={df.x.corr(df.y):.2f}')
 
-# small black dots via the '.' point marker; one panel per dataset, sized
-# to a near-square grid, sharing one pipeline fit (a no-op here since
+# small black dots via the '.' point marker; one panel per dataset, laid
+# out automatically (3 rows of 5 here), sharing one pipeline fit (a no-op here since
 # ndims=2 already matches the data)
 fig = hyp.plot(datasets, '.', color='k', ndims=2, panels=True,
                title=[f'Dataset {i + 1}' for i in range(len(datasets))])
