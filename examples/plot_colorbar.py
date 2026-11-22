@@ -30,6 +30,8 @@ hyp.plot(data, '-', hue=hue, colorbar=True)
 # Discrete groups (here, k-means clusters) get a segmented colorbar with
 # one tick/block per group instead of a continuous gradient. A dict lets
 # you set a label or move the colorbar to another side of the figure.
+# (k-means starts from random centers; ``random_state`` keeps the cluster
+# numbering, and so the colors, the same from run to run.)
 
-hyp.plot(data, '.', n_clusters=4,
+hyp.plot(data, '.', n_clusters=4, random_state=0,
          colorbar={'label': 'cluster', 'location': 'right'})

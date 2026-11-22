@@ -38,4 +38,7 @@ hyp.plot(data, '.', reduce='TSNE', hue=hue, ndims=2, legend=True)
 
 # %%
 # ... and with UMAP, which is faster and keeps more of the global layout.
-hyp.plot(data, '.', reduce='UMAP', hue=hue, ndims=2, legend=True)
+# UMAP's layout is random unless it is seeded; ``random_state`` makes the
+# figure the same on every run.
+hyp.plot(data, '.', reduce='UMAP', random_state=0, hue=hue, ndims=2,
+         legend=True)

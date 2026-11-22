@@ -1,4 +1,4 @@
-![Hypertools logo](https://raw.githubusercontent.com/ContextLab/hypertools/v1.1.0/images/hypercube.png)
+![Hypertools logo](https://raw.githubusercontent.com/ContextLab/hypertools/v1.1.1/images/hypercube.png)
 
 [![Tests](https://img.shields.io/github/actions/workflow/status/ContextLab/hypertools/test.yml?label=tests)](https://github.com/ContextLab/hypertools/actions/workflows/test.yml)
 [![Documentation Status](https://readthedocs.org/projects/hypertools/badge/?version=latest)](https://hypertools.readthedocs.io/en/latest/?badge=latest)
@@ -7,7 +7,7 @@
 "_To deal with hyper-planes in a 14 dimensional space, visualize a 3D space and say 'fourteen' very loudly.  Everyone does it._" - Geoff Hinton
 
 
-![Hypertools example](https://raw.githubusercontent.com/ContextLab/hypertools/v1.1.0/images/story_trajectories.gif)
+![Hypertools example](https://raw.githubusercontent.com/ContextLab/hypertools/v1.1.1/images/story_trajectories.gif)
 
 ## Overview
 
@@ -52,7 +52,7 @@ the link under a clip for the full code and the full-length animation.
 Six stock-market sectors, each reduced to 3-D on its own and then hyperaligned
 into a shared space, with a heavier path for the market as a whole.
 
-![Market sectors example](https://raw.githubusercontent.com/ContextLab/hypertools/v1.1.0/images/tour_market_sectors.gif)
+![Market sectors example](https://raw.githubusercontent.com/ContextLab/hypertools/v1.1.1/images/tour_market_sectors.gif)
 
 [Tutorial: market sectors](https://hypertools.readthedocs.io/en/latest/tutorials/market_sectors.html)
 
@@ -62,7 +62,7 @@ Give `hyp.plot` a list of strings and it embeds them, projects them into 2-D
 or 3-D, and plots the result. Here a paragraph about each of five paintings
 becomes its own cloud, drawn in a color pulled from the canvas itself.
 
-![Painting embeddings example](https://raw.githubusercontent.com/ContextLab/hypertools/v1.1.0/images/tour_painting_embeddings.gif)
+![Painting embeddings example](https://raw.githubusercontent.com/ContextLab/hypertools/v1.1.1/images/tour_painting_embeddings.gif)
 
 [Tutorial: painting embeddings](https://hypertools.readthedocs.io/en/latest/tutorials/painting_embeddings.html)
 
@@ -72,7 +72,7 @@ becomes its own cloud, drawn in a color pulled from the canvas itself.
 Tea-Party from *Alice's Adventures in Wonderland*: each segment is one turn of
 the conversation, colored by speaker and placed by what is being said.
 
-![Conversation example](https://raw.githubusercontent.com/ContextLab/hypertools/v1.1.0/images/tour_conversation_shape.gif)
+![Conversation example](https://raw.githubusercontent.com/ContextLab/hypertools/v1.1.1/images/tour_conversation_shape.gif)
 
 [Tutorial: the shape of a conversation](https://hypertools.readthedocs.io/en/latest/tutorials/conversation_shape.html)
 
@@ -81,7 +81,7 @@ the conversation, colored by speaker and placed by what is being said.
 Monthly temperatures in 20 cities around the globe, from 1875 to 2013, drawn as
 a single path and colored by the average temperature that month.
 
-![Weather example](https://raw.githubusercontent.com/ContextLab/hypertools/v1.1.0/images/tour_weather_decades.gif)
+![Weather example](https://raw.githubusercontent.com/ContextLab/hypertools/v1.1.1/images/tour_weather_decades.gif)
 
 [Tutorial: weather across the decades](https://hypertools.readthedocs.io/en/latest/tutorials/weather_decades.html)
 
@@ -97,7 +97,7 @@ shapes = [hyp.load(n) for n in names]
 hyp.plot(shapes, '.', color='k', animate='morph', title=names)
 ```
 
-![Morph example](https://raw.githubusercontent.com/ContextLab/hypertools/v1.1.0/images/tour_morph_shapes_zoo.gif)
+![Morph example](https://raw.githubusercontent.com/ContextLab/hypertools/v1.1.1/images/tour_morph_shapes_zoo.gif)
 
 [Tutorial: morphing the shapes zoo](https://hypertools.readthedocs.io/en/latest/tutorials/morph_shapes_zoo.html)
 
@@ -256,7 +256,7 @@ list_of_labels = ['A'] * 300 + ['B'] * 300  # one label per observation
 hyp.plot(list_of_arrays, animate=True, hue=list_of_labels)
 ```
 
-![Plot example](https://raw.githubusercontent.com/ContextLab/hypertools/v1.1.0/images/plot.gif)
+![Plot example](https://raw.githubusercontent.com/ContextLab/hypertools/v1.1.1/images/plot.gif)
 
 ## Align
 
@@ -275,11 +275,11 @@ hyp.plot(list_of_arrays, align='hyper')
 
 ### BEFORE
 
-![Align before example](https://raw.githubusercontent.com/ContextLab/hypertools/v1.1.0/images/align_before.gif)
+![Align before example](https://raw.githubusercontent.com/ContextLab/hypertools/v1.1.1/images/align_before.gif)
 
 ### AFTER
 
-![Align after example](https://raw.githubusercontent.com/ContextLab/hypertools/v1.1.0/images/align_after.gif)
+![Align after example](https://raw.githubusercontent.com/ContextLab/hypertools/v1.1.1/images/align_after.gif)
 
 
 ## Cluster
@@ -299,7 +299,7 @@ array = np.vstack([rng.standard_normal((100, 3)) + offset
 hyp.plot(array, 'o', cluster='GaussianMixture', n_clusters=3)
 ```
 
-![Cluster Example](https://raw.githubusercontent.com/ContextLab/hypertools/v1.1.0/images/cluster_example.png)
+![Cluster Example](https://raw.githubusercontent.com/ContextLab/hypertools/v1.1.1/images/cluster_example.png)
 
 
 ## Surfaces
@@ -317,7 +317,7 @@ blob_b = rng.standard_normal((100, 3)) + [4, 0, 0]
 hyp.plot([blob_a, blob_b], '.', surface=True)
 ```
 
-![Surface Example](https://raw.githubusercontent.com/ContextLab/hypertools/v1.1.0/images/surface_example.png)
+![Surface Example](https://raw.githubusercontent.com/ContextLab/hypertools/v1.1.1/images/surface_example.png)
 
 
 ## Describe
@@ -332,4 +332,4 @@ list_of_arrays = [np.cumsum(rng.standard_normal((200, 20)), axis=0)
 
 hyp.describe(list_of_arrays, reduce='PCA', max_dims=14)
 ```
-![Describe Example](https://raw.githubusercontent.com/ContextLab/hypertools/v1.1.0/images/describe_example.png)
+![Describe Example](https://raw.githubusercontent.com/ContextLab/hypertools/v1.1.1/images/describe_example.png)

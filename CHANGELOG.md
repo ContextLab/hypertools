@@ -75,12 +75,19 @@ draws into a figure the caller built, found by executing notebooks with
   same glyphs are still reached through 'Hiragino Sans'); a font named with
   `font=`, and a font found to be the only one covering the text, are kept
   regardless.
-
 - **A Yahoo Finance rate limit is reported as one.** When Yahoo throttles
   an address it answers HTTP 429 with a plain-text body, which
   `hyp.load('yahoo:<TICKER>')` reported as "returned a non-JSON response
   (HTTP 429) ... JSONDecodeError". The error now says that Yahoo is
   rate-limiting the address and to try again later.
+
+### Documentation
+
+- **Two gallery examples are now seeded.** The k-means panel of
+  `plot_colorbar.py` and the UMAP panel of `plot_digits.py` came out
+  different on every docs build (cluster colors permuted; a different UMAP
+  layout). Both now pass `random_state=0`, so every gallery figure that
+  does not read live data is the same from build to build.
 
 ### Documented limitations
 

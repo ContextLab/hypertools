@@ -305,3 +305,44 @@ pass on matplotlib 3.10.8 and 3.11.2.
 - Sphinx `-b html -W -E -a` with every gallery example re-executed, at
   49165c09: build succeeded.
 - `ruff check`: all checks passed.
+
+## Gallery rebuild and before/after review (2026-11-21, late evening)
+
+Request: rebuild the gallery, review before/after for ALL figures (own review
+plus an independent one, ideally Codex), and build a draft release. Working
+unattended; the user is on a phone.
+
+- PR #294 (automatic legend/title fit) merged as e3abb840 with all CI green.
+- Built the gallery in release form from e3abb840 (51 of 51 examples
+  executed, sphinx exit 0, 32 min). Compared it with two baselines using
+  a scratch script (pixel statistics on every PNG, every GIF frame, every
+  MP4 frame, plotly payload hashes): the published 1.1.0 gallery
+  (`docs-gallery-v1.1.0`, 519b4af2) and the pre-fit 1.1.1 gallery (built
+  from 514a12cb).
+- Result: 89 figures + 51 thumbnails. 87 of 89 byte-identical to the
+  pre-fit build; 85 of 89 to 1.1.0. The differences:
+  - `plot_colorbar_002.png`: k-means unseeded, cluster colors permuted on
+    every build (same points). Not from the code change.
+  - `plot_digits_003.png`: UMAP unseeded, new layout every build.
+  - `animate_market_sectors_001.gif/.mp4` (vs 1.1.0 only): live Yahoo data,
+    one more month (ends October 31, 2026 instead of September 30, 2026).
+- No gallery example puts a legend on an axes the example made itself (five
+  use `ax=`, with titles only, which already fit), so the fit changing no
+  gallery figure is expected. My earlier guess that four examples would
+  render differently was wrong.
+- Fix: both examples now pass `random_state=0` (the library's own argument;
+  passing UMAP's `random_state` through the `reduce` dict works too but
+  prints umap's n_jobs warning). Verified: two runs each give identical
+  figures, no warnings with `-W error::UserWarning`.
+- Release form: README images flipped to `v1.1.1` (13 URLs), tutorial
+  install cells already correct (migrator: 76 of 76). NOTE: the migrator
+  must run on the `master` branch; on any other branch it retargets the
+  tutorials to that branch.
+- Plan: commit on local `master` (not pushed to `master`; pushed as
+  `release/1.1.1` so nothing on `master` changes before the user's go),
+  rebuild the gallery from that commit, repeat the comparison, independent
+  review (Codex + fresh subagent), publish the pre-built gallery (keeping
+  the old commit c90dd87e reachable on a `docs-gallery-v1.1.1-prev` branch
+  because `master`'s docs build fetches it by id), record it, publish the
+  notebooks, build wheel + sdist, create a DRAFT GitHub release (no tag).
+  Tag, PyPI and the `master` push wait for the user's go.
