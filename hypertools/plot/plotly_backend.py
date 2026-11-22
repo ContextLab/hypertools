@@ -3388,7 +3388,8 @@ def place_shared_furniture(target, legend, colorbar_trace, ndims,
         target.layout.legend = style
     if colorbar_trace is not None:
         if side is None:
-            offset = PANEL_GUTTER_PAD_PX + (PANEL_LEGEND_PX if legend else 0)
+            offset = PANEL_GUTTER_PAD_PX + (
+                PANEL_LEGEND_PX if legend and legend_position is None else 0)
             cb.update(x=1.0 + offset / plot_w, xanchor='left', y=0.5,
                       yanchor='middle')
         elif side == 'l':

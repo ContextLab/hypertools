@@ -725,7 +725,7 @@ class PanelAnimationStub:
 
     `zoom_scale` is the panel's handle on its own 3-D camera zoom: the grid
     lowers ``zoom_scale[0]`` until the panel's rotating cube fits its cell
-    (`plot._fit_rotating_cubes`).
+    (`plot._fit_panel_cubes`).
     """
 
     def __init__(self, func, args, n_frames, interval, zoom_scale=None):
