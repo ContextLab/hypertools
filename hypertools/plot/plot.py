@@ -17168,8 +17168,18 @@ def _build_colorbar_info(colorbar, hue, multicolor_hue, cluster, n_clusters,
         labels = [i + 1 for i in range(n_groups)]
 
     explicit_colors = mpl_kwargs.get('color')
+    # ONE explicit color for every ungrouped dataset (``color='red'``, an
+    # RGB(A) tuple): recognized BEFORE the per-group list below, because a
+    # 3- or 4-number tuple is one color even when there happen to be three
+    # or four datasets (`_is_single_color`, as the drawing reads it) --
+    # read as a list it resolved to one color for three labels, and the
+    # colorbar failed on the tick/label count
+    _one_color = (explicit_colors is not None and hue is None
+                  and cluster is None and n_clusters is None
+                  and (isinstance(explicit_colors, str)
+                       or _is_single_color(explicit_colors)))
     if (isinstance(explicit_colors, (list, tuple))
-            and len(explicit_colors) == n_groups):
+            and len(explicit_colors) == n_groups and not _one_color):
         # the mixture-blend paths (cluster=<mixture model> or matrix hue,
         # animated) set an EXPLICIT per-group color list -- reuse it
         # verbatim so the colorbar swatches exactly match the drawn lines.
@@ -17181,13 +17191,9 @@ def _build_colorbar_info(colorbar, hue, multicolor_hue, cluster, n_clusters,
         # always-on color-scale resolution `bundle['colors']` added there).
         from matplotlib.colors import to_rgba_array
         colors = to_rgba_array(explicit_colors)[:, :3]
-    elif (explicit_colors is not None and hue is None and cluster is None
-            and n_clusters is None
-            and (isinstance(explicit_colors, str)
-                 or _is_single_color(explicit_colors))):
-        # ONE explicit color for every ungrouped dataset
-        # (``color='red'``): the swatches are that color, the color the
-        # datasets are drawn in -- not the palette's, which nothing drew
+    elif _one_color:
+        # the swatches are that color, the color the datasets are drawn in
+        # -- not the palette's, which nothing drew
         from matplotlib.colors import to_rgba_array
         colors = np.tile(to_rgba_array([explicit_colors])[:, :3],
                          (n_groups, 1))

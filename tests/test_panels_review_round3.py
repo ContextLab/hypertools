@@ -1,6 +1,9 @@
 """1.2.0 review, round 3: a `panels=` grid's color resolution runs in the
 panels' own drawing mode and stops before any geometry, categories are
-identified by themselves, and a matrix `hue=` is resolved once for the grid.
+identified by themselves, a matrix `hue=` is resolved once for the grid --
+plus the single-axes defects found on the way (an RGB tuple under
+`colorbar=`, a left/right animated title, a per-frame caption's extra
+`on_frame=` call).
 
 Every test makes the real call and reads the real figure back; call counts
 are taken with `sys.setprofile` on the real functions (nothing is replaced).
@@ -292,3 +295,30 @@ def test_color_resolution_creates_no_figure():
     assert calls.count['new'] <= 2
     assert len(plt.get_fignums()) == before
     assert _shared_colorbar(fig) is not None
+
+
+# --------------------------------------------------------------------------
+# Codex 3 (single axes): an RGB(A) tuple is ONE color under colorbar=
+# --------------------------------------------------------------------------
+
+@pytest.mark.parametrize('color', [(0.2, 0.4, 0.6), (0.2, 0.4, 0.6, 1.0)],
+                         ids=['rgb-3-datasets', 'rgba-4-datasets'])
+@pytest.mark.parametrize('panels', [False, True], ids=['single', 'grid'])
+def test_a_color_tuple_as_long_as_the_dataset_count_is_one_color(
+        color, panels):
+    """Three datasets and a three-number tuple: the tuple is one RGB color
+    (as the drawing reads it), not one entry per dataset. The colorbar
+    resolved ONE color for three labels and failed on the tick count."""
+    data = [X + 3 * i for i in range(len(color))]
+    kwargs = dict(panels=True) if panels else {}
+    fig = _quiet(data, reduce=None, ndims=2, color=color, colorbar=True,
+                 backend='matplotlib', **kwargs)
+    cax = _shared_colorbar(fig) if panels else fig.axes[-1]
+    assert _swatches(cax) == [tuple(color[:3])] * len(data)
+    fig.canvas.draw()
+    assert [t.get_text() for t in cax.get_yticklabels()] \
+        == [str(i + 1) for i in range(len(data))]
+    lines = [line for ax in fig.axes if ax is not cax for line in ax.lines]
+    assert len(lines) == len(data)
+    assert all(to_rgb(line.get_color()) == tuple(color[:3])
+               for line in lines)
