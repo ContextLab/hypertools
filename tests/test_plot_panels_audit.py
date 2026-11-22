@@ -507,13 +507,15 @@ _PER_DATASET_PHRASES = re.compile(
 #: added to a roster in plot.py or, with a reason, here.
 _NOT_SLICED = {
     'x': 'the datasets themselves',
-    'animate': 'rejected under panels= (an animation owns its figure)',
+    'animate': 'one mode for the whole grid, played in every panel (GH '
+               '#295); a per-dataset morph list is passed whole, so a panel '
+               'that does not hold that many datasets refuses it',
     'resample': 'its per-dataset arrays are its OUTPUT, not an argument',
     'ax': 'rejected under panels=; mentions per-dataset layouts only',
     'title_color': 'per SEGMENT of a serial/morph title, not per dataset',
     'forecast_cluster': 'groups each panel\'s own forecast endpoints',
     'forecast_n_clusters': 'a count for forecast_cluster=, not a list',
-    'forecast_trail': 'animation only; panels= is static',
+    'forecast_trail': 'one value for every animated panel',
     'return_model': 'describes the bundle, takes no per-dataset value',
     'colorbar': 'drawn per panel',
     'label_anchor': 'positions a per-dataset labels= entry; one value',
@@ -525,13 +527,14 @@ _NOT_SLICED = {
     'hue_mode': 'describes the hue matrix, one value',
     'color_reduce': 'reduces a hue matrix, one spec',
     't': 'one horizon for every forecast',
-    'dataset_fade': 'animation only; panels= is static',
-    'companion': 'animation only; panels= is static',
+    'dataset_fade': 'one (floor, decay) for every animated panel',
+    'companion': 'refused with an animated panels= grid; a static '
+                 'grid refuses it as every static plot does',
     'frame_kwargs': 'one frame style for every panel',
     'save_path': 'one file for the whole grid',
     'size': 'one figure size for the whole grid',
-    'loop': 'animation only; panels= is static',
-    'on_frame': 'animation only; panels= is static',
+    'loop': 'one value for every animated (morph) panel',
+    'on_frame': 'called once per frame for the whole animated grid',
     'transform': 'replaces the pipeline for the panel probe, whose rows '
                  'each panel then receives through its own transform=',
     'panels': 'the grid itself (its description names the sliced arguments)',
@@ -647,18 +650,52 @@ _PER_DATASET_CASES = {
 
 _PER_DATASET_TESTED_ELSEWHERE = {
     'truth': 'test_truth_list_reaches_only_its_own_panel',
+    # the three trails are animation-only: an ANIMATED grid shows them
+    # (GH #295; `panels=` used to reject `animate=`)
+    'chemtrails': 'test_trail_list_reaches_only_its_own_animated_panel',
+    'precog': 'test_trail_list_reaches_only_its_own_animated_panel',
+    'bullettime': 'test_trail_list_reaches_only_its_own_animated_panel',
 }
 
-#: roster entries a STATIC grid cannot show: the three trails are
-#: animation-only (`panels=` rejects `animate=`), and `density=` has no
-#: per-dataset list form -- `plot()` rejects a list on the single-axes
-#: path and on every panel alike.
+#: roster entries no grid can show: `density=` has no per-dataset list
+#: form -- `plot()` rejects a list on the single-axes path and on every
+#: panel alike.
 _PER_DATASET_STATIC_INVISIBLE = {
-    'chemtrails': 'animation only',
-    'precog': 'animation only',
-    'bullettime': 'animation only',
     'density': 'no per-dataset list form (plot() rejects a list)',
 }
+
+
+@pytest.mark.parametrize('fit', FITS)
+@pytest.mark.parametrize('key', ['chemtrails', 'precog', 'bullettime'])
+def test_trail_list_reaches_only_its_own_animated_panel(fit, key):
+    """A per-dataset trail list is narrowed to each panel of an ANIMATED
+    grid (GH #295): the panel whose dataset asked for a trail draws a head
+    and a trail, the other draws its head alone -- as the two datasets do
+    on the single animated axes."""
+    data = walks()
+    kwargs = {key: [True, False]}
+    single = quiet_plot(data, animate=True, duration=1, frame_rate=6,
+                        **kwargs)
+    grid = quiet_plot(data, panels=True, panel_fit=fit, animate=True,
+                      duration=1, frame_rate=6, **kwargs)
+    try:
+        # single axes: two heads, and ONE trail (the first dataset's)
+        assert len(single['fig'].axes[0].lines) == 3
+        assert [len(ax.lines) for ax in grid['axes']] == [2, 1]
+        trail = grid['axes'][0].lines[1]
+        head = grid['axes'][0].lines[0]
+        assert trail.get_alpha() == pytest.approx(0.3 * (head.get_alpha()
+                                                        or 1.0))
+        # ...and the grid's own frames draw the trail the single-axes
+        # animation draws on the same frame
+        single_trail = single['fig'].axes[0].lines[2]
+        for frame in (0, 3, 5):
+            grid['animation']._func(frame)
+            single['animation']._func(frame, *single['animation']._args)
+            assert (len(np.asarray(trail.get_data_3d()[0]))
+                    == len(np.asarray(single_trail.get_data_3d()[0])))
+    finally:
+        close_all()
 
 
 def test_every_per_dataset_roster_entry_has_a_partitioning_test():

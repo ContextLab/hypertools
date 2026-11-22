@@ -261,9 +261,30 @@ def test_empty_reduce_list_raises():
 
 # --- refusals -----------------------------------------------------------
 
-def test_panels_with_animate_raises():
-    with pytest.raises(ValueError, match='animate'):
-        hyp.plot(_datasets(3), panels=True, animate=True, show=False)
+def test_panels_with_animate_is_one_animation_of_the_whole_grid():
+    """GH #295: `panels=` with `animate=` used to raise ("draws several
+    STATIC panels"); it now returns ONE animation whose every frame draws
+    every panel (tests/test_animated_panels.py covers it in depth)."""
+    from hypertools.plot.hyper_animation import HyperAnimation
+    anim = hyp.plot(_datasets(3), panels=True, animate=True, duration=1,
+                    frame_rate=6, show=False)
+    try:
+        assert isinstance(anim, HyperAnimation)
+        assert anim.n_frames == 6
+        panels = [ax for ax in anim.figure.axes if ax.get_visible()]
+        assert len(panels) == 3
+
+        def drawn(ax):
+            return [np.column_stack(line.get_data_3d()) for line in ax.lines]
+
+        anim.draw_frame(1)
+        early = [drawn(ax) for ax in panels]
+        anim.draw_frame(5)
+        late = [drawn(ax) for ax in panels]
+        for a, b in zip(early, late):
+            assert a[0].shape != b[0].shape or not np.allclose(a[0], b[0])
+    finally:
+        matplotlib.pyplot.close(anim.figure)
 
 
 def test_panels_with_ax_raises():

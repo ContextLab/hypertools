@@ -139,7 +139,10 @@ def test_the_documented_duplicate_time_rejection_actually_happens():
 
 
 def test_added_documents_every_new_capability():
-    added = _section(_changelog(), '### Added')
+    # the 1.1.0 section's own Added subsection: a later release has one
+    # too (GH #295), and it sits above this one
+    text = _changelog()
+    added = _section(_section(text, _heading_1_1_0(text)), '### Added')
     for phrase in ('column MultiIndex', 'hue', 'hyp.predict', 'trace_data',
                    'plotly'):
         assert phrase in added, f'missing {phrase!r}'
@@ -183,7 +186,10 @@ def test_the_release_review_subsection_documents_its_user_visible_fixes():
 def test_added_names_the_scoring_and_source_kwargs():
     """The Added section describes backtests, imputer scoring and the
     synthetic/web loaders, so it has to name the keywords that drive them."""
-    added = _section(_changelog(), '### Added')
+    # the 1.1.0 section's own Added subsection: a later release has one
+    # too (GH #295), and it sits above this one
+    text = _changelog()
+    added = _section(_section(text, _heading_1_1_0(text)), '### Added')
     for phrase in ('`metrics=`', '`return_imputed=True`', '`**source_kwargs`'):
         assert phrase in added, f'missing {phrase!r}'
 
