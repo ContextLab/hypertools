@@ -192,3 +192,53 @@ Both suites and the docs build ran at the same time on one machine.
   pins that a record for another release is ignored) and it stays red for
   any version bump until the gallery for the new version is published from
   the release commit (checklist step 2). Not fixed in the PR; asked Jeremy.
+
+## After the first CI run (2026-11-21 evening)
+
+- Jeremy asked for the 1.1.1 gallery to be published before merging. Built in
+  release form from 514a12cb (51 examples, `-W`, succeeded), published to
+  `docs-gallery-v1.1.1` (c90dd87e), recorded in `docs/prebuilt_gallery.json`
+  (commit 9dec09f0). Final CI on 9dec09f0: 12 test jobs, docs-clean,
+  wheel-smoke, dataset-gate, live-source-gate, Read the Docs all green.
+- PR #293 merged as 84342161; #290, #291, #292 closed. Not tagged, not on
+  PyPI.
+
+## Follow-up: fit the legend/title on caller axes automatically
+
+Jeremy (2026-11-21, after the merge): "All of those grid/figure/legend layout
+problems need to be fixed. That must happen automatically for the user when
+the 'fix' is clear, rather than requiring them to make an explicit call to
+fix strangeness or broken components that this toolbox created."
+
+Branch `fix/1.1.1-caller-figure-fit` (from master 84342161).
+
+Measured on master first (`scratchpad/probe_fit.py`, 18 cases, 2-D and 3-D):
+every caller figure without a layout call had the legend off the canvas
+(77-156 px) or over the next panel; a 3-D legend stayed clipped even after
+the caller's own `fig.tight_layout()` (single axes 25 px, 2x2 grid 22 px).
+
+Fix: `_CallerSlotLocator` (hypertools/plot/plot.py), a matplotlib axes
+locator installed by `hyp.plot` on a caller-supplied axes that carries a
+legend or title. At draw time it narrows that axes from the right (bisection,
+floor 30% of the slot) until the legend ends before the canvas edge or the
+next panel's tick labels, and lowers it until the title is on the canvas.
+The slot (`get_position(original=True)`), other axes, figure size and layout
+engine are untouched. Details:
+
+- answers `get_subplotspec()` so `tight_layout` keeps including the axes
+  (a locator without it gets "not compatible with tight_layout");
+- defers to a constrained-layout engine (`not engine.adjust_compatible`);
+- decides nothing lasting during measuring passes (renderer with draw
+  methods switched off);
+- no room beside the axes even at the floor: legend drawn inside the axes,
+  framed, if it is at most 90% of the axes; larger than the panel: left in
+  place with one `UserWarning`;
+- skipped when a colorbar of the same axes sits to its right (that pair is
+  already inside the axes' slot);
+- installed only when there is a legend or title: with a locator,
+  `ax.get_position()` reports the last drawn position (matplotlib does not
+  apply the aspect on the spot for located axes).
+
+After the fix all 18 probe cases report OK; tests added in
+`tests/test_caller_figure_hygiene.py` (65 tests, pass on matplotlib 3.10.8
+and 3.11.2).
