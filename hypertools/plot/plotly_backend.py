@@ -3246,26 +3246,29 @@ class PanelFurnitureConflict(Exception):
 
 def _legend_trace_look(trace, color=True):
     """What a legend-listed trace's key LOOKS like, as a comparable
-    value: mode, dash, width, marker symbol and (with `color`) its line
-    and marker colors."""
+    value: mode, line dash and width, marker symbol and size and (with
+    `color`) its line and marker colors."""
     line = trace.line.to_plotly_json() if trace.line is not None else {}
     marker = (trace.marker.to_plotly_json()
               if getattr(trace, 'marker', None) is not None else {})
     mode = trace.mode or 'lines'
+    def _plain(value):
+        """A color or size as a comparable plain value."""
+        return value if (value is None or isinstance(value, str)) \
+            else repr(np.round(np.asarray(value, dtype=float), 4).tolist())
+
     look = [type(trace).__name__, mode, line.get('dash'),
-            marker.get('symbol') if 'markers' in mode else None]
+            _plain(line.get('width')) if 'lines' in mode else None,
+            marker.get('symbol') if 'markers' in mode else None,
+            _plain(marker.get('size')) if 'markers' in mode else None]
     if color:
-        def _plain(value):
-            """A color as a comparable plain value."""
-            return value if (value is None or isinstance(value, str)) \
-                else repr(np.asarray(value).tolist())
         look += [_plain(line.get('color')) if 'lines' in mode else None,
                  _plain(marker.get('color')) if 'markers' in mode else None,
                  trace.opacity]
     return repr(look)
 
 
-def merge_panel_legends(panels):
+def merge_panel_legends(panels, order=None):
     """Make the drawn panel figures `panels` list every legend entry
     ONCE between them -- the plotly twin of
     `hypertools.plot.plot._merge_panel_legends`, under the same rule: two
@@ -3276,8 +3279,10 @@ def merge_panel_legends(panels):
     other name that looks different in two panels raises
     `PanelFurnitureConflict`. Same-named traces share a ``legendgroup``,
     so clicking the one entry toggles them in every panel, and the
-    forecast/truth keys are ranked after the data entries. Returns whether
-    any entry is listed."""
+    forecast/truth keys are ranked after the data entries. The data
+    entries are listed in `order` -- their names in the order the
+    single-axes call of every dataset lists them -- when it covers them,
+    else in panel order. Returns whether any entry is listed."""
     from .forecast import FORECAST_LEGEND_COLOR
     kept = {}
     for panel in panels:
@@ -3315,6 +3320,15 @@ def merge_panel_legends(panels):
                 raise PanelFurnitureConflict(name)
             same.append({'look': look, 'shape': shape, 'overlay': overlay,
                          'trace': trace})
+    data = [entry for same in kept.values() for entry in same
+            if not entry['overlay']]
+    names = [str(entry['trace'].name) for entry in data]
+    if order is not None and len(set(order)) == len(order) \
+            and len(set(names)) == len(names) and set(names) <= set(order):
+        for entry, name in zip(data, names):
+            # (plotly lists equal ranks in trace order; 1000 is its
+            # default rank, and the overlay keys sit at 2000)
+            entry['trace'].legendrank = 1000 + order.index(name)
     return bool(kept)
 
 

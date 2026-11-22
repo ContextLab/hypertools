@@ -4683,7 +4683,7 @@ def _add_caption(fig, text, font=None, family=None, samples=()):
     return artist
 
 
-def _panel_probe(data, kw, ndims, caught_warnings):
+def _panel_probe(data, kw, ndims, caught_warnings, panel_shared=None):
     """Fit one panel grid's pipeline exactly as the equivalent single-axes
     call fits it -- by MAKING that call (``return_model=True``, figure
     thrown away) -- and hand back ``(xform, pipeline, clustering, colors)``
@@ -4703,8 +4703,13 @@ def _panel_probe(data, kw, ndims, caught_warnings):
     format_data/analyze here -- is what makes "a panel is analyzed exactly
     as the single-axes call analyzes it" true by construction. The
     warnings the call raises are appended to `caught_warnings` (see
-    `_reemit_panel_warnings`)."""
+    `_reemit_panel_warnings`). `panel_shared` is the panel's share of the
+    grid's color resolution (``plot``'s ``_panel_shared``), for a probe of
+    ONE panel (``panel_fit='independent'``): the probe reads its `hue=` as
+    the panel's drawing call will."""
     probe_kwargs = dict(kw)
+    if panel_shared:
+        probe_kwargs['_panel_shared'] = dict(panel_shared)
     probe_kwargs.update(return_model=True, show=False, save_path=None,
                         colorbar=None, legend=None, labels=None,
                         names=None, surface=None, density=None, title=None)
@@ -4869,29 +4874,125 @@ def _panel_dataset_colors(grid_kw, sources):
     return colors
 
 
-def _panel_color_probe(lengths, grid_kw):
-    """The color scale the single-axes call of every dataset resolves for
-    the grid's `hue=` (its bundle's ``'colors'``), for a grid with no such
-    call to read it from (``panel_fit='independent'`` fits each panel
-    alone): that call's color resolution, run on placeholder rows of the
-    datasets' own lengths with no analysis. None when it cannot be
-    resolved (the grid then keeps per-panel legends and colorbars)."""
-    rows = [np.column_stack([np.linspace(0.0, 1.0, max(int(n), 1)),
-                             np.linspace(1.0, 0.0, max(int(n), 1)) ** 2,
-                             np.sin(np.arange(max(int(n), 1)))])
-            for n in lengths]
-    try:
-        with warnings.catch_warnings():
-            warnings.simplefilter('ignore')
-            probe = plot(rows, hue=grid_kw.get('hue'),
-                         palette=grid_kw.get('palette') or 'hls',
-                         fmt=grid_kw.get('fmt'), reduce=None, show=False,
-                         return_model=True, backend='matplotlib')
-    except Exception:  # noqa: BLE001 - reported by the panel calls instead
-        return None
+#: the `plot()` arguments that decide what a figure's colors mean and what
+#: explains them: the colors themselves, the legend's entries and the
+#: colorbar. A `panels=` grid resolves them ONCE (`_resolve_grid_colors`).
+_GRID_COLOR_KWARGS = ('fmt', 'hue', 'palette', 'color', 'colors', 'legend',
+                      'names', 'colorbar', 'hue_mode', 'color_reduce')
+
+
+def _placeholder_rows(lengths, width=3):
+    """Stand-in rows for datasets of the given `lengths`, `width` columns
+    wide: what `_resolve_grid_colors` is run on when the datasets' analyzed
+    rows do not exist yet (``panel_fit='independent'`` resolves its `hue=`
+    before any panel is fit) or cannot share one axes (panels of unequal
+    width). Colors, legend entries and the colorbar do not depend on the
+    coordinates."""
+    rows = []
+    for n in lengths:
+        n = max(int(n), 1)
+        columns = [np.linspace(0.0, 1.0, n), np.linspace(1.0, 0.0, n) ** 2,
+                   np.sin(np.arange(n))]
+        rows.append(np.column_stack(columns[:max(1, min(int(width), 3))]))
+    return rows
+
+
+def _resolve_grid_colors(rows, grid_kw, ndims, caught_warnings,
+                         clustering=None, keys=_GRID_COLOR_KWARGS):
+    """Resolve, ONCE and for the whole grid, everything a one-panel-per-
+    dataset `panels=` grid's colors mean -- exactly as the equivalent
+    single-axes call of all the datasets resolves it, by MAKING that call
+    (on `rows`, the datasets' analyzed rows, with no analysis; the figure
+    is thrown away). Every panel is then handed its share (``plot``'s
+    ``_panel_shared``); no panel re-decides any of this from its own
+    subset of the data.
+
+    `grid_kw` is the grid's own kwargs, of which `keys` are forwarded
+    (`_GRID_COLOR_KWARGS`); `clustering` the grid's one clustering, replayed
+    (`_panel_cluster_labels` over every dataset), or None. The call's
+    errors are the grid's errors (a `legend=` list of the wrong length is
+    refused with the count of the grid's datasets or groups, a `palette=`
+    mapping naming a category no dataset has, a `colorbar=` nothing can be
+    put on), and its warnings are appended to `caught_warnings`, to be
+    issued once for the grid (the number of non-finite hue values over all
+    the panels, a legend asked of a continuous hue).
+
+    Returns a dict:
+
+    - ``'scale'``: the call's color scale (its bundle's ``'colors'``):
+      whether the hue is ``'continuous'`` or ``'discrete'``, its value
+      range, its ``{category: color}`` mapping;
+    - ``'categories'``: that mapping keyed by the hue's own categories
+      (the scale's is keyed by legend label, which a `legend=` list
+      changes);
+    - ``'colorbar'``: the colorbar the call draws (`_build_colorbar_info`),
+      or None -- the grid's one colorbar;
+    - ``'legend_names'``: ``{category: legend label}`` where the legend
+      names hue categories or clusters under a `legend=` list, else None;
+    - ``'legend_labels'``: the legend label of every trace the call draws
+      (``'_nolegend_'`` for a trace without an entry), or None without a
+      legend;
+    - ``'legend_order'``: the legend's labels in the order the call lists
+      them, or None without a legend.
+    """
+    kw = {key: grid_kw[key] for key in keys if key in grid_kw}
+    if clustering is not None:
+        kw.update(cluster=clustering, n_clusters=None)
+    report, colorbars = {}, []
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter('always')
+        probe = plot(rows, reduce=None, normalize=None, align=None,
+                     ndims=ndims, show=False, return_model=True,
+                     backend='matplotlib',
+                     _panel_shared={'colorbars': colorbars,
+                                    'report': report}, **kw)
+    caught_warnings.extend(caught)
     if isinstance(probe.get('fig'), plt.Figure):
         plt.close(probe['fig'])
-    return probe.get('colors')
+    legend = report.get('legend')
+    groups = report.get('group_names')
+    names = order = None
+    if isinstance(legend, list):
+        order = report.get('legend_order') or [
+            str(label) for label in legend if label != '_nolegend_']
+        if groups is not None and grid_kw.get('legend') is not True:
+            names = {str(group): label
+                     for group, label in zip(groups, legend)
+                     if group != '_nolegend_'}
+    scale = probe.get('colors')
+    categories = (scale.get('categories') or {}
+                  if isinstance(scale, dict) else {})
+    if names and all(str(label) in categories for label in names.values()):
+        # the scale names its colors by legend label; the panels' hue
+        # holds the categories themselves
+        categories = {group: categories[str(label)]
+                      for group, label in names.items()}
+    return {'scale': scale,
+            'categories': dict(categories),
+            'colorbar': colorbars[0] if colorbars else None,
+            'legend_names': names,
+            'legend_labels': (list(legend) if isinstance(legend, list)
+                              else None),
+            'legend_order': None if order is None else list(order)}
+
+
+def _panel_hue_scale_probe(lengths, grid_kw):
+    """What the single-axes call of every dataset resolves for the grid's
+    `hue=` (a `_resolve_grid_colors` result, of which the scale and its
+    categories are read), for
+    ``panel_fit='independent'``, BEFORE any panel is fit: each panel's fit
+    is a call of its own, which must already read its `hue=` and
+    `palette=` under the grid's scale (a ``{category: color}`` palette
+    names the grid's categories, not one panel's). Resolved on placeholder
+    rows of the datasets' own lengths, from `hue=`, `palette=` and `fmt=`
+    alone; None when that fails -- the full resolution, run once the
+    panels are fit, then reports the error."""
+    try:
+        return _resolve_grid_colors(
+            _placeholder_rows(lengths), grid_kw, 3, [],
+            keys=('fmt', 'hue', 'palette', 'hue_mode', 'color_reduce'))
+    except Exception:  # noqa: BLE001 - reported by the full resolution
+        return None
 
 
 def _hue_label_strings(hue):
@@ -4917,22 +5018,30 @@ def _hue_label_strings(hue):
     return out
 
 
-def _panel_apply_hue_scale(kw, scale, shared):
+def _panel_apply_hue_scale(kw, resolution, shared):
     """Make one panel (kwargs `kw`, already narrowed to its dataset) draw
-    its `hue=` under the GRID's color scale `scale` (the single-axes
-    call's ``'colors'``): a continuous hue is mapped over the grid-wide
-    value range (``shared['limits']``, see `plot`'s ``_panel_shared``),
-    and a categorical hue through the grid's own ``{category: color}``
+    its `hue=` under the GRID's color scale (`resolution`, a
+    `_resolve_grid_colors` result: the single-axes call's ``'colors'``
+    and its ``{category: color}`` mapping): the hue is continuous or categorical as the
+    grid's is (``shared['hue_kind']``, see `plot`'s ``_panel_shared``), a
+    continuous hue is mapped over the grid-wide value range
+    (``shared['limits']``), and a categorical hue through the grid's own ``{category: color}``
     mapping, narrowed to the categories this panel has (a `palette=`
     mapping may only name categories the plot draws). Returns False when
     the panel has a category the scale does not know -- the grid then
     cannot claim one shared mapping."""
+    scale = None if resolution is None else resolution.get('scale')
     if not isinstance(scale, dict) or kw.get('hue') is None:
         return True
+    if scale.get('kind') in ('continuous', 'discrete'):
+        # the grid's classification of a numeric hue (integers are
+        # categorical or continuous by how many distinct values the WHOLE
+        # grid has), which the panel draws under
+        shared['hue_kind'] = scale['kind']
     if scale.get('kind') == 'continuous':
         shared['limits'] = (float(scale['vmin']), float(scale['vmax']))
         return True
-    categories = scale.get('categories') or {}
+    categories = resolution.get('categories') or {}
     if scale.get('kind') != 'discrete' or not categories \
             or _looks_like_dataset_palettes(kw.get('palette')):
         return True
@@ -4942,9 +5051,11 @@ def _panel_apply_hue_scale(kw, scale, shared):
         return False
     if any(label not in categories for label in present):
         return False
-    if present:
-        kw['palette'] = {label: tuple(categories[label])
-                         for label in categories if label in present}
+    # (a panel with no labeled observation names no category at all: it
+    # draws its unlabeled points, which take no palette color)
+    kw['palette'] = ({label: tuple(categories[label])
+                      for label in categories if label in present}
+                     if present else 'hls')
     return True
 
 
@@ -4982,13 +5093,15 @@ def _legend_handle_signature(handle, color=True):
     return repr(signature)
 
 
-def _merge_panel_legends(panel_axes):
+def _merge_panel_legends(panel_axes, order=None):
     """The ONE legend a grid draws for its panels' legends: ``(handles,
     labels, template)``, or None when no panel drew a legend. `template`
     is the first panel legend, whose text styling the shared one copies.
 
     The entries are the union of the panels', without duplicates: the data
-    entries in panel (dataset) order, then the `predict=`/`truth=` overlay
+    entries in `order` -- the labels in the order the single-axes call of
+    every dataset lists them (`_resolve_grid_colors`), when it covers them
+    -- else in panel (dataset) order, then the `predict=`/`truth=` overlay
     entries. Two entries are one when they have the same label and look
     the same. An overlay entry that differs between panels only in color
     (one model's forecasts, each continuing a dataset of another color) is
@@ -5034,8 +5147,12 @@ def _merge_panel_legends(panel_axes):
                 raise _PanelFurnitureConflict(label)
     if template is None:
         return None
-    ordered = ([e for e in entries if not e['overlay']]
-               + [e for e in entries if e['overlay']])
+    data = [e for e in entries if not e['overlay']]
+    if order is not None and len(set(order)) == len(order) \
+            and {e['label'] for e in data} <= set(order) \
+            and len({e['label'] for e in data}) == len(data):
+        data.sort(key=lambda e: order.index(e['label']))
+    ordered = data + [e for e in entries if e['overlay']]
     handles = []
     for entry in ordered:
         handle = entry['handle']
@@ -5088,14 +5205,29 @@ def _merge_panel_colorbars(infos, order=None):
     return merged
 
 
-def _merge_panel_color_scales(scales, dataset_mode=False, names=None):
-    """A grid bundle's ``'colors'``: the one color scale its panels share,
-    merged from each panel's own (`scales`, the panel bundles'
+def _grid_color_scale(scales, resolved, dataset_mode=False):
+    """A grid bundle's ``'colors'``: `resolved`, the color scale of the
+    single-axes call of every dataset (`_resolve_grid_colors`), which the
+    panels drew their shares of -- so a grid whose every panel holds one
+    category still reports all of them, by name. Where there is none (a
+    reducer-list grid) or the panels drew another kind of scale than it
+    (`scales`, the panels' own), the panels' scales are merged
+    (`_merge_panel_color_scales`)."""
+    kinds = {s.get('kind') for s in scales if isinstance(s, dict)}
+    if isinstance(resolved, dict) and kinds <= {resolved.get('kind')}:
+        return resolved
+    return _merge_panel_color_scales(scales, dataset_mode=dataset_mode)
+
+
+def _merge_panel_color_scales(scales, dataset_mode=False):
+    """A grid bundle's ``'colors'`` where the grid has no resolved scale
+    of its own (see `_grid_color_scale`): the one color scale its panels
+    share, merged from each panel's own (`scales`, the panel bundles'
     ``'colors'``). Continuous scales are the grid's common one; discrete
     scales merge into the union of their groups -- every dataset's color,
-    in panel order, for a one-panel-per-dataset grid (`dataset_mode`) with
-    nothing grouping the data (labeled with `names`, the grid's `legend=`
-    list, when given), otherwise ``label -> color`` by name. Where
+    in panel order, numbered 1..n, for a one-panel-per-dataset grid
+    (`dataset_mode`) with nothing grouping the data, otherwise
+    ``label -> color`` by name. Where
     the panels' scales do not combine (colors that mean different things
     per panel), the first panel's is returned as before and each panel's
     own is in ``panel_models[i]['colors']``."""
@@ -5113,10 +5245,7 @@ def _merge_panel_color_scales(scales, dataset_mode=False, names=None):
     if ungrouped:
         colors = [np.asarray(s['colors'][0], dtype=float)[:3]
                   for s in scales]
-        if names is not None and len(names) == len(scales):
-            labels, named = list(names), True
-        else:
-            labels, named = [i + 1 for i in range(len(scales))], False
+        labels, named = [i + 1 for i in range(len(scales))], False
     else:
         try:
             merged = _merge_panel_colorbars(
@@ -5650,6 +5779,15 @@ def _plot_panels_impl(x, panels, call_kwargs, _name='panels'):
     #: the color scale the single-axes call of the whole grid resolves
     #: (its bundle's ``'colors'``), which the panels share
     grid_scale = None
+    #: per panel, what `plot()` reads as ``_panel_shared``: the panel's
+    #: share of the grid's color resolution (`_resolve_grid_colors`)
+    panel_shared = [{} for _ in range(n_panels)]
+    #: whether a panel's categories turned out not to be the grid scale's
+    #: (the grid then cannot claim one shared mapping)
+    scale_mismatch = False
+    #: the grid's ONE clustering (a shared fit's), replayed by the color
+    #: resolution over every dataset
+    grid_clustering = None
     #: per panel: the input datasets it draws (for their index/column
     #: labels), its analyzed rows (one array per dataset), its fitted
     #: pipeline, and its narrowed kwargs
@@ -5687,8 +5825,25 @@ def _plot_panels_impl(x, panels, call_kwargs, _name='panels'):
             # mode
             _panel_narrow_kwargs(kw, i, n_panels, lengths)
             panel_kwargs.append(kw)
+        if shared.get('hue') is not None and not (
+                shared.get('cluster')
+                or shared.get('n_clusters') is not None):
+            # (clusters override `hue=`, and each panel fits its own)
+            # each panel's fit is a call of its own, so the grid's `hue=`
+            # scale is resolved -- and each panel's share of it handed
+            # over -- BEFORE any of them runs: a ``{category: color}``
+            # palette names the GRID's categories, and a panel refused the
+            # ones it does not hold
+            _early = _panel_hue_scale_probe(lengths, shared)
+            for i in range(n_panels):
+                if not _panel_apply_hue_scale(panel_kwargs[i], _early,
+                                              panel_shared[i]):
+                    scale_mismatch = True
+                elif _early is not None:
+                    panel_shared[i]['quiet'] = True
         probes = [_panel_probe(panel_sources[i], panel_kwargs[i], ndims,
-                               probe_warnings)
+                               probe_warnings,
+                               panel_shared=panel_shared[i])
                   for i in range(n_panels)]
         panel_xforms = [probe[0] for probe in probes]
         panel_pipelines = [probe[1] for probe in probes]
@@ -5715,6 +5870,10 @@ def _plot_panels_impl(x, panels, call_kwargs, _name='panels'):
         # cluster must not shift the others' colors, round 9)
         panel_clusters = []
         offsets = np.cumsum([0] + lengths)
+        if shared_clustering is not None:
+            grid_clustering = _panel_cluster_labels(
+                shared_clustering[0], shared_clustering[1],
+                shared.get('cluster'), categories=shared_clustering[2])
         for i in range(n_panels):
             kw = dict(shared)
             _panel_narrow_kwargs(kw, i, n_panels, lengths)
@@ -5736,23 +5895,34 @@ def _plot_panels_impl(x, panels, call_kwargs, _name='panels'):
     # COLOR MEANS ONE THING ACROSS THE FIGURE (1.2). A reducer-list grid's
     # panels each draw every dataset through the same color resolution, so
     # they agree already. A one-panel-per-dataset grid's panels each see
-    # one dataset, so the grid resolves what the single-axes call of ALL
-    # the datasets would draw and hands every panel its share: its
-    # dataset's color (palette position i of n), its number under
-    # ``legend=True``, and the grid's `hue=` scale (one value range for a
-    # continuous hue, one category -> color mapping for a categorical one).
-    meanings_differ = _panel_meanings_differ(shared, per_panel_reduce,
-                                             panel_fit)
-    #: per panel, what `plot()` reads as ``_panel_shared``
-    panel_shared = [{} for _ in range(n_panels)]
-    #: the names a one-panel-per-dataset grid's bundle lists its datasets'
-    #: colors under (the `legend=` list), when nothing groups the data
-    color_names = None
-    if not per_panel_reduce:
-        if shared.get('hue') is not None and panel_fit == 'independent':
-            grid_scale = _panel_color_probe(lengths, shared)
-            if grid_scale is None:
-                meanings_differ = True
+    # one dataset, so the grid resolves ONCE what the single-axes call of
+    # ALL the datasets draws (`_resolve_grid_colors`: that very call, on
+    # the analyzed rows) and hands every panel its share: its dataset's
+    # color (palette position i of n), its number or name in the legend,
+    # the grid's `hue=` scale (continuous or categorical, one value range,
+    # one category -> color mapping) and the grid's names for its
+    # categories. The legend's order, the colorbar and the bundle's
+    # ``'colors'`` are that call's; so are its errors and its warnings.
+    meanings_differ = (_panel_meanings_differ(shared, per_panel_reduce,
+                                              panel_fit) or scale_mismatch)
+    #: the grid's color resolution; None for a reducer-list grid, and where
+    #: every panel fits clusters of its own (no grid-wide meaning exists)
+    resolution = None
+    clustered = bool(shared.get('cluster')) \
+        or shared.get('n_clusters') is not None
+    if not per_panel_reduce and not (clustered
+                                     and panel_fit == 'independent'):
+        _rows = [_panel_frame(src[0], xf[0])
+                 for src, xf in zip(panel_sources, panel_xforms)]
+        if len({int(xf[0].shape[1]) if xf[0].ndim == 2 else 1
+                for xf in panel_xforms}) > 1:
+            # panels of unequal width (independent fits) share no axes
+            _rows = _placeholder_rows([len(xf[0]) for xf in panel_xforms],
+                                      width=panel_ndims)
+        resolution = _resolve_grid_colors(
+            _rows, shared, panel_ndims, probe_warnings,
+            clustering=grid_clustering)
+        grid_scale = resolution['scale']
         # one drawn trace per dataset (ndims=1 draws one line per COLUMN,
         # colored by column in every panel alike)
         one_trace = panel_ndims != 1 or all(
@@ -5760,29 +5930,43 @@ def _plot_panels_impl(x, panels, call_kwargs, _name='panels'):
             for xf in panel_xforms for xi in xf)
         own_colors = (_panel_dataset_colors(shared, datasets) if one_trace
                       else [None] * n_panels)
-        ungrouped = (shared.get('hue') is None and not shared.get('cluster')
-                     and shared.get('n_clusters') is None)
-        _legend = shared.get('legend')
-        if (ungrouped and isinstance(_legend, (list, tuple))
-                and len(_legend) == n_panels):
-            color_names = list(_legend)
+        ungrouped = shared.get('hue') is None and not clustered
         for i in range(n_panels):
             kw = panel_kwargs[i]
+            # the warnings about the whole call are the resolution's
+            panel_shared[i]['quiet'] = True
             if own_colors[i] is not None:
                 kw['color'] = [own_colors[i]]
-            if (kw.get('legend') is True and ungrouped and panel_ndims != 1
-                    and kw.get('names') is None):
-                # the single-axes call numbers its datasets 1..n; every
-                # panel numbered its own dataset 1
-                kw['legend'] = [i + 1]
-            if not _panel_apply_hue_scale(kw, grid_scale, panel_shared[i]):
+            _labels = resolution['legend_labels']
+            if (kw.get('legend') is True and ungrouped and one_trace
+                    and kw.get('names') is None and _labels is not None
+                    and len(_labels) == n_panels):
+                # the single-axes call numbers its datasets 1..n (or, in
+                # ndims=1 series mode, calls them 'dataset 1'..'dataset
+                # n'); every panel called its own dataset the first
+                kw['legend'] = [_labels[i]]
+            if resolution['legend_names'] is not None:
+                # a `legend=` list naming the grid's categories/clusters:
+                # each panel labels the ones it draws
+                kw['legend'] = True
+                panel_shared[i]['legend_names'] = resolution['legend_names']
+            if not _panel_apply_hue_scale(kw, resolution, panel_shared[i]):
                 # a panel's categories are not the grid scale's: no
                 # shared mapping to claim
                 meanings_differ = True
-    #: the grid scale's category order, for the shared colorbar
+    #: the grid scale's category order, for a merged colorbar
     scale_order = (list(grid_scale['categories'])
                    if isinstance(grid_scale, dict)
                    and grid_scale.get('categories') else None)
+    #: the grid's one colorbar and the order of its one legend's entries,
+    #: as the single-axes call draws them (a reducer-list grid merges its
+    #: panels' instead: each already drew every dataset)
+    # (...also where the LEGENDS end up per panel, a label looking
+    # different in two panels: the colorbar is the grid's all the same)
+    grid_colorbar = (None if resolution is None or meanings_differ
+                     else resolution['colorbar'])
+    legend_order = (None if resolution is None
+                    else resolution['legend_order'])
     panel_data = []
     for i in range(n_panels):
         kw = panel_kwargs[i]
@@ -5854,8 +6038,10 @@ def _plot_panels_impl(x, panels, call_kwargs, _name='panels'):
                 plotly_kwargs, shared_pipeline=shared_pipeline,
                 panel_pipelines=panel_pipelines,
                 panel_shared=panel_shared, consolidate=not meanings_differ,
-                scale_order=scale_order, color_names=color_names,
-                dataset_mode=not per_panel_reduce)
+                scale_order=scale_order,
+                dataset_mode=not per_panel_reduce,
+                grid_colorbar=grid_colorbar, legend_order=legend_order,
+                grid_scale=(None if resolution is None else grid_scale))
         _reemit_panel_warnings(probe_warnings, draw_warnings)
         return grid
 
@@ -5897,6 +6083,9 @@ def _plot_panels_impl(x, panels, call_kwargs, _name='panels'):
                     kw['_panel_shared'] = dict(
                         panel_shared[i],
                         **({'colorbars': colorbars} if consolidate else {}))
+                    if grid_colorbar is not None:
+                        # the grid's one colorbar is already resolved
+                        kw['colorbar'] = None
                     if panel_ndims < (3 if ndims is None else min(ndims, 3)):
                         # cells lowered to the data's width
                         # (`_panel_cell_ndims`): the panel call's `ax=`
@@ -5930,12 +6119,14 @@ def _plot_panels_impl(x, panels, call_kwargs, _name='panels'):
     panel_axes = list(axes[:n_panels])
     if consolidate:
         try:
-            legend_spec = _merge_panel_legends(panel_axes)
-            colorbar_info = _merge_panel_colorbars(colorbars, scale_order)
+            legend_spec = _merge_panel_legends(panel_axes, legend_order)
+            colorbar_info = (grid_colorbar if grid_colorbar is not None
+                             else _merge_panel_colorbars(colorbars,
+                                                         scale_order))
         except _PanelFurnitureConflict:
             plt.close(fig)
             consolidate = False
-            legend_spec = colorbar_info = None
+            legend_spec, colorbar_info = None, grid_colorbar
             (fig, axes, panel_models, cells, draw_warnings,
              colorbars) = _draw_grid(False)
             panel_axes = list(axes[:n_panels])
@@ -5943,8 +6134,8 @@ def _plot_panels_impl(x, panels, call_kwargs, _name='panels'):
     for spare in axes[n_panels:]:
         spare.set_visible(False)
     strip = None
-    if consolidate and (legend_spec is not None
-                        or colorbar_info is not None):
+    if (consolidate and legend_spec is not None) \
+            or colorbar_info is not None:
         # room for them is reserved ONCE, in a strip right of the grid:
         # the default figure grows by the strip's measured width (an
         # explicit `size=` is honored verbatim, the grid laid out beside
@@ -5979,9 +6170,10 @@ def _plot_panels_impl(x, panels, call_kwargs, _name='panels'):
         _scales = ([m.get('colors') for m in panel_models] if return_model
                    else [cell['colors'] for cell in cells])
         grid_colors = (_scales[0] if _scales and meanings_differ
-                       else _merge_panel_color_scales(
-                           _scales, dataset_mode=not per_panel_reduce,
-                           names=color_names))
+                       else _grid_color_scale(
+                           _scales,
+                           None if resolution is None else grid_scale,
+                           dataset_mode=not per_panel_reduce))
 
     if animated:
         return _animate_panel_grid(
@@ -6585,7 +6777,8 @@ def _plot_panels_plotly(panel_data, panel_kwargs, titles, nrows, ncols,
                         ndims, call_kwargs, shared_pipeline=None,
                         panel_pipelines=None, panel_shared=None,
                         consolidate=False, scale_order=None,
-                        color_names=None, dataset_mode=False):
+                        dataset_mode=False, grid_colorbar=None,
+                        legend_order=None, grid_scale=None):
     """`panels=` under the plotly backend: the same grid, built with
     `plotly.subplots.make_subplots` (3-D panels get ``type='scene'``
     cells). Each panel is drawn by an ordinary `plot()` call and its traces
@@ -6594,9 +6787,11 @@ def _plot_panels_plotly(panel_data, panel_kwargs, titles, nrows, ncols,
     With `consolidate` the grid shows ONE legend and ONE colorbar for the
     figure, as the matplotlib grid does (see `_plot_panels`):
     `panel_shared` is each panel's ``_panel_shared``, `scale_order` the
-    grid color scale's category order, and `color_names`/`dataset_mode`
-    what `_merge_panel_color_scales` builds the bundle's ``'colors'``
-    from.
+    grid color scale's category order, and `grid_colorbar`,
+    `legend_order` and `grid_scale` the grid's one colorbar, the order of
+    its legend's entries and its color scale as `_resolve_grid_colors`
+    resolved them (None for a reducer-list grid, whose panels' own are
+    merged; `dataset_mode` is False for one).
 
     `return_model=True` gets the SAME bundle shape the matplotlib panel
     path returns -- ``fig``, ``axes``, ``panels``, ``panel_models``,
@@ -6642,6 +6837,9 @@ def _plot_panels_plotly(panel_data, panel_kwargs, titles, nrows, ncols,
             kw['_panel_shared'] = dict(
                 panel_shared[i] if panel_shared is not None else {},
                 **({'colorbars': colorbars} if consolidate else {}))
+            if grid_colorbar is not None:
+                # the grid's one colorbar is already resolved
+                kw['colorbar'] = None
             result = plot(data, **kw)
             figs.append(result['fig'] if return_model else result)
             if return_model:
@@ -6660,16 +6858,24 @@ def _plot_panels_plotly(panel_data, panel_kwargs, titles, nrows, ncols,
     panel_figs, panel_models, colorbars = _draw_panels(consolidate)
     shared_legend = False
     colorbar_info = None
+    # a legend is asked for by `legend=`, or by `names=` alone (which
+    # names the datasets in one) unless ``legend=False`` -- as on one axes
+    legend_wanted = (bool(call_kwargs.get('legend'))
+                     or (call_kwargs.get('legend') is None
+                         and call_kwargs.get('names') is not None))
     if consolidate:
         try:
-            shared_legend = (merge_panel_legends(panel_figs)
-                             and bool(call_kwargs.get('legend')))
-            colorbar_info = _merge_panel_colorbars(colorbars, scale_order)
+            shared_legend = (merge_panel_legends(panel_figs, legend_order)
+                             and legend_wanted)
+            colorbar_info = (grid_colorbar if grid_colorbar is not None
+                             else _merge_panel_colorbars(colorbars,
+                                                         scale_order))
         except (PanelFurnitureConflict, _PanelFurnitureConflict):
             consolidate = False
-            shared_legend, colorbar_info = False, None
+            shared_legend, colorbar_info = False, grid_colorbar
             panel_figs, panel_models, colorbars = _draw_panels(False)
-    legend_present = call_kwargs.get('legend') is not None
+    legend_present = (call_kwargs.get('legend') is not None
+                      or legend_wanted)
     colorbar_present = any(
         getattr(getattr(trace, 'marker', None), 'showscale', None)
         for panel in panel_figs for trace in panel.data)
@@ -6689,13 +6895,12 @@ def _plot_panels_plotly(panel_data, panel_kwargs, titles, nrows, ncols,
             panel_figs[0].layout.legend.to_plotly_json()
             if panel_figs[0].layout.legend is not None else {})
     strip_px = 0
-    if consolidate:
-        if shared_legend and _position is None:
-            strip_px += PANEL_LEGEND_PX
-        if colorbar_info is not None \
-                and colorbar_info.get('location', 'right') == 'right':
-            strip_px += PANEL_COLORBAR_PX
-        strip_px += PANEL_GUTTER_PAD_PX if strip_px else 0
+    if shared_legend and _position is None:
+        strip_px += PANEL_LEGEND_PX
+    if colorbar_info is not None \
+            and colorbar_info.get('location', 'right') == 'right':
+        strip_px += PANEL_COLORBAR_PX
+    strip_px += PANEL_GUTTER_PAD_PX if strip_px else 0
     fig = make_panel_grid(nrows, ncols, ndims,
                           size=call_kwargs.get('size'),
                           gutter_px=(0 if consolidate else panel_gutter_px(
@@ -6707,7 +6912,7 @@ def _plot_panels_plotly(panel_data, panel_kwargs, titles, nrows, ncols,
                                 i, ndims)
         panel_axes.append(keys['scene'] if ndims >= 3
                           else (keys['xaxis'], keys['yaxis']))
-    if consolidate and (shared_legend or colorbar_info is not None):
+    if shared_legend or colorbar_info is not None:
         place_shared_furniture(
             fig, shared_legend,
             (None if colorbar_info is None else _colorbar_trace(
@@ -6718,7 +6923,7 @@ def _plot_panels_plotly(panel_data, panel_kwargs, titles, nrows, ncols,
             font=(panel_figs[0].layout.font.to_plotly_json()
                   if panel_figs[0].layout.font is not None else None),
             title_px=title_px, widen=call_kwargs.get('size') is None)
-    fig.update_layout(showlegend=bool(call_kwargs.get('legend')))
+    fig.update_layout(showlegend=legend_wanted)
     # the SAME figure class the single-axes plotly path returns, displayed
     # through the same one-shot end-of-cell queue: a bare `go.Figure` shown
     # with `fig.show()` here was displayed a second time by the notebook's
@@ -6754,9 +6959,9 @@ def _plot_panels_plotly(panel_data, panel_kwargs, titles, nrows, ncols,
                            else m['xform_data'] for m in panel_models],
             'colors': (
                 (panel_models[0].get('colors') if panel_models else None)
-                if not consolidate else _merge_panel_color_scales(
-                    [m.get('colors') for m in panel_models],
-                    dataset_mode=dataset_mode, names=color_names)),
+                if not consolidate else _grid_color_scale(
+                    [m.get('colors') for m in panel_models], grid_scale,
+                    dataset_mode=dataset_mode)),
             'pipeline': shared_pipeline,
         }
     return fig
@@ -7546,8 +7751,15 @@ def plot(
         item); the list must have exactly one entry per drawn dataset/
         group (``ValueError`` naming legend otherwise). A bare string is
         treated as a single-entry list (valid only for a single dataset).
+        Under a categorical `hue=` (or `cluster=`/`n_clusters=`) a list
+        names the CATEGORIES: one entry per category, in the order
+        ``legend=True`` lists them -- with a line format too, where a
+        category that recurs is drawn as several line segments but is
+        still one legend entry.
         A `panels=` grid draws ONE legend for the whole figure, right of
-        the grid (see `panels=`).
+        the grid, and reads `legend=` as the single-axes call of all the
+        datasets does: a list has one entry per dataset, or per category
+        of the whole grid (see `panels=`).
 
         Under a MultiIndex HIERARCHY the drawn traces are leaves plus
         derived per-level means, and only the TOP-level groups carry a
@@ -9242,10 +9454,30 @@ def plot(
         mapping. (A list-valued `reduce=` grid draws every dataset in
         every panel and always colored them alike.)
 
+        All of this is resolved ONCE, for the whole grid, exactly as the
+        single-axes call of all the datasets resolves it, and each panel
+        draws its share; no panel decides any of it from its own data.
+        Whether an integer `hue=` is categorical or continuous is decided
+        from the values of every panel together (see `hue=`); a
+        ``{category: color}`` `palette=` names the categories of the
+        whole grid, in either `panel_fit=` mode; a `legend=` list has one
+        entry per dataset, or -- under a categorical `hue=` or a shared
+        clustering -- one per category of the whole grid, each panel
+        labeling the categories it draws, and a list of any other length
+        raises the single-axes call's ``ValueError`` (which counts the
+        grid's datasets or groups); ``colorbar=True`` with nothing
+        grouping the data draws the one discrete colorbar of the
+        datasets' colors that call draws; a panel whose `hue=` has no
+        finite value, or no labeled observation, is drawn in the neutral
+        gray under the grid's scale; and a warning about the whole call
+        (the number of non-finite `hue=` values, a legend asked of a
+        continuous `hue=`) is issued once, not once per panel.
+
         The legend and the colorbar are then drawn ONCE for the figure:
         one legend holding the union of the panels' entries without
-        duplicates -- the data entries in dataset order, then the
-        `predict=`/`truth=` entries, where two entries are one when they
+        duplicates -- the data entries in the order the single-axes call
+        lists them (datasets in dataset order, categories and clusters
+        in their own order), then the `predict=`/`truth=` entries, where two entries are one when they
         have the same label and look the same (a forecast or truth key
         that differs between panels only in color is one key in the
         neutral gray the single-axes legend uses for a model that
@@ -9913,15 +10145,29 @@ def plot(
     # function, frame hooks and axes to (`_plot_animated_panels` collects
     # them into the grid's single animation). Internal, never a user kwarg.
     _panel_animation = kwargs.pop('_panel_animation', None)
-    # ...and what a `panels=` grid shares across its panels (see
-    # `_plot_panels`): ``'limits'``, the grid-wide ``(vmin, vmax)`` of a
-    # continuous `hue=`, which this panel's value-to-color mapping must use
-    # so a color is the same value in every panel; and ``'colorbars'``, a
-    # list this call appends its resolved colorbar to INSTEAD of drawing it
-    # (the grid draws one for the figure, and one legend, so the panel's
-    # own legend is not fitted either). Internal, never a user kwarg.
+    # ...and what a `panels=` grid resolved ONCE for all of its panels and
+    # hands this one its share of (see `_resolve_grid_colors`; a panel
+    # never re-decides any of it from its own subset of the data):
+    # ``'hue_kind'``, whether the grid's numeric `hue=` is ``'continuous'``
+    # or ``'discrete'`` (categorical); ``'limits'``, the grid-wide
+    # ``(vmin, vmax)`` of a continuous `hue=`, which this panel's
+    # value-to-color mapping must use so a color is the same value in every
+    # panel; ``'legend_names'``, the grid's ``{category: legend label}``
+    # (a `legend=` list naming the grid's hue categories or clusters);
+    # ``'quiet'``, set when the grid itself issues the warnings that are
+    # about the whole call (the count of non-finite hue values, a legend
+    # asked of a continuous hue), so no panel repeats them; ``'colorbars'``,
+    # a list this call appends its resolved colorbar to INSTEAD of drawing
+    # it (the grid draws one for the figure, and one legend, so the panel's
+    # own legend is not fitted either); and ``'report'``, a dict this call
+    # fills with the legend it resolved (the grid's own probe call reads
+    # it). Internal, never a user kwarg.
     _panel_shared = kwargs.pop('_panel_shared', None)
     _hue_limits = (_panel_shared or {}).get('limits')
+    _grid_hue_kind = (_panel_shared or {}).get('hue_kind')
+    _grid_legend_names = (_panel_shared or {}).get('legend_names')
+    _grid_quiet = bool((_panel_shared or {}).get('quiet'))
+    _grid_report = (_panel_shared or {}).get('report')
     _grid_furniture = (_panel_shared is not None
                        and 'colorbars' in _panel_shared)
 
@@ -9955,7 +10201,9 @@ def plot(
                                     '_panels_spec', '_panels_name',
                                     '_panel_lift', '_panel_animation',
                                     '_panel_shared', '_hue_limits',
-                                    '_grid_furniture')}
+                                    '_grid_furniture', '_grid_hue_kind',
+                                    '_grid_legend_names', '_grid_quiet',
+                                    '_grid_report')}
         _panel_call.update(kwargs)
         return _plot_panels(x, _panels_spec, _panel_call, _name=_panels_name)
 
@@ -12737,6 +12985,15 @@ def plot(
             and hue_array.shape[0] == n_obs
             and len(np.unique(hue_array)) <= 12
             and len(np.unique(hue_array)) < n_obs)
+        if (_grid_hue_kind is not None and hue_array is not None
+                and hue_array.ndim == 1 and hue_array.shape[0] == n_obs
+                and (np.issubdtype(hue_array.dtype, np.integer)
+                     or np.issubdtype(hue_array.dtype, np.bool_))):
+            # a `panels=` cell: the rule above was applied ONCE, to the
+            # grid's whole hue (20 distinct integers over two panels are
+            # continuous, though each panel holds only 10 of them); the
+            # panel draws under that classification
+            _hue_int_categorical = _grid_hue_kind == 'discrete'
         hue_is_continuous = (hue_array is not None and hue_array.ndim == 1
                              and np.issubdtype(hue_array.dtype, np.number)
                              and hue_array.shape[0] == n_obs
@@ -12782,7 +13039,7 @@ def plot(
                     # swatches instead of discarding the legend.
                     _hue_legend_entries = _matrix_hue_legend_entries(
                         hue_array, palette, legend, _hue_column_names)
-                else:
+                elif not _grid_quiet:
                     warnings.warn(
                         "legend is not supported for continuous or "
                         "RGB-valued hue; ignoring legend.",
@@ -12828,7 +13085,10 @@ def plot(
             # spelled it. Guarded on "some entry is a string" so a purely
             # numeric hue (binned as continuous values, where non-finite
             # entries are already handled by `mat2colors`) is untouched.
-            if any(isinstance(el, str) for el in hue):
+            if (any(isinstance(el, str) for el in hue)
+                    or _grid_hue_kind == 'discrete'):
+                # (a `panels=` cell of a categorical grid may hold nothing
+                # but missing labels: still the unlabeled group)
                 hue = [None if is_missing_label(el) else el for el in hue]
 
             # if all of the elements are numbers, map them to colors
@@ -12854,7 +13114,8 @@ def plot(
                     hue_group_labels = list(hue_category_names)
                     hue = group_by_category(hue)
                 elif (any(el is None for el in hue)
-                      and any(isinstance(el, str) for el in hue)
+                      and (any(isinstance(el, str) for el in hue)
+                           or _grid_hue_kind == 'discrete')
                       and all(el is None or isinstance(el, str)
                               for el in hue)):
                     # partially-labeled hue (the docstring's "label a subset
@@ -13359,10 +13620,19 @@ def plot(
             _nested_hover_labels = [g + 1 for g in nested_groups]
 
     # handle legend
+    #: the names `legend=True` gives the drawn hue/cluster groups, one per
+    #: drawn trace ('_nolegend_' for a trace with no entry), before a
+    #: `legend=` list renames them -- what a `panels=` grid keys its
+    #: ``{category: legend label}`` by (`_resolve_grid_colors`)
+    _legend_group_names = None
     if legend is not None:
         if legend is False:
             legend = None
-        elif legend is True and hue is not None:
+        elif hue is not None and (
+                legend is True
+                or (isinstance(legend, (list, tuple))
+                    and hue_group_labels is not None)):
+            _renamed = None if legend is True else list(legend)
             if hue_group_labels is not None:
                 # categorical string hue: show the ORIGINAL category names,
                 # not the integer group ids `hue` was reassigned to above
@@ -13371,7 +13641,48 @@ def plot(
                 legend = list(hue_group_labels)
             else:
                 legend = [item for item in
-                         sorted(set(hue), key=list(hue).index)]
+                          sorted(set(hue), key=list(hue).index)]
+            _legend_group_names = list(legend)
+            _rename = None
+            if _renamed is not None:
+                # a `legend=` LIST under a categorical hue names the
+                # CATEGORIES, one entry per category in the order
+                # `legend=True` lists them -- on the line path too, whose
+                # drawn traces are the categories' RUNS (a category that
+                # recurs along a trajectory is several traces, so three
+                # names for three categories were refused as "3 entries
+                # for 4 dataset(s)/group(s)", and a list that happened to
+                # match the run count named the runs in data order, not
+                # the categories the marker path names)
+                _listed = ([n for n in _legend_order if n != '_nolegend_']
+                           if _legend_order is not None
+                           else [str(n) for n in legend
+                                 if n != '_nolegend_'])
+                if _legend_order is None and len(_renamed) == len(legend):
+                    # (one entry per drawn group, the unlabeled group's
+                    # included: named in drawn order, as always)
+                    _listed = [str(n) for n in legend]
+                    _legend_group_names = list(_listed)
+                    legend = list(_listed)
+                if len(_renamed) != len(_listed):
+                    raise ValueError(
+                        f"legend= was given as a list of length "
+                        f"{len(_renamed)}, but there are {len(_listed)} "
+                        "dataset(s)/group(s) to plot; pass one entry per "
+                        "drawn dataset, or legend=True to auto-number "
+                        "them.")
+                _rename = dict(zip(_listed, _renamed))
+            elif _grid_legend_names:
+                # a `panels=` cell: the grid's `legend=` list named the
+                # categories of the WHOLE grid; this panel labels the ones
+                # it draws
+                _rename = _grid_legend_names
+            if _rename:
+                legend = [n if n == '_nolegend_' else _rename.get(str(n), n)
+                          for n in legend]
+                if _legend_order is not None:
+                    _legend_order = [str(_rename.get(n, n))
+                                     for n in _legend_order]
         elif (_nested_group_colored and hue is None
                 and len(nested_groups) == len(xform)
                 and (legend is True or (
@@ -13417,6 +13728,15 @@ def plot(
                 "auto-number them.")
 
         mpl_kwargs["label"] = legend
+
+    if _grid_report is not None:
+        # a `panels=` grid's probe call: what this (single-axes) call's
+        # legend resolved to
+        _grid_report.update(
+            group_names=_legend_group_names,
+            legend=(list(legend) if isinstance(legend, (list, tuple))
+                    else legend),
+            legend_order=_legend_order)
 
     # colorbar (GH #100): resolve the color-mapping info (continuous hue
     # value range + palette, or discrete group colors + labels) now, while
@@ -13602,6 +13922,8 @@ def plot(
         line_colors = _multicolor_line_colors(
             multicolor_hue, pre_interp_lengths, xform, palette,
             is_rgb=multicolor_hue_is_rgb,
+            # (a `panels=` grid says it once, counting every panel's)
+            warn_non_finite=not _grid_quiet,
             # only a `panels=` grid pins the range (its shared scale)
             **({} if _hue_limits is None else {'limits': _hue_limits}))
 
@@ -15871,7 +16193,7 @@ def _build_colorbar_info(colorbar, hue, multicolor_hue, cluster, n_clusters,
         # the range either: `np.min` over a NaN is NaN, and a colorbar (or
         # bundle['colors']) spanning nan..nan is a colorbar over nothing.
         finite = vals[np.isfinite(vals)]
-        if finite.size == 0:
+        if finite.size == 0 and limits is None:
             raise ValueError(
                 "hue= has no finite values (every entry is NaN/inf), so "
                 "there is no value range to put on a colorbar.")
@@ -15940,6 +16262,16 @@ def _build_colorbar_info(colorbar, hue, multicolor_hue, cluster, n_clusters,
         # always-on color-scale resolution `bundle['colors']` added there).
         from matplotlib.colors import to_rgba_array
         colors = to_rgba_array(explicit_colors)[:, :3]
+    elif (explicit_colors is not None and hue is None and cluster is None
+            and n_clusters is None
+            and (isinstance(explicit_colors, str)
+                 or _is_single_color(explicit_colors))):
+        # ONE explicit color for every ungrouped dataset
+        # (``color='red'``): the swatches are that color, the color the
+        # datasets are drawn in -- not the palette's, which nothing drew
+        from matplotlib.colors import to_rgba_array
+        colors = np.tile(to_rgba_array([explicit_colors])[:, :3],
+                         (n_groups, 1))
     elif isinstance(palette, collections.abc.Mapping):
         # a {category: color} dict names the SWATCHES, so index it by the
         # group names resolved above rather than by position (GH #285).

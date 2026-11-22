@@ -570,6 +570,19 @@ def test_plotly_grid_categorical_hue_and_legend_false():
         if trace.name in expected and trace.marker.color is not None \
                 and isinstance(trace.marker.color, str):
             assert _plotly_rgb(trace.marker.color) == expected[trace.name]
+    # ...and an explicit legend=False suppresses it: the categorical hue
+    # still names and colors the traces, but none is listed and the
+    # figure shows no legend (review round 2: this combination, which the
+    # test is named for, was never exercised)
+    off = _quiet_plot(x, hue=hue, fmt='o', legend=False, panels=True,
+                      backend='plotly')
+    named = [t for t in off.data if t.name in expected]
+    assert {t.name for t in named} == {'p', 'q', 'r'}
+    assert all(t.showlegend is False for t in off.data)
+    assert off.layout.showlegend is False
+    for trace in named:
+        if isinstance(trace.marker.color, str):
+            assert _plotly_rgb(trace.marker.color) == expected[trace.name]
     bare = _quiet_plot(x, panels=True, backend='plotly')
     assert not any(t.showlegend for t in bare.data)
     assert not bare.layout.showlegend

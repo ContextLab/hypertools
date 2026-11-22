@@ -129,3 +129,44 @@ labels, explicit sizes, shared-legend placement).
 - `tests/test_animated_panels.py::test_axis_labels_enlarge_the_figure...`
   still asserts labeled > plain width for long labels; it passes because the
   70% floor makes long labels grow the figure slightly. It was not edited.
+
+## Review round 2 fixes (2026-11-22)
+
+Source list: the scratchpad's `feat295/fix_round2.md` (Codex 1-10, tester
+R1-R11). Tests: `tests/test_panels_global_resolution.py` (new: every color /
+legend item, both backends, each compared with the single-axes call), the
+renamed-for-real `test_plotly_grid_categorical_hue_and_legend_false`, and
+the layout/title tests added to `tests/test_panel_layout_review.py` and
+`tests/test_animated_panels_review.py`.
+
+Structure of the color/legend fix (one mechanism instead of per-item cases):
+
+- `_resolve_grid_colors(rows, grid_kw, ndims, caught, clustering=)` MAKES the
+  single-axes call of every dataset (on the analyzed rows, `reduce=None`,
+  matplotlib, figure thrown away) with the color kwargs
+  (`_GRID_COLOR_KWARGS`: fmt, hue, palette, color(s), legend, names,
+  colorbar, hue_mode, color_reduce) and the shared clustering replayed. It
+  returns the call's color scale, its `{category: color}` keyed by the hue's
+  own categories, its colorbar info, `{category: legend label}` and the
+  legend's order. Its errors are the grid's errors (legend-list length with
+  the grid's counts, palette validation, colorbar validation); its warnings
+  are issued once (`_reemit_panel_warnings`).
+- `plot()`'s internal `_panel_shared` carries a panel's share:
+  `'hue_kind'` (forces the integer-hue categorical/continuous decision),
+  `'limits'`, `'legend_names'`, `'quiet'` (no per-panel repeat of the
+  whole-call warnings), `'colorbars'` (collector) and `'report'` (what the
+  probe call's legend resolved to). A consolidated grid's panels get
+  `colorbar=None`: the grid's one colorbar is the resolution's.
+- `panel_fit='independent'`: `_panel_hue_scale_probe` (the same resolver on
+  placeholder rows, hue/palette/fmt only) runs BEFORE the per-panel fits so
+  their kwargs are already narrowed; the full resolution runs after them.
+- Not resolved globally (no grid-wide meaning exists): reducer-list grids
+  (each panel already draws every dataset; their legends/colorbars are
+  merged as before) and per-panel clusters (`panel_fit='independent'` with
+  `cluster=`).
+- Single-axes change that came with it: a `legend=` list under a categorical
+  hue names the CATEGORIES in `legend=True` order on the line path too
+  (was: one entry per run, in data order).
+- Plotly: `_legend_trace_look` compares line width and marker size;
+  `merge_panel_legends(order=)` ranks the kept entries; a grid's legend is
+  wanted by `legend=` or by `names=` alone.
