@@ -7,11 +7,10 @@ back; the layout tests measure window extents after a real draw.
 """
 import warnings
 
-import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
-from matplotlib.colors import to_rgb, to_rgba
+from matplotlib.colors import to_rgb
 
 import hypertools as hyp
 from hypertools.plot.plot import (CAPTION_GID, SHARED_COLORBAR_GID,
