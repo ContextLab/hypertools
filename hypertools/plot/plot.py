@@ -1759,6 +1759,30 @@ def _matrix_hue_to_rgb(hue_array, color_reduce):
     return rgb
 
 
+def _matrix_hue_to_rgb_once(hue_array, color_reduce, cache):
+    """`_matrix_hue_to_rgb`, run at most ONCE per `panels=` grid call for
+    one matrix: `cache` is the dict a grid shares between the calls it
+    makes of `plot()` (``_panel_shared['matrix_cache']``: its probe, its
+    color resolution and, in a reducer-list grid, every panel), None in
+    any other call. The first of those calls reduces the matrix; the others
+    are given that very result for the same matrix (compared by value).
+    Reducing it again would repeat the work and, with a stochastic reducer,
+    consume randomness a second time -- so a seeded grid call would not
+    draw the colors of the equivalent single-axes call, and two panels of
+    one grid could disagree about a row's color."""
+    if cache is None:
+        return _matrix_hue_to_rgb(hue_array, color_reduce)
+    source = np.asarray(hue_array, dtype=np.float64)
+    entries = cache.setdefault('rgb', [])
+    for seen, rgb in entries:
+        if seen.shape == source.shape and np.array_equal(
+                seen, source, equal_nan=True):
+            return rgb.copy()
+    rgb = _matrix_hue_to_rgb(source, color_reduce)
+    entries.append((source.copy(), np.array(rgb, copy=True)))
+    return rgb
+
+
 def _hierarchy_hue_per_leaf(hue, n_rows, n_leaves):
     """Normalize a hue argument to ONE value sequence per hierarchy leaf.
 
@@ -4773,7 +4797,10 @@ def _panel_probe(data, kw, ndims, caught_warnings, panel_shared=None):
     `_reemit_panel_warnings`). `panel_shared` is the panel's share of the
     grid's color resolution (``plot``'s ``_panel_shared``), for a probe of
     ONE panel (``panel_fit='independent'``): the probe reads its `hue=` as
-    the panel's drawing call will."""
+    the panel's drawing call will. A probe of EVERY dataset is given the
+    grid's ``'matrix_cache'`` there instead, so the matrix `hue=` it
+    reduces to RGB is not reduced again by the grid's color resolution
+    (`_matrix_hue_to_rgb_once`)."""
     probe_kwargs = dict(kw)
     if panel_shared:
         probe_kwargs['_panel_shared'] = dict(panel_shared)
@@ -5017,7 +5044,8 @@ def _grid_needs_color_resolution(grid_kw):
 
 
 def _resolve_grid_colors(rows, grid_kw, ndims, caught_warnings,
-                         clustering=None, furniture=True):
+                         clustering=None, furniture=True,
+                         matrix_cache=None):
     """Resolve, ONCE and for the whole grid, everything a one-panel-per-
     dataset `panels=` grid's colors mean -- exactly as the equivalent
     single-axes call of all the datasets resolves it, by running THAT
@@ -5041,7 +5069,9 @@ def _resolve_grid_colors(rows, grid_kw, ndims, caught_warnings,
     dataset has, a `colorbar=` nothing can be put on), and its warnings
     are appended to `caught_warnings`, to be issued once for the grid (the
     number of non-finite hue values over all the panels, a legend asked of
-    a continuous hue).
+    a continuous hue). `matrix_cache` is the grid's record of the matrix
+    `hue=` it has already reduced to RGB (`_matrix_hue_to_rgb_once`): the
+    call reuses it rather than reducing the matrix again.
 
     Returns a dict:
 
@@ -5075,14 +5105,15 @@ def _resolve_grid_colors(rows, grid_kw, ndims, caught_warnings,
     if clustering is not None:
         kw.update(cluster=clustering, n_clusters=None)
     report, colorbars = {}, []
+    call_shared = {'colorbars': colorbars, 'report': report,
+                   'resolve_only': True}
+    if matrix_cache is not None:
+        call_shared['matrix_cache'] = matrix_cache
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter('always')
         probe = plot(rows, reduce=None, normalize=None, align=None,
                      ndims=ndims, show=False, return_model=True,
-                     backend='matplotlib',
-                     _panel_shared={'colorbars': colorbars,
-                                    'report': report,
-                                    'resolve_only': True}, **kw)
+                     backend='matplotlib', _panel_shared=call_shared, **kw)
     caught_warnings.extend(caught)
     legend = report.get('legend')
     groups = report.get('group_names')
@@ -5105,7 +5136,7 @@ def _resolve_grid_colors(rows, grid_kw, ndims, caught_warnings,
             'blend_groups': report.get('blend_groups')}
 
 
-def _panel_hue_scale_probe(lengths, grid_kw):
+def _panel_hue_scale_probe(lengths, grid_kw, matrix_cache=None):
     """What the single-axes call of every dataset resolves for the grid's
     `hue=` (a `_resolve_grid_colors` result, of which the scale, its
     categories and a matrix hue's rows are read), for
@@ -5115,10 +5146,13 @@ def _panel_hue_scale_probe(lengths, grid_kw):
     names the grid's categories, not one panel's). Resolved on placeholder
     rows of the datasets' own lengths, without the legend and the
     colorbar; None when that fails -- the full resolution, run once the
-    panels are fit, then reports the error."""
+    panels are fit, then reports the error. A matrix `hue=` this call
+    reduces to RGB is recorded in `matrix_cache`, where the full
+    resolution finds it."""
     try:
         return _resolve_grid_colors(
-            _placeholder_rows(lengths), grid_kw, 3, [], furniture=False)
+            _placeholder_rows(lengths), grid_kw, 3, [], furniture=False,
+            matrix_cache=matrix_cache)
     except Exception:  # noqa: BLE001 - reported by the full resolution
         return None
 
@@ -6242,6 +6276,11 @@ def _plot_panels_impl(x, panels, call_kwargs, _name='panels'):
     #: the grid's ONE clustering (a shared fit's), replayed by the color
     #: resolution over every dataset
     grid_clustering = None
+    #: the matrix `hue=` this grid call has reduced to RGB
+    #: (`_matrix_hue_to_rgb_once`), shared by every call the grid makes on
+    #: the whole matrix -- its probe(s), its color resolution(s) and a
+    #: reducer-list grid's panels -- so the matrix is reduced ONCE
+    matrix_cache = {}
     #: per panel: the input datasets it draws (for their index/column
     #: labels), its analyzed rows (one array per dataset), its fitted
     #: pipeline, and its narrowed kwargs
@@ -6254,8 +6293,12 @@ def _plot_panels_impl(x, panels, call_kwargs, _name='panels'):
             kw = dict(shared)
             kw['reduce'] = spec
             panel_kwargs.append(kw)
-        probes = [_panel_probe(x, kw, ndims, probe_warnings)
+        probes = [_panel_probe(x, kw, ndims, probe_warnings,
+                               panel_shared={'matrix_cache': matrix_cache})
                   for kw in panel_kwargs]
+        # (each reducer panel draws EVERY dataset, under the whole hue)
+        for _shared in panel_shared:
+            _shared['matrix_cache'] = matrix_cache
         panel_xforms = [probe[0] for probe in probes]
         panel_pipelines = [probe[1] for probe in probes]
         grid_scale = probes[0][3]
@@ -6288,7 +6331,7 @@ def _plot_panels_impl(x, panels, call_kwargs, _name='panels'):
             # over -- BEFORE any of them runs: a ``{category: color}``
             # palette names the GRID's categories, and a panel refused the
             # ones it does not hold
-            _early = _panel_hue_scale_probe(lengths, shared)
+            _early = _panel_hue_scale_probe(lengths, shared, matrix_cache)
             _starts = np.cumsum([0] + lengths)
             for i in range(n_panels):
                 if not _panel_apply_hue_scale(
@@ -6313,7 +6356,8 @@ def _plot_panels_impl(x, panels, call_kwargs, _name='panels'):
         # would have made without panels=, take its analyzed (pre-display-
         # rescale) data, and give each panel its own dataset's rows
         xform, shared_pipeline, shared_clustering, grid_scale = _panel_probe(
-            x, shared, ndims, probe_warnings)
+            x, shared, ndims, probe_warnings,
+            panel_shared={'matrix_cache': matrix_cache})
         lengths = [int(xi.shape[0]) for xi in xform]
         panel_sources = [[datasets[i]] for i in range(n_panels)]
         panel_xforms = [[xform[i]] for i in range(n_panels)]
@@ -6396,7 +6440,7 @@ def _plot_panels_impl(x, panels, call_kwargs, _name='panels'):
                 _rows = [np.asarray(row) for row in _rows]
             resolution = _resolve_grid_colors(
                 _rows, shared, panel_ndims, probe_warnings,
-                clustering=grid_clustering)
+                clustering=grid_clustering, matrix_cache=matrix_cache)
             grid_scale = resolved_scale = resolution['scale']
         elif panel_fit == 'shared':
             resolved_scale = grid_scale
@@ -10990,7 +11034,10 @@ def plot(
     # whole grid (reduced and scaled over every panel's rows), which the
     # panel draws as it is; and ``'blend_groups'``, the grid's
     # ``{quantized color: drawn color}`` for the groups a blended (mixture)
-    # coloring is quantized into. The grid's own RESOLUTION call
+    # coloring is quantized into; and ``'matrix_cache'``, a dict
+    # the grid shares between its calls so a matrix `hue=` is reduced to
+    # RGB once for all of them (`_matrix_hue_to_rgb_once`). The grid's
+    # own RESOLUTION call
     # (`_resolve_grid_colors`) passes ``'report'``, a dict this call fills
     # with what it resolved (its legend, its ``{category: color}``, the
     # RGB of a matrix hue, its blend groups), and ``'resolve_only'``: the
@@ -11056,7 +11103,6 @@ def plot(
     # ...and, for the same reason, the COLUMN labels `ndims=1` series mode
     # names its per-column lines with (GH #285).
     _column_names = _capture_column_names(x)
-
     # fmt: accept plain-bytes format strings like np.bytes_ (F01-017) --
     # decoded here once so every downstream fmt consumer sees str.
     if isinstance(fmt, bytes):
@@ -13335,8 +13381,9 @@ def plot(
                     f"pass one weight ROW per row for every leaf.")
             if multicolor_hue.ndim == 2 and _matrix_hue_wants_rgb(
                     multicolor_hue, color_reduce, hue_mode):
-                multicolor_hue = _matrix_hue_to_rgb(multicolor_hue,
-                                                    color_reduce)
+                multicolor_hue = _matrix_hue_to_rgb_once(
+                    multicolor_hue, color_reduce,
+                    (_panel_shared or {}).get('matrix_cache'))
                 multicolor_hue_is_rgb = True
             if legend is True or _legend_user_list:
                 # a legend LIST is dropped here for the same reason
@@ -13866,7 +13913,9 @@ def plot(
         elif hue_is_matrix and _matrix_hue_wants_rgb(hue_array,
                                                      color_reduce,
                                                      hue_mode):
-            hue_array = _matrix_hue_to_rgb(hue_array, color_reduce)
+            hue_array = _matrix_hue_to_rgb_once(
+                hue_array, color_reduce,
+                (_panel_shared or {}).get('matrix_cache'))
             multicolor_hue_is_rgb = True
         elif hue_is_matrix:
             # mixture weights: a SIGNED matrix is shifted row by row

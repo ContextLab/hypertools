@@ -17,6 +17,7 @@ import pandas as pd
 import pytest
 from matplotlib.collections import LineCollection, PathCollection
 from matplotlib.colors import to_rgba, to_rgba_array
+from sklearn.base import BaseEstimator, TransformerMixin
 
 import hypertools as hyp
 from hypertools.plot.plot import SHARED_COLORBAR_GID
@@ -313,3 +314,106 @@ def test_panel_colors_are_the_single_axes_calls(kwargs, factory, fmt, mode):
                 f'{key}: grid {got.get(key)} != single {expected.get(key)}'
                 for key in sorted(set(got) | set(expected))
                 if got.get(key) != expected.get(key))[:600])
+
+
+# --------------------------------------------------------------------------
+# 1.2.0 review round 4: a matrix `hue=` is reduced ONCE per grid call.
+# --------------------------------------------------------------------------
+
+class _CountingRandomProjection(BaseEstimator, TransformerMixin):
+    """A small real reducer (sklearn API): projects onto `n_components`
+    random directions drawn from numpy's GLOBAL random state at fit time --
+    so two fits under one seed differ, as a stochastic embedding's do --
+    and counts every fit made by any instance in `fits`."""
+
+    fits = 0
+
+    def __init__(self, n_components=3):
+        self.n_components = n_components
+
+    def fit(self, X, y=None):
+        """Draw the projection (one more fit)."""
+        type(self).fits += 1
+        X = np.asarray(X, dtype=float)
+        self.mean_ = X.mean(axis=0)
+        self.components_ = np.random.normal(
+            size=(self.n_components, X.shape[1]))
+        return self
+
+    def transform(self, X):
+        """Project the rows of `X`."""
+        return (np.asarray(X, dtype=float) - self.mean_) @ self.components_.T
+
+
+def _seeded_draw(data, kwargs, seed=11):
+    """`_draw` with numpy's global random state reset to `seed` first, and
+    the number of reducer fits the call made."""
+    _CountingRandomProjection.fits = 0
+    np.random.seed(seed)
+    figure = _draw(data, kwargs)
+    return figure, _CountingRandomProjection.fits
+
+
+def _assert_panels_match_single(single, grid):
+    """Every panel of `grid` draws its dataset's rows in the colors
+    `single` (the single-axes figure of all the datasets) gives them."""
+    want = _row_colors(single.axes[0], 0, TOTAL - 1)
+    for i, ax in enumerate(grid.axes[:N_DATASETS]):
+        first, last = i * ROWS, (i + 1) * ROWS - 1
+        expected = {key: value for key, value in want.items()
+                    if first <= key[1] <= last}
+        assert expected
+        assert _row_colors(ax, first, last) == expected, f'panel {i}'
+
+
+REDUCED_HUES = {
+    'counting-class': {'color_reduce': _CountingRandomProjection},
+    'counting-spec': {'color_reduce': {
+        'model': _CountingRandomProjection,
+        'kwargs': {'n_components': 3}}},
+}
+
+
+@pytest.mark.parametrize('fit', ['shared', 'independent'])
+@pytest.mark.parametrize('fmt', ['-', 'o'])
+@pytest.mark.parametrize('mode', ['static', 'reveal'])
+@pytest.mark.parametrize('spec', list(REDUCED_HUES))
+def test_matrix_hue_is_reduced_once_per_grid(spec, mode, fmt, fit):
+    call = dict(REDUCED_HUES[spec], hue=_wide_matrix(), reduce=None, ndims=2,
+                fmt=fmt, **MODES[mode])
+    single, single_fits = _seeded_draw(_datasets(), call)
+    assert single_fits == 1
+    grid, grid_fits = _seeded_draw(
+        _datasets(), dict(call, panels=True, panel_fit=fit))
+    assert grid_fits == 1, (
+        f'the grid reduced its hue matrix {grid_fits} times')
+    # ...so, under one seed, the grid's colors are the single-axes call's
+    _assert_panels_match_single(single, grid)
+
+
+@pytest.mark.parametrize('fit', ['shared', 'independent'])
+def test_seeded_tsne_hue_colors_are_the_single_axes_calls(fit):
+    call = dict(hue=_wide_matrix(), reduce=None, ndims=2, fmt='o',
+                color_reduce={'model': 'TSNE',
+                              'kwargs': {'perplexity': 5, 'init': 'random'}})
+    single, _ = _seeded_draw(_datasets(), call)
+    grid, _ = _seeded_draw(_datasets(),
+                           dict(call, panels=True, panel_fit=fit))
+    _assert_panels_match_single(single, grid)
+
+
+@pytest.mark.parametrize('backend', ['matplotlib', 'plotly'])
+def test_reducer_list_grid_reduces_its_matrix_hue_once(backend):
+    """A one-panel-per-REDUCER grid draws every dataset in every panel:
+    one reduction of the hue matrix colors all of them alike."""
+    call = dict(hue=_wide_matrix(), color_reduce=_CountingRandomProjection,
+                reduce=['PCA', 'IncrementalPCA'], ndims=2, fmt='o',
+                panels=True, backend=backend)
+    grid, fits = _seeded_draw(_datasets(3), call)
+    assert fits == 1
+    if backend == 'matplotlib':
+        first, second = (
+            sorted(tuple(np.round(c, 6)) for coll in ax.collections
+                   for c in to_rgba_array(coll.get_facecolor()))
+            for ax in grid.axes[:2])
+        assert first and first == second
