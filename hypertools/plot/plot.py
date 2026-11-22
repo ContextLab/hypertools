@@ -1688,6 +1688,39 @@ def _validate_hue_mode(hue_mode, color_reduce, hue=None):
             "reduce.")
 
 
+def _nonnegative_mixture_rows(weights):
+    """A mixture-weight matrix as `colors.mat2colors` blends it: when ANY
+    finite row holds a negative entry, every finite row is shifted by its
+    own minimum (negative weights have no color meaning); otherwise the
+    matrix is returned as it is. Decided ONCE, for the whole matrix, so the
+    rows blend the same whether they are colored together or a `panels=`
+    grid hands each panel its own -- a panel whose rows happen to hold no
+    negative entry is still shifted when the grid's matrix is signed."""
+    weights = np.asarray(weights, dtype=np.float64)
+    if weights.ndim != 2:
+        return weights
+    finite = np.isfinite(weights).all(axis=1)
+    if not finite.any() or weights[finite].min() >= 0:
+        return weights
+    shifted = weights.copy()
+    shifted[finite] -= shifted[finite].min(axis=1, keepdims=True)
+    return shifted
+
+
+def _blend_groups(blended, shared=None):
+    """`colors.colors2groups` of per-observation `blended` colors:
+    ``(group_ids, group_colors)``, the quantized color each observation
+    is grouped under and each group's drawn color (the mean of its
+    members). `shared` is a `panels=` grid's ``{group id: color}`` for
+    the whole grid: a panel holds only some of a group's members, so it
+    draws the group in the GRID's color, not its own members' mean."""
+    group_ids, group_colors = colors2groups(blended)
+    if shared:
+        group_colors = {gid: tuple(shared.get(gid, color))
+                        for gid, color in group_colors.items()}
+    return group_ids, group_colors
+
+
 def _matrix_hue_to_rgb(hue_array, color_reduce):
     """Reduce a matrix hue to 3 min-max scaled columns used AS (r, g, b)."""
     rgb = np.asarray(hue_array, dtype=np.float64)
@@ -4858,8 +4891,14 @@ def _panel_dataset_colors(grid_kw, sources):
     across the figure. An entry is None where the single-axes call colors
     the dataset some other way that each panel already reproduces: an
     explicit `color=`, a color letter in `fmt=`, a per-dataset or
-    ``{category: color}`` `palette=`, a `hue=`/`cluster=` grouping, or a
-    MultiIndex frame (drawn as several traces)."""
+    ``{category: color}`` `palette=`, or a `hue=`/`cluster=` grouping.
+
+    A MultiIndex frame is a dataset like any other here: a hierarchy is
+    only expanded into several traces for a SINGLE frame, never for a
+    frame in a list (the single-axes call of the grid's datasets flattens
+    it, with a warning), and a panel is drawn from its analyzed rows,
+    which carry no MultiIndex (`_panel_frame`) -- so each such dataset is
+    one trace in one color, in either figure."""
     n = len(sources)
     none = [None] * n
     if (grid_kw.get('hue') is not None or grid_kw.get('cluster')
@@ -4871,9 +4910,6 @@ def _panel_dataset_colors(grid_kw, sources):
     palette = 'hls' if palette is None else palette
     if (isinstance(palette, collections.abc.Mapping)
             or _looks_like_dataset_palettes(palette)):
-        return none
-    if any(isinstance(getattr(src, 'index', None), pd.MultiIndex)
-           for src in sources):
         return none
     fmts = _panel_draw_fmts(grid_kw.get('fmt'), n)
     cycle = iter(_palette_continuation(palette, n))
@@ -4887,11 +4923,32 @@ def _panel_dataset_colors(grid_kw, sources):
     return colors
 
 
-#: the `plot()` arguments that decide what a figure's colors mean and what
-#: explains them: the colors themselves, the legend's entries and the
-#: colorbar. A `panels=` grid resolves them ONCE (`_resolve_grid_colors`).
-_GRID_COLOR_KWARGS = ('fmt', 'hue', 'palette', 'color', 'colors', 'legend',
-                      'names', 'colorbar', 'hue_mode', 'color_reduce')
+#: the grid kwargs its color resolution (`_resolve_grid_colors`) does NOT
+#: forward to the single-axes call it resolves: the analysis (the rows it
+#: is given are analyzed already), the overlays and annotations drawn per
+#: panel, and what belongs to the figure rather than to its colors. Every
+#: OTHER argument is forwarded -- `animate=` and its options, `font=`,
+#: `fmt=`, the marker and line styling, `hue=`/`palette=`/`color=`,
+#: `legend=`/`names=`/`colorbar=` and their options -- so the resolution
+#: runs in the drawing mode the panels are drawn in. An argument added to
+#: `plot()` later is forwarded unless it is listed here.
+_GRID_RESOLUTION_DROPPED_KWARGS = _PANEL_PROBE_DROPPED_KWARGS + (
+    'reduce', 'normalize', 'align', 'manip', 'pipeline', 'impute',
+    'resample', 'transform', 'random_state', 'ndims', 'vectorizer',
+    'semantic', 'corpus', 'stream_init', 'stream_chunk', 'stream_max',
+    'stream_window', 't', 'labels', 'label_anchor', 'label_alpha',
+    'surface', 'density', 'companion', 'explore', 'interactive',
+    'on_frame', 'size', 'xlabel', 'ylabel', 'zlabel', 'xlim', 'ylim',
+    'axis_scale', 'title', 'title_kwargs', 'title_color', 'title_wrap',
+    'frame_kwargs', 'dataset_fade', 'slow_warning_seconds', 'backend',
+    'mpl_backend', 'show', 'save_path', 'return_model', 'ax', 'panels',
+    'subplots', 'panel_fit', 'caption')
+
+#: ...and the ones that ask for the legend and the colorbar, left out of
+#: the resolution `panel_fit='independent'` runs BEFORE its panels are fit
+#: (`_panel_hue_scale_probe`), which only reads the `hue=` scale
+_GRID_FURNITURE_KWARGS = ('legend', 'names', 'colorbar', 'legend_colors',
+                          'legend_kwargs')
 
 
 def _placeholder_rows(lengths, width=3):
@@ -4910,34 +4967,57 @@ def _placeholder_rows(lengths, width=3):
     return rows
 
 
+def _grid_needs_color_resolution(grid_kw):
+    """Whether a one-panel-per-dataset grid has anything to resolve for
+    the whole figure (`_resolve_grid_colors`): a `hue=`, clusters, a
+    legend (`names=` turns it on) or a colorbar. Without any of them each
+    panel draws its dataset in its palette color (`_panel_dataset_colors`,
+    which needs no call at all) and there is nothing else to agree on."""
+    legend = grid_kw.get('legend')
+    colorbar = grid_kw.get('colorbar')
+    return (grid_kw.get('hue') is not None
+            or bool(grid_kw.get('cluster'))
+            or grid_kw.get('n_clusters') is not None
+            or not (legend is None or legend is False)
+            or grid_kw.get('names') is not None
+            or not (colorbar is None or colorbar is False))
+
+
 def _resolve_grid_colors(rows, grid_kw, ndims, caught_warnings,
-                         clustering=None, keys=_GRID_COLOR_KWARGS):
+                         clustering=None, furniture=True):
     """Resolve, ONCE and for the whole grid, everything a one-panel-per-
     dataset `panels=` grid's colors mean -- exactly as the equivalent
-    single-axes call of all the datasets resolves it, by MAKING that call
-    (on `rows`, the datasets' analyzed rows, with no analysis; the figure
-    is thrown away). Every panel is then handed its share (``plot``'s
-    ``_panel_shared``); no panel re-decides any of this from its own
-    subset of the data.
+    single-axes call of all the datasets resolves it, by running THAT
+    call's own color resolution (on `rows`, the datasets' analyzed rows,
+    with no analysis). The call is made in ``resolve_only`` mode (see
+    `plot`'s ``_panel_shared``): it returns once its colors, legend entries
+    and colorbar are resolved, before any line is interpolated, any figure
+    created or anything drawn. Every panel is then handed its share; no
+    panel re-decides any of this from its own subset of the data.
 
-    `grid_kw` is the grid's own kwargs, of which `keys` are forwarded
-    (`_GRID_COLOR_KWARGS`); `clustering` the grid's one clustering, replayed
-    (`_panel_cluster_labels` over every dataset), or None. The call's
-    errors are the grid's errors (a `legend=` list of the wrong length is
-    refused with the count of the grid's datasets or groups, a `palette=`
-    mapping naming a category no dataset has, a `colorbar=` nothing can be
-    put on), and its warnings are appended to `caught_warnings`, to be
-    issued once for the grid (the number of non-finite hue values over all
-    the panels, a legend asked of a continuous hue).
+    `grid_kw` is the grid's own kwargs, forwarded whole but for
+    `_GRID_RESOLUTION_DROPPED_KWARGS` -- so the call resolves its colors
+    in the drawing mode the panels use (an animated mixture clustering is
+    quantized into groups, a static one is a continuous blend; `font=`
+    reaches the colorbar). `clustering` is the grid's one clustering,
+    replayed (`_panel_cluster_labels` over every dataset), or None.
+    Without `furniture` the legend and colorbar arguments are left out
+    (`_GRID_FURNITURE_KWARGS`). The call's errors are the grid's errors (a
+    `legend=` list of the wrong length is refused with the count of the
+    grid's datasets or groups, a `palette=` mapping naming a category no
+    dataset has, a `colorbar=` nothing can be put on), and its warnings
+    are appended to `caught_warnings`, to be issued once for the grid (the
+    number of non-finite hue values over all the panels, a legend asked of
+    a continuous hue).
 
     Returns a dict:
 
     - ``'scale'``: the call's color scale (its bundle's ``'colors'``):
       whether the hue is ``'continuous'`` or ``'discrete'``, its value
-      range, its ``{category: color}`` mapping;
-    - ``'categories'``: that mapping keyed by the hue's own categories
-      (the scale's is keyed by legend label, which a `legend=` list
-      changes);
+      range, its ``{legend label: color}`` mapping;
+    - ``'categories'``: ``{category: color}``, keyed by the hue's own
+      categories (cluster ids), never by their legend labels: a `legend=`
+      list may give two categories the same label;
     - ``'colorbar'``: the colorbar the call draws (`_build_colorbar_info`),
       or None -- the grid's one colorbar;
     - ``'legend_names'``: ``{category: legend label}`` where the legend
@@ -4946,9 +5026,19 @@ def _resolve_grid_colors(rows, grid_kw, ndims, caught_warnings,
       (``'_nolegend_'`` for a trace without an entry), or None without a
       legend;
     - ``'legend_order'``: the legend's labels in the order the call lists
-      them, or None without a legend.
+      them, or None without a legend;
+    - ``'matrix_hue'``: ``(kind, rows)`` for a matrix `hue=` -- ``'rgb'``
+      with the RGB of every observation, reduced and scaled over the whole
+      grid, or ``'mixture'`` with its weight rows -- else None;
+    - ``'blend_groups'``: ``{quantized color: drawn color}`` where a
+      blended coloring is drawn as quantized groups (animated mixture
+      clusters, a matrix hue on markers), else None.
     """
-    kw = {key: grid_kw[key] for key in keys if key in grid_kw}
+    kw = {key: value for key, value in grid_kw.items()
+          if key not in _GRID_RESOLUTION_DROPPED_KWARGS}
+    if not furniture:
+        for key in _GRID_FURNITURE_KWARGS:
+            kw.pop(key, None)
     if clustering is not None:
         kw.update(cluster=clustering, n_clusters=None)
     report, colorbars = {}, []
@@ -4958,10 +5048,9 @@ def _resolve_grid_colors(rows, grid_kw, ndims, caught_warnings,
                      ndims=ndims, show=False, return_model=True,
                      backend='matplotlib',
                      _panel_shared={'colorbars': colorbars,
-                                    'report': report}, **kw)
+                                    'report': report,
+                                    'resolve_only': True}, **kw)
     caught_warnings.extend(caught)
-    if isinstance(probe.get('fig'), plt.Figure):
-        plt.close(probe['fig'])
     legend = report.get('legend')
     groups = report.get('group_names')
     names = order = None
@@ -4972,38 +5061,31 @@ def _resolve_grid_colors(rows, grid_kw, ndims, caught_warnings,
             names = {str(group): label
                      for group, label in zip(groups, legend)
                      if group != '_nolegend_'}
-    scale = probe.get('colors')
-    categories = (scale.get('categories') or {}
-                  if isinstance(scale, dict) else {})
-    if names and all(str(label) in categories for label in names.values()):
-        # the scale names its colors by legend label; the panels' hue
-        # holds the categories themselves
-        categories = {group: categories[str(label)]
-                      for group, label in names.items()}
-    return {'scale': scale,
-            'categories': dict(categories),
+    return {'scale': probe.get('colors'),
+            'categories': dict(report.get('categories') or {}),
             'colorbar': colorbars[0] if colorbars else None,
             'legend_names': names,
             'legend_labels': (list(legend) if isinstance(legend, list)
                               else None),
-            'legend_order': None if order is None else list(order)}
+            'legend_order': None if order is None else list(order),
+            'matrix_hue': report.get('matrix_hue'),
+            'blend_groups': report.get('blend_groups')}
 
 
 def _panel_hue_scale_probe(lengths, grid_kw):
     """What the single-axes call of every dataset resolves for the grid's
-    `hue=` (a `_resolve_grid_colors` result, of which the scale and its
-    categories are read), for
+    `hue=` (a `_resolve_grid_colors` result, of which the scale, its
+    categories and a matrix hue's rows are read), for
     ``panel_fit='independent'``, BEFORE any panel is fit: each panel's fit
     is a call of its own, which must already read its `hue=` and
     `palette=` under the grid's scale (a ``{category: color}`` palette
     names the grid's categories, not one panel's). Resolved on placeholder
-    rows of the datasets' own lengths, from `hue=`, `palette=` and `fmt=`
-    alone; None when that fails -- the full resolution, run once the
+    rows of the datasets' own lengths, without the legend and the
+    colorbar; None when that fails -- the full resolution, run once the
     panels are fit, then reports the error."""
     try:
         return _resolve_grid_colors(
-            _placeholder_rows(lengths), grid_kw, 3, [],
-            keys=('fmt', 'hue', 'palette', 'hue_mode', 'color_reduce'))
+            _placeholder_rows(lengths), grid_kw, 3, [], furniture=False)
     except Exception:  # noqa: BLE001 - reported by the full resolution
         return None
 
@@ -5031,21 +5113,40 @@ def _hue_label_strings(hue):
     return out
 
 
-def _panel_apply_hue_scale(kw, resolution, shared):
+def _panel_apply_hue_scale(kw, resolution, shared, rows=None):
     """Make one panel (kwargs `kw`, already narrowed to its dataset) draw
     its `hue=` under the GRID's color scale (`resolution`, a
-    `_resolve_grid_colors` result: the single-axes call's ``'colors'``
-    and its ``{category: color}`` mapping): the hue is continuous or categorical as the
-    grid's is (``shared['hue_kind']``, see `plot`'s ``_panel_shared``), a
-    continuous hue is mapped over the grid-wide value range
-    (``shared['limits']``), and a categorical hue through the grid's own ``{category: color}``
-    mapping, narrowed to the categories this panel has (a `palette=`
-    mapping may only name categories the plot draws). Returns False when
-    the panel has a category the scale does not know -- the grid then
-    cannot claim one shared mapping."""
-    scale = None if resolution is None else resolution.get('scale')
+    `_resolve_grid_colors` result): the hue is continuous or categorical
+    as the grid's is (``shared['hue_kind']``, see `plot`'s
+    ``_panel_shared``), a continuous hue is mapped over the grid-wide
+    value range (``shared['limits']``), a categorical hue through the
+    grid's own ``{category: color}`` mapping, narrowed to the categories
+    this panel has (a `palette=` mapping may only name categories the plot
+    draws), and a matrix hue is replaced by the panel's rows (`rows`, its
+    ``(start, stop)`` among the grid's observations) of the matrix the
+    grid resolved -- RGB reduced and scaled over every panel
+    (``shared['hue_rgb']``), or its mixture weights. A blended coloring
+    drawn as quantized groups takes the grid's group colors
+    (``shared['blend_groups']``). Returns False when the panel has a
+    category the scale does not know -- the grid then cannot claim one
+    shared mapping."""
+    if resolution is None:
+        return True
+    if resolution.get('blend_groups'):
+        shared['blend_groups'] = resolution['blend_groups']
+    scale = resolution.get('scale')
     if not isinstance(scale, dict) or kw.get('hue') is None:
         return True
+    matrix = resolution.get('matrix_hue')
+    if matrix is not None and rows is not None:
+        kind, values = matrix
+        values = np.asarray(values)
+        if rows[1] <= len(values):
+            kw['hue'] = values[rows[0]:rows[1]]
+            if kind == 'rgb':
+                kw['hue_mode'] = 'rgb'
+                kw['color_reduce'] = None
+                shared['hue_rgb'] = True
     if scale.get('kind') in ('continuous', 'discrete'):
         # the grid's classification of a numeric hue (integers are
         # categorical or continuous by how many distinct values the WHOLE
@@ -5056,6 +5157,7 @@ def _panel_apply_hue_scale(kw, resolution, shared):
         return True
     categories = resolution.get('categories') or {}
     if scale.get('kind') != 'discrete' or not categories \
+            or matrix is not None \
             or _looks_like_dataset_palettes(kw.get('palette')):
         return True
     try:
@@ -6147,9 +6249,11 @@ def _plot_panels_impl(x, panels, call_kwargs, _name='panels'):
             # palette names the GRID's categories, and a panel refused the
             # ones it does not hold
             _early = _panel_hue_scale_probe(lengths, shared)
+            _starts = np.cumsum([0] + lengths)
             for i in range(n_panels):
-                if not _panel_apply_hue_scale(panel_kwargs[i], _early,
-                                              panel_shared[i]):
+                if not _panel_apply_hue_scale(
+                        panel_kwargs[i], _early, panel_shared[i],
+                        rows=(int(_starts[i]), int(_starts[i + 1]))):
                     scale_mismatch = True
                 elif _early is not None:
                     panel_shared[i]['quiet'] = True
@@ -6208,41 +6312,54 @@ def _plot_panels_impl(x, panels, call_kwargs, _name='panels'):
     # panels each draw every dataset through the same color resolution, so
     # they agree already. A one-panel-per-dataset grid's panels each see
     # one dataset, so the grid resolves ONCE what the single-axes call of
-    # ALL the datasets draws (`_resolve_grid_colors`: that very call, on
-    # the analyzed rows) and hands every panel its share: its dataset's
-    # color (palette position i of n), its number or name in the legend,
-    # the grid's `hue=` scale (continuous or categorical, one value range,
-    # one category -> color mapping) and the grid's names for its
-    # categories. The legend's order, the colorbar and the bundle's
-    # ``'colors'`` are that call's; so are its errors and its warnings.
+    # ALL the datasets resolves (`_resolve_grid_colors`: that very call's
+    # color resolution, in the panels' drawing mode, stopped before any
+    # geometry) and hands every panel its share: its dataset's color
+    # (palette position i of n), its number or name in the legend, the
+    # grid's `hue=` scale (continuous or categorical, one value range, one
+    # category -> color mapping, a matrix hue's rows resolved over the
+    # whole grid) and the grid's names for its categories. The legend's
+    # order, the colorbar and the bundle's ``'colors'`` are that call's;
+    # so are its errors and its warnings.
     meanings_differ = (_panel_meanings_differ(shared, per_panel_reduce,
                                               panel_fit) or scale_mismatch)
-    #: the grid's color resolution; None for a reducer-list grid, and where
-    #: every panel fits clusters of its own (no grid-wide meaning exists)
+    #: the grid's color resolution; None for a reducer-list grid, where
+    #: every panel fits clusters of its own (no grid-wide meaning exists),
+    #: and where there is nothing to resolve (no `hue=`, clusters, legend
+    #: or colorbar: `_grid_needs_color_resolution`)
     resolution = None
+    #: the color scale of the single-axes call of every dataset, which the
+    #: grid's bundle reports: the resolution's, or the shared fit's probe's
+    #: (that very call) where nothing needed resolving; None where neither
+    #: exists (the panels' own scales are then merged)
+    resolved_scale = None
     clustered = bool(shared.get('cluster')) \
         or shared.get('n_clusters') is not None
     if not per_panel_reduce and not (clustered
                                      and panel_fit == 'independent'):
-        _rows = [_panel_frame(src[0], xf[0])
-                 for src, xf in zip(panel_sources, panel_xforms)]
-        if len({int(xf[0].shape[1]) if xf[0].ndim == 2 else 1
-                for xf in panel_xforms}) > 1:
-            # panels of unequal width (independent fits) share no axes
-            _rows = _placeholder_rows([len(xf[0]) for xf in panel_xforms],
-                                      width=panel_ndims)
-        elif len({tuple(map(str, row.columns)) for row in _rows
-                  if is_frame_dataset(row)}) > 1:
-            # panels whose DataFrames name their columns differently
-            # (independent fits: each panel has its own features) cannot be
-            # stacked by feature name; colors, legend entries and the
-            # colorbar do not depend on the names, so resolve them on the
-            # bare rows (this call refused such a grid outright)
-            _rows = [np.asarray(row) for row in _rows]
-        resolution = _resolve_grid_colors(
-            _rows, shared, panel_ndims, probe_warnings,
-            clustering=grid_clustering)
-        grid_scale = resolution['scale']
+        if _grid_needs_color_resolution(shared):
+            _rows = [_panel_frame(src[0], xf[0])
+                     for src, xf in zip(panel_sources, panel_xforms)]
+            if len({int(xf[0].shape[1]) if xf[0].ndim == 2 else 1
+                    for xf in panel_xforms}) > 1:
+                # panels of unequal width (independent fits) share no axes
+                _rows = _placeholder_rows(
+                    [len(xf[0]) for xf in panel_xforms], width=panel_ndims)
+            elif len({tuple(map(str, row.columns)) for row in _rows
+                      if is_frame_dataset(row)}) > 1:
+                # panels whose DataFrames name their columns differently
+                # (independent fits: each panel has its own features)
+                # cannot be stacked by feature name; colors, legend entries
+                # and the colorbar do not depend on the names, so resolve
+                # them on the bare rows (this call refused such a grid
+                # outright)
+                _rows = [np.asarray(row) for row in _rows]
+            resolution = _resolve_grid_colors(
+                _rows, shared, panel_ndims, probe_warnings,
+                clustering=grid_clustering)
+            grid_scale = resolved_scale = resolution['scale']
+        elif panel_fit == 'shared':
+            resolved_scale = grid_scale
         # one drawn trace per dataset (ndims=1 draws one line per COLUMN,
         # colored by column in every panel alike)
         one_trace = panel_ndims != 1 or all(
@@ -6251,12 +6368,15 @@ def _plot_panels_impl(x, panels, call_kwargs, _name='panels'):
         own_colors = (_panel_dataset_colors(shared, datasets) if one_trace
                       else [None] * n_panels)
         ungrouped = shared.get('hue') is None and not clustered
+        _starts = np.cumsum([0] + [len(xf[0]) for xf in panel_xforms])
         for i in range(n_panels):
             kw = panel_kwargs[i]
-            # the warnings about the whole call are the resolution's
-            panel_shared[i]['quiet'] = True
             if own_colors[i] is not None:
                 kw['color'] = [own_colors[i]]
+            if resolution is None:
+                continue
+            # the warnings about the whole call are the resolution's
+            panel_shared[i]['quiet'] = True
             _labels = resolution['legend_labels']
             if (kw.get('legend') is True and ungrouped and one_trace
                     and kw.get('names') is None and _labels is not None
@@ -6270,7 +6390,9 @@ def _plot_panels_impl(x, panels, call_kwargs, _name='panels'):
                 # each panel labels the ones it draws
                 kw['legend'] = True
                 panel_shared[i]['legend_names'] = resolution['legend_names']
-            if not _panel_apply_hue_scale(kw, resolution, panel_shared[i]):
+            if not _panel_apply_hue_scale(
+                    kw, resolution, panel_shared[i],
+                    rows=(int(_starts[i]), int(_starts[i + 1]))):
                 # a panel's categories are not the grid scale's: no
                 # shared mapping to claim
                 meanings_differ = True
@@ -6361,7 +6483,7 @@ def _plot_panels_impl(x, panels, call_kwargs, _name='panels'):
                 scale_order=scale_order,
                 dataset_mode=not per_panel_reduce,
                 grid_colorbar=grid_colorbar, legend_order=legend_order,
-                grid_scale=(None if resolution is None else grid_scale))
+                grid_scale=resolved_scale)
         _reemit_panel_warnings(probe_warnings, draw_warnings)
         return grid
 
@@ -6495,8 +6617,7 @@ def _plot_panels_impl(x, panels, call_kwargs, _name='panels'):
                    else [cell['colors'] for cell in cells])
         grid_colors = (_scales[0] if _scales and meanings_differ
                        else _grid_color_scale(
-                           _scales,
-                           None if resolution is None else grid_scale,
+                           _scales, resolved_scale,
                            dataset_mode=not per_panel_reduce))
 
     if animated:
@@ -10818,15 +10939,27 @@ def plot(
     # asked of a continuous hue), so no panel repeats them; ``'colorbars'``,
     # a list this call appends its resolved colorbar to INSTEAD of drawing
     # it (the grid draws one for the figure, and one legend, so the panel's
-    # own legend is not fitted either); and ``'report'``, a dict this call
-    # fills with the legend it resolved (the grid's own probe call reads
-    # it). Internal, never a user kwarg.
+    # own legend is not fitted either); ``'hue_rgb'``, set when this
+    # panel's matrix `hue=` is the grid's RGB, already resolved for the
+    # whole grid (reduced and scaled over every panel's rows), which the
+    # panel draws as it is; and ``'blend_groups'``, the grid's
+    # ``{quantized color: drawn color}`` for the groups a blended (mixture)
+    # coloring is quantized into. The grid's own RESOLUTION call
+    # (`_resolve_grid_colors`) passes ``'report'``, a dict this call fills
+    # with what it resolved (its legend, its ``{category: color}``, the
+    # RGB of a matrix hue, its blend groups), and ``'resolve_only'``: the
+    # call then returns once its colors, legend entries and colorbar are
+    # resolved, BEFORE any geometry is built or drawn. Internal, never a
+    # user kwarg.
     _panel_shared = kwargs.pop('_panel_shared', None)
     _hue_limits = (_panel_shared or {}).get('limits')
     _grid_hue_kind = (_panel_shared or {}).get('hue_kind')
     _grid_legend_names = (_panel_shared or {}).get('legend_names')
     _grid_quiet = bool((_panel_shared or {}).get('quiet'))
     _grid_report = (_panel_shared or {}).get('report')
+    _grid_resolve_only = bool((_panel_shared or {}).get('resolve_only'))
+    _grid_hue_rgb = bool((_panel_shared or {}).get('hue_rgb'))
+    _grid_blend_groups = (_panel_shared or {}).get('blend_groups')
     _grid_furniture = (_panel_shared is not None
                        and 'colorbars' in _panel_shared)
 
@@ -10862,7 +10995,8 @@ def plot(
                                     '_panel_shared', '_hue_limits',
                                     '_grid_furniture', '_grid_hue_kind',
                                     '_grid_legend_names', '_grid_quiet',
-                                    '_grid_report')}
+                                    '_grid_report', '_grid_resolve_only',
+                                    '_grid_hue_rgb', '_grid_blend_groups')}
         _panel_call.update(kwargs)
         return _plot_panels(x, _panels_spec, _panel_call, _name=_panels_name)
 
@@ -12815,6 +12949,14 @@ def plot(
     # data by category -- names= (one name per INPUT dataset) cannot apply
     # after that regrouping (F02-009).
     _hue_regrouped_counts = None
+    #: ``(kind, rows)`` of a flat matrix `hue=` as this call resolved it:
+    #: ``'rgb'`` with its rows reduced and scaled to RGB, or ``'mixture'``
+    #: with its (non-negative) weight rows -- what a `panels=` grid hands
+    #: its panels, each its own rows; None without a matrix hue
+    _resolved_matrix_hue = None
+    #: ``{quantized color: drawn color}`` of the groups a blended coloring
+    #: was quantized into (`_blend_groups`), or None
+    _blend_group_colors = None
     #: True once a MARKER-only `hue=`/`cluster=` grouping ran through
     #: `reshape_data`, which groups GLOBALLY by category: its drawn traces
     #: are categories, never datasets, however the counts happen to fall
@@ -13407,7 +13549,9 @@ def plot(
                 # points or crossing a dataset boundary; GH #291), each run
                 # colored by its quantized blended group color.
                 blended = mat2colors(cluster_labels, palette=palette)
-                group_ids, group_colors = colors2groups(blended)
+                group_ids, group_colors = _blend_groups(
+                    blended, _grid_blend_groups)
+                _blend_group_colors = dict(group_colors)
                 _cat_color = {gid: group_colors[gid]
                               for gid in dict.fromkeys(group_ids)}
                 _cat_label = {gid: str(gid) for gid in dict.fromkeys(group_ids)}
@@ -13423,7 +13567,9 @@ def plot(
                 # marker animations render one trace per group: quantize the
                 # blended colors into (near-)identical-color groups
                 blended = mat2colors(cluster_labels, palette=palette)
-                group_ids, group_colors = colors2groups(blended)
+                group_ids, group_colors = _blend_groups(
+                    blended, _grid_blend_groups)
+                _blend_group_colors = dict(group_colors)
                 xform, labels = reshape_data(xform, group_ids, labels)
                 _global_regrouped = True
                 mpl_kwargs["color"] = [
@@ -13663,11 +13809,27 @@ def plot(
         # whether or not the frame has a hierarchy (they did not: measured,
         # color_reduce= changed a flat figure's colors and was silently
         # ignored under a hierarchy).
-        if hue_is_matrix and _matrix_hue_wants_rgb(hue_array,
-                                                   color_reduce,
-                                                   hue_mode):
+        if hue_is_matrix and _grid_hue_rgb:
+            # a `panels=` cell: these rows ARE the grid's RGB, reduced and
+            # scaled once over every panel's rows (scaling them again over
+            # this panel's own range drew one hue row white in one panel
+            # and black in the next)
+            hue_array = np.clip(np.asarray(hue_array, dtype=np.float64),
+                                0.0, 1.0)
+            multicolor_hue_is_rgb = True
+        elif hue_is_matrix and _matrix_hue_wants_rgb(hue_array,
+                                                     color_reduce,
+                                                     hue_mode):
             hue_array = _matrix_hue_to_rgb(hue_array, color_reduce)
             multicolor_hue_is_rgb = True
+        elif hue_is_matrix:
+            # mixture weights: a SIGNED matrix is shifted row by row
+            # (`mat2colors`), decided here for the whole matrix so every
+            # consumer -- and every panel of a grid -- blends the same rows
+            hue_array = _nonnegative_mixture_rows(hue_array)
+        if hue_is_matrix:
+            _resolved_matrix_hue = (
+                'rgb' if multicolor_hue_is_rgb else 'mixture', hue_array)
 
         # set when a categorical INTEGER/boolean hue needs its groups
         # reordered from first-appearance to sorted numeric order after
@@ -13712,7 +13874,9 @@ def plot(
             # traces
             blended = (hue_array if multicolor_hue_is_rgb
                        else mat2colors(hue_array, palette=palette))
-            group_ids, group_colors = colors2groups(blended)
+            group_ids, group_colors = _blend_groups(
+                blended, _grid_blend_groups)
+            _blend_group_colors = dict(group_colors)
             mpl_kwargs["color"] = [
                 group_colors[gid]
                 for gid in sorted(set(group_ids), key=group_ids.index)
@@ -14446,6 +14610,57 @@ def plot(
         and n_clusters is None and multicolor_hue is None
         and not isinstance(palette, collections.abc.Mapping)
         and not _looks_like_dataset_palettes(palette))
+
+    if _grid_resolve_only:
+        # a `panels=` grid's color resolution (`_resolve_grid_colors`):
+        # everything this call's colors mean is resolved by now -- the
+        # scale, the legend's entries, the colorbar -- and nothing of it
+        # depends on the geometry, so the call stops HERE, before the
+        # lines are interpolated and anything is drawn (1.2.0 review,
+        # round 3: the resolution used to draw a second full figure)
+        if _color_scales_from_cycle:
+            # the cycle colors the datasets take on a fresh axes, as both
+            # backends assign them below (a fmt= color letter takes no
+            # slot)
+            _fmts = _panel_draw_fmts(fmt, len(xform)) or []
+            _cycle_iter = iter(_palette_continuation(palette, len(xform)))
+            _drawn_colors = []
+            for _i in range(len(xform)):
+                _letter = _fmt_color_letter(
+                    _fmts[_i] if _i < len(_fmts) else None)
+                _drawn_colors.append(_letter if _letter is not None
+                                     else next(_cycle_iter, None))
+            if None not in _drawn_colors:
+                _sync_color_scales(_drawn_colors, colors_info,
+                                   colorbar_info)
+        if colorbar_info is not None and _grid_furniture:
+            _panel_shared['colorbars'].append(
+                dict(colorbar_info, font=_artist_font))
+        if (multicolor_hue is not None and not multicolor_hue_is_rgb
+                and not _grid_quiet):
+            # the one warning the drawing itself issues about the colors
+            # (`_multicolor_line_colors`): said here, for the whole grid
+            _warn_non_finite_hue(multicolor_hue)
+        if _grid_report is not None:
+            #: the scale's ``{category: color}``, keyed by the CATEGORY
+            #: (the scale itself is keyed by legend label, and a `legend=`
+            #: list may give two categories one label)
+            _by_category = colors_info
+            if (_legend_group_names is not None
+                    and isinstance(legend, (list, tuple))
+                    and len(_legend_group_names) == len(legend)):
+                _by_category = _build_colors_info(
+                    hue, multicolor_hue, cluster, n_clusters, xform,
+                    mpl_kwargs, list(_legend_group_names), palette,
+                    hue_group_labels=hue_group_labels,
+                    hierarchy_labels=_mi_colorbar_labels,
+                    legend_entries=_final_legend_entries,
+                    limits=_hue_limits)
+            _grid_report.update(
+                categories=dict(_by_category.get('categories') or {}),
+                matrix_hue=_resolved_matrix_hue,
+                blend_groups=_blend_group_colors)
+        return {'colors': colors_info}
 
     # interpolate if its a line plot. animate='morph' treats every dataset
     # as a POINT CLOUD (Hungarian-matched to its neighbors in `morph.py`),
@@ -18153,6 +18368,24 @@ def _contains_string(el):
     return False
 
 
+def _warn_non_finite_hue(hue_values):
+    """Warn, once, how many OBSERVATIONS of a per-point `hue=` (1-D values
+    or one matrix row each) are non-finite: they are drawn gray and left
+    out of the color mapping. Nothing is said when every one is finite."""
+    values = np.asarray(hue_values, dtype=np.float64)
+    if values.ndim == 1:
+        values = values.reshape(-1, 1)
+    n_bad = int(np.count_nonzero(~np.isfinite(values).all(axis=1)))
+    if n_bad:
+        from .colors import NAN_COLOR
+        warnings.warn(
+            f"{n_bad} observation(s) have non-finite (NaN/inf) "
+            f"hue/color values; they are drawn in a neutral gray "
+            f"{NAN_COLOR} and excluded from the color mapping (the "
+            "remaining observations keep their full color range).",
+            UserWarning, stacklevel=external_stacklevel())
+
+
 def _multicolor_line_colors(hue_src, orig_lengths, xform, palette, is_rgb=False,
                             warn_non_finite=True, limits=None):
     """Per-point RGB colors for multicolored lines.
@@ -18223,15 +18456,7 @@ def _multicolor_line_colors(hue_src, orig_lengths, xform, palette, is_rgb=False,
                     stacked.ravel() if stacked.shape[1] == 1 else stacked,
                     palette=palette)
         if warn_non_finite:
-            _n_bad = int(np.count_nonzero(~np.isfinite(hue_src).all(axis=1)))
-            if _n_bad:
-                from .colors import NAN_COLOR
-                warnings.warn(
-                    f"{_n_bad} observation(s) have non-finite (NaN/inf) "
-                    f"hue/color values; they are drawn in a neutral gray "
-                    f"{NAN_COLOR} and excluded from the color mapping (the "
-                    "remaining observations keep their full color range).",
-                    UserWarning, stacklevel=external_stacklevel())
+            _warn_non_finite_hue(hue_src)
 
     out, start = [], 0
     for xi in xform:
