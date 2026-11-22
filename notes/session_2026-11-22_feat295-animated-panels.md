@@ -170,3 +170,13 @@ Structure of the color/legend fix (one mechanism instead of per-item cases):
 - Plotly: `_legend_trace_look` compares line width and marker size;
   `merge_panel_legends(order=)` ranks the kept entries; a grid's legend is
   wanted by `legend=` or by `names=` alone.
+
+Layout half of round 2 (done by a subagent in a side worktree, cherry-picked):
+R1 static labeled grid at a too-small explicit `size=` clamps cubes at 50%
+(`_REFUSED_LABELED_CUBE_SHARE`), warns once with a size that works; Codex 9
+title room = tallest of first/middle/last frames (`_caption_sample_frames`),
+single-axes too (2-D figure grows upward); R11 `_wrap_shared_legend`,
+`_thin_horizontal_colorbar_ticks`; R8 `Animation.save` ->
+`FuncAnimation._init_draw` draws frame 0 before the loop (documented); R9
+example text. Left open: an animated grid's figure is not enlarged for a
+tall title (panels shrink under it).

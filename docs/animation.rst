@@ -780,7 +780,9 @@ A few things are specific to a grid:
   that needs more lines than all three runs above its room).
 * Colors, the legend and the colorbar belong to the whole grid, as in a
   static grid: each dataset keeps the color the single-axes call of all the
-  datasets gives it, ``hue=`` is mapped through one scale, and one legend
+  datasets gives it, ``hue=`` is read (categorical or continuous) and
+  mapped through one scale, a ``legend=`` list names the grid's datasets or
+  its categories, and one legend
   and/or one colorbar is drawn in a strip right of the panels. They are
   static across frames, and every rotating cube stays clear of the strip.
   ``legend_kwargs={'loc': ...}`` moves the legend's strip to another side of

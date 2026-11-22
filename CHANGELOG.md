@@ -26,7 +26,8 @@ draws into a figure the caller built, found by executing notebooks with
   unlabeled one's size, and an explicit `size=` that would leave cubes
   under half their unlabeled size raises, naming a size that works (`xlabel='', ylabel='', zlabel=''` drops the
   labels). Per-frame titles (a callable, an `'{index...}'` pattern, or a
-  list with one per panel) get their room above each panel, and
+  list with one per panel) get their room above each panel, sized for the
+  tallest of the first, middle and last frames' titles, and
   `animate={...}` dictionaries work as for a single plot.
   Without `size=`, the figure is sized by the grid (3.2 in per panel each
   way, at least 6.4 in wide) instead of matplotlib's fixed 6.4 x 4.8 in, so a
@@ -34,7 +35,10 @@ draws into a figure the caller built, found by executing notebooks with
   widened by a shared legend or colorbar strip and made taller by a
   caption. A static grid's default size is unchanged, except as noted for
   axis labels under "Fixed".
-  `on_frame=` is called once per frame for the whole figure, with a
+  `on_frame=` is called once per frame drawn, for the whole figure (a
+  save draws frame 0 twice: matplotlib draws it once while setting up and
+  again as the first frame, so a callback must give the same result when
+  called again for the same frame), with a
   `FrameContext` whose `axes` is a tuple of the panel axes and whose new
   `panels` field holds one per-panel context each. `return_model=True`
   returns the panel bundle with `'animation'` added. Refused with an error
@@ -170,8 +174,25 @@ draws into a figure the caller built, found by executing notebooks with
   the canvas. A labeled panel's cube is now drawn smaller until its labels
   fit its own cell; where that would leave the cubes very small the
   default figure grows in the direction that limits them (a 1 x 4 grid of
-  labeled 3-D panels is wider than 6.4 in), and an explicit `size=` is
-  honored as given. Grids without axis labels are unchanged.
+  labeled 3-D panels is wider than 6.4 in). An explicit `size=` is
+  honored as given; where it cannot hold the labeled grid legibly, the
+  cubes are kept at half their unlabeled size at least and one
+  `UserWarning` names a size that works (and
+  `xlabel='', ylabel='', zlabel=''` as the alternative). Grids without
+  axis labels are unchanged.
+- **An animated title that grows after the first frame stays on the
+  canvas.** Room for a per-frame `title=` is sized for the tallest of the
+  first, middle and last frames' titles (it was sized for frame 0), in a
+  grid and in a single plot; a 2-D animation's figure grows upward for a
+  title taller than its default margin (a fixed eight-line title left the
+  canvas).
+- **A shared grid legend too wide for its figure is wrapped.** With a
+  small explicit `size=`, long legend labels were clipped at the canvas
+  edge; they are wrapped onto more lines instead.
+- **A horizontal colorbar's tick labels do not overlap.** A top or bottom
+  colorbar of a continuous `hue=` with long tick labels (values around
+  1e-4) gets fewer ticks until its labels are clear of each other;
+  `ticks=` given by the caller are kept.
 - **A failed `panels=` call leaves no figure behind.** Whatever makes a
   grid call raise (a refused combination, an unknown `predict=` model, a
   `title=`/`caption=` callable that raises, a failed save), every figure
