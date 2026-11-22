@@ -5482,6 +5482,27 @@ def _add_shared_furniture(fig, panel_axes, legend_spec, colorbar_info,
         box = cax.get_tightbbox(_measurement_renderer(fig))
         strip['colorbar_in'] = box.width / fig.dpi
 
+    if strip['legend'] is not None and strip['side'] in (
+            'right', 'left', 'top', 'bottom'):
+        # a legend wider than the figure can give it was clipped at the
+        # canvas' edge: a top/bottom legend wider than the figure (already
+        # down to one column), or a side legend at an explicit `size=`
+        # (the default figure widens by the legend instead) wider than
+        # what the grid's 30% floor and the colorbar leave. Its labels
+        # are wrapped until it fits.
+        if strip['side'] in ('top', 'bottom'):
+            limit_in = width_in - 2 * pad
+        elif widen:
+            limit_in = np.inf
+        else:
+            limit_in = 0.7 * width_in - 2 * pad - (
+                strip['colorbar_in'] + pad if strip['colorbar_in'] else 0.0)
+        if strip['legend_in'][0] > limit_in:
+            strip['legend'].remove()
+            strip['legend'], strip['legend_in'] = _wrap_shared_legend(
+                fig, handles, labels, _call, limit_in)
+            strip['legend'].set_gid(SHARED_LEGEND_GID)
+
     # the room each side's strip takes (inches)
     legend_w, legend_h = strip['legend_in']
     side = strip['side']
@@ -5551,7 +5572,79 @@ def _add_shared_furniture(fig, panel_axes, legend_spec, colorbar_info,
             shrink=_SHARED_COLORBAR_HEIGHT,
             **({} if ticks is None else {'ticks': ticks})))
     _place_shared_furniture(fig, strip)
+    if (strip['colorbar'] is not None and ticks is None
+            and colorbar_info['kind'] == 'continuous'):
+        # (a top/bottom bar: its tick labels must not run into each other)
+        _thin_horizontal_colorbar_ticks(fig, strip['colorbar'])
     return strip
+
+
+#: the fewest characters a wrapped shared-legend line is given
+_SHARED_LEGEND_MIN_WRAP = 12
+
+
+def _wrap_shared_legend(fig, handles, labels, call, limit_in):
+    """Draw a grid's shared legend with its labels WRAPPED so that it is
+    no wider than `limit_in` inches, and return ``(legend, (width,
+    height))`` in inches, measured on a real draw.
+
+    Every label is broken at spaces into lines of at most the same number
+    of characters (a single longer word is broken), and that number is
+    lowered until the legend fits or reaches `_SHARED_LEGEND_MIN_WRAP`
+    (the legend is then as narrow as it gets). A label holding mathtext
+    (``$...$``) is left whole: breaking it could split a formula. `call`
+    is the keyword arguments of the `Figure.legend` call that drew the
+    unwrapped legend.
+    """
+    import textwrap
+    labels = [str(label) for label in labels]
+    chars = max([len(label) for label in labels] + [1])
+    while True:
+        wrapped = [label if label.count('$') >= 2
+                   else (textwrap.fill(label, width=chars) or label)
+                   for label in labels]
+        legend = fig.legend(handles, wrapped, **call)
+        box = legend.get_window_extent(_measurement_renderer(fig))
+        size_in = (box.width / fig.dpi, box.height / fig.dpi)
+        if size_in[0] <= limit_in or chars <= _SHARED_LEGEND_MIN_WRAP:
+            return legend, size_in
+        legend.remove()
+        chars = max(_SHARED_LEGEND_MIN_WRAP,
+                    min(chars - 1, int(chars * limit_in / size_in[0])))
+
+
+def _thin_horizontal_colorbar_ticks(fig, cbar, gap_px=4.0):
+    """Give a HORIZONTAL colorbar fewer ticks until its tick labels stand
+    clear of each other (at least `gap_px` apart), measured on a real
+    draw.
+
+    matplotlib picks a horizontal colorbar's ticks without regard to how
+    wide their labels are, so values that need many digits (around 1e-4:
+    ``0.00005``, ``0.00010``, ...) were drawn into each other. The ticks
+    stay at round values (`MaxNLocator`), down to two of them. Only for
+    ticks hypertools chose: the caller's own ``ticks`` and a discrete
+    bar's one tick per group are never dropped. A vertical colorbar's
+    labels are stacked and cannot collide this way.
+    """
+    if getattr(cbar, 'orientation', None) != 'horizontal':
+        return
+    from matplotlib.ticker import MaxNLocator
+
+    def _labels():
+        renderer = _measurement_renderer(fig)
+        return sorted((label.get_window_extent(renderer)
+                       for label in cbar.ax.xaxis.get_ticklabels()
+                       if label.get_visible() and label.get_text()),
+                      key=lambda box: box.x0)
+
+    boxes = _labels()
+    bins = len(boxes) - 1
+    while bins > 1 and any(left.x1 + gap_px > right.x0
+                           for left, right in zip(boxes, boxes[1:])):
+        bins -= 1
+        cbar.locator = MaxNLocator(nbins=bins, steps=[1, 2, 2.5, 5, 10])
+        cbar.update_ticks()
+        boxes = _labels()
 
 
 def _place_shared_furniture(fig, strip):
@@ -7921,7 +8014,10 @@ def plot(
         'bottom'}`` (all keys optional; ``location`` defaults to
         ``'right'``, the same side as the legend -- when both a legend and
         a right-side colorbar are shown, the figure is widened so neither
-        is clipped or overlaps the other). Raises ``ValueError`` if
+        is clipped or overlaps the other). A ``'top'``/``'bottom'``
+        matplotlib colorbar of a continuous `hue` is given fewer ticks
+        where its tick labels would run into each other (your own
+        ``ticks`` are never dropped). Raises ``ValueError`` if
         requested with no color mapping available at all (e.g. a single
         dataset with no `hue`/`cluster`). A `panels=` grid draws ONE
         colorbar for the whole figure, over one color scale shared by
@@ -9575,7 +9671,12 @@ def plot(
         one entry per dataset. `legend_kwargs=` styles the one legend; a
         ``loc``/``bbox_to_anchor`` (plotly: ``x``/``y``) in it places
         that legend in FIGURE coordinates and no strip is reserved for
-        it. A `colorbar=` ``location`` other than ``'right'`` attaches
+        it. A shared matplotlib legend wider than the figure can give it
+        -- above or below the grid, or beside it at an explicit `size=`
+        (the default figure widens by the legend instead) -- has its
+        labels wrapped onto several lines instead of being clipped
+        (labels with ``$...$`` mathtext are left whole). A `colorbar=`
+        ``location`` other than ``'right'`` attaches
         the one colorbar to that side of the whole grid. No legend or
         colorbar is added that the call did not ask for. On the returned
         matplotlib figure the shared legend is a figure-level legend
@@ -9655,12 +9756,21 @@ def plot(
         made taller by a `caption=`, and enlarged for axis labels as
         just described. A STATIC 3-D grid keeps its axis labels inside
         each panel the same way (its default figure grows where the
-        cubes would otherwise become very small; an explicit `size=` is
-        honored). `caption=` adds a line of text under the grid, updated
+        cubes would otherwise become very small). An explicit `size=` is
+        always honored for a static grid: where it cannot hold the
+        labeled grid legibly -- a cube would be under half its unlabeled
+        size, or a panel's own labels would be drawn over each other --
+        the cubes are kept at half their unlabeled size, so the labels
+        may overlap, and one ``UserWarning`` names a size that works and
+        the alternative ``xlabel='', ylabel='', zlabel=''``.
+        `caption=` adds a line of text under the grid, updated
         every frame. A per-frame `title=` (callable or ``{index}``
         pattern, one for all panels or a list with one per panel) is
-        given its room above each panel like a fixed title. `on_frame=` is called ONCE per frame for the whole
-        figure: its ``FrameContext`` has ``axes`` as a tuple of the panel
+        given its room above each panel like a fixed title, sized for
+        the tallest of the first, middle and last frames' titles (see
+        `title=`). `on_frame=` is called once for the whole figure each
+        time a frame is drawn, not once per panel (see `on_frame=`: a
+        save draws frame 0 twice): its ``FrameContext`` has ``axes`` as a tuple of the panel
         axes, ``artists`` and ``datasets`` as every panel's in panel
         order, and ``panels`` as one ordinary per-panel ``FrameContext``
         each (that panel's own axes, artists and reveal state).
@@ -16621,6 +16731,10 @@ def _add_colorbar(fig, ax, colorbar_info, font=None, attached=False):
         if label:
             cbar.set_label(label)
         _apply_font_to_colorbar(cbar, font)
+        if ticks is None and colorbar_info['kind'] == 'continuous':
+            # (a top/bottom bar: its tick labels must not run into each
+            # other)
+            _thin_horizontal_colorbar_ticks(fig, cbar)
 
     # A VERTICAL discrete colorbar ('right'/'left') must read top-to-bottom
     # in the SAME order as the legend (first group at the TOP) -- matplotlib's

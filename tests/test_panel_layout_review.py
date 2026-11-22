@@ -566,3 +566,127 @@ def test_a_static_labeled_grid_that_fits_its_size_does_not_warn(
     assert not messages
     _assert_labels_clear(fig, 4)
     assert _own_label_overlaps(fig, 4) == 0
+
+
+# --------------------------------------------------------------------------
+# Round 2, R11a: a shared legend wider than its figure can hold
+# --------------------------------------------------------------------------
+
+WORDY_NAMES = [f'a very long label indeed that goes on and on for dataset '
+               f'{i} of the experiment' for i in range(4)]
+
+
+@pytest.mark.parametrize('ndims', [2, 3])
+@pytest.mark.parametrize('loc', [None, 'center left', 'upper center',
+                                 'lower center'])
+def test_a_legend_too_wide_for_an_explicit_size_is_wrapped_not_clipped(
+        loc, ndims):
+    """The legend of four 78-character names was 547 px wide on a 400 px
+    canvas and cut off at its edge. Its labels are wrapped."""
+    fig = hyp.plot(DATA, '-', panels=(2, 2), ndims=ndims, size=(4, 3),
+                   legend=WORDY_NAMES, show=False,
+                   legend_kwargs={} if loc is None else {'loc': loc})
+    assert tuple(fig.get_size_inches()) == (4.0, 3.0)
+    renderer = _draw(fig)
+    width, height = fig.canvas.get_width_height()
+    legend = _legend(fig)
+    box = legend.get_window_extent(renderer)
+    assert box.x0 >= -0.5 and box.x1 <= width + 0.5
+    assert box.y0 >= -0.5 and box.y1 <= height + 0.5
+    texts = [text.get_text() for text in legend.get_texts()]
+    assert any('\n' in text for text in texts)
+    assert [' '.join(text.split()) for text in texts] == WORDY_NAMES
+    for text in legend.get_texts():
+        inner = text.get_window_extent(renderer)
+        assert inner.x0 >= 0 and inner.x1 <= width
+    if ndims == 2:
+        for ax in fig.axes[:4]:
+            assert not _shrunk(box).overlaps(ax.get_window_extent(renderer))
+
+
+def test_a_long_legend_at_the_default_size_widens_the_figure_unwrapped():
+    fig = hyp.plot(DATA, '-', panels=(2, 2), ndims=2, legend=WORDY_NAMES,
+                   show=False)
+    renderer = _draw(fig)
+    legend = _legend(fig)
+    assert [text.get_text() for text in legend.get_texts()] == WORDY_NAMES
+    assert legend.get_window_extent(renderer).x1 <= (
+        fig.canvas.get_width_height()[0] + 0.5)
+
+
+def test_a_mathtext_legend_label_is_never_broken():
+    names = [r'$\alpha + \beta + \gamma + \delta + \epsilon + \zeta$ '
+             r'and then some more words after the formula'] + WORDY_NAMES[1:]
+    fig = hyp.plot(DATA, '-', panels=(2, 2), ndims=2, size=(4, 3),
+                   legend=names, show=False)
+    texts = [text.get_text() for text in _legend(fig).get_texts()]
+    assert texts[0] == names[0]
+    assert all('\n' in text for text in texts[1:])
+
+
+# --------------------------------------------------------------------------
+# Round 2, R11b: a top/bottom colorbar's tick labels
+# --------------------------------------------------------------------------
+
+def _colorbar_tick_boxes(fig):
+    """The drawn boxes of the (one) colorbar's visible tick labels along
+    its long axis, left to right, and their texts."""
+    renderer = _draw(fig)
+    (bar,) = [ax for ax in fig.axes if ax.get_label() == '<colorbar>']
+    place = bar.get_position()
+    axis = bar.xaxis if place.width > place.height else bar.yaxis
+    labels = [label for label in axis.get_ticklabels()
+              if label.get_visible() and label.get_text()]
+    boxes = [label.get_window_extent(renderer) for label in labels]
+    order = np.argsort([box.x0 for box in boxes])
+    return ([boxes[i] for i in order],
+            [labels[i].get_text() for i in order], bar)
+
+
+@pytest.mark.parametrize('scale', [1e-4, 1.0, 1e5], ids=['1e-4', '1', '1e5'])
+@pytest.mark.parametrize('location', ['top', 'bottom'])
+@pytest.mark.parametrize('call', [
+    dict(panels=(2, 2)), dict(panels=(2, 2), ndims=2), dict(panels=(1, 4)),
+    dict(panels=(1, 2), ndims=2, size=(3, 2.5)), dict(),
+    dict(animate=True, duration=1, frame_rate=4, panels=(1, 2)),
+], ids=['2x2-3d', '2x2-2d', '1x4', 'small', 'single', 'animated'])
+def test_a_horizontal_colorbars_tick_labels_do_not_overlap(call, location,
+                                                           scale):
+    """Values around 1e-4 drew nine labels like '0.00005' into each other
+    on a top/bottom bar: it gets fewer ticks, at round values."""
+    n = (call['panels'][0] * call['panels'][1]) if 'panels' in call else 1
+    hue = [np.linspace(0, scale * (i + 1), 30) for i in range(n)]
+    data = DATA[:n] if n > 1 else DATA[0]
+    result = hyp.plot(data, 'o', hue=hue if n > 1 else hue[0], show=False,
+                      colorbar={'location': location, 'label': 'a label'},
+                      title='t', **call)
+    fig = result.figure if 'animate' in call else result
+    boxes, texts, bar = _colorbar_tick_boxes(fig)
+    assert len(boxes) >= 2, texts
+    for left, right in zip(boxes, boxes[1:]):
+        assert left.x1 < right.x0, texts
+    low, high = bar.get_xlim()
+    for tick in bar.xaxis.get_majorticklocs():
+        assert low - 1e-12 * scale <= tick <= high + 1e-12 * scale
+
+
+def test_thinning_leaves_the_callers_ticks_and_vertical_bars_alone():
+    hue = [np.linspace(0, 1e-4 * (i + 1), 30) for i in range(4)]
+    mine = [0.0, 0.5e-4, 1e-4, 1.5e-4, 2e-4, 2.5e-4, 3e-4, 3.5e-4, 4e-4]
+    fig = hyp.plot(DATA, 'o', hue=hue, panels=(2, 2), show=False,
+                   colorbar={'location': 'top', 'ticks': mine})
+    _, _, bar = _colorbar_tick_boxes(fig)
+    assert np.allclose(bar.xaxis.get_majorticklocs(), mine)
+    plt.close('all')
+    fig = hyp.plot(DATA, 'o', hue=hue, panels=(2, 2), show=False,
+                   colorbar=True)
+    boxes, texts, _ = _colorbar_tick_boxes(fig)
+    assert len(texts) == 9, texts
+
+
+def test_a_discrete_horizontal_colorbar_keeps_one_tick_per_group():
+    hue = [['a'] * 15 + ['b'] * 15, ['b'] * 15 + ['c'] * 15]
+    fig = hyp.plot(DATA[:2], 'o', hue=hue, panels=(1, 2), show=False,
+                   colorbar={'location': 'bottom'})
+    _, texts, _ = _colorbar_tick_boxes(fig)
+    assert texts == ['a', 'b', 'c']
