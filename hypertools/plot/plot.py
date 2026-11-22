@@ -4376,6 +4376,26 @@ def _grow_figure_downward(fig, extra_in):
                  pos.width, pos.height * h_in / new_h_in], which=which)
 
 
+def _grow_figure_rightward(fig, extra_in):
+    """Make `fig` wider by `extra_in` inches, adding the room on the
+    RIGHT: every axes keeps its absolute size and its distance from the
+    left, top and bottom edges (`_grow_figure_downward`'s twin)."""
+    w_in, h_in = fig.get_size_inches()
+    new_w_in = w_in + float(extra_in)
+    try:
+        fig.set_layout_engine('none')
+    except Exception:
+        pass
+    placed = [(axis, axis.get_position(original=True), axis.get_position())
+              for axis in fig.axes]
+    fig.set_size_inches(new_w_in, h_in)
+    for axis, original, active in placed:
+        for which, pos in (('original', original), ('active', active)):
+            axis.set_position(
+                [pos.x0 * w_in / new_w_in, pos.y0,
+                 pos.width * w_in / new_w_in, pos.height], which=which)
+
+
 def _blank_bottom_in(fig):
     """How many inches at the bottom of `fig` hold nothing: the distance
     from the canvas' bottom edge up to the lowest thing drawn (any axes,
@@ -4434,7 +4454,9 @@ def _add_caption(fig, text, font=None, family=None):
 def _panel_probe(data, kw, ndims, caught_warnings):
     """Fit one panel grid's pipeline exactly as the equivalent single-axes
     call fits it -- by MAKING that call (``return_model=True``, figure
-    thrown away) -- and hand back ``(xform, pipeline, clustering)``: the analyzed rows
+    thrown away) -- and hand back ``(xform, pipeline, clustering, colors)``
+    (``colors`` being the call's resolved color scale, its bundle's
+    ``'colors'``, which a grid shares across its panels): the analyzed rows
     (one array per input dataset; for ``ndims`` > 3 the 3-D display
     projection the single-axes call drew, since a reduce=None panel cannot
     draw wider rows, P4), the fitted pipeline, and the clustering the
@@ -4483,7 +4505,7 @@ def _panel_probe(data, kw, ndims, caught_warnings):
     if models.get('cluster_labels') is not None:
         clustering = (models['cluster_labels'], _panel_cluster_model(kw),
                       _hard_cluster_categories(models['cluster_labels']))
-    return xform, probe.get('pipeline'), clustering
+    return xform, probe.get('pipeline'), clustering, probe.get('colors')
 
 
 def _panel_cluster_model(kw):
@@ -4533,6 +4555,530 @@ def _reemit_panel_warnings(probe_caught, draw_caught):
 #: side (inches) of one panel's cell in an animated `panels=` grid's default
 #: figure (no `size=`); see `_plot_panels`
 _ANIMATED_PANEL_CELL_INCHES = 3.2
+
+
+# --------------------------------------------------------------------------
+# A `panels=` grid's shared colors, legend and colorbar (1.2): color means
+# one thing across the whole figure, and what explains it is drawn once.
+# --------------------------------------------------------------------------
+
+#: ``gid`` of the ONE legend a `panels=` grid draws for the whole figure (a
+#: figure-level legend: ``fig.legends``), and of the axes of its one
+#: colorbar -- how a caller finds them on the returned figure.
+SHARED_LEGEND_GID = 'hypertools-shared-legend'
+SHARED_COLORBAR_GID = 'hypertools-shared-colorbar'
+
+#: blank room (inches) left of, between and right of the shared legend and
+#: colorbar in the strip a grid reserves for them beside its panels
+_SHARED_STRIP_PAD_IN = 0.15
+
+#: width (inches) of the shared colorbar's bar, and its height as a
+#: fraction of the grid's
+_SHARED_COLORBAR_WIDTH_IN = 0.18
+_SHARED_COLORBAR_HEIGHT = 0.6
+
+
+class _PanelFurnitureConflict(Exception):
+    """The panels' legends (or colorbars) cannot be drawn once for the
+    figure: one label looks different in two panels, so a single entry
+    would be wrong for one of them. The grid then keeps them per panel."""
+
+
+def _panel_meanings_differ(kw, per_panel_reduce, panel_fit):
+    """Whether the grid's colors mean something DIFFERENT in every panel,
+    so each panel must keep its own legend/colorbar: clusters
+    (`cluster=`/`n_clusters=`) fit separately per panel -- under
+    ``panel_fit='independent'``, or in a reducer-list grid, where each
+    panel clusters its own embedding -- and forecast clusters
+    (`forecast_cluster=`/`forecast_n_clusters=`), which every panel fits
+    over its own forecasts. Cluster 1 of one panel is then not cluster 1
+    of the next."""
+    clustered = bool(kw.get('cluster')) or kw.get('n_clusters') is not None
+    if clustered and (per_panel_reduce or panel_fit == 'independent'):
+        return True
+    return (kw.get('predict') is not None
+            and (bool(kw.get('forecast_cluster'))
+                 or kw.get('forecast_n_clusters') is not None))
+
+
+def _panel_dataset_colors(grid_kw, sources):
+    """The color each dataset takes in the single-axes call of ALL of them
+    (`grid_kw`: the grid's own kwargs), one per dataset -- what a one-panel-
+    per-dataset grid draws dataset i in, so a color names one dataset
+    across the figure. An entry is None where the single-axes call colors
+    the dataset some other way that each panel already reproduces: an
+    explicit `color=`, a color letter in `fmt=`, a per-dataset or
+    ``{category: color}`` `palette=`, a `hue=`/`cluster=` grouping, or a
+    MultiIndex frame (drawn as several traces)."""
+    n = len(sources)
+    none = [None] * n
+    if (grid_kw.get('hue') is not None or grid_kw.get('cluster')
+            or grid_kw.get('n_clusters') is not None
+            or grid_kw.get('color') is not None
+            or grid_kw.get('colors') is not None):
+        return none
+    palette = grid_kw.get('palette')
+    palette = 'hls' if palette is None else palette
+    if (isinstance(palette, collections.abc.Mapping)
+            or _looks_like_dataset_palettes(palette)):
+        return none
+    if any(isinstance(getattr(src, 'index', None), pd.MultiIndex)
+           for src in sources):
+        return none
+    fmts = _panel_draw_fmts(grid_kw.get('fmt'), n)
+    cycle = iter(_palette_continuation(palette, n))
+    colors = []
+    for i in range(n):
+        letter = _fmt_color_letter(
+            fmts[i] if fmts is not None and i < len(fmts) else None)
+        color = None if letter is not None else next(cycle, None)
+        colors.append(None if color is None
+                      else tuple(float(v) for v in color[:3]))
+    return colors
+
+
+def _panel_color_probe(lengths, grid_kw):
+    """The color scale the single-axes call of every dataset resolves for
+    the grid's `hue=` (its bundle's ``'colors'``), for a grid with no such
+    call to read it from (``panel_fit='independent'`` fits each panel
+    alone): that call's color resolution, run on placeholder rows of the
+    datasets' own lengths with no analysis. None when it cannot be
+    resolved (the grid then keeps per-panel legends and colorbars)."""
+    rows = [np.column_stack([np.linspace(0.0, 1.0, max(int(n), 1)),
+                             np.linspace(1.0, 0.0, max(int(n), 1)) ** 2,
+                             np.sin(np.arange(max(int(n), 1)))])
+            for n in lengths]
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')
+            probe = plot(rows, hue=grid_kw.get('hue'),
+                         palette=grid_kw.get('palette') or 'hls',
+                         fmt=grid_kw.get('fmt'), reduce=None, show=False,
+                         return_model=True, backend='matplotlib')
+    except Exception:  # noqa: BLE001 - reported by the panel calls instead
+        return None
+    if isinstance(probe.get('fig'), plt.Figure):
+        plt.close(probe['fig'])
+    return probe.get('colors')
+
+
+def _hue_label_strings(hue):
+    """The distinct category labels of a (panel's) categorical `hue=`, as
+    the strings the resolved color scale keys its categories by; missing
+    labels (None/NaN) are not categories."""
+    out = []
+
+    def _walk(value):
+        if isinstance(value, (str, bytes)) or np.ndim(value) == 0:
+            if not is_missing_label(value) and str(value) not in out:
+                out.append(str(value))
+            return
+        for item in (value.tolist() if isinstance(value, np.ndarray)
+                     else list(value)):
+            _walk(item)
+
+    _walk(hue)
+    return out
+
+
+def _panel_apply_hue_scale(kw, scale, shared):
+    """Make one panel (kwargs `kw`, already narrowed to its dataset) draw
+    its `hue=` under the GRID's color scale `scale` (the single-axes
+    call's ``'colors'``): a continuous hue is mapped over the grid-wide
+    value range (``shared['limits']``, see `plot`'s ``_panel_shared``),
+    and a categorical hue through the grid's own ``{category: color}``
+    mapping, narrowed to the categories this panel has (a `palette=`
+    mapping may only name categories the plot draws). Returns False when
+    the panel has a category the scale does not know -- the grid then
+    cannot claim one shared mapping."""
+    if not isinstance(scale, dict) or kw.get('hue') is None:
+        return True
+    if scale.get('kind') == 'continuous':
+        shared['limits'] = (float(scale['vmin']), float(scale['vmax']))
+        return True
+    categories = scale.get('categories') or {}
+    if scale.get('kind') != 'discrete' or not categories \
+            or _looks_like_dataset_palettes(kw.get('palette')):
+        return True
+    try:
+        present = _hue_label_strings(kw['hue'])
+    except TypeError:
+        return False
+    if any(label not in categories for label in present):
+        return False
+    if present:
+        kw['palette'] = {label: tuple(categories[label])
+                         for label in categories if label in present}
+    return True
+
+
+def _legend_handle_signature(handle, color=True):
+    """What a legend handle LOOKS like, as a comparable value: its artist
+    type, line/marker/hatch styling and (with `color`) its colors. Two
+    entries with the same label and the same signature are the same
+    entry."""
+    from matplotlib.colors import to_rgba_array
+
+    def _plain(value):
+        try:
+            return np.round(np.asarray(value, dtype=float), 4).tolist()
+        except (TypeError, ValueError):
+            return repr(value)
+
+    signature = [type(handle).__name__]
+    for getter in ('get_linestyle', 'get_linewidth', 'get_marker',
+                   'get_markersize', 'get_alpha', 'get_hatch', 'get_sizes'):
+        if hasattr(handle, getter):
+            signature.append((getter, _plain(getattr(handle, getter)())))
+    if color:
+        for getter in ('get_color', 'get_markerfacecolor',
+                       'get_markeredgecolor', 'get_facecolor',
+                       'get_edgecolor'):
+            if not hasattr(handle, getter):
+                continue
+            value = getattr(handle, getter)()
+            try:
+                value = np.round(to_rgba_array(value), 4).tolist()
+            except (TypeError, ValueError):
+                value = repr(value)
+            signature.append((getter, value))
+    return repr(signature)
+
+
+def _merge_panel_legends(panel_axes):
+    """The ONE legend a grid draws for its panels' legends: ``(handles,
+    labels, template)``, or None when no panel drew a legend. `template`
+    is the first panel legend, whose text styling the shared one copies.
+
+    The entries are the union of the panels', without duplicates: the data
+    entries in panel (dataset) order, then the `predict=`/`truth=` overlay
+    entries. Two entries are one when they have the same label and look
+    the same. An overlay entry that differs between panels only in color
+    (one model's forecasts, each continuing a dataset of another color) is
+    one entry in the neutral `forecast.FORECAST_LEGEND_COLOR`, the glyph
+    the single-axes legend gives a label that spans several colors. Any
+    other label that looks different in two panels raises
+    `_PanelFurnitureConflict`: one entry would be wrong for a panel.
+    """
+    from matplotlib.lines import Line2D
+    from .forecast import FORECAST_LEGEND_COLOR
+    entries = []
+    template = None
+    for ax in panel_axes:
+        legend = ax.get_legend()
+        if legend is None:
+            continue
+        template = legend if template is None else template
+        overlay = {getattr(line, '_hyp_forecast_label', None)
+                   for line in ax.lines
+                   if getattr(line, '_hyp_forecast_role', None)
+                   in ('static', 'live')}
+        overlay |= {getattr(line, '_hyp_truth_label', None)
+                    for line in ax.lines}
+        overlay = {str(label) for label in overlay if label is not None}
+        for handle, text in zip(legend.legend_handles, legend.get_texts()):
+            label = text.get_text()
+            entry = {'label': label, 'handle': handle,
+                     'look': _legend_handle_signature(handle),
+                     'shape': _legend_handle_signature(handle, color=False),
+                     'overlay': label in overlay}
+            same = [e for e in entries if e['label'] == label]
+            if not same:
+                entries.append(entry)
+            elif any(e['look'] == entry['look'] for e in same):
+                continue
+            elif (entry['overlay'] and isinstance(handle, Line2D)
+                    and any(e['overlay'] and e['shape'] == entry['shape']
+                            for e in same)):
+                for e in same:
+                    if e['overlay'] and e['shape'] == entry['shape']:
+                        e['neutral'] = True
+            else:
+                raise _PanelFurnitureConflict(label)
+    if template is None:
+        return None
+    ordered = ([e for e in entries if not e['overlay']]
+               + [e for e in entries if e['overlay']])
+    handles = []
+    for entry in ordered:
+        handle = entry['handle']
+        if entry.get('neutral'):
+            handle = Line2D(
+                [], [], color=FORECAST_LEGEND_COLOR,
+                linestyle=handle.get_linestyle(),
+                linewidth=handle.get_linewidth(), alpha=handle.get_alpha(),
+                marker=handle.get_marker(),
+                markersize=handle.get_markersize(), label=entry['label'])
+        handles.append(handle)
+    return handles, [e['label'] for e in ordered], template
+
+
+def _merge_panel_colorbars(infos, order=None):
+    """The ONE colorbar a grid draws for its panels' colorbars (`infos`:
+    each panel's `_build_colorbar_info` result), or None without any.
+    Continuous scales over one palette merge into their common value range
+    (under a grid's shared limits they are already identical); discrete
+    scales into the union of their ``label -> color`` pairs, in `order`
+    (the grid scale's category order) when it covers them, else in panel
+    order. A label colored differently in two panels, or mixed kinds,
+    raises `_PanelFurnitureConflict`."""
+    if not infos:
+        return None
+    merged = dict(infos[0])
+    kinds = {info['kind'] for info in infos}
+    if kinds == {'continuous'}:
+        if any(repr(info['palette']) != repr(merged['palette'])
+               for info in infos):
+            raise _PanelFurnitureConflict('palette')
+        merged['vmin'] = min(info['vmin'] for info in infos)
+        merged['vmax'] = max(info['vmax'] for info in infos)
+        return merged
+    if kinds != {'discrete'}:
+        raise _PanelFurnitureConflict('kind')
+    mapping = {}
+    for info in infos:
+        for label, color in zip(info['labels'], np.asarray(info['colors'])):
+            color = np.asarray(color, dtype=float)[:3]
+            if str(label) not in mapping:
+                mapping[str(label)] = (label, color)
+            elif not np.allclose(mapping[str(label)][1], color, atol=1e-6):
+                raise _PanelFurnitureConflict(str(label))
+    keys = list(mapping)
+    if order is not None and set(keys) <= set(order):
+        keys = [key for key in order if key in mapping]
+    merged['labels'] = [mapping[key][0] for key in keys]
+    merged['colors'] = np.asarray([mapping[key][1] for key in keys])
+    return merged
+
+
+def _merge_panel_color_scales(scales, dataset_mode=False, names=None):
+    """A grid bundle's ``'colors'``: the one color scale its panels share,
+    merged from each panel's own (`scales`, the panel bundles'
+    ``'colors'``). Continuous scales are the grid's common one; discrete
+    scales merge into the union of their groups -- every dataset's color,
+    in panel order, for a one-panel-per-dataset grid (`dataset_mode`) with
+    nothing grouping the data (labeled with `names`, the grid's `legend=`
+    list, when given), otherwise ``label -> color`` by name. Where
+    the panels' scales do not combine (colors that mean different things
+    per panel), the first panel's is returned as before and each panel's
+    own is in ``panel_models[i]['colors']``."""
+    from matplotlib.colors import BoundaryNorm, ListedColormap
+    scales = [s for s in scales if isinstance(s, dict)]
+    if not scales:
+        return None
+    first = scales[0]
+    if len(scales) == 1 or {s.get('kind') for s in scales} != {'discrete'}:
+        return first
+    if any(s.get('colors') is None for s in scales):
+        return first
+    ungrouped = dataset_mode and all(
+        len(s['colors']) == 1 for s in scales)
+    if ungrouped:
+        colors = [np.asarray(s['colors'][0], dtype=float)[:3]
+                  for s in scales]
+        if names is not None and len(names) == len(scales):
+            labels, named = list(names), True
+        else:
+            labels, named = [i + 1 for i in range(len(scales))], False
+    else:
+        try:
+            merged = _merge_panel_colorbars(
+                [{'kind': 'discrete', 'labels': s['labels'],
+                  'colors': s['colors']} for s in scales])
+        except _PanelFurnitureConflict:
+            return first
+        colors, labels = list(merged['colors']), merged['labels']
+        named = any(s.get('categories') for s in scales)
+    colors = np.asarray(colors)
+    return dict(first, cmap=ListedColormap(colors),
+                norm=BoundaryNorm(np.arange(len(colors) + 1) - 0.5,
+                                  len(colors)),
+                colors=colors, labels=list(labels),
+                categories=({str(label): tuple(color)
+                             for label, color in zip(labels, colors)}
+                            if named else {}))
+
+
+def _shared_legend_call(template, legend_kwargs):
+    """``(kwargs, placed)`` for the grid's one figure-level legend: the
+    styling hypertools draws a legend with, in the panels' own text font
+    (`template` is one of their legends), under the caller's
+    `legend_kwargs=`. `placed` says the caller positioned it
+    (``loc``/``bbox_to_anchor``): those then place the one legend in
+    FIGURE coordinates and no strip is reserved for it."""
+    call = dict(loc='center left', borderaxespad=0.0, frameon=False)
+    texts = template.get_texts()
+    if texts:
+        call['prop'] = texts[0].get_fontproperties()
+    user = dict(legend_kwargs or {})
+    placed = 'loc' in user or 'bbox_to_anchor' in user
+    if 'fontsize' in user and 'prop' in call and 'prop' not in user:
+        prop = call['prop'].copy()
+        prop.set_size(user.pop('fontsize'))
+        call['prop'] = prop
+    call.update(user)
+    return call, placed
+
+
+def _add_shared_furniture(fig, panel_axes, legend_spec, colorbar_info,
+                          legend_kwargs=None, widen=True):
+    """Draw a panel grid's ONE legend and/or ONE colorbar in a strip to
+    the right of the grid, and lay the grid out beside it.
+
+    `legend_spec` is `_merge_panel_legends`' result (the panels' own
+    legends are removed here) and `colorbar_info` `_merge_panel_colorbars`'
+    (either may be None). The strip is as wide as what it holds, measured
+    on a real draw: with `widen` (no explicit `size=`) the figure grows by
+    that much, so the panels keep their size; otherwise the grid is laid
+    out in the figure's remaining width. A legend too tall for the figure
+    is wrapped into columns. A colorbar whose ``location`` is not
+    ``'right'`` is attached to the whole grid on that side instead
+    (matplotlib's own multi-axes colorbar).
+
+    Returns the strip's state for `_place_shared_furniture`, which
+    positions the legend and colorbar and is called again whenever the
+    figure is resized afterwards (the caption, an animated grid's cube
+    fit).
+    """
+    from matplotlib.cm import ScalarMappable
+    from matplotlib.colors import BoundaryNorm, ListedColormap, Normalize
+    strip = {'legend': None, 'colorbar': None, 'legend_in': (0.0, 0.0),
+             'colorbar_in': 0.0, 'panel_axes': list(panel_axes),
+             'placed': False, 'rect_right': 1.0}
+    pad = _SHARED_STRIP_PAD_IN
+    width_in, height_in = fig.get_size_inches()
+
+    if legend_spec is not None:
+        handles, labels, template = legend_spec
+        call, placed = _shared_legend_call(template, legend_kwargs)
+        for ax in panel_axes:
+            if ax.get_legend() is not None:
+                ax.get_legend().remove()
+        if not placed:
+            call['bbox_to_anchor'] = (0.5, 0.5)
+            call['bbox_transform'] = fig.transFigure
+        columns = 1
+        while True:
+            _call = dict(call)
+            if columns > 1:
+                _call['ncols'] = columns
+            legend = fig.legend(handles, labels, **_call)
+            box = legend.get_window_extent(_measurement_renderer(fig))
+            size_in = (box.width / fig.dpi, box.height / fig.dpi)
+            if (placed or 'ncols' in call or 'ncol' in call
+                    or size_in[1] <= height_in - 2 * pad
+                    or columns >= len(labels)):
+                break
+            # too tall for the figure: wrap the entries into columns
+            legend.remove()
+            columns = max(columns + 1, int(np.ceil(
+                columns * size_in[1] / (height_in - 2 * pad))))
+        legend.set_gid(SHARED_LEGEND_GID)
+        strip.update(legend=legend, placed=placed,
+                     legend_in=(0.0, 0.0) if placed else size_in)
+
+    mappable = ticklabels = None
+    if colorbar_info is not None:
+        if colorbar_info['kind'] == 'continuous':
+            mappable = ScalarMappable(
+                norm=Normalize(vmin=colorbar_info['vmin'],
+                               vmax=colorbar_info['vmax']),
+                cmap=continuous_colormap(colorbar_info['palette']))
+            ticks = colorbar_info['ticks']
+        else:
+            n = len(colorbar_info['colors'])
+            mappable = ScalarMappable(
+                norm=BoundaryNorm(np.arange(n + 1) - 0.5, n),
+                cmap=ListedColormap(colorbar_info['colors']))
+            ticks = (colorbar_info['ticks']
+                     if colorbar_info['ticks'] is not None
+                     else list(range(n)))
+            if colorbar_info['ticks'] is None:
+                ticklabels = [str(lbl) for lbl in colorbar_info['labels']]
+        mappable.set_array([])
+    in_strip = mappable is not None and colorbar_info['location'] == 'right'
+
+    def _finish(cbar):
+        if ticklabels is not None:
+            cbar.set_ticklabels(ticklabels)
+        if colorbar_info['label']:
+            cbar.set_label(colorbar_info['label'])
+        _apply_font_to_colorbar(cbar, colorbar_info.get('font'))
+        if (colorbar_info['kind'] == 'discrete'
+                and colorbar_info['location'] in ('right', 'left')):
+            # first group at the top, as the legend reads (`_add_colorbar`)
+            cbar.ax.invert_yaxis()
+        cbar.ax.set_gid(SHARED_COLORBAR_GID)
+        strip['colorbar'] = cbar
+
+    if in_strip:
+        cax = fig.add_axes([0.45, 0.2, _SHARED_COLORBAR_WIDTH_IN / width_in,
+                            0.6])
+        _finish(fig.colorbar(mappable, cax=cax,
+                             **({} if ticks is None else {'ticks': ticks})))
+        box = cax.get_tightbbox(_measurement_renderer(fig))
+        strip['colorbar_in'] = box.width / fig.dpi
+
+    strip_in = sum(part + pad for part in (strip['legend_in'][0],
+                                           strip['colorbar_in']) if part)
+    if strip_in:
+        strip_in += pad
+    # The grid is laid out in a figure WITHOUT the strip -- the figure as
+    # it is when it is about to grow by the strip, or narrowed by it under
+    # an explicit `size=` -- and the strip is then added on the right
+    # (`_grow_figure_rightward`), so the layout is exactly the legend-less
+    # grid's. (`tight_layout(rect=...)` is not: it drops the room a 3-D
+    # panel's title needs, which then pokes out of the top of the canvas.)
+    grid_in = width_in if widen else max(width_in - strip_in,
+                                         0.3 * width_in)
+    strip_in = (width_in + strip_in if widen else width_in) - grid_in
+    fig.set_size_inches(grid_in, height_in)
+    with warnings.catch_warnings():
+        # the colorbar's axes is placed by hand (below), which
+        # `tight_layout` reports as an axes it cannot lay out
+        warnings.filterwarnings(
+            'ignore', message='This figure includes Axes that are not '
+            'compatible with tight_layout')
+        # the panels were last laid out around their own legends, which
+        # are gone: one pass from there under-reserves a 3-D panel's
+        # title room (its box is aspect-constrained), a second settles it
+        for _ in range(3):
+            fig.tight_layout()
+    _grow_figure_rightward(fig, strip_in)
+    strip['rect_right'] = grid_in / (grid_in + strip_in)
+    if mappable is not None and not in_strip:
+        _finish(fig.colorbar(
+            mappable, ax=list(panel_axes),
+            location=colorbar_info['location'],
+            shrink=_SHARED_COLORBAR_HEIGHT,
+            **({} if ticks is None else {'ticks': ticks})))
+    _place_shared_furniture(fig, strip)
+    return strip
+
+
+def _place_shared_furniture(fig, strip):
+    """Position a grid's shared legend and colorbar (`strip`, from
+    `_add_shared_furniture`) in the strip right of the panels: the legend
+    first, then the colorbar, each vertically centered on the grid.
+    Idempotent, and re-run after anything resizes the figure -- the strip
+    starts at the same fraction of the figure's width, and what it holds
+    keeps its size in inches."""
+    if strip is None:
+        return
+    width_in, height_in = fig.get_size_inches()
+    boxes = [ax.get_position() for ax in strip['panel_axes']]
+    y0, y1 = min(b.y0 for b in boxes), max(b.y1 for b in boxes)
+    middle = 0.5 * (y0 + y1)
+    x = strip['rect_right'] + _SHARED_STRIP_PAD_IN / width_in
+    legend = strip['legend']
+    if legend is not None and not strip['placed']:
+        legend.set_bbox_to_anchor((x, middle), transform=fig.transFigure)
+        x += (strip['legend_in'][0] + _SHARED_STRIP_PAD_IN) / width_in
+    cbar = strip['colorbar']
+    if cbar is not None and strip['colorbar_in']:
+        height = _SHARED_COLORBAR_HEIGHT * (y1 - y0)
+        cbar.ax.set_position([x, middle - 0.5 * height,
+                              _SHARED_COLORBAR_WIDTH_IN / width_in, height])
 
 
 def _plot_panels(x, panels, call_kwargs, _name='panels'):
@@ -4679,6 +5225,9 @@ def _plot_panels(x, panels, call_kwargs, _name='panels'):
     shared_pipeline = None
     #: the warnings the probes raised, re-issued once the grid is drawn
     probe_warnings = []
+    #: the color scale the single-axes call of the whole grid resolves
+    #: (its bundle's ``'colors'``), which the panels share
+    grid_scale = None
     #: per panel: the input datasets it draws (for their index/column
     #: labels), its analyzed rows (one array per dataset), its fitted
     #: pipeline, and its narrowed kwargs
@@ -4693,13 +5242,14 @@ def _plot_panels(x, panels, call_kwargs, _name='panels'):
             panel_kwargs.append(kw)
         probes = [_panel_probe(x, kw, ndims, probe_warnings)
                   for kw in panel_kwargs]
-        panel_xforms = [xf for xf, _, _ in probes]
-        panel_pipelines = [pipe for _, pipe, _ in probes]
+        panel_xforms = [probe[0] for probe in probes]
+        panel_pipelines = [probe[1] for probe in probes]
+        grid_scale = probes[0][3]
         # each reducer panel draws EVERY dataset: its probe's labels whole
         panel_clusters = [
             None if clus is None else _panel_cluster_labels(
                 clus[0], clus[1], kw.get('cluster'), categories=clus[2])
-            for (_, _, clus), kw in zip(probes, panel_kwargs)]
+            for (_, _, clus, _), kw in zip(probes, panel_kwargs)]
     elif panel_fit == 'independent':
         # one FULL pipeline per panel: each panel's fit is byte-for-byte
         # the ``hyp.plot(datasets[i], ...)`` the caller would have written,
@@ -4718,18 +5268,18 @@ def _plot_panels(x, panels, call_kwargs, _name='panels'):
         probes = [_panel_probe(panel_sources[i], panel_kwargs[i], ndims,
                                probe_warnings)
                   for i in range(n_panels)]
-        panel_xforms = [xf for xf, _, _ in probes]
-        panel_pipelines = [pipe for _, pipe, _ in probes]
+        panel_xforms = [probe[0] for probe in probes]
+        panel_pipelines = [probe[1] for probe in probes]
         # each probe clustered its own panel's rows: replayed whole
         panel_clusters = [
             None if clus is None else _panel_cluster_labels(
                 clus[0], clus[1], kw.get('cluster'), categories=clus[2])
-            for (_, _, clus), kw in zip(probes, panel_kwargs)]
+            for (_, _, clus, _), kw in zip(probes, panel_kwargs)]
     else:
         # ONE shared fit across every dataset: run the very call the user
         # would have made without panels=, take its analyzed (pre-display-
         # rescale) data, and give each panel its own dataset's rows
-        xform, shared_pipeline, shared_clustering = _panel_probe(
+        xform, shared_pipeline, shared_clustering, grid_scale = _panel_probe(
             x, shared, ndims, probe_warnings)
         lengths = [int(xi.shape[0]) for xi in xform]
         panel_sources = [[datasets[i]] for i in range(n_panels)]
@@ -4760,6 +5310,56 @@ def _plot_panels(x, panels, call_kwargs, _name='panels'):
     # after the pipeline)
     panel_ndims = _panel_cell_ndims(
         panel_ndims, [xi for xf in panel_xforms for xi in xf])
+
+    # COLOR MEANS ONE THING ACROSS THE FIGURE (1.2). A reducer-list grid's
+    # panels each draw every dataset through the same color resolution, so
+    # they agree already. A one-panel-per-dataset grid's panels each see
+    # one dataset, so the grid resolves what the single-axes call of ALL
+    # the datasets would draw and hands every panel its share: its
+    # dataset's color (palette position i of n), its number under
+    # ``legend=True``, and the grid's `hue=` scale (one value range for a
+    # continuous hue, one category -> color mapping for a categorical one).
+    meanings_differ = _panel_meanings_differ(shared, per_panel_reduce,
+                                             panel_fit)
+    #: per panel, what `plot()` reads as ``_panel_shared``
+    panel_shared = [{} for _ in range(n_panels)]
+    #: the names a one-panel-per-dataset grid's bundle lists its datasets'
+    #: colors under (the `legend=` list), when nothing groups the data
+    color_names = None
+    if not per_panel_reduce:
+        if shared.get('hue') is not None and panel_fit == 'independent':
+            grid_scale = _panel_color_probe(lengths, shared)
+            if grid_scale is None:
+                meanings_differ = True
+        # one drawn trace per dataset (ndims=1 draws one line per COLUMN,
+        # colored by column in every panel alike)
+        one_trace = panel_ndims != 1 or all(
+            xi.ndim == 2 and xi.shape[1] == 1
+            for xf in panel_xforms for xi in xf)
+        own_colors = (_panel_dataset_colors(shared, datasets) if one_trace
+                      else [None] * n_panels)
+        ungrouped = (shared.get('hue') is None and not shared.get('cluster')
+                     and shared.get('n_clusters') is None)
+        _legend = shared.get('legend')
+        if (ungrouped and isinstance(_legend, (list, tuple))
+                and len(_legend) == n_panels):
+            color_names = list(_legend)
+        for i in range(n_panels):
+            kw = panel_kwargs[i]
+            if own_colors[i] is not None:
+                kw['color'] = [own_colors[i]]
+            if kw.get('legend') is True and ungrouped and panel_ndims != 1:
+                # the single-axes call numbers its datasets 1..n; every
+                # panel numbered its own dataset 1
+                kw['legend'] = [i + 1]
+            if not _panel_apply_hue_scale(kw, grid_scale, panel_shared[i]):
+                # a panel's categories are not the grid scale's: no
+                # shared mapping to claim
+                meanings_differ = True
+    #: the grid scale's category order, for the shared colorbar
+    scale_order = (list(grid_scale['categories'])
+                   if isinstance(grid_scale, dict)
+                   and grid_scale.get('categories') else None)
     panel_data = []
     for i in range(n_panels):
         kw = panel_kwargs[i]
@@ -4829,7 +5429,10 @@ def _plot_panels(x, panels, call_kwargs, _name='panels'):
             grid = _plot_panels_plotly(
                 panel_data, panel_kwargs, titles, nrows, ncols, panel_ndims,
                 plotly_kwargs, shared_pipeline=shared_pipeline,
-                panel_pipelines=panel_pipelines)
+                panel_pipelines=panel_pipelines,
+                panel_shared=panel_shared, consolidate=not meanings_differ,
+                scale_order=scale_order, color_names=color_names,
+                dataset_mode=not per_panel_reduce)
         _reemit_panel_warnings(probe_warnings, draw_warnings)
         return grid
 
@@ -4843,56 +5446,119 @@ def _plot_panels(x, panels, call_kwargs, _name='panels'):
         # than that default, so a single column keeps its usual width.
         _grid_size = (max(6.4, _ANIMATED_PANEL_CELL_INCHES * ncols),
                       _ANIMATED_PANEL_CELL_INCHES * nrows)
-    fig, axes = subplots(nrows, ncols, ndims=panel_ndims,
-                         size=_grid_size, backend='matplotlib')
-    panel_axes = []
-    panel_models = []
-    #: an animated grid's panels, in panel order: each animated panel call
-    #: appends its frame function, frame hooks and axes here (GH #295)
-    cells = [] if animated else None
-    with warnings.catch_warnings(record=True) as draw_warnings:
-        warnings.simplefilter('always')
-        for i in range(n_panels):
-            kw = dict(panel_kwargs[i])
-            kw.update(ax=axes[i], title=titles[i], show=False,
-                      save_path=None, return_model=return_model, size=None)
-            if animated:
-                kw['_panel_animation'] = cells
-            if panel_ndims < (3 if ndims is None else min(ndims, 3)):
-                # cells lowered to the data's width (`_panel_cell_ndims`):
-                # the panel call's `ax=` projection check reads ndims=,
-                # not the data, so tell it the dimensionality its axes
-                # actually has (the drawing is the same: the rows are
-                # already analyzed)
-                kw['ndims'] = panel_ndims
-            result = plot(panel_data[i], **kw)
-            if return_model:
-                # the fit this panel was drawn from: the panel itself is
-                # drawn through `transform=`, whose bundles carry
-                # `pipeline=None` (release audit 2026-09-07, 3)
-                result['pipeline'] = panel_pipelines[i]
-                panel_models.append(result)
-            panel_axes.append(axes[i])
+
+    def _draw_grid(consolidate):
+        """Draw every panel into a fresh grid figure. With `consolidate`
+        the panels hand their colorbars to the grid instead of drawing
+        them, and their legends are merged into one afterwards; returns
+        the figure, its axes, the panel bundles, the animated cells, the
+        draw-time warnings and the panels' colorbars."""
+        fig, axes = subplots(nrows, ncols, ndims=panel_ndims,
+                             size=_grid_size, backend='matplotlib')
+        models = []
+        #: an animated grid's panels, in panel order: each animated panel
+        #: call appends its frame function, frame hooks and axes here
+        #: (GH #295)
+        cells = [] if animated else None
+        colorbars = []
+        try:
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter('always')
+                for i in range(n_panels):
+                    kw = dict(panel_kwargs[i])
+                    kw.update(ax=axes[i], title=titles[i], show=False,
+                              save_path=None, return_model=return_model,
+                              size=None)
+                    if animated:
+                        kw['_panel_animation'] = cells
+                    kw['_panel_shared'] = dict(
+                        panel_shared[i],
+                        **({'colorbars': colorbars} if consolidate else {}))
+                    if panel_ndims < (3 if ndims is None else min(ndims, 3)):
+                        # cells lowered to the data's width
+                        # (`_panel_cell_ndims`): the panel call's `ax=`
+                        # projection check reads ndims=, not the data, so
+                        # tell it the dimensionality its axes actually has
+                        # (the drawing is the same: the rows are already
+                        # analyzed)
+                        kw['ndims'] = panel_ndims
+                    result = plot(panel_data[i], **kw)
+                    if return_model:
+                        # the fit this panel was drawn from: the panel
+                        # itself is drawn through `transform=`, whose
+                        # bundles carry `pipeline=None` (release audit
+                        # 2026-09-07, 3)
+                        result['pipeline'] = panel_pipelines[i]
+                        models.append(result)
+        except Exception:
+            plt.close(fig)
+            raise
+        return fig, axes, models, cells, caught, colorbars
+
+    # ONE legend and ONE colorbar for the figure (1.2) whenever they say
+    # the same thing in every panel; per panel where the colors mean
+    # something different in each (`_panel_meanings_differ`), or where one
+    # label turns out to look different in two panels
+    # (`_PanelFurnitureConflict`: the grid is then drawn again, per panel)
+    consolidate = not meanings_differ
+    legend_spec = colorbar_info = None
+    fig, axes, panel_models, cells, draw_warnings, colorbars = _draw_grid(
+        consolidate)
+    panel_axes = list(axes[:n_panels])
+    if consolidate:
+        try:
+            legend_spec = _merge_panel_legends(panel_axes)
+            colorbar_info = _merge_panel_colorbars(colorbars, scale_order)
+        except _PanelFurnitureConflict:
+            plt.close(fig)
+            consolidate = False
+            legend_spec = colorbar_info = None
+            (fig, axes, panel_models, cells, draw_warnings,
+             colorbars) = _draw_grid(False)
+            panel_axes = list(axes[:n_panels])
     _reemit_panel_warnings(probe_warnings, draw_warnings)
     for spare in axes[n_panels:]:
         spare.set_visible(False)
-    if call_kwargs.get('size') is None:
-        # room beside every column for the legends/colorbars the panels
-        # drew -- what the plotly grid reserves as its gutter (110 px per
-        # legend or colorbar) -- so `tight_layout` does not shrink the
-        # panels to fit them (1.1 release review, feature-tour 9.8: three
-        # 10-entry legends left three 1.3 in cubes). An explicit `size=`
-        # is honored verbatim.
-        _cols = ncols if n_panels > 1 else 1
-        _extra = 0.0
-        if any(a.get_legend() is not None for a in panel_axes):
-            _extra += 1.1 * _cols
-        if len(fig.axes) > len(axes):  # colorbar axes beside the panels
-            _extra += 1.1 * _cols
-        if _extra:
-            _w, _h = fig.get_size_inches()
-            fig.set_size_inches(_w + _extra, _h)
-    fig.tight_layout()
+    strip = None
+    if consolidate and (legend_spec is not None
+                        or colorbar_info is not None):
+        # room for them is reserved ONCE, in a strip right of the grid:
+        # the default figure grows by the strip's measured width (an
+        # explicit `size=` is honored verbatim, the grid laid out beside
+        # the strip)
+        strip = _add_shared_furniture(
+            fig, panel_axes, legend_spec, colorbar_info,
+            legend_kwargs=call_kwargs.get('legend_kwargs'),
+            widen=call_kwargs.get('size') is None)
+    else:
+        if call_kwargs.get('size') is None:
+            # per-panel legends/colorbars (colors that mean something
+            # different in every panel): room beside every column for
+            # them -- what the plotly grid reserves as its gutter (110 px
+            # per legend or colorbar) -- so `tight_layout` does not shrink
+            # the panels to fit them (1.1 release review, feature-tour
+            # 9.8: three 10-entry legends left three 1.3 in cubes). An
+            # explicit `size=` is honored verbatim.
+            _cols = ncols if n_panels > 1 else 1
+            _extra = 0.0
+            if any(a.get_legend() is not None for a in panel_axes):
+                _extra += 1.1 * _cols
+            if len(fig.axes) > len(axes):  # colorbar axes beside panels
+                _extra += 1.1 * _cols
+            if _extra:
+                _w, _h = fig.get_size_inches()
+                fig.set_size_inches(_w + _extra, _h)
+        fig.tight_layout()
+
+    #: the bundle's ``'colors'``: the one scale the panels share
+    grid_colors = None
+    if return_model or animated:
+        _scales = ([m.get('colors') for m in panel_models] if return_model
+                   else [cell['colors'] for cell in cells])
+        grid_colors = (_scales[0] if _scales and meanings_differ
+                       else _merge_panel_color_scales(
+                           _scales, dataset_mode=not per_panel_reduce,
+                           names=color_names))
 
     if animated:
         return _animate_panel_grid(
@@ -4901,7 +5567,8 @@ def _plot_panels(x, panels, call_kwargs, _name='panels'):
             dynamic_caption=dynamic_caption, font=call_kwargs.get('font'),
             save_path=save_path, show=show, return_model=return_model,
             shared_pipeline=shared_pipeline,
-            resize=call_kwargs.get('size') is None, _name=_name)
+            resize=call_kwargs.get('size') is None, _name=_name,
+            strip=strip, grid_colors=grid_colors)
 
     if caption is not None or dynamic_caption is not None:
         # a static grid's caption: fixed text, or the dynamic forms
@@ -4909,6 +5576,9 @@ def _plot_panels(x, panels, call_kwargs, _name='panels'):
         # a static plot)
         _add_grid_caption(fig, caption, dynamic_caption, panel_axes,
                           call_kwargs.get('font'))
+        # the caption's room was added under the grid: re-center the
+        # shared legend/colorbar on the panels
+        _place_shared_furniture(fig, strip)
 
     if save_path is not None:
         fig.savefig(save_path)
@@ -4938,7 +5608,7 @@ def _plot_panels(x, panels, call_kwargs, _name='panels'):
             'panel_models': panel_models,
             'xform_data': [m['xform_data'][0] if len(m['xform_data']) == 1
                            else m['xform_data'] for m in panel_models],
-            'colors': panel_models[0].get('colors') if panel_models else None,
+            'colors': grid_colors,
             'pipeline': shared_pipeline,
         }
         return bundle
@@ -5187,7 +5857,8 @@ def _fit_rotating_cubes(fig, cells, resize=True, _name='panels'):
 def _animate_panel_grid(fig, cells, panel_axes, panel_models, grid,
                         grid_hooks, caption, dynamic_caption, font,
                         save_path, show, return_model, shared_pipeline,
-                        resize=True, _name='panels'):
+                        resize=True, _name='panels', strip=None,
+                        grid_colors=None):
     """Turn a drawn grid of animated panels into ONE animation (GH #295).
 
     Every panel call left its frame function in `cells` (a
@@ -5200,6 +5871,13 @@ def _animate_panel_grid(fig, cells, panel_axes, panel_models, grid,
     and returns exactly as an animated single-axes call does: a
     `HyperAnimation`, or the panel bundle with ``'animation'`` added when
     `return_model=True`.
+
+    `strip` is the grid's shared legend/colorbar (`_add_shared_furniture`),
+    static across every frame: it sits in its own strip right of the
+    cells, which every rotating cube is fitted inside, and is re-placed
+    here after the cube fit and the caption resized the figure.
+    `grid_colors` is the color scale the panels share (the bundle's
+    ``'colors'`` and `HyperAnimation.colors`).
     """
     from .animate import HyperFuncAnimation
     from .hyper_animation import HyperAnimation, mark_draw_started
@@ -5224,6 +5902,7 @@ def _animate_panel_grid(fig, cells, panel_axes, panel_models, grid,
     interval = cells[0]['stub']._interval
     try:
         _fit_rotating_cubes(fig, cells, resize=resize, _name=_name)
+        _place_shared_furniture(fig, strip)
     except Exception:
         _abandon()
         raise
@@ -5243,6 +5922,7 @@ def _animate_panel_grid(fig, cells, panel_axes, panel_models, grid,
                 fig, caption, dynamic_caption, panel_axes, font,
                 context=(_draw_panels(0) if dynamic_caption is not None
                          else None))
+            _place_shared_furniture(fig, strip)
         except Exception:
             _abandon()
             raise
@@ -5303,23 +5983,32 @@ def _animate_panel_grid(fig, cells, panel_axes, panel_models, grid,
             'panel_models': panel_models,
             'xform_data': [m['xform_data'][0] if len(m['xform_data']) == 1
                            else m['xform_data'] for m in panel_models],
-            'colors': panel_models[0].get('colors') if panel_models else None,
+            'colors': grid_colors,
             'pipeline': shared_pipeline,
             'animation': line_ani,
         }
     anim = HyperAnimation(fig, line_ani, frame_hooks=grid_hooks)
-    anim.colors = cells[0]['colors'] if cells else None
+    anim.colors = grid_colors
     return anim
 
 
 
 def _plot_panels_plotly(panel_data, panel_kwargs, titles, nrows, ncols,
                         ndims, call_kwargs, shared_pipeline=None,
-                        panel_pipelines=None):
+                        panel_pipelines=None, panel_shared=None,
+                        consolidate=False, scale_order=None,
+                        color_names=None, dataset_mode=False):
     """`panels=` under the plotly backend: the same grid, built with
     `plotly.subplots.make_subplots` (3-D panels get ``type='scene'``
     cells). Each panel is drawn by an ordinary `plot()` call and its traces
     (plus its scene/axis configuration) are transplanted into the cell.
+
+    With `consolidate` the grid shows ONE legend and ONE colorbar for the
+    figure, as the matplotlib grid does (see `_plot_panels`):
+    `panel_shared` is each panel's ``_panel_shared``, `scale_order` the
+    grid color scale's category order, and `color_names`/`dataset_mode`
+    what `_merge_panel_color_scales` builds the bundle's ``'colors'``
+    from.
 
     `return_model=True` gets the SAME bundle shape the matplotlib panel
     path returns -- ``fig``, ``axes``, ``panels``, ``panel_models``,
@@ -5337,30 +6026,61 @@ def _plot_panels_plotly(panel_data, panel_kwargs, titles, nrows, ncols,
     ``transform=``), both recorded in the bundle exactly as the matplotlib
     grid records them.
     """
-    from .plotly_backend import (make_panel_grid, panel_gutter_px,
+    import plotly.graph_objects as go
+    from .plotly_backend import (PANEL_COLORBAR_PX, PANEL_GUTTER_PAD_PX,
+                                 PANEL_LEGEND_PX, PanelFurnitureConflict,
+                                 _colorbar_trace, _explicit_legend_position,
+                                 make_panel_grid, merge_panel_legends,
+                                 panel_gutter_px, place_shared_furniture,
                                  transplant_panel)
     return_model = bool(call_kwargs.get('return_model', False))
-    # draw every panel FIRST (each an ordinary single-axes plotly call), so
-    # the grid can reserve room beside each cell for the legend/colorbar
-    # the panels actually carry
-    panel_models = []
-    panel_figs = []
-    for data, kw, title in zip(panel_data, panel_kwargs, titles):
-        kw = dict(kw)
-        # each panel's title goes through the ordinary single-axes title
-        # path (newlines, `title_wrap=`, `title_kwargs=`, validation) and
-        # `transplant_panel` turns the result into the cell's title -- the
-        # matplotlib grid formats its titles the same way (round 2)
-        kw.update(show=False, save_path=None, return_model=return_model,
-                  title=title, size=None, backend='plotly')
-        result = plot(data, **kw)
-        panel_figs.append(result['fig'] if return_model else result)
-        if return_model:
-            if panel_pipelines is not None:
-                result['pipeline'] = panel_pipelines[len(panel_models)]
-            elif shared_pipeline is not None:
-                result['pipeline'] = shared_pipeline
-            panel_models.append(result)
+
+    def _draw_panels(consolidate):
+        """Draw every panel (each an ordinary single-axes plotly call);
+        with `consolidate` the panels hand their colorbars to the grid
+        instead of drawing them. Returns the figures, the panel bundles
+        and those colorbars."""
+        models, figs, colorbars = [], [], []
+        for i, (data, kw, title) in enumerate(
+                zip(panel_data, panel_kwargs, titles)):
+            kw = dict(kw)
+            # each panel's title goes through the ordinary single-axes
+            # title path (newlines, `title_wrap=`, `title_kwargs=`,
+            # validation) and `transplant_panel` turns the result into the
+            # cell's title -- the matplotlib grid formats its titles the
+            # same way (round 2)
+            kw.update(show=False, save_path=None, return_model=return_model,
+                      title=title, size=None, backend='plotly')
+            kw['_panel_shared'] = dict(
+                panel_shared[i] if panel_shared is not None else {},
+                **({'colorbars': colorbars} if consolidate else {}))
+            result = plot(data, **kw)
+            figs.append(result['fig'] if return_model else result)
+            if return_model:
+                if panel_pipelines is not None:
+                    result['pipeline'] = panel_pipelines[len(models)]
+                elif shared_pipeline is not None:
+                    result['pipeline'] = shared_pipeline
+                models.append(result)
+        return figs, models, colorbars
+
+    # draw every panel FIRST, so the grid can reserve room for the
+    # legend/colorbar the panels actually carry: ONE strip right of the
+    # grid for the shared ones (1.2), or a gutter beside each cell where
+    # they stay per panel (colors that mean something different in every
+    # panel; see `_plot_panels`)
+    panel_figs, panel_models, colorbars = _draw_panels(consolidate)
+    shared_legend = False
+    colorbar_info = None
+    if consolidate:
+        try:
+            shared_legend = (merge_panel_legends(panel_figs)
+                             and bool(call_kwargs.get('legend')))
+            colorbar_info = _merge_panel_colorbars(colorbars, scale_order)
+        except (PanelFurnitureConflict, _PanelFurnitureConflict):
+            consolidate = False
+            shared_legend, colorbar_info = False, None
+            panel_figs, panel_models, colorbars = _draw_panels(False)
     legend_present = call_kwargs.get('legend') is not None
     colorbar_present = any(
         getattr(getattr(trace, 'marker', None), 'showscale', None)
@@ -5372,17 +6092,38 @@ def _plot_panels_plotly(panel_data, panel_kwargs, titles, nrows, ncols,
     title_px = max([0] + [max(0, int(panel.layout.margin.t or 0) - 10)
                           for panel, title in zip(panel_figs, titles)
                           if title])
+    strip_px = 0
+    if consolidate:
+        if shared_legend:
+            strip_px += PANEL_LEGEND_PX
+        if colorbar_info is not None \
+                and colorbar_info.get('location', 'right') == 'right':
+            strip_px += PANEL_COLORBAR_PX
+        strip_px += PANEL_GUTTER_PAD_PX if strip_px else 0
     fig = make_panel_grid(nrows, ncols, ndims,
                           size=call_kwargs.get('size'),
-                          gutter_px=panel_gutter_px(legend_present,
-                                                    colorbar_present),
-                          title_px=title_px)
+                          gutter_px=(0 if consolidate else panel_gutter_px(
+                              legend_present, colorbar_present)),
+                          title_px=title_px, strip_px=strip_px)
     panel_axes = []
     for i, panel in enumerate(panel_figs):
         keys = transplant_panel(fig, panel, i // ncols + 1, i % ncols + 1,
                                 i, ndims)
         panel_axes.append(keys['scene'] if ndims >= 3
                           else (keys['xaxis'], keys['yaxis']))
+    if consolidate and (shared_legend or colorbar_info is not None):
+        _first_legend = (panel_figs[0].layout.legend.to_plotly_json()
+                         if panel_figs[0].layout.legend is not None else {})
+        _position = _explicit_legend_position(_first_legend)
+        place_shared_furniture(
+            fig, shared_legend,
+            (None if colorbar_info is None else _colorbar_trace(
+                go, colorbar_info, ndims, shared_legend)),
+            ndims,
+            legend_position=(None if _position is None else
+                             {'x': _position['lx'], 'y': _position['ly']}),
+            font=(panel_figs[0].layout.font.to_plotly_json()
+                  if panel_figs[0].layout.font is not None else None))
     fig.update_layout(showlegend=bool(call_kwargs.get('legend')))
     # the SAME figure class the single-axes plotly path returns, displayed
     # through the same one-shot end-of-cell queue: a bare `go.Figure` shown
@@ -5417,7 +6158,11 @@ def _plot_panels_plotly(panel_data, panel_kwargs, titles, nrows, ncols,
             'panel_models': panel_models,
             'xform_data': [m['xform_data'][0] if len(m['xform_data']) == 1
                            else m['xform_data'] for m in panel_models],
-            'colors': panel_models[0].get('colors') if panel_models else None,
+            'colors': (
+                (panel_models[0].get('colors') if panel_models else None)
+                if not consolidate else _merge_panel_color_scales(
+                    [m.get('colors') for m in panel_models],
+                    dataset_mode=dataset_mode, names=color_names)),
             'pipeline': shared_pipeline,
         }
     return fig
@@ -8449,6 +9194,17 @@ def plot(
     # function, frame hooks and axes to (`_plot_animated_panels` collects
     # them into the grid's single animation). Internal, never a user kwarg.
     _panel_animation = kwargs.pop('_panel_animation', None)
+    # ...and what a `panels=` grid shares across its panels (see
+    # `_plot_panels`): ``'limits'``, the grid-wide ``(vmin, vmax)`` of a
+    # continuous `hue=`, which this panel's value-to-color mapping must use
+    # so a color is the same value in every panel; and ``'colorbars'``, a
+    # list this call appends its resolved colorbar to INSTEAD of drawing it
+    # (the grid draws one for the figure, and one legend, so the panel's
+    # own legend is not fitted either). Internal, never a user kwarg.
+    _panel_shared = kwargs.pop('_panel_shared', None)
+    _hue_limits = (_panel_shared or {}).get('limits')
+    _grid_furniture = (_panel_shared is not None
+                       and 'colorbars' in _panel_shared)
 
     # early kwarg validation (release-1.0 audit): catch renamed/misspelled/
     # unknown keyword arguments HERE, with a clear TypeError naming the
@@ -8478,7 +9234,9 @@ def plot(
         _panel_call = {k: v for k, v in locals().items()
                        if k not in ('x', 'kwargs', 'panels', 'subplots',
                                     '_panels_spec', '_panels_name',
-                                    '_panel_lift', '_panel_animation')}
+                                    '_panel_lift', '_panel_animation',
+                                    '_panel_shared', '_hue_limits',
+                                    '_grid_furniture')}
         _panel_call.update(kwargs)
         return _plot_panels(x, _panels_spec, _panel_call, _name=_panels_name)
 
@@ -12071,7 +12829,7 @@ def plot(
     colorbar_info = _build_colorbar_info(
         colorbar, hue, multicolor_hue, cluster, n_clusters, xform,
         mpl_kwargs, legend, palette, hue_group_labels=hue_group_labels,
-        hierarchy_labels=_mi_colorbar_labels)
+        hierarchy_labels=_mi_colorbar_labels, limits=_hue_limits)
 
     # GH #285: the same mapping, always resolved (never raising) and never
     # gated on colorbar=, for `return_model=True`'s bundle['colors'] and
@@ -12082,7 +12840,7 @@ def plot(
         hue, multicolor_hue, cluster, n_clusters, xform, mpl_kwargs,
         legend, palette, hue_group_labels=hue_group_labels,
         hierarchy_labels=_mi_colorbar_labels,
-        legend_entries=_final_legend_entries)
+        legend_entries=_final_legend_entries, limits=_hue_limits)
     # ...which, for datasets colored from the palette CYCLE (no color=,
     # hue=, cluster=, palette mapping), reads the palette's fresh sampling;
     # the colors actually drawn differ when a composed `ax=` continues the
@@ -12228,7 +12986,7 @@ def plot(
     if multicolor_hue is not None:
         line_colors = _multicolor_line_colors(
             multicolor_hue, pre_interp_lengths, xform, palette,
-            is_rgb=multicolor_hue_is_rgb)
+            is_rgb=multicolor_hue_is_rgb, limits=_hue_limits)
 
     # handle explore flag (a real ValueError, not an assert -- asserts are
     # stripped under `python -O`, F01-016/F10-013)
@@ -13101,6 +13859,10 @@ def plot(
             if _legend_order:
                 _rank_plotly_legend(drawn, _n_traces_before, _legend_order)
 
+        if colorbar_info is not None and _grid_furniture:
+            # a `panels=` grid draws ONE colorbar for the figure
+            _panel_shared['colorbars'].append(
+                dict(colorbar_info, font=_artist_font))
         fig = plotly_draw(
             xform,
             into=_plotly_into,
@@ -13148,7 +13910,7 @@ def plot(
             # backends read one table instead of two transcriptions of it
             forecast_schedule=forecast_schedule,
             forecast_trail=_n_forecast_trail,
-            colorbar_info=colorbar_info,
+            colorbar_info=(None if _grid_furniture else colorbar_info),
             surface=surface_list,
             surface_colors=surface_colors,
             surface_point_colors=surface_point_colors,
@@ -13841,7 +14603,7 @@ def plot(
                         palette, is_rgb=multicolor_hue_is_rgb,
                         # the line colors above already warned about
                         # any non-finite hue observation
-                        warn_non_finite=False)
+                        warn_non_finite=False, limits=_hue_limits)
                     _apply_multicolor_markers(ax, raw_xform, _marker_colors,
                                               kwargs_list, fmt=fmt)
                 else:
@@ -14001,7 +14763,11 @@ def plot(
             # via matplotlib's own `make_axes` machinery, which can discard
             # an EARLIER legend fit; fitting the legend last, against
             # whatever the current layout actually is, sidesteps that.
-            if colorbar_info is not None and ax is not None:
+            if colorbar_info is not None and _grid_furniture:
+                # a `panels=` grid draws ONE colorbar for the figure
+                _panel_shared['colorbars'].append(
+                    dict(colorbar_info, font=_artist_font))
+            elif colorbar_info is not None and ax is not None:
                 _add_colorbar(fig, ax, colorbar_info, font=_artist_font,
                               attached=_user_supplied_ax)
 
@@ -14023,7 +14789,10 @@ def plot(
             # `fig.tight_layout()` (measured: the last panel's legend ends
             # up clipped) (GH #291).
             if ((legend is not None or _final_legend_entries is not None)
-                    and ax is not None and not _caller_figure):
+                    and ax is not None and not _caller_figure
+                    # (a `panels=` grid moves this legend's entries into
+                    # the figure's one shared legend and fits that)
+                    and not _grid_furniture):
                 _fit_right_legend(fig, ax)
             # ...but what hypertools added to the caller's axes (the legend
             # hanging off its right edge, the title above it) must still end
@@ -14414,7 +15183,8 @@ def plot(
 
 def _build_colorbar_info(colorbar, hue, multicolor_hue, cluster, n_clusters,
                          xform, mpl_kwargs, legend, palette,
-                         hue_group_labels=None, hierarchy_labels=None):
+                         hue_group_labels=None, hierarchy_labels=None,
+                         limits=None):
     """Resolve `colorbar=` into a backend-agnostic color-mapping dict, or
     None if no colorbar was requested (GH #100).
 
@@ -14457,10 +15227,14 @@ def _build_colorbar_info(colorbar, hue, multicolor_hue, cluster, n_clusters,
             raise ValueError(
                 "hue= has no finite values (every entry is NaN/inf), so "
                 "there is no value range to put on a colorbar.")
+        # `limits`: the value range of a whole `panels=` grid, which every
+        # panel maps its own values over (see `_multicolor_line_colors`)
+        _vmin, _vmax = ((float(np.min(finite)), float(np.max(finite)))
+                        if limits is None else limits)
         return {
             'kind': 'continuous',
-            'vmin': float(np.min(finite)),
-            'vmax': float(np.max(finite)),
+            'vmin': float(_vmin),
+            'vmax': float(_vmax),
             'palette': palette,
             'label': label,
             'ticks': ticks,
@@ -14562,7 +15336,8 @@ def _build_colorbar_info(colorbar, hue, multicolor_hue, cluster, n_clusters,
 
 def _build_colors_info(hue, multicolor_hue, cluster, n_clusters, xform,
                        mpl_kwargs, legend, palette, hue_group_labels=None,
-                       hierarchy_labels=None, legend_entries=None):
+                       hierarchy_labels=None, legend_entries=None,
+                       limits=None):
     """The RESOLVED color scale this figure draws with (GH #285).
 
     `_build_colorbar_info` already computes exactly this mapping, but only
@@ -14593,7 +15368,7 @@ def _build_colors_info(hue, multicolor_hue, cluster, n_clusters, xform,
         info = _build_colorbar_info(
             {}, hue, multicolor_hue, cluster, n_clusters, xform, mpl_kwargs,
             legend, palette, hue_group_labels=hue_group_labels,
-            hierarchy_labels=hierarchy_labels)
+            hierarchy_labels=hierarchy_labels, limits=limits)
     except ValueError:
         info = None
 
@@ -14608,8 +15383,23 @@ def _build_colors_info(hue, multicolor_hue, cluster, n_clusters, xform,
                     'colors': None, 'labels': None,
                     'categories': {str(label): tuple(to_rgb(color))
                                    for label, color in (legend_entries or [])}}
-        # no grouping at all: one dataset, one color
+        # no grouping at all: one dataset, one color -- the explicit
+        # `color=` it was drawn in when there is one (the palette's first
+        # color was reported for ``color='k'``, and for a `panels=` cell,
+        # which is handed its dataset's color this way)
         colors = np.asarray(dataset_colors(palette, max(len(xform), 1)))
+        _explicit = mpl_kwargs.get('color')
+        if _explicit is not None:
+            from matplotlib.colors import to_rgba_array
+            try:
+                _drawn = to_rgba_array(
+                    [_explicit] if (isinstance(_explicit, str)
+                                    or _is_single_color(_explicit))
+                    else list(_explicit))[:, :3]
+            except (TypeError, ValueError):
+                _drawn = None
+            if _drawn is not None and len(_drawn) == len(colors):
+                colors = _drawn
         return {'kind': 'discrete', 'palette': palette,
                 'cmap': ListedColormap(colors), 'norm': None,
                 'vmin': None, 'vmax': None, 'colors': colors,
@@ -15637,7 +16427,7 @@ def _contains_string(el):
 
 
 def _multicolor_line_colors(hue_src, orig_lengths, xform, palette, is_rgb=False,
-                            warn_non_finite=True):
+                            warn_non_finite=True, limits=None):
     """Per-point RGB colors for multicolored lines.
 
     Non-finite hue values are drawn gray (`colors.mat2colors`); one
@@ -15649,7 +16439,10 @@ def _multicolor_line_colors(hue_src, orig_lengths, xform, palette, is_rgb=False,
     trajectories in xform have since been interpolated to a higher temporal
     resolution, so each dataset's hue values are linearly re-interpolated to
     its new length before color mapping. Colors are mapped over the
-    CONCATENATED hue values so the scale is shared across datasets.
+    CONCATENATED hue values so the scale is shared across datasets -- and,
+    with `limits` (``(vmin, vmax)``, a 1-D hue only), over that range
+    instead of the values' own: a `panels=` grid passes the range of every
+    panel's values, so a color is the same value in every panel.
 
     When `is_rgb` is True, `hue_src` already holds literal per-point RGB values
     (e.g. a matrix hue reduced to 3 columns via `plot`'s `color_reduce=`), so
@@ -15691,9 +16484,17 @@ def _multicolor_line_colors(hue_src, orig_lengths, xform, palette, is_rgb=False,
             warnings.filterwarnings(
                 'ignore', message=r'\d+ observation\(s\) have non-finite',
                 category=UserWarning)
-            colors = mat2colors(
-                stacked.ravel() if stacked.shape[1] == 1 else stacked,
-                palette=palette)
+            if limits is not None and stacked.shape[1] == 1:
+                # `mat2colors` maps over the finite values' own range:
+                # two extra values pin that range to `limits`
+                colors = mat2colors(
+                    np.concatenate([stacked.ravel(),
+                                    np.asarray(limits, dtype=np.float64)]),
+                    palette=palette)[:-2]
+            else:
+                colors = mat2colors(
+                    stacked.ravel() if stacked.shape[1] == 1 else stacked,
+                    palette=palette)
         if warn_non_finite:
             _n_bad = int(np.count_nonzero(~np.isfinite(hue_src).all(axis=1)))
             if _n_bad:

@@ -3159,7 +3159,8 @@ class PlotlyCell:
 
 
 def make_panel_grid(nrows, ncols, ndims, titles=None, size=None,
-                    gutter_px=0, title_px=None, **make_subplots_kw):
+                    gutter_px=0, title_px=None, strip_px=0,
+                    **make_subplots_kw):
     """The empty plotly grid `panels=` and `hyp.subplots(backend='plotly')`
     fill: a `plotly.subplots.make_subplots` figure with ``'scene'`` cells
     for 3-D and ``'xy'`` cells otherwise, sized like the matplotlib grid
@@ -3167,7 +3168,9 @@ def make_panel_grid(nrows, ncols, ndims, titles=None, size=None,
     reserved to the right of EVERY cell (and in the right margin) for a
     per-panel legend/colorbar (see `panel_gutter_px`). When `size` is not
     given the figure is widened by the gutters, so the default grid stays
-    as roomy as it is without them.
+    as roomy as it is without them. `strip_px` reserves ONE strip right of
+    the whole grid instead (a `panels=` grid's shared legend/colorbar, see
+    `place_shared_furniture`), widening the default figure the same way.
 
     The cells are laid out the way matplotlib's `tight_layout` lays out
     the matplotlib grid (1.1 release review: the plotly grid used
@@ -3190,8 +3193,10 @@ def make_panel_grid(nrows, ncols, ndims, titles=None, size=None,
     if size is not None:
         width, height = int(size[0] * 100), int(size[1] * 100)
     else:
-        width = int(DEFAULT_FIGSIZE[0] * 100) + gutter_px * ncols
+        width = int(DEFAULT_FIGSIZE[0] * 100) + gutter_px * ncols + strip_px
         height = int(DEFAULT_FIGSIZE[1] * 100)
+    # the strip is taken off the right; the grid is laid out in the rest
+    full_width, width = width, max(width - int(strip_px), 1)
     titles = list(titles) if titles is not None else []
     if title_px is None:
         title_px = PANEL_TITLE_PX if any(t for t in titles) else 0
@@ -3212,7 +3217,7 @@ def make_panel_grid(nrows, ncols, ndims, titles=None, size=None,
     side = max((width - plot_w - gutter_px) / 2, 0.0)
     vert = max((height - plot_h - title_px) / 2, 0.0)
     margin = dict(l=int(round(side)), t=int(round(vert)) + title_px)
-    margin['r'] = max(int(width - plot_w - margin['l']), 0)
+    margin['r'] = max(int(full_width - plot_w - margin['l']), 0)
     margin['b'] = max(int(height - plot_h - margin['t']), 0)
     make_kw = {}
     if ncols > 1:
@@ -3229,9 +3234,141 @@ def make_panel_grid(nrows, ncols, ndims, titles=None, size=None,
     fig = make_subplots(rows=nrows, cols=ncols,
                         specs=[[dict(cell) for _ in range(ncols)]
                                for _ in range(nrows)], **make_kw)
-    fig.update_layout(width=width, height=height, margin=margin,
+    fig.update_layout(width=full_width, height=height, margin=margin,
                       paper_bgcolor='white', plot_bgcolor='white')
     return fig
+
+
+class PanelFurnitureConflict(Exception):
+    """One legend label looks different in two panels of a `panels=`
+    grid, so a single shared entry would be wrong for one of them."""
+
+
+def _legend_trace_look(trace, color=True):
+    """What a legend-listed trace's key LOOKS like, as a comparable
+    value: mode, dash, width, marker symbol and (with `color`) its line
+    and marker colors."""
+    line = trace.line.to_plotly_json() if trace.line is not None else {}
+    marker = (trace.marker.to_plotly_json()
+              if getattr(trace, 'marker', None) is not None else {})
+    mode = trace.mode or 'lines'
+    look = [type(trace).__name__, mode, line.get('dash'),
+            marker.get('symbol') if 'markers' in mode else None]
+    if color:
+        def _plain(value):
+            return value if (value is None or isinstance(value, str)) \
+                else repr(np.asarray(value).tolist())
+        look += [_plain(line.get('color')) if 'lines' in mode else None,
+                 _plain(marker.get('color')) if 'markers' in mode else None,
+                 trace.opacity]
+    return repr(look)
+
+
+def merge_panel_legends(panels):
+    """Make the drawn panel figures `panels` list every legend entry
+    ONCE between them -- the plotly twin of
+    `hypertools.plot.plot._merge_panel_legends`, under the same rule: two
+    entries with the same name and the same look are one (the later
+    traces keep their name but leave the legend); a forecast/truth key
+    (``meta['hyp_legend_entry']``) that differs between panels only in
+    color becomes one key in the neutral `FORECAST_LEGEND_COLOR`; any
+    other name that looks different in two panels raises
+    `PanelFurnitureConflict`. Same-named traces share a ``legendgroup``,
+    so clicking the one entry toggles them in every panel, and the
+    forecast/truth keys are ranked after the data entries. Returns whether
+    any entry is listed."""
+    from .forecast import FORECAST_LEGEND_COLOR
+    kept = {}
+    for panel in panels:
+        for trace in panel.data:
+            if not trace.showlegend:
+                continue
+            name = str(trace.name)
+            overlay = bool((trace.meta or {}).get('hyp_legend_entry')) \
+                if isinstance(trace.meta, dict) else False
+            look = _legend_trace_look(trace)
+            shape = _legend_trace_look(trace, color=False)
+            if trace.legendgroup is None:
+                trace.legendgroup = f'hyp-shared-{name}'
+            if overlay and trace.legendrank is None:
+                trace.legendrank = 2000
+            same = kept.setdefault(name, [])
+            match = [e for e in same if e['look'] == look]
+            if match:
+                trace.showlegend = False
+                trace.legendgroup = match[0]['trace'].legendgroup
+                continue
+            neutral = [e for e in same if overlay and e['overlay']
+                       and e['shape'] == shape]
+            if neutral:
+                first = neutral[0]['trace']
+                alpha = _color_alpha(first.line.color)
+                first.line.color = _to_plotly_color(FORECAST_LEGEND_COLOR,
+                                                    alpha)
+                if first.marker is not None and first.marker.color is not None:
+                    first.marker.color = first.line.color
+                trace.showlegend = False
+                trace.legendgroup = first.legendgroup
+                continue
+            if same:
+                raise PanelFurnitureConflict(name)
+            same.append({'look': look, 'shape': shape, 'overlay': overlay,
+                         'trace': trace})
+    return bool(kept)
+
+
+def _color_alpha(color):
+    """The alpha of a plotly ``rgba(...)`` color string (1.0 for any
+    other form)."""
+    if isinstance(color, str) and color.strip().lower().startswith('rgba'):
+        try:
+            return float(color.strip()[5:-1].split(',')[3])
+        except (IndexError, ValueError):
+            return 1.0
+    return 1.0
+
+
+def place_shared_furniture(target, legend, colorbar_trace, ndims,
+                           legend_position=None, font=None):
+    """Give a filled `panels=` grid ONE legend and/or ONE colorbar, in
+    the strip `make_panel_grid` reserved right of the whole grid
+    (`strip_px`). With `legend`, every trace is attached to the figure's
+    single ``layout.legend`` (the per-cell ``legendN`` that
+    `transplant_panel` gave each panel is dropped), which is placed just
+    right of the last column, vertically centered -- or at
+    `legend_position` (``{'x', 'y'}``, paper fractions), a caller's own
+    `legend_kwargs` placement. `colorbar_trace` (`_colorbar_trace`'s
+    phantom trace, carrying the merged colorbar) is added to the first
+    cell and, when vertical on the right, placed right of the legend;
+    `font` is the panels' inherited text font."""
+    plot_w = max((target.layout.width or int(DEFAULT_FIGSIZE[0] * 100))
+                 - (target.layout.margin.l or 0)
+                 - (target.layout.margin.r or 0), 1)
+    if legend:
+        style = target.layout.legend.to_plotly_json()
+        for trace in target.data:
+            trace.legend = 'legend'
+        for key in [k for k in target.layout.to_plotly_json()
+                    if k.startswith('legend') and k != 'legend']:
+            target.layout[key] = None
+        if legend_position is not None:
+            style.update(x=legend_position['x'], y=legend_position['y'])
+        else:
+            style.update(x=1.0 + PANEL_GUTTER_PAD_PX / plot_w, y=0.5,
+                         xanchor='left', yanchor='middle')
+        target.layout.legend = style
+    if colorbar_trace is not None:
+        cb = colorbar_trace.marker.colorbar
+        if cb.orientation in (None, 'v') and cb.xanchor != 'right':
+            offset = PANEL_GUTTER_PAD_PX + (PANEL_LEGEND_PX if legend else 0)
+            cb.update(x=1.0 + offset / plot_w, xanchor='left', y=0.5,
+                      yanchor='middle')
+        if font:
+            cb.tickfont = _with_base_font(cb.tickfont.to_plotly_json(), font)
+            if cb.title is not None and cb.title.text:
+                cb.title.font = _with_base_font(
+                    cb.title.font.to_plotly_json(), font)
+        target.add_trace(colorbar_trace, row=1, col=1)
 
 
 def _grid_spec(target):
