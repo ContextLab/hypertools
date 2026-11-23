@@ -1084,17 +1084,25 @@ def _descendants(pid):
 
 
 def _alive(started):
-    """The entries of `started` (``{pid: command line}``) still running
-    the same command."""
+    """The entries of `started` (``{pid: [command lines seen]}``) still in
+    the process table under one of the command lines that process was seen
+    with, as ``{pid: its command line now}``. Every command line seen
+    counts, so a process cannot drop out of this check by changing how
+    ``ps`` describes it (a fork that then `exec`s, a bare "(sleep)" under
+    load, "<defunct>" once it has exited and awaits its parent)."""
     table = _process_table()
-    return {pid: command for pid, command in started.items()
-            if pid in table and table[pid][1] == command}
+    return {pid: table[pid][1] for pid, commands in started.items()
+            if pid in table and table[pid][1] in commands}
 
 
 def _run_render_watching_its_processes(out_path, env, tmp_path):
     """`_run_render`, also returning every process the render script was
-    seen to start while it ran (``{pid: command line}``, polled from the
-    real process table twice a second)."""
+    seen to start while it ran, polled from the real process table twice a
+    second: ``{pid: [every command line it was seen with, in order]}``. The
+    history is kept because one process is described differently over its
+    life: on 2026-11-22 a macOS job's last snapshot caught the stand-in
+    browser already ended ("<defunct>"), and keeping only the latest
+    description erased the "sleep 600" seen before it."""
     full = dict(os.environ)
     full.update(env or {})
     started = {}
@@ -1106,7 +1114,10 @@ def _run_render_watching_its_processes(out_path, env, tmp_path):
         limit = time.monotonic() + _KALEIDO_TIMEOUT_S
         try:
             while proc.poll() is None:
-                started.update(_descendants(proc.pid))
+                for pid, command in _descendants(proc.pid).items():
+                    seen = started.setdefault(pid, [])
+                    if command not in seen:
+                        seen.append(command)
                 if time.monotonic() > limit:
                     proc.kill()
                     proc.wait()
@@ -1159,7 +1170,8 @@ def test_render_script_exits_NO_BROWSER_when_the_browser_never_answers(
         # "sleep 600"; only the wrapper's arguments name the script, and
         # under load `ps` reports a bare "(sleep)" with no arguments at all
         assert any('silent-browser' in command or 'sleep' in command
-                   for command in started.values()), (
+                   for commands in started.values()
+                   for command in commands), (
             f'the stand-in browser was never seen running: {started}')
         deadline = time.monotonic() + 10
         alive = _alive(started)

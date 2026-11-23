@@ -21,6 +21,7 @@ Python 3.10 through 3.13. Extras are unchanged from 1.1.0.
 ## Changed
 
 - **Panel grids share their colors, one legend and one colorbar.** In a `panels=` grid each dataset is drawn in the color it has in the single-axes plot of all the datasets, `hue=` uses one scale (or one label-to-color mapping) for the whole figure, and the grid shows one legend and one colorbar beside the panels instead of one per panel. Legends stay per panel only where the colors mean different things in each panel (for example clusters fit separately per panel).
+- **Shared axis labels are drawn on the outer panels only:** x under the lowest panel of each column and y on the left-most panel of each row, when the panels of that column or row share the label. Labels that differ are all kept.
 - **A panel grid's default figure is sized by the grid:** 3.2 in per panel each way, at least 6.4 in wide, instead of a fixed 6.4 x 4.8 in. `size=` is honored as before, and `hyp.subplots()` keeps its default.
 
 ## Fixed
@@ -34,7 +35,7 @@ Python 3.10 through 3.13. Extras are unchanged from 1.1.0.
 
 ## Upgrading from 1.1.0
 
-- **Static `panels=` figures look different:** per-dataset colors, one shared legend and colorbar, and a figure sized by the grid. Pass `size=` to set the figure size yourself.
+- **Static `panels=` figures look different:** per-dataset colors, one shared legend and colorbar, shared axis labels on the outer panels only, and a figure sized by the grid. Pass `size=` to set the figure size yourself.
 - **If you relied on the automatic `tight_layout`** of a figure made with `plt.subplots` and drawn into with `ax=`, call `fig.tight_layout()` after plotting, create the figure with `layout='constrained'`, or build the grid with `hyp.subplots`.
 - On a single line plot with a categorical `hue=`, `legend=[...]` now takes one name per category (it took one per drawn run).
 
