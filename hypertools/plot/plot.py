@@ -8267,8 +8267,16 @@ def _lay_out_panel_grid(fig, panel_axes, grid, strip, cells=None,
         _place_shared_furniture(fig, strip)
     # the grid is laid out: observation labels are placed from their
     # usual places on the first draw of the finished figure
-    from .matplotlib_backend import reset_label_places
+    from .matplotlib_backend import freeze_label_places, reset_label_places
     reset_label_places(fig)
+    if animated:
+        # ...and an animated grid's are placed once, with every panel at
+        # frame 0, and hold those places on every frame
+        for cell in cells:
+            if getattr(cell['axes'], '_hyp_labels_and_points', None):
+                cell['stub'].draw(0)
+                freeze_label_places(
+                    cell['axes'], lambda: _measurement_renderer(fig))
     return caption_artist
 
 
@@ -9390,14 +9398,16 @@ def plot(
         label whose box is covered by an earlier label's is moved to
         another place around its point (a corner or a side, at the usual
         distance or further out): the free place nearest to where it
-        was. The placement is stable: a label stays where it is until
-        its box is covered, and it does not go back when its old place
-        becomes free, so the labels of neighboring points stay readable
-        without hopping about while a 3-D plot is rotated or an
-        animation plays (a label changes place only when points move
-        onto each other). An animation that starts over places its
-        labels from the start again, so every pass through it, played or
-        saved, is the same.
+        was. A static figure is placed when it is drawn, and the same
+        call always saves the same picture; when a 3-D plot is rotated
+        by hand a label stays where it is until its box is covered, and
+        does not go back when its old place becomes free. An animation's
+        labels are placed ONCE, for the view of its first frame with
+        every label taken as shown (those of points revealed later
+        included), and every label holds that place on every frame: no
+        label changes place while the animation plays, and a frame is
+        the same picture whatever was drawn before it (labels placed for
+        the first view can meet at a later one).
 
     label_anchor : 'first', 'center', 'last', int, or None
         Where a PER-DATASET `labels=` list attaches its annotation inside
@@ -18094,9 +18104,19 @@ def plot(
             # the figure is finished: its observation labels are placed
             # from their usual places on the first draw of it, not from
             # where a draw made while it was being laid out left them
+            # An ANIMATED plot's labels are placed once, with frame 0
+            # drawn, and hold those places on every frame: a frame is
+            # then the same picture whatever was drawn before it.
             if isinstance(fig, plt.Figure):
-                from .matplotlib_backend import reset_label_places
+                from .matplotlib_backend import (freeze_label_places,
+                                                 reset_label_places)
                 reset_label_places(fig)
+                if (line_ani is not None and ax is not None
+                        and _panel_animation is None
+                        and getattr(ax, '_hyp_labels_and_points', None)):
+                    _orig_frame_func(0, *line_ani._args)
+                    freeze_label_places(
+                        ax, lambda: _measurement_renderer(fig))
 
             # save. `fig.savefig`, NOT `plt.savefig` (release-1.0 audit,
             # F09-001: `plt.savefig` writes pyplot's CURRENT figure, so

@@ -1,9 +1,11 @@
 """1.2.1 review round 1: defects two reviews found in the GH #299 animation
 arguments and the GH #297 layout fixes.
 
-A. Observation labels are placed STABLY: a label stays where it is until
-   its box is covered, so labels do not hop between places from one
-   frame of an animation to the next.
+A. Observation labels are placed STABLY. An animation's labels are
+   placed once and hold those places on every frame, so a frame is the
+   same picture whatever was drawn before it; a static figure saves the
+   same picture every time, and a label of a figure turned by hand stays
+   where it is until its box is covered.
 B. Continuous ``hue=`` in an animation: markers of a line-and-marker
    format on tail and trail, serial trails that are empty when they
    should be, the dataset's own opacity, mixed formats.
@@ -26,6 +28,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt                                 # noqa: E402
 import numpy as np                                              # noqa: E402
 import pytest                                                   # noqa: E402
+from matplotlib.animation import PillowWriter                   # noqa: E402
 from matplotlib.collections import PathCollection               # noqa: E402
 from mpl_toolkits.mplot3d import proj3d                         # noqa: E402
 from PIL import Image                                           # noqa: E402
@@ -94,70 +97,199 @@ def _switches(places):
     return switches, returns
 
 
-def test_spinning_labels_stay_put_with_few_labels():
-    """Eight labels over one turn in 60 frames: the first draft of 1.2.1
-    made 71 changes of place (labels were placed afresh on every draw).
-    A label now moves only when it is covered: under one change every
-    two frames, never two frames running back and forth, and no box on
-    another."""
-    anim = hyp.plot(CLOUD[:8], 'o', labels=NAMES[:8], animate='spin',
-                    duration=4, frame_rate=15, show=False)
-    places, overlaps = _label_history(anim)
-    switches, returns = _switches(places)
+def _pixels(fig):
+    fig.canvas.draw()
+    return np.asarray(fig.canvas.buffer_rgba()).copy()
+
+
+class _KeepFrames(PillowWriter):
+    """Pillow's own gif writer, which also keeps the frames it was given
+    so they can be compared with frames drawn one at a time."""
+
+    def finish(self):
+        self.kept = [np.asarray(frame.convert('RGBA')).copy()
+                     for frame in self._frames]
+        super().finish()
+
+
+LABELED_ANIMATIONS = {
+    'spin, 8 labels': dict(data=CLOUD[:8], labels=NAMES[:8],
+                           animate='spin'),
+    'spin, 30 labels': dict(data=CLOUD, labels=NAMES, animate='spin'),
+    'window, 3-D': dict(data=CLOUD, labels=NAMES, animate='window'),
+    'window, 2-D': dict(data=CLOUD[:, :2], labels=NAMES, animate='window'),
+    'reveal': dict(data=CLOUD, labels=NAMES, animate=True),
+}
+
+
+def _labeled(name, **kwargs):
+    spec = dict(LABELED_ANIMATIONS[name])
+    kwargs = {'duration': 4, 'frame_rate': 15, **kwargs}
+    return hyp.plot(spec.pop('data'), 'o', show=False, **spec, **kwargs)
+
+
+@pytest.mark.parametrize('name', list(LABELED_ANIMATIONS))
+def test_animated_labels_hold_their_places(name):
+    """An animation's labels are placed once and hold those places (the
+    first draft of 1.2.1 placed them afresh on every draw: 71 changes of
+    place in 60 frames with 8 labels, 777 with 30, 233 in a sliding
+    window). Not one label changes place on any frame, on a second pass
+    through the animation either, and the one placement is a real one:
+    labels were moved off each other."""
+    anim = _labeled(name)
     assert anim.n_frames == 60
-    assert switches <= 30, switches
-    assert returns == 0
-    assert max(overlaps) == 0
-
-
-def test_spinning_labels_stay_put_with_many_labels():
-    """Thirty labels: about 13 of them changed place on EVERY frame (777
-    changes in 60 frames). Now well under a tenth of the labels change
-    on an average frame, and a label almost never goes straight back."""
-    anim = hyp.plot(CLOUD, 'o', labels=NAMES, animate='spin', duration=4,
-                    frame_rate=15, show=False)
     places, _overlaps = _label_history(anim)
-    switches, returns = _switches(places)
-    per_frame = switches / (anim.n_frames - 1)
-    assert per_frame <= 0.1 * len(NAMES), per_frame
-    assert returns <= 0.05 * switches + 2, (returns, switches)
+    assert _switches(places) == (0, 0)
+    shown = [{place for place in track if place is not None}
+             for track in zip(*places)]
+    assert all(len(seen) == 1 for seen in shown), shown
+    assert any(seen != {(-20.0, 20.0)} for seen in shown)
+    again, _overlaps = _label_history(anim)
+    assert again == places
 
 
-@pytest.mark.parametrize('ndims', [2, 3])
-def test_window_animation_labels_stay_put(ndims):
-    """A sliding window: 233 changes in 60 frames before (3-D)."""
-    anim = hyp.plot(CLOUD[:, :ndims], 'o', labels=NAMES, animate='window',
-                    duration=4, frame_rate=15, show=False)
-    places, overlaps = _label_history(anim)
-    switches, returns = _switches(places)
-    assert switches <= 60, switches
-    assert returns <= 2, returns
-    assert np.mean(overlaps) <= 0.25
-
-
-def test_a_label_keeps_its_place_while_it_is_clear():
-    """Hysteresis: a label that was moved does not go back when its old
-    place becomes free, and a label that is clear is not touched."""
-    anim = hyp.plot(CLOUD[:8], 'o', labels=NAMES[:8], animate='spin',
-                    duration=4, frame_rate=15, show=False)
+@pytest.mark.parametrize('name, clear', [('spin, 8 labels', True),
+                                         ('window, 2-D', False)])
+def test_animated_labels_are_placed_for_the_first_view(name, clear):
+    """The one placement is made for the first frame's view with every
+    label taken as shown. There, 8 labels are all clear of each other;
+    30 crowded ones overlap far less than at their usual places."""
+    from hypertools.plot.matplotlib_backend import (_label_place,
+                                                    _send_label_home,
+                                                    _set_label_place)
+    anim = _labeled(name)
     fig = anim.figure
     labels = _labels(fig)
     anim.draw_frame(0)
+    hidden = [label for label in labels if not label.get_visible()]
+
+    def overlapping():
+        fig.canvas.draw()
+        renderer = fig.canvas.get_renderer()
+        boxes = [label.get_bbox_patch().get_window_extent(renderer)
+                 for label in labels]
+        return sum(1 for one, other in itertools.combinations(boxes, 2)
+                   if one.overlaps(other))
+
+    places = [_label_place(label) for label in labels]
+    for label in hidden:
+        label.set_visible(True)
+    try:
+        placed = overlapping()
+        for label in labels:
+            _send_label_home(label)
+        usual = overlapping()
+    finally:
+        for label, place in zip(labels, places):
+            _set_label_place(label, *place)
+        for label in hidden:
+            label.set_visible(False)
+    assert usual > 0
+    assert placed == 0 if clear else placed <= usual / 4, (placed, usual)
+
+
+@pytest.mark.parametrize('name', list(LABELED_ANIMATIONS))
+def test_a_frame_is_the_same_picture_whatever_was_drawn_before(name):
+    """`draw_frame(i)` gives the same pixels in order, in a shuffled
+    order and backwards."""
+    anim = _labeled(name, duration=2, frame_rate=10)
+    fig = anim.figure
+
+    def frame(i):
+        anim.draw_frame(int(i))
+        return _pixels(fig)
+
+    forward = [frame(i) for i in range(anim.n_frames)]
+    shuffled = np.random.default_rng(0).permutation(anim.n_frames)
+    for i in list(shuffled) + list(range(anim.n_frames))[::-1]:
+        assert np.array_equal(frame(i), forward[i]), i
+
+
+@pytest.mark.parametrize('name', ['spin, 8 labels', 'window, 3-D'])
+def test_a_saved_animation_is_its_frames_drawn_one_at_a_time(name, tmp_path):
+    """Saving after frames were drawn in another order, and the same
+    call made twice, give the same frames."""
+    anim = _labeled(name, duration=2, frame_rate=10)
+    fig = anim.figure
+    forward = []
+    for i in range(anim.n_frames):
+        anim.draw_frame(i)
+        forward.append(_pixels(fig))
+    anim.draw_frame(anim.n_frames // 2)
+    writer = _KeepFrames(fps=10)
+    anim.animation.save(str(tmp_path / 'saved.gif'), writer=writer)
+    assert len(writer.kept) == anim.n_frames
+    for i, saved in enumerate(writer.kept):
+        assert np.array_equal(saved, forward[i]), i
+    twin = _labeled(name, duration=2, frame_rate=10)
+    for i in (anim.n_frames - 1, 0, anim.n_frames // 2):
+        twin.draw_frame(i)
+        assert np.array_equal(_pixels(twin.figure), forward[i]), i
+
+
+def test_animated_panels_hold_their_label_places():
+    data = [_walk(1), _walk(2)]
+    names = [[f'a{k}' if k % 8 == 0 else None for k in range(40)],
+             [f'b{k}' if k % 8 == 0 else None for k in range(40)]]
+    anim = hyp.plot(data, '-o', panels=True, labels=names, animate=True,
+                    duration=2, frame_rate=10, show=False)
+    fig = anim.figure
+    labels = [entry[0] for ax in fig.axes
+              for entry in getattr(ax, '_hyp_labels_and_points', None) or []]
+    assert len(labels) == 10
+    anim.draw_frame(0)
+    forward = _pixels(fig)
+    start = [tuple(label.xyann) for label in labels]
+    for i in (anim.n_frames - 1, 7, 3):
+        anim.draw_frame(i)
+        fig.canvas.draw()
+        assert [tuple(label.xyann) for label in labels] == start
+    anim.draw_frame(0)
+    assert np.array_equal(_pixels(fig), forward)
+
+
+@pytest.mark.parametrize('ndims', [2, 3])
+def test_the_same_static_call_saves_the_same_picture(ndims, tmp_path):
+    """`plot()` + `savefig` twice: identical pixels, labels placed off
+    each other (not all at the usual place)."""
+    pictures = []
+    for k in range(2):
+        fig = hyp.plot(CLOUD[:, :ndims], 'o', labels=NAMES, show=False)
+        path = tmp_path / f'static{k}.png'
+        fig.savefig(path)
+        pictures.append(plt.imread(path))
+        if k == 0:
+            assert any(tuple(label.xyann) != (-20.0, 20.0)
+                       for label in _labels(fig))
+            fig.savefig(path)               # ...and a second save of it
+            assert np.array_equal(plt.imread(path), pictures[0])
+    assert np.array_equal(pictures[0], pictures[1])
+
+
+def test_a_static_label_keeps_its_place_while_it_is_clear():
+    """Hysteresis on a figure turned by hand (what a mouse drag does): a
+    label that was moved does not go back when its old place becomes
+    free, and a label that is clear is not touched."""
+    fig = hyp.plot(CLOUD[:8], 'o', labels=NAMES[:8], show=False)
+    ax = fig.axes[0]
+    labels = _labels(fig)
     fig.canvas.draw()
-    for frame in range(1, anim.n_frames):
+    moved = 0
+    for _step in range(1, 60):
         before = [tuple(label.xyann) for label in labels]
-        anim.draw_frame(frame)
+        ax.view_init(elev=ax.elev, azim=ax.azim + 6.0)
         fig.canvas.draw()
         renderer = fig.canvas.get_renderer()
         after = [tuple(label.xyann) for label in labels]
         for k, label in enumerate(labels):
             if before[k] == after[k]:
                 continue
-            # the label moved: at its OLD place, in this frame, its box
+            moved += 1
+            # the label moved: at its OLD place, in this view, its box
             # would be on an earlier label's
             now = label.get_bbox_patch().get_window_extent(renderer)
             width, height = now.width, now.height
-            anchor = fig.axes[0].transData.transform(label.xy)
+            anchor = ax.transData.transform(label.xy)
             scale = renderer.points_to_pixels(1.0)
             # (the frame reaches `pad` beyond the text on every side)
             pad = label.get_bbox_patch().get_boxstyle().pad \
@@ -178,17 +310,8 @@ def test_a_label_keeps_its_place_while_it_is_clear():
                         and min(y0 + height, box.y1)
                         - max(y0, box.y0) > -2.0):
                     covered = True
-            assert covered, (frame, label.get_text(), before[k], after[k])
-
-
-def test_an_animation_places_its_labels_the_same_on_every_pass():
-    """Starting over (a loop, a save after a preview) places the labels
-    from the start again."""
-    anim = hyp.plot(CLOUD[:12], 'o', labels=NAMES[:12], animate='spin',
-                    duration=2, frame_rate=10, show=False)
-    first, _ = _label_history(anim)
-    again, _ = _label_history(anim)
-    assert first == again
+            assert covered, (_step, label.get_text(), before[k], after[k])
+    assert moved                            # (the turn did move labels)
 
 
 def test_static_labels_start_from_their_usual_place():

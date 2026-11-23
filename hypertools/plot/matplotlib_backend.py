@@ -154,22 +154,26 @@ def declutter_labels(ax, renderer):
     where it is; with no clear place, a place that at least halves what
     it covers, or else it stays. A moved label
     is given `_LABEL_CLEARANCE_PT` of room and does not go back when its
-    old place becomes free, so from one frame of an animation to the next
-    (or as a 3-D plot is turned by hand) a label changes place only when
-    the points themselves have moved onto each other. In version 1.2.1's
-    first draft every label was placed afresh on every draw, and labels
-    hopped between places on every frame of a spinning plot.
+    old place becomes free, so as a 3-D plot is turned by hand a label
+    changes place only when the points themselves have moved onto each
+    other. In version 1.2.1's first draft every label was placed afresh
+    on every draw, and labels hopped between places on every frame of a
+    spinning plot.
 
-    What a draw does therefore depends on where the labels were:
-    `reset_label_places` puts them back at the start, which `plot()` does
-    when the figure is finished and an animation does when it starts
-    over, so a figure and a played or saved animation come out the same
-    every time. A label that is hidden (its point is outside an
-    animation's window) starts again from up and to the left.
+    What a draw does therefore depends on where the labels were, which
+    suits a figure the reader turns by hand and nothing else. So the
+    state is pinned wherever a picture must be reproducible:
+    `reset_label_places` puts the labels back at the start when `plot()`
+    has finished a STATIC figure, so the same call always saves the same
+    picture; and an ANIMATED plot is placed ONCE by this function
+    (`freeze_label_places`: frame 0's view, every label taken as shown)
+    and its labels then hold those places on every frame, so a frame is
+    the same picture whatever was drawn before it and no label changes
+    place while the animation plays.
 
     It runs at draw time (`_LabelDeclutter`), which is the one path for a
-    static figure, a figure the reader rotates, and every frame of an
-    animation. The anchor of a 3-D label is projected here as well, with
+    static figure, a figure the reader rotates, and the one placement
+    of an animation. The anchor of a 3-D label is projected here as well, with
     the camera and the box zoom of this very draw.
     """
     import matplotlib.text as mtext
@@ -189,6 +193,10 @@ def declutter_labels(ax, renderer):
                 x2, y2, _ = proj3d.proj_transform(
                     entry[1], entry[2], entry[3], proj)
                 entry[0].xy = (x2, y2)
+    if getattr(ax, '_hyp_labels_frozen', False):
+        # an animation's labels were placed once (`freeze_label_places`)
+        # and hold those places on every frame
+        return
     labels = []
     for entry in entries:
         label = entry[0]
@@ -320,6 +328,8 @@ def reset_label_places(target):
     or the caller moved is left alone."""
     axes = [target] if hasattr(target, 'transData') else list(target.axes)
     for ax in axes:
+        if getattr(ax, '_hyp_labels_frozen', False):
+            continue                        # an animation's: they hold
         for entry in getattr(ax, '_hyp_labels_and_points', None) or []:
             label = entry[0]
             if label.axes is not ax or getattr(
@@ -329,6 +339,39 @@ def reset_label_places(target):
                     label, '_hyp_offset', label.xyann), 6)):
                 continue                    # moved by the reader or caller
             _send_label_home(label)
+
+
+def freeze_label_places(ax, draw):
+    """Place the labels of an ANIMATED axes once and for all, and have
+    them hold those places on every frame.
+
+    The placement is the one `declutter_labels` makes, starting from
+    every label's usual place, on one reference state: the view the axes
+    shows when this is called (`plot()` calls it with frame 0 drawn, the
+    figure laid out) with EVERY label taken as shown, the ones whose
+    points an animation has not revealed yet included. `draw` makes one
+    real draw of the figure, which is what runs the placement. After it
+    a frame's labels depend on nothing that was drawn before: frame `i`
+    is the same picture whenever it is drawn, and no label changes place
+    during the animation (as in 1.2.0, where every label kept the one
+    fixed offset). Labels placed for the first view can meet at a later
+    one, as they could then."""
+    entries = [entry for entry in
+               (getattr(ax, '_hyp_labels_and_points', None) or [])
+               if entry[0].axes is ax]
+    if not entries:
+        return
+    ax._hyp_labels_frozen = False
+    reset_label_places(ax)
+    shown = [(entry[0], entry[0].get_visible()) for entry in entries]
+    for label, _visible in shown:
+        label.set_visible(True)
+    try:
+        draw()
+    finally:
+        for label, visible in shown:
+            label.set_visible(visible)
+    ax._hyp_labels_frozen = True
 
 
 class _LabelDeclutter(matplotlib.artist.Artist):
@@ -1802,12 +1845,6 @@ def _draw(
                 if getattr(e[0], 'axes', None) is ax]
         if not laps:
             return
-        # an animation that starts over (a loop, a save after a preview,
-        # `draw_frame` of an earlier frame) places its labels from the
-        # start again, so every pass through it comes out the same
-        if num < getattr(ax, '_hyp_label_frame', num):
-            reset_label_places(ax)
-        ax._hyp_label_frame = num
         is_3d = hasattr(ax, "get_proj")
         proj = ax.get_proj() if is_3d else None
         renderer = getattr(fig.canvas, "renderer", None)

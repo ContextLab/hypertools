@@ -71,15 +71,19 @@ Follows 1.2.0. Animated trails now work with line-and-marker formats (GH
   its point (a corner or a side, at the usual distance or further out):
   a free place on the canvas at the shortest distance, and of those the
   one nearest to where it was. A label that covers nothing stays where it
-  was. The placement is made at draw time, so it holds after a resize,
-  when a 3-D plot is rotated by hand and on every frame of an animation,
-  and it is stable: a label keeps its place until its box is covered and
-  does not go back when its old place becomes free, so labels do not hop
-  about while the plot turns (measured on a 60-frame spin: 26 changes of
-  place for 8 labels, 130 for 30 labels, against 71 and 777 when every
-  frame was placed afresh). An animation that starts over places its
-  labels from the start again, so every pass, played or saved, is the
-  same. With very many labels on a small figure some boxes still overlap.
+  was. The placement is made at draw time, so it holds after a resize and
+  when a 3-D plot is rotated by hand, where it is stable: a label keeps
+  its place until its box is covered and does not go back when its old
+  place becomes free. A static figure saves the same picture every time
+  the same call is made. An animation's labels are placed once, for the
+  view of its first frame with every label taken as shown (the ones whose
+  points are revealed later included), and each label then holds that
+  place on every frame, as each held the one fixed offset in 1.2.0: no
+  label changes place while the animation plays (the first draft of this
+  fix placed every frame afresh: 71 changes of place for 8 labels on a
+  60-frame spin, 777 for 30), a frame is the same picture whatever was
+  drawn before it, and a saved file is the frames drawn one at a time.
+  Labels placed for the first view can meet at a later one. With very many labels  same. With very many labels on a small figure some boxes still overlap.
   The arrow of a 3-D label points at its point after the cube is drawn
   smaller to clear a legend. A 2-D label the reader has dragged is left
   where it was put. Above 300 visible labels nothing is moved. Matplotlib
