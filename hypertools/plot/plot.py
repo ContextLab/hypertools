@@ -1291,6 +1291,44 @@ def _regroup_categorical_lines(xform, hue, labels, cat_color, cat_label):
             run_category_names, seg_lengths, run_bridged)
 
 
+def _trail_flag_per_run(value, name, seg_dataset, n_runs, n_datasets,
+                        by_category):
+    """A per-dataset `chemtrails=`/`precog=`/`bullettime=` list, matched
+    to the caller's datasets after a categorical `hue=`/`cluster=` split
+    them into drawn runs: each run takes the flag of the dataset it
+    comes from (`seg_dataset`, as `_expand_styles_to_runs` does for
+    `fmt` and the styling kwargs). Anything that is not a list of one
+    entry per input dataset is returned as it is, for
+    `broadcast_trail_flag` to check. A markers-only plot is grouped by
+    CATEGORY instead (`by_category`): its traces are not datasets, so a
+    per-dataset list cannot be applied and is refused in those words."""
+    if isinstance(value, np.ndarray):
+        value = value.tolist()
+    if not isinstance(value, (list, tuple)):
+        return value
+    if seg_dataset is not None and len(seg_dataset) == n_runs:
+        if n_datasets is None:
+            n_datasets = max(seg_dataset) + 1
+        if len(value) == n_datasets:
+            return [value[dataset] for dataset in seg_dataset]
+        if len(value) != n_runs:
+            # (counted in the caller's datasets, not in the runs)
+            raise ValueError(
+                f"{name} list has {len(value)} entries but there are "
+                f"{n_datasets} datasets to plot; pass a single value to "
+                "apply it to every dataset, or a list matching the "
+                "dataset count.")
+    elif by_category and len(value) != n_runs:
+        raise ValueError(
+            f"{name} list has {len(value)} entries, but a markers-only "
+            f"plot colored by a categorical hue= or cluster= draws one "
+            f"trace per category ({n_runs} here), not one per dataset, "
+            f"so a per-dataset list cannot be applied; pass a single "
+            f"value to apply it to every category, or a format with a "
+            f"line (e.g. '-o'), which keeps the datasets apart.")
+    return value
+
+
 def _expand_styles_to_runs(fmt, mpl_kwargs, seg_dataset, n_datasets):
     """Propagate per-INPUT-DATASET styles across run segmentation (GH #291
     follow-up).
@@ -2453,79 +2491,132 @@ def _is_finite_number(value):
             and not isinstance(value, bool) and bool(np.isfinite(value)))
 
 
-def _check_style_values(style, name, given=None):
-    """Refuse a bad VALUE in a dict of text or marker styling options
-    (`title_kwargs=`, `caption_kwargs=`, `suptitle_kwargs=`,
-    `head_marker=`), naming the argument and the key. `style` is keyed by
-    the resolved option names; `given` maps each back to the key the
-    caller wrote (an alias such as ``'size'``), which is the one the error
-    names. Options this does not know are left to matplotlib.
+#: what each checked styling option must be, as the error says it
+_STYLE_VALUE_NEEDS = {
+    'fontsize': "a font size in points greater than 0, or one of {sizes}",
+    'markersize': "a marker size in points greater than 0",
+    'linespacing': "a line spacing (a multiple of the font size) greater "
+                   "than 0",
+    'fontweight': "a number from 0 to 1000 or one of {weights}",
+    'fontstyle': "'normal', 'italic' or 'oblique'",
+    'fontfamily': "a font family name or a list of them",
+    'color': "a matplotlib color (a name such as 'gray', a hex string, "
+             "or an RGB(A) tuple)",
+    'markeredgecolor': "a matplotlib color (a name such as 'gray', a hex "
+                       "string, or an RGB(A) tuple)",
+    'backgroundcolor': "a matplotlib color (a name such as 'gray', a hex "
+                       "string, or an RGB(A) tuple)",
+    'alpha': "a number between 0 and 1",
+    'markeredgewidth': "a line width in points, 0 or more",
+    'fillstyle': "one of {fillstyles}",
+    'zorder': "a number",
+}
 
-    Without it a negative, zero or NaN size was accepted and drew nothing
-    (or drew the text mirrored), and a wrong name or an alpha outside 0-1
-    surfaced as a matplotlib error that named neither."""
+#: `title_kwargs=` keys that are arguments of `Axes.set_title` itself and
+#: not properties of the title's `Text`
+_SET_TITLE_ARGUMENTS = frozenset({'y', 'pad', 'loc'})
+
+
+def _check_style_values(style, name, given=None, marker=False):
+    """Refuse a bad VALUE in a dict of text or marker styling options
+    (`title_kwargs=`, `caption_kwargs=`, `suptitle_kwargs=`, and with
+    ``marker=True`` `head_marker=`), naming the argument and the key.
+    `style` is keyed by the resolved option names; `given` maps each back
+    to the key the caller wrote (an alias such as ``'size'``), which is
+    the one the error names.
+
+    MATPLOTLIB DECIDES what a property accepts: every value is set on a
+    throwaway `Text` (or `Line2D`), and whatever matplotlib takes is
+    taken here: ``None`` for its default, a size as the string ``'12'``,
+    a weight as ``'700'``, ``alpha=True``, an edge color of ``'auto'``.
+    (The first version of this check, in the 1.2.1 draft, compared
+    against lists written by hand and refused all of those, which 1.2.0
+    had drawn correctly.) What matplotlib refuses is refused here, with
+    the same error for every key. Beyond that only values that
+    matplotlib accepts and then draws nothing readable with, or fails on
+    later in the draw, are refused: a size, line spacing or edge width
+    that is not finite or not positive (matplotlib quietly draws a
+    negative or zero font size at 1 pt and a NaN one not at all), a line
+    spacing or z-order that is not a number, a font family that is not
+    a name or a list of names, and a text color of ``'auto'``."""
     from matplotlib import font_manager
-    from matplotlib.colors import is_color_like
     from matplotlib.markers import MarkerStyle
     given = given or {}
 
-    def _refuse(option, need):
+    def _refuse(option, reason=None):
         key = given.get(option, option)
+        need = _STYLE_VALUE_NEEDS.get(
+            option, "a value matplotlib accepts for this property")
+        need = need.format(
+            sizes=', '.join(size for size in font_manager.font_scalings
+                            if isinstance(size, str)),
+            weights=', '.join(font_manager.weight_dict),
+            fillstyles=', '.join(MarkerStyle.fillstyles))
+        if option not in _STYLE_VALUE_NEEDS and reason:
+            need += f" (matplotlib: {reason})"
         raise ValueError(
             f"{name}[{key!r}] must be {need}; got {style[option]!r}.")
 
-    def _named(value, names):
-        return isinstance(value, str) and value in names
+    def _number(value):
+        """`value` as the float matplotlib reads it as, or None for a
+        name (a font size such as 'large')."""
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
 
-    for option in ('fontsize', 'markersize', 'linespacing'):
-        if option not in style:
+    for option, value in style.items():
+        if option in _SET_TITLE_ARGUMENTS or option in ('position',) \
+                or (option == 'loc') or (marker and option == 'marker'):
             continue
-        value = style[option]
-        sizes = tuple(
-            size for size in font_manager.font_scalings
-            if isinstance(size, str)) if option == 'fontsize' else ()
-        if not ((_is_finite_number(value) and value > 0)
-                or _named(value, sizes)):
-            _refuse(option, {
-                'fontsize': "a font size in points greater than 0, or "
-                            f"one of {', '.join(sizes)}",
-                'markersize': "a marker size in points greater than 0",
-                'linespacing': "a line spacing (a multiple of the font "
-                               "size) greater than 0"}[option])
-    if 'fontweight' in style:
-        value = style['fontweight']
-        weights = tuple(font_manager.weight_dict)
-        if not ((_is_finite_number(value) and 0 <= value <= 1000)
-                or _named(value, weights)):
-            _refuse('fontweight', "a number from 0 to 1000 or one of "
-                                  f"{', '.join(weights)}")
-    if 'fontstyle' in style and not _named(
-            style['fontstyle'], ('normal', 'italic', 'oblique')):
-        _refuse('fontstyle', "'normal', 'italic' or 'oblique'")
-    if 'fontfamily' in style:
-        value = style['fontfamily']
-        names = value if isinstance(value, (list, tuple)) else [value]
-        if not names or not all(isinstance(one, str) and one.strip()
-                                for one in names):
-            _refuse('fontfamily', "a font family name or a list of them")
-    for option in ('color', 'markeredgecolor'):
-        if option in style and not is_color_like(style[option]):
-            _refuse(option, "a matplotlib color (a name such as 'gray', "
-                            "a hex string, or an RGB(A) tuple)")
-    if 'alpha' in style and not (
-            _is_finite_number(style['alpha'])
-            and 0.0 <= style['alpha'] <= 1.0):
-        _refuse('alpha', "a number between 0 and 1")
-    if 'markeredgewidth' in style and not (
-            _is_finite_number(style['markeredgewidth'])
-            and style['markeredgewidth'] >= 0):
-        _refuse('markeredgewidth', "a line width in points, 0 or more")
-    if 'fillstyle' in style and not _named(
-            style['fillstyle'], MarkerStyle.fillstyles):
-        _refuse('fillstyle',
-                f"one of {', '.join(MarkerStyle.fillstyles)}")
-    if 'zorder' in style and not _is_finite_number(style['zorder']):
-        _refuse('zorder', "a number")
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter('ignore')
+                if marker:
+                    from matplotlib.lines import Line2D
+                    Line2D([0], [0], **{option: value})
+                else:
+                    import matplotlib.text as mtext
+                    mtext.Text().update({option: value})
+        except Exception as error:      # whatever matplotlib raises
+            _refuse(option, str(error))
+        if value is None:
+            continue                    # matplotlib's own default
+        if option in ('fontsize', 'markersize', 'linespacing',
+                      'markeredgewidth'):
+            number = _number(value)
+            if number is None:
+                if option != 'fontsize':
+                    _refuse(option)
+            elif not np.isfinite(number) or number < 0 or (
+                    number == 0 and option != 'markeredgewidth'):
+                _refuse(option)
+        elif option == 'fontfamily':
+            # (matplotlib stores any family and only looks the names up
+            # when the text is drawn: an unknown name, an empty one or
+            # an empty list falls back to the default font, with
+            # matplotlib's own "not found" log line. A family that is
+            # not a name or a list of names fails in the draw.)
+            names = [value] if isinstance(value, str) else value
+            if not isinstance(names, (list, tuple)) or not all(
+                    one is None or isinstance(one, str) for one in names):
+                _refuse(option)
+        elif option in ('color', 'backgroundcolor') and not marker:
+            # (`Text.set_color('auto')` is accepted and then fails when
+            # the text is drawn)
+            from matplotlib.colors import is_color_like
+            if not is_color_like(value):
+                _refuse(option)
+        elif option == 'markeredgecolor':
+            # (a `Line2D` takes any edge color and fails on a bad one
+            # when it is drawn)
+            from matplotlib.colors import is_color_like
+            if not (isinstance(value, str) and value == 'auto') \
+                    and not is_color_like(value):
+                _refuse(option)
+        elif option == 'zorder':
+            if _number(value) is None or isinstance(value, str):
+                _refuse(option)
 
 
 def _normalize_title_kwargs(title_kwargs, _name='title_kwargs'):
@@ -3294,6 +3385,8 @@ def _validate_head_marker(head_marker, backend_name):
     ``markeredgecolor`` and ``markeredgewidth``). ``None``/``False`` is no
     head marker.
     """
+    if isinstance(head_marker, np.bool_):
+        head_marker = bool(head_marker)
     if head_marker is None or head_marker is False:
         return None
     if isinstance(head_marker, bytes):
@@ -3315,7 +3408,17 @@ def _validate_head_marker(head_marker, backend_name):
         # (the values too: a size of -3, 0 or NaN drew no marker and said
         # nothing; a wrong color or an alpha of 2 raised from matplotlib
         # without naming `head_marker=`)
-        _check_style_values(spec, 'head_marker', given)
+        _check_style_values(spec, 'head_marker', given, marker=True)
+        # (None is matplotlib's "the default": the marker then follows
+        # the dataset as if the key had not been written)
+        spec = {key: value for key, value in spec.items()
+                if value is not None}
+        if isinstance(spec.get('marker'), (bool, np.bool_)):
+            # `{'marker': True}` is `head_marker=True`: matplotlib reads
+            # a bare True as marker number 1, a tick mark
+            if not spec['marker']:
+                return None
+            spec['marker'] = 'o'
         spec.setdefault('marker', 'o')
     else:
         spec = {'marker': head_marker}
@@ -3323,7 +3426,10 @@ def _validate_head_marker(head_marker, backend_name):
     marker = spec['marker']
     try:
         MarkerStyle(marker)
-        drawable = marker not in (None, '', ' ', 'None', 'none')
+        # (a marker may also be a path, a tuple or an array of vertices,
+        # which cannot be compared with the "no marker" names)
+        drawable = not (isinstance(marker, str)
+                        and marker in ('', ' ', 'None', 'none'))
     except (ValueError, TypeError):
         drawable = False
     if not drawable:
@@ -3399,6 +3505,17 @@ def _validate_hold(hold, style, frame_rate, backend_name):
         raise _matplotlib_only_animation_argument(
             'hold', 'the held frames')
     return int(round(float(hold) * float(frame_rate)))
+
+
+def _warn_ignored_grid_styling(cases):
+    """`_warn_ignored_animation_styling` for a `panels=` grid, once for
+    the whole figure: `cases` are the panels' own cases, and an argument
+    is ignored only when NO panel draws what it styles."""
+    if cases:
+        _warn_ignored_animation_styling(**dict(
+            cases[0],
+            any_trail=any(case['any_trail'] for case in cases),
+            any_line=any(case['any_line'] for case in cases)))
 
 
 def _warn_ignored_animation_styling(animate, head_marker, tail_linewidth,
@@ -4866,6 +4983,10 @@ def _validate_figure_text_kwargs(kwargs, name, given=True,
                 f"{sorted(keys)} (aliases: {sorted(_FIGURE_TEXT_ALIASES)}).")
         resolved[option] = value
         written[option] = key
+    # (None is "the default", as in matplotlib: as if the key had not
+    # been written)
+    resolved = {option: value for option, value in resolved.items()
+                if value is not None}
     _check_style_values(resolved, name, written)
     if resolved.get('position', 'bottom') not in ('bottom', 'top'):
         raise ValueError(
@@ -5035,6 +5156,17 @@ def _caption_sample_frames(n_frames):
     first, the middle and the last (see `_add_caption`)."""
     n_frames = max(int(n_frames), 1)
     return sorted({0, n_frames // 2, n_frames - 1})
+
+
+def _caption_text_frames(n_frames):
+    """The frames whose TEXTS size a per-frame caption's room: every
+    frame of the animation, so the room holds the tallest text the
+    caption ever shows (1.2.1 review round 2; it was the first, middle
+    and last, and a caption that was tallest on another frame ran off
+    the canvas). Getting a frame's text costs one run of the frame's
+    updater and of the caller's function, nothing is rendered, and equal
+    texts are measured once (`_add_caption`)."""
+    return range(max(int(n_frames), 1))
 
 
 def _static_axes_artists(ax):
@@ -5232,8 +5364,11 @@ def _add_caption(fig, text, font=None, family=None, samples=(), style=None,
     # excluded from the "lowest thing drawn" measurement
     artist.set_visible(False)
     wrapped = _wrap_caption(artist, text)
-    candidates = [wrapped] + [_wrap_caption(artist, str(sample))
-                              for sample in samples]
+    # (each different text once: a per-frame caption is sampled on every
+    # frame and mostly repeats itself)
+    candidates = [wrapped] + [
+        _wrap_caption(artist, sample) for sample in dict.fromkeys(
+            str(sample) for sample in samples) if sample != text]
     line_in = 1.2 * props.get_size_in_points() / 72.0
     text_in = max(max((candidate.count('\n') + 1) * line_in,
                       _caption_text_height_in(artist, candidate))
@@ -5314,8 +5449,9 @@ def _panel_probe(data, kw, ndims, caught_warnings, panel_shared=None):
     reduces to RGB is not reduced again by the grid's color resolution
     (`_matrix_hue_to_rgb_once`)."""
     probe_kwargs = dict(kw)
-    if panel_shared:
-        probe_kwargs['_panel_shared'] = dict(panel_shared)
+    # (whether a styling argument is ignored is said once, for the whole
+    # figure, by the grid that draws: `_warn_ignored_grid_styling`)
+    probe_kwargs['_panel_shared'] = dict(panel_shared or {}, styling=[])
     probe_kwargs.update(return_model=True, show=False, save_path=None,
                         colorbar=None, legend=None, labels=None,
                         names=None, surface=None, density=None, title=None)
@@ -5630,6 +5766,8 @@ def _resolve_grid_colors(rows, grid_kw, ndims, caught_warnings,
         call_shared['matrix_cache'] = matrix_cache
     if column_names is not None:
         call_shared['series_columns'] = column_names
+    # (not this call's to say: `_warn_ignored_grid_styling`)
+    call_shared['styling'] = []
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter('always')
         probe = plot(rows, reduce=None, normalize=None, align=None,
@@ -7179,6 +7317,9 @@ def _plot_panels_impl(x, panels, call_kwargs, _name='panels'):
         #: (GH #295)
         cells = [] if animated else None
         colorbars = []
+        #: each panel's case for the "this styling is ignored" warnings,
+        #: which are about the whole figure (`_warn_ignored_grid_styling`)
+        styling = []
         try:
             with warnings.catch_warnings(record=True) as caught:
                 warnings.simplefilter('always')
@@ -7190,7 +7331,7 @@ def _plot_panels_impl(x, panels, call_kwargs, _name='panels'):
                     if animated:
                         kw['_panel_animation'] = cells
                     kw['_panel_shared'] = dict(
-                        panel_shared[i],
+                        panel_shared[i], styling=styling,
                         **({'colorbars': colorbars} if consolidate else {}))
                     if grid_colorbar is not None:
                         # the grid's one colorbar is already resolved
@@ -7211,6 +7352,7 @@ def _plot_panels_impl(x, panels, call_kwargs, _name='panels'):
                         # 2026-09-07, 3)
                         result['pipeline'] = panel_pipelines[i]
                         models.append(result)
+                _warn_ignored_grid_styling(styling)
         except Exception:
             plt.close(fig)
             raise
@@ -7375,20 +7517,19 @@ def _grid_caption_font(font, text):
 
 
 def _add_grid_caption(fig, caption, dynamic_caption, font, context,
-                      sample_contexts=(), **placement):
+                      sample_texts=(), **placement):
     """Draw a panel grid's caption and return its ``Text``. A dynamic
     caption (pattern or callable) is resolved for `context` -- frame 0 of
     an animated grid (`_panel_grid_context`), or the finished static
     figure (`_static_grid_context`) -- and its room is sized for that text
-    and for `sample_contexts`' (see `_add_caption`, which `placement` --
-    ``style``, ``gid``, ``settle`` -- is handed to)."""
+    and for `sample_texts`, the caption's texts on the other frames (see
+    `_add_caption`, which `placement` -- ``style``, ``gid``, ``settle``
+    -- is handed to)."""
     text, samples = caption, []
     if dynamic_caption is not None:
         text = _resolve_dynamic_title_text(dynamic_caption, context,
                                            name='caption')
-        samples = [_resolve_dynamic_title_text(dynamic_caption, sample,
-                                               name='caption')
-                   for sample in sample_contexts]
+        samples = list(sample_texts)
     resolved_font, family = _grid_caption_font(font, text)
     return _add_caption(fig, text, font=resolved_font, family=family,
                         samples=samples, **placement)
@@ -7675,7 +7816,48 @@ class _AnimatedCubeZoom:
 def _cube_corners_px(axis, azimuths):
     """The cube's eight corners on the canvas, in pixels, at each camera
     angle of `azimuths` (the axes' current elevation and box zoom):
-    an array of shape ``(len(azimuths), 8, 2)``."""
+    an array of shape ``(len(azimuths), 8, 2)``.
+
+    Turning the camera round the vertical axis by an angle shows what
+    turning the cube the other way round the same axis (through the
+    middle of the box the camera looks at) shows from where the camera
+    is. So the projection is asked for ONCE, at the axes' own azimuth,
+    and the corners are turned instead, all views in one go. (Asking
+    matplotlib for a projection per view cost 9 ms for the 121 views of
+    a full turn, several times per animated 3-D plot: 1.2.1 review
+    round 2.) An axes whose vertical axis is not z is measured view by
+    view (`_cube_corners_px_by_view`)."""
+    import itertools
+    from mpl_toolkits.mplot3d import proj3d
+    aspect = getattr(axis, '_box_aspect', None)
+    if getattr(axis, '_vertical_axis', None) != 2 or aspect is None:
+        return _cube_corners_px_by_view(axis, azimuths)
+    limits = np.array([axis.get_xlim3d(), axis.get_ylim3d(),
+                       axis.get_zlim3d()], dtype=float)
+    low, span = limits[:, 0], limits[:, 1] - limits[:, 0]
+    aspect = np.asarray(aspect, dtype=float)
+    corners = np.array(list(itertools.product(*limits)))
+    # (the square a 3-D axes is drawn in is settled by `apply_aspect`)
+    axis.apply_aspect()
+    # in the box the camera turns round: every side scaled to its aspect
+    box = (corners - low) / span * aspect - 0.5 * aspect
+    turn = -np.radians(np.asarray(list(azimuths), dtype=float) - axis.azim)
+    cos, sin = np.cos(turn)[:, None], np.sin(turn)[:, None]
+    turned = np.stack([box[None, :, 0] * cos - box[None, :, 1] * sin,
+                       box[None, :, 0] * sin + box[None, :, 1] * cos,
+                       np.broadcast_to(box[None, :, 2],
+                                       (len(turn), len(box)))], axis=-1)
+    data = (turned + 0.5 * aspect) / aspect * span + low
+    flat = data.reshape(-1, 3)
+    px, py, _ = proj3d.proj_transform(
+        flat[:, 0], flat[:, 1], flat[:, 2], axis.get_proj())
+    return axis.transData.transform(
+        np.column_stack([px, py])).reshape(len(turn), len(box), 2)
+
+
+def _cube_corners_px_by_view(axis, azimuths):
+    """`_cube_corners_px` the long way: the camera is put at each angle
+    in turn and matplotlib is asked for that view's projection."""
     import itertools
     from mpl_toolkits.mplot3d import proj3d
     elev, azim0 = axis.elev, axis.azim
@@ -8172,7 +8354,7 @@ def _lay_out_panel_grid(fig, panel_axes, grid, strip, cells=None,
                         resize=True, rotations=0, caption=None, dynamic_caption=None,
                         font=None, frame_context=None, sample_frames=(),
                         _name='panels', caption_style=None, suptitle=None,
-                        suptitle_style=None):
+                        suptitle_style=None, text_frames=None):
     """Finish the layout of a drawn matplotlib `panels=` grid -- the ONE
     path of static and animated grids (1.2.0). When this is called the
     panels are drawn, shared axis labels are on the outer panels only
@@ -8250,12 +8432,17 @@ def _lay_out_panel_grid(fig, panel_axes, grid, strip, cells=None,
         # the sampled frames' it sizes the caption's room; an animated
         # grid's panels are drawn at each to get its real context (frames
         # are idempotent, see `FrameContext`)
-        samples = ([frame_context(frame) for frame in sample_frames]
-                   if dynamic else ())
+        # (each frame's text is resolved while the panels show that
+        # frame: a context holds the panels' artists, which the next
+        # frame changes)
+        samples = ([_resolve_dynamic_title_text(
+            dynamic_caption, frame_context(frame), name='caption')
+            for frame in (text_frames if text_frames is not None
+                          else sample_frames)] if dynamic else ())
         caption_artist = _add_grid_caption(
             fig, caption, dynamic_caption, font,
             context=frame_context(0) if dynamic else None,
-            sample_contexts=samples, style=caption_style, settle=settle)
+            sample_texts=samples, style=caption_style, settle=settle)
         # the caption's room was added under the grid: re-center the
         # shared legend/colorbar on the panels
         _place_shared_furniture(fig, strip)
@@ -8275,8 +8462,7 @@ def _lay_out_panel_grid(fig, panel_axes, grid, strip, cells=None,
         for cell in cells:
             if getattr(cell['axes'], '_hyp_labels_and_points', None):
                 cell['stub'].draw(0)
-                freeze_label_places(
-                    cell['axes'], lambda: _measurement_renderer(fig))
+                freeze_label_places(cell['axes'])
     return caption_artist
 
 
@@ -8340,7 +8526,8 @@ def _animate_panel_grid(fig, cells, panel_axes, panel_models, grid,
             rotations=rotations, caption=caption,
             dynamic_caption=dynamic_caption, font=font,
             frame_context=_draw_panels,
-            sample_frames=_caption_sample_frames(n_frames), _name=_name,
+            sample_frames=_caption_sample_frames(n_frames),
+            text_frames=_caption_text_frames(n_frames), _name=_name,
             **(figure_texts or {}))
     except Exception:
         _abandon()
@@ -15295,8 +15482,15 @@ def plot(
     # dataset count -- reshaping above can change how many traces are
     # actually drawn, so this must run after it, not against the original
     # `x`.
-    surface_list = (broadcast_surface(_surface_norm, len(xform))
-                    if _surface_norm is not None else None)
+    # (a per-dataset list is matched to the caller's datasets, as the
+    # trail flags are: `_trail_flag_per_run`)
+    surface_list = (broadcast_surface(
+        _trail_flag_per_run(
+            _surface_norm, "surface", seg_dataset=_seg_ds,
+            n_runs=len(xform),
+            n_datasets=(_hue_regrouped_counts or (None,))[0],
+            by_category=_global_regrouped), len(xform))
+        if _surface_norm is not None else None)
 
     # density= (GH #108/#191): broadcast to the FINAL (post cluster/hue-
     # reshape) dataset count, same as surface= above.
@@ -15457,9 +15651,25 @@ def plot(
     # dataset) or a list/tuple of bool (one entry per drawn dataset, mixed
     # per-dataset combinations allowed). `animate` itself stays a single
     # GLOBAL mode -- only these trail FLAGS become per-dataset.
-    chemtrails = broadcast_trail_flag(chemtrails, len(xform), "chemtrails")
-    precog = broadcast_trail_flag(precog, len(xform), "precog")
-    bullettime = broadcast_trail_flag(bullettime, len(xform), "bullettime")
+    # A categorical `hue=`/`cluster=` has by now split the caller's
+    # datasets into the runs that are drawn; a per-dataset list is the
+    # caller's, so it is matched to THEIR datasets and each run takes its
+    # dataset's flag (1.2.1 review round 2: `chemtrails=[False, True,
+    # True]` for three datasets was refused with "3 entries but there
+    # are 5 datasets").
+    _flag_runs = dict(
+        seg_dataset=_seg_ds, n_runs=len(xform),
+        n_datasets=(_hue_regrouped_counts or (None,))[0],
+        by_category=_global_regrouped)
+    chemtrails = broadcast_trail_flag(
+        _trail_flag_per_run(chemtrails, "chemtrails", **_flag_runs),
+        len(xform), "chemtrails")
+    precog = broadcast_trail_flag(
+        _trail_flag_per_run(precog, "precog", **_flag_runs),
+        len(xform), "precog")
+    bullettime = broadcast_trail_flag(
+        _trail_flag_per_run(bullettime, "bullettime", **_flag_runs),
+        len(xform), "bullettime")
 
     # trail flags on a STATIC plot (release-1.0 audit, F05-007): the same
     # user mistake the spin/serial/morph/window branch below already warns
@@ -15482,11 +15692,20 @@ def plot(
             )
 
     # GH #299: the same for head_marker=/tail_linewidth=/trail_alpha=
-    _warn_ignored_animation_styling(
-        animate, _head_marker, _tail_linewidth, _trail_alpha,
-        any(chemtrails) or any(precog) or any(bullettime),
+    # (a panel of a `panels=` grid reports to its grid instead: whether
+    # an argument is ignored is a question about the whole figure, e.g.
+    # `['-', 'o']` has a line to widen though the second panel has none,
+    # and the grid warns once; 1.2.1 review round 2)
+    _styling_case = dict(
+        animate=animate, head_marker=_head_marker,
+        tail_linewidth=_tail_linewidth, trail_alpha=_trail_alpha,
+        any_trail=any(chemtrails) or any(precog) or any(bullettime),
         any_line=any(has_line_component(_one) for _one in (
             fmt if isinstance(fmt, (list, tuple, np.ndarray)) else [fmt])))
+    if (_panel_shared or {}).get('styling') is not None:
+        _panel_shared['styling'].append(_styling_case)
+    else:
+        _warn_ignored_animation_styling(**_styling_case)
 
     # GH #127 (+ morph/window follow-up): 'spin' has no "current position"
     # (only the camera moves, so a trail has nothing to trail BEHIND or AHEAD
@@ -15529,6 +15748,28 @@ def plot(
                 UserWarning,
                 stacklevel=external_stacklevel(),
             )
+
+    # labels= with animate='morph' (1.2.1 review round 2): a morph draws
+    # ONE cloud that travels from each dataset's shape to the next, and
+    # its points are not the labeled observations, so there is nothing
+    # for a label to stay on. matplotlib hid every label without a word
+    # and plotly drew them (in 2-D only) at the first positions while the
+    # cloud moved away. Neither backend draws them now, and the call
+    # says so.
+    if animate == 'morph' and labels is not None and any(
+            _one is not None for _one in (
+                itertools.chain.from_iterable(
+                    _row if isinstance(_row, (list, tuple, np.ndarray))
+                    else [_row] for _row in labels)
+                if isinstance(labels, (list, tuple, np.ndarray))
+                else [labels])):
+        warnings.warn(
+            "animate='morph' draws one cloud that moves from each "
+            "dataset's shape to the next, so it has no observation for a "
+            "label to stay on; ignoring labels=. Use another animate= "
+            "style (e.g. True, 'spin' or 'window') to show labels.",
+            UserWarning, stacklevel=external_stacklevel())
+        labels = None
 
     # names= (QC 2026-07): per-DATASET names, distinct from per-point `labels=`
     # (text call-outs on individual observations) and the `legend=True`
@@ -17704,11 +17945,16 @@ def plot(
                 return FrameContext(figure=fig, axes=ax,
                                     **_frame_hooks.state)
 
+            _dynamic_title_texts = []
+
             def _sampled_dynamic_titles():
-                """The dynamic `title=`'s wrapped text on the frames that
-                size its room -- the first, the middle and the last
-                (`_caption_sample_frames`, as a per-frame caption's room is
-                sized) -- frame 0's first. Each is resolved against that
+                """The different texts the dynamic `title=` shows over
+                the animation, wrapped, frame 0's first: what sizes its
+                room. EVERY frame is asked (`_caption_text_frames`, as
+                for a per-frame caption; until 1.2.1 it was the first,
+                middle and last, and a title that was tallest on another
+                frame ran off the canvas), once per call of `plot()`.
+                Each is resolved against that
                 frame's REAL context (`_real_frame_context`: the frame is
                 drawn to get it), and the resolver is a pure function of
                 the context by contract (`FrameContext`), so these cannot
@@ -17716,16 +17962,18 @@ def plot(
                 a resolver that is going to fail fails HERE, before the
                 animation runs, instead of inside a frame. The animation
                 is left showing frame 0."""
+                if _dynamic_title_texts:
+                    return list(_dynamic_title_texts)
                 try:
-                    texts = [
+                    texts = list(dict.fromkeys(
                         _wrap_title_text(
                             _resolve_dynamic_title_text(
                                 _dynamic_title, _real_frame_context(_frame)),
                             _title_wrap, _wrap_break)
-                        for _frame in _caption_sample_frames(
-                            content_frame_count(line_ani))]
-                    if len(texts) > 1:
-                        _real_frame_context(0)
+                        for _frame in _caption_text_frames(
+                            content_frame_count(line_ani))))
+                    _real_frame_context(0)
+                    _dynamic_title_texts.extend(texts)
                 except Exception:
                     # the user's title raised before the animation was
                     # ever handed back: detach it (no HyperAnimation
@@ -18038,17 +18286,18 @@ def plot(
                 if _dynamic_caption is not None:
                     try:
                         if _animated_caption:
-                            # the REAL contexts of the first, middle and
-                            # last frames (each is drawn to get it): frame
-                            # 0's text is what a still shows, and the three
-                            # together size the caption's room
+                            # the REAL context of every frame (its
+                            # updater is run to get it; nothing is
+                            # rendered): frame 0's text is what a still
+                            # shows, and all of them together size the
+                            # caption's room
                             _n = content_frame_count(line_ani)
                             _caption_samples = [
                                 _resolve_dynamic_title_text(
                                     _dynamic_caption,
                                     _real_frame_context(_frame),
                                     name='caption')
-                                for _frame in _caption_sample_frames(_n)]
+                                for _frame in _caption_text_frames(_n)]
                             _real_frame_context(0)
                             _caption_text = _caption_samples[0]
                         else:
@@ -18111,12 +18360,15 @@ def plot(
                 from .matplotlib_backend import (freeze_label_places,
                                                  reset_label_places)
                 reset_label_places(fig)
-                if (line_ani is not None and ax is not None
-                        and _panel_animation is None
-                        and getattr(ax, '_hyp_labels_and_points', None)):
-                    _orig_frame_func(0, *line_ani._args)
-                    freeze_label_places(
-                        ax, lambda: _measurement_renderer(fig))
+                # (so are labels a static call adds to an axes that
+                # holds an animation's: placed with them, then held)
+                if (ax is not None and _panel_animation is None
+                        and getattr(ax, '_hyp_labels_and_points', None)
+                        and (line_ani is not None or getattr(
+                            ax, '_hyp_labels_frozen', False))):
+                    if line_ani is not None:
+                        _orig_frame_func(0, *line_ani._args)
+                    freeze_label_places(ax)
 
             # save. `fig.savefig`, NOT `plt.savefig` (release-1.0 audit,
             # F09-001: `plt.savefig` writes pyplot's CURRENT figure, so
@@ -18809,14 +19061,30 @@ def _measurement_renderer(fig):
     reads back via `self.canvas` when it fires `'draw_event'` at the end
     of the draw (`Figure.draw`, matplotlib source), not stale state left on
     whatever canvas existed before.
+
+    The figure keeps ITS OWN canvas (1.2.1 review round 2): constructing
+    the Agg canvas rebinds `fig.canvas`, and a figure left on it has lost
+    its window -- on a GUI backend (macosx, QtAgg, TkAgg) the animation's
+    `fig.canvas.draw_idle()` then went to the offscreen canvas and the
+    window stopped updating, for every call that measures (a legend, a
+    caption, a `panels=` grid, and since 1.2.1 a labeled animation). The
+    canvas that was there is put back, with the figure's `_original_dpi`
+    (which a new canvas overwrites with the current, possibly
+    pixel-ratio-scaled, dpi), exactly as `print_figure` restores them.
     """
     from matplotlib.backends.backend_agg import FigureCanvasAgg
+    own_canvas = fig.canvas
+    original_dpi = getattr(fig, '_original_dpi', None)
     canvas = FigureCanvasAgg(fig)
     canvas._is_saving = True
     try:
         canvas.draw()
     finally:
         canvas._is_saving = False
+        if own_canvas is not None and fig.canvas is not own_canvas:
+            fig.set_canvas(own_canvas)
+        if original_dpi is not None:
+            fig._original_dpi = original_dpi
     return canvas.get_renderer()
 
 
@@ -19814,6 +20082,76 @@ def _multicolor_line_colors(hue_src, orig_lengths, xform, palette, is_rgb=False,
     return out
 
 
+class _HueMarkerLook:
+    """How the markers of a dataset colored by a continuous `hue=` wear
+    the marker styling the caller gave the dataset.
+
+    Such markers are drawn as a scatter, one color per observation, in
+    place of the `Line2D` the styling kwargs were written for, and the
+    scatter took the glyph and the size alone: ``markerfacecolor='none',
+    markeredgecolor='k', markeredgewidth=3`` drew plain filled dots with
+    default edges, static and animated (1.2.1 review round 2). The same
+    reading as on a `Line2D`, with the hue in the place of the line's
+    one color: the hue fills the marker unless ``markerfacecolor`` names
+    another fill (``'none'`` for a hollow marker), and it colors the
+    edge unless ``markeredgecolor`` names one; ``markeredgewidth`` is
+    the edge's width and ``fillstyle`` the half that is filled.
+    matplotlib's short names (``mfc``, ``mec``, ``mew``, ``ms``) are
+    read as it reads them."""
+
+    def __init__(self, tkwargs):
+        from matplotlib import cbook
+        from matplotlib.lines import Line2D
+        named = {key: value for key, value in (tkwargs or {}).items()
+                 if isinstance(key, str)}
+        try:
+            named = cbook.normalize_kwargs(named, Line2D)
+        except TypeError:
+            pass        # a name and its alias together: left as written
+        self.face = named.get('markerfacecolor')
+        self.edge = named.get('markeredgecolor')
+        self.width = named.get('markeredgewidth')
+        self.fillstyle = named.get('fillstyle')
+        self.size = named.get('markersize')
+        for name in ('face', 'edge'):
+            if isinstance(getattr(self, name), str) and getattr(
+                    self, name).lower() == 'auto':
+                setattr(self, name, None)
+        if self.fillstyle == 'none':
+            self.face, self.fillstyle = 'none', None
+        #: nothing asked for: the scatter is drawn as it always was
+        self.plain = (self.face is None and self.edge is None
+                      and self.width is None and self.fillstyle is None)
+
+    def glyph(self, marker):
+        """`marker` with the dataset's ``fillstyle`` (if it has one)."""
+        if self.fillstyle is None:
+            return marker
+        from matplotlib.markers import MarkerStyle
+        return MarkerStyle(marker, fillstyle=self.fillstyle)
+
+    def color(self, scatter, colors, alpha=None):
+        """Color `scatter` by the per-observation `colors` (rows of
+        RGB(A)); `alpha` is applied to a fill or edge color the caller
+        named (the rows carry their own)."""
+        from matplotlib.colors import to_rgba
+
+        def _named(color):
+            if isinstance(color, str) and color.lower() == 'none':
+                return 'none'
+            return to_rgba(color, alpha)
+
+        scatter.set_facecolors(
+            colors if self.face is None else _named(self.face))
+        scatter.set_edgecolors(
+            colors if self.edge is None else _named(self.edge))
+
+
+def _hue_marker_look(tkwargs):
+    """The `_HueMarkerLook` of one dataset's styling kwargs."""
+    return _HueMarkerLook(tkwargs)
+
+
 def _apply_multicolor_lines(ax, xform, line_colors, kwargs_list,
                             row_counts=None, only=None):
     """Replace single-color line artists with per-segment-colored
@@ -19984,6 +20322,7 @@ def _apply_multicolor_animation(ax, xform, line_colors, kwargs_list,
     """
     from matplotlib.collections import LineCollection, PathCollection
     from mpl_toolkits.mplot3d.art3d import Line3DCollection
+    from .matplotlib_backend import follow_artist
 
     is_3d = xform[0].shape[1] >= 3
     n = len(xform)
@@ -20049,8 +20388,13 @@ def _apply_multicolor_animation(ax, xform, line_colors, kwargs_list,
             [ax.get_zlim()] if is_3d else [])
         auto = ax.get_autoscale_on()
         extra = {'depthshade': False} if is_3d else {}
+        look = _hue_marker_look(
+            kwargs_list[i] if i < len(kwargs_list) else {})
         coll = ax.scatter(*pts.T, s=float(source.get_markersize()) ** 2,
-                          marker=glyph, alpha=alpha, **extra)
+                          marker=look.glyph(glyph), alpha=alpha, **extra)
+        if look.width is not None:
+            coll.set_linewidth(look.width)
+        coll._hyp_marker_look = look
         ax.set_xlim(limits[0])
         ax.set_ylim(limits[1])
         if is_3d:
@@ -20115,6 +20459,9 @@ def _apply_multicolor_animation(ax, xform, line_colors, kwargs_list,
             dots._hyp_markers_of = (i, role)
             dots.set_zorder(coll.get_zorder() + 0.1)
             coll._hyp_markers = dots
+            # one trace, two artists: the markers are drawn when their
+            # line is, at its opacity (a callback holds the line alone)
+            follow_artist(ax, dots, coll, alpha=True)
         return coll
 
     head_colls = [_make_collection(i) for i in range(n)]
@@ -20126,6 +20473,9 @@ def _apply_multicolor_animation(ax, xform, line_colors, kwargs_list,
         _head_marker = getattr(head_lines[i], '_hyp_head_marker', None)
         if _head_marker is not None:
             head_colls[i]._hyp_head_marker = _head_marker
+            # ...and is hidden with the collection, which is the artist a
+            # callback is handed in place of the hidden line
+            follow_artist(ax, _head_marker, head_colls[i])
 
     for artist in head_lines + list(trail_lines.values()):
         artist.set_visible(False)
@@ -20138,6 +20488,9 @@ def _apply_multicolor_animation(ax, xform, line_colors, kwargs_list,
         """Fill the scatter `coll`: one marker per row of `pts`, each in
         its own color; no rows, nothing drawn."""
         coll.set_visible(pts.shape[0] > 0)
+        # (the markers of a line are then hidden again, at draw time, if
+        # their line is: `follow_artist`)
+        coll._hyp_hidden_with_leader = False
         if pts.shape[0] == 0:
             return
         colors = np.asarray(colors, dtype=float)
@@ -20146,8 +20499,7 @@ def _apply_multicolor_animation(ax, xform, line_colors, kwargs_list,
                 np.asarray(pts[:, k], dtype=float) for k in range(3))
         else:
             coll.set_offsets(pts[:, :2])
-        coll.set_facecolors(colors)
-        coll.set_edgecolors(colors)
+        coll._hyp_marker_look.color(coll, colors)
         coll.stale = True
 
     def _set_segments(coll, pts, colors, source=None):
@@ -20391,10 +20743,10 @@ def _apply_multicolor_markers(ax, xform, point_colors, kwargs_list,
     for i, (xi, ci) in enumerate(zip(xform, point_colors)):
         if only is not None and i not in only:
             continue
-        marker = _glyph(i)
         tkwargs = kwargs_list[i] if i < len(kwargs_list) else {}
-        ms = float(tkwargs.get('markersize')
-                   or plt.rcParams['lines.markersize'])
+        look = _hue_marker_look(tkwargs)
+        marker = look.glyph(_glyph(i))
+        ms = float(look.size or plt.rcParams['lines.markersize'])
         s = ms ** 2  # scatter sizes are areas in points^2
         # the trace's alpha= travels WITH the per-point colors, as on the
         # line path (`_apply_multicolor_lines`): the scatter replaces the
@@ -20407,13 +20759,19 @@ def _apply_multicolor_markers(ax, xform, point_colors, kwargs_list,
             ci = np.column_stack([ci[:, :3],
                                   np.full(len(ci), float(_alpha))])
         if xi.shape[1] == 1:
-            ax.scatter(np.arange(xi.shape[0]), xi[:, 0], c=ci, s=s,
-                       marker=marker)
+            dots = ax.scatter(np.arange(xi.shape[0]), xi[:, 0], c=ci, s=s,
+                              marker=marker)
         elif is_3d:
-            ax.scatter(xi[:, 0], xi[:, 1], xi[:, 2], c=ci, s=s,
-                       depthshade=False, marker=marker)
+            dots = ax.scatter(xi[:, 0], xi[:, 1], xi[:, 2], c=ci, s=s,
+                              depthshade=False, marker=marker)
         else:
-            ax.scatter(xi[:, 0], xi[:, 1], c=ci, s=s, marker=marker)
+            dots = ax.scatter(xi[:, 0], xi[:, 1], c=ci, s=s, marker=marker)
+        if not look.plain:
+            # a hollow, outlined or half-filled marker keeps that look
+            # (the animated plot's scatters wear the same one)
+            if look.width is not None:
+                dots.set_linewidth(look.width)
+            look.color(dots, np.asarray(ci, dtype=float), alpha=_alpha)
 
 def _mixture_name(model):
     """Registry name for a cluster-model spec (string or class)."""

@@ -1432,7 +1432,9 @@ def manage_backend(plot_func):
 
             try:
                 from ..predict.time import warn_once_per_call
-                with backend_context(tmp_backend), warn_once_per_call():
+                from .matplotlib_backend import labels_held_while_plotting
+                with backend_context(tmp_backend), warn_once_per_call(), \
+                        labels_held_while_plotting():
                     if needs_interactive_display:
                         _issue_backend_warning()
 
