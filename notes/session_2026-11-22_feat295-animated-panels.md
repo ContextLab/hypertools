@@ -796,3 +796,88 @@ stricter):
   rounds of a loop.
 
 Contact sheets and GIFs: scratch `round5fix/sheet_*.png`, `anim_*.gif`.
+
+## LSL discovery failure in full-suite runs
+
+2026-11-23. `tests/test_lsl_streaming.py::test_lsl_stream_name_takes_precedence_over_type`
+failed in two full-suite runs ("no LSL stream found (name='HypertoolsTestStreamB-...')",
+at 5 s with four more tests of the file, then alone at 30 s). The machine crashed
+at about 17:45 during this work; everything below marked "after the restart" was
+measured again on the fresh boot, the rest could not be repeated.
+
+What was established:
+
+- Why that test: liblsl's unicast discovery query (127.0.0.1:16571) reaches only
+  the oldest socket bound to the port, so only one outlet on the machine can be
+  found that way. The test's second outlet is the one case in the file that needs
+  a multicast query to arrive. (Unicast to the oldest socket only: plain sockets,
+  10 of 10 against 0 of 10.)
+- A race in liblsl 1.17.7 on macOS 26 (after the restart too): the resolver sends
+  each multicast query on loopback and then switches the same socket to en0
+  (`resolve_attempt_udp::send_next_query`); a loopback datagram followed at once
+  by that switch is lost (plain sockets: 0 of 30 with no delay, 30 of 30 with
+  1 ms, 30 of 30 without the switch), and nothing sent on en0 is looped back (0
+  of 30). Per 20 query waves 18 / 8 / 4 delivered the 224.0.0.1 / 224.0.0.183 /
+  239.255.172.215 datagram. After the restart, default configuration: the second
+  of two outlets found at once in 8 of 12 resolves, after 0.5, 0.5, 1.0, 2.5 s in
+  the rest. This alone costs seconds, not 30 s.
+- Before the restart the kernel dropped loopback UDP for minutes at a time, on any
+  port: a fresh socket got 0 of 20 datagrams; "dropped due to full socket buffers"
+  (`netstat -s -p udp`) +3,096 in 10 s (1,006,018 at 16:42, 1,699,882 at 17:39);
+  `netstat -m` 360,106 KB allocated to network, 94.7% in use, 2,034 requests
+  denied, 41,615 mbufs of ancillary data; the `com.apple.content-filter` kernel
+  control socket's receive queue full (523,880 of 524,288 bytes; Malwarebytes and
+  GlobalProtect network extensions are installed). In milder phases only multicast
+  to sockets already on 16571 stopped, 16 to 143 s after resolvers started and
+  until they ended. After the restart: 21,559 KB, 2.8% in use, unicast 20 of 20.
+  A 30 s failure needs this state; the race does not produce one.
+- NOT established: what filled the network buffers (the content filter's queue is
+  the lead, unproven), whether that state existed at 12:53 and 15:20 when the two
+  suite runs failed (the drop counter was already 1,006,018 at 16:42), and whether
+  this work's own experiments (long resolvers, two LSL test runs at once, a
+  400-process CPU burner for 75 s) made it worse or contributed to the crash.
+  Do not repeat them on a loaded machine.
+- Ruled out: leaked outlets or sockets in the pytest process (liblsl leaks 3 file
+  descriptors per outlet, a kqueue and a pipe pair, no sockets); port-range
+  exhaustion (26 of 33 UDP ports busy with two resolvers, none leaked); order
+  dependence (test_io_audit_final.py through test_lsl_streaming.py, 23 files in
+  one process: all passed); a stalled pusher thread; a member leaving a multicast
+  group silencing the others; an undrained full socket silencing the others.
+- Corrected along the way: 14 to 15 s durations of the two-outlet tests before the
+  restart were outlet destruction (7 s per outlet then; a pair took 5.8 to 14 s
+  after the restart in a bare script), not lost discovery.
+
+What changed:
+
+- `tests/lsl_loopback.cfg` (`[lab] KnownPeers = {127.0.0.1}`): liblsl also sends
+  each query straight to every port of its range, where each outlet has its own
+  socket. `tests/conftest.py` points `LSLAPICFG` at it on macOS only, unless the
+  caller set one. Before the restart, same outlets, same minutes: default
+  resolver 13 of 13 misses, two KnownPeers resolvers 138 of 138 and 154 of 154
+  found. After the restart: second outlet within 0.51 s in 12 of 12. It does
+  nothing while unicast is dropped too (9 of 9 discovery tests failed then).
+- New test `test_every_discovery_wave_queries_each_outlet_port_directly` (real
+  socket on a port of the range, real resolve): 0 queries without the setting,
+  7 with.
+- Timeouts stay at 30 s (discovery) and 10 s (stall test), as in a11c09e9: with
+  5 s restored, 9 discovery tests failed in a degraded phase. The comment that
+  explained them was rewritten; "Discovery" in the test module's docstring has
+  the measurements. `tests/test_io_audit_final.py` has one more 30 s; untouched.
+- `[multicast] Interfaces = {127.0.0.1}` removes the race (20 of 20 waves) and
+  was dropped: it did not prevent the multicast outage, and a test that counted
+  multicast deliveries failed once in nine runs with it in place.
+
+Library: `hypertools/io/lsl.py` is unchanged and uses liblsl's defaults, so a
+user on macOS with two outlets on one machine (or one outlet next to another LSL
+program) has the same race: a few query waves, covered by the default
+`timeout=10`. The outage is the machine's. A sentence in the LSL tutorial about
+`KnownPeers` for same-machine outlets is a candidate; not written (user-facing
+advice, for Jeremy to decide). Linux and Windows CI runners do not get the
+configuration (`sys.platform == 'darwin'`); the setting is plain unicast to
+127.0.0.1 and should be harmless there, which was not tested.
+
+Verified after the restart (load average 45 to 95): `.venv/bin/ruff check tests
+hypertools/io` clean; `pytest tests/test_io_audit_lsl.py tests/test_lsl_streaming.py
+tests/test_io_audit_final.py tests/test_notebook_install_gate.py`: 73 passed, 3
+skipped in 114 s; the new test alone with the setting commented out: 1 failed
+("assert 0 >= 6"). No full-suite run was made.
