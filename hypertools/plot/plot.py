@@ -9579,14 +9579,23 @@ def plot(
         `ax.annotate` call-outs; plotly draws the same points as
         `layout.scene.annotations` (3D) or `layout.annotations` (2D), at
         the same data coordinates, honoring the resolved `font=` (see
-        below) the same way the legend/colorbar/title do.
+        below) the same way the legend/colorbar/title do. With
+        ``animate='morph'`` no label is drawn, on either backend, and a
+        ``UserWarning`` says so: a morph draws one cloud that moves from
+        each dataset's shape to the next, so it has no observation for a
+        label to stay on.
 
         On matplotlib a label hangs up and to the left of its point. A
         label whose box is covered by an earlier label's is moved to
         another place around its point (a corner or a side, at the usual
         distance or further out): the free place nearest to where it
         was. A static figure is placed when it is drawn, and the same
-        call always saves the same picture; when a 3-D plot is rotated
+        call always saves the same picture. The placement is worked out
+        in points from the figure's own size, not from the pixels of
+        the draw, so the screen, a PNG at any dpi, a PDF and an SVG show
+        the same arrangement (a figure whose size is changed is placed
+        again). Several labeled calls into one `ax=` are kept off each
+        other as one set. When a 3-D plot is rotated
         by hand a label stays where it is until its box is covered, and
         does not go back when its old place becomes free. An animation's
         labels are placed ONCE, for the view of its first frame with
@@ -9809,7 +9818,11 @@ def plot(
         ``variant``, ``stretch``, and the already-real names ``color``,
         ``alpha``, ``y``, ``pad``, ``loc``, ``rotation``, ``linespacing``,
         ``backgroundcolor``. An unknown key raises ``ValueError`` naming
-        the supported set. A ``size`` given here also sizes the room
+        the supported set. matplotlib decides what each key accepts
+        (``None`` where it takes ``None``, a size as a number, a numeric
+        string or a size name); a value it refuses, and a size or line
+        spacing that is not positive and finite, raises ``ValueError``
+        naming ``title_kwargs`` and the key. A ``size`` given here also sizes the room
         reserved above an animated 3-D title (matplotlib's top-margin
         probe; plotly's ``layout.margin.t``), so a larger title still fits
         on the canvas.
@@ -9840,10 +9853,8 @@ def plot(
         A dynamic (callable / ``{index``) title is wrapped afresh every
         frame. An animated 3-D title reserves top margin per line on both
         backends: for a per-segment list, the tallest entry; for a
-        dynamic title, plotly measures every frame (all frames are built
-        up front) while matplotlib measures the first, middle and last
-        frames' texts (see `title=`), so only a frame in between that
-        needs more lines than all three can clip there. Default None.
+        dynamic title, both backends measure every frame's text (see
+        `title=`). Default None.
 
     font : None, str, or matplotlib.font_manager.FontProperties
         Controls the font used for every text surface hypertools draws,
@@ -10166,7 +10177,11 @@ def plot(
         observations, so its labels cannot group the plotted rows -- use
         `hyp.cluster(data, cluster='FeatureAgglomeration')` directly.
         Cluster labels are drawn as one trace per cluster (palette
-        colors, legend entries in sorted label order).
+        colors, legend entries in sorted label order). A model that
+        starts from a random state (KMeans, MiniBatchKMeans,
+        SpectralClustering, the mixture models) can group the same data
+        differently on each call; pass `random_state=` for the same
+        clusters, and so the same picture, every time.
 
     n_clusters : int
         If n_clusters is passed, HyperTools will perform clustering with
@@ -10619,12 +10634,17 @@ def plot(
 
     chemtrails (animation only) : bool or list of bool
         A low-opacity trail is left behind the trajectory (default: False).
-        Pass a list of bool (one entry per drawn dataset -- i.e. the FINAL
-        count after any `cluster`/`hue`/`n_clusters` regrouping) for
-        per-dataset control (GH #127): e.g. `chemtrails=[True, False]` turns
+        Pass a list of bool, one entry per dataset, for per-dataset
+        control (GH #127): e.g. `chemtrails=[True, False]` turns
         chemtrails on for dataset 0 only. A bare bool is broadcast to every
-        dataset. Raises `ValueError` if a list's length does not match the
-        number of drawn datasets (naming both counts). Trail styles
+        dataset. When a categorical `hue=` or `cluster=` splits the
+        datasets of a line format into several drawn traces, each trace
+        takes the flag of the dataset it comes from (a list with one
+        entry per drawn trace, the FINAL count after the regrouping, is
+        accepted too). A markers-only format colored by category draws
+        one trace per category, not per dataset, so there a list needs
+        one entry per category. Raises `ValueError` if a list's length
+        matches neither count (naming both counts). Trail styles
         (`chemtrails`/`precog`/`bullettime`) apply to `animate=True`/
         `'parallel'` and to `animate='serial'`, on BOTH backends (see the
         note under `bullettime` below).
@@ -10705,10 +10725,17 @@ def plot(
         (matplotlib's default without one), never less than 2.5 times
         the tail's line width so that it shows on a thick tail. It is
         drawn in addition to the format's own markers and is never a
-        legend entry. Default None (no head marker). A value the dict
-        cannot take (a size that is not a positive number, an unknown
-        color, an alpha outside 0 to 1) raises ``ValueError`` naming
-        ``head_marker`` and the key. Ignored, with a ``UserWarning``, on
+        legend entry. Default None (no head marker). The marker may be
+        any marker matplotlib draws: a name, an array of vertices, a
+        tuple such as ``(5, 1)``, a ``Path`` or a ``'$...$'`` string.
+        Inside the dict ``'marker': True`` is ``'o'`` and ``'marker':
+        False`` is no head marker, as for the argument itself, and a key
+        set to ``None`` is left to follow the dataset. matplotlib
+        decides what each key accepts; a value it refuses (an unknown
+        color, an alpha outside 0 to 1), and a size that is not a
+        positive, finite number, raises ``ValueError`` naming
+        ``head_marker`` and the key. The head marker is hidden when its
+        dataset's line is hidden (see `on_frame=`). Ignored, with a ``UserWarning``, on
         a static plot (either backend) and for ``animate='spin'``/
         ``'morph'`` (no reveal head). An ANIMATED plot under
         ``backend='plotly'`` raises ``NotImplementedError``.
@@ -11096,7 +11123,13 @@ def plot(
         (``ctx.axes`` is ``None`` on plotly, whose ``ctx.artists`` are that
         frame's traces), so a callback that touches them is **not**
         portable across backends; every other field is identical across
-        backends.
+        backends. On matplotlib ``ctx.artists`` holds one artist per
+        dataset's reveal head, then the trails. Two things are drawn by
+        a second artist that is not in the list and follows the listed
+        one: with a continuous `hue=` on a line-and-marker format
+        (``'-o'``) the markers, which are hidden when the listed line
+        is hidden and take its ``alpha``; and a `head_marker=`, which is
+        hidden when its dataset's head artist is hidden.
 
         With an animated `panels=` grid the callback is called once per
         frame for the whole figure, with ``ctx.axes`` a tuple of the panel
@@ -11189,11 +11222,15 @@ def plot(
         ``'left'`` or ``'right'``, aligned with the figure's edge. E.g.
         ``caption_kwargs={'size': 14, 'color': 'gray', 'position':
         'top', 'loc': 'left'}``. The style is applied BEFORE the caption
-        is wrapped and its room measured, so a caption of any size has
-        the room it needs and is never clipped. An unknown key, a value
-        a key cannot take (a size that is not a positive number or one
-        of matplotlib's size names, an unknown weight or color, an alpha
-        outside 0 to 1; the error names ``caption_kwargs`` and the key),
+        is wrapped and its room measured, and a per-frame caption is
+        measured on every frame, so a caption of any size has
+        the room it needs and is never clipped. matplotlib decides what
+        each key accepts (a size may be a number, a numeric string or
+        one of matplotlib's size names; a key set to ``None`` keeps its
+        default). An unknown key, a value matplotlib refuses (an unknown
+        weight or color, an alpha outside 0 to 1), a size or line
+        spacing that is not positive and finite (the error names
+        ``caption_kwargs`` and the key),
         or `caption_kwargs=` without a `caption=`, raises
         ``ValueError``. Default None.
 
@@ -11210,7 +11247,7 @@ def plot(
         text; for a figure-level text that changes on every frame use
         ``caption=`` with ``caption_kwargs={'position': 'top'}`` (the
         suptitle stays clear of the tallest text such a caption shows on
-        the first, middle and last frames). A ``bytes`` value is decoded
+        any frame). A ``bytes`` value is decoded
         as UTF-8, as for `caption=`. `suptitle_kwargs=` takes the keys
         of `caption_kwargs=` except ``position`` and checks their values
         the same way. A
@@ -11666,7 +11703,7 @@ def plot(
         every frame. A per-frame `title=` (callable or ``{index}``
         pattern, one for all panels or a list with one per panel) is
         given its room above each panel like a fixed title, sized for
-        the tallest of the first, middle and last frames' titles (see
+        the tallest title of any frame (see
         `title=`). `on_frame=` is called once for the whole figure each
         time a frame is drawn, not once per panel (see `on_frame=`: a
         save draws frame 0 twice): its ``FrameContext`` has ``axes`` as a tuple of the panel
@@ -15754,8 +15791,9 @@ def plot(
     # its points are not the labeled observations, so there is nothing
     # for a label to stay on. matplotlib hid every label without a word
     # and plotly drew them (in 2-D only) at the first positions while the
-    # cloud moved away. Neither backend draws them now, and the call
-    # says so.
+    # cloud moved away. Neither backend shows them now, and the call
+    # says so (matplotlib keeps the hidden label artists it has always
+    # made, for a caller that reaches for them; plotly makes none).
     if animate == 'morph' and labels is not None and any(
             _one is not None for _one in (
                 itertools.chain.from_iterable(
@@ -15769,7 +15807,8 @@ def plot(
             "label to stay on; ignoring labels=. Use another animate= "
             "style (e.g. True, 'spin' or 'window') to show labels.",
             UserWarning, stacklevel=external_stacklevel())
-        labels = None
+        if resolve_backend(backend) == 'plotly':
+            labels = None
 
     # names= (QC 2026-07): per-DATASET names, distinct from per-point `labels=`
     # (text call-outs on individual observations) and the `legend=True`
@@ -18020,8 +18059,8 @@ def plot(
                          or _dynamic_title is not None
                          or on_frame is not None)):
                 # a dynamic (callable / `{index...}`) title has no text yet:
-                # the tallest of the first, middle and last frames' titles
-                # sizes the margin (`_sampled_dynamic_titles`)
+                # the tallest of every frame's titles sizes the margin
+                # (`_sampled_dynamic_titles`)
                 _probe_title = None
                 if _dynamic_title is not None:
                     _probe_title = _tallest_title(_sampled_dynamic_titles())
@@ -18071,7 +18110,7 @@ def plot(
                     # title was then drawn off the top of the canvas (top
                     # row) or over the x-axis labels of the row above. The
                     # layout -- this one and the grid's -- arranges the
-                    # TALLEST of the first, middle and last frames' titles
+                    # TALLEST of every frame's titles
                     # like a fixed one (frame 0's alone left a title that
                     # grows lines later off the canvas); the grid draws
                     # frame 0 once it is laid out (`_animate_panel_grid`)
@@ -19344,7 +19383,7 @@ def _reserve_animated_2d_title_room(fig, ax, tallest, shown, font=None,
     axes' top margin (about three lines) and a taller one ran off the top
     of the canvas. `tallest` is the title's tallest text (a fixed title:
     itself; a per-segment list: its tallest entry; a per-frame title: the
-    tallest of the first, middle and last frames', as a caption's room is
+    tallest of every frame's, as a caption's room is
     sized). It is set on `ax` and measured on a real draw, and the figure
     grows UPWARD by what leaves the canvas plus `pad_in` (`_grow_figure`:
     the axes keeps its size and nothing else moves). A title that already

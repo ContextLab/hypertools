@@ -74,8 +74,16 @@ Follows 1.2.0. Animated trails now work with line-and-marker formats (GH
   was. The placement is made at draw time, so it holds after a resize and
   when a 3-D plot is rotated by hand, where it is stable: a label keeps
   its place until its box is covered and does not go back when its old
-  place becomes free. A static figure saves the same picture every time
-  the same call is made. An animation's labels are placed once, for the
+  place becomes free (the labels are hidden while the mouse button is
+  down, as before, and come back where they were). A static figure saves
+  the same picture every time the same call is made, and the placement is
+  worked out in points from the figure's own size, not from the pixels of
+  the draw, so the screen, a PNG at any dpi, a PDF and an SVG show the
+  same arrangement; a figure whose size is changed is placed again. A
+  redraw of an unchanged figure does not work the placement out again.
+  Several labeled calls into one `ax=` are kept off each other as one
+  set, and an axes that was cleared (`ax.clear()`) and plotted into again
+  has its new labels placed. An animation's labels are placed once, for the
   view of its first frame with every label taken as shown (the ones whose
   points are revealed later included), and each label then holds that
   place on every frame, as each held the one fixed offset in 1.2.0: no
@@ -83,11 +91,46 @@ Follows 1.2.0. Animated trails now work with line-and-marker formats (GH
   fix placed every frame afresh: 71 changes of place for 8 labels on a
   60-frame spin, 777 for 30), a frame is the same picture whatever was
   drawn before it, and a saved file is the frames drawn one at a time.
-  Labels placed for the first view can meet at a later one. With very many labels  same. With very many labels on a small figure some boxes still overlap.
+  Labels placed for the first view can meet at a later one. With very
+  many labels on a small figure some boxes still overlap.
   The arrow of a 3-D label points at its point after the cube is drawn
   smaller to clear a legend. A 2-D label the reader has dragged is left
   where it was put. Above 300 visible labels nothing is moved. Matplotlib
   backend.
+- **`labels=` with `animate='morph'` says that no label is drawn.** A
+  morph draws one cloud that moves from each dataset's shape to the next,
+  so it has no observation for a label to stay on. The matplotlib backend
+  hid every label without a word, and the plotly backend drew them in 2-D
+  at the first cloud's positions while the cloud moved away. Both now
+  draw no label and give one `UserWarning`.
+- **A per-dataset trail list works with a categorical `hue=` or
+  `cluster=`.** `hyp.plot([a, b, c], '-', hue=categories, animate=True,
+  chemtrails=[False, True, True])` raised "3 entries but there are 5
+  datasets" when the categories split the three datasets into five drawn
+  traces. Each trace now takes the flag of the dataset it comes from, for
+  `chemtrails=`, `precog=`, `bullettime=` and a `surface=` list. A list
+  with one entry per drawn trace is still accepted. A markers-only format
+  colored by category draws one trace per category, so there a list needs
+  one entry per category, and the error says so.
+- **Markers colored by a continuous `hue=` keep their marker styling.**
+  `markerfacecolor=`, `markeredgecolor=`, `markeredgewidth=`, `fillstyle=`
+  and the short names (`mfc=`, `mec=`, `mew=`, `ms=`) were dropped, so
+  hollow markers with a black edge were drawn as filled dots. They are
+  now honored by the static plot and, in an animation, on the tail and on
+  the trail. Without those arguments the markers are drawn as before.
+  Matplotlib backend.
+- **`hyp.plot` leaves a figure on its own canvas.** To measure a legend,
+  a caption or a `panels=` grid, `hyp.plot` drew the figure on a new Agg
+  canvas and left that canvas attached. In a window (macosx, QtAgg,
+  TkAgg) the figure's canvas was then no longer the one its window shows.
+  The figure's own canvas, and its dpi on a high-resolution display, are
+  now put back after every measurement.
+- **A per-frame title has room on every frame.** The room above an
+  animated plot was sized from the first, middle and last frames' titles,
+  so a callable or `'{index}'` title that was tallest on another frame
+  ran off the canvas. Every frame's title is now measured, which calls a
+  callable title once per frame before the animation is returned.
+  Matplotlib backend.
 - **An animated markers-only plot with a continuous `hue=` is animated
   (GH #297).** `hyp.plot(x, 'o', animate=True, hue=values)` drew every
   observation on every frame: in 3-D only the camera moved, in 2-D every
@@ -123,7 +166,11 @@ Follows 1.2.0. Animated trails now work with line-and-marker formats (GH
   marker, `True` for `'o'`, or a dict such as `{'marker': 'D', 'size': 10,
   'color': 'k'}`. Its color, alpha and size follow the dataset unless the
   dict sets them (with a continuous `hue=` it takes the color of the point
-  it is on). Matplotlib only.
+  it is on). The marker may be any marker matplotlib draws, an array of
+  vertices included. In an `on_frame=` callback, hiding a dataset's
+  artist in `ctx.artists` hides its head marker too, and with a
+  continuous `hue=` on a line-and-marker format the markers follow the
+  visibility and alpha of the listed line. Matplotlib only.
 - **`tail_linewidth=`: a tail thicker (or thinner) than its trail (GH
   #299).** The line width of the recent window that `tail_duration=`
   sizes; a `chemtrails=`/`precog=`/`bullettime=` trail keeps `linewidth=`.
@@ -142,13 +189,15 @@ Follows 1.2.0. Animated trails now work with line-and-marker formats (GH
 - **`caption_kwargs=`: caption size, color and position (GH #299).**
   `caption_kwargs={'size': 14, 'color': 'gray', 'position': 'top', 'loc':
   'left'}`. The style is applied before the caption is wrapped and its
-  room is measured, so a caption of any size is never clipped.
+  room is measured, and a per-frame caption is measured on every frame
+  (a callable caption is called once per frame before the animation is
+  returned), so a caption of any size is never clipped.
 - **`suptitle=`: a title for the whole figure (GH #299).** With `panels=`,
   `title=` names the panels; `suptitle=` is the one title above the grid,
   static or animated (it works on a single plot too). Its room is measured
   like a caption's, so it clears the panel titles, the shared legend and
   colorbar, and a caption placed at the top, at the tallest text a
-  per-frame caption shows on the first, middle and last frames.
+  per-frame caption shows on any frame.
   `suptitle_kwargs=` styles it. Matplotlib only.
 - `head_marker=`, `tail_linewidth=`, `trail_alpha=` and `hold=` may also be
   given inside the `animate={...}` dict. The matplotlib-only arguments
@@ -157,15 +206,22 @@ Follows 1.2.0. Animated trails now work with line-and-marker formats (GH
   `head_marker=`, `tail_linewidth=` and `trail_alpha=` are ignored with a
   warning (as the trail flags are) and `hold=` raises `ValueError`.
   `tail_linewidth=` also warns when no dataset is drawn with a line, and
-  leaves the lines of `animate='spin'` at `linewidth=`.
-- **Values inside styling dicts are checked.** `head_marker=`,
-  `caption_kwargs=`, `suptitle_kwargs=` and `title_kwargs=` raise
-  `ValueError` naming the argument and the key for a size that is not a
-  positive number (or, for text, one of matplotlib's size names), an
-  unknown color, weight or style, and an alpha outside 0 to 1. What
-  changes for existing calls: `title_kwargs={'size': -3}` (or 0, or NaN)
-  was accepted and drew no readable title; it now raises. Bad names
-  already raised, from matplotlib, without naming the argument.
+  leaves the lines of `animate='spin'` at `linewidth=`. In a `panels=`
+  grid each of these warnings is given once for the figure, and only when
+  it is true of every panel.
+- **Values inside styling dicts are checked.** matplotlib decides what
+  each key of `head_marker=`, `caption_kwargs=`, `suptitle_kwargs=` and
+  `title_kwargs=` accepts, so whatever it takes is taken: `None` where it
+  takes `None`, a size as a number, a numeric string or a size name, a
+  weight as a number or a name. A value matplotlib refuses raises
+  `ValueError` naming the argument and the key (it already raised, from
+  matplotlib, without naming the argument). hypertools also refuses a
+  size that is not positive and finite, and a line spacing that is not
+  positive and finite. What changes for existing calls:
+  `title_kwargs={'size': -3}` (or 0, `False`, NaN, or those as strings)
+  was accepted and drew no readable title, and `title_kwargs=
+  {'linespacing': 0}` (or a negative number, or NaN) was accepted; both
+  now raise.
 
 ## 1.2.0 (2026-11-22)
 

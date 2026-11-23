@@ -163,9 +163,9 @@ reserves room for every line above an animated 3-D plot, not just one.
 On the matplotlib backend the room above an animated plot is made for the
 tallest title the animation shows: a fixed title's own lines, the tallest
 entry of a per-segment list, and, for a callable or ``'{index...}'`` title,
-the tallest of the first, middle and last frames' titles, so a title that
-grows lines as the animation runs has its room from the start (a frame in
-between that needs more lines than all three runs above it). The figure is
+the tallest of every frame's titles, so a title that grows lines on any
+frame has its room from the start (the callable is called once per frame
+for this before the animation is returned). The figure is
 made taller by what the title needs, in 2-D and in 3-D, and nothing already
 drawn moves or shrinks.
 
@@ -246,7 +246,14 @@ The context carries the frame index and total, the resolved ``style`` and
 ``segment_kind``. All of those are the same on either backend.
 
 What you *do* with the context is usually backend-specific, because
-``ctx.figure``, ``ctx.axes`` and ``ctx.artists`` are backend-native. The
+``ctx.figure``, ``ctx.axes`` and ``ctx.artists`` are backend-native. On
+matplotlib ``ctx.artists`` holds one artist per dataset's reveal head, then
+the trails. Two things are drawn by a second artist that is not in the list
+and follows the listed one: the markers of a line-and-marker format
+(``'-o'``) under a continuous ``hue=``, which are hidden when the listed
+line is hidden and take its ``alpha``; and a ``head_marker=``, which is
+hidden when its dataset's head artist is hidden. So
+``ctx.artists[0].set_visible(False)`` hides the whole trace. The
 matplotlib form:
 
 .. code-block:: python
@@ -883,9 +890,9 @@ has no blank room there (an animated 3-D plot fills its canvas) the figure
 is made taller by the caption's height, so the caption never overlaps a
 panel, a legend or a colorbar and never leaves the canvas. A caption wider
 than the figure is wrapped to the figure's width, on every frame. Room is
-made for the tallest of the first, middle and last frames' wrapped captions,
-so a caption that grows as the animation runs has its room from the start
-(a frame in between that needs more lines than all three runs below it). An
+made for the tallest of every frame's wrapped captions, so a caption that
+grows on any frame has its room from the start (a callable caption is
+called once per frame for this before the animation is returned). An
 empty caption draws nothing and adds no room. On a static plot the caption
 is drawn once, a pattern or callable being resolved for the finished figure.
 
@@ -904,7 +911,12 @@ caller-supplied ``ax=``.
 ``weight``, ``style``, ``family``, ``alpha``, ``linespacing``, ``position``
 (``'bottom'``, the default, or ``'top'``) and ``loc`` (``'center'``,
 ``'left'`` or ``'right'``). The style is applied before the caption is
-wrapped and its room measured, so a caption of any size is never clipped.
+wrapped and its room measured, and a per-frame caption is measured on every
+frame, so a caption of any size is never clipped. matplotlib decides what
+each key accepts (a size may be a number, a numeric string or a size name,
+and a key set to ``None`` keeps its default); a value it refuses, or a size
+that is not positive and finite, raises ``ValueError`` naming the argument
+and the key.
 
 ``suptitle=`` is one fixed title for the whole figure, above everything it
 holds. It is the figure-level title of a ``panels=`` grid, static or

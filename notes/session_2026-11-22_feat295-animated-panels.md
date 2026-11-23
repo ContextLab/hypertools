@@ -484,3 +484,64 @@ Design decision from the coordinator after round 1: the stateful declutter still
 - Determinism, pixel for pixel (scratch `det.py`, 14 configurations: labeled spin/window/reveal, parallel, line+marker with trails and head marker, hue window, serial, serial hue 2-D, dataset_fade, caption+suptitle, morph, panels with labels, legend spin): frame i in order == shuffled == reversed == the frames a real Pillow writer received from `animation.save` == the same frames of a second identical call. Static `plot()` twice: identical. So history dependence applied to labels only (the stale serial hue trail of C2 was the other case and was fixed in round 1).
 - Tests: section A of tests/test_review_round1_1_2_1.py rewritten (zero switches, first-view placement, shuffled/reversed pixels, saved == drawn, panels, static twice, hysteresis moved to the hand-rotated static figure). tests/test_issue297_layout.py passes unmodified.
 
+
+## 1.2.1 review round 2 (2026-11-23, branch `post-1.2.0`; not pushed)
+
+Library commit 9fed77ec, then tests/docs/CHANGELOG in the next commit.
+Tests: `tests/test_review_round2_1_2_1.py` (117 of its tests fail on
+82933121). 1.2.0 reference venv: scratchpad `review121/old` (mpl 3.10.8).
+
+Per item (confirmed? cause; fix):
+
+- T1 confirmed. `_check_style_values` had its own list of allowed types.
+  Now it asks matplotlib (`Text().update` / `Line2D(**{k: v})`), and adds
+  only: size/markersize/linespacing must be positive and finite (also as
+  numeric strings), text color not `'auto'`, family a str or list of str.
+  None-valued keys are dropped in `_validate_figure_text_kwargs` and
+  `_validate_head_marker`. Against 1.2.0 over 290 `title_kwargs` values the
+  only differences left: size False/0/negative/NaN (and as strings) and
+  linespacing 0/negative/NaN now raise; 1.2.0 accepted them.
+- T2 confirmed. The axes kept only the last call's label list.
+  `_watch_labels` merges lists per axes.
+- T3 confirmed. Each panel warned for itself. `_warn_ignored_grid_styling`
+  collects one case per panel and warns only if true of all.
+- T4 confirmed. Placement used the renderer's pixels. `declutter_labels`
+  now works in points; text sizes come from ONE Agg renderer at 100 dpi
+  (`_label_size_pt`). Tried first: base `RendererBase` metrics; dropped,
+  its sizes were up to 4.5 px smaller than Agg's drawn boxes and labels
+  "clear" in points overlapped by a pixel on screen.
+- T5 fixed the garbled line and rewrote the claims that changed.
+- T6 `{'marker': True}` is 'o', `{'marker': False}` no marker.
+- T7 made true: caption and dynamic title text is resolved on every frame
+  (`_caption_text_frames`, `_sampled_dynamic_titles`). Cost about 0.9 ms a
+  frame for a callable; no extra draws.
+- T8 see timings in the hand-back. Causes: a full declutter on every
+  draw (now memoized in `ax._hyp_label_answer`, skipped while `plot()`
+  lays out via `labels_held_while_plotting`), a draw in
+  `freeze_label_places` (now none), `_cube_corners_px` projecting per view
+  (now one vectorized projection, equal to 1e-12 px).
+- P1 confirmed. Trail lists were checked against drawn runs.
+  `_trail_flag_per_run` maps dataset flags onto runs (also `surface=`).
+- P2 confirmed, NOT changed: `random_state=None` is the documented
+  default for every random stage; `random_state=0` gives the same picture.
+  Added a sentence to the `cluster` docstring.
+- P3 decided: a warning on both backends; plotly makes no annotations, matplotlib keeps its hidden label artists (an existing test reads them).
+- C1 confirmed (in 1.2.0 too for legend/caption/panels).
+  `_measurement_renderer` restores the canvas and `_original_dpi`.
+- C2 confirmed. `_watch_labels` reinstalls the declutter artist when it
+  is not among the axes' children and clears the frozen flag when no
+  earlier label survives.
+- C3 confirmed. `_TraceFollowers` (one invisible artist per axes) makes
+  the hue marker scatter and the head marker follow their leader. Tried
+  and dropped: a `_hyp_shown` flag that re-showed followers each draw
+  (broke a round 1 test that hides the dots directly); closures on the
+  artists (figure no longer pickles).
+- C4 confirmed, static plot too. `_HueMarkerLook`.
+- C5 confirmed with real MouseEvents (1 of 12 labels changed place after
+  a 0.7 degree drag on 82933121, 0 now). Hidden labels keep their place.
+- C6 confirmed. `isinstance(marker, str)` before the emptiness test.
+- C7 confirmed. No measurement draw at all for label placement.
+
+Test note: a caller-supplied 3-D axes is smaller than hypertools' own, so
+the same 30 crowded labels leave 3 overlaps there and 0 in an own figure;
+that is crowding, not a C2 defect (cleared axes == never-used axes).

@@ -147,11 +147,11 @@ def _covered_area(box, others):
         np.clip(wide, 0, None) * np.clip(tall, 0, None), axis=1)
 
 
-#: the renderer every label is measured with (`_label_size_pt`): the
-#: base class measures a text from its font's outlines at 72 dpi, so one
-#: of its "pixels" is one point and the answer does not depend on the
-#: canvas, the dpi or the file format being drawn
-_POINT_RENDERER = []
+#: the resolution every label is measured at (`_label_size_pt`), and the
+#: renderer that measures: hypertools' own figures are made at 100 dpi,
+#: so this is what the screen and a default `savefig` draw
+_LABEL_METRICS_DPI = 100.0
+_LABEL_METRICS_RENDERER = []
 
 
 def _label_size_pt(label):
@@ -159,27 +159,34 @@ def _label_size_pt(label):
     drawing it.
 
     Measured with matplotlib's own layout of the text (line breaks, line
-    spacing, mathtext) on the base renderer instead of the renderer of
-    the draw: Agg fits glyphs to the pixel grid, so the same text is a
-    slightly different size at every dpi (and PDF and SVG measure it a
-    third way), and a placement made from those sizes was a different
-    arrangement on the screen, in a 300 dpi PNG and in a PDF."""
+    spacing, mathtext) on ONE renderer at ONE resolution
+    (`_LABEL_METRICS_DPI`) instead of the renderer of the draw: Agg fits
+    glyphs to the pixel grid, so the same text is a slightly different
+    size at every dpi (and PDF and SVG measure it a third way), and a
+    placement made from those sizes was a different arrangement on the
+    screen, in a 300 dpi PNG and in a PDF. At the default 100 dpi the
+    size is exactly the one drawn; a text is a little larger there than
+    at a higher resolution or in a vector file, so boxes that are clear
+    of each other here are clear there."""
     import matplotlib.text as mtext
     key = (label.get_text(), hash(label.get_fontproperties()),
            label._linespacing, label.get_usetex())
     known = getattr(label, '_hyp_size_pt', None)
     if known is not None and known[0] == key:
         return known[1]
-    if not _POINT_RENDERER:
-        from matplotlib.backend_bases import RendererBase
-        _POINT_RENDERER.append(RendererBase())
+    if not _LABEL_METRICS_RENDERER:
+        from matplotlib.backends.backend_agg import RendererAgg
+        _LABEL_METRICS_RENDERER.append(
+            RendererAgg(1, 1, _LABEL_METRICS_DPI))
     own_renderer, shown = label._renderer, label.get_visible()
     try:
         # (a hidden text has no extent; visibility is put back below
         # without marking the figure as changed)
         label._visible = True
-        box = mtext.Text.get_window_extent(label, _POINT_RENDERER[0])
-        size = (float(box.width), float(box.height))
+        box = mtext.Text.get_window_extent(
+            label, _LABEL_METRICS_RENDERER[0])
+        to_pt = 72.0 / _LABEL_METRICS_DPI
+        size = (float(box.width) * to_pt, float(box.height) * to_pt)
     finally:
         label._visible = shown
         label._renderer = own_renderer
