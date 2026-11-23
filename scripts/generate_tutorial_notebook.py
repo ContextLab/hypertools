@@ -46,7 +46,7 @@ SPECS = {
     'market_sectors': ('animate_market_sectors', 100, [
         ('## 1. Imports, a disk cache, and the universe',
          'Six sectors of four or five tickers each -- unequal on purpose -- '
-         'with fixed sector colours, the animation length, a whitened PCA so '
+         'with fixed sector colors, the animation length, a whitened PCA so '
          "a sector's common growth does not flatten its path onto one line, "
          'and the colormap that tints the date red or green.', None),
         ('## 2. Prices and share counts, with a synthetic fallback',
@@ -66,8 +66,8 @@ SPECS = {
          'return',
          'What is plotted is each stock\'s cumulative log return since the '
          'first month (a growth curve), one matrix per sector. Each sector\'s '
-         'share of the basket\'s capitalisation, month by month, becomes the '
-         'colour weights of the market path, and the cap-weighted trailing '
+         'share of the basket\'s capitalization, month by month, becomes the '
+         'color weights of the market path, and the cap-weighted trailing '
          'twelve-month return tints the title. `load_market` is the real '
          'path; `fixture_data` is the same payload from the seeded basket.',
          'assemble'),
@@ -75,7 +75,7 @@ SPECS = {
          'Three library calls: `hyp.reduce` per sector (its own stocks, its '
          'own space), `hyp.align(..., model=\'HyperAlign\')` into one shared '
          'space, and `hyp.plot` on the six aligned paths plus their mean, '
-         'coloured through the mixture hue. The `on_frame` hook only sets '
+         'colored through the mixture hue. The `on_frame` hook only sets '
          'the title: the date under the head, tinted by the basket\'s '
          'return.', 'construct_artifact'),
     ]),
@@ -102,15 +102,15 @@ SPECS = {
     'painting_embeddings': ('animate_painting_embeddings', 100, [
         ('## 1. Imports, a disk cache, and the five paintings',
          'The descriptions are bundled inline with each painting\'s artist, '
-         'year, Wikimedia file and a hand-picked fallback colour. The '
+         'year, Wikimedia file and a hand-picked fallback color. The '
          'layout constants place the text column and the thumbnails.',
          None),
-        ('## 2. Windows, canvases and colours',
+        ('## 2. Windows, canvases and colors',
          'Each description is cut into overlapping ten-word windows. The '
          'canvas is downloaded once (the only network access here) and '
-         '`image_palette` picks its most salient legible colour; offline, '
-         'the fallback colour and a flat swatch stand in. `fixture_data` is '
-         "the test-suite's path: it takes every colour from a thumbnail "
+         '`image_palette` picks its most salient legible color; offline, '
+         'the fallback color and a flat swatch stand in. `fixture_data` is '
+         "the test-suite's path: it takes every color from a thumbnail "
          'committed next to the example script (`examples/data/`, not '
          'shipped with this notebook, so it is not called here) and embeds '
          'with TF-IDF, so no test fetches a canvas or a model.', 'Paintings'),
@@ -118,12 +118,12 @@ SPECS = {
          'Raw text in, five clouds out, spun by `animate=\'spin\'`. '
          'Everything after the call is annotation of the same figure: the '
          'name with artist and year, the embedded description, and a '
-         'thumbnail centred on it.', 'construct_artifact'),
+         'thumbnail centered on it.', 'construct_artifact'),
     ]),
     'conversation_shape': ('animate_conversation', 100, [
         ('## 1. Imports, the speakers, and the turns',
          'The Mad Tea-Party turns, spoken text only, with each speaker\'s '
-         'colour, the recency-fade constants, the title wrap width and the '
+         'color, the recency-fade constants, the title wrap width and the '
          'tail length.', None),
         ('## 2. Windows and the payload',
          'Each turn becomes a list of sliding word windows; the payload '
@@ -136,10 +136,10 @@ SPECS = {
          'hand-written form of `dataset_fade={\'floor\': FLOOR, '
          '\'decay\': DECAY}`, which gives exactly these alphas in one '
          'keyword. The title needs no hook: `title_color=` tints each '
-         'turn\'s title with its speaker\'s colour, and the library reserves '
+         'turn\'s title with its speaker\'s color, and the library reserves '
          'the wrapped title\'s margin.', 'turn_alpha'),
         ('## 4. One call',
-         'Raw dialogue in, one disjoint trajectory per turn, coloured by '
+         'Raw dialogue in, one disjoint trajectory per turn, colored by '
          'speaker, revealed one turn at a time over thirty seconds and two '
          'camera rotations.', 'construct_artifact'),
     ]),
@@ -150,7 +150,7 @@ SPECS = {
         ('## 2. The shapes zoo, sampled and loop-closed, with parametric '
          'stand-ins',
          '`hyp.load` fetches each shape once into `~/hypertools_data`; the '
-         'clouds are normalised into the unit cube, sampled, and the first '
+         'clouds are normalized into the unit cube, sampled, and the first '
          'is repeated at the end so a looping player never hard-cuts. On a '
          'cold cache with no network, five parametric clouds stand in.',
          'Shapes'),
