@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.2.1 (2026-11-23)
+
+Follows 1.2.0. Animated trails now work with line-and-marker formats (GH
+#299), and six small layout points in the gallery figures are fixed (GH
+#297).
+
+### Fixed
+
+### Added
+
 ## 1.2.0 (2026-11-22)
 
 A feature release. `animate=` now works with `panels=` (one animation of the

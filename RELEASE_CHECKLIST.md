@@ -1,6 +1,27 @@
 # HyperTools 1.1 release checklist
 
-## The 1.2.0 release: read this first
+## The 1.2.1 release: read this first
+
+`pyproject.toml` and `CHANGELOG.md` declare **1.2.1** (GH #299 and GH #297,
+on top of 1.2.0, which was released on 2026-11-22: PyPI, GitHub release, Read
+the Docs "stable", conda-forge). Follow the 1.2.0 notes below and read `1.2.1`
+for `1.2.0` (and `v1.2.1` for `v1.2.0`) in every command, with these
+differences:
+
+- **Step 6, Read the Docs:** "stable" follows the highest version tag by
+  itself; confirm it instead of setting it.
+- **Step 6, PyPI check:** `https://pypi.org/pypi/hypertools/<version>/json`
+  can keep answering a cached 404 for minutes after the upload; read
+  `https://pypi.org/pypi/hypertools/json` or the simple index instead.
+- **Step 6, clean-environment check:** build the environment on Python 3.10
+  or later. On 3.9, `pip install hypertools` installs 0.8.2 without a message.
+- **Step 7, conda-forge:** if the bot has not opened a bump pull request,
+  open one from a personal fork of the feedstock (version and sdist sha256;
+  compare `[project] dependencies` with the previous tag) and ask
+  `@conda-forge-admin` to rerender, as was done for 1.1.0 and 1.2.0.
+- There are no leftovers of an earlier draft to delete.
+
+## The 1.2.0 release (released 2026-11-22)
 
 `pyproject.toml` and `CHANGELOG.md` declare **1.2.0** (GH #295: animated
 panel grids, `caption=`, fast-start mp4; panel grids with shared colors, one
