@@ -76,7 +76,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from matplotlib.colors import LinearSegmentedColormap, Normalize
-from matplotlib.lines import Line2D
 
 import hypertools as hyp
 
@@ -320,13 +319,15 @@ def construct_artifact(data):
                         tail_duration=TAIL, duration=DURATION, frame_rate=FPS,
                         rotations=ROTATIONS, colorbar=False,
                         title=f'{months[0]:%B} {months[0].day}, {months[0].year}',
+                        # the key is the library's own legend: one entry
+                        # per sector color plus a gray one for the market
+                        # path, in the top-left corner of the axes. The
+                        # library keeps the turning cube clear of it.
+                        legend_colors=list(zip(names, SECTOR_COLORS))
+                        + [('Market (average across sectors)', '#666666')],
+                        legend_kwargs={'loc': 'upper left', 'fontsize': 8},
                         size=(8, 8), backend='matplotlib', show=False)
     ax = anim.figure.axes[0]
-    ax.legend(handles=[Line2D([], [], color=c, lw=2, label=s)
-                       for s, c in zip(names, SECTOR_COLORS)]
-              + [Line2D([], [], color='#666666', lw=3.4,
-                        label='Market (average across sectors)')],
-              loc='upper left', fontsize=8, frameon=False)
 
     def date_title(ctx):
         """The title is the date under the head, tinted by the basket's own

@@ -249,7 +249,11 @@ def construct_artifact(data):
     # temperature through the same colormap (extremes saturate).
     norm = matplotlib.colors.Normalize(mean.min(), mean.max())
     cmap = plt.get_cmap('RdBu_r')
-    map_ax = fig.add_axes([0.615, 0.50, 0.38, 0.44])
+    # (the right edge stops at 0.985, not at the canvas edge: the time
+    # series below shares it, and its head marker is drawn unclipped,
+    # centered ON that edge at the last month, so it needs half a
+    # marker of canvas beyond it)
+    map_ax = fig.add_axes([0.615, 0.50, 0.37, 0.44])
     for ring in data.land:
         map_ax.add_patch(Polygon(ring, closed=True, facecolor='0.86',
                                  edgecolor='0.62', linewidth=0.4))

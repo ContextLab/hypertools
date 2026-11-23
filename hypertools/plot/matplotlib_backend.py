@@ -79,6 +79,156 @@ def _label_callout_kwargs(label_alpha, arrowstyle='-', facecolor='white'):
     )
 
 
+#: where an observation label sits relative to its point, in points: up
+#: and to the left, as hypertools has always drawn it
+LABEL_OFFSET_PT = 20.0
+
+#: the offsets a label is tried at, in order, when its box would cover
+#: another label's (`declutter_labels`): the four corners around the
+#: point at the usual distance, then the same corners further out
+_LABEL_REACHES_PT = (LABEL_OFFSET_PT, 2.25 * LABEL_OFFSET_PT,
+                     3.5 * LABEL_OFFSET_PT)
+_LABEL_CORNERS = ((-1, 1), (1, 1), (-1, -1), (1, -1))
+
+#: above this many visible labels they are left where they are: that many
+#: boxes cover the plot whichever way each one points
+_LABEL_DECLUTTER_MAX = 300
+
+
+def _label_box(anchor, size, corner, reach_px, pad_px):
+    """The display box (x0, y0, x1, y1), its round frame included, of a
+    label of text `size` attached to the point `anchor` on the `corner`
+    side (``(-1, 1)`` is up and to the left) at `reach_px`."""
+    (px, py), (w, h), (sx, sy) = anchor, size, corner
+    x0 = px + sx * reach_px - (w if sx < 0 else 0.0)
+    y0 = py + sy * reach_px - (h if sy < 0 else 0.0)
+    return (x0 - pad_px, y0 - pad_px, x0 + w + pad_px, y0 + h + pad_px)
+
+
+def declutter_labels(ax, renderer):
+    """Keep the observation labels of `ax` (`labels=`) off each other.
+
+    Every label hangs up and to the left of its point, so the labels of
+    two points that are close on screen were drawn on top of each other
+    (GH #297: "Subject 1" over "Subject 2" in `examples/plot_labels.py`).
+    Here each visible label, in the order the labels were given, keeps
+    that place unless its box would cover the box of a label placed
+    before it; then it takes the first of the other corners around its
+    point (up-right, down-left, down-right, then the same four further
+    out) that is free and inside the canvas, or failing that the one
+    that covers the least. A label that covers nothing is not touched,
+    so a figure whose labels were clear of each other is drawn exactly
+    as before.
+
+    It is a pure function of what is on screen (the points' positions,
+    which labels are visible, the text sizes), so a frame of an
+    animation comes out the same whenever it is drawn. It runs at draw
+    time (`_LabelDeclutter`), which is the one path for a static figure,
+    a figure the reader rotates, and every frame of an animation.
+    """
+    import matplotlib.text as mtext
+    entries = getattr(ax, '_hyp_labels_and_points', None) or []
+    labels = []
+    for entry in entries:
+        label = entry[0]
+        if not label.get_visible() or label.axes is not ax:
+            continue
+        # a label that is no longer where hypertools put it was moved by
+        # the reader (2-D labels can be dragged) or by the caller's own
+        # code: it is theirs from then on
+        if tuple(np.round(label.xyann, 6)) != tuple(
+                np.round(getattr(label, '_hyp_offset', label.xyann), 6)):
+            label._hyp_user_placed = True
+        if not getattr(label, '_hyp_user_placed', False):
+            labels.append(label)
+    if not labels:
+        return
+    to_px = renderer.points_to_pixels
+    home = (-LABEL_OFFSET_PT, LABEL_OFFSET_PT)
+    for label in labels:
+        if label._hyp_offset != home:
+            _set_label_corner(label, _LABEL_CORNERS[0], LABEL_OFFSET_PT)
+    if len(labels) < 2 or len(labels) > _LABEL_DECLUTTER_MAX:
+        return
+    canvas = ax.get_figure(root=True).bbox
+    gap = to_px(2.0)
+    placed = np.empty((0, 4))
+    for label in labels:
+        anchor = ax.transData.transform(label.xy)
+        if not np.all(np.isfinite(anchor)):
+            continue
+        text = mtext.Text.get_window_extent(label, renderer)
+        size = (text.width, text.height)
+        frame = label.get_bbox_patch()
+        pad = getattr(frame.get_boxstyle(), 'pad', 0.0) if frame else 0.0
+        pad_px = pad * to_px(label.get_size()) + gap
+        best = None
+        for reach in _LABEL_REACHES_PT:
+            for corner in _LABEL_CORNERS:
+                box = _label_box(anchor, size, corner, to_px(reach), pad_px)
+                over = 0.0
+                if len(placed):
+                    wide = (np.minimum(box[2], placed[:, 2])
+                            - np.maximum(box[0], placed[:, 0]))
+                    tall = (np.minimum(box[3], placed[:, 3])
+                            - np.maximum(box[1], placed[:, 1]))
+                    over = float(np.sum(
+                        np.clip(wide, 0, None) * np.clip(tall, 0, None)))
+                is_home = best is None
+                inside = (box[0] >= canvas.x0 and box[1] >= canvas.y0
+                          and box[2] <= canvas.x1 and box[3] <= canvas.y1)
+                # (the usual place needs no room check: a lone label at
+                # the canvas edge stays where it has always been)
+                if over <= 0.0 and (is_home or inside):
+                    best = (0.0, corner, reach, box)
+                    break
+                # a place off the canvas only as a last resort
+                cost = over + (0.0 if inside else
+                               (box[2] - box[0]) * (box[3] - box[1]))
+                if best is None or cost < best[0]:
+                    best = (cost, corner, reach, box)
+            if best[0] <= 0.0:
+                break
+        _cost, corner, reach, box = best
+        if (corner, reach) != (_LABEL_CORNERS[0], LABEL_OFFSET_PT):
+            _set_label_corner(label, corner, reach)
+        placed = np.vstack([placed, box])
+
+
+def _set_label_corner(label, corner, reach_pt):
+    """Hang `label` on the `corner` side of its point, `reach_pt` away."""
+    sx, sy = corner
+    label.set_position((sx * reach_pt, sy * reach_pt))
+    label.set_ha('right' if sx < 0 else 'left')
+    label.set_va('bottom' if sy > 0 else 'top')
+    label._hyp_offset = (sx * reach_pt, sy * reach_pt)
+
+
+class _LabelDeclutter(matplotlib.artist.Artist):
+    """Invisible child of an axes that carries observation labels: it is
+    drawn before them (lowest zorder) and puts them clear of each other
+    for the draw that follows (`declutter_labels`). Being part of the
+    draw, it sees the figure as it is then: after any layout, at any
+    size or dpi, at the camera angle of the frame being drawn."""
+
+    def __init__(self):
+        super().__init__()
+        self.set_zorder(-1e6)
+        self.set_in_layout(False)
+
+    def draw(self, renderer):
+        """Place the axes' labels for this draw; draws nothing itself."""
+        if self.axes is not None and self.get_visible():
+            declutter_labels(self.axes, renderer)
+        self.stale = False
+
+
+def _watch_labels(ax):
+    """Give `ax` its `_LabelDeclutter` (one per axes)."""
+    if getattr(ax, '_hyp_label_declutter', None) is None:
+        ax._hyp_label_declutter = ax.add_artist(_LabelDeclutter())
+
+
 def _apply_title(ax, text, font=None, title_kwargs=None, family=None):
     """Set `ax`'s title, honoring the resolved `font=` and `title_kwargs=`
     (GH #285).
@@ -1046,8 +1196,9 @@ def _draw(
     # panel on a shared clock.
     _cell_ax = ax if (panel_cell and ax is not None) else None
     # ...and a factor on the animated 3-D box zoom, which the grid lowers
-    # (through the stub) until the rotating cube stays inside its cell; it
-    # is 1.0, i.e. no change, for every ordinary animated plot.
+    # (through the stub) until the rotating cube stays inside its cell. A
+    # single animated plot starts at 1.0 and is lowered only if its cube
+    # would reach the canvas edge or a legend (`plot._keep_cube_clear`).
     _cell_zoom_scale = [1.0]
 
     # chemtrails/precog/bullettime (GH #127): normalize to one bool per
@@ -1418,13 +1569,14 @@ def _draw(
                     label = ax.annotate(
                         labels[idx],
                         xy=(x2, y2),
-                        xytext=(-20, 20),
+                        xytext=(-LABEL_OFFSET_PT, LABEL_OFFSET_PT),
                         textcoords="offset points",
                         ha="right",
                         va="bottom",
                         **_label_callout_kwargs(label_alpha),
                         **_label_font_kwargs,
                     )
+                    label._hyp_offset = (-LABEL_OFFSET_PT, LABEL_OFFSET_PT)
                     label._hyp_point_idx = within[idx]
                     label._hyp_global_idx = idx
                     label._hyp_run_idx = (run_of[idx] if run_of is not None
@@ -1435,19 +1587,23 @@ def _draw(
                     label = ax.annotate(
                         labels[idx],
                         xy=(x2, y2),
-                        xytext=(-20, 20),
+                        xytext=(-LABEL_OFFSET_PT, LABEL_OFFSET_PT),
                         textcoords="offset points",
                         ha="right",
                         va="bottom",
                         **_label_callout_kwargs(label_alpha),
                         **_label_font_kwargs,
                     )
+                    label._hyp_offset = (-LABEL_OFFSET_PT, LABEL_OFFSET_PT)
                     label.draggable()
                     label._hyp_point_idx = within[idx]
                     label._hyp_global_idx = idx
                     label._hyp_run_idx = (run_of[idx] if run_of is not None
                                           else None)
                     labels_and_points.append((label, x[0], x[1]))
+        # labels that would cover each other are moved apart on every
+        # draw (GH #297), static, rotated by hand or animated alike
+        _watch_labels(ax)
         fig.canvas.draw()
 
     def update_position(e):
@@ -2407,6 +2563,10 @@ def _draw(
             fargs=fargs, interval=1000 / frame_rate, blit=False,
             repeat=False)
         line_ani._hyp_content_frames = int(n_frames)
+        # the factor every 3-D frame function multiplies its box zoom by:
+        # `plot._keep_cube_clear` lowers it when the turning cube would
+        # reach the canvas edge or a legend (GH #297)
+        line_ani._hyp_zoom_scale = _cell_zoom_scale
         return line_ani
 
     def dispatch_animate(x, ani_params):

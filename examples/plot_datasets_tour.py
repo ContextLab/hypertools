@@ -19,7 +19,22 @@ from each and plotting it in a 2x2 grid: one panel per source.
 # Code source: Contextual Dynamics Laboratory
 # License: MIT
 
+import numpy as np
+
 import hypertools as hyp
+
+
+def bechdel_numeric(df):
+    """The Bechdel table's numeric columns, with the dollar amounts on a
+    log scale. Budgets and grosses run from a few hundred dollars to three
+    billion: plotted as they are, a handful of blockbusters stretch the
+    axes and every other film is squeezed into one corner of the plot."""
+    df = df.select_dtypes('number').dropna()
+    dollars = [name for name in df.columns
+               if 'budget' in name or 'gross' in name]
+    df[dollars] = np.log10(df[dollars])
+    return df
+
 
 # Three of these four sources (seaborn, FiveThirtyEight, Kaggle) fetch over
 # the network at run time. So that a transient outage doesn't abort the whole
@@ -34,7 +49,7 @@ sources = [
     ('seaborn: penguins', lambda: hyp.load('penguins'),
      lambda df: df.select_dtypes('number').dropna()),
     ('fivethirtyeight: bechdel', lambda: hyp.load('fivethirtyeight/bechdel'),
-     lambda df: df.select_dtypes('number').dropna()),
+     bechdel_numeric),
     ('kaggle: uciml/iris', lambda: hyp.load('kaggle/uciml/iris'), None),
 ]
 

@@ -25,6 +25,62 @@ Follows 1.2.0. Animated trails now work with line-and-marker formats (GH
   have one.** With a per-dataset list such as `chemtrails=[False, True]`
   the trail took the next color of the color cycle, which was another
   dataset's (matplotlib backend). Found while fixing GH #299.
+- **The cube of an animated 3-D plot stays inside the canvas and off the
+  legend (GH #297).** An animated 3-D plot fills its canvas with the cube
+  zoomed in, so on a square or portrait figure (`size=(8, 8)`) the cube,
+  seen corner-on, reached the left and right canvas edges and ran past
+  them, and at its widest view its right corner reached into the box of
+  the legend beside the plot. A legend placed in a corner of the axes
+  (`legend_kwargs={'loc': 'upper left'}`) could meet the cube's top
+  corner, in a static plot too. The cube is now measured at every camera
+  angle the plot is seen from and drawn smaller until it keeps a margin of
+  2% of the canvas from the canvas edges, from the legend and from the
+  colorbar. What changes in existing figures: an animated 3-D plot on a
+  square or portrait figure draws its cube about 10% smaller, an animated
+  landscape plot with a legend about 5% smaller, and a plot whose cube
+  was already clear (an animated landscape plot without a legend, every
+  static plot whose legend is in its default place) is drawn as before. A
+  `zoom=` above 1 is left alone, and so are `panels=` grids (they have
+  their own fit) and plots drawn into an `ax=`. To clear a large legend
+  the cube is drawn no smaller than 70% of its size. An animated plot's
+  figure now shows the first frame as soon as `hyp.plot` returns (it was
+  empty until the first frame was drawn). Matplotlib backend.
+- **Observation labels are not drawn on top of each other (GH #297).**
+  Every `labels=` box hangs up and to the left of its point, so the labels
+  of two points that are close on screen covered each other. A label whose
+  box would cover an earlier label's now takes another corner around its
+  point (up-right, down-left, down-right, then the same corners further
+  out), on the canvas where possible. A label that covers nothing stays
+  where it was. The placement is made at draw time, so it holds after a
+  resize, when a 3-D plot is rotated by hand and on every frame of an
+  animation; a 2-D label the reader has dragged is left where it was put.
+  Above 300 visible labels nothing is moved. Matplotlib backend.
+- **An animated markers-only plot with a continuous `hue=` is animated
+  (GH #297).** `hyp.plot(x, 'o', animate=True, hue=values)` drew every
+  observation on every frame: in 3-D only the camera moved, in 2-D every
+  frame was the same picture, and `chemtrails=`/`precog=`/`bullettime=`
+  drew nothing. The markers are now revealed over the same window as
+  without `hue=`, each in its own color, with their trail of faded
+  markers. `animate='spin'` still shows every observation, as it should.
+  Matplotlib backend (plotly already animated this call).
+
+### Examples
+
+- `animate_market_sectors` draws its key with the library's legend
+  (`legend_colors=` pairs and `legend_kwargs={'loc': 'upper left'}`)
+  instead of a hand-made `ax.legend`, so the library keeps the cube clear
+  of it (GH #297).
+- `animate_weather_decades`: the map and time-series panels, which the
+  example places itself, end at 0.985 of the figure width instead of
+  0.995, so the marker on the last month is no longer cut by the canvas
+  edge (GH #297).
+- `plot_shapes_zoo`: the teapot, the one sparse cloud (1,728 rows, 301
+  distinct points), is drawn with the `.` marker instead of the one-pixel
+  `,` (GH #297).
+- `plot_datasets_tour`: the Bechdel panel plots its dollar columns on a
+  log scale. Budgets and grosses span six orders of magnitude, so a few
+  blockbusters stretched the axes and squeezed every other film into one
+  corner of the cube (GH #297).
 
 ### Added
 

@@ -7523,6 +7523,164 @@ def _outer_label_margins(fig, cubes, strip):
     return grow
 
 
+def _zoomed_in(zoom):
+    """Whether `zoom=` asks for a closer view than the default (1)."""
+    try:
+        return float(zoom) > 1.0
+    except (TypeError, ValueError):
+        return False
+
+
+class _AnimatedCubeZoom:
+    """A single ANIMATED 3-D plot's zoom handle, in the shape
+    `_keep_cube_clear` fits (``zoom_scale`` and ``draw``): the factor its
+    frame functions multiply their box zoom by, and a draw of frame 0 (the
+    updater alone, no hook), which applies it."""
+
+    def __init__(self, zoom_scale, draw_first_frame):
+        self.zoom_scale = zoom_scale
+        self._draw_first_frame = draw_first_frame
+
+    def draw(self, frame=0):
+        """Draw frame 0 (`frame` is ignored: the fit measures from it)."""
+        self._draw_first_frame()
+
+
+def _cube_corners_px(axis, azimuths):
+    """The cube's eight corners on the canvas, in pixels, at each camera
+    angle of `azimuths` (the axes' current elevation and box zoom):
+    an array of shape ``(len(azimuths), 8, 2)``."""
+    import itertools
+    from mpl_toolkits.mplot3d import proj3d
+    elev, azim0 = axis.elev, axis.azim
+    corners = np.array(list(itertools.product(
+        axis.get_xlim3d(), axis.get_ylim3d(), axis.get_zlim3d())))
+    # (the square a 3-D axes is drawn in is settled by `apply_aspect`)
+    axis.apply_aspect()
+    views = []
+    for azim in azimuths:
+        axis.view_init(elev=elev, azim=azim)
+        px, py, _ = proj3d.proj_transform(
+            corners[:, 0], corners[:, 1], corners[:, 2], axis.get_proj())
+        views.append(axis.transData.transform(np.column_stack([px, py])))
+    axis.view_init(elev=elev, azim=azim0)
+    return np.array(views)
+
+
+def _cube_excess(views, center, room, obstacles):
+    """By what factor the cube drawn at `views` (`_cube_corners_px`) is
+    too large: the smallest number its size, measured from `center`,
+    must be divided by for every corner to stay inside the box `room`
+    (x0, y0, x1, y1) and for the cube to stay off every box of
+    `obstacles`. 1.0 or less means it is clear already. An obstacle that
+    covers `center` cannot be cleared at any size and is ignored."""
+    offsets = views - np.asarray(center, dtype=float)
+    low = np.array([center[0] - room[0], center[1] - room[1]])
+    high = np.array([room[2] - center[0], room[3] - center[1]])
+    with np.errstate(divide='ignore', invalid='ignore'):
+        excess = float(np.nanmax(np.where(
+            offsets >= 0, offsets / high, -offsets / low)))
+    for x0, y0, x1, y1 in obstacles:
+        box = np.array([[x0, y0], [x1, y0], [x1, y1], [x0, y1]]) - center
+        for corners in offsets:
+            # two convex shapes are apart exactly when some edge normal of
+            # one of them separates them. The cube's outline is convex and
+            # its edges join pairs of corners, so the normals of all the
+            # corner pairs (and the box's own two) cover every candidate.
+            # Along a normal the cube spans [a, b] around the center
+            # (a < 0 < b) and the box [c, d]: shrunk by s the cube clears
+            # the box on that side when s * b < c (or s * a > d). The
+            # largest such s over all normals is the size that just fits.
+            pairs = corners[:, None, :] - corners[None, :, :]
+            pairs = pairs[np.triu_indices(len(corners), 1)]
+            normals = np.vstack([np.column_stack([-pairs[:, 1], pairs[:, 0]]),
+                                 [[1.0, 0.0], [0.0, 1.0]]])
+            lengths = np.hypot(normals[:, 0], normals[:, 1])
+            normals = normals[lengths > 1e-9] / lengths[lengths > 1e-9, None]
+            cube = corners @ normals.T
+            a, b = cube.min(axis=0), cube.max(axis=0)
+            rect = box @ normals.T
+            c, d = rect.min(axis=0), rect.max(axis=0)
+            with np.errstate(divide='ignore', invalid='ignore'):
+                fits = np.where(c > 0, c / b, np.where(d < 0, d / a, 0.0))
+            fits = float(np.nanmax(fits))
+            if fits > 0.0:
+                excess = max(excess, 1.0 / fits)
+    return excess
+
+
+#: the smallest a single plot's cube is drawn to keep it off a legend (or
+#: another axes of the figure), as a share of its usual size: under this
+#: the cube stays at that share and the legend covers part of it
+_LEGEND_CLEAR_CUBE_SHARE = 0.7
+
+
+def _keep_cube_clear(fig, axis, handle, rotations):
+    """Zoom a single 3-D plot's cube out until, at EVERY camera angle it
+    is seen from, it stays inside the canvas and off the plot's legend
+    and the figure's other axes (GH #297). The one fit of a single plot's
+    cube, static or animated; a `panels=` grid has its own
+    (`_fit_panel_cubes`).
+
+    An animated 3-D axes fills the canvas and its cube is drawn zoomed
+    in, so on a square or portrait figure the cube, seen corner-on,
+    reached to the canvas edge and past it (the left corner of
+    `examples/animate_conversation.py` sat on the edge for the whole
+    clip); a legend placed in a corner of the axes
+    (``legend_kwargs={'loc': 'upper left'}``) met the cube's top corner;
+    and the default legend, right of the plot, was reached by the cube's
+    right corner at its widest view. The cube's eight corners are
+    projected at the views the plot is seen from (`_camera_azimuths`: the
+    whole turn of a rotating animation, the one view of a static plot)
+    and the box zoom is lowered (the `handle`'s ``zoom_scale``) until
+    they are all on the canvas, less the margin a panel's cube is given
+    (`_PANEL_CUBE_FILL`), and the cube's outline is that margin away from
+    the legend and from every other axes of the figure (a colorbar). A
+    cube that is clear already is not touched: a static plot unless its
+    legend was put inside the axes, and an animated landscape plot
+    without a legend. To clear a legend or another axes the cube is drawn
+    no smaller than `_LEGEND_CLEAR_CUBE_SHARE` of its size.
+    """
+    if not hasattr(axis, 'get_proj'):
+        return
+    width, height = fig.bbox.width, fig.bbox.height
+    margin = 0.5 * (1.0 - _PANEL_CUBE_FILL) * min(width, height)
+    room = (margin, margin, width - margin, height - margin)
+    obstacles = []
+    for other in fig.axes:
+        if other is axis or not other.get_visible():
+            continue
+        box = other.get_position()
+        obstacles.append((box.x0 * width, box.y0 * height,
+                          box.x1 * width, box.y1 * height))
+    legend = axis.get_legend()
+    if legend is not None and legend.get_visible():
+        import matplotlib
+        with plt.rc_context(matplotlib.rcParamsDefault):
+            extent = legend.get_window_extent(_measurement_renderer(fig))
+        obstacles.append(tuple(extent.extents))
+    obstacles = [(x0 - margin, y0 - margin, x1 + margin, y1 + margin)
+                 for x0, y0, x1, y1 in obstacles]
+    start = handle.zoom_scale[0]
+    for _ in range(4):
+        # frame 0 sets the plot's elevation and applies its box zoom
+        handle.draw(0)
+        views = _cube_corners_px(
+            axis, _camera_azimuths(axis, rotations, 3.0))
+        square = axis.get_position()
+        center = ((square.x0 + square.x1) * 0.5 * width,
+                  (square.y0 + square.y1) * 0.5 * height)
+        excess = max(_cube_excess(views, center, room, []), min(
+            _cube_excess(views, center, room, obstacles),
+            handle.zoom_scale[0] / (_LEGEND_CLEAR_CUBE_SHARE * start)))
+        if excess <= 1.001:
+            break
+        # (the projection is perspective, so the cube's reach is not
+        # exactly linear in the zoom: correct and measure again)
+        handle.zoom_scale[0] /= excess
+    handle.draw(0)
+
+
 class _StaticCubeZoom:
     """A STATIC 3-D panel's zoom handle, in the shape of an animated
     panel's `PanelAnimationStub` (``zoom_scale``, ``start_scale`` and
@@ -9098,6 +9256,13 @@ def plot(
         the same data coordinates, honoring the resolved `font=` (see
         below) the same way the legend/colorbar/title do.
 
+        On matplotlib a label hangs up and to the left of its point. A
+        label whose box would cover an earlier label's is hung on another
+        side of its point instead (up-right, down-left, down-right, then
+        further out), so the labels of neighboring points stay readable;
+        this is decided on every draw, so it holds when a 3-D plot is
+        rotated and on every frame of an animation.
+
     label_anchor : 'first', 'center', 'last', int, or None
         Where a PER-DATASET `labels=` list attaches its annotation inside
         each dataset: the first observation (default), the middle one, the
@@ -9169,6 +9334,10 @@ def plot(
         'orientation': 'h'}`) under `backend='plotly'`. Applied LAST, so
         anything given here wins over hypertools' own defaults (a
         frameless legend centered outside the right edge). Default None.
+        On a single 3-D matplotlib plot the cube is kept clear of the
+        legend wherever it is placed: a legend in a corner of the axes
+        (``'upper left'``) has the cube drawn a little smaller, by up to
+        30%, rather than drawn across it.
 
         In a `panels=` grid these style the grid's ONE shared legend, and
         its position is read relative to the whole GRID. On matplotlib a
@@ -17249,6 +17418,26 @@ def plot(
                         total_frames=max(1, int(round(frame_rate
                                                       * duration))),
                         frame_hooks=_frame_hooks)
+                elif (line_ani is not None and animate != 'spin'
+                        and not has_line_component(fmt)):
+                    # a markers-only format in a reveal animation (GH
+                    # #297): the same per-frame rendering, with one
+                    # per-point-colored scatter per head window and
+                    # trail in place of a line collection. The static
+                    # scatter below REMOVED the animated artists and drew
+                    # every observation on every frame: no reveal, no
+                    # trail, and in 2-D every frame the same picture.
+                    _apply_multicolor_animation(
+                        ax, xform, line_colors, kwargs_list, line_ani,
+                        style=animate, chemtrails=chemtrails,
+                        precog=precog, bullettime=bullettime,
+                        trail_alpha=(DEFAULT_TRAIL_ALPHA
+                                     if _trail_alpha is None
+                                     else _trail_alpha),
+                        antialias=False,
+                        total_frames=max(1, int(round(frame_rate
+                                                      * duration))),
+                        frame_hooks=_frame_hooks, markers=True)
                 elif is_line(fmt):
                     _apply_multicolor_lines(ax, xform, line_colors,
                                             kwargs_list,
@@ -17539,6 +17728,27 @@ def plot(
             # figure's size and its layout engine are all untouched.
             if _caller_figure and ax is not None:
                 _keep_inside_caller_slot(ax)
+            # the cube of a single 3-D plot stays off the canvas edge and
+            # off its legend at every camera angle (GH #297). After the
+            # title margin, the colorbar and the legend fit: they decide
+            # the room the axes has. A `panels=` grid fits its own cubes,
+            # and an axes the caller passed (`ax=`) is one of several in a
+            # figure laid out by the caller or by `hyp.subplots`.
+            if (ax is not None and not _user_supplied_ax
+                    and _panel_animation is None and not _grid_furniture
+                    and hasattr(ax, 'get_proj')):
+                if line_ani is not None:
+                    _zoom_scale = getattr(line_ani, '_hyp_zoom_scale', None)
+                    # (a `zoom=` above 1 asks for a closer view than the
+                    # canvas holds: that is the caller's to have)
+                    if _zoom_scale is not None and not _zoomed_in(zoom):
+                        _keep_cube_clear(
+                            fig, ax, _AnimatedCubeZoom(
+                                _zoom_scale,
+                                lambda: _orig_frame_func(0, *line_ani._args)),
+                            rotations)
+                elif not animate:
+                    _keep_cube_clear(fig, ax, _StaticCubeZoom(ax), 0)
 
             # companion= panels (GH #285): extra 2-D panels laid out beside
             # the animated plot and revealed in lockstep with it. Created
@@ -19520,9 +19730,14 @@ def _make_title_updater(titles, axes, font=None, title_kwargs=None,
 def _apply_multicolor_animation(ax, xform, line_colors, kwargs_list,
                                 line_ani, style, chemtrails, precog,
                                 bullettime, total_frames, antialias=True,
-                                frame_hooks=None, trail_alpha=0.3):
+                                frame_hooks=None, trail_alpha=0.3,
+                                markers=False):
     """Per-frame multicolored (continuous/matrix hue) line rendering for
-    ANIMATED matplotlib plots (release-1.0 audit, F04-001/F05-002).
+    ANIMATED matplotlib plots (release-1.0 audit, F04-001/F05-002), and,
+    with `markers`, the same for a MARKERS-ONLY format (GH #297): each
+    hidden artist is then stood in for by a scatter of its own marker,
+    one color per observation, over exactly the rows the artist was just
+    drawn over (never antialiased: a marker sits on an observation).
 
     The static multicolor path (`_apply_multicolor_lines`) swaps the
     single-color line artists for full-trajectory collections -- on an
@@ -19597,8 +19812,37 @@ def _apply_multicolor_animation(ax, xform, line_colors, kwargs_list,
             return np.column_stack([np.arange(xi.shape[0]), xi[:, 0]])
         return xi[:, :3] if is_3d else xi[:, :2]
 
-    def _make_collection(i, alpha=None, role='head'):
+    def _make_scatter(i, alpha, role):
+        """An (invisible until filled) scatter standing in for dataset
+        `i`'s hidden marker artist: same glyph, same size."""
+        source = trail_lines[i] if role == 'trail' else head_lines[i]
+        glyph = source.get_marker()
+        if glyph in (None, 'None', 'none', '', ' '):
+            glyph = 'o'
+        pts = _points(i)[:1]
+        # (made from one real observation, with the limits put back: the
+        # animation has fixed them, and a scatter rescales the axes)
+        limits = [ax.get_xlim(), ax.get_ylim()] + (
+            [ax.get_zlim()] if is_3d else [])
+        auto = ax.get_autoscale_on()
+        extra = {'depthshade': False} if is_3d else {}
+        coll = ax.scatter(*pts.T, s=float(source.get_markersize()) ** 2,
+                          marker=glyph, alpha=alpha, **extra)
+        ax.set_xlim(limits[0])
+        ax.set_ylim(limits[1])
         if is_3d:
+            ax.set_zlim(limits[2])
+        ax.autoscale(auto)
+        coll.set_visible(False)
+        return coll
+
+    def _make_collection(i, alpha=None, role='head'):
+        if markers:
+            if alpha is None:
+                # the dataset's own alpha= (the hidden artist carries it)
+                alpha = head_lines[i].get_alpha()
+            coll = _make_scatter(i, alpha, role)
+        elif is_3d:
             coll = Line3DCollection([], linewidths=_linewidth(i, role),
                                     alpha=alpha)
             # autolim=False: the animation already fixed the axes limits
@@ -19638,6 +19882,21 @@ def _apply_multicolor_animation(ax, xform, line_colors, kwargs_list,
                 else len(artist.get_xdata()))
 
     def _set_segments(coll, pts, colors):
+        if markers:
+            # one marker per row of the window, each in its own color
+            coll.set_visible(pts.shape[0] > 0)
+            if pts.shape[0] == 0:
+                return
+            colors = np.asarray(colors, dtype=float)
+            if is_3d:
+                coll._offsets3d = tuple(
+                    np.asarray(pts[:, k], dtype=float) for k in range(3))
+            else:
+                coll.set_offsets(pts[:, :2])
+            coll.set_facecolors(colors)
+            coll.set_edgecolors(colors)
+            coll.stale = True
+            return
         if pts.shape[0] < 2:
             coll.set_segments([])
             return
@@ -19684,7 +19943,8 @@ def _apply_multicolor_animation(ax, xform, line_colors, kwargs_list,
         # just given (a serial reveal switches `tail_linewidth=` per
         # frame), and a `head_marker=` takes the color of the row it sits
         # on unless its own color was asked for
-        head_colls[i].set_linewidth(head_lines[i].get_linewidth())
+        if not markers:
+            head_colls[i].set_linewidth(head_lines[i].get_linewidth())
         marker = getattr(head_lines[i], '_hyp_head_marker', None)
         if (marker is not None and end >= 1
                 and not getattr(marker, '_hyp_color_pinned', False)):
