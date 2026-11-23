@@ -41,6 +41,37 @@ reveal on **both** backends:
 
     hyp.plot(data, '-', animate=True, order='serial', chemtrails=True)
 
+A trail is drawn in its dataset's own format and color: a line's trail is the
+faded line, a line-and-marker format's (``'-o'``, ``'o-'``, ``'.-'``,
+``'--s'``) the faded line with faded markers on the observations, and a
+markers-only format's its faded markers.
+
+.. versionadded:: 1.2.1
+
+Four arguments style the reveal:
+
+.. code-block:: python
+
+    hyp.plot(data, '-', animate=True, chemtrails=True, linewidth=1,
+             trail_alpha=0.5,       # trails at 0.5 x alpha (default 0.3)
+             tail_linewidth=3,      # the recent window, drawn thicker
+             head_marker='o',       # a marker on the last revealed point
+             hold=2)                # hold the last frame for 2 seconds
+
+``trail_alpha=`` is the opacity of the trails as a fraction of each dataset's
+own ``alpha=`` (both backends). ``tail_linewidth=`` is the line width of the
+tail, the recent window that ``tail_duration=`` sizes, while the trail keeps
+``linewidth=``. ``head_marker=`` draws a marker at the reveal head only (a
+matplotlib marker, ``True`` for ``'o'``, or a dict such as ``{'marker': 'D',
+'size': 10, 'color': 'k'}``); its color and size follow the dataset unless
+the dict sets them. ``hold=`` appends ``round(hold * frame_rate)`` frames
+that draw the last frame again, so the pause is in a saved ``.mp4`` or
+``.gif``; per-frame titles, captions and ``on_frame=`` callbacks see the last
+frame's context during the hold. ``tail_linewidth=``, ``head_marker=`` and
+``hold=`` are matplotlib only and raise ``NotImplementedError`` under
+``backend='plotly'``. All four may also be given inside the ``animate={...}``
+dict.
+
 Fading earlier datasets
 ------------------------
 
@@ -856,6 +887,28 @@ the panel that draws it (the first panel under a list-valued ``reduce=``).
 ``caption=`` raises ``NotImplementedError`` under ``backend='plotly'`` (a
 per-frame ``title=`` works on both backends) and ``ValueError`` with a
 caller-supplied ``ax=``.
+
+.. versionadded:: 1.2.1
+
+``caption_kwargs=`` styles and places the caption: ``size``, ``color``,
+``weight``, ``style``, ``family``, ``alpha``, ``linespacing``, ``position``
+(``'bottom'``, the default, or ``'top'``) and ``loc`` (``'center'``,
+``'left'`` or ``'right'``). The style is applied before the caption is
+wrapped and its room measured, so a caption of any size is never clipped.
+
+``suptitle=`` is one fixed title for the whole figure, above everything it
+holds. It is the figure-level title of a ``panels=`` grid, static or
+animated, where ``title=`` names the panels; ``suptitle_kwargs=`` styles it
+with the same keys (except ``position``). Its room is measured like the
+caption's, so it clears the panel titles, the shared legend and colorbar,
+and a caption placed at the top:
+
+.. code-block:: python
+
+    hyp.plot([a, b, c, d], '-', panels=(2, 2), animate=True,
+             title=['a', 'b', 'c', 'd'], suptitle='Four walks, one clock',
+             caption=lambda ctx: f'frame {ctx.frame + 1} of {ctx.n_frames}',
+             caption_kwargs={'size': 13, 'color': 'gray', 'loc': 'right'})
 
 Companion panels
 -----------------

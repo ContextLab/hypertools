@@ -8,7 +8,58 @@ Follows 1.2.0. Animated trails now work with line-and-marker formats (GH
 
 ### Fixed
 
+- **An animated line-and-marker format draws its trails (GH #299).**
+  `hyp.plot(x, '-o', animate=True, chemtrails=True)` drew the tail and no
+  chemtrail, with no warning; `precog=` and `bullettime=` were dropped the
+  same way, for every format that has both a line and a marker (`'-o'`,
+  `'o-'`, `'.-'`, `'--s'`), on the matplotlib backend. The trail artists
+  were only created when some dataset of the call had a pure line format.
+  Every dataset that asks for a trail now gets one, drawn in its own
+  format: a line-and-marker trail is the faded line with faded markers on
+  the observations, as its tail is drawn. A markers-only format now gets
+  its trail of faded markers on its own too (it used to get one only when
+  another dataset of the same call was a pure line), which is what the
+  plotly backend has always drawn. Single plots, serial reveals, animated
+  `panels=` grids and continuous `hue=` coloring are all covered.
+- **A trail is drawn in its own dataset's color when only some datasets
+  have one.** With a per-dataset list such as `chemtrails=[False, True]`
+  the trail took the next color of the color cycle, which was another
+  dataset's (matplotlib backend). Found while fixing GH #299.
+
 ### Added
+
+- **`head_marker=`: a marker at the reveal head (GH #299).**
+  `hyp.plot(x, '-', animate=True, head_marker='o')` draws one marker on the
+  last revealed point of each dataset, on every frame. Pass a matplotlib
+  marker, `True` for `'o'`, or a dict such as `{'marker': 'D', 'size': 10,
+  'color': 'k'}`. Its color, alpha and size follow the dataset unless the
+  dict sets them (with a continuous `hue=` it takes the color of the point
+  it is on). Matplotlib only.
+- **`tail_linewidth=`: a tail thicker (or thinner) than its trail (GH
+  #299).** The line width of the recent window that `tail_duration=`
+  sizes; a `chemtrails=`/`precog=`/`bullettime=` trail keeps `linewidth=`.
+  Matplotlib only.
+- **`trail_alpha=`: the opacity of the trails (GH #299).** A fraction of
+  each dataset's own `alpha=`. The default stays 0.3. Both backends.
+- **`hold=`: hold the last frame (GH #299).** `hold=2` appends two seconds
+  of frames (`round(hold * frame_rate)`) that draw the last frame again, in
+  saved `.mp4` and `.gif` files as well as on screen. Per-frame titles,
+  captions and `on_frame=` callbacks see the last frame's context during
+  the hold. Works with every `animate=` style, with `loop=True` and on
+  animated `panels=` grids. Matplotlib only.
+- **`caption_kwargs=`: caption size, color and position (GH #299).**
+  `caption_kwargs={'size': 14, 'color': 'gray', 'position': 'top', 'loc':
+  'left'}`. The style is applied before the caption is wrapped and its
+  room is measured, so a caption of any size is never clipped.
+- **`suptitle=`: a title for the whole figure (GH #299).** With `panels=`,
+  `title=` names the panels; `suptitle=` is the one title above the grid,
+  static or animated (it works on a single plot too). Its room is measured
+  like a caption's, so it clears the panel titles, the shared legend and
+  colorbar, and a caption placed at the top. `suptitle_kwargs=` styles it.
+  Matplotlib only.
+- `head_marker=`, `tail_linewidth=`, `trail_alpha=` and `hold=` may also be
+  given inside the `animate={...}` dict. The matplotlib-only arguments
+  raise `NotImplementedError` under `backend='plotly'`.
 
 ## 1.2.0 (2026-11-22)
 

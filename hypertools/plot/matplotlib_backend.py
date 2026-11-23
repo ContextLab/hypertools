@@ -2300,6 +2300,25 @@ def _draw(
                 segment_kind='hold' if seg_idx % 2 == 0 else 'transition')
         return (artist,)
 
+    def _own_color(kw, idx, head):
+        """`kw` (a trail's plot kwargs) with the color of the dataset's
+        head line, unless `kw` or the dataset's format string names one.
+        Left to the axes' color cycle a trail took the next color after
+        the head lines', which is its dataset's only when EVERY dataset
+        has a trail: ``chemtrails=[False, True]`` drew dataset 1's trail
+        in dataset 0's color (found with GH #299)."""
+        if "color" in kw or "c" in kw:
+            return kw
+        fmt_color = None
+        if isinstance(_fmt_at(idx), str) and _process_plot_format is not None:
+            try:
+                fmt_color = _process_plot_format(_fmt_at(idx))[2]
+            except Exception:  # noqa: BLE001 - matplotlib reports it itself
+                fmt_color = None
+        if fmt_color is None:
+            kw["color"] = head.get_color()
+        return kw
+
     def _head_linewidths(linewidths):
         """The line width of each dataset's HEAD line (the recent window):
         `tail_linewidth` when given (GH #299), else the dataset's own."""
@@ -2532,10 +2551,10 @@ def _draw(
         # collided when MultiIndex expansion assigned a per-trace alpha (faint
         # leaf traces vs. opaque group-mean traces), raising "got multiple
         # values for keyword argument 'alpha'".
-        def _trail_kwargs(kw):
+        def _trail_kwargs(kw, idx):
             kw = dict(kw) if isinstance(kw, dict) else {}
             kw["alpha"] = trail_alpha * kw.pop("alpha", 1.0)
-            return kw
+            return _own_color(kw, idx, lines[idx])
 
         head_linewidths = _head_linewidths(linewidths)
 
@@ -2560,7 +2579,7 @@ def _draw(
         trail = [
             ax.plot(dat[0:1, 0], dat[0:1, 1], dat[0:1, 2], *_fmt_args(idx),
                     linewidth=linewidths[idx],
-                    **_trail_kwargs(kwargs_list[idx]))[0]
+                    **_trail_kwargs(kwargs_list[idx], idx))[0]
             if _wants_trail(idx) else None
             for idx, dat in enumerate(x)
         ]
@@ -3188,10 +3207,10 @@ def _draw(
         # dataset kwargs already carry, so a per-trace alpha from MultiIndex
         # expansion does not collide with a bare `alpha=0.3` ("got multiple
         # values for keyword argument 'alpha'").
-        def _trail_kwargs(kw):
+        def _trail_kwargs(kw, idx):
             kw = dict(kw) if isinstance(kw, dict) else {}
             kw["alpha"] = trail_alpha * kw.pop("alpha", 1.0)
-            return kw
+            return _own_color(kw, idx, lines[idx])
 
         head_linewidths = _head_linewidths(linewidths)
 
@@ -3208,7 +3227,7 @@ def _draw(
         trail = [
             ax.plot(dat[0:1, 0], dat[0:1, 1], *_fmt_args(idx),
                     linewidth=linewidths[idx],
-                    **_trail_kwargs(kwargs_list[idx]))[0]
+                    **_trail_kwargs(kwargs_list[idx], idx))[0]
             if _wants_trail(idx) else None
             for idx, dat in enumerate(x)
         ]

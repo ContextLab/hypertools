@@ -385,3 +385,39 @@ Jeremy's instruction: "Go for 1.2.0 release on pypi and then on conda forge".
 - Fix: the watcher keeps every command line each process was seen with; the "was it ever seen" check reads the whole history; `_alive` counts a process as still there when its current command line is any of those seen for it (stricter than before, never looser). Checked on real processes: a running `sleep` is reported, an ended one not yet collected by its parent is reported, a collected one is not.
 - Master gets no commits between releases (release gate), so this waits on the branch for the next release.
 - `notes/release_notes_v1.2.0_draft.md` now equals the published release body (it lacked the outer-labels bullet).
+
+## Issue #299 (2026-11-23, branch `post-1.2.0`, for 1.2.1; not pushed)
+
+Cause of the bug: `animate_plot3D`/`animate_plot2D` (hypertools/plot/matplotlib_backend.py) created the trail artists only inside `if any(is_line(f) for f in fmt)` (and `if is_line(fmt)`). `is_line` means "a PURE line format, no marker", so `'-o'`, `'o-'`, `'.-'`, `'--s'` built no trail artist and the updaters, which tolerate a missing trail through `zip_longest`, drew nothing and said nothing. A markers-only dataset got a trail of faded markers only when another dataset of the same call was a pure line. Plotly was never affected (it builds a trail trace for every flagged dataset).
+
+Fix: the gate is gone; every dataset with a trail flag gets its trail, drawn with its own format. The trail of a line+marker format carries faded markers on the observations because `_aa_window(..., artist=trail)` already ran `_mark_observations` on it, exactly as for the tail. Markers-only: trail of faded markers (matplotlib now equals plotly), so there is no case left where a trail flag is dropped and no new warning was needed for it.
+
+Second bug found on the way (fixed, in the CHANGELOG): a trail took its color from the axes' color cycle, so with `chemtrails=[False, True]` dataset 1's trail was drawn in dataset 0's color. `_own_color` gives a trail its head line's color unless the kwargs or the format string name one.
+
+Added (all real `plot()` arguments, all four animation ones also accepted inside the `animate={...}` dict):
+
+- `head_marker=`: marker str / True / dict (`marker`, `size`, `color`, `alpha`, `edgecolor`, `edgewidth`, `fillstyle`, `zorder`). One extra `Line2D` per dataset, created after the trails (so `ax.lines[:n]` are still the heads and the trails follow: `_apply_multicolor_animation` finds them by position), placed by `_place_head_marker` in the four updaters. Tagged `_hyp_trace_role='head_marker'`. With continuous `hue=` the multicolor frame function recolors it to the head row's color unless the dict pinned a color. Not in `FrameContext.artists` (the `dataset_fade` updater maps artists to datasets by position); the fade updater follows `line._hyp_head_marker` instead.
+- `tail_linewidth=`: head line width; trail keeps `linewidth=`. Serial: switched per frame (`_set_serial_linewidth`), thick only while the dataset is the comet head.
+- `trail_alpha=`: replaces the constant 0.3 (matplotlib `_trail_kwargs`, the multicolor trail collection, plotly's trail traces).
+- `hold=` seconds: `FuncAnimation` is given the frame LIST `0..n-1` then `n-1` repeated (`held_frame_sequence`), so every wrapper `plot()` puts round the frame function later (multicolor, hooks, titles, captions) just sees the last index again. `_hyp_content_frames` on the animation is the count of distinct frames; `content_frame_count()` is what the caption/title sampling uses, and `HyperAnimation.draw_frame` clamps to it. A panel cell never holds; `_animate_panel_grid` holds for the grid.
+- `caption_kwargs=`: size/color/weight/style/family/alpha/linespacing/position/loc, applied to the `Text` before `_wrap_caption`/`_caption_text_height_in` run.
+- `suptitle=` + `suptitle_kwargs=`: drawn by `_add_caption` itself (gid `hypertools-suptitle`, position top), in `_lay_out_panel_grid` for grids (static and animated, one path) and at the caption site of `plot()` for single plots.
+
+Decisions:
+
+- `title=` as one string with `panels=` names every panel (documented, tested), so the figure title is a new argument, `suptitle=`.
+- `caption_kwargs=`/`suptitle_kwargs=` follow `title_kwargs=`/`legend_kwargs=` rather than separate `caption_size=`... arguments.
+- Matplotlib-only (NotImplementedError on plotly, the `caption=`/`companion=` wording): `head_marker`, `tail_linewidth`, `hold`, `suptitle`, `caption_kwargs` (through `caption=`). `trail_alpha` works on plotly.
+- `head_marker`/`tail_linewidth`/`trail_alpha` on a static plot or `spin`/`morph` warn like the trail flags do; `hold` on a static plot raises like `on_frame=`.
+- `_grow_figure` now also keeps hypertools' own figure texts (caption, suptitle) at their place in inches: adding the suptitle's strip at the top would otherwise have moved a bottom caption.
+- Room above an animated figure: measured over the first/middle/last frames (grid: the cells' own frame functions set per-frame panel titles), and for a single plot with the tallest per-frame/per-segment title set on the axes while measuring (`_real_frame_context` runs no hooks, so the title was not there).
+
+Tried and dropped:
+
+- Clamping the frame number inside the backend's frame function for `hold=`: the wrappers `plot()` adds afterwards would still have received the raw index. The frame list does it for all of them.
+- Default head marker size = the dataset's `markersize=` alone: with `'-o', markersize=3, tail_linewidth=3` the marker disappeared under the tail. Now never less than 2.5 x the tail width.
+- A warning for markers-only + trail flags: not needed once the trail is drawn.
+- Scalar only: `head_marker`, `tail_linewidth`, `trail_alpha` take one value for all datasets (no per-dataset lists).
+- Not changed: the legend key of a dataset shows the tail's width when `tail_linewidth=` is set. No example in examples/ was edited (the prebuilt gallery record is not to be touched).
+
+Tests: tests/test_issue299_animation_arguments.py (new).

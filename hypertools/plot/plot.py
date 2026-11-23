@@ -10006,7 +10006,8 @@ def plot(
         e.g. `'spin'`) and every OTHER key maps onto one of the flat
         animation kwargs below (`duration`, `tail_duration`, `rotations`,
         `zoom`, `chemtrails`, `precog`, `bullettime`, `frame_rate`,
-        `focused`, `morph_samples`) -- e.g. ``animate={'style': 'spin', 'rotations':
+        `focused`, `morph_samples`, `head_marker`, `tail_linewidth`,
+        `trail_alpha`, `hold`) -- e.g. ``animate={'style': 'spin', 'rotations':
         2, 'duration': 15}`` is exactly equivalent to
         ``animate='spin', rotations=2, duration=15``. The dict is unpacked
         into the flat kwargs at the very top of `plot()`, before anything
@@ -10125,6 +10126,12 @@ def plot(
         (`chemtrails`/`precog`/`bullettime`) apply to `animate=True`/
         `'parallel'` and to `animate='serial'`, on BOTH backends (see the
         note under `bullettime` below).
+        A trail is drawn in its dataset's own format and color, at 0.3
+        times the dataset's alpha (`trail_alpha=` changes the 0.3): a
+        line's trail is the faded line, a line+marker format's (``'-o'``,
+        ``'o-'``, ``'.-'``, ``'--s'``) the faded line with faded markers
+        on the observations, as its tail is drawn, and a markers-only
+        format's its faded markers.
 
     precog (animation only) : bool or list of bool
         A low-opacity trail is plotted ahead of the trajectory (default:
@@ -10154,6 +10161,66 @@ def plot(
         `bullettime` entirely (no trail artist/trace is created) and emit a
         `UserWarning` naming the mode, the ignored flag(s), and which dataset
         indices had them set.
+
+    trail_alpha (animation only) : float or None
+        The opacity of the `chemtrails`/`precog`/`bullettime` trails, as
+        a fraction (0 to 1) of each dataset's own `alpha=`. Default None:
+        0.3, what hypertools has always drawn (``trail_alpha=0.6`` draws
+        the trails twice as strong; with ``alpha=0.5`` a trail is then at
+        0.3). One number for every trail. Works on both backends. Warns
+        (``UserWarning``) when the animation draws no trail.
+
+    tail_linewidth (animation only, matplotlib only) : float or None
+        The line width, in points, of the TAIL -- the recent window that
+        `tail_duration=` (or `focused=`) sizes, drawn at full opacity --
+        while a `chemtrails`/`precog`/`bullettime` trail keeps the
+        dataset's `linewidth=`; e.g. ``linewidth=1, tail_linewidth=3,
+        chemtrails=True`` draws a thick tail ahead of a thin faded trail.
+        On a serial reveal it applies to the dataset being revealed (its
+        comet head, when it has a trail); a finished dataset is drawn in
+        full at `linewidth=`. One number for every dataset. Default None
+        (the tail is drawn at `linewidth=`). Ignored, with a
+        ``UserWarning``, on a static plot and for ``animate='spin'``/
+        ``'morph'``; raises ``NotImplementedError`` under
+        ``backend='plotly'``.
+
+    head_marker (animation only, matplotlib only) : str, bool, dict, or None
+        A marker drawn at the reveal HEAD only: the last revealed point
+        of each dataset, on every frame (`animate=True`/``'parallel'``,
+        ``'window'`` and ``'serial'``; on a serial reveal a dataset that
+        has not started has none, and a finished one keeps its marker on
+        its last point). Pass a matplotlib marker (``head_marker='o'``),
+        ``True`` for ``'o'``, or a dict to style it: ``{'marker': 'D',
+        'size': 10, 'color': 'k', 'edgecolor': 'w', 'edgewidth': 1,
+        'alpha': 1.0}`` (``marker`` defaults to ``'o'``; ``size``,
+        ``edgecolor`` and ``edgewidth`` are short for ``markersize``,
+        ``markeredgecolor`` and ``markeredgewidth``; ``fillstyle`` and
+        ``zorder`` are accepted too). What the dict leaves out follows
+        the dataset: its color (with a continuous `hue=`, the color of
+        the point the head is on), its `alpha=`, and its `markersize=`
+        (matplotlib's default without one), never less than 2.5 times
+        the tail's line width so that it shows on a thick tail. It is
+        drawn in addition to the format's own markers and is never a
+        legend entry. Default None (no head marker). Ignored, with a
+        ``UserWarning``, on a static plot and for ``animate='spin'``/
+        ``'morph'`` (no reveal head); raises ``NotImplementedError``
+        under ``backend='plotly'``.
+
+    hold (animation only, matplotlib only) : float
+        Hold the LAST frame for this many seconds at the end of the
+        animation (default 0): ``round(hold * frame_rate)`` frames are
+        appended, each drawing the last frame again, so the pause is in
+        a saved ``.mp4``/``.gif`` and in every pass of a looping player.
+        The animation is then ``duration + hold`` seconds long
+        (``HyperAnimation.n_frames`` counts the held frames). During the
+        hold everything stays on its last value: the camera stops where
+        `rotations=` left it, and per-frame titles, `caption=` and
+        `on_frame=` callbacks see the last frame's context again
+        (``ctx.frame`` stays ``ctx.n_frames - 1`` and ``ctx.progress``
+        1.0). Works with every `animate=` style, with ``loop=True`` (the
+        closing return to the first cloud is held) and on an animated
+        `panels=` grid. Raises ``ValueError`` on a static plot and
+        ``NotImplementedError`` under ``backend='plotly'``.
 
     forecast_trail (animation only) : bool or int
         Keep earlier forecasts on screen as a fading fan -- the forecast
@@ -10582,12 +10649,12 @@ def plot(
         start; a frame in between that needs more lines than all three
         runs below that room. An empty caption (``''``) draws nothing
         and adds no room. It is drawn in the plot's font (`font=`), at the
-        default text size; it is a matplotlib ``Text`` with
-        ``gid='hypertools-caption'``, should you want to restyle it::
+        default text size, unless `caption_kwargs=` styles it; it is a
+        matplotlib ``Text`` with ``gid='hypertools-caption'``, should you
+        want to find it on the figure::
 
             caption = anim.figure.findobj(
                 lambda a: a.get_gid() == 'hypertools-caption')[0]
-            caption.set_color('gray')
 
         Raises ``NotImplementedError`` under ``backend='plotly'`` (use a
         per-frame `title=` there, which both backends support) and
@@ -10598,6 +10665,50 @@ def plot(
         ...                 caption=lambda ctx: f'frame {ctx.frame + 1}')
         >>> anim.draw_frame(4).figure.texts[-1].get_text()
         'frame 5'
+
+    caption_kwargs (matplotlib only) : dict or None
+        Styling and placement for `caption=`: ``size`` (``fontsize``),
+        ``color``, ``weight`` (``fontweight``), ``style``
+        (``fontstyle``), ``family`` (``fontfamily``), ``alpha``,
+        ``linespacing``, ``position`` -- ``'bottom'`` (default, under
+        the figure) or ``'top'`` (above everything the figure holds,
+        axes titles included) -- and ``loc`` -- ``'center'`` (default),
+        ``'left'`` or ``'right'``, aligned with the figure's edge. E.g.
+        ``caption_kwargs={'size': 14, 'color': 'gray', 'position':
+        'top', 'loc': 'left'}``. The style is applied BEFORE the caption
+        is wrapped and its room measured, so a caption of any size has
+        the room it needs and is never clipped. An unknown key, or
+        `caption_kwargs=` without a `caption=`, raises ``ValueError``.
+        Default None.
+
+    suptitle (matplotlib only) : str or None
+        One title for the whole FIGURE, centered above everything it
+        holds. This is the figure-level title of a `panels=` grid, where
+        `title=` names the panels (a single string names every panel),
+        static or animated; it works on a single plot too, above its
+        `title=`. Its room is measured as a caption's is: the figure is
+        made taller by the title's height, nothing already drawn moves
+        or shrinks, and it clears every panel title, the shared legend
+        and colorbar, and a caption placed at the top (the suptitle goes
+        above it). A title wider than the figure is wrapped. It is fixed
+        text; for a figure-level text that changes on every frame use
+        ``caption=`` with ``caption_kwargs={'position': 'top'}``. A
+        matplotlib ``Text`` with ``gid='hypertools-suptitle'``. Raises
+        ``NotImplementedError`` under ``backend='plotly'`` and
+        ``ValueError`` with a caller-supplied `ax=`. Default None.
+
+        >>> fig = hyp.plot([data, data * 2], panels=(1, 2), show=False,
+        ...                title=['one', 'two'], suptitle='Both walks')
+        >>> fig.texts[-1].get_text()
+        'Both walks'
+
+    suptitle_kwargs (matplotlib only) : dict or None
+        Styling for `suptitle=`: the keys of `caption_kwargs=` except
+        ``position`` (``size``, ``color``, ``weight``, ``style``,
+        ``family``, ``alpha``, ``linespacing``, ``loc``). The defaults
+        are matplotlib's own figure-title size and weight
+        (``rcParams['figure.titlesize']``/``['figure.titleweight']``).
+        Default None.
 
     simplify : bool
         Whether hypertools may silently downsample to keep a render
@@ -17483,6 +17594,32 @@ def plot(
                 return (_real_frame_context, _caption_sample_frames(
                     content_frame_count(line_ani)))
 
+            def _add_over_tallest_title(add):
+                """Run `add()` -- which measures the room above the
+                figure -- with the axes showing the TALLEST title an
+                animation gives it. A per-frame or per-segment title is
+                set by a frame hook, so it is not on the figure yet (or
+                is frame 0's) when a top caption or the suptitle is
+                placed; measured against that, the text landed on the
+                taller titles of later frames."""
+                candidates = []
+                if animate and line_ani is not None and ax is not None \
+                        and _panel_animation is None:
+                    if _dynamic_title is not None:
+                        candidates = _sampled_dynamic_titles()
+                    elif _segment_titles is not None:
+                        candidates = [_text for _text in _segment_titles
+                                      if isinstance(_text, str)]
+                if not candidates:
+                    return add()
+                _artist = _title_artist(ax, _title_kwargs)
+                _shown = _artist.get_text()
+                _artist.set_text(_tallest_title(candidates))
+                try:
+                    return add()
+                finally:
+                    _artist.set_text(_shown)
+
             # caption= (GH #295): one figure-level line of text under
             # everything drawn above -- the plot, its legend and colorbar,
             # any companion panel -- so it is added LAST, in a strip the
@@ -17538,11 +17675,12 @@ def plot(
                                 and isinstance(fig, plt.Figure)):
                             plt.close(fig)
                         raise
-                _caption_artist = _add_caption(
-                    fig, _caption_text, font=_artist_font,
-                    family=list(plt.rcParams['font.family']),
-                    samples=_caption_samples, style=_caption_style,
-                    settle=_figure_text_settle())
+                _caption_artist = _add_over_tallest_title(
+                    lambda: _add_caption(
+                        fig, _caption_text, font=_artist_font,
+                        family=list(plt.rcParams['font.family']),
+                        samples=_caption_samples, style=_caption_style,
+                        settle=_figure_text_settle()))
                 if _dynamic_caption is not None and _animated_caption:
                     def _update_caption(ctx, _fn=_dynamic_caption,
                                         _artist=_caption_artist):
@@ -17554,11 +17692,12 @@ def plot(
             # caption's own code in a measured strip ABOVE everything else
             # -- a caption placed at the top included, so it is added last
             if _suptitle is not None and isinstance(fig, plt.Figure):
-                _add_caption(
-                    fig, _suptitle, font=_artist_font,
-                    family=list(plt.rcParams['font.family']),
-                    style=dict(_suptitle_style, position='top'),
-                    gid=SUPTITLE_GID, settle=_figure_text_settle())
+                _add_over_tallest_title(
+                    lambda: _add_caption(
+                        fig, _suptitle, font=_artist_font,
+                        family=list(plt.rcParams['font.family']),
+                        style=dict(_suptitle_style, position='top'),
+                        gid=SUPTITLE_GID, settle=_figure_text_settle()))
 
             # save. `fig.savefig`, NOT `plt.savefig` (release-1.0 audit,
             # F09-001: `plt.savefig` writes pyplot's CURRENT figure, so
