@@ -881,3 +881,28 @@ hypertools/io` clean; `pytest tests/test_io_audit_lsl.py tests/test_lsl_streamin
 tests/test_io_audit_final.py tests/test_notebook_install_gate.py`: 73 passed, 3
 skipped in 114 s; the new test alone with the setting commented out: 1 failed
 ("assert 0 >= 6"). No full-suite run was made.
+
+### Checks (after the machine crash of about 17:45; code as in checkpoint d9058dff)
+
+The machine crashed while the timings were being written up; the
+coordinator checkpointed the working tree as d9058dff. Every earlier test
+result was lost with the scratch folder, so all runs were made again on
+that code (load average 25 to 85):
+
+- tests/test_review_round5_1_2_1.py: 50 passed (matplotlib 3.10); 50
+  passed with matplotlib 3.11.2 (installed into a scratch target folder
+  and put first on `PYTHONPATH`; the earlier `mpl311` venv was lost).
+- tests/test_review_round1_1_2_1.py + round2: 311 passed, 1 skipped.
+- round3 + round4 + tests/test_issue297_layout.py +
+  tests/test_issue299_animation_arguments.py: 297 passed.
+- The 71 other files named label/legend/hue/panel/caption/title/animat/
+  docstring/gate/signature/changelog (not the LSL files): 2661 passed, 8
+  skipped, 0 failed. (Before the crash one time bound failed once in
+  tests/plot/test_forecast_animated_regrouped.py, the slow-forecast notice
+  at load 180, and its file passed on a rerun, 15 passed.)
+- `ruff check .`: clean. The whole suite was not run (the coordinator
+  runs it).
+
+Contact sheets and GIFs were made again after the crash:
+`<scratchpad>/round5fix/sheet_{spin30_legend_title_caption,spin12_axis_labels,window2d,panels2x2}.png`
+and `anim_*.gif` of the same names; all four sheets were looked at.
