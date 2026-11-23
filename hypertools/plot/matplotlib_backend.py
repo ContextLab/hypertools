@@ -175,13 +175,13 @@ def _label_size_pt(label):
     # (`set_parse_math(False)`) after it was first measured kept its old
     # size, so labels that now covered each other were left where they
     # were (1.2.1 review round 3). A wrapped text is laid out against
-    # the figure it is in, so its size is measured every time.
+    # the figure it is in, so its size is measured every time. (The
+    # alignment is not part of it: it moves the text, which is how a
+    # label is put at its place, and leaves its size alone.)
     key = (label.get_text(), hash(label.get_fontproperties()),
            label._linespacing, label.get_usetex(), label.get_parse_math(),
            label.get_rotation(), label.get_rotation_mode(),
-           label.get_transform_rotates_text(),
-           label.get_horizontalalignment(), label.get_verticalalignment(),
-           label._multialignment)
+           label.get_transform_rotates_text())
     if label.get_wrap():
         key = None
     known = getattr(label, '_hyp_size_pt', None)

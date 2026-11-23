@@ -178,9 +178,10 @@ def test_a_labeled_figure_given_another_canvas_answers_the_mouse_there():
     hyp.plot(x, 'o', ax=ax, labels=list('abcdef'), show=False,
              reduce=None, ndims=2)
     FigureCanvasAgg(fig)
-    assert _connected(fig, 'button_press_event') == 0
+    fresh = _connected(fig, 'button_press_event')
     hyp.plot(x + 1, 'o', ax=ax, labels=list('uvwxyz'), show=False,
              reduce=None, ndims=2)
+    assert _connected(fig, 'button_press_event') == fresh + 1
     labels = [entry[0] for entry in _entries(ax)]
     assert len(labels) == 12
     x0, y0 = ax.bbox.x0 + 5, ax.bbox.y0 + 5
