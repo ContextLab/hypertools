@@ -101,7 +101,9 @@ class HyperAnimation(tuple):
         `max(1, round(frame_rate * duration))` for parallel/serial/spin, and
         `sum(segment_frame_counts(...))` for a morph -- so this is exact
         rather than an estimate. Reading it is the supported alternative to
-        matplotlib's private `_save_count`.
+        matplotlib's private `_save_count`. The frames a ``hold=`` repeats
+        at the end are counted: ``round(hold * frame_rate)`` more, each
+        drawing the last frame again.
         """
         return int(self[1]._save_count)
 
@@ -134,6 +136,10 @@ class HyperAnimation(tuple):
                 f'frame {frame} is out of range; this animation has '
                 f'{self.n_frames} frames, so valid indices are 0 and '
                 f'{self.n_frames - 1}')
+        # the frames a `hold=` appends repeat the LAST content frame
+        content = getattr(self[1], '_hyp_content_frames', None)
+        if content is not None:
+            frame = min(frame, int(content) - 1)
         self[1]._func(frame, *self[1]._args)
         return self
 

@@ -35,7 +35,8 @@ from .colors import (mat2colors, colors2groups, get_palette_colors,
                      _looks_like_dataset_palettes)
 from ..reduce.reduce import reduce as reducer
 from ..tools.format_data import format_data
-from .matplotlib_backend import _draw, _apply_title, show_legend_keys
+from .matplotlib_backend import (_draw, _apply_title, show_legend_keys,
+                                 content_frame_count, held_frame_sequence)
 from .backend import manage_backend
 from .plotly_backend import resolve_backend
 from .animation_context import FrameContext, FrameHooks
@@ -2124,6 +2125,11 @@ _ANIMATE_DICT_DEFAULTS = {
     'frame_rate': 30,
     'focused': None,
     'morph_samples': None,
+    # GH #299
+    'head_marker': None,
+    'tail_linewidth': None,
+    'trail_alpha': None,
+    'hold': 0,
 }
 
 
@@ -3165,6 +3171,181 @@ def _validate_loop(loop, style):
     return True
 
 
+# --------------------------------------------------------------------------
+# GH #299: `head_marker=`, `tail_linewidth=`, `trail_alpha=`, `hold=`.
+# --------------------------------------------------------------------------
+
+#: Short aliases accepted in a `head_marker=` dict, mapped onto the
+#: matplotlib `Line2D` property names.
+_HEAD_MARKER_ALIASES = {
+    'size': 'markersize',
+    'edgecolor': 'markeredgecolor',
+    'edgewidth': 'markeredgewidth',
+    'fillstyle': 'fillstyle',
+}
+
+#: Every key a `head_marker=` dict accepts after alias resolution.
+_HEAD_MARKER_KEYS = frozenset({
+    'marker', 'markersize', 'color', 'alpha', 'markeredgecolor',
+    'markeredgewidth', 'fillstyle', 'zorder',
+})
+
+
+def _matplotlib_only_animation_argument(name, what):
+    """The error a frame-driven matplotlib argument raises on plotly."""
+    return NotImplementedError(
+        f"{name}= is matplotlib-only. On plotly an animation is a list of "
+        f"go.Frame payloads, so {what} would have to be rebuilt inside "
+        "every frame's payload -- separate work from the matplotlib "
+        f"artists this draws. Pass backend='matplotlib' for {name}=, or "
+        f"drop {name}=.")
+
+
+def _validate_head_marker(head_marker, backend_name):
+    """`head_marker=` -> a dict of `Line2D` marker properties (always with
+    ``'marker'``), or None (GH #299).
+
+    ``True`` is ``'o'``; a string (or any other matplotlib marker) is the
+    marker; a dict styles it (``'marker'`` defaults to ``'o'``; ``size``,
+    ``edgecolor`` and ``edgewidth`` are short for ``markersize``,
+    ``markeredgecolor`` and ``markeredgewidth``). ``None``/``False`` is no
+    head marker.
+    """
+    if head_marker is None or head_marker is False:
+        return None
+    if isinstance(head_marker, bytes):
+        head_marker = head_marker.decode('utf-8')
+    if head_marker is True:
+        spec = {'marker': 'o'}
+    elif isinstance(head_marker, dict):
+        spec = {}
+        for key, value in head_marker.items():
+            name = _HEAD_MARKER_ALIASES.get(key, key)
+            if name not in _HEAD_MARKER_KEYS:
+                raise ValueError(
+                    f"head_marker={{{key!r}: ...}} is not a supported head "
+                    f"marker option. Supported keys (short aliases in "
+                    f"parentheses): {sorted(_HEAD_MARKER_KEYS)} (aliases: "
+                    f"{sorted(_HEAD_MARKER_ALIASES)}).")
+            spec[name] = value
+        spec.setdefault('marker', 'o')
+    else:
+        spec = {'marker': head_marker}
+    from matplotlib.markers import MarkerStyle
+    marker = spec['marker']
+    try:
+        MarkerStyle(marker)
+        drawable = marker not in (None, '', ' ', 'None', 'none')
+    except (ValueError, TypeError):
+        drawable = False
+    if not drawable:
+        raise ValueError(
+            f"head_marker= needs a matplotlib marker (e.g. 'o', '*', 'D'), "
+            f"True for 'o', or a dict such as {{'marker': 'o', 'size': 9, "
+            f"'color': 'k'}}; got {head_marker!r}.")
+    if backend_name == 'plotly':
+        raise _matplotlib_only_animation_argument(
+            'head_marker', 'a marker at the reveal head')
+    return spec
+
+
+def _validate_tail_linewidth(tail_linewidth, backend_name):
+    """`tail_linewidth=` -> a positive float, or None (GH #299)."""
+    if tail_linewidth is None:
+        return None
+    if isinstance(tail_linewidth, bool) or not isinstance(
+            tail_linewidth, (int, float, np.integer, np.floating)) \
+            or not np.isfinite(tail_linewidth) or tail_linewidth <= 0:
+        raise ValueError(
+            "tail_linewidth= must be a positive number: the line width, in "
+            "points, of the tail (the recent window `tail_duration=` "
+            f"sizes); got {tail_linewidth!r}.")
+    if backend_name == 'plotly':
+        raise _matplotlib_only_animation_argument(
+            'tail_linewidth', "the tail's own line width")
+    return float(tail_linewidth)
+
+
+#: the factor a trail's alpha is the dataset's alpha times, without
+#: `trail_alpha=`
+DEFAULT_TRAIL_ALPHA = 0.3
+
+
+def _validate_trail_alpha(trail_alpha):
+    """`trail_alpha=` -> a float in [0, 1], or None (GH #299)."""
+    if trail_alpha is None:
+        return None
+    if isinstance(trail_alpha, bool) or not isinstance(
+            trail_alpha, (int, float, np.integer, np.floating)) \
+            or not 0.0 <= trail_alpha <= 1.0:
+        raise ValueError(
+            "trail_alpha= must be a number between 0 and 1: the opacity of "
+            "a chemtrails/precog/bullettime trail, as a fraction of its "
+            f"dataset's own alpha (default {DEFAULT_TRAIL_ALPHA}); got "
+            f"{trail_alpha!r}.")
+    return float(trail_alpha)
+
+
+def _validate_hold(hold, style, frame_rate, backend_name):
+    """`hold=` (seconds) -> how many times the last frame is repeated at
+    the end of the animation: ``round(hold * frame_rate)`` (GH #299)."""
+    if hold is None or hold is False:
+        return 0
+    if isinstance(hold, bool) or not isinstance(
+            hold, (int, float, np.integer, np.floating)) \
+            or not np.isfinite(hold) or hold < 0:
+        raise ValueError(
+            "hold= must be a number of seconds, 0 or more: how long the "
+            f"last frame is held at the end of the animation; got {hold!r}.")
+    if hold == 0:
+        return 0
+    if isinstance(style, (list, tuple)):
+        animated = len(style) > 0
+    else:
+        animated = bool(style)
+    if not animated:
+        raise ValueError(
+            "hold= requires an animated plot; pass animate=True (or "
+            "'spin'/'serial'/'window'/'morph').")
+    if backend_name == 'plotly':
+        raise _matplotlib_only_animation_argument(
+            'hold', 'the held frames')
+    return int(round(float(hold) * float(frame_rate)))
+
+
+def _warn_ignored_animation_styling(animate, head_marker, tail_linewidth,
+                                    trail_alpha, any_trail):
+    """Say so when `head_marker=`/`tail_linewidth=`/`trail_alpha=` cannot
+    apply (GH #299), as the trail flags do: on a static plot, on a style
+    with no reveal head ('spin', 'morph'), and -- for `trail_alpha=` --
+    when no dataset draws a trail."""
+    given = [name for name, value in (('head_marker', head_marker),
+                                      ('tail_linewidth', tail_linewidth),
+                                      ('trail_alpha', trail_alpha))
+             if value is not None]
+    if not given:
+        return
+    if not animate:
+        warnings.warn(
+            f"{'/'.join(given)} only affect ANIMATED plots and will be "
+            "ignored here; pass animate=True (or 'parallel').",
+            UserWarning, stacklevel=external_stacklevel())
+        return
+    if animate in ('spin', 'morph'):
+        warnings.warn(
+            f"animate={animate!r} has no reveal head, tail or trail; "
+            f"ignoring {'/'.join(given)}",
+            UserWarning, stacklevel=external_stacklevel())
+        return
+    if trail_alpha is not None and (animate == 'window' or not any_trail):
+        warnings.warn(
+            "trail_alpha= sets the opacity of chemtrails/precog/bullettime "
+            "trails, and this animation draws none; ignoring it. Pass "
+            "chemtrails=True (or precog=/bullettime=) with animate=True or "
+            "'serial' to draw one.",
+            UserWarning, stacklevel=external_stacklevel())
+
+
 def _validate_dataset_fade(dataset_fade, style, order):
     """`dataset_fade=` -> ``(floor, decay)`` or None (GH #285).
 
@@ -3278,6 +3459,10 @@ def _make_dataset_fade_updater(floor, decay):
                                        floor, decay)
             if hasattr(artist, 'set_alpha'):          # matplotlib artist
                 artist.set_alpha(alpha)
+                # its `head_marker=` fades with the dataset (GH #299)
+                _head = getattr(artist, '_hyp_head_marker', None)
+                if _head is not None:
+                    _head.set_alpha(alpha)
             else:                                     # plotly trace
                 artist.opacity = alpha
     return _update
@@ -4520,6 +4705,106 @@ CAPTION_GID = 'hypertools-caption'
 #: blank room (inches) kept above and below the caption's text
 _CAPTION_PAD_IN = 0.1
 
+#: ``gid`` of the figure-level title `suptitle=` draws (GH #299)
+SUPTITLE_GID = 'hypertools-suptitle'
+
+#: the figure-level texts hypertools reserves a measured strip for
+_FIGURE_TEXT_GIDS = (CAPTION_GID, SUPTITLE_GID)
+
+#: Short aliases accepted in `caption_kwargs=`/`suptitle_kwargs=` (the
+#: ones `title_kwargs=` accepts).
+_FIGURE_TEXT_ALIASES = {
+    'size': 'fontsize',
+    'weight': 'fontweight',
+    'family': 'fontfamily',
+    'style': 'fontstyle',
+}
+
+#: Every key `caption_kwargs=`/`suptitle_kwargs=` accept after alias
+#: resolution: font and color options applied to the text BEFORE its room
+#: is measured, plus where it goes (``position``: 'bottom' or 'top' of the
+#: figure, `caption_kwargs=` only; ``loc``: 'center', 'left' or 'right').
+_FIGURE_TEXT_KEYS = frozenset({
+    'fontsize', 'fontweight', 'fontfamily', 'fontstyle', 'color', 'alpha',
+    'linespacing', 'loc', 'position',
+})
+
+
+def _validate_figure_text_kwargs(kwargs, name, given=True,
+                                 allow_position=True):
+    """Resolve `caption_kwargs=`/`suptitle_kwargs=` (GH #299): aliases
+    mapped, unknown keys and bad ``position``/``loc`` values refused by
+    name. Returns a dict (empty without styling). `given` is whether the
+    text the options style was passed: styling for a text that is not
+    there is refused, not ignored."""
+    if kwargs is None:
+        return {}
+    what = name.rsplit('_', 1)[0]
+    if not isinstance(kwargs, dict):
+        raise TypeError(
+            f"{name}= must be a dict of styling options (e.g. "
+            f"{{'size': 14, 'color': 'gray', 'loc': 'left'}}); got "
+            f"{type(kwargs).__name__}: {kwargs!r}.")
+    if not given:
+        raise ValueError(
+            f"{name}= styles the text of {what}=, and no {what}= was "
+            f"given; pass {what}= or drop {name}=.")
+    keys = _FIGURE_TEXT_KEYS if allow_position \
+        else _FIGURE_TEXT_KEYS - {'position'}
+    resolved = {}
+    for key, value in kwargs.items():
+        option = _FIGURE_TEXT_ALIASES.get(key, key)
+        if option not in keys:
+            raise ValueError(
+                f"{name}={{{key!r}: ...}} is not a supported styling "
+                f"option. Supported keys (short aliases in parentheses): "
+                f"{sorted(keys)} (aliases: {sorted(_FIGURE_TEXT_ALIASES)}).")
+        resolved[option] = value
+    if resolved.get('position', 'bottom') not in ('bottom', 'top'):
+        raise ValueError(
+            f"{name}['position'] must be 'bottom' (under the figure, the "
+            f"default) or 'top' (above it); got {resolved['position']!r}.")
+    if resolved.get('loc', 'center') not in ('center', 'left', 'right'):
+        raise ValueError(
+            f"{name}['loc'] must be 'center' (the default), 'left' or "
+            f"'right'; got {resolved['loc']!r}.")
+    return resolved
+
+
+def _validate_suptitle(suptitle, suptitle_kwargs, backend_name, ax=None):
+    """`suptitle=` -> ``(text, style)`` (GH #299): one fixed title for
+    the whole FIGURE, above everything it holds -- what a `panels=` grid,
+    whose `title=` names its panels, has no other argument for. Both are
+    empty without one. Refused where a caption is (`_validate_caption`):
+    on plotly and with a caller's ``ax=``."""
+    if isinstance(suptitle, bytes):
+        suptitle = suptitle.decode('utf-8')
+    if suptitle is not None and not isinstance(suptitle, str):
+        raise TypeError(
+            "suptitle= must be a string (one title for the whole figure); "
+            f"got {type(suptitle).__name__}: {suptitle!r}. For a title "
+            "that changes on every frame, use caption= with "
+            "caption_kwargs={'position': 'top'}.")
+    given = suptitle is not None and bool(suptitle.strip())
+    style = _validate_figure_text_kwargs(
+        suptitle_kwargs, 'suptitle_kwargs', given=given,
+        allow_position=False)
+    if not given:
+        return None, {}
+    if backend_name == 'plotly':
+        raise NotImplementedError(
+            "suptitle= is matplotlib-only: it is a matplotlib text in a "
+            "strip hypertools measures and adds above the figure. Pass "
+            "backend='matplotlib' for suptitle=, or drop it (title= works "
+            "on both backends).")
+    if ax is not None:
+        raise ValueError(
+            "suptitle= is drawn above the whole figure, which hypertools "
+            "resizes to make room for it, so it cannot be combined with a "
+            "caller-supplied ax=. Drop ax= (or use panels= for a grid), or "
+            "add the title yourself with ax.figure.suptitle(...).")
+    return suptitle, style
+
 
 def _validate_caption(caption, row_indices, backend_name, ax=None):
     """Split `caption=` into ``(static_text, dynamic)`` (GH #295).
@@ -4581,7 +4866,14 @@ def _grow_figure(fig, left=0.0, right=0.0, top=0.0, bottom=0.0):
         pass
     placed = [(axis, axis.get_position(original=True), axis.get_position())
               for axis in fig.axes]
+    # hypertools' own figure-level texts (the caption, the suptitle) keep
+    # their place in inches too -- they are positioned in figure fractions
+    strip_texts = [(text, text.get_position()) for text in fig.texts
+                   if text.get_gid() in _FIGURE_TEXT_GIDS]
     fig.set_size_inches(new_w_in, new_h_in)
+    for text, (x, y) in strip_texts:
+        text.set_position(((x * w_in + left) / new_w_in,
+                           (y * h_in + bottom) / new_h_in))
     for axis, original, active in placed:
         for which, pos in (('original', original), ('active', active)):
             axis.set_position(
@@ -4612,6 +4904,19 @@ def _blank_bottom_in(fig):
     if not np.isfinite(bottom):
         return 0.0
     return max(0.0, bottom)
+
+
+def _blank_top_in(fig):
+    """`_blank_bottom_in`'s counterpart for the TOP of `fig`: the inches
+    between the highest thing drawn and the canvas' top edge."""
+    try:
+        box = fig.get_tightbbox(_measurement_renderer(fig))
+        top = float(fig.get_size_inches()[1]) - float(box.y1)
+    except Exception:  # noqa: BLE001 - an unmeasurable figure: assume none
+        return 0.0
+    if not np.isfinite(top):
+        return 0.0
+    return max(0.0, top)
 
 
 #: blank room (inches) kept between the caption and the canvas' side edges
@@ -4746,8 +5051,11 @@ def _set_caption_text(artist, text):
     artist.set_text(_wrap_caption(artist, text))
 
 
-def _add_caption(fig, text, font=None, family=None, samples=()):
+def _add_caption(fig, text, font=None, family=None, samples=(), style=None,
+                 gid=CAPTION_GID, settle=None):
     """Draw `text` as `fig`'s caption (GH #295) and return its ``Text``.
+    The figure-level `suptitle=` is drawn by this same function (GH #299:
+    ``gid=SUPTITLE_GID``, at the top).
 
     The caption is centered under everything the figure holds, a small gap
     below the lowest thing drawn (`_blank_bottom_in`). It is WRAPPED to
@@ -4776,17 +5084,44 @@ def _add_caption(fig, text, font=None, family=None, samples=()):
     `font` is the resolved explicit ``font=`` (a ``FontProperties``), and
     `family` the fallback font stack used without one -- the caption is
     styled like the title beside it.
+
+    `style` (`caption_kwargs=`/`suptitle_kwargs=`, GH #299, as
+    `_validate_figure_text_kwargs` resolves them) is applied to the text
+    BEFORE anything is measured, so the wrapping and the room are those of
+    the text as it is drawn, at any size. ``position='top'`` puts the
+    text ABOVE everything the figure holds instead (`_blank_top_in`; the
+    figure grows upward by what is missing) and ``loc`` aligns it with the
+    figure's left or right edge. `settle` is, for an animation, a pair
+    ``(draw, frames)``: the room above the figure is the least found over
+    those frames (``draw(frame)`` draws one; a per-frame title has a
+    different height on each), and the figure is left showing the first.
     """
     from matplotlib.font_manager import FontProperties
+    style = dict(style or {})
+    position = style.pop('position', 'bottom')
+    loc = style.pop('loc', 'center')
     text = '' if text is None else str(text)
     if font is not None:
         props = FontProperties(font) if isinstance(font, str) else font.copy()
     else:
         props = FontProperties(family=family or sans_serif_stack())
         props.set_size(plt.rcParams['font.size'])
+    if gid == SUPTITLE_GID:
+        # a figure title's default size and weight are matplotlib's own
+        props.set_size(plt.rcParams['figure.titlesize'])
+        props.set_weight(plt.rcParams['figure.titleweight'])
+    if 'fontfamily' in style:
+        props.set_family(style.pop('fontfamily'))
+    if 'fontsize' in style:
+        props.set_size(style.pop('fontsize'))
+    if 'fontweight' in style:
+        props.set_weight(style.pop('fontweight'))
+    if 'fontstyle' in style:
+        props.set_style(style.pop('fontstyle'))
     # placed for good below, once its wrapped height is known
-    artist = fig.text(0.5, 0.0, '', ha='center', va='top',
-                      fontproperties=props, gid=CAPTION_GID)
+    top = position == 'top'
+    artist = fig.text(0.5, 0.0, '', ha=loc, va='bottom' if top else 'top',
+                      fontproperties=props, gid=gid, **style)
     # excluded from the "lowest thing drawn" measurement
     artist.set_visible(False)
     wrapped = _wrap_caption(artist, text)
@@ -4797,12 +5132,29 @@ def _add_caption(fig, text, font=None, family=None, samples=()):
                       _caption_text_height_in(artist, candidate))
                   for candidate in candidates)
     strip_in = text_in + 2 * _CAPTION_PAD_IN
-    blank_in = _blank_bottom_in(fig)
+    if top and settle is not None:
+        draw, frames = settle
+        frames = list(frames)
+        blank_in = None
+        for frame in frames + frames[:1]:
+            draw(frame)
+            found = _blank_top_in(fig)
+            blank_in = found if blank_in is None else min(blank_in, found)
+    else:
+        blank_in = _blank_top_in(fig) if top else _blank_bottom_in(fig)
     if blank_in < strip_in:
-        _grow_figure_downward(fig, strip_in - blank_in)
+        if top:
+            _grow_figure(fig, top=strip_in - blank_in)
+        else:
+            _grow_figure_downward(fig, strip_in - blank_in)
         blank_in = strip_in
-    _, h_in = fig.get_size_inches()
-    artist.set_position((0.5, (blank_in - _CAPTION_PAD_IN) / h_in))
+    w_in, h_in = fig.get_size_inches()
+    x = {'center': 0.5, 'left': _CAPTION_SIDE_PAD_IN / w_in,
+         'right': 1.0 - _CAPTION_SIDE_PAD_IN / w_in}[loc]
+    if top:
+        artist.set_position((x, 1.0 - (blank_in - _CAPTION_PAD_IN) / h_in))
+    else:
+        artist.set_position((x, (blank_in - _CAPTION_PAD_IN) / h_in))
     artist.set_text(wrapped)
     artist.set_visible(True)
     return artist
@@ -5036,7 +5388,8 @@ _GRID_RESOLUTION_DROPPED_KWARGS = _PANEL_PROBE_DROPPED_KWARGS + (
     'axis_scale', 'title', 'title_kwargs', 'title_color', 'title_wrap',
     'frame_kwargs', 'dataset_fade', 'slow_warning_seconds', 'backend',
     'mpl_backend', 'show', 'save_path', 'return_model', 'ax', 'panels',
-    'subplots', 'panel_fit', 'caption')
+    'subplots', 'panel_fit', 'caption', 'caption_kwargs', 'suptitle',
+    'suptitle_kwargs', 'hold')
 
 #: ...and the ones that ask for the legend and the colorbar, left out of
 #: the resolution `panel_fit='independent'` runs BEFORE its panels are fit
@@ -6240,6 +6593,19 @@ def _plot_panels_impl(x, panels, call_kwargs, _name='panels'):
     # validated here, before any panel is analyzed, and drawn below
     caption, dynamic_caption = _validate_caption(
         call_kwargs.get('caption'), _capture_row_indices(x), backend)
+    # ...and so do its styling, the figure-level `suptitle=` and `hold=`
+    # (GH #299): the grid is the one animation, so the grid holds
+    caption_style = _validate_figure_text_kwargs(
+        call_kwargs.get('caption_kwargs'), 'caption_kwargs',
+        given=caption is not None or dynamic_caption is not None)
+    suptitle, suptitle_style = _validate_suptitle(
+        call_kwargs.get('suptitle'), call_kwargs.get('suptitle_kwargs'),
+        backend)
+    hold_frames = _validate_hold(
+        call_kwargs.get('hold', 0), _animate,
+        call_kwargs.get('frame_rate', 30), backend)
+    figure_texts = dict(caption_style=caption_style, suptitle=suptitle,
+                        suptitle_style=suptitle_style)
     if call_kwargs.get('ax') is not None:
         raise ValueError(
             f"{_name}= creates its own figure and axes, so it cannot also "
@@ -6297,7 +6663,8 @@ def _plot_panels_impl(x, panels, call_kwargs, _name='panels'):
     # re-shows: this function owns the figure, the save and the display.
     shared = dict(call_kwargs)
     for key in ('title', 'show', 'save_path', 'return_model', 'panels',
-                'subplots', 'ax', 'panel_fit', 'caption'):
+                'subplots', 'ax', 'panel_fit', 'caption', 'caption_kwargs',
+                'suptitle', 'suptitle_kwargs', 'hold'):
         shared.pop(key, None)
     shared['show'] = False
     # on_frame= on an animated grid is called once per DRAWN frame for the
@@ -6803,7 +7170,8 @@ def _plot_panels_impl(x, panels, call_kwargs, _name='panels'):
             shared_pipeline=shared_pipeline,
             resize=call_kwargs.get('size') is None, _name=_name,
             strip=strip, grid_colors=grid_colors,
-            rotations=call_kwargs.get('rotations', 1))
+            rotations=call_kwargs.get('rotations', 1),
+            hold_frames=hold_frames, figure_texts=figure_texts)
 
     # the layout an animated grid gets, at the one view; a dynamic caption
     # is resolved once, for the finished figure (as a dynamic title= is on
@@ -6814,7 +7182,8 @@ def _plot_panels_impl(x, panels, call_kwargs, _name='panels'):
         caption=caption, dynamic_caption=dynamic_caption,
         font=call_kwargs.get('font'),
         frame_context=lambda _frame: _static_grid_context(
-            fig, panel_axes, panel_xforms, order='parallel'), _name=_name)
+            fig, panel_axes, panel_xforms, order='parallel'), _name=_name,
+        **figure_texts)
 
     if save_path is not None:
         fig.savefig(save_path)
@@ -6880,12 +7249,13 @@ def _grid_caption_font(font, text):
 
 
 def _add_grid_caption(fig, caption, dynamic_caption, font, context,
-                      sample_contexts=()):
+                      sample_contexts=(), **placement):
     """Draw a panel grid's caption and return its ``Text``. A dynamic
     caption (pattern or callable) is resolved for `context` -- frame 0 of
     an animated grid (`_panel_grid_context`), or the finished static
     figure (`_static_grid_context`) -- and its room is sized for that text
-    and for `sample_contexts`' (see `_add_caption`)."""
+    and for `sample_contexts`' (see `_add_caption`, which `placement` --
+    ``style``, ``gid``, ``settle`` -- is handed to)."""
     text, samples = caption, []
     if dynamic_caption is not None:
         text = _resolve_dynamic_title_text(dynamic_caption, context,
@@ -6895,7 +7265,7 @@ def _add_grid_caption(fig, caption, dynamic_caption, font, context,
                    for sample in sample_contexts]
     resolved_font, family = _grid_caption_font(font, text)
     return _add_caption(fig, text, font=resolved_font, family=family,
-                        samples=samples)
+                        samples=samples, **placement)
 
 
 def _static_grid_context(fig, panel_axes, panel_rows, order=None):
@@ -7517,7 +7887,8 @@ def _fit_panel_cubes(fig, cells, resize=True, rotations=1, static=False,
 def _lay_out_panel_grid(fig, panel_axes, grid, strip, cells=None,
                         resize=True, rotations=0, caption=None, dynamic_caption=None,
                         font=None, frame_context=None, sample_frames=(),
-                        _name='panels'):
+                        _name='panels', caption_style=None, suptitle=None,
+                        suptitle_style=None):
     """Finish the layout of a drawn matplotlib `panels=` grid -- the ONE
     path of static and animated grids (1.2.0). When this is called the
     panels are drawn, shared axis labels are on the outer panels only
@@ -7531,8 +7902,10 @@ def _lay_out_panel_grid(fig, panel_axes, grid, strip, cells=None,
        only as far as legible labeled cubes need (`_fit_panel_cubes`);
     2. re-centers the shared legend/colorbar on the panels
        (`_place_shared_furniture`);
-    3. adds the caption's room under the grid and draws it
-       (`_add_grid_caption`), then re-centers the strip again.
+    3. adds the caption's room under the grid (or above it:
+       `caption_style`) and draws it (`_add_grid_caption`), then the
+       figure-level `suptitle`'s room above everything, a top caption
+       included (GH #299), and re-centers the strip again.
 
     An animated grid passes its `cells` (each panel's
     `PanelAnimationStub`) and differs in exactly two inputs, both of them
@@ -7583,6 +7956,9 @@ def _lay_out_panel_grid(fig, panel_axes, grid, strip, cells=None,
             # showing its tallest per-frame title; see `plot`)
             cell['stub'].draw(0)
     _place_emptied_cube_labels(fig, panel_axes)
+    # a text added ABOVE an animated grid has its room measured over the
+    # sampled frames (a per-frame panel title is taller on some)
+    settle = (frame_context, sample_frames) if animated else None
     caption_artist = None
     if caption is not None or dynamic_caption is not None:
         dynamic = dynamic_caption is not None
@@ -7595,9 +7971,15 @@ def _lay_out_panel_grid(fig, panel_axes, grid, strip, cells=None,
         caption_artist = _add_grid_caption(
             fig, caption, dynamic_caption, font,
             context=frame_context(0) if dynamic else None,
-            sample_contexts=samples)
+            sample_contexts=samples, style=caption_style, settle=settle)
         # the caption's room was added under the grid: re-center the
         # shared legend/colorbar on the panels
+        _place_shared_furniture(fig, strip)
+    if suptitle is not None:
+        _add_grid_caption(
+            fig, suptitle, None, font, context=None,
+            style=dict(suptitle_style or {}, position='top'),
+            gid=SUPTITLE_GID, settle=settle)
         _place_shared_furniture(fig, strip)
     return caption_artist
 
@@ -7606,7 +7988,8 @@ def _animate_panel_grid(fig, cells, panel_axes, panel_models, grid,
                         grid_hooks, caption, dynamic_caption, font,
                         save_path, show, return_model, shared_pipeline,
                         resize=True, _name='panels', strip=None,
-                        grid_colors=None, rotations=1):
+                        grid_colors=None, rotations=1, hold_frames=0,
+                        figure_texts=None):
     """Turn a drawn grid of animated panels into ONE animation (GH #295).
 
     Every panel call left its frame function in `cells` (a
@@ -7661,7 +8044,8 @@ def _animate_panel_grid(fig, cells, panel_axes, panel_models, grid,
             rotations=rotations, caption=caption,
             dynamic_caption=dynamic_caption, font=font,
             frame_context=_draw_panels,
-            sample_frames=_caption_sample_frames(n_frames), _name=_name)
+            sample_frames=_caption_sample_frames(n_frames), _name=_name,
+            **(figure_texts or {}))
     except Exception:
         _abandon()
         raise
@@ -7674,9 +8058,13 @@ def _animate_panel_grid(fig, cells, panel_axes, panel_models, grid,
         for callback in grid_hooks.callbacks:
             callback(context)
 
+    # `hold=` (GH #299): the grid's ONE animation repeats its last frame
+    # (`held_frame_sequence`), so every panel, the caption and the
+    # `on_frame=` callbacks see the last index again
     line_ani = HyperFuncAnimation(
-        fig, _grid_frame, n_frames, interval=interval, blit=False,
-        repeat=False)
+        fig, _grid_frame, held_frame_sequence(n_frames, hold_frames),
+        interval=interval, blit=False, repeat=False)
+    line_ani._hyp_content_frames = int(n_frames)
     # a morph grid's panels share one hold/transition schedule (they have
     # the same frame count); `HyperAnimation.n_segments` reads this
     segments = {getattr(cell['stub'], '_hyp_morph_segments', None)
@@ -8049,6 +8437,13 @@ def plot(
     legend_kwargs=None,
     legend_colors=None,
     caption=None,
+    caption_kwargs=None,
+    suptitle=None,
+    suptitle_kwargs=None,
+    head_marker=None,
+    tail_linewidth=None,
+    trail_alpha=None,
+    hold=0,
     **kwargs,
 ):
     """
@@ -11509,7 +11904,9 @@ def plot(
         'rotations': rotations, 'zoom': zoom, 'chemtrails': chemtrails,
         'precog': precog, 'bullettime': bullettime,
         'frame_rate': frame_rate, 'focused': focused,
-        'morph_samples': morph_samples})
+        'morph_samples': morph_samples, 'head_marker': head_marker,
+        'tail_linewidth': tail_linewidth, 'trail_alpha': trail_alpha,
+        'hold': hold})
     duration = _animate_flat['duration']
     tail_duration = _animate_flat['tail_duration']
     rotations = _animate_flat['rotations']
@@ -11520,6 +11917,10 @@ def plot(
     frame_rate = _animate_flat['frame_rate']
     focused = _animate_flat['focused']
     morph_samples = _animate_flat['morph_samples']
+    head_marker = _animate_flat['head_marker']
+    tail_linewidth = _animate_flat['tail_linewidth']
+    trail_alpha = _animate_flat['trail_alpha']
+    hold = _animate_flat['hold']
 
     # fail-fast on hue_mode= for the same reason title= fails fast here: a
     # typo or a contradictory pair should not survive the reduce pipeline.
@@ -11662,6 +12063,22 @@ def plot(
     # forms `title=` takes (fixed text, a `{index...}` pattern, a callable).
     caption, _dynamic_caption = _validate_caption(
         caption, _row_indices, resolve_backend(backend), ax=ax)
+    # GH #299: caption styling, the figure-level `suptitle=`, and the
+    # animation arguments `head_marker=`/`tail_linewidth=`/`trail_alpha=`/
+    # `hold=`. Private names: the streaming-kwarg check below compares the
+    # parameters themselves against their signature defaults.
+    _caption_style = _validate_figure_text_kwargs(
+        caption_kwargs, 'caption_kwargs',
+        given=caption is not None or _dynamic_caption is not None)
+    _suptitle, _suptitle_style = _validate_suptitle(
+        suptitle, suptitle_kwargs, resolve_backend(backend), ax=ax)
+    _frame_backend = resolve_backend(backend) if animate else None
+    _head_marker = _validate_head_marker(head_marker, _frame_backend)
+    _tail_linewidth = _validate_tail_linewidth(tail_linewidth,
+                                               _frame_backend)
+    _trail_alpha = _validate_trail_alpha(trail_alpha)
+    _hold_frames = _validate_hold(hold, animate, frame_rate,
+                                  _frame_backend)
 
     # fail-fast on on_frame= (plan 1.1 Task 7, same precedent as title=/
     # order= above): needs only its own callability and the raw animate=
@@ -11885,7 +12302,7 @@ def plot(
     # review 2026-09-11: an axis label alone in a script outside the stack
     # rendered as tofu).
     _font_texts = [labels, legend, title, hue, xlabel, ylabel, zlabel,
-                   caption]
+                   caption, _suptitle]
     if colorbar is not None:
         _font_texts.append(colorbar.get('label'))
         _font_texts.append(colorbar.get('ticks'))
@@ -14619,6 +15036,11 @@ def plot(
                 stacklevel=external_stacklevel(),
             )
 
+    # GH #299: the same for head_marker=/tail_linewidth=/trail_alpha=
+    _warn_ignored_animation_styling(
+        animate, _head_marker, _tail_linewidth, _trail_alpha,
+        any(chemtrails) or any(precog) or any(bullettime))
+
     # GH #127 (+ morph/window follow-up): 'spin' has no "current position"
     # (only the camera moves, so a trail has nothing to trail BEHIND or AHEAD
     # of), 'morph' draws a single traveling point-cloud artist with no
@@ -16022,6 +16444,8 @@ def plot(
             chemtrails=chemtrails,
             precog=precog,
             bullettime=bullettime,
+            trail_alpha=(DEFAULT_TRAIL_ALPHA if _trail_alpha is None
+                         else _trail_alpha),
             zoom=zoom,
             forecasts=raw_forecasts,
             # which drawn run each forecast continues after hue=/cluster=
@@ -16217,6 +16641,12 @@ def plot(
                 chemtrails=chemtrails,
                 precog=precog,
                 bullettime=bullettime,
+                head_marker=(None if _head_marker is None
+                             else [_head_marker] * len(xform)),
+                tail_linewidth=_tail_linewidth,
+                trail_alpha=(DEFAULT_TRAIL_ALPHA if _trail_alpha is None
+                             else _trail_alpha),
+                hold_frames=_hold_frames,
                 frame_rate=frame_rate,
                 elev=elev,
                 azim=azim,
@@ -16701,6 +17131,9 @@ def plot(
                         ax, xform, line_colors, kwargs_list, line_ani,
                         style=animate, chemtrails=chemtrails,
                         precog=precog, bullettime=bullettime,
+                        trail_alpha=(DEFAULT_TRAIL_ALPHA
+                                     if _trail_alpha is None
+                                     else _trail_alpha),
                         antialias=antialias,
                         total_frames=max(1, int(round(frame_rate
                                                       * duration))),
@@ -16798,7 +17231,7 @@ def plot(
                                 _dynamic_title, _real_frame_context(_frame)),
                             _title_wrap, _wrap_break)
                         for _frame in _caption_sample_frames(
-                            int(line_ani._save_count))]
+                            content_frame_count(line_ani))]
                     if len(texts) > 1:
                         _real_frame_context(0)
                 except Exception:
@@ -17040,6 +17473,16 @@ def plot(
                 for _panel in _panels_drawn:
                     update_companion_panel(_panel, 0)
 
+            def _figure_text_settle():
+                """For a text added ABOVE an animated figure (a top
+                caption, the suptitle): the frames its room is measured
+                over, and how to draw one (see `_add_caption`). None for
+                a static figure, measured as it stands."""
+                if not animate or line_ani is None:
+                    return None
+                return (_real_frame_context, _caption_sample_frames(
+                    content_frame_count(line_ani)))
+
             # caption= (GH #295): one figure-level line of text under
             # everything drawn above -- the plot, its legend and colorbar,
             # any companion panel -- so it is added LAST, in a strip the
@@ -17060,7 +17503,7 @@ def plot(
                             # last frames (each is drawn to get it): frame
                             # 0's text is what a still shows, and the three
                             # together size the caption's room
-                            _n = int(line_ani._save_count)
+                            _n = content_frame_count(line_ani)
                             _caption_samples = [
                                 _resolve_dynamic_title_text(
                                     _dynamic_caption,
@@ -17098,13 +17541,24 @@ def plot(
                 _caption_artist = _add_caption(
                     fig, _caption_text, font=_artist_font,
                     family=list(plt.rcParams['font.family']),
-                    samples=_caption_samples)
+                    samples=_caption_samples, style=_caption_style,
+                    settle=_figure_text_settle())
                 if _dynamic_caption is not None and _animated_caption:
                     def _update_caption(ctx, _fn=_dynamic_caption,
                                         _artist=_caption_artist):
                         _set_caption_text(_artist, _resolve_dynamic_title_text(
                             _fn, ctx, name='caption'))
                     _frame_hooks.add_internal(_update_caption)
+
+            # suptitle= (GH #299): the figure-level title, drawn by the
+            # caption's own code in a measured strip ABOVE everything else
+            # -- a caption placed at the top included, so it is added last
+            if _suptitle is not None and isinstance(fig, plt.Figure):
+                _add_caption(
+                    fig, _suptitle, font=_artist_font,
+                    family=list(plt.rcParams['font.family']),
+                    style=dict(_suptitle_style, position='top'),
+                    gid=SUPTITLE_GID, settle=_figure_text_settle())
 
             # save. `fig.savefig`, NOT `plt.savefig` (release-1.0 audit,
             # F09-001: `plt.savefig` writes pyplot's CURRENT figure, so
@@ -18927,7 +19381,7 @@ def _make_title_updater(titles, axes, font=None, title_kwargs=None,
 def _apply_multicolor_animation(ax, xform, line_colors, kwargs_list,
                                 line_ani, style, chemtrails, precog,
                                 bullettime, total_frames, antialias=True,
-                                frame_hooks=None):
+                                frame_hooks=None, trail_alpha=0.3):
     """Per-frame multicolored (continuous/matrix hue) line rendering for
     ANIMATED matplotlib plots (release-1.0 audit, F04-001/F05-002).
 
@@ -18978,7 +19432,11 @@ def _apply_multicolor_animation(ax, xform, line_colors, kwargs_list,
         if wants_trail[i] and _trail_artists:
             trail_lines[i] = _trail_artists.pop(0)
 
-    def _linewidth(i):
+    def _linewidth(i, role='head'):
+        # a trail keeps its own width: `tail_linewidth=` (GH #299) makes
+        # the head line's differ from it
+        if role == 'trail' and i in trail_lines:
+            return trail_lines[i].get_linewidth()
         # the hidden head artist already carries the caller's linewidth=:
         # `animate_plot3D`/`animate_plot2D` pop it out of kwargs_list ONCE per
         # dataset (matplotlib_backend.py:1602-1606 / :2197-2201, so it cannot
@@ -19002,14 +19460,15 @@ def _apply_multicolor_animation(ax, xform, line_colors, kwargs_list,
 
     def _make_collection(i, alpha=None, role='head'):
         if is_3d:
-            coll = Line3DCollection([], linewidths=_linewidth(i),
+            coll = Line3DCollection([], linewidths=_linewidth(i, role),
                                     alpha=alpha)
             # autolim=False: the animation already fixed the axes limits
             # (cube_scale), and autoscaling an EMPTY collection crashes
             # inside Axes3D.add_collection3d
             ax.add_collection3d(coll, autolim=False)
         else:
-            coll = LineCollection([], linewidths=_linewidth(i), alpha=alpha)
+            coll = LineCollection([], linewidths=_linewidth(i, role),
+                                  alpha=alpha)
             ax.add_collection(coll)
         coll.set_label('_nolegend_')
         # match the line artists' unclipping (see animate_plot3D's
@@ -19029,7 +19488,7 @@ def _apply_multicolor_animation(ax, xform, line_colors, kwargs_list,
         return coll
 
     head_colls = [_make_collection(i) for i in range(n)]
-    trail_colls = {i: _make_collection(i, alpha=0.3, role='trail')
+    trail_colls = {i: _make_collection(i, alpha=trail_alpha, role='trail')
                    for i in trail_lines}
 
     for artist in head_lines + list(trail_lines.values()):
@@ -19081,6 +19540,18 @@ def _apply_multicolor_animation(ax, xform, line_colors, kwargs_list,
 
     orig_func = line_ani._func
 
+    def _follow_head(i, end):
+        # GH #299: the head collection takes the width its hidden line was
+        # just given (a serial reveal switches `tail_linewidth=` per
+        # frame), and a `head_marker=` takes the color of the row it sits
+        # on unless its own color was asked for
+        head_colls[i].set_linewidth(head_lines[i].get_linewidth())
+        marker = getattr(head_lines[i], '_hyp_head_marker', None)
+        if (marker is not None and end >= 1
+                and not getattr(marker, '_hyp_color_pinned', False)):
+            marker.set_color(np.asarray(line_colors[i], dtype=float)[
+                min(end, len(line_colors[i])) - 1])
+
     def _multicolor_frame(num, *fargs):
         result = orig_func(num, *fargs)
         for i in range(n):
@@ -19095,6 +19566,7 @@ def _apply_multicolor_animation(ax, xform, line_colors, kwargs_list,
             if _win is not None:
                 start, end = _win
                 _set_segments(head_colls[i], *_aa_slice(i, start, end))
+                _follow_head(i, end)
                 trail = trail_lines.get(i)
                 if trail is not None:
                     _twin = getattr(trail, '_hyp_row_window', None)
@@ -19127,6 +19599,7 @@ def _apply_multicolor_animation(ax, xform, line_colors, kwargs_list,
                 end = max(1, min(n_pts, end))
                 start = max(0, end - head_len)
             _set_segments(head_colls[i], *_aa_slice(i, start, end))
+            _follow_head(i, end)
 
             trail = trail_lines.get(i)
             if trail is not None:

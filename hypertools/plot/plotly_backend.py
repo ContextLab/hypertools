@@ -1161,6 +1161,7 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 elev=10, azim=-60, point_colors=None, tail_duration=2,
                 focused=None,
                 chemtrails=False, precog=False, bullettime=False, zoom=1,
+                trail_alpha=0.3,
                 forecasts=None, forecast_owner=None,
                 forecast_overrides=None,
                 forecast_schedule=None, forecast_trail=0,
@@ -1335,6 +1336,9 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     bullettime : bool or list of bool
         Past+future trail flag(s), per trace. Same `animate='serial'`
         support as `chemtrails` above.
+    trail_alpha : float
+        The factor a trail's opacity is its dataset's alpha times
+        (`plot()`'s ``trail_alpha=``; default 0.3).
     zoom : float
         3-D camera zoom factor, for ANIMATIONS only (as `plot()` documents
         it, and as the matplotlib backend applies it); a static figure keeps
@@ -2403,9 +2407,10 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
         # existed) never reached plotly's trail traces even though the
         # matching head trace already honors it (see `tkwargs.get('alpha')`
         # a few dozen lines above, in the head-trace loop).
+        # (`trail_alpha=`, GH #299, replaces the 0.3 on both backends)
         _trail_alpha = tkwargs.get('alpha')
-        _trail_alpha = (0.3 if _trail_alpha is None
-                        else 0.3 * float(_trail_alpha))
+        _trail_alpha = (trail_alpha if _trail_alpha is None
+                        else trail_alpha * float(_trail_alpha))
         color = _to_plotly_color(tkwargs.get('color'), _trail_alpha)
         width = float(tkwargs.get('linewidth')
                       or DEFAULT_LINEWIDTH_PT) * PT_TO_PX

@@ -728,6 +728,26 @@ def _anim_box_zoom(zoom):
 # for the backend divergences a shared callee closed.
 
 
+def held_frame_sequence(n_frames, hold_frames=0):
+    """What `FuncAnimation` is given as ``frames=`` for an animation of
+    `n_frames` content frames whose last frame is held for `hold_frames`
+    more (``hold=``, GH #299): the int `n_frames` itself without a hold
+    (exactly what was always passed), else the list ``[0, ..., n-1, n-1,
+    ..., n-1]``."""
+    n_frames, hold_frames = int(n_frames), int(hold_frames or 0)
+    if hold_frames <= 0:
+        return n_frames
+    return list(range(n_frames)) + [n_frames - 1] * hold_frames
+
+
+def content_frame_count(line_ani):
+    """How many DISTINCT frames an animation draws: its frame count less
+    the frames a ``hold=`` repeats at the end (GH #299). Frame indices
+    handed to a frame function must stay below this."""
+    count = getattr(line_ani, '_hyp_content_frames', None)
+    return int(line_ani._save_count if count is None else count)
+
+
 class PanelAnimationStub:
     """One panel's share of an animated `panels=` grid (GH #295).
 
@@ -927,9 +947,25 @@ def _draw(
     x_date=False,
     legend_order=None,
     panel_cell=False,
+    head_marker=None,
+    tail_linewidth=None,
+    trail_alpha=0.3,
+    hold_frames=0,
 ):
     """
     Draws the plot
+
+    `head_marker` / `tail_linewidth` / `trail_alpha` / `hold_frames`
+    (GH #299), animations only. `head_marker`: None, or one resolved spec
+    per drawn dataset (a dict of `Line2D` marker properties with at least
+    ``'marker'``, or None for a dataset without one) -- a marker drawn at
+    the last vertex of that dataset's head line on every frame
+    (`_place_head_marker`). `tail_linewidth`: the line width of the head
+    line (the recent window), while the trail keeps the dataset's
+    ``linewidth``. `trail_alpha`: the factor a trail's alpha is the
+    dataset's alpha times (0.3, the historical constant). `hold_frames`:
+    how many times the LAST frame is repeated at the end of the animation
+    (`_new_animation`).
 
     `legend_order` (1.1 release review): the legend labels in the order
     their entries should be listed, or None for drawn-artist order. The
@@ -1916,6 +1952,7 @@ def _draw(
             draw_window = _aa_window(i, start, end, artist=line)  # drawn curve
             line.set_data(draw_window[:, 0:2].T)
             line.set_3d_properties(draw_window[:, 2])
+            _place_head_marker(line, draw_window)
             windows.append(window)
             window_spcs.append(_window_surface_point_colors(
                 surface_point_colors, i, start, end))
@@ -2114,6 +2151,8 @@ def _draw(
             _head_windows.append(tuple(int(b) for b in head_bounds))
             line.set_data(head[:, 0:2].T)
             line.set_3d_properties(head[:, 2])
+            _place_head_marker(line, head)
+            _set_serial_linewidth(line, trail_bounds is not None)
             if trail is not None:
                 trail.set_data(trail_seg[:, 0:2].T)
                 trail.set_3d_properties(trail_seg[:, 2])
@@ -2261,19 +2300,95 @@ def _draw(
                 segment_kind='hold' if seg_idx % 2 == 0 else 'transition')
         return (artist,)
 
+    def _head_linewidths(linewidths):
+        """The line width of each dataset's HEAD line (the recent window):
+        `tail_linewidth` when given (GH #299), else the dataset's own."""
+        if tail_linewidth is None:
+            return list(linewidths)
+        return [tail_linewidth] * len(linewidths)
+
+    def _remember_linewidths(lines, linewidths, head_linewidths):
+        for line, base, head in zip(lines, linewidths, head_linewidths):
+            line._hyp_linewidths = (base, head)
+
+    def _set_serial_linewidth(line, revealing):
+        """A serial reveal draws a finished dataset with its head line, in
+        full: `tail_linewidth` applies to that line only while it is the
+        comet head of the dataset being revealed (GH #299)."""
+        widths = getattr(line, '_hyp_linewidths', None)
+        if widths is not None and widths[0] != widths[1]:
+            line.set_linewidth(widths[1] if revealing else widths[0])
+
+    def _add_head_markers(ax, lines, head_linewidths, has_head):
+        """Create each dataset's `head_marker=` artist (GH #299): ONE
+        marker, placed at the last vertex of the dataset's head line on
+        every frame (`_place_head_marker`). Its color, alpha and size
+        follow the dataset unless the spec styles them: the head line's
+        color, the dataset's ``alpha=``, and the dataset's ``markersize=``
+        (matplotlib's default marker size without one) -- but never less
+        than 2.5 times the head line's width, so the marker shows on a
+        thick tail. Never a legend entry."""
+        if head_marker is None or not has_head:
+            return
+        for idx, (line, spec) in enumerate(zip(lines, head_marker)):
+            if spec is None:
+                continue
+            dataset_kw = (kwargs_list[idx]
+                          if isinstance(kwargs_list[idx], dict) else {})
+            props = dict(spec)
+            pinned = 'color' in props
+            props.setdefault('color', line.get_color())
+            if dataset_kw.get('alpha') is not None:
+                props.setdefault('alpha', dataset_kw['alpha'])
+            props.setdefault('markersize', max(
+                float(dataset_kw.get('markersize')
+                      or plt.rcParams['lines.markersize']),
+                2.5 * float(head_linewidths[idx])))
+            props.setdefault('zorder', line.get_zorder() + 1)
+            empty = ([], [], []) if hasattr(ax, 'get_proj') else ([], [])
+            (artist,) = ax.plot(*empty, linestyle='None', **props)
+            artist.set_label('_nolegend_')
+            artist.set_clip_on(False)
+            artist.set_in_layout(False)
+            artist._hyp_trace_index = idx
+            artist._hyp_trace_role = 'head_marker'
+            artist._hyp_color_pinned = pinned
+            line._hyp_head_marker = artist
+
+    def _place_head_marker(line, points):
+        """Move `line`'s `head_marker=` artist (if it has one) to the last
+        of the `points` the line was just given; no points, no marker."""
+        artist = getattr(line, '_hyp_head_marker', None)
+        if artist is None:
+            return
+        last = np.asarray(points)[-1:]
+        artist.set_data(last[:, 0], last[:, 1])
+        if last.shape[1] >= 3 and hasattr(artist, 'set_3d_properties'):
+            artist.set_3d_properties(last[:, 2])
+
     def _new_animation(fig, func, n_frames, fargs):
         """The animation object for frame function `func`: the
         `FuncAnimation` an ordinary animated plot returns, or -- for one
         cell of an animated panel grid (`panel_cell=True`) -- a
         `PanelAnimationStub` carrying the same function, arguments, frame
-        count and interval for the grid's single animation to drive."""
+        count and interval for the grid's single animation to drive.
+
+        `hold_frames` (``hold=``, GH #299) repeats the last frame at the
+        end: the frame SEQUENCE becomes ``0..n-1`` followed by ``n-1``
+        that many times (`held_frame_sequence`), so the frame function --
+        and every wrapper `plot()` puts around it later -- is simply
+        called with the last index again and nothing downstream has to
+        know about the hold. A panel cell never holds: its grid does."""
         if _cell_ax is not None:
             return PanelAnimationStub(func, fargs, n_frames,
                                       1000 / frame_rate,
                                       zoom_scale=_cell_zoom_scale)
-        return HyperFuncAnimation(
-            fig, func, n_frames, fargs=fargs,
-            interval=1000 / frame_rate, blit=False, repeat=False)
+        line_ani = HyperFuncAnimation(
+            fig, func, held_frame_sequence(n_frames, hold_frames),
+            fargs=fargs, interval=1000 / frame_rate, blit=False,
+            repeat=False)
+        line_ani._hyp_content_frames = int(n_frames)
+        return line_ani
 
     def dispatch_animate(x, ani_params):
         """Dispatch to `animate_plot3D` or `animate_plot2D` based on `x[0]`'s column count.
@@ -2370,11 +2485,7 @@ def _draw(
             # at some rotation angles, clipping cube corners and data
             ax.set_position([0.0, 0.0, 1.0, 1.0])
 
-        # create lines. Trail artists are created whenever ANY dataset draws
-        # lines (previously is_line(fmt) required ALL datasets to be lines,
-        # which left `trail` undefined -- and the FuncAnimation call below
-        # crashed -- when fmts were mixed, e.g. after a single-point dataset's
-        # line fmt is converted to '.', or for marker-only animations).
+        # create lines.
         #
         # GH #127: chemtrails/precog/bullettime are now per-dataset lists
         # (broadcast/validated in `_draw` above), so a dataset only gets its
@@ -2423,61 +2534,42 @@ def _draw(
         # values for keyword argument 'alpha'".
         def _trail_kwargs(kw):
             kw = dict(kw) if isinstance(kw, dict) else {}
-            kw["alpha"] = 0.3 * kw.pop("alpha", 1.0)
+            kw["alpha"] = trail_alpha * kw.pop("alpha", 1.0)
             return kw
 
-        trail = []
-        if fmt is not None:
-            lines = [
-                ax.plot(
-                    dat[0:1, 0],
-                    dat[0:1, 1],
-                    dat[0:1, 2],
-                    fmt[idx],
+        head_linewidths = _head_linewidths(linewidths)
+
+        # GH #299: a trail artist is created for EVERY dataset that asks for
+        # one, whatever its format. It used to be gated on `is_line` -- "is
+        # this a PURE line format" -- so a line+marker format ('-o', 'o-',
+        # '.-', '--s') silently got no chemtrails/precog/bullettime trail at
+        # all, and a markers-only dataset got its trail of faded markers
+        # only when some OTHER dataset of the call happened to be a pure
+        # line. The trail is drawn in the dataset's own format, exactly as
+        # its head is: a line+marker trail carries faded markers at the
+        # observations (`_mark_observations`), a markers-only trail is its
+        # faded markers -- what the plotly backend has always drawn.
+        def _fmt_args(idx):
+            return (fmt[idx],) if fmt is not None else ()
+
+        lines = [
+            ax.plot(dat[0:1, 0], dat[0:1, 1], dat[0:1, 2], *_fmt_args(idx),
+                    linewidth=head_linewidths[idx], **kwargs_list[idx])[0]
+            for idx, dat in enumerate(x)
+        ]
+        trail = [
+            ax.plot(dat[0:1, 0], dat[0:1, 1], dat[0:1, 2], *_fmt_args(idx),
                     linewidth=linewidths[idx],
-                    **kwargs_list[idx]
-                )[0]
-                for idx, dat in enumerate(x)
-            ]
-            if any(is_line(f) for f in fmt):
-                trail = [
-                    ax.plot(
-                        dat[0:1, 0],
-                        dat[0:1, 1],
-                        dat[0:1, 2],
-                        fmt[idx],
-                        linewidth=linewidths[idx],
-                        **_trail_kwargs(kwargs_list[idx])
-                    )[0] if _wants_trail(idx) else None
-                    for idx, dat in enumerate(x)
-                ]
-        else:
-            lines = [
-                ax.plot(
-                    dat[0:1, 0],
-                    dat[0:1, 1],
-                    dat[0:1, 2],
-                    linewidth=linewidths[idx],
-                    **kwargs_list[idx]
-                )[0]
-                for idx, dat in enumerate(x)
-            ]
-            if is_line(fmt):
-                trail = [
-                    ax.plot(
-                        dat[0:1, 0],
-                        dat[0:1, 1],
-                        dat[0:1, 2],
-                        linewidth=linewidths[idx],
-                        **_trail_kwargs(kwargs_list[idx])
-                    )[0] if _wants_trail(idx) else None
-                    for idx, dat in enumerate(x)
-                ]
-        # trails are faint context, not legend-worthy: only the in-focus
-        # `lines` should carry legend entries. Otherwise every label appears
-        # twice -- once for the moving window, once for its tail. The legend is
-        # built once from `lines` (all datasets, created upfront), so it shows
-        # the static union of in-focus items and never changes across frames.
+                    **_trail_kwargs(kwargs_list[idx]))[0]
+            if _wants_trail(idx) else None
+            for idx, dat in enumerate(x)
+        ]
+        _remember_linewidths(lines, linewidths, head_linewidths)
+        # head_marker= (GH #299): created AFTER the trails, so the head
+        # lines and then the trails stay the axes' first line artists
+        # (`plot._apply_multicolor_animation` finds them by position)
+        _add_head_markers(ax, lines, head_linewidths,
+                          style not in ("spin", "morph"))
         for _trail_line in trail:
             if _trail_line is not None:
                 _trail_line.set_label('_nolegend_')
@@ -2885,6 +2977,7 @@ def _draw(
 
             window = _aa_window(i, start, end, artist=line)
             line.set_data(window[:, 0], window[:, 1])
+            _place_head_marker(line, window)
 
         _sync_anim_labels(num, tail_duration, windows=head_bounds)
         if frame_hooks is not None:
@@ -2951,6 +3044,8 @@ def _draw(
                          else _aa_window(i, *trail_bounds, artist=trail))
             _head_windows.append(tuple(int(b) for b in head_bounds))
             line.set_data(head[:, 0], head[:, 1])
+            _place_head_marker(line, head)
+            _set_serial_linewidth(line, trail_bounds is not None)
             if trail is not None:
                 trail.set_data(trail_seg[:, 0], trail_seg[:, 1])
 
@@ -3095,52 +3190,34 @@ def _draw(
         # values for keyword argument 'alpha'").
         def _trail_kwargs(kw):
             kw = dict(kw) if isinstance(kw, dict) else {}
-            kw["alpha"] = 0.3 * kw.pop("alpha", 1.0)
+            kw["alpha"] = trail_alpha * kw.pop("alpha", 1.0)
             return kw
 
-        trail = []
-        if fmt is not None:
-            lines = [
-                ax.plot(
-                    dat[0:1, 0],
-                    dat[0:1, 1],
-                    fmt[idx],
+        head_linewidths = _head_linewidths(linewidths)
+
+        # every flagged dataset gets its trail, whatever its format (GH #299:
+        # see animate_plot3D)
+        def _fmt_args(idx):
+            return (fmt[idx],) if fmt is not None else ()
+
+        lines = [
+            ax.plot(dat[0:1, 0], dat[0:1, 1], *_fmt_args(idx),
+                    linewidth=head_linewidths[idx], **kwargs_list[idx])[0]
+            for idx, dat in enumerate(x)
+        ]
+        trail = [
+            ax.plot(dat[0:1, 0], dat[0:1, 1], *_fmt_args(idx),
                     linewidth=linewidths[idx],
-                    **kwargs_list[idx]
-                )[0]
-                for idx, dat in enumerate(x)
-            ]
-            if any(is_line(f) for f in fmt):
-                trail = [
-                    ax.plot(
-                        dat[0:1, 0],
-                        dat[0:1, 1],
-                        fmt[idx],
-                        linewidth=linewidths[idx],
-                        **_trail_kwargs(kwargs_list[idx])
-                    )[0] if _wants_trail(idx) else None
-                    for idx, dat in enumerate(x)
-                ]
-        else:
-            lines = [
-                ax.plot(
-                    dat[0:1, 0],
-                    dat[0:1, 1],
-                    linewidth=linewidths[idx],
-                    **kwargs_list[idx]
-                )[0]
-                for idx, dat in enumerate(x)
-            ]
-            if is_line(fmt):
-                trail = [
-                    ax.plot(
-                        dat[0:1, 0],
-                        dat[0:1, 1],
-                        linewidth=linewidths[idx],
-                        **_trail_kwargs(kwargs_list[idx])
-                    )[0] if _wants_trail(idx) else None
-                    for idx, dat in enumerate(x)
-                ]
+                    **_trail_kwargs(kwargs_list[idx]))[0]
+            if _wants_trail(idx) else None
+            for idx, dat in enumerate(x)
+        ]
+        _remember_linewidths(lines, linewidths, head_linewidths)
+        # head_marker= (GH #299): created AFTER the trails, so the head
+        # lines and then the trails stay the axes' first line artists
+        # (`plot._apply_multicolor_animation` finds them by position)
+        _add_head_markers(ax, lines, head_linewidths,
+                          style not in ("spin", "morph"))
         for _trail_line in trail:
             if _trail_line is not None:
                 _trail_line.set_label('_nolegend_')
