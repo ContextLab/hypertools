@@ -67,10 +67,20 @@ matplotlib marker, ``True`` for ``'o'``, or a dict such as ``{'marker': 'D',
 the dict sets them. ``hold=`` appends ``round(hold * frame_rate)`` frames
 that draw the last frame again, so the pause is in a saved ``.mp4`` or
 ``.gif``; per-frame titles, captions and ``on_frame=`` callbacks see the last
-frame's context during the hold. ``tail_linewidth=``, ``head_marker=`` and
-``hold=`` are matplotlib only and raise ``NotImplementedError`` under
-``backend='plotly'``. All four may also be given inside the ``animate={...}``
-dict.
+frame's context during the hold. An ``.mp4`` stores every held frame. A
+``.gif`` plays for the same time, but its writer (Pillow) stores a run of
+identical frames as one frame with a longer duration, so it has fewer stored
+frames than ``n_frames``. ``tail_linewidth=``, ``head_marker=`` and ``hold=``
+are matplotlib only: an animated plot under ``backend='plotly'`` raises
+``NotImplementedError``. On a static plot (either backend)
+``tail_linewidth=``, ``head_marker=`` and ``trail_alpha=`` are ignored with a
+warning, and ``hold=`` raises ``ValueError``. ``tail_linewidth=`` also warns
+when no dataset is drawn with a line (a markers-only format). All four may
+also be given inside the ``animate={...}`` dict.
+
+With a continuous ``hue=`` the tail and the trail are colored observation by
+observation, whatever the format: a line (``'-'``), markers (``'o'``), or
+both (``'-o'``, the colored line with a colored marker on each observation).
 
 Fading earlier datasets
 ------------------------

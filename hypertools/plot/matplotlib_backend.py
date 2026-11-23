@@ -83,12 +83,30 @@ def _label_callout_kwargs(label_alpha, arrowstyle='-', facecolor='white'):
 #: and to the left, as hypertools has always drawn it
 LABEL_OFFSET_PT = 20.0
 
-#: the offsets a label is tried at, in order, when its box would cover
-#: another label's (`declutter_labels`): the four corners around the
-#: point at the usual distance, then the same corners further out
+#: the places a label can take when its box is covered by another
+#: label's (`declutter_labels`): the four corners around its point and
+#: the four sides, at the usual distance and at two further out
 _LABEL_REACHES_PT = (LABEL_OFFSET_PT, 2.25 * LABEL_OFFSET_PT,
                      3.5 * LABEL_OFFSET_PT)
 _LABEL_CORNERS = ((-1, 1), (1, 1), (-1, -1), (1, -1))
+_LABEL_SIDES = ((0, 1), (0, -1), (-1, 0), (1, 0))
+
+#: the place every label starts from: up and to the left of its point
+_LABEL_HOME = (_LABEL_CORNERS[0], LABEL_OFFSET_PT)
+
+#: the clear space, in points, a label is given around its box when it is
+#: moved to a new place. A label that is not moved keeps its place until
+#: its box actually meets another's, so a label never sits on the border
+#: between two places (it would switch on every frame of an animation).
+_LABEL_CLEARANCE_PT = 3.0
+
+#: a label that cannot be put clear of the others moves only to a place
+#: that covers less than this share of what it covers where it is
+_LABEL_MOVE_GAIN = 0.5
+
+#: how many times the labels are gone through on one draw (each time only
+#: the labels still covered move)
+_LABEL_PASSES = 3
 
 #: above this many visible labels they are left where they are: that many
 #: boxes cover the plot whichever way each one points
@@ -98,110 +116,219 @@ _LABEL_DECLUTTER_MAX = 300
 def _label_box(anchor, size, corner, reach_px, pad_px):
     """The display box (x0, y0, x1, y1), its round frame included, of a
     label of text `size` attached to the point `anchor` on the `corner`
-    side (``(-1, 1)`` is up and to the left) at `reach_px`."""
+    side (``(-1, 1)`` is up and to the left, ``(0, 1)`` straight up) at
+    `reach_px`."""
     (px, py), (w, h), (sx, sy) = anchor, size, corner
-    x0 = px + sx * reach_px - (w if sx < 0 else 0.0)
-    y0 = py + sy * reach_px - (h if sy < 0 else 0.0)
+    x0 = px + sx * reach_px - (w if sx < 0 else 0.5 * w if sx == 0 else 0.0)
+    y0 = py + sy * reach_px - (h if sy < 0 else 0.5 * h if sy == 0 else 0.0)
     return (x0 - pad_px, y0 - pad_px, x0 + w + pad_px, y0 + h + pad_px)
+
+
+def _covered_area(box, others):
+    """The area of `box` (x0, y0, x1, y1) that the boxes `others` (an
+    ``(n, 4)`` array) cover, summed over them."""
+    if not len(others):
+        return 0.0
+    wide = np.minimum(box[2], others[:, 2]) - np.maximum(box[0], others[:, 0])
+    tall = np.minimum(box[3], others[:, 3]) - np.maximum(box[1], others[:, 1])
+    area = np.clip(wide, 0, None) * np.clip(tall, 0, None)
+    return float(np.nansum(area))
 
 
 def declutter_labels(ax, renderer):
     """Keep the observation labels of `ax` (`labels=`) off each other.
 
-    Every label hangs up and to the left of its point, so the labels of
+    Every label starts up and to the left of its point, so the labels of
     two points that are close on screen were drawn on top of each other
     (GH #297: "Subject 1" over "Subject 2" in `examples/plot_labels.py`).
-    Here each visible label, in the order the labels were given, keeps
-    that place unless its box would cover the box of a label placed
-    before it; then it takes the first of the other corners around its
-    point (up-right, down-left, down-right, then the same four further
-    out) that is free and inside the canvas, or failing that the one
-    that covers the least. A label that covers nothing is not touched,
-    so a figure whose labels were clear of each other is drawn exactly
-    as before.
 
-    It is a pure function of what is on screen (the points' positions,
-    which labels are visible, the text sizes), so a frame of an
-    animation comes out the same whenever it is drawn. It runs at draw
-    time (`_LabelDeclutter`), which is the one path for a static figure,
-    a figure the reader rotates, and every frame of an animation.
+    The placement is STABLE: a label stays where it is for as long as its
+    box is clear of the labels given before it, so a label that covers
+    nothing is never touched and a figure whose labels were clear of each
+    other is drawn exactly as before. Only a label whose box is covered
+    by an earlier label's moves (or one that was moved and has since left
+    the canvas), and it moves as little as it can: of the places around
+    its point (four corners and four sides, at three distances) that are
+    clear of every other label and on the canvas, it takes one at the
+    shortest distance from its point, and of those the one nearest to
+    where it is; with no clear place, a place that at least halves what
+    it covers, or else it stays. A moved label
+    is given `_LABEL_CLEARANCE_PT` of room and does not go back when its
+    old place becomes free, so from one frame of an animation to the next
+    (or as a 3-D plot is turned by hand) a label changes place only when
+    the points themselves have moved onto each other. In version 1.2.1's
+    first draft every label was placed afresh on every draw, and labels
+    hopped between places on every frame of a spinning plot.
+
+    What a draw does therefore depends on where the labels were:
+    `reset_label_places` puts them back at the start, which `plot()` does
+    when the figure is finished and an animation does when it starts
+    over, so a figure and a played or saved animation come out the same
+    every time. A label that is hidden (its point is outside an
+    animation's window) starts again from up and to the left.
+
+    It runs at draw time (`_LabelDeclutter`), which is the one path for a
+    static figure, a figure the reader rotates, and every frame of an
+    animation. The anchor of a 3-D label is projected here as well, with
+    the camera and the box zoom of this very draw.
     """
     import matplotlib.text as mtext
-    entries = getattr(ax, '_hyp_labels_and_points', None) or []
+    entries = [entry for entry in
+               (getattr(ax, '_hyp_labels_and_points', None) or [])
+               if entry[0].axes is ax]
+    if not entries:
+        return
+    if hasattr(ax, 'get_proj'):
+        # (the label's point where THIS draw puts it: a projection kept
+        # from an earlier layout or zoom left the arrow pointing at
+        # nothing)
+        from mpl_toolkits.mplot3d import proj3d
+        proj = ax.get_proj()
+        for entry in entries:
+            if len(entry) == 4 and entry[0].get_visible():
+                x2, y2, _ = proj3d.proj_transform(
+                    entry[1], entry[2], entry[3], proj)
+                entry[0].xy = (x2, y2)
     labels = []
     for entry in entries:
         label = entry[0]
-        if not label.get_visible() or label.axes is not ax:
-            continue
         # a label that is no longer where hypertools put it was moved by
         # the reader (2-D labels can be dragged) or by the caller's own
         # code: it is theirs from then on
         if tuple(np.round(label.xyann, 6)) != tuple(
                 np.round(getattr(label, '_hyp_offset', label.xyann), 6)):
             label._hyp_user_placed = True
-        if not getattr(label, '_hyp_user_placed', False):
-            labels.append(label)
-    if not labels:
+        if getattr(label, '_hyp_user_placed', False):
+            continue
+        if not label.get_visible():
+            _send_label_home(label)
+            continue
+        labels.append(label)
+    if len(labels) > _LABEL_DECLUTTER_MAX:
+        for label in labels:
+            _send_label_home(label)
+        return
+    if len(labels) < 2:
         return
     to_px = renderer.points_to_pixels
-    home = (-LABEL_OFFSET_PT, LABEL_OFFSET_PT)
-    for label in labels:
-        if label._hyp_offset != home:
-            _set_label_corner(label, _LABEL_CORNERS[0], LABEL_OFFSET_PT)
-    if len(labels) < 2 or len(labels) > _LABEL_DECLUTTER_MAX:
-        return
     canvas = ax.get_figure(root=True).bbox
-    gap = to_px(2.0)
-    placed = np.empty((0, 4))
-    for label in labels:
+    gap = to_px(_LABEL_CLEARANCE_PT)
+    geometry = []
+    boxes = np.full((len(labels), 4), np.nan)
+    for k, label in enumerate(labels):
         anchor = ax.transData.transform(label.xy)
-        if not np.all(np.isfinite(anchor)):
-            continue
         text = mtext.Text.get_window_extent(label, renderer)
         size = (text.width, text.height)
         frame = label.get_bbox_patch()
         pad = getattr(frame.get_boxstyle(), 'pad', 0.0) if frame else 0.0
-        pad_px = pad * to_px(label.get_size()) + gap
-        best = None
-        for reach in _LABEL_REACHES_PT:
-            for corner in _LABEL_CORNERS:
-                box = _label_box(anchor, size, corner, to_px(reach), pad_px)
-                over = 0.0
-                if len(placed):
-                    wide = (np.minimum(box[2], placed[:, 2])
-                            - np.maximum(box[0], placed[:, 0]))
-                    tall = (np.minimum(box[3], placed[:, 3])
-                            - np.maximum(box[1], placed[:, 1]))
-                    over = float(np.sum(
-                        np.clip(wide, 0, None) * np.clip(tall, 0, None)))
-                is_home = best is None
-                inside = (box[0] >= canvas.x0 and box[1] >= canvas.y0
-                          and box[2] <= canvas.x1 and box[3] <= canvas.y1)
-                # (the usual place needs no room check: a lone label at
-                # the canvas edge stays where it has always been)
-                if over <= 0.0 and (is_home or inside):
-                    best = (0.0, corner, reach, box)
-                    break
-                # a place off the canvas only as a last resort
-                cost = over + (0.0 if inside else
-                               (box[2] - box[0]) * (box[3] - box[1]))
-                if best is None or cost < best[0]:
-                    best = (cost, corner, reach, box)
-            if best[0] <= 0.0:
-                break
-        _cost, corner, reach, box = best
-        if (corner, reach) != (_LABEL_CORNERS[0], LABEL_OFFSET_PT):
-            _set_label_corner(label, corner, reach)
-        placed = np.vstack([placed, box])
+        pad_px = pad * to_px(label.get_size())
+        geometry.append((anchor, size, pad_px))
+        if np.all(np.isfinite(anchor)):
+            corner, reach = _label_place(label)
+            boxes[k] = _label_box(anchor, size, corner, to_px(reach), pad_px)
+    def _off_canvas(box):
+        return (box[0] < canvas.x0 or box[1] < canvas.y0
+                or box[2] > canvas.x1 or box[3] > canvas.y1)
+
+    def _area(box):
+        return (box[2] - box[0]) * (box[3] - box[1])
+
+    # (a label that moves frees the place it leaves and takes another, so
+    # the labels are gone through until none of them moves)
+    for _ in range(_LABEL_PASSES):
+        moved = False
+        for k, label in enumerate(labels):
+            anchor, size, pad_px = geometry[k]
+            if not np.all(np.isfinite(anchor)):
+                continue
+            here = boxes[k]
+            place = _label_place(label)
+            # it stays unless an earlier label's box is on its own, or a
+            # place it was moved to has since left the canvas (in its
+            # usual place a label at the canvas edge stays where it has
+            # always been)
+            if _covered_area(here, boxes[:k]) <= 0.0 and (
+                    place == _LABEL_HOME or not _off_canvas(here)):
+                continue
+            others = np.delete(boxes, k, axis=0)
+            cost_here = _covered_area(here, others) + (
+                _area(here) if _off_canvas(here) else 0.0)
+            center = (0.5 * (here[0] + here[2]), 0.5 * (here[1] + here[3]))
+            best = None
+            for reach in _LABEL_REACHES_PT:
+                for corner in _LABEL_CORNERS + _LABEL_SIDES:
+                    if (corner, reach) == place:
+                        continue
+                    roomy = _label_box(anchor, size, corner, to_px(reach),
+                                       pad_px + gap)
+                    # a place off the canvas only as a last resort
+                    cost = _covered_area(roomy, others) + (
+                        _area(roomy) if _off_canvas(roomy) else 0.0)
+                    # a short arrow before a long one, and at that
+                    # distance the smallest change: the place the box
+                    # travels least to reach
+                    change = np.hypot(
+                        0.5 * (roomy[0] + roomy[2]) - center[0],
+                        0.5 * (roomy[1] + roomy[3]) - center[1])
+                    # (the place it last left comes after the others at
+                    # that distance: a label pushed out of one place and
+                    # then out of the next does not hop straight back)
+                    back = (corner, reach) == getattr(
+                        label, '_hyp_place_left', None)
+                    rank = (cost, reach, back, change)
+                    if best is None or rank < best[:4]:
+                        best = rank + (corner,)
+            cost, reach, _back, _change, corner = best
+            if cost > 0.0 and cost >= _LABEL_MOVE_GAIN * cost_here:
+                continue
+            label._hyp_place_left = place
+            _set_label_place(label, corner, reach)
+            boxes[k] = _label_box(anchor, size, corner, to_px(reach), pad_px)
+            moved = True
+        if not moved:
+            break
 
 
-def _set_label_corner(label, corner, reach_pt):
+def _label_place(label):
+    """Where `label` hangs: ``(corner, reach in points)``."""
+    return getattr(label, '_hyp_place', _LABEL_HOME)
+
+
+def _send_label_home(label):
+    """Put `label` back where every label starts, as if never moved."""
+    label._hyp_place_left = None
+    _set_label_place(label, *_LABEL_HOME)
+
+
+def _set_label_place(label, corner, reach_pt):
     """Hang `label` on the `corner` side of its point, `reach_pt` away."""
+    if _label_place(label) == (corner, reach_pt) and hasattr(
+            label, '_hyp_place'):
+        return
     sx, sy = corner
     label.set_position((sx * reach_pt, sy * reach_pt))
-    label.set_ha('right' if sx < 0 else 'left')
-    label.set_va('bottom' if sy > 0 else 'top')
+    label.set_ha('right' if sx < 0 else 'left' if sx > 0 else 'center')
+    label.set_va('bottom' if sy > 0 else 'top' if sy < 0 else 'center')
     label._hyp_offset = (sx * reach_pt, sy * reach_pt)
+    label._hyp_place = (corner, reach_pt)
+
+
+def reset_label_places(target):
+    """Put the observation labels of `target` (an axes, or a figure: all
+    of its axes) back up and to the left of their points, where
+    `declutter_labels` starts from on the next draw. A label the reader
+    or the caller moved is left alone."""
+    axes = [target] if hasattr(target, 'transData') else list(target.axes)
+    for ax in axes:
+        for entry in getattr(ax, '_hyp_labels_and_points', None) or []:
+            label = entry[0]
+            if label.axes is not ax or getattr(
+                    label, '_hyp_user_placed', False):
+                continue
+            if tuple(np.round(label.xyann, 6)) != tuple(np.round(getattr(
+                    label, '_hyp_offset', label.xyann), 6)):
+                continue                    # moved by the reader or caller
+            _send_label_home(label)
 
 
 class _LabelDeclutter(matplotlib.artist.Artist):
@@ -1675,6 +1802,12 @@ def _draw(
                 if getattr(e[0], 'axes', None) is ax]
         if not laps:
             return
+        # an animation that starts over (a loop, a save after a preview,
+        # `draw_frame` of an earlier frame) places its labels from the
+        # start again, so every pass through it comes out the same
+        if num < getattr(ax, '_hyp_label_frame', num):
+            reset_label_places(ax)
+        ax._hyp_label_frame = num
         is_3d = hasattr(ax, "get_proj")
         proj = ax.get_proj() if is_3d else None
         renderer = getattr(fig.canvas, "renderer", None)
@@ -2304,6 +2437,12 @@ def _draw(
             head = _aa_window(i, *head_bounds, artist=line)
             trail_seg = (data[:0] if trail_bounds is None
                          else _aa_window(i, *trail_bounds, artist=trail))
+            if trail is not None and trail_bounds is None:
+                # no trail on this frame: say so on the artist as well, or
+                # a renderer that redraws it from its recorded rows
+                # (`plot._apply_multicolor_animation`) keeps showing the
+                # trail of the frame drawn before
+                trail._hyp_row_window = (0, 0)
             _head_windows.append(tuple(int(b) for b in head_bounds))
             line.set_data(head[:, 0:2].T)
             line.set_3d_properties(head[:, 2])
@@ -2475,10 +2614,13 @@ def _draw(
             kw["color"] = head.get_color()
         return kw
 
-    def _head_linewidths(linewidths):
+    def _head_linewidths(linewidths, style=None):
         """The line width of each dataset's HEAD line (the recent window):
-        `tail_linewidth` when given (GH #299), else the dataset's own."""
-        if tail_linewidth is None:
+        `tail_linewidth` when given (GH #299), else the dataset's own. A
+        `style` with no reveal ('spin' draws every dataset in full, 'morph'
+        its own cloud) has no tail, so the lines keep their own width
+        there, as the warning `plot()` gives for it says."""
+        if tail_linewidth is None or style in ("spin", "morph"):
             return list(linewidths)
         return [tail_linewidth] * len(linewidths)
 
@@ -2716,7 +2858,7 @@ def _draw(
             kw["alpha"] = trail_alpha * kw.pop("alpha", 1.0)
             return _own_color(kw, idx, lines[idx])
 
-        head_linewidths = _head_linewidths(linewidths)
+        head_linewidths = _head_linewidths(linewidths, style)
 
         # GH #299: a trail artist is created for EVERY dataset that asks for
         # one, whatever its format. It used to be gated on `is_line` -- "is
@@ -2749,9 +2891,14 @@ def _draw(
         # (`plot._apply_multicolor_animation` finds them by position)
         _add_head_markers(ax, lines, head_linewidths,
                           style not in ("spin", "morph"))
-        for _trail_line in trail:
+        for _idx, _trail_line in enumerate(trail):
             if _trail_line is not None:
                 _trail_line.set_label('_nolegend_')
+                # which dataset the trail belongs to: with a per-dataset
+                # flag list not every dataset has one, so its place among
+                # the trails does not say
+                _trail_line._hyp_trace_index = _idx
+                _trail_line._hyp_trace_role = 'trail'
 
         # axes-box slicing fix (see `plot_cube`): unclip every data/trail
         # line artist -- Axes3D's shrunk-square viewport (`ax.get_position()`
@@ -3221,6 +3368,12 @@ def _draw(
             head = _aa_window(i, *head_bounds, artist=line)
             trail_seg = (data[:0] if trail_bounds is None
                          else _aa_window(i, *trail_bounds, artist=trail))
+            if trail is not None and trail_bounds is None:
+                # no trail on this frame: say so on the artist as well, or
+                # a renderer that redraws it from its recorded rows
+                # (`plot._apply_multicolor_animation`) keeps showing the
+                # trail of the frame drawn before
+                trail._hyp_row_window = (0, 0)
             _head_windows.append(tuple(int(b) for b in head_bounds))
             line.set_data(head[:, 0], head[:, 1])
             _place_head_marker(line, head)
@@ -3372,7 +3525,7 @@ def _draw(
             kw["alpha"] = trail_alpha * kw.pop("alpha", 1.0)
             return _own_color(kw, idx, lines[idx])
 
-        head_linewidths = _head_linewidths(linewidths)
+        head_linewidths = _head_linewidths(linewidths, style)
 
         # every flagged dataset gets its trail, whatever its format (GH #299:
         # see animate_plot3D)
@@ -3397,9 +3550,14 @@ def _draw(
         # (`plot._apply_multicolor_animation` finds them by position)
         _add_head_markers(ax, lines, head_linewidths,
                           style not in ("spin", "morph"))
-        for _trail_line in trail:
+        for _idx, _trail_line in enumerate(trail):
             if _trail_line is not None:
                 _trail_line.set_label('_nolegend_')
+                # which dataset the trail belongs to: with a per-dataset
+                # flag list not every dataset has one, so its place among
+                # the trails does not say
+                _trail_line._hyp_trace_index = _idx
+                _trail_line._hyp_trace_role = 'trail'
 
         # animate='morph': single traveling point-cloud artist, exactly
         # mirroring `animate_plot3D`'s morph setup but in 2-D.

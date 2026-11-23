@@ -20,7 +20,25 @@ Follows 1.2.0. Animated trails now work with line-and-marker formats (GH
   its trail of faded markers on its own too (it used to get one only when
   another dataset of the same call was a pure line), which is what the
   plotly backend has always drawn. Single plots, serial reveals, animated
-  `panels=` grids and continuous `hue=` coloring are all covered.
+  `panels=` grids and continuous `hue=` coloring are all covered: with a
+  continuous `hue=` a line-and-marker format draws the colored line and a
+  colored marker on each observation, on the tail and on the trail.
+- **Continuous `hue=` in an animation (found in review).** A serial reveal
+  of a markers-only format with a trail flag (`hyp.plot(x, 'o', hue=h,
+  animate='serial', chemtrails=True)`) raised `AttributeError` on its
+  first frame; a serial trail stayed on screen after its dataset was
+  finished and when the animation started over; a trail was drawn at
+  `trail_alpha=` alone instead of `trail_alpha=` times the dataset's
+  `alpha=` (a faint dataset had a trail stronger than its head); an
+  animated hue-colored line ignored `alpha=` and was drawn opaque (the
+  static plot has honored it since 1.1); and a call that mixes formats
+  (`['-', 'o']`) drew every dataset as markers, static or animated. Each
+  dataset is now drawn by its own format, at its own opacity. Matplotlib
+  backend.
+- **`dataset_fade=` fades the right trail.** With a per-dataset flag list
+  such as `chemtrails=[False, True]` the one trail was faded as the first
+  dataset's. A dataset's `head_marker=` fades with it under a continuous
+  `hue=` too.
 - **A trail is drawn in its own dataset's color when only some datasets
   have one.** With a per-dataset list such as `chemtrails=[False, True]`
   the trail took the next color of the color cycle, which was another
@@ -34,8 +52,9 @@ Follows 1.2.0. Animated trails now work with line-and-marker formats (GH
   (`legend_kwargs={'loc': 'upper left'}`) could meet the cube's top
   corner, in a static plot too. The cube is now measured at every camera
   angle the plot is seen from and drawn smaller until it keeps a margin of
-  2% of the canvas from the canvas edges, from the legend and from the
-  colorbar. What changes in existing figures: an animated 3-D plot on a
+  about 2% of the canvas's shorter side (measured on every frame: 1.95%
+  to 2%) from the canvas edges, from the legend and from the colorbar.
+  What changes in existing figures: an animated 3-D plot on a
   square or portrait figure draws its cube about 10% smaller, an animated
   landscape plot with a legend about 5% smaller, and a plot whose cube
   was already clear (an animated landscape plot without a legend, every
@@ -48,13 +67,23 @@ Follows 1.2.0. Animated trails now work with line-and-marker formats (GH
 - **Observation labels are not drawn on top of each other (GH #297).**
   Every `labels=` box hangs up and to the left of its point, so the labels
   of two points that are close on screen covered each other. A label whose
-  box would cover an earlier label's now takes another corner around its
-  point (up-right, down-left, down-right, then the same corners further
-  out), on the canvas where possible. A label that covers nothing stays
-  where it was. The placement is made at draw time, so it holds after a
-  resize, when a 3-D plot is rotated by hand and on every frame of an
-  animation; a 2-D label the reader has dragged is left where it was put.
-  Above 300 visible labels nothing is moved. Matplotlib backend.
+  box is covered by an earlier label's now moves to another place around
+  its point (a corner or a side, at the usual distance or further out):
+  a free place on the canvas at the shortest distance, and of those the
+  one nearest to where it was. A label that covers nothing stays where it
+  was. The placement is made at draw time, so it holds after a resize,
+  when a 3-D plot is rotated by hand and on every frame of an animation,
+  and it is stable: a label keeps its place until its box is covered and
+  does not go back when its old place becomes free, so labels do not hop
+  about while the plot turns (measured on a 60-frame spin: 26 changes of
+  place for 8 labels, 130 for 30 labels, against 71 and 777 when every
+  frame was placed afresh). An animation that starts over places its
+  labels from the start again, so every pass, played or saved, is the
+  same. With very many labels on a small figure some boxes still overlap.
+  The arrow of a 3-D label points at its point after the cube is drawn
+  smaller to clear a legend. A 2-D label the reader has dragged is left
+  where it was put. Above 300 visible labels nothing is moved. Matplotlib
+  backend.
 - **An animated markers-only plot with a continuous `hue=` is animated
   (GH #297).** `hyp.plot(x, 'o', animate=True, hue=values)` drew every
   observation on every frame: in 3-D only the camera moved, in 2-D every
@@ -99,7 +128,10 @@ Follows 1.2.0. Animated trails now work with line-and-marker formats (GH
   each dataset's own `alpha=`. The default stays 0.3. Both backends.
 - **`hold=`: hold the last frame (GH #299).** `hold=2` appends two seconds
   of frames (`round(hold * frame_rate)`) that draw the last frame again, in
-  saved `.mp4` and `.gif` files as well as on screen. Per-frame titles,
+  saved `.mp4` and `.gif` files as well as on screen. An `.mp4` stores
+  every held frame; a `.gif` plays for the same time with fewer stored
+  frames, because its writer (Pillow) stores a run of identical frames as
+  one frame with the run's duration. Per-frame titles,
   captions and `on_frame=` callbacks see the last frame's context during
   the hold. Works with every `animate=` style, with `loop=True` and on
   animated `panels=` grids. Matplotlib only.
@@ -111,11 +143,25 @@ Follows 1.2.0. Animated trails now work with line-and-marker formats (GH
   `title=` names the panels; `suptitle=` is the one title above the grid,
   static or animated (it works on a single plot too). Its room is measured
   like a caption's, so it clears the panel titles, the shared legend and
-  colorbar, and a caption placed at the top. `suptitle_kwargs=` styles it.
-  Matplotlib only.
+  colorbar, and a caption placed at the top, at the tallest text a
+  per-frame caption shows on the first, middle and last frames.
+  `suptitle_kwargs=` styles it. Matplotlib only.
 - `head_marker=`, `tail_linewidth=`, `trail_alpha=` and `hold=` may also be
   given inside the `animate={...}` dict. The matplotlib-only arguments
-  raise `NotImplementedError` under `backend='plotly'`.
+  raise `NotImplementedError` on an animated plot under
+  `backend='plotly'`. On a static plot, on either backend,
+  `head_marker=`, `tail_linewidth=` and `trail_alpha=` are ignored with a
+  warning (as the trail flags are) and `hold=` raises `ValueError`.
+  `tail_linewidth=` also warns when no dataset is drawn with a line, and
+  leaves the lines of `animate='spin'` at `linewidth=`.
+- **Values inside styling dicts are checked.** `head_marker=`,
+  `caption_kwargs=`, `suptitle_kwargs=` and `title_kwargs=` raise
+  `ValueError` naming the argument and the key for a size that is not a
+  positive number (or, for text, one of matplotlib's size names), an
+  unknown color, weight or style, and an alpha outside 0 to 1. What
+  changes for existing calls: `title_kwargs={'size': -3}` (or 0, or NaN)
+  was accepted and drew no readable title; it now raises. Bad names
+  already raised, from matplotlib, without naming the argument.
 
 ## 1.2.0 (2026-11-22)
 

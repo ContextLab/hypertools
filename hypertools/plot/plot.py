@@ -2447,6 +2447,87 @@ _PLOTLY_TITLE_KEYS = {
 }
 
 
+def _is_finite_number(value):
+    """Whether `value` is one real, finite number (never a bool)."""
+    return (isinstance(value, (int, float, np.integer, np.floating))
+            and not isinstance(value, bool) and bool(np.isfinite(value)))
+
+
+def _check_style_values(style, name, given=None):
+    """Refuse a bad VALUE in a dict of text or marker styling options
+    (`title_kwargs=`, `caption_kwargs=`, `suptitle_kwargs=`,
+    `head_marker=`), naming the argument and the key. `style` is keyed by
+    the resolved option names; `given` maps each back to the key the
+    caller wrote (an alias such as ``'size'``), which is the one the error
+    names. Options this does not know are left to matplotlib.
+
+    Without it a negative, zero or NaN size was accepted and drew nothing
+    (or drew the text mirrored), and a wrong name or an alpha outside 0-1
+    surfaced as a matplotlib error that named neither."""
+    from matplotlib import font_manager
+    from matplotlib.colors import is_color_like
+    from matplotlib.markers import MarkerStyle
+    given = given or {}
+
+    def _refuse(option, need):
+        key = given.get(option, option)
+        raise ValueError(
+            f"{name}[{key!r}] must be {need}; got {style[option]!r}.")
+
+    def _named(value, names):
+        return isinstance(value, str) and value in names
+
+    for option in ('fontsize', 'markersize', 'linespacing'):
+        if option not in style:
+            continue
+        value = style[option]
+        sizes = tuple(
+            size for size in font_manager.font_scalings
+            if isinstance(size, str)) if option == 'fontsize' else ()
+        if not ((_is_finite_number(value) and value > 0)
+                or _named(value, sizes)):
+            _refuse(option, {
+                'fontsize': "a font size in points greater than 0, or "
+                            f"one of {', '.join(sizes)}",
+                'markersize': "a marker size in points greater than 0",
+                'linespacing': "a line spacing (a multiple of the font "
+                               "size) greater than 0"}[option])
+    if 'fontweight' in style:
+        value = style['fontweight']
+        weights = tuple(font_manager.weight_dict)
+        if not ((_is_finite_number(value) and 0 <= value <= 1000)
+                or _named(value, weights)):
+            _refuse('fontweight', "a number from 0 to 1000 or one of "
+                                  f"{', '.join(weights)}")
+    if 'fontstyle' in style and not _named(
+            style['fontstyle'], ('normal', 'italic', 'oblique')):
+        _refuse('fontstyle', "'normal', 'italic' or 'oblique'")
+    if 'fontfamily' in style:
+        value = style['fontfamily']
+        names = value if isinstance(value, (list, tuple)) else [value]
+        if not names or not all(isinstance(one, str) and one.strip()
+                                for one in names):
+            _refuse('fontfamily', "a font family name or a list of them")
+    for option in ('color', 'markeredgecolor'):
+        if option in style and not is_color_like(style[option]):
+            _refuse(option, "a matplotlib color (a name such as 'gray', "
+                            "a hex string, or an RGB(A) tuple)")
+    if 'alpha' in style and not (
+            _is_finite_number(style['alpha'])
+            and 0.0 <= style['alpha'] <= 1.0):
+        _refuse('alpha', "a number between 0 and 1")
+    if 'markeredgewidth' in style and not (
+            _is_finite_number(style['markeredgewidth'])
+            and style['markeredgewidth'] >= 0):
+        _refuse('markeredgewidth', "a line width in points, 0 or more")
+    if 'fillstyle' in style and not _named(
+            style['fillstyle'], MarkerStyle.fillstyles):
+        _refuse('fillstyle',
+                f"one of {', '.join(MarkerStyle.fillstyles)}")
+    if 'zorder' in style and not _is_finite_number(style['zorder']):
+        _refuse('zorder', "a number")
+
+
 def _normalize_title_kwargs(title_kwargs, _name='title_kwargs'):
     """Resolve `title_kwargs=`'s short aliases and reject unknown keys.
 
@@ -2460,7 +2541,7 @@ def _normalize_title_kwargs(title_kwargs, _name='title_kwargs'):
             f"{_name}= must be a dict of title styling options (e.g. "
             f"{{'size': 20, 'weight': 'bold', 'color': 'k', 'y': 0.93}}); "
             f"got {type(title_kwargs).__name__}: {title_kwargs!r}.")
-    resolved = {}
+    resolved, given = {}, {}
     for key, value in title_kwargs.items():
         name = _TITLE_KWARG_ALIASES.get(key, key)
         if name not in _TITLE_KWARG_KEYS:
@@ -2470,6 +2551,8 @@ def _normalize_title_kwargs(title_kwargs, _name='title_kwargs'):
                 f"parentheses): {sorted(_TITLE_KWARG_KEYS)} "
                 f"(aliases: {sorted(_TITLE_KWARG_ALIASES)}).")
         resolved[name] = value
+        given[name] = key
+    _check_style_values(resolved, _name, given)
     return resolved
 
 
@@ -3218,7 +3301,7 @@ def _validate_head_marker(head_marker, backend_name):
     if head_marker is True:
         spec = {'marker': 'o'}
     elif isinstance(head_marker, dict):
-        spec = {}
+        spec, given = {}, {}
         for key, value in head_marker.items():
             name = _HEAD_MARKER_ALIASES.get(key, key)
             if name not in _HEAD_MARKER_KEYS:
@@ -3228,6 +3311,11 @@ def _validate_head_marker(head_marker, backend_name):
                     f"parentheses): {sorted(_HEAD_MARKER_KEYS)} (aliases: "
                     f"{sorted(_HEAD_MARKER_ALIASES)}).")
             spec[name] = value
+            given[name] = key
+        # (the values too: a size of -3, 0 or NaN drew no marker and said
+        # nothing; a wrong color or an alpha of 2 raised from matplotlib
+        # without naming `head_marker=`)
+        _check_style_values(spec, 'head_marker', given)
         spec.setdefault('marker', 'o')
     else:
         spec = {'marker': head_marker}
@@ -3314,11 +3402,13 @@ def _validate_hold(hold, style, frame_rate, backend_name):
 
 
 def _warn_ignored_animation_styling(animate, head_marker, tail_linewidth,
-                                    trail_alpha, any_trail):
+                                    trail_alpha, any_trail, any_line=True):
     """Say so when `head_marker=`/`tail_linewidth=`/`trail_alpha=` cannot
     apply (GH #299), as the trail flags do: on a static plot, on a style
-    with no reveal head ('spin', 'morph'), and -- for `trail_alpha=` --
-    when no dataset draws a trail."""
+    with no reveal head ('spin', 'morph'), for `trail_alpha=` when no
+    dataset draws a trail, and for `tail_linewidth=` when no dataset is
+    drawn with a line (`any_line`: a markers-only format has no line to
+    widen)."""
     given = [name for name, value in (('head_marker', head_marker),
                                       ('tail_linewidth', tail_linewidth),
                                       ('trail_alpha', trail_alpha))
@@ -3327,8 +3417,9 @@ def _warn_ignored_animation_styling(animate, head_marker, tail_linewidth,
         return
     if not animate:
         warnings.warn(
-            f"{'/'.join(given)} only affect ANIMATED plots and will be "
-            "ignored here; pass animate=True (or 'parallel').",
+            f"{'/'.join(given)} only "
+            f"{'affects' if len(given) == 1 else 'affect'} ANIMATED plots "
+            "and will be ignored here; pass animate=True (or 'parallel').",
             UserWarning, stacklevel=external_stacklevel())
         return
     if animate in ('spin', 'morph'):
@@ -3343,6 +3434,13 @@ def _warn_ignored_animation_styling(animate, head_marker, tail_linewidth,
             "trails, and this animation draws none; ignoring it. Pass "
             "chemtrails=True (or precog=/bullettime=) with animate=True or "
             "'serial' to draw one.",
+            UserWarning, stacklevel=external_stacklevel())
+    if tail_linewidth is not None and not any_line:
+        warnings.warn(
+            "tail_linewidth= sets the width of the tail's line, and no "
+            "dataset of this animation is drawn with a line (a "
+            "markers-only format such as 'o'); ignoring it. Use a format "
+            "with a line ('-', '-o') or size the markers with markersize=.",
             UserWarning, stacklevel=external_stacklevel())
 
 
@@ -3450,19 +3548,26 @@ def _make_dataset_fade_updater(floor, decay):
             return
         n = len(counts)
         for i, artist in enumerate(ctx.artists):
-            # heads are artists 0..n-1; trails (when any) follow in the
-            # same dataset order, so artist n + i belongs to dataset i.
-            dataset = i if i < n else i - n
-            if dataset >= n:
+            # heads are artists 0..n-1; trails (when any) follow in
+            # dataset order. A trail says which dataset it belongs to
+            # (`_hyp_trace_index`): with a per-dataset flag list such as
+            # ``chemtrails=[False, True]`` not every dataset has one, so
+            # its place among the trails does not.
+            dataset = i if i < n else getattr(
+                artist, '_hyp_trace_index', i - n)
+            if dataset is None or dataset >= n:
                 continue
             alpha = dataset_fade_alpha(dataset, current, counts[dataset],
                                        floor, decay)
             if hasattr(artist, 'set_alpha'):          # matplotlib artist
                 artist.set_alpha(alpha)
-                # its `head_marker=` fades with the dataset (GH #299)
-                _head = getattr(artist, '_hyp_head_marker', None)
-                if _head is not None:
-                    _head.set_alpha(alpha)
+                # its `head_marker=` and, with a continuous `hue=`, the
+                # markers of a line-and-marker format fade with the
+                # dataset (GH #299)
+                for _name in ('_hyp_head_marker', '_hyp_markers'):
+                    _follower = getattr(artist, _name, None)
+                    if _follower is not None:
+                        _follower.set_alpha(alpha)
             else:                                     # plotly trace
                 artist.opacity = alpha
     return _update
@@ -4751,7 +4856,7 @@ def _validate_figure_text_kwargs(kwargs, name, given=True,
             f"given; pass {what}= or drop {name}=.")
     keys = _FIGURE_TEXT_KEYS if allow_position \
         else _FIGURE_TEXT_KEYS - {'position'}
-    resolved = {}
+    resolved, written = {}, {}
     for key, value in kwargs.items():
         option = _FIGURE_TEXT_ALIASES.get(key, key)
         if option not in keys:
@@ -4760,6 +4865,8 @@ def _validate_figure_text_kwargs(kwargs, name, given=True,
                 f"option. Supported keys (short aliases in parentheses): "
                 f"{sorted(keys)} (aliases: {sorted(_FIGURE_TEXT_ALIASES)}).")
         resolved[option] = value
+        written[option] = key
+    _check_style_values(resolved, name, written)
     if resolved.get('position', 'bottom') not in ('bottom', 'top'):
         raise ValueError(
             f"{name}['position'] must be 'bottom' (under the figure, the "
@@ -5132,16 +5239,35 @@ def _add_caption(fig, text, font=None, family=None, samples=(), style=None,
                       _caption_text_height_in(artist, candidate))
                   for candidate in candidates)
     strip_in = text_in + 2 * _CAPTION_PAD_IN
-    if top and settle is not None:
-        draw, frames = settle
-        frames = list(frames)
-        blank_in = None
-        for frame in frames + frames[:1]:
-            draw(frame)
-            found = _blank_top_in(fig)
-            blank_in = found if blank_in is None else min(blank_in, found)
-    else:
-        blank_in = _blank_top_in(fig) if top else _blank_bottom_in(fig)
+    # the tallest text this artist will ever show (a per-frame caption
+    # shows frame 0's now): what a text added later must stay clear of
+    artist._hyp_tallest_text = max(
+        candidates, key=lambda candidate: _caption_text_height_in(
+            artist, candidate))
+    # ...and the texts already on the figure are measured at THEIR
+    # tallest: a suptitle placed against a top caption's first-frame text
+    # sat in the room the caption's later, longer texts grow into
+    earlier = [(other, other.get_text()) for other in fig.texts
+               if other is not artist
+               and other.get_gid() in _FIGURE_TEXT_GIDS
+               and getattr(other, '_hyp_tallest_text', None) is not None]
+    for other, _shown in earlier:
+        other.set_text(other._hyp_tallest_text)
+    try:
+        if top and settle is not None:
+            draw, frames = settle
+            frames = list(frames)
+            blank_in = None
+            for frame in frames + frames[:1]:
+                draw(frame)
+                found = _blank_top_in(fig)
+                blank_in = found if blank_in is None \
+                    else min(blank_in, found)
+        else:
+            blank_in = _blank_top_in(fig) if top else _blank_bottom_in(fig)
+    finally:
+        for other, shown in earlier:
+            other.set_text(shown)
     if blank_in < strip_in:
         if top:
             _grow_figure(fig, top=strip_in - blank_in)
@@ -8139,6 +8265,10 @@ def _lay_out_panel_grid(fig, panel_axes, grid, strip, cells=None,
             style=dict(suptitle_style or {}, position='top'),
             gid=SUPTITLE_GID, settle=settle)
         _place_shared_furniture(fig, strip)
+    # the grid is laid out: observation labels are placed from their
+    # usual places on the first draw of the finished figure
+    from .matplotlib_backend import reset_label_places
+    reset_label_places(fig)
     return caption_artist
 
 
@@ -9257,11 +9387,17 @@ def plot(
         below) the same way the legend/colorbar/title do.
 
         On matplotlib a label hangs up and to the left of its point. A
-        label whose box would cover an earlier label's is hung on another
-        side of its point instead (up-right, down-left, down-right, then
-        further out), so the labels of neighboring points stay readable;
-        this is decided on every draw, so it holds when a 3-D plot is
-        rotated and on every frame of an animation.
+        label whose box is covered by an earlier label's is moved to
+        another place around its point (a corner or a side, at the usual
+        distance or further out): the free place nearest to where it
+        was. The placement is stable: a label stays where it is until
+        its box is covered, and it does not go back when its old place
+        becomes free, so the labels of neighboring points stay readable
+        without hopping about while a 3-D plot is rotated or an
+        animation plays (a label changes place only when points move
+        onto each other). An animation that starts over places its
+        labels from the start again, so every pass through it, played or
+        saved, is the same.
 
     label_anchor : 'first', 'center', 'last', int, or None
         Where a PER-DATASET `labels=` list attaches its annotation inside
@@ -10349,9 +10485,11 @@ def plot(
         comet head, when it has a trail); a finished dataset is drawn in
         full at `linewidth=`. One number for every dataset. Default None
         (the tail is drawn at `linewidth=`). Ignored, with a
-        ``UserWarning``, on a static plot and for ``animate='spin'``/
-        ``'morph'``; raises ``NotImplementedError`` under
-        ``backend='plotly'``.
+        ``UserWarning``, on a static plot (either backend), for
+        ``animate='spin'``/``'morph'`` (every line keeps `linewidth=`)
+        and when no dataset is drawn with a line (a markers-only format
+        such as ``'o'``). An ANIMATED plot under ``backend='plotly'``
+        raises ``NotImplementedError``.
 
     head_marker (animation only, matplotlib only) : str, bool, dict, or None
         A marker drawn at the reveal HEAD only: the last revealed point
@@ -10370,16 +10508,25 @@ def plot(
         (matplotlib's default without one), never less than 2.5 times
         the tail's line width so that it shows on a thick tail. It is
         drawn in addition to the format's own markers and is never a
-        legend entry. Default None (no head marker). Ignored, with a
-        ``UserWarning``, on a static plot and for ``animate='spin'``/
-        ``'morph'`` (no reveal head); raises ``NotImplementedError``
-        under ``backend='plotly'``.
+        legend entry. Default None (no head marker). A value the dict
+        cannot take (a size that is not a positive number, an unknown
+        color, an alpha outside 0 to 1) raises ``ValueError`` naming
+        ``head_marker`` and the key. Ignored, with a ``UserWarning``, on
+        a static plot (either backend) and for ``animate='spin'``/
+        ``'morph'`` (no reveal head). An ANIMATED plot under
+        ``backend='plotly'`` raises ``NotImplementedError``.
 
     hold (animation only, matplotlib only) : float
         Hold the LAST frame for this many seconds at the end of the
         animation (default 0): ``round(hold * frame_rate)`` frames are
         appended, each drawing the last frame again, so the pause is in
         a saved ``.mp4``/``.gif`` and in every pass of a looping player.
+        A saved ``.mp4`` holds every one of those frames. A ``.gif``
+        plays for the same time with fewer stored frames: the GIF writer
+        (Pillow) stores a run of identical frames as one frame with the
+        run's total duration, so ``duration=1, frame_rate=10, hold=1``
+        with a still camera is 10 stored frames, the last shown for 1.1
+        seconds.
         The animation is then ``duration + hold`` seconds long
         (``HyperAnimation.n_frames`` counts the held frames). During the
         hold everything stays on its last value: the camera stops where
@@ -10846,9 +10993,12 @@ def plot(
         ``caption_kwargs={'size': 14, 'color': 'gray', 'position':
         'top', 'loc': 'left'}``. The style is applied BEFORE the caption
         is wrapped and its room measured, so a caption of any size has
-        the room it needs and is never clipped. An unknown key, or
-        `caption_kwargs=` without a `caption=`, raises ``ValueError``.
-        Default None.
+        the room it needs and is never clipped. An unknown key, a value
+        a key cannot take (a size that is not a positive number or one
+        of matplotlib's size names, an unknown weight or color, an alpha
+        outside 0 to 1; the error names ``caption_kwargs`` and the key),
+        or `caption_kwargs=` without a `caption=`, raises
+        ``ValueError``. Default None.
 
     suptitle (matplotlib only) : str or None
         One title for the whole FIGURE, centered above everything it
@@ -10861,7 +11011,12 @@ def plot(
         and colorbar, and a caption placed at the top (the suptitle goes
         above it). A title wider than the figure is wrapped. It is fixed
         text; for a figure-level text that changes on every frame use
-        ``caption=`` with ``caption_kwargs={'position': 'top'}``. A
+        ``caption=`` with ``caption_kwargs={'position': 'top'}`` (the
+        suptitle stays clear of the tallest text such a caption shows on
+        the first, middle and last frames). A ``bytes`` value is decoded
+        as UTF-8, as for `caption=`. `suptitle_kwargs=` takes the keys
+        of `caption_kwargs=` except ``position`` and checks their values
+        the same way. A
         matplotlib ``Text`` with ``gid='hypertools-suptitle'``. Raises
         ``NotImplementedError`` under ``backend='plotly'`` and
         ``ValueError`` with a caller-supplied `ax=`. Default None.
@@ -15319,7 +15474,9 @@ def plot(
     # GH #299: the same for head_marker=/tail_linewidth=/trail_alpha=
     _warn_ignored_animation_styling(
         animate, _head_marker, _tail_linewidth, _trail_alpha,
-        any(chemtrails) or any(precog) or any(bullettime))
+        any(chemtrails) or any(precog) or any(bullettime),
+        any_line=any(has_line_component(_one) for _one in (
+            fmt if isinstance(fmt, (list, tuple, np.ndarray)) else [fmt])))
 
     # GH #127 (+ morph/window follow-up): 'spin' has no "current position"
     # (only the camera moves, so a trail has nothing to trail BEHIND or AHEAD
@@ -17398,15 +17555,25 @@ def plot(
                         "morph with its default colors.",
                         UserWarning,
                         stacklevel=external_stacklevel())
-                elif (line_ani is not None and animate != 'spin'
-                        and has_line_component(fmt)):
+                elif line_ani is not None and animate != 'spin':
                     # animated reveal styles (parallel/window/serial):
                     # per-frame multicolor rendering (F04-001/F05-002 --
                     # the static swap froze the animation; 'spin' keeps
                     # the static swap below, which is exactly right for a
-                    # camera-only animation). Marker+line combos animate
-                    # as a single line artist (see _draw's raw_data note),
-                    # so they take this path too.
+                    # camera-only animation). A line format gets a
+                    # per-segment-colored collection, a line-and-marker
+                    # format that plus its markers on the observations,
+                    # and a markers-only format (GH #297) one
+                    # per-point-colored scatter per head window and
+                    # trail -- each DATASET by its own format, so a call
+                    # that mixes them (``['-', 'o']``) draws each as
+                    # asked. The static scatter below REMOVED the animated
+                    # artists and drew every observation on every frame:
+                    # no reveal, no trail, and in 2-D every frame the
+                    # same picture.
+                    _fmts = (list(fmt) if isinstance(
+                        fmt, (list, tuple, np.ndarray))
+                        else [fmt] * len(xform))
                     _apply_multicolor_animation(
                         ax, xform, line_colors, kwargs_list, line_ani,
                         style=animate, chemtrails=chemtrails,
@@ -17417,27 +17584,10 @@ def plot(
                         antialias=antialias,
                         total_frames=max(1, int(round(frame_rate
                                                       * duration))),
-                        frame_hooks=_frame_hooks)
-                elif (line_ani is not None and animate != 'spin'
-                        and not has_line_component(fmt)):
-                    # a markers-only format in a reveal animation (GH
-                    # #297): the same per-frame rendering, with one
-                    # per-point-colored scatter per head window and
-                    # trail in place of a line collection. The static
-                    # scatter below REMOVED the animated artists and drew
-                    # every observation on every frame: no reveal, no
-                    # trail, and in 2-D every frame the same picture.
-                    _apply_multicolor_animation(
-                        ax, xform, line_colors, kwargs_list, line_ani,
-                        style=animate, chemtrails=chemtrails,
-                        precog=precog, bullettime=bullettime,
-                        trail_alpha=(DEFAULT_TRAIL_ALPHA
-                                     if _trail_alpha is None
-                                     else _trail_alpha),
-                        antialias=False,
-                        total_frames=max(1, int(round(frame_rate
-                                                      * duration))),
-                        frame_hooks=_frame_hooks, markers=True)
+                        frame_hooks=_frame_hooks,
+                        markers=[not has_line_component(
+                            _fmts[_i] if _i < len(_fmts) else None)
+                            for _i in range(len(xform))])
                 elif is_line(fmt):
                     _apply_multicolor_lines(ax, xform, line_colors,
                                             kwargs_list,
@@ -17465,6 +17615,38 @@ def plot(
                         warn_non_finite=False, limits=_hue_limits)
                     _apply_multicolor_markers(ax, raw_xform, _marker_colors,
                                               kwargs_list, fmt=fmt)
+                elif (isinstance(fmt, (list, tuple, np.ndarray))
+                        and any(has_line_component(_one) for _one in fmt)):
+                    # a call that MIXES formats (``['-', 'o']``): each
+                    # dataset is drawn by its own, a line as the
+                    # multicolored line, markers as the per-point-colored
+                    # scatter, a line-and-marker format as both. Every
+                    # dataset used to be drawn as markers as soon as one
+                    # of them had no line.
+                    _fmts = list(fmt)
+
+                    def _fmt_of(_i):
+                        return _fmts[_i] if _i < len(_fmts) else None
+
+                    _with_line = {_i for _i in range(len(xform))
+                                  if has_line_component(_fmt_of(_i))}
+                    _with_marker = {
+                        _i for _i in range(len(xform))
+                        if _i not in _with_line or (
+                            isinstance(_fmt_of(_i), str)
+                            and split_marker_line_fmt(_fmt_of(_i))[1])}
+                    _apply_multicolor_lines(ax, xform, line_colors,
+                                            kwargs_list,
+                                            row_counts=[len(r) for r in
+                                                        raw_xform],
+                                            only=_with_line)
+                    _marker_colors = _multicolor_line_colors(
+                        multicolor_hue, pre_interp_lengths, raw_xform,
+                        palette, is_rgb=multicolor_hue_is_rgb,
+                        warn_non_finite=False, limits=_hue_limits)
+                    _apply_multicolor_markers(ax, raw_xform, _marker_colors,
+                                              kwargs_list, fmt=fmt,
+                                              only=_with_marker)
                 else:
                     _apply_multicolor_markers(ax, xform, line_colors,
                                               kwargs_list, fmt=fmt)
@@ -17908,6 +18090,13 @@ def plot(
                         family=list(plt.rcParams['font.family']),
                         style=dict(_suptitle_style, position='top'),
                         gid=SUPTITLE_GID, settle=_figure_text_settle()))
+
+            # the figure is finished: its observation labels are placed
+            # from their usual places on the first draw of it, not from
+            # where a draw made while it was being laid out left them
+            if isinstance(fig, plt.Figure):
+                from .matplotlib_backend import reset_label_places
+                reset_label_places(fig)
 
             # save. `fig.savefig`, NOT `plt.savefig` (release-1.0 audit,
             # F09-001: `plt.savefig` writes pyplot's CURRENT figure, so
@@ -19606,9 +19795,12 @@ def _multicolor_line_colors(hue_src, orig_lengths, xform, palette, is_rgb=False,
 
 
 def _apply_multicolor_lines(ax, xform, line_colors, kwargs_list,
-                            row_counts=None):
+                            row_counts=None, only=None):
     """Replace single-color line artists with per-segment-colored
-    collections (matplotlib backend).
+    collections (matplotlib backend). `only`: the indices of the datasets
+    to draw a collection for (every one by default); the data lines of
+    ALL datasets are removed either way, so a call that mixes formats
+    draws its markers-only datasets with `_apply_multicolor_markers`.
 
     `row_counts` (one per trace): the ORIGINAL row count behind each
     (possibly antialiased) trace, so a 1-D trace's x stays the row index
@@ -19649,6 +19841,8 @@ def _apply_multicolor_lines(ax, xform, line_colors, kwargs_list,
 
     is_3d = xform[0].shape[1] >= 3
     for i, (xi, ci) in enumerate(zip(xform, line_colors)):
+        if only is not None and i not in only:
+            continue
         tkwargs = kwargs_list[i] if i < len(kwargs_list) else {}
         lw = tkwargs.get('linewidth') or plt.rcParams['lines.linewidth']
         if xi.shape[1] == 1:
@@ -19734,10 +19928,13 @@ def _apply_multicolor_animation(ax, xform, line_colors, kwargs_list,
                                 markers=False):
     """Per-frame multicolored (continuous/matrix hue) line rendering for
     ANIMATED matplotlib plots (release-1.0 audit, F04-001/F05-002), and,
-    with `markers`, the same for a MARKERS-ONLY format (GH #297): each
-    hidden artist is then stood in for by a scatter of its own marker,
-    one color per observation, over exactly the rows the artist was just
-    drawn over (never antialiased: a marker sits on an observation).
+    for each dataset `markers` flags (one bool per dataset, or one for
+    all), the same for a MARKERS-ONLY format (GH #297): its hidden artist
+    is then stood in for by a scatter of its own marker, one color per
+    observation, over exactly the rows the artist was just drawn over
+    (never antialiased: a marker sits on an observation). A dataset whose
+    format has a line AND a marker ('-o') gets the line collection plus a
+    scatter of its markers on the observations.
 
     The static multicolor path (`_apply_multicolor_lines`) swaps the
     single-color line artists for full-trajectory collections -- on an
@@ -19765,11 +19962,14 @@ def _apply_multicolor_animation(ax, xform, line_colors, kwargs_list,
     then reach what is actually rendered. Without the swap, setting alpha
     on ``ctx.artists`` changed invisible artists and rendered nothing.
     """
-    from matplotlib.collections import LineCollection
+    from matplotlib.collections import LineCollection, PathCollection
     from mpl_toolkits.mplot3d.art3d import Line3DCollection
 
     is_3d = xform[0].shape[1] >= 3
     n = len(xform)
+    if isinstance(markers, (bool, np.bool_)):
+        markers = [bool(markers)] * n
+    markers = [bool(flag) for flag in markers]
     # artist bookkeeping mirrors matplotlib_backend.animate_plot3D/2D: the
     # n head lines are created first, then one trail artist per dataset
     # that wants one (parallel/True AND serial create trails -- serial now
@@ -19812,12 +20012,15 @@ def _apply_multicolor_animation(ax, xform, line_colors, kwargs_list,
             return np.column_stack([np.arange(xi.shape[0]), xi[:, 0]])
         return xi[:, :3] if is_3d else xi[:, :2]
 
+    def _has_marker(artist):
+        return artist.get_marker() not in (None, 'None', 'none', '', ' ')
+
     def _make_scatter(i, alpha, role):
-        """An (invisible until filled) scatter standing in for dataset
-        `i`'s hidden marker artist: same glyph, same size."""
+        """An (invisible until filled) scatter standing in for the markers
+        of dataset `i`'s hidden artist: same glyph, same size."""
         source = trail_lines[i] if role == 'trail' else head_lines[i]
         glyph = source.get_marker()
-        if glyph in (None, 'None', 'none', '', ' '):
+        if not _has_marker(source):
             glyph = 'o'
         pts = _points(i)[:1]
         # (made from one real observation, with the limits put back: the
@@ -19836,23 +20039,7 @@ def _apply_multicolor_animation(ax, xform, line_colors, kwargs_list,
         coll.set_visible(False)
         return coll
 
-    def _make_collection(i, alpha=None, role='head'):
-        if markers:
-            if alpha is None:
-                # the dataset's own alpha= (the hidden artist carries it)
-                alpha = head_lines[i].get_alpha()
-            coll = _make_scatter(i, alpha, role)
-        elif is_3d:
-            coll = Line3DCollection([], linewidths=_linewidth(i, role),
-                                    alpha=alpha)
-            # autolim=False: the animation already fixed the axes limits
-            # (cube_scale), and autoscaling an EMPTY collection crashes
-            # inside Axes3D.add_collection3d
-            ax.add_collection3d(coll, autolim=False)
-        else:
-            coll = LineCollection([], linewidths=_linewidth(i, role),
-                                  alpha=alpha)
-            ax.add_collection(coll)
+    def _tag(coll, i, role):
         coll.set_label('_nolegend_')
         # match the line artists' unclipping (see animate_plot3D's
         # axes-box slicing fix)
@@ -19870,9 +20057,55 @@ def _apply_multicolor_animation(ax, xform, line_colors, kwargs_list,
         coll._hyp_trace_role = role
         return coll
 
+    def _make_collection(i, role='head'):
+        # the opacity of the artist it stands in for: the dataset's own
+        # `alpha=` on the head, and that times `trail_alpha=` on the trail
+        # (the backend folded the two together when it made the trail).
+        # Giving every trail the bare `trail_alpha` drew the trail of a
+        # faint dataset more opaque than its head.
+        source = trail_lines[i] if role == 'trail' else head_lines[i]
+        alpha = source.get_alpha()
+        if role == 'trail' and alpha is None:
+            alpha = trail_alpha
+        if markers[i]:
+            coll = _make_scatter(i, alpha, role)
+        elif is_3d:
+            coll = Line3DCollection([], linewidths=_linewidth(i, role),
+                                    alpha=alpha)
+            # autolim=False: the animation already fixed the axes limits
+            # (cube_scale), and autoscaling an EMPTY collection crashes
+            # inside Axes3D.add_collection3d
+            ax.add_collection3d(coll, autolim=False)
+        else:
+            coll = LineCollection([], linewidths=_linewidth(i, role),
+                                  alpha=alpha)
+            ax.add_collection(coll)
+        _tag(coll, i, role)
+        if not markers[i] and _has_marker(source):
+            # a line-and-marker format ('-o'): the hidden artist carries
+            # its markers too, on the observations (`markevery`), so the
+            # collection gets a scatter of them, each in its observation's
+            # color. Without it the animated plot drew the line alone,
+            # tail and trail, where the static plot draws both.
+            # (tagged apart from the trace's own collection, which stays
+            # the one artist carrying `_hyp_trace_index`/`_hyp_trace_role`)
+            dots = _make_scatter(i, alpha, role)
+            dots.set_label('_nolegend_')
+            dots.set_clip_on(False)
+            dots._hyp_markers_of = (i, role)
+            dots.set_zorder(coll.get_zorder() + 0.1)
+            coll._hyp_markers = dots
+        return coll
+
     head_colls = [_make_collection(i) for i in range(n)]
-    trail_colls = {i: _make_collection(i, alpha=trail_alpha, role='trail')
+    trail_colls = {i: _make_collection(i, role='trail')
                    for i in trail_lines}
+    for i in range(n):
+        # `dataset_fade=` fades a dataset's `head_marker=` through the
+        # artist it is handed, which is the collection (GH #299)
+        _head_marker = getattr(head_lines[i], '_hyp_head_marker', None)
+        if _head_marker is not None:
+            head_colls[i]._hyp_head_marker = _head_marker
 
     for artist in head_lines + list(trail_lines.values()):
         artist.set_visible(False)
@@ -19881,22 +20114,39 @@ def _apply_multicolor_animation(ax, xform, line_colors, kwargs_list,
         return (len(artist.get_data_3d()[0]) if is_3d
                 else len(artist.get_xdata()))
 
-    def _set_segments(coll, pts, colors):
-        if markers:
-            # one marker per row of the window, each in its own color
-            coll.set_visible(pts.shape[0] > 0)
-            if pts.shape[0] == 0:
-                return
-            colors = np.asarray(colors, dtype=float)
-            if is_3d:
-                coll._offsets3d = tuple(
-                    np.asarray(pts[:, k], dtype=float) for k in range(3))
-            else:
-                coll.set_offsets(pts[:, :2])
-            coll.set_facecolors(colors)
-            coll.set_edgecolors(colors)
-            coll.stale = True
+    def _set_points(coll, pts, colors):
+        """Fill the scatter `coll`: one marker per row of `pts`, each in
+        its own color; no rows, nothing drawn."""
+        coll.set_visible(pts.shape[0] > 0)
+        if pts.shape[0] == 0:
             return
+        colors = np.asarray(colors, dtype=float)
+        if is_3d:
+            coll._offsets3d = tuple(
+                np.asarray(pts[:, k], dtype=float) for k in range(3))
+        else:
+            coll.set_offsets(pts[:, :2])
+        coll.set_facecolors(colors)
+        coll.set_edgecolors(colors)
+        coll.stale = True
+
+    def _set_segments(coll, pts, colors, source=None):
+        """Draw the window `pts` (with its per-vertex `colors`) in `coll`.
+        `source` is the hidden artist the window was read from: its
+        `markevery` names the vertices that are observations, where a
+        line-and-marker format's markers go."""
+        if isinstance(coll, PathCollection):
+            _set_points(coll, pts, colors)
+            return
+        dots = getattr(coll, '_hyp_markers', None)
+        if dots is not None:
+            every = source.get_markevery() if source is not None else None
+            if every is None:
+                at = np.arange(pts.shape[0])
+            else:
+                at = np.asarray([v for v in every if 0 <= v < pts.shape[0]],
+                                dtype=int)
+            _set_points(dots, pts[at], np.asarray(colors)[at])
         if pts.shape[0] < 2:
             coll.set_segments([])
             return
@@ -19913,7 +20163,7 @@ def _apply_multicolor_animation(ax, xform, line_colors, kwargs_list,
     def _dense_for(i):
         pts = _points(i)
         ci = np.asarray(line_colors[i], dtype=float)
-        if not antialias or pts.shape[0] < 2:
+        if not antialias or markers[i] or pts.shape[0] < 2:
             return pts, ci, 1
         dense, step = antialias_line(pts)
         if step == 1:
@@ -19943,7 +20193,7 @@ def _apply_multicolor_animation(ax, xform, line_colors, kwargs_list,
         # just given (a serial reveal switches `tail_linewidth=` per
         # frame), and a `head_marker=` takes the color of the row it sits
         # on unless its own color was asked for
-        if not markers:
+        if not markers[i]:
             head_colls[i].set_linewidth(head_lines[i].get_linewidth())
         marker = getattr(head_lines[i], '_hyp_head_marker', None)
         if (marker is not None and end >= 1
@@ -19964,15 +20214,17 @@ def _apply_multicolor_animation(ax, xform, line_colors, kwargs_list,
             _win = getattr(head_lines[i], '_hyp_row_window', None)
             if _win is not None:
                 start, end = _win
-                _set_segments(head_colls[i], *_aa_slice(i, start, end))
+                _set_segments(head_colls[i], *_aa_slice(i, start, end),
+                              source=head_lines[i])
                 _follow_head(i, end)
                 trail = trail_lines.get(i)
                 if trail is not None:
-                    _twin = getattr(trail, '_hyp_row_window', None)
-                    if _twin is not None:
-                        _set_segments(trail_colls[i], *_aa_slice(i, *_twin))
-                    else:
-                        trail_colls[i].set_segments([])
+                    # (no recorded window: the trail has not been drawn
+                    # yet, so it is empty, whatever kind of collection
+                    # stands in for it)
+                    _twin = getattr(trail, '_hyp_row_window', None) or (0, 0)
+                    _set_segments(trail_colls[i], *_aa_slice(i, *_twin),
+                                  source=trail)
                 continue
             # the hidden head artist was just set to the exact visible
             # window; recover its [start, end) indices from its length
@@ -19997,7 +20249,8 @@ def _apply_multicolor_animation(ax, xform, line_colors, kwargs_list,
                                   / max(1, int(total_frames))))
                 end = max(1, min(n_pts, end))
                 start = max(0, end - head_len)
-            _set_segments(head_colls[i], *_aa_slice(i, start, end))
+            _set_segments(head_colls[i], *_aa_slice(i, start, end),
+                          source=head_lines[i])
             _follow_head(i, end)
 
             trail = trail_lines.get(i)
@@ -20007,7 +20260,8 @@ def _apply_multicolor_animation(ax, xform, line_colors, kwargs_list,
                     ts, te = n_pts - trail_len, n_pts  # anchored at the end
                 else:
                     ts, te = 0, trail_len  # chemtrails/bullettime: from 0
-                _set_segments(trail_colls[i], *_aa_slice(i, ts, te))
+                _set_segments(trail_colls[i], *_aa_slice(i, ts, te),
+                              source=trail)
         if frame_hooks is not None and frame_hooks.state:
             recorded = frame_hooks.state.get('artists')
             if recorded is not None:
@@ -20063,13 +20317,15 @@ def _expand_labels(labels, old_lengths, new_lengths):
 
 
 def _apply_multicolor_markers(ax, xform, point_colors, kwargs_list,
-                              fmt=None):
+                              fmt=None, only=None):
     """Replace single-color marker artists with per-point-colored scatter
     (matplotlib backend). Gives exact per-observation colors -- e.g. mixture
     proportions render as true blends instead of quantized groups. When
-    `fmt` is a single format string carrying a marker character (e.g. the
-    'o' of 'o-'), that marker glyph is used for the scatter points
-    (F02-004); otherwise the default circle is drawn."""
+    a dataset's format string (`fmt`, one for all or one per dataset)
+    carries a marker character (e.g. the 'o' of 'o-'), that marker glyph
+    is used for its scatter points (F02-004); otherwise the default
+    circle is drawn. `only`: the indices of the datasets to scatter
+    (every one by default)."""
     # as in `_apply_multicolor_lines`: replace the DATA artists, keep the
     # tagged forecast overlays
     _kept_forecasts = []
@@ -20101,13 +20357,21 @@ def _apply_multicolor_markers(ax, xform, point_colors, kwargs_list,
                 and len(point_colors[_ds])):
             _fc_line.set_color(point_colors[_ds][-1])
 
-    marker = None
-    if fmt is not None and not isinstance(fmt, (list, tuple, np.ndarray)):
-        _, marker = split_marker_line_fmt(fmt)
-    marker = marker or 'o'
+    def _glyph(i):
+        one = fmt
+        if isinstance(fmt, (list, tuple, np.ndarray)):
+            one = fmt[i] if i < len(fmt) else None
+        if isinstance(one, bytes):
+            one = one.decode('utf-8')
+        if not isinstance(one, str):
+            return 'o'
+        return split_marker_line_fmt(one)[1] or 'o'
 
     is_3d = xform[0].shape[1] >= 3
     for i, (xi, ci) in enumerate(zip(xform, point_colors)):
+        if only is not None and i not in only:
+            continue
+        marker = _glyph(i)
         tkwargs = kwargs_list[i] if i < len(kwargs_list) else {}
         ms = float(tkwargs.get('markersize')
                    or plt.rcParams['lines.markersize'])
