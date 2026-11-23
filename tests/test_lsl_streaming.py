@@ -158,6 +158,15 @@ def _require_outlets():
     pytest.skip(message)
 
 
+# Discovery timeouts (`lsl_stream(..., timeout=30.0)` throughout): the
+# resolve returns as soon as the named outlet answers, so a long timeout
+# costs nothing when the outlet is found. It was 5 s, and five tests of this
+# file failed in one full-suite run on a heavily loaded machine ("no LSL
+# stream found ... within timeout=5.0s"). Measured 2026-11-23, 12 cores:
+# discovery by name takes about 6 ms on a quiet machine and a steady 1.0 s
+# with 144 CPU-bound processes running (the first resolve query is missed
+# and the next one is answered), so a few more missed queries use up 5 s.
+
 #: How long a test waits for `_start_outlet`'s thread to END after `stop` is
 #: set. The thread's closure holds the only reference to the outlet, so its
 #: exit includes `StreamOutlet.__del__` -> liblsl's `lsl_destroy_outlet`, and
@@ -241,13 +250,13 @@ def test_ci_has_pylsl():
 
 @requires_pylsl
 def test_is_stream_true_for_lsl_stream(outlet_stream):
-    stream = hyp.io.lsl_stream(name=outlet_stream, timeout=5.0)
+    stream = hyp.io.lsl_stream(name=outlet_stream, timeout=30.0)
     assert is_stream(stream)
 
 
 @requires_pylsl
 def test_lsl_stream_receives_pushed_samples_by_name(outlet_stream):
-    stream = hyp.io.lsl_stream(name=outlet_stream, timeout=5.0)
+    stream = hyp.io.lsl_stream(name=outlet_stream, timeout=30.0)
 
     received = [next(stream) for _ in range(10)]
 
@@ -276,7 +285,7 @@ def test_lsl_stream_resolves_by_type():
     thread, stop = _start_outlet(
         f'HypertoolsTestStream-bytype-{time.time_ns()}', stream_type=stream_type)
     try:
-        with hyp.io.lsl_stream(type=stream_type, timeout=5.0) as stream:
+        with hyp.io.lsl_stream(type=stream_type, timeout=30.0) as stream:
             sample = next(stream)
         assert len(sample) == N_CHANNELS
     finally:
@@ -297,7 +306,7 @@ def test_lsl_stream_name_takes_precedence_over_type():
     outlet_b = hyp.io.lsl.synthetic_outlet(name_b, n_channels=N_CHANNELS,
                                           stream_type='EEG')
     try:
-        stream = hyp.io.lsl_stream(name=name_b, type='EEG', timeout=5.0)
+        stream = hyp.io.lsl_stream(name=name_b, type='EEG', timeout=30.0)
         sample = next(stream)
         assert len(sample) == N_CHANNELS
     finally:
@@ -333,7 +342,7 @@ def test_synthetic_outlet_is_discoverable_by_lsl_stream():
     name = f'HypertoolsSyntheticTest-{time.time_ns()}'
     outlet = hyp.io.lsl.synthetic_outlet(name)
     try:
-        stream = hyp.io.lsl_stream(name=name, timeout=5.0)
+        stream = hyp.io.lsl_stream(name=name, timeout=30.0)
         assert is_stream(stream)
         stream.close()
     finally:
@@ -347,7 +356,7 @@ def test_synthetic_outlet_samples_have_n_channels():
     name = f'HypertoolsSyntheticTest-{time.time_ns()}'
     outlet = hyp.io.lsl.synthetic_outlet(name, n_channels=6)
     try:
-        stream = hyp.io.lsl_stream(name=name, timeout=5.0)
+        stream = hyp.io.lsl_stream(name=name, timeout=30.0)
         sample = next(stream)
         assert len(sample) == 6
         stream.close()
@@ -403,7 +412,7 @@ def test_timeout_raises_hypertools_io_error():
 
 @requires_pylsl
 def test_plot_stream_end_to_end(outlet_stream):
-    stream = hyp.io.lsl_stream(name=outlet_stream, timeout=5.0)
+    stream = hyp.io.lsl_stream(name=outlet_stream, timeout=30.0)
     # _sample_for_index is a monotonically increasing ramp, so every
     # post-head sample is guaranteed outside the display box fitted on the
     # first stream_init samples -- the clamped-samples notice must fire
@@ -756,7 +765,11 @@ def test_lsl_stream_raises_when_source_stops_delivering():
     _require_outlets()
     outlet = hyp.io.lsl.synthetic_outlet(name, n_channels=N_CHANNELS)
     try:
-        stream = hyp.io.lsl_stream(name=name, timeout=2.0)
+        # (10 s, not 2: `timeout=` is also how long the first sample
+        # may take, and on a machine under load the 2 s ran out before
+        # it came; the stall below is then detected after 10 s of
+        # silence, well inside the 30 s the test allows)
+        stream = hyp.io.lsl_stream(name=name, timeout=10.0)
         # receive at least one real sample while the outlet is alive
         assert len(next(stream)) == N_CHANNELS
     finally:
@@ -793,7 +806,7 @@ def _inlet_ref(stream):
 
 @requires_pylsl
 def test_close_destroys_the_inlet_and_is_idempotent(outlet_stream):
-    stream = hyp.io.lsl_stream(name=outlet_stream, timeout=5.0)
+    stream = hyp.io.lsl_stream(name=outlet_stream, timeout=30.0)
     assert len(next(stream)) == N_CHANNELS
     assert not stream.closed
     ref = _inlet_ref(stream)
@@ -814,7 +827,7 @@ def test_close_destroys_the_inlet_and_is_idempotent(outlet_stream):
 
 @requires_pylsl
 def test_context_manager_closes_the_inlet(outlet_stream):
-    with hyp.io.lsl_stream(name=outlet_stream, timeout=5.0) as stream:
+    with hyp.io.lsl_stream(name=outlet_stream, timeout=30.0) as stream:
         assert is_stream(stream)
         assert len(next(stream)) == N_CHANNELS
         ref = _inlet_ref(stream)
@@ -825,7 +838,7 @@ def test_context_manager_closes_the_inlet(outlet_stream):
 @requires_pylsl
 def test_dropping_the_last_reference_destroys_the_inlet(outlet_stream):
     import gc
-    stream = hyp.io.lsl_stream(name=outlet_stream, timeout=5.0)
+    stream = hyp.io.lsl_stream(name=outlet_stream, timeout=30.0)
     assert len(next(stream)) == N_CHANNELS
     ref = _inlet_ref(stream)
     del stream
@@ -838,7 +851,7 @@ def test_plot_stream_leaves_the_stream_open_for_reuse(outlet_stream):
     # hyp.plot stops PULLING at stream_max; it does not own the stream, so
     # the caller decides when the inlet goes (the tutorial closes it
     # explicitly, before tearing down its outlet)
-    stream = hyp.io.lsl_stream(name=outlet_stream, timeout=5.0)
+    stream = hyp.io.lsl_stream(name=outlet_stream, timeout=30.0)
     with pytest.warns(RuntimeWarning, match='outside the display box'):
         hyp.plot(stream, show=False, stream_init=20, stream_chunk=10,
                  stream_max=40)
@@ -858,7 +871,7 @@ _TEARDOWN_SCRIPT = """
     NAME = 'HypertoolsTeardownTest-%d' % time.time_ns()
     outlet = hyp.io.lsl.synthetic_outlet(NAME, n_channels=6)
 
-    stream = hyp.io.lsl_stream(name=NAME, timeout=5.0)
+    stream = hyp.io.lsl_stream(name=NAME, timeout=30.0)
     fig = hyp.plot(stream, stream_init=40, stream_chunk=20, stream_max=120,
                    show=False)
     assert fig.stream_info['n_samples'] >= 120, fig.stream_info
@@ -925,7 +938,7 @@ _TUTORIAL_UNDER_LOAD_SCRIPT = """
         threading.Thread(target=_hog, daemon=True).start()
 
     for k in range(CYCLES):
-        stream = hyp.io.lsl_stream(name=NAME, timeout=5.0)
+        stream = hyp.io.lsl_stream(name=NAME, timeout=30.0)
         fig = hyp.plot(stream, stream_init=200, stream_chunk=20,
                        stream_max=600, save_path=SAVE_PATH, frame_rate=5,
                        show=False)

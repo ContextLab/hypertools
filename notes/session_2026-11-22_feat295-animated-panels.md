@@ -570,3 +570,58 @@ the fix. Tests: `tests/test_review_round3_1_2_1.py` (20 of them fail on
 - CHANGELOG 1.2.1: the labels entry (shared callbacks, restyled labels
   measured again) and the hue marker entry (half fill styles,
   `markerfacecoloralt=`).
+
+## 1.2.1 review round 4 (2026-11-23, branch `post-1.2.0`; not pushed)
+
+Nine items from the fourth review, each reproduced with real code first
+(scratch `round4fix/repro.py`, the tester's scripts in `review121c/`,
+the 1.2.0 venv `review121/old`). Tests:
+`tests/test_review_round4_1_2_1.py` (111; 64 of them fail on a0ef72b8).
+Before/after renders: session scratchpad `round4fix/`
+(`before_item*.png`, `after_item*.png`, `old120_item*.png`).
+
+| Item | Confirmed | Cause; fix |
+|-|-|-|
+| 1. Panel labels on the shared legend (regression) | yes: 6 of 12 seeds in 3-D and 6 of 12 in 2-D put a label on the legend, a panel title or the suptitle; 1.2.0: 0 on the legend | The declutter only knew the other labels, and it runs after the layout that made room for the labels at their usual place. `_label_obstacles_pt` (matplotlib_backend.py): every legend (axes and figure), every colorbar axes with its tick labels, every axes title, every figure text, in points, widened to whole points. `declutter_labels` moves a label that lies on one; a candidate place on one is a last resort (it costs the label's whole box plus `_LABEL_OBSTACLE_WEIGHT` = 4 times the covered area, as an off-canvas place costs the whole box); they are part of the memo key. One path: static draw and `freeze_label_places`. |
+| 2. Labels on title text (1.2.0 too) | yes | Same rule. A single label is looked at too (it used to return early with fewer than two labels). Tiny figure (3 x 2.5 in, size 18 texts, 30 labels): labels on texts 9 -> 0, on the legend 1 -> 0 (matplotlib 3.10 and 3.11), label pairs on each other 15 -> 29 (3.11: 23 -> 33): there is no room, and labels lie on each other rather than on the texts. First version (furniture cost = label cost) left 1 label on the title on 3.10 and 2 on the legend on 3.11, although with every label at its usual place none is on furniture; hence the last-resort cost. |
+| 3. 2-D `legend_kwargs={'loc': ...}` | yes, static and animated, 1.2.0 too | Not a stray `bbox_to_anchor`: the 2-D axes fills the canvas and the frame is a square drawn inside it (`frame_2d`), so the corner of the axes is outside the frame. `frame_2d` records the square (`ax._hyp_frame_box`, data coordinates) and `legend_call_kwargs(ax=)` anchors a NAMED `loc` to it (`bbox_to_anchor` = the square, `bbox_transform=ax.transData`). Not touched: a caller's `bbox_to_anchor`/`bbox_transform`, a coordinate pair as `loc`, `axis_scale='data'` (no square), 3-D (the legend is inside the axes and `_keep_cube_clear` shrinks the cube), `panels=` (documented: `loc` names the side of the grid). |
+| 4. Two head markers with categorical `hue=` | yes | Each category run is its own line with its own marker artist, and a run the reveal had passed kept its marker at its end. `_head_holders`: per input dataset (the `ownership`), only the last reached run places its marker; the others are emptied. Color is the run's, so the category's. |
+| 5. Serial frame 0 empty | yes (2-D, 3-D, panels) | `serial_reveal_counts` is 0 everywhere on frame 0. Not changed (an existing contract with tests); `_serial_head_holders` gives the first dataset the marker on frame 0 and it is placed on `data[:1]`. With a continuous `hue=` it wears row 0's color (`_follow_head`). |
+| 6. `head_marker=` dict keys | yes | Aliases `ms`, `mec`, `mew`, `mfc`, `mfcalt`, `c`, and `facecolor`/`facecoloralt`; keys `markerfacecolor`, `markerfacecoloralt`. One option under two names raises. Found by the new test: a bad face color was not refused by `_check_style_values` (a `Line2D` takes it and fails in the draw); now checked like the edge color. |
+| 7a. `trail_alpha=` warning under `'window'` | yes | Own message for `animate='window'` (it draws no trail whatever is passed). |
+| 7b. `hold=0.01` | yes | DECIDED: the rule stays `round(hold * frame_rate)` and a positive hold that rounds to no frame WARNS, naming `1 / frame_rate`. The coordinator's default was "at least one frame"; not taken because `tests/test_issue299_animation_arguments.py::test_hold_zero_is_the_animation_it_always_was` asserts `hold=0.04` at 10 fps adds no frame, and existing tests are not to be changed. Switching is `max(1, ...)` in `_validate_hold` plus that assertion. |
+| 8. Undocumented definitions | yes | Docstrings for `hide_labels`, `update_position`, `_HalfFilledMarkers.draw`, `_HalfFilledMarkers3D.draw`. |
+| 9. LSL tests under load | failure NOT reproduced | Measured on 12 cores: discovery by name 6 ms idle, a steady 1.0 s with 144 CPU-bound processes (load average 118); first sample 20 ms either way; the file passed (27) with 48 burners in 197 s. So I don't know the exact cause; the quantized 1.0 s points at missed resolve queries, and a few more of them use up 5 s. Tests only: discovery `timeout=5.0` -> `30.0` (returns as soon as the outlet answers) in test_lsl_streaming.py, test_io_audit_lsl.py, test_io_audit_final.py; the stall test's `timeout=2.0` -> `10.0` (it is also the wait for the first sample). No assertion changed. `hypertools/io/lsl.py` untouched. |
+
+Tried and dropped:
+
+- Obstacle boxes measured on the label metrics renderer at 100 dpi
+  (`Text.get_window_extent(dpi=)`): it resets the figure's dpi inside a
+  draw and is wrong during a `bbox_inches='tight'` save. The boxes are
+  measured on the draw's renderer and widened to whole points instead.
+  UNCERTAIN: a place that is free at one dpi and covered by a fraction
+  of a point at another could still differ between a PNG and a PDF; the
+  round 2 cross-renderer tests pass.
+- Changing `serial_reveal_counts` so frame 0 reveals one row: it moves
+  every serial animation's first frame and its `revealed_counts`.
+
+Not done: a `companion=` panel and other panels of a grid are not label
+obstacles (labels may reach over a neighboring panel, as before). A
+per-frame title or caption is an obstacle at its frame 0 extent only.
+
+Checks run for round 4 (machine load average 120 to 430 throughout, from
+other suites running at the same time): new file 111 passed (also 111
+under matplotlib 3.11.2); review rounds 1 to 3: 343 passed, 1 skipped;
+test_issue297_layout 32; test_issue299_animation_arguments 122; the 73
+other files named label/legend/hue/panel/caption/title/animat/docstring/
+gate/signature/changelog/lsl: 2687 passed, 9 skipped, 5 failed, then all
+5 passed on a rerun of their files (363 passed, 8 skipped with the
+docstring, gate, signature, changelog and new files). Of the 5: one was
+mine (`test_panel_rosters_cover_every_documented_per_dataset_argument`
+reads the phrase "per dataset" in a docstring as a per-dataset argument;
+the `head_marker` text was reworded). Three were time bounds in
+tests/test_animation_export.py (kill within 20 s / 30 s) and one was
+`test_io_audit_lsl.py::test_multiple_matching_streams_warn` ("DID NOT
+WARN": with `minimum=2` and 30 s only one of two outlets was heard) at
+load average about 400; not reproduced on the rerun, cause not
+established beyond the load. `ruff check .` clean.

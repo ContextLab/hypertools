@@ -100,6 +100,26 @@ Follows 1.2.0. Animated trails now work with line-and-marker formats (GH
   smaller to clear a legend. A 2-D label the reader has dragged is left
   where it was put. Above 300 visible labels nothing is moved. Matplotlib
   backend.
+- **Labels keep off the legend, the colorbar, the titles and the
+  caption.** The labels were only kept off each other, so a label moved
+  out of another label's way could land on the shared legend of a
+  `panels=` grid (which no label did in 1.2.0), and a label could lie on
+  a panel title, a `suptitle=` or a `caption=` (as in 1.2.0). Every
+  legend, every colorbar with its tick labels, every panel title and
+  every figure text is now something a label is kept off, in 2-D and
+  3-D, in a static figure and in the one placement an animation makes.
+  A single label that lies on a title moves too. A place on one of
+  them is the last resort: on a very small figure with large texts,
+  where there is not room for every label, labels lie on each other
+  rather than on a title or the legend.
+  Matplotlib backend.
+- **`legend_kwargs={'loc': 'upper left'}` on a 2-D plot puts the legend
+  inside the frame.** A 2-D hypertools axes fills the canvas and the
+  frame is drawn inside it, so a named `loc` put the legend across the
+  frame's border with its keys outside (in 1.2.0 too, static and
+  animated). A named `loc` is now read against the drawn frame, as
+  matplotlib reads it against the axes' frame. A `bbox_to_anchor`, a
+  coordinate pair as `loc`, 3-D plots and `panels=` grids are unchanged.
 - **`labels=` with `animate='morph'` says that no label is drawn.** A
   morph draws one cloud that moves from each dataset's shape to the next,
   so it has no observation for a label to stay on. The matplotlib backend
@@ -176,7 +196,14 @@ Follows 1.2.0. Animated trails now work with line-and-marker formats (GH
   vertices included. In an `on_frame=` callback, hiding a dataset's
   artist in `ctx.artists` hides its head marker too, and with a
   continuous `hue=` on a line-and-marker format the markers follow the
-  visibility and alpha of the listed line. Matplotlib only.
+  visibility and alpha of the listed line. There is one marker per
+  dataset: when a categorical `hue=` or `cluster=` colors a dataset in
+  several pieces, the marker is on the dataset's current point, in that
+  point's category color. The first frame of a serial reveal shows the
+  first dataset's marker on its first point. The dict also takes a face
+  color (`facecolor`, or matplotlib's `markerfacecolor`/`mfc`) and
+  matplotlib's short names `ms`, `mec`, `mew`, `mfcalt` and `c`.
+  Matplotlib only.
 - **`tail_linewidth=`: a tail thicker (or thinner) than its trail (GH
   #299).** The line width of the recent window that `tail_duration=`
   sizes; a `chemtrails=`/`precog=`/`bullettime=` trail keeps `linewidth=`.
@@ -188,7 +215,8 @@ Follows 1.2.0. Animated trails now work with line-and-marker formats (GH
   saved `.mp4` and `.gif` files as well as on screen. An `.mp4` stores
   every held frame; a `.gif` plays for the same time with fewer stored
   frames, because its writer (Pillow) stores a run of identical frames as
-  one frame with the run's duration. Per-frame titles,
+  one frame with the run's duration. A hold shorter than half a frame
+  adds no frame, and a warning says so. Per-frame titles,
   captions and `on_frame=` callbacks see the last frame's context during
   the hold. Works with every `animate=` style, with `loop=True` and on
   animated `panels=` grids. Matplotlib only.
@@ -212,7 +240,9 @@ Follows 1.2.0. Animated trails now work with line-and-marker formats (GH
   `head_marker=`, `tail_linewidth=` and `trail_alpha=` are ignored with a
   warning (as the trail flags are) and `hold=` raises `ValueError`.
   `tail_linewidth=` also warns when no dataset is drawn with a line, and
-  leaves the lines of `animate='spin'` at `linewidth=`. In a `panels=`
+  leaves the lines of `animate='spin'` at `linewidth=`. Under
+  `animate='window'`, which draws no trail, the `trail_alpha=` warning
+  says that instead of asking for a trail flag. In a `panels=`
   grid each of these warnings is given once for the figure, and only when
   it is true of every panel.
 - **Values inside styling dicts are checked.** matplotlib decides what

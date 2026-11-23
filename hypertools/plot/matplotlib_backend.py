@@ -106,6 +106,10 @@ _LABEL_CLEARANCE_PT = 3.0
 #: that covers less than this share of what it covers where it is
 _LABEL_MOVE_GAIN = 0.5
 
+#: what covering a legend, a colorbar, a title or a figure text costs a
+#: place, against covering the same area of another label
+_LABEL_OBSTACLE_WEIGHT = 4.0
+
 #: how many times the labels are gone through on one draw (each time only
 #: the labels still covered move)
 _LABEL_PASSES = 12
@@ -256,12 +260,81 @@ def _label_entries(ax):
             if entry[0].axes is ax]
 
 
+def _label_obstacles_pt(ax, renderer, origin, to_pt):
+    """The boxes, in points from the canvas's bottom-left corner, of
+    everything in the figure of `ax` that an observation label must not
+    be put on: every legend (the axes' own and the figure's, such as the
+    one shared legend of a `panels=` grid), every colorbar with its tick
+    labels, every panel's title, and every figure text (`suptitle=`,
+    `caption=`, a caller's own ``fig.text``). An ``(n, 4)`` array.
+
+    1.2.1 review round 4: the labels were only kept off each other, so a
+    label moved out of another label's way could land on the legend
+    (which the labels of 1.2.0, all at one fixed offset the layout had
+    made room for, never did) or on a title.
+
+    Each box is measured where the figure shows it now (no draw is made:
+    a legend and a text know their extent from the figure's layout) and
+    then widened to whole points, so the small differences between how
+    one renderer and another measures the same text almost never change
+    which places are free."""
+    fig = ax.get_figure(root=True)
+    if renderer is None:
+        renderer = fig._get_renderer()
+    found = []
+
+    def _add(artist, tight=False):
+        if artist is None or not artist.get_visible():
+            return
+        try:
+            box = (artist.get_tightbbox(renderer) if tight
+                   else artist.get_window_extent(renderer))
+        except Exception:  # noqa: BLE001 - an artist that cannot be measured is no obstacle
+            return
+        if box is None or not np.all(np.isfinite(box.extents)) \
+                or box.width <= 0 or box.height <= 0:
+            return
+        found.append(box.extents)
+
+    for legend in fig.legends:
+        _add(legend)
+    for text in fig.texts:
+        if text.get_text().strip():
+            _add(text)
+    for other in fig.axes:
+        if not other.get_visible():
+            continue
+        _add(other.get_legend())
+        for title in (other.title, getattr(other, '_left_title', None),
+                      getattr(other, '_right_title', None)):
+            if title is not None and title.get_text().strip():
+                _add(title)
+        if other is not ax and hasattr(other, '_colorbar'):
+            _add(other, tight=True)
+    if not found:
+        return np.zeros((0, 4))
+    boxes = (np.array(found, dtype=float)
+             - (origin[0], origin[1], origin[0], origin[1])) * to_pt
+    boxes[:, :2] = np.floor(boxes[:, :2])
+    boxes[:, 2:] = np.ceil(boxes[:, 2:])
+    return boxes
+
+
 def declutter_labels(ax, renderer=None):
     """Keep the observation labels of `ax` (`labels=`) off each other.
 
     Every label starts up and to the left of its point, so the labels of
     two points that are close on screen were drawn on top of each other
     (GH #297: "Subject 1" over "Subject 2" in `examples/plot_labels.py`).
+
+    The labels are kept off the figure's furniture as well: its
+    legends, colorbars, titles, suptitle and caption
+    (`_label_obstacles_pt`; 1.2.1 review round 4). A label lying on one
+    of them moves like a label lying on an earlier label, a place that
+    covers one of them is taken only as a last resort (it costs the
+    label's whole box and `_LABEL_OBSTACLE_WEIGHT` times what it covers
+    there, as a place off the canvas costs the whole box), and this
+    also holds for an axes with a single label.
 
     The placement is STABLE: a label stays where it is for as long as its
     box is clear of the labels given before it, so a label that covers
@@ -348,7 +421,7 @@ def declutter_labels(ax, renderer=None):
         for label in labels:
             _send_label_home(label)
         return
-    if len(labels) < 2:
+    if not labels:
         return
     fig = ax.get_figure(root=True)
     to_pt = 72.0 / fig.dpi
@@ -369,9 +442,14 @@ def declutter_labels(ax, renderer=None):
         * label.get_size()
         for label, frame in ((label, label.get_bbox_patch())
                              for label in labels)])
+    # what no label may be put on: legends, colorbars, titles, the
+    # figure's suptitle and caption (1.2.1 review round 4)
+    obstacles = _label_obstacles_pt(ax, renderer, (left, bottom), to_pt)
+    if len(labels) < 2 and not len(obstacles):
+        return
     # the same problem as on the last draw: nothing to work out again
     problem = (tuple(map(id, labels)), anchors.tobytes(), sizes.tobytes(),
-               pads.tobytes(), canvas)
+               pads.tobytes(), canvas, obstacles.tobytes())
     start = tuple((_label_place(label),
                    getattr(label, '_hyp_place_left', None))
                   for label in labels)
@@ -423,12 +501,14 @@ def declutter_labels(ax, renderer=None):
             anchor, size, pad = anchors[k], sizes[k], pads[k]
             here = boxes[k].copy()
             place = _label_place(label)
-            # it stays unless an earlier label's box is on its own, or a
+            # it stays unless an earlier label's box is on its own, it is
+            # on a legend, a colorbar or a title (`obstacles`), or a
             # place it was moved to has since left the canvas (in its
             # usual place a label at the canvas edge stays where it has
             # always been)
-            if _covered_area(here, boxes[:k]) <= 0.0 and (
-                    place == _LABEL_HOME or not _off_canvas(here)):
+            on_obstacle = _covered_area(here, obstacles)
+            if _covered_area(here, boxes[:k]) <= 0.0 and on_obstacle <= 0.0 \
+                    and (place == _LABEL_HOME or not _off_canvas(here)):
                 stayed_at[k] = moves
                 continue
             if k not in rooms:
@@ -444,10 +524,21 @@ def declutter_labels(ax, renderer=None):
             # (every label but this one: its own row is blanked for the
             # sums, which skip NaN)
             boxes[k] = np.nan
+            # a place off the canvas, or on a legend, a colorbar or a
+            # title, only as a last resort: it costs the label's whole
+            # box on top of what it covers there, so a label that lies on
+            # another label does not get out of its way onto a title
+            # (where every label hangs at first, the layout has made
+            # room for it)
             cost_here = _covered_area(here, boxes) + (
-                _area(here) if _off_canvas(here) else 0.0)
-            # a place off the canvas only as a last resort
-            costs = _covered_area(roomy, boxes) + off_cost
+                _area(here) if _off_canvas(here) else 0.0) + (
+                _LABEL_OBSTACLE_WEIGHT * on_obstacle + _area(here)
+                if on_obstacle > 0.0 else 0.0)
+            on_obstacles = _covered_area(roomy, obstacles)
+            costs = (_covered_area(roomy, boxes) + off_cost
+                     + _LABEL_OBSTACLE_WEIGHT * on_obstacles
+                     + (on_obstacles > 0.0) * (roomy[:, 2] - roomy[:, 0])
+                     * (roomy[:, 3] - roomy[:, 1]))
             boxes[k] = here
             # a short arrow before a long one, and at that distance the
             # smallest change: the place the box travels least to reach
@@ -634,10 +725,16 @@ def _connect_label_events(fig, ax):
     served.add(ax)
 
     def hide_labels(event):
+        """Button press: hide every label the axes holds now (a 3-D
+        axes is about to be turned, and its labels are placed in the
+        projected plane)."""
         for entry in _label_entries(ax):
             entry[0]._visible = False
 
     def update_position(event):
+        """Button release: put every label the axes holds now back at
+        its point (projected with the camera the drag left, on a 3-D
+        axes), show it again and redraw the canvas."""
         entries = _label_entries(ax)
         if not entries:
             return
@@ -1022,7 +1119,7 @@ def _legend_proxy_handles(entries, fmt=None):
 
 
 def legend_call_kwargs(is_3d=False, zlabel=None, font=None,
-                       legend_kwargs=None):
+                       legend_kwargs=None, ax=None):
     """The `ax.legend(...)` keyword arguments hypertools draws a legend with.
 
     Factored out of `_draw` (GH #285) so `plot()` can REBUILD the legend
@@ -1031,6 +1128,14 @@ def legend_call_kwargs(is_3d=False, zlabel=None, font=None,
     inside `_draw`, before those artists exist, and a rebuild that guessed
     at the placement would move the legend on exactly the figures that
     gained an entry.
+
+    `ax` is the axes the legend is for. A 2-D hypertools axes fills the
+    canvas and the frame the reader sees is a square drawn INSIDE it
+    (`frame_2d`), so a caller's ``loc='upper left'`` put the legend in
+    the corner of the invisible axes: across the drawn frame's border,
+    its keys left of the frame (1.2.1 review round 4; 1.2.0 too). With
+    `ax` given, a named ``loc`` is read against the drawn frame, as it
+    is read against the axes' frame in matplotlib.
     """
     # a 3-D zlabel is drawn in the axes' right margin -- exactly where
     # the legend is anchored -- so shift the legend further right when
@@ -1052,6 +1157,13 @@ def legend_call_kwargs(is_3d=False, zlabel=None, font=None,
             # anchor (1.1 release review, feature-tour 9.6)
             call.pop('bbox_to_anchor', None)
             call.pop('borderaxespad', None)
+            frame = getattr(ax, '_hyp_frame_box', None)
+            if (frame is not None and not is_3d
+                    and isinstance(legend_kwargs['loc'], (str, int))
+                    and 'bbox_transform' not in legend_kwargs):
+                # the frame the reader sees, in data coordinates
+                call['bbox_to_anchor'] = frame
+                call['bbox_transform'] = ax.transData
         call.update(legend_kwargs)
         # matplotlib ignores `fontsize=` whenever `prop=` is given, so with
         # a `font=` the user's size silently lost; fold it into the
@@ -2433,9 +2545,13 @@ def _draw(
         """
         if axis_scale != 'data':
             plot_square(ax, scale=UNIT_FRAME_SCALE, **frame_kwargs)
+            # where a legend placed by name goes (`legend_call_kwargs`)
+            ax._hyp_frame_box = (-UNIT_FRAME_SCALE, -UNIT_FRAME_SCALE,
+                                 2 * UNIT_FRAME_SCALE, 2 * UNIT_FRAME_SCALE)
             ax.set_xlim(-UNIT_FRAME_LIMIT, UNIT_FRAME_LIMIT)
             ax.set_ylim(-UNIT_FRAME_LIMIT, UNIT_FRAME_LIMIT)
             return
+        ax._hyp_frame_box = None
         if xlim is not None:
             ax.set_xlim(*xlim)
         if ylim is not None:
@@ -2515,6 +2631,8 @@ def _draw(
         # in the same loop that slices the artists, so what the context
         # reports and what the frame draws cannot drift apart.
         head_bounds = []
+        _holders = (None if _windows is None else _head_holders(
+            [win.reached for win in _windows]))
         for i, (line, data, trail) in enumerate(itertools.zip_longest(
                 lines, data_lines, trail_lines)):
 
@@ -2557,7 +2675,8 @@ def _draw(
             draw_window = _aa_window(i, start, end, artist=line)  # drawn curve
             line.set_data(draw_window[:, 0:2].T)
             line.set_3d_properties(draw_window[:, 2])
-            _place_head_marker(line, draw_window)
+            _place_head_marker(line, draw_window,
+                               _holders is None or _holders[i])
             windows.append(window)
             window_spcs.append(_window_surface_point_colors(
                 surface_point_colors, i, start, end))
@@ -2702,6 +2821,7 @@ def _draw(
         total_points = sum(lengths)
         revealed = total_points * num / max(1, total_frames - 1)
         _counts = serial_reveal_counts(lengths, num, total_frames)
+        _holders = _serial_head_holders(_counts, lengths)
 
         windows = []
         window_spcs = []
@@ -2762,7 +2882,12 @@ def _draw(
             _head_windows.append(tuple(int(b) for b in head_bounds))
             line.set_data(head[:, 0:2].T)
             line.set_3d_properties(head[:, 2])
-            _place_head_marker(line, head)
+            # (frame 0 of a serial reveal has drawn nothing yet: the
+            # head marker waits at the first dataset's first point, as a
+            # parallel reveal's frame 0 shows it there)
+            _place_head_marker(
+                line, head if len(head) or not _holders[i] else data[:1],
+                _holders[i])
             _set_serial_linewidth(line, trail_bounds is not None)
             if trail is not None:
                 trail.set_data(trail_seg[:, 0:2].T)
@@ -2990,13 +3115,48 @@ def _draw(
             # hidden with its line (a callback holds the line alone)
             follow_artist(ax, artist, line)
 
-    def _place_head_marker(line, points):
+    def _head_holders(reached):
+        """Which drawn runs carry their dataset's `head_marker=` on this
+        frame, given which of them the reveal has `reached`: ONE per
+        input dataset, the run its current point is in.
+
+        `hue=` categories and `cluster=` cut a dataset into runs, each
+        its own line with its own marker artist; every run the reveal had
+        passed kept its marker at its last point, so a dataset in two
+        categories ended with two head markers, one stuck where the first
+        category stops (1.2.1 review round 4). The marker of the run that
+        holds the head is drawn, in that run's (the category's) color."""
+        reached = [bool(flag) for flag in reached]
+        if ownership is None or ownership.n_runs != len(reached):
+            return reached
+        holds = [False] * len(reached)
+        for dataset in range(ownership.n_datasets):
+            runs = [r for r in ownership.runs_of(dataset) if reached[r]]
+            if runs:
+                holds[max(runs, key=lambda r: ownership.run_span(r)[0])] = True
+        return holds
+
+    def _serial_head_holders(counts, lengths):
+        """`_head_holders` for a serial reveal, where a run is reached
+        once one of its rows is revealed. Before anything is (frame 0),
+        the first dataset that has rows holds its marker, at its first
+        point: frame 0 was an empty frame while a parallel reveal's
+        frame 0 already showed the head (1.2.1 review round 4)."""
+        reached = [count > 0 for count in counts]
+        if not any(reached):
+            first = next((i for i, n in enumerate(lengths) if n > 0), None)
+            return [i == first for i in range(len(reached))]
+        return _head_holders(reached)
+
+    def _place_head_marker(line, points, holds=True):
         """Move `line`'s `head_marker=` artist (if it has one) to the last
-        of the `points` the line was just given; no points, no marker."""
+        of the `points` the line was just given; no points, no marker.
+        Nor when the line is not the run that `holds` its dataset's head
+        (`_head_holders`)."""
         artist = getattr(line, '_hyp_head_marker', None)
         if artist is None:
             return
-        last = np.asarray(points)[-1:]
+        last = np.asarray(points)[-1:] if holds else np.asarray(points)[:0]
         artist.set_data(last[:, 0], last[:, 1])
         if last.shape[1] >= 3 and hasattr(artist, 'set_3d_properties'):
             artist.set_3d_properties(last[:, 2])
@@ -3590,6 +3750,8 @@ def _draw(
                 num, total_frames, ownership,
                 [d.shape[0] for d in data_lines], tail_duration)
         head_bounds = []                                    # GH #285
+        _holders = (None if _windows is None else _head_holders(
+            [win.reached for win in _windows]))
         for i, (line, data, trail) in enumerate(itertools.zip_longest(
                 lines, data_lines, trail_lines)):
             # same F05-001/F05-008/F04-003/F05-012 slicing fixes as the 3-D
@@ -3621,7 +3783,8 @@ def _draw(
 
             window = _aa_window(i, start, end, artist=line)
             line.set_data(window[:, 0], window[:, 1])
-            _place_head_marker(line, window)
+            _place_head_marker(line, window,
+                               _holders is None or _holders[i])
 
         _sync_anim_labels(num, tail_duration, windows=head_bounds)
         if frame_hooks is not None:
@@ -3652,6 +3815,7 @@ def _draw(
         total_points = sum(lengths)
         revealed = total_points * num / max(1, total_frames - 1)
         _counts = serial_reveal_counts(lengths, num, total_frames)
+        _holders = _serial_head_holders(_counts, lengths)
 
         _head_windows = []                                  # GH #285
         for i, (line, data, trail) in enumerate(itertools.zip_longest(
@@ -3694,7 +3858,12 @@ def _draw(
                 trail._hyp_row_window = (0, 0)
             _head_windows.append(tuple(int(b) for b in head_bounds))
             line.set_data(head[:, 0], head[:, 1])
-            _place_head_marker(line, head)
+            # (frame 0 of a serial reveal has drawn nothing yet: the
+            # head marker waits at the first dataset's first point, as a
+            # parallel reveal's frame 0 shows it there)
+            _place_head_marker(
+                line, head if len(head) or not _holders[i] else data[:1],
+                _holders[i])
             _set_serial_linewidth(line, trail_bounds is not None)
             if trail is not None:
                 trail.set_data(trail_seg[:, 0], trail_seg[:, 1])
@@ -4247,7 +4416,7 @@ def _draw(
     if legend is not None or legend_entries is not None:
         _legend_call = legend_call_kwargs(
             is_3d=hasattr(ax, "get_proj"), zlabel=zlabel, font=font,
-            legend_kwargs=legend_kwargs)
+            legend_kwargs=legend_kwargs, ax=ax)
         if legend_entries is not None:
             # explicit entries (matrix/mixture hue palette swatches, or
             # `legend_colors=[(label, color), ...]`): proxy handles, since

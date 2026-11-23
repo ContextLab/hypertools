@@ -64,9 +64,32 @@ tail, the recent window that ``tail_duration=`` sizes, while the trail keeps
 ``linewidth=``. ``head_marker=`` draws a marker at the reveal head only (a
 matplotlib marker, ``True`` for ``'o'``, or a dict such as ``{'marker': 'D',
 'size': 10, 'color': 'k'}``); its color and size follow the dataset unless
-the dict sets them. ``hold=`` appends ``round(hold * frame_rate)`` frames
+the dict sets them. The dict's keys are ``marker``, ``size``, ``color``,
+``facecolor``, ``edgecolor``, ``edgewidth``, ``alpha``, ``fillstyle``,
+``facecoloralt`` and ``zorder``; matplotlib's own names are taken as well
+(``markersize``/``ms``, ``markerfacecolor``/``mfc``,
+``markeredgecolor``/``mec``, ``markeredgewidth``/``mew``,
+``markerfacecoloralt``/``mfcalt``, ``c``). ``color`` colors the whole
+marker, ``facecolor`` fills it with another color (``'none'`` for a hollow
+marker):
+
+.. code-block:: python
+
+    hyp.plot(data, '-', animate=True,
+             head_marker={'marker': 'o', 'size': 12,
+                          'facecolor': 'white', 'edgecolor': 'k'})
+
+There is one head marker per dataset. When a categorical ``hue=`` or
+``cluster=`` colors a dataset in several pieces, the marker is on the
+dataset's current point and takes the color of the category that point is
+in. On the first frame of a serial reveal, before any point is revealed, the
+first dataset's marker is on its first point, as the first frame of a
+parallel reveal shows every dataset's.
+
+``hold=`` appends ``round(hold * frame_rate)`` frames
 that draw the last frame again, so the pause is in a saved ``.mp4`` or
-``.gif``; per-frame titles, captions and ``on_frame=`` callbacks see the last
+``.gif`` (a hold shorter than half a frame adds none, and a warning says
+so); per-frame titles, captions and ``on_frame=`` callbacks see the last
 frame's context during the hold. An ``.mp4`` stores every held frame. A
 ``.gif`` plays for the same time, but its writer (Pillow) stores a run of
 identical frames as one frame with a longer duration, so it has fewer stored

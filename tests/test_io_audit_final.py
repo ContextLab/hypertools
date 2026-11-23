@@ -439,7 +439,7 @@ def test_lsl_multimatch_warning_admits_best_effort():
     outlets = [pylsl.StreamOutlet(i) for i in infos]
     try:
         with pytest.warns(RuntimeWarning, match='best-effort'):
-            stream = hyp.io.lsl_stream(type=stream_type, timeout=5.0,
+            stream = hyp.io.lsl_stream(type=stream_type, timeout=30.0,
                                        minimum=2)
         stream.close()
     finally:

@@ -2508,6 +2508,10 @@ _STYLE_VALUE_NEEDS = {
                        "string, or an RGB(A) tuple)",
     'backgroundcolor': "a matplotlib color (a name such as 'gray', a hex "
                        "string, or an RGB(A) tuple)",
+    'markerfacecolor': "a matplotlib color (a name such as 'gray', a hex "
+                       "string, or an RGB(A) tuple), or 'none'",
+    'markerfacecoloralt': "a matplotlib color (a name such as 'gray', a "
+                          "hex string, or an RGB(A) tuple), or 'none'",
     'alpha': "a number between 0 and 1",
     'markeredgewidth': "a line width in points, 0 or more",
     'fillstyle': "one of {fillstyles}",
@@ -2609,9 +2613,10 @@ def _check_style_values(style, name, given=None, marker=False):
             from matplotlib.colors import is_color_like
             if not is_color_like(value):
                 _refuse(option)
-        elif option == 'markeredgecolor':
-            # (a `Line2D` takes any edge color and fails on a bad one
-            # when it is drawn)
+        elif option in ('markeredgecolor', 'markerfacecolor',
+                        'markerfacecoloralt'):
+            # (a `Line2D` takes any edge or face color and fails on a
+            # bad one when it is drawn)
             from matplotlib.colors import is_color_like
             if not (isinstance(value, str) and value == 'auto') \
                     and not is_color_like(value):
@@ -3357,13 +3362,25 @@ _HEAD_MARKER_ALIASES = {
     'size': 'markersize',
     'edgecolor': 'markeredgecolor',
     'edgewidth': 'markeredgewidth',
+    'facecolor': 'markerfacecolor',
+    'facecoloralt': 'markerfacecoloralt',
     'fillstyle': 'fillstyle',
+    # matplotlib's own short names, which `hyp.plot` takes as keyword
+    # arguments for the datasets' markers (1.2.1 review round 4: a
+    # `head_marker=` dict refused them)
+    'ms': 'markersize',
+    'mec': 'markeredgecolor',
+    'mew': 'markeredgewidth',
+    'mfc': 'markerfacecolor',
+    'mfcalt': 'markerfacecoloralt',
+    'c': 'color',
 }
 
 #: Every key a `head_marker=` dict accepts after alias resolution.
 _HEAD_MARKER_KEYS = frozenset({
     'marker', 'markersize', 'color', 'alpha', 'markeredgecolor',
-    'markeredgewidth', 'fillstyle', 'zorder',
+    'markeredgewidth', 'markerfacecolor', 'markerfacecoloralt',
+    'fillstyle', 'zorder',
 })
 
 
@@ -3383,8 +3400,10 @@ def _validate_head_marker(head_marker, backend_name):
 
     ``True`` is ``'o'``; a string (or any other matplotlib marker) is the
     marker; a dict styles it (``'marker'`` defaults to ``'o'``; ``size``,
-    ``edgecolor`` and ``edgewidth`` are short for ``markersize``,
-    ``markeredgecolor`` and ``markeredgewidth``). ``None``/``False`` is no
+    ``edgecolor``, ``edgewidth`` and ``facecolor`` are short for
+    ``markersize``, ``markeredgecolor``, ``markeredgewidth`` and
+    ``markerfacecolor``, and matplotlib's own ``ms``/``mec``/``mew``/
+    ``mfc``/``mfcalt``/``c`` are taken as well). ``None``/``False`` is no
     head marker.
     """
     if isinstance(head_marker, np.bool_):
@@ -3405,6 +3424,13 @@ def _validate_head_marker(head_marker, backend_name):
                     f"marker option. Supported keys (short aliases in "
                     f"parentheses): {sorted(_HEAD_MARKER_KEYS)} (aliases: "
                     f"{sorted(_HEAD_MARKER_ALIASES)}).")
+            if name in given:
+                # (matplotlib refuses a property given under two names
+                # too; the later one silently won here)
+                raise ValueError(
+                    f"head_marker= names one option twice: {given[name]!r} "
+                    f"and {key!r} are both the marker's {name}. Pass one "
+                    "of them.")
             spec[name] = value
             given[name] = key
         # (the values too: a size of -3, 0 or NaN drew no marker and said
@@ -3484,7 +3510,11 @@ def _validate_trail_alpha(trail_alpha):
 
 def _validate_hold(hold, style, frame_rate, backend_name):
     """`hold=` (seconds) -> how many times the last frame is repeated at
-    the end of the animation: ``round(hold * frame_rate)`` (GH #299)."""
+    the end of the animation: ``round(hold * frame_rate)`` (GH #299).
+
+    A hold shorter than half a frame is therefore no frame at all, and
+    that is said in a warning (1.2.1 review round 4: ``hold=0.01`` added
+    nothing and said nothing)."""
     if hold is None or hold is False:
         return 0
     if isinstance(hold, bool) or not isinstance(
@@ -3506,7 +3536,16 @@ def _validate_hold(hold, style, frame_rate, backend_name):
     if backend_name == 'plotly':
         raise _matplotlib_only_animation_argument(
             'hold', 'the held frames')
-    return int(round(float(hold) * float(frame_rate)))
+    frames = int(round(float(hold) * float(frame_rate)))
+    if frames == 0:
+        warnings.warn(
+            f"hold={hold!r} is shorter than half a frame at frame_rate="
+            f"{frame_rate!r} and adds no frame: the hold is round(hold * "
+            f"frame_rate) repeats of the last frame. Pass hold="
+            f"{1.0 / float(frame_rate):.3g} or more to hold for at least "
+            "one frame.",
+            UserWarning, stacklevel=external_stacklevel())
+    return frames
 
 
 def _warn_ignored_grid_styling(cases):
@@ -3547,7 +3586,17 @@ def _warn_ignored_animation_styling(animate, head_marker, tail_linewidth,
             f"ignoring {'/'.join(given)}",
             UserWarning, stacklevel=external_stacklevel())
         return
-    if trail_alpha is not None and (animate == 'window' or not any_trail):
+    if trail_alpha is not None and animate == 'window':
+        # (not "pass chemtrails=True": the caller may well have, and
+        # 'window' is what draws no trail; 1.2.1 review round 4)
+        warnings.warn(
+            "trail_alpha= sets the opacity of chemtrails/precog/bullettime "
+            "trails, and animate='window' draws none (it shows the "
+            "sliding window alone); ignoring it. Use animate=True or "
+            "'serial' with chemtrails=True (or precog=/bullettime=) for a "
+            "trail.",
+            UserWarning, stacklevel=external_stacklevel())
+    elif trail_alpha is not None and not any_trail:
         warnings.warn(
             "trail_alpha= sets the opacity of chemtrails/precog/bullettime "
             "trails, and this animation draws none; ignoring it. Pass "
@@ -9609,7 +9658,15 @@ def plot(
         label whose box is covered by an earlier label's is moved to
         another place around its point (a corner or a side, at the usual
         distance or further out): the free place nearest to where it
-        was. A static figure is placed when it is drawn, and the same
+        was. A label is also kept off the figure's legends (the one
+        shared legend of a `panels=` grid included), its colorbars, the
+        panel titles and the `suptitle=` and `caption=` texts: a label
+        that would lie on one of them, a single label too, takes the
+        nearest place that is clear of them, and a place on one of them
+        is the last resort: where there is no room for every label (a
+        very small figure with large texts) labels lie on each other
+        rather than on a title or the legend. A static figure is placed
+        when it is drawn, and the same
         call always saves the same picture. The placement is worked out
         in points from the figure's own size, not from the pixels of
         the draw, so the screen, a PNG at any dpi, a PDF and an SVG show
@@ -9699,7 +9756,12 @@ def plot(
         On a single 3-D matplotlib plot the cube is kept clear of the
         legend wherever it is placed: a legend in a corner of the axes
         (``'upper left'``) has the cube drawn a little smaller, by up to
-        30%, rather than drawn across it.
+        30%, rather than drawn across it. On a single 2-D matplotlib
+        plot a named ``loc`` (``'upper left'``, ``'best'``, ...) places
+        the legend inside the frame that is drawn around the data, as a
+        ``loc`` places it inside the axes' frame in matplotlib; with a
+        ``bbox_to_anchor`` (or a coordinate pair as ``loc``) the
+        placement is yours, in axes fractions.
 
         In a `panels=` grid these style the grid's ONE shared legend, and
         its position is read relative to the whole GRID. On matplotlib a
@@ -10733,13 +10795,25 @@ def plot(
         of each dataset, on every frame (`animate=True`/``'parallel'``,
         ``'window'`` and ``'serial'``; on a serial reveal a dataset that
         has not started has none, and a finished one keeps its marker on
-        its last point). Pass a matplotlib marker (``head_marker='o'``),
+        its last point; on the first frame of a serial reveal, before
+        any point is revealed, the first dataset's marker is on its
+        first point). Each dataset has ONE marker: when a categorical `hue=`
+        or `cluster=` colors a dataset in several pieces, the marker is
+        on the dataset's current point, in the color of the category
+        that point is in. Pass a matplotlib marker (``head_marker='o'``),
         ``True`` for ``'o'``, or a dict to style it: ``{'marker': 'D',
         'size': 10, 'color': 'k', 'edgecolor': 'w', 'edgewidth': 1,
         'alpha': 1.0}`` (``marker`` defaults to ``'o'``; ``size``,
-        ``edgecolor`` and ``edgewidth`` are short for ``markersize``,
-        ``markeredgecolor`` and ``markeredgewidth``; ``fillstyle`` and
-        ``zorder`` are accepted too). What the dict leaves out follows
+        ``edgecolor``, ``edgewidth`` and ``facecolor`` are short for
+        ``markersize``, ``markeredgecolor``, ``markeredgewidth`` and
+        ``markerfacecolor``; ``fillstyle``, ``facecoloralt``
+        (``markerfacecoloralt``) and ``zorder`` are accepted too, and so
+        are matplotlib's own short names ``ms``, ``mec``, ``mew``,
+        ``mfc``, ``mfcalt`` and ``c``). ``color`` is the color of the
+        whole marker; ``facecolor`` fills it with another color
+        (``'none'`` for a hollow marker) and ``edgecolor`` outlines it
+        in another. One option under two names (``size`` and ``ms``)
+        raises ``ValueError``. What the dict leaves out follows
         the dataset: its color (with a continuous `hue=`, the color of
         the point the head is on), its `alpha=`, and its `markersize=`
         (matplotlib's default without one), never less than 2.5 times
@@ -10765,6 +10839,9 @@ def plot(
         animation (default 0): ``round(hold * frame_rate)`` frames are
         appended, each drawing the last frame again, so the pause is in
         a saved ``.mp4``/``.gif`` and in every pass of a looping player.
+        A hold shorter than half a frame (``hold=0.01`` at 10 frames a
+        second) therefore adds no frame, and a ``UserWarning`` says so
+        and names the shortest hold that adds one (``1 / frame_rate``).
         A saved ``.mp4`` holds every one of those frames. A ``.gif``
         plays for the same time with fewer stored frames: the GIF writer
         (Pillow) stores a run of identical frames as one frame with the
@@ -17545,7 +17622,8 @@ def plot(
                     ax, _forecast_artists, _truth_artists,
                     **legend_call_kwargs(
                         is_3d=hasattr(ax, 'get_proj'), zlabel=zlabel,
-                        font=_artist_font, legend_kwargs=_legend_kwargs))
+                        font=_artist_font, legend_kwargs=_legend_kwargs,
+                            ax=ax))
             if (_legend_recolor is not None and legend is not None
                     and _final_legend_entries is None
                     and (raw_forecasts is not None or raw_truths is not None)
@@ -17704,7 +17782,8 @@ def plot(
                         ax, _live_forecast_artists, None,
                         **legend_call_kwargs(
                             is_3d=hasattr(ax, 'get_proj'), zlabel=zlabel,
-                            font=_artist_font, legend_kwargs=_legend_kwargs))
+                            font=_artist_font, legend_kwargs=_legend_kwargs,
+                            ax=ax))
                 if (_legend_recolor is not None and legend is not None
                         and _final_legend_entries is None
                         and ax.get_legend() is not None
@@ -20160,6 +20239,8 @@ class _HalfFilledMarkers(PathCollection):
     marker on a line, the filled half and then the other."""
 
     def draw(self, renderer):
+        """Draw the filled half of every marker, then the other half
+        (`_draw_both_halves`)."""
         _draw_both_halves(self, renderer, super().draw)
 
 
@@ -20167,6 +20248,8 @@ class _HalfFilledMarkers3D(Path3DCollection):
     """`_HalfFilledMarkers` in a 3-D axes."""
 
     def draw(self, renderer):
+        """Draw the filled half of every marker, then the other half
+        (`_draw_both_halves`)."""
         _draw_both_halves(self, renderer, super().draw)
 
 
@@ -20690,10 +20773,12 @@ def _apply_multicolor_animation(ax, xform, line_colors, kwargs_list,
         if not markers[i]:
             head_colls[i].set_linewidth(head_lines[i].get_linewidth())
         marker = getattr(head_lines[i], '_hyp_head_marker', None)
-        if (marker is not None and end >= 1
+        # (frame 0 of a serial reveal: the marker waits on the first
+        # row, in that row's color)
+        if (marker is not None and len(line_colors[i])
                 and not getattr(marker, '_hyp_color_pinned', False)):
             marker.set_color(np.asarray(line_colors[i], dtype=float)[
-                min(end, len(line_colors[i])) - 1])
+                min(max(end, 1), len(line_colors[i])) - 1])
 
     def _multicolor_frame(num, *fargs):
         result = orig_func(num, *fargs)
