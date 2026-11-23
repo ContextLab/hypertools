@@ -40,7 +40,7 @@ def test_string_channel_stream_rejected_at_resolve():
     outlet = pylsl.StreamOutlet(info)   # real outlet, alive during resolve
     try:
         with pytest.raises(HypertoolsIOError, match='string'):
-            hyp.io.lsl_stream(name=name, timeout=30.0)
+            hyp.io.lsl_stream(name=name, timeout=5.0)
     finally:
         del outlet
 
@@ -60,7 +60,7 @@ def test_multiple_matching_streams_warn():
     outlets = [pylsl.StreamOutlet(i) for i in infos]
     try:
         with pytest.warns(RuntimeWarning, match='using the first'):
-            stream = hyp.io.lsl_stream(type=stream_type, timeout=30.0,
+            stream = hyp.io.lsl_stream(type=stream_type, timeout=5.0,
                                        minimum=2)
         stream.close()
     finally:
@@ -77,7 +77,7 @@ def test_single_matching_stream_does_not_warn():
     try:
         with _warnings.catch_warnings(record=True) as caught:
             _warnings.simplefilter('always')
-            stream = hyp.io.lsl_stream(name=name, timeout=30.0)
+            stream = hyp.io.lsl_stream(name=name, timeout=5.0)
         stream.close()
         assert not [w for w in caught if 'using the first' in str(w.message)]
     finally:

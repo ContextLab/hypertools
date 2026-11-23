@@ -42,7 +42,7 @@ from matplotlib.figure import Figure                            # noqa: E402
 
 import hypertools as hyp                                        # noqa: E402
 from hypertools.plot.matplotlib_backend import (                # noqa: E402
-    LABEL_OFFSET_PT, _LabelDeclutter)
+    LABEL_OFFSET_PT, _LabelDeclutter, forget_label_tracks, label_tracks)
 from hypertools.plot.plot import CAPTION_GID, SUPTITLE_GID      # noqa: E402
 
 
@@ -379,43 +379,48 @@ def test_a_cleared_axes_declutters_its_new_labels(ndims):
 
 
 def test_an_axes_reused_after_an_animation_places_labels_again():
-    """An animation's hold on its labels (`_hyp_labels_frozen`) stayed on
-    the axes after `ax.clear()`: a static plot's labels were never
-    moved."""
+    """An animation's hold on its labels (since review round 5 its
+    table, `label_tracks`) stayed on the axes after `ax.clear()`: a
+    static plot's labels were never moved."""
     x, names = _crowded()
     anim = hyp.plot(x, 'o', labels=names, animate='spin', duration=1,
                     frame_rate=5, show=False)
     fig = anim.figure
     ax = fig.axes[0]
     anim.draw_frame(2)
-    assert ax._hyp_labels_frozen
+    assert label_tracks(ax) is not None
     ax.clear()
     hyp.plot(x, 'o', labels=names, ax=ax, show=False)
-    assert not ax._hyp_labels_frozen
+    assert label_tracks(ax) is None
     fig.canvas.draw()
     labels = [entry[0] for entry in _entries(ax)]
     assert len(labels) == len(names)
     assert sum(place != HOME for place in _places(labels)) >= 3
 
 
-def test_labels_added_to_an_animations_axes_are_placed_once_and_held():
+def test_labels_added_to_an_animations_axes_join_its_table():
     """Without a clear, the animation's labels are still there: the new
-    ones are placed with them, once, and all of them hold."""
+    ones are placed with them, in the animation's one table (rewritten
+    in review round 5 from the test that all of them hold one place), so
+    every frame shows all 24 the same way whenever it is drawn."""
     x, names = _crowded(n=12)
     anim = hyp.plot(x, 'o', labels=names, animate='spin', duration=1,
                     frame_rate=5, show=False)
     ax = anim.figure.axes[0]
     hyp.plot(x + 0.01, 'o', labels=[name.upper() for name in names], ax=ax,
              show=False)
-    assert ax._hyp_labels_frozen
+    tracks = label_tracks(ax)
     labels = [entry[0] for entry in _entries(ax)]
     assert len(labels) == 24
-    places = _places(labels)
-    assert sum(place != HOME for place in places) >= 3
-    for frame in (3, 1, 4):
+    assert [ref() for ref in tracks['labels']] == labels
+    home = tracks['places'][0].min()
+    assert (tracks['places'] != home).any(axis=0).sum() >= 3
+    seen = {}
+    for frame in (3, 1, 4, 1, 3):
         anim.draw_frame(frame)
         anim.figure.canvas.draw()
-        assert _places(labels) == places
+        assert seen.setdefault(frame, _places(labels)) == _places(labels)
+    assert label_tracks(ax) is tracks
 
 
 @pytest.mark.parametrize('ndims', [2, 3])
@@ -553,8 +558,9 @@ def count_draws(monkeypatch):
 
 
 def test_placing_an_animations_labels_draws_nothing(count_draws):
-    """`freeze_label_places` rendered the whole figure to place the
-    labels (and replaced the figure's canvas doing it)."""
+    """Placing an animation's labels rendered the whole figure (and
+    replaced the figure's canvas doing it). The table of review round 5
+    (`solve_label_tracks`) is worked out without a draw too."""
     names = [f'a{i}' if i % 5 == 0 else None for i in range(len(X))]
     counts = {}
     for key, labels in (('plain', None), ('labeled', names)):
@@ -581,29 +587,36 @@ def test_an_animated_grid_places_its_labels_without_a_draw_per_panel(
     # (each panel's labels are created with one draw, as in a static grid)
     assert counts['labeled'] - counts['plain'] <= len(data)
     for ax in anim.figure.axes[:4]:
-        assert ax._hyp_labels_frozen
+        assert label_tracks(ax) is not None
 
 
 def test_an_animations_labels_are_placed_as_a_draw_would_place_them():
     """The placement made without a draw is the one a draw of the same
-    state makes."""
+    state makes (rewritten in review round 5: the table's first row for
+    an animation that does not loop, placed frame by frame on its own,
+    against a real draw of frame 0 with the labels arranged as a static
+    figure's are)."""
+    from hypertools.plot.matplotlib_backend import (
+        _LABEL_CANDIDATES, _label_place, _send_label_home,
+        solve_label_tracks)
     x, names = _crowded()
     anim = hyp.plot(x, 'o', labels=names, animate='spin', duration=1,
-                    frame_rate=5, show=False)
+                    frame_rate=5, rotations=0.4, show=False)
     ax = anim.figure.axes[0]
     labels = [entry[0] for entry in _entries(ax)]
-    frozen = _places(labels)
-    assert sum(place != HOME for place in frozen) >= 3
+    tracks = solve_label_tracks(ax, _independent=True)
+    tabled = [_LABEL_CANDIDATES[k] for k in tracks['places'][0]]
+    assert sum(place != _LABEL_CANDIDATES[tracks['places'][0].min()]
+               for place in tabled) >= 3
     anim.draw_frame(0)
     # the same state, placed by a real draw
-    ax._hyp_labels_frozen = False
+    forget_label_tracks(ax)
     for label in labels:
-        label.set_position(HOME)
-        label._hyp_offset, label._hyp_place = HOME, ((-1, 1), LABEL_OFFSET_PT)
-        label._hyp_place_left = None
+        label._hyp_place = None
+        _send_label_home(label)
     ax._hyp_label_answer = None
     anim.figure.canvas.draw()
-    assert _places(labels) == frozen
+    assert [_label_place(label) for label in labels] == tabled
 
 
 # --------------------------------------------------------------------------

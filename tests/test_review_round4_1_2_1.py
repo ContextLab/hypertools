@@ -127,24 +127,29 @@ def test_panel_labels_stay_off_the_shared_legend_and_the_titles(dims, seed):
 
 @pytest.mark.parametrize('seed', [0, 2, 6, 7])
 def test_animated_panel_labels_are_placed_off_the_legend_and_texts(seed):
-    """The ONE placement an animation makes (frame 0's view) keeps off
-    the same things, and holds on the later frames."""
+    """An animation's placement keeps off the same things on every frame
+    (rewritten in review round 5 from the test of one placement, made
+    for frame 0 and held), and a frame shown again has its labels where
+    they were."""
     x = np.random.default_rng(seed).normal(size=(24, 3))
     anim = _quiet([x[:12], x[12:]], 'o', animate='spin', panels=True,
                   labels=[LABELS[:12], LABELS[12:]], legend=['a', 'b'],
                   title=['A', 'B'], suptitle='S', caption='A caption',
                   duration=1, frame_rate=5)
-    anim.draw_frame(0)
-    n, counts = _covered(anim.figure)
-    assert n == 24
-    assert counts['legend'] == counts['title'] == 0
-    assert counts['figure text'] == 0
-    places = [label.xyann for ax in anim.figure.axes
-              for label in ax.findobj(mtext.Annotation)]
-    anim.draw_frame(3)
-    anim.figure.canvas.draw()
-    assert places == [label.xyann for ax in anim.figure.axes
-                      for label in ax.findobj(mtext.Annotation)]
+    places = {}
+    for frame in range(anim.n_frames):
+        anim.draw_frame(frame)
+        n, counts = _covered(anim.figure)
+        assert n == 24
+        assert counts['legend'] == counts['title'] == 0, frame
+        assert counts['figure text'] == 0, frame
+        places[frame] = [label.xyann for ax in anim.figure.axes
+                         for label in ax.findobj(mtext.Annotation)]
+    for frame in (3, 0, 4):
+        anim.draw_frame(frame)
+        anim.figure.canvas.draw()
+        assert places[frame] == [label.xyann for ax in anim.figure.axes
+                                 for label in ax.findobj(mtext.Annotation)]
 
 
 @pytest.mark.parametrize('across', [0.2, 0.4])

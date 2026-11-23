@@ -260,13 +260,67 @@ def _label_entries(ax):
             if entry[0].axes is ax]
 
 
-def _label_obstacles_pt(ax, renderer, origin, to_pt):
+def axis_text_boxes_px(ax, renderer=None):
+    """The boxes ``(x0, y0, x1, y1)``, in pixels, of every axis label
+    and tick label the 3-D axes `ax` draws at its current view: an
+    ``(n, 4)`` array (empty for a 2-D axes, whose axis texts lie outside
+    the plot, and for a cube that draws none).
+
+    matplotlib decides where these texts go while it draws the axis
+    (which edge of the cube a label hangs from changes as the cube
+    turns). During a draw of the figure (`renderer` given) the axes has
+    just drawn them, so they are read where they are; otherwise the
+    three axes alone are drawn onto the figure's renderer first, about
+    a hundredth of what drawing the figure costs, which is what lets
+    EVERY frame's view of an animation be measured."""
+    if not hasattr(ax, 'get_proj') or not getattr(ax, '_axis3don', True):
+        return np.zeros((0, 4))
+    texts = []
+    for axis3d in ax._axis_map.values():
+        texts.extend(
+            text for text in [axis3d.label] + [
+                tick.label1 for tick in axis3d.get_major_ticks()]
+            if text.get_visible() and text.get_text().strip())
+    if not texts:
+        return np.zeros((0, 4))
+    if renderer is None:
+        renderer = ax.get_figure(root=True)._get_renderer()
+        ax.apply_aspect()
+        # (what `Axes3D.draw` sets up before it draws its axes)
+        ax.M = ax.get_proj()
+        ax.invM = np.linalg.inv(ax.M)
+        for axis3d in ax._axis_map.values():
+            axis3d.draw(renderer)
+    boxes = [text.get_window_extent(renderer).extents for text in texts]
+    return np.array([box for box in boxes if np.all(np.isfinite(box))],
+                    dtype=float).reshape(-1, 4)
+
+
+def _whole_points(boxes_px, origin, to_pt):
+    """Pixel boxes as boxes in points from `origin`, widened to whole
+    points."""
+    boxes = (np.asarray(boxes_px, dtype=float).reshape(-1, 4)
+             - (origin[0], origin[1], origin[0], origin[1])) * to_pt
+    boxes[:, :2] = np.floor(boxes[:, :2])
+    boxes[:, 2:] = np.ceil(boxes[:, 2:])
+    return boxes
+
+
+def _label_obstacles_pt(ax, renderer, origin, to_pt, axis_text=True):
     """The boxes, in points from the canvas's bottom-left corner, of
     everything in the figure of `ax` that an observation label must not
     be put on: every legend (the axes' own and the figure's, such as the
     one shared legend of a `panels=` grid), every colorbar with its tick
     labels, every panel's title, and every figure text (`suptitle=`,
     `caption=`, a caller's own ``fig.text``). An ``(n, 4)`` array.
+
+    1.2.1 review round 5 added two things. Every OTHER axes of the
+    figure (the next panel of a grid, a companion panel): a label that
+    reached into the next panel was painted over by that panel's
+    background, cut off at its edge. And, with `axis_text`, the axis
+    labels and tick labels of a 3-D axes' own cube
+    (`axis_text_boxes_px`), which hang where the labels of points near
+    the cube's edges want to go.
 
     1.2.1 review round 4: the labels were only kept off each other, so a
     label moved out of another label's way could land on the legend
@@ -311,118 +365,22 @@ def _label_obstacles_pt(ax, renderer, origin, to_pt):
                 _add(title)
         if other is not ax and hasattr(other, '_colorbar'):
             _add(other, tight=True)
+        elif other is not ax:
+            _add(other)
+    if axis_text:
+        found.extend(axis_text_boxes_px(ax, renderer))
     if not found:
         return np.zeros((0, 4))
-    boxes = (np.array(found, dtype=float)
-             - (origin[0], origin[1], origin[0], origin[1])) * to_pt
-    boxes[:, :2] = np.floor(boxes[:, :2])
-    boxes[:, 2:] = np.ceil(boxes[:, 2:])
-    return boxes
+    return _whole_points(found, origin, to_pt)
 
 
-def declutter_labels(ax, renderer=None):
-    """Keep the observation labels of `ax` (`labels=`) off each other.
-
-    Every label starts up and to the left of its point, so the labels of
-    two points that are close on screen were drawn on top of each other
-    (GH #297: "Subject 1" over "Subject 2" in `examples/plot_labels.py`).
-
-    The labels are kept off the figure's furniture as well: its
-    legends, colorbars, titles, suptitle and caption
-    (`_label_obstacles_pt`; 1.2.1 review round 4). A label lying on one
-    of them moves like a label lying on an earlier label, a place that
-    covers one of them is taken only as a last resort (it costs the
-    label's whole box and `_LABEL_OBSTACLE_WEIGHT` times what it covers
-    there, as a place off the canvas costs the whole box), and this
-    also holds for an axes with a single label.
-
-    The placement is STABLE: a label stays where it is for as long as its
-    box is clear of the labels given before it, so a label that covers
-    nothing is never touched and a figure whose labels were clear of each
-    other is drawn exactly as before. Only a label whose box is covered
-    by an earlier label's moves (or one that was moved and has since left
-    the canvas), and it moves as little as it can: of the places around
-    its point (four corners and four sides, at three distances) that are
-    clear of every other label and on the canvas, it takes one at the
-    shortest distance from its point, and of those the one nearest to
-    where it is; with no clear place, a place that at least halves what
-    it covers, or else it stays. A moved label
-    is given `_LABEL_CLEARANCE_PT` of room and does not go back when its
-    old place becomes free, so as a 3-D plot is turned by hand a label
-    changes place only when the points themselves have moved onto each
-    other. In version 1.2.1's first draft every label was placed afresh
-    on every draw, and labels hopped between places on every frame of a
-    spinning plot.
-
-    What a draw does therefore depends on where the labels were, which
-    suits a figure the reader turns by hand and nothing else. So the
-    state is pinned wherever a picture must be reproducible:
-    `reset_label_places` puts the labels back at the start when `plot()`
-    has finished a STATIC figure, so the same call always saves the same
-    picture; and an ANIMATED plot is placed ONCE by this function
-    (`freeze_label_places`: frame 0's view, every label taken as shown)
-    and its labels then hold those places on every frame, so a frame is
-    the same picture whatever was drawn before it and no label changes
-    place while the animation plays.
-
-    Everything is worked out in POINTS, from the figure itself and not
-    from the renderer of the draw (1.2.1 review round 2): the anchors
-    and the canvas are the figure's own geometry divided by its dpi, and
-    a label's size is `_label_size_pt`. The same figure is therefore
-    arranged the same way on the screen, in a PNG at any dpi, in a PDF
-    and in an SVG; only a change of the figure itself (its size, its
-    layout, the camera, the labels) can change the arrangement. For the
-    same reason a draw of a figure in which nothing has moved since the
-    last one does not place anything again (the last problem and its
-    answer are kept on the axes), and the labels are gone through until
-    none of them moves, so a second draw has nothing left to do.
-
-    It runs at draw time (`_LabelDeclutter`), which is the one path for a
-    static figure, a figure the reader rotates, and the one placement
-    of an animation (`freeze_label_places` calls it without a draw:
-    `renderer` is not needed). The anchor of a 3-D label is projected
-    here as well, with the camera and the box zoom of this very draw.
-    """
-    entries = _label_entries(ax)
-    if not entries:
-        return
-    if renderer is None:
-        # no draw is going on: bring the axes to the state a draw would
-        # give it (pending autoscaling, the box an aspect ratio leaves)
-        ax.get_xlim(), ax.get_ylim()
-        locator = ax.get_axes_locator()
-        ax.apply_aspect(locator(ax, None) if locator else None)
-    if hasattr(ax, 'get_proj'):
-        # (the label's point where THIS draw puts it: a projection kept
-        # from an earlier layout or zoom left the arrow pointing at
-        # nothing)
-        from mpl_toolkits.mplot3d import proj3d
-        proj = ax.get_proj()
-        for entry in entries:
-            if len(entry) == 4 and entry[0].get_visible():
-                x2, y2, _ = proj3d.proj_transform(
-                    entry[1], entry[2], entry[3], proj)
-                entry[0].xy = (x2, y2)
-    if getattr(ax, '_hyp_labels_frozen', False):
-        # an animation's labels were placed once (`freeze_label_places`)
-        # and hold those places on every frame
-        return
-    if renderer is not None and _PLOTTING[0] and getattr(
-            ax, '_hyp_labels_held', False):
-        # `plot()` is still laying the figure out
-        # (`labels_held_while_plotting`)
-        return
-    # (a hidden label keeps its place and is no obstacle while hidden: a
-    # 3-D plot's labels are hidden while the reader drags it round, and
-    # they come back where they were unless their points have met)
-    labels = [entry[0] for entry in entries
-              if entry[0].get_visible() and not _label_user_placed(entry[0])]
-    if len(labels) > _LABEL_DECLUTTER_MAX:
-        for label in labels:
-            _send_label_home(label)
-        return
-    if not labels:
-        return
+def _label_geometry(ax, labels):
+    """What the labels `labels` of `ax` are placed from, all in POINTS
+    from the bottom-left corner of the canvas the figure was made for:
+    ``(origin, to_pt, canvas, anchors)``. `origin` is that corner in
+    display pixels, `to_pt` the points in a pixel, `canvas` the box
+    ``(0, 0, width, height)`` and `anchors` the ``(n, 2)`` positions of
+    the labels' points as the axes shows them now."""
     fig = ax.get_figure(root=True)
     to_pt = 72.0 / fig.dpi
     # the canvas the figure was made for: the unit square of the figure
@@ -432,47 +390,110 @@ def declutter_labels(ax, renderer=None):
         [(0.0, 0.0), (1.0, 1.0)])
     canvas = (0.0, 0.0, round((right - left) * to_pt, 4),
               round((top - bottom) * to_pt, 4))
+    if not labels:
+        return (left, bottom), to_pt, canvas, np.zeros((0, 2))
     anchors = np.round(
         (ax.transData.transform(np.array([label.xy for label in labels],
                                          dtype=float))
          - (left, bottom)) * to_pt, 4)
-    sizes = np.array([_label_size_pt(label) for label in labels])
-    pads = np.array([
+    return (left, bottom), to_pt, canvas, anchors
+
+
+def _label_pads_pt(labels):
+    """How far each label's round frame reaches beyond its text, in
+    points."""
+    return np.array([
         (getattr(frame.get_boxstyle(), 'pad', 0.0) if frame else 0.0)
         * label.get_size()
         for label, frame in ((label, label.get_bbox_patch())
-                             for label in labels)])
-    # what no label may be put on: legends, colorbars, titles, the
-    # figure's suptitle and caption (1.2.1 review round 4)
-    obstacles = _label_obstacles_pt(ax, renderer, (left, bottom), to_pt)
-    if len(labels) < 2 and not len(obstacles):
+                             for label in labels)], dtype=float)
+
+
+def _settle_axes_for_labels(ax):
+    """With no draw going on, bring `ax` to the state a draw would give
+    it (pending autoscaling, the box an aspect ratio leaves), so its
+    data transform is the one the picture is drawn with."""
+    ax.get_xlim(), ax.get_ylim()
+    locator = ax.get_axes_locator()
+    ax.apply_aspect(locator(ax, None) if locator else None)
+
+
+def _project_label_anchors(ax, entries):
+    """Point every visible 3-D label of `entries` at its point where the
+    camera and the box zoom of `ax` put it NOW (a projection kept from an
+    earlier layout or zoom left the arrow pointing at nothing)."""
+    if not hasattr(ax, 'get_proj'):
         return
-    # the same problem as on the last draw: nothing to work out again
-    problem = (tuple(map(id, labels)), anchors.tobytes(), sizes.tobytes(),
-               pads.tobytes(), canvas, obstacles.tobytes())
-    start = tuple((_label_place(label),
-                   getattr(label, '_hyp_place_left', None))
-                  for label in labels)
-    known = getattr(ax, '_hyp_label_answer', None)
-    if known is not None and known['problem'] == problem:
-        if start == known['end'] and known['settled']:
-            return
-        if start == known['start']:
-            for label, (place, left_place) in zip(labels, known['end']):
-                _set_label_place(label, *place)
-                label._hyp_place_left = left_place
-            return
+    from mpl_toolkits.mplot3d import proj3d
+    proj = ax.get_proj()
+    for entry in entries:
+        if len(entry) == 4 and entry[0].get_visible():
+            x2, y2, _ = proj3d.proj_transform(
+                entry[1], entry[2], entry[3], proj)
+            entry[0].xy = (x2, y2)
+
+
+#: every place a label can take, nearest first, and each place's reach
+_LABEL_CANDIDATES = tuple((corner, reach) for reach in _LABEL_REACHES_PT
+                          for corner in _LABEL_CORNERS + _LABEL_SIDES)
+
+
+def _arrange_labels(places, left, anchors, sizes, pads, canvas, obstacles,
+                    avoid=None, strict=False, ahead=None, resting=None):
+    """THE placement rule of observation labels, for one view: given
+    where each label hangs now (`places`, a list of ``(corner, reach)``)
+    and the place each one last left (`left`), move the labels that are
+    covered and leave the others. Both lists are changed in place.
+    Returns whether the labels came to rest.
+
+    `anchors`, `sizes` and `pads` are ``(n, 2)``, ``(n, 2)`` and ``(n,)``
+    arrays in points (`_label_geometry`, `_label_size_pt`,
+    `_label_pads_pt`), `canvas` the canvas box and `obstacles` the
+    ``(m, 4)`` boxes no label may be put on (`_label_obstacles_pt`).
+
+    A label stays where it is unless an earlier label's box is on its
+    own, it lies on an obstacle, or a place it was moved to has left the
+    canvas. A label that must move takes, of the places around its point
+    (`_LABEL_CANDIDATES`), the one that covers least; of equals the one
+    at the shortest distance from its point, then not the place it last
+    left, then the one its box travels least to reach. With no clear
+    place it moves only to one that at least halves what it covers
+    (`_LABEL_MOVE_GAIN`).
+
+    This one function places the labels of a static figure
+    (`declutter_labels`, from the places the labels hang at) and of
+    every frame of an animation (`solve_label_tracks`, from the places
+    of the frame before). The animation, which knows the frames to
+    come, passes more:
+
+    * `ahead`, the labels' anchors on the next frames
+      (``(frames, n, 2)``, NaN where a label is not shown): of the
+      places that cover as little, a label takes the one that stays
+      clear for the most of those frames (of the other labels as they
+      hang now, the obstacles and the canvas edge), so it does not have
+      to move again soon;
+    * `avoid`, per label the places it left a short while ago, which
+      come after every other place that covers as little and stays
+      clear as long (a label pushed out of a place does not come back
+      to it a few frames later);
+    * `resting`, per label whether it has only just moved: it is then
+      not moved again for another label (it still is for an obstacle or
+      the canvas edge);
+    * `strict`, under which a label at its usual place that reaches off
+      the canvas moves too (in a static figure the layout has made room
+      for the usual places, and such a label stays where it has always
+      been)."""
+    count = len(places)
     gap = _LABEL_CLEARANCE_PT
+    candidates = _LABEL_CANDIDATES
+    reaches = np.array([reach for _corner, reach in candidates])
     finite = np.all(np.isfinite(anchors), axis=1)
-    boxes = np.full((len(labels), 4), np.nan)
-    for k, label in enumerate(labels):
+    boxes = np.full((count, 4), np.nan)
+    for k in range(count):
         if finite[k]:
-            corner, reach = _label_place(label)
+            corner, reach = places[k]
             boxes[k] = _label_box(anchors[k], sizes[k], corner, reach,
                                   pads[k])
-    candidates = [(corner, reach) for reach in _LABEL_REACHES_PT
-                  for corner in _LABEL_CORNERS + _LABEL_SIDES]
-    reaches = np.array([reach for _corner, reach in candidates])
 
     def _off_canvas(box):
         return (box[0] < canvas[0] or box[1] < canvas[1]
@@ -480,6 +501,73 @@ def declutter_labels(ax, renderer=None):
 
     def _area(box):
         return (box[2] - box[0]) * (box[3] - box[1])
+
+    def _may_stay(k, here, on_obstacle):
+        return ((_covered_area(here, boxes[:k]) <= 0.0
+                 or (resting is not None and resting[k]))
+                and on_obstacle <= 0.0
+                and ((places[k] == _LABEL_HOME and not strict)
+                     or not _off_canvas(here)))
+
+    def _clear_frames(k, roomy):
+        """For each candidate place of label `k` (`roomy`, its boxes
+        there), for how many of the frames `ahead` it stays clear of the
+        other labels (hanging as they do now), the obstacles and the
+        canvas edge."""
+        xyxy = [0, 1, 0, 1]
+        own = (roomy - anchors[k][xyxy])[None] + ahead[:, k][:, None, xyxy]
+        # (only the labels that come anywhere near this one's places)
+        with np.errstate(invalid='ignore'):
+            apart = np.abs(ahead - ahead[:, k][:, None]).max(axis=2)
+            # (labels never shown on the same frame are never near)
+            apart = np.where(np.isnan(apart), np.inf, apart).min(axis=0)
+            near = apart <= (np.abs(roomy - anchors[k][xyxy]).max()
+                             + np.abs(boxes - anchors[:, xyxy]).max(axis=1))
+        near[k] = False
+        others = ((boxes - anchors[:, xyxy])[near][None]
+                  + ahead[:, near][:, :, xyxy])
+        with np.errstate(invalid='ignore'):
+            taken = ((np.minimum(own[:, :, None, 2], others[:, None, :, 2])
+                      > np.maximum(own[:, :, None, 0], others[:, None, :, 0]))
+                     & (np.minimum(own[:, :, None, 3], others[:, None, :, 3])
+                        > np.maximum(own[:, :, None, 1],
+                                     others[:, None, :, 1]))).any(axis=2)
+            taken |= ((own[..., 0] < canvas[0]) | (own[..., 1] < canvas[1])
+                      | (own[..., 2] > canvas[2]) | (own[..., 3] > canvas[3]))
+            if len(obstacles):
+                taken |= (
+                    (np.minimum(own[:, :, None, 2], obstacles[None, None, :, 2])
+                     > np.maximum(own[:, :, None, 0],
+                                  obstacles[None, None, :, 0]))
+                    & (np.minimum(own[:, :, None, 3],
+                                  obstacles[None, None, :, 3])
+                       > np.maximum(own[:, :, None, 1],
+                                    obstacles[None, None, :, 1]))).any(axis=2)
+        return np.where(taken.any(axis=0), taken.argmax(axis=0), len(ahead))
+
+    def _all_at_rest():
+        """Whether no label has a reason to move (every label looked at
+        in one go: most views of an animation leave every label where
+        it is)."""
+        with np.errstate(invalid='ignore'):
+            wide = (np.minimum(boxes[:, None, 2], boxes[None, :, 2])
+                    - np.maximum(boxes[:, None, 0], boxes[None, :, 0]))
+            tall = (np.minimum(boxes[:, None, 3], boxes[None, :, 3])
+                    - np.maximum(boxes[:, None, 1], boxes[None, :, 1]))
+            meet = (wide > 0) & (tall > 0)
+            if np.tril(meet, -1).any():
+                return False
+            if len(obstacles) and np.any(
+                    _covered_area(boxes, obstacles) > 0.0):
+                return False
+            off = ((boxes[:, 0] < canvas[0]) | (boxes[:, 1] < canvas[1])
+                   | (boxes[:, 2] > canvas[2]) | (boxes[:, 3] > canvas[3]))
+        if not strict:
+            off &= np.array([place != _LABEL_HOME for place in places])
+        return not off.any()
+
+    if _all_at_rest():
+        return True
 
     #: per label, the boxes of its candidate places with their clearance
     #: (worked out when the label first has to move)
@@ -495,20 +583,19 @@ def declutter_labels(ax, renderer=None):
     moves, stayed_at = 0, {}
     for _ in range(_LABEL_PASSES):
         moved = False
-        for k, label in enumerate(labels):
+        for k in range(count):
             if not finite[k] or stayed_at.get(k) == moves:
                 continue
             anchor, size, pad = anchors[k], sizes[k], pads[k]
             here = boxes[k].copy()
-            place = _label_place(label)
+            place = places[k]
             # it stays unless an earlier label's box is on its own, it is
             # on a legend, a colorbar or a title (`obstacles`), or a
             # place it was moved to has since left the canvas (in its
-            # usual place a label at the canvas edge stays where it has
-            # always been)
+            # usual place a static figure's label at the canvas edge
+            # stays where it has always been)
             on_obstacle = _covered_area(here, obstacles)
-            if _covered_area(here, boxes[:k]) <= 0.0 and on_obstacle <= 0.0 \
-                    and (place == _LABEL_HOME or not _off_canvas(here)):
+            if _may_stay(k, here, on_obstacle):
                 stayed_at[k] = moves
                 continue
             if k not in rooms:
@@ -539,36 +626,172 @@ def declutter_labels(ax, renderer=None):
                      + _LABEL_OBSTACLE_WEIGHT * on_obstacles
                      + (on_obstacles > 0.0) * (roomy[:, 2] - roomy[:, 0])
                      * (roomy[:, 3] - roomy[:, 1]))
+            sooner = np.zeros(len(candidates))
+            open_places = np.array([one != place for one in candidates])
+            least = costs[open_places].min()
+            tied = open_places & (costs <= least)
+            # (which place stays clear longest is only asked when the
+            # label is going to move and has more than one place to go)
+            if ahead is not None and len(ahead) and tied.sum() > 1 and not (
+                    least > 0.0 and least >= _LABEL_MOVE_GAIN * cost_here):
+                sooner[tied] = -_clear_frames(k, roomy[tied]).astype(float)
             boxes[k] = here
             # a short arrow before a long one, and at that distance the
             # smallest change: the place the box travels least to reach
             change = np.hypot(
                 0.5 * (roomy[:, 0] + roomy[:, 2]) - 0.5 * (here[0] + here[2]),
                 0.5 * (roomy[:, 1] + roomy[:, 3]) - 0.5 * (here[1] + here[3]))
-            # (the place it last left comes after the others at that
-            # distance: a label pushed out of one place and then out of
-            # the next does not hop straight back)
-            last_left = getattr(label, '_hyp_place_left', None)
-            back = np.array([one == last_left for one in candidates])
-            open_places = np.array([one != place for one in candidates])
-            # the best place: least covered, then nearest reach, then not
-            # the place just left, then the smallest change (the first of
-            # equals, in the order of `candidates`)
-            order = np.lexsort((change, back, reaches, costs))
+            if avoid is None:
+                # (the place it last left comes after the others at that
+                # distance: a label pushed out of one place and then out
+                # of the next does not hop straight back)
+                back = np.array([one == left[k] for one in candidates])
+                # the best place: least covered, then nearest reach, then
+                # not the place just left, then the smallest change (the
+                # first of equals, in the order of `candidates`)
+                order = np.lexsort((change, back, reaches, costs))
+            else:
+                # an animation: least covered, then clear for the most
+                # frames to come, then not a place left a short while
+                # ago, then the nearest reach and the smallest change
+                back = np.array([one == left[k] or one in avoid[k]
+                                 for one in candidates])
+                order = np.lexsort((change, reaches, back, sooner, costs))
             best = int(order[open_places[order]][0])
             cost = float(costs[best])
             if cost > 0.0 and cost >= _LABEL_MOVE_GAIN * cost_here:
                 stayed_at[k] = moves
                 continue
             corner, reach = candidates[best]
-            label._hyp_place_left = place
-            _set_label_place(label, corner, reach)
+            left[k] = place
+            places[k] = (corner, reach)
             boxes[k] = _label_box(anchor, size, corner, reach, pad)
             moved = True
             moves += 1
         if not moved:
             settled = True
             break
+    return settled
+
+
+def declutter_labels(ax, renderer=None):
+    """Keep the observation labels of `ax` (`labels=`) off each other.
+
+    Every label starts up and to the left of its point, so the labels of
+    two points that are close on screen were drawn on top of each other
+    (GH #297: "Subject 1" over "Subject 2" in `examples/plot_labels.py`).
+
+    The labels are kept off the figure's furniture as well: its
+    legends, colorbars, titles, suptitle and caption
+    (`_label_obstacles_pt`; 1.2.1 review round 4). A label lying on one
+    of them moves like a label lying on an earlier label, a place that
+    covers one of them is taken only as a last resort (it costs the
+    label's whole box and `_LABEL_OBSTACLE_WEIGHT` times what it covers
+    there, as a place off the canvas costs the whole box), and this
+    also holds for an axes with a single label.
+
+    The placement (`_arrange_labels`) is STABLE: a label stays where it
+    is for as long as its box is clear of the labels given before it, so
+    a label that covers nothing is never touched and a figure whose
+    labels were clear of each other is drawn exactly as before. Only a
+    label whose box is covered by an earlier label's moves (or one that
+    was moved and has since left the canvas), and it moves as little as
+    it can: of the places around its point (four corners and four sides,
+    at three distances) that are clear of every other label and on the
+    canvas, it takes one at the shortest distance from its point, and of
+    those the one nearest to where it is; with no clear place, a place
+    that at least halves what it covers, or else it stays. A moved label
+    is given `_LABEL_CLEARANCE_PT` of room and does not go back when its
+    old place becomes free, so as a 3-D plot is turned by hand a label
+    changes place only when the points themselves have moved onto each
+    other.
+
+    What a draw does therefore depends on where the labels were, which
+    suits a figure the reader turns by hand and nothing else. So the
+    state is pinned wherever a picture must be reproducible:
+    `reset_label_places` puts the labels back at the start when `plot()`
+    has finished a STATIC figure, so the same call always saves the same
+    picture; and an ANIMATED plot's labels follow a table worked out for
+    the whole animation, frame 0 to the last frame in order, by the same
+    rule (`solve_label_tracks`): frame `i` shows row `i` of it, so a
+    frame is the same picture whatever was drawn before it, and every
+    frame's labels are placed for that frame's own view.
+
+    Everything is worked out in POINTS, from the figure itself and not
+    from the renderer of the draw (1.2.1 review round 2): the anchors
+    and the canvas are the figure's own geometry divided by its dpi, and
+    a label's size is `_label_size_pt`. The same figure is therefore
+    arranged the same way on the screen, in a PNG at any dpi, in a PDF
+    and in an SVG; only a change of the figure itself (its size, its
+    layout, the camera, the labels) can change the arrangement. For the
+    same reason a draw of a figure in which nothing has moved since the
+    last one does not place anything again (the last problem and its
+    answer are kept on the axes), and the labels are gone through until
+    none of them moves, so a second draw has nothing left to do.
+
+    It runs at draw time (`_LabelDeclutter`), which is the one path for a
+    static figure, a figure the reader rotates, and a frame of an
+    animation. The anchor of a 3-D label is projected here as well, with
+    the camera and the box zoom of this very draw.
+    """
+    entries = _label_entries(ax)
+    if not entries:
+        return
+    if renderer is None:
+        _settle_axes_for_labels(ax)
+    _project_label_anchors(ax, entries)
+    if label_tracks(ax) is not None:
+        # an animation's labels: the row of its table for the frame the
+        # axes shows (`solve_label_tracks`)
+        _apply_label_tracks(ax)
+        return
+    if renderer is not None and _PLOTTING[0] and getattr(
+            ax, '_hyp_labels_held', False):
+        # `plot()` is still laying the figure out
+        # (`labels_held_while_plotting`)
+        return
+    # (a hidden label keeps its place and is no obstacle while hidden: a
+    # 3-D plot's labels are hidden while the reader drags it round, and
+    # they come back where they were unless their points have met)
+    labels = [entry[0] for entry in entries
+              if entry[0].get_visible() and not _label_user_placed(entry[0])]
+    if len(labels) > _LABEL_DECLUTTER_MAX:
+        for label in labels:
+            _send_label_home(label)
+        return
+    if not labels:
+        return
+    origin, to_pt, canvas, anchors = _label_geometry(ax, labels)
+    sizes = np.array([_label_size_pt(label) for label in labels])
+    pads = _label_pads_pt(labels)
+    # what no label may be put on: legends, colorbars, titles, the
+    # figure's suptitle and caption (1.2.1 review round 4)
+    obstacles = _label_obstacles_pt(ax, renderer, origin, to_pt)
+    if len(labels) < 2 and not len(obstacles):
+        return
+    # the same problem as on the last draw: nothing to work out again
+    problem = (tuple(map(id, labels)), anchors.tobytes(), sizes.tobytes(),
+               pads.tobytes(), canvas, obstacles.tobytes())
+    start = tuple((_label_place(label),
+                   getattr(label, '_hyp_place_left', None))
+                  for label in labels)
+    known = getattr(ax, '_hyp_label_answer', None)
+    if known is not None and known['problem'] == problem:
+        if start == known['end'] and known['settled']:
+            return
+        if start == known['start']:
+            for label, (place, left_place) in zip(labels, known['end']):
+                _set_label_place(label, *place)
+                label._hyp_place_left = left_place
+            return
+    places = [place for place, _left in start]
+    left = [left_place for _place, left_place in start]
+    settled = _arrange_labels(places, left, anchors, sizes, pads, canvas,
+                              obstacles)
+    for label, was, place, left_place in zip(labels, start, places, left):
+        if place != was[0]:
+            label._hyp_place_left = left_place
+            _set_label_place(label, *place)
     ax._hyp_label_answer = {
         'problem': problem, 'start': start, 'settled': settled,
         'end': tuple((_label_place(label),
@@ -604,53 +827,510 @@ def reset_label_places(target):
     """Put the observation labels of `target` (an axes, or a figure: all
     of its axes) back up and to the left of their points, where
     `declutter_labels` starts from on the next draw. A label the reader
-    or the caller moved is left alone."""
+    or the caller moved is left alone, and so are an animation's labels,
+    which follow their table (`solve_label_tracks`)."""
     axes = [target] if hasattr(target, 'transData') else list(target.axes)
     for ax in axes:
         if getattr(ax, '_hyp_labels_held', False):
             # the figure is finished: its next draw arranges the labels
             ax._hyp_labels_held = False
             ax.stale = True
-        if getattr(ax, '_hyp_labels_frozen', False):
-            continue                        # an animation's: they hold
+        if label_tracks(ax) is not None:
+            continue
         for entry in _label_entries(ax):
             if not _label_user_placed(entry[0]):
                 _send_label_home(entry[0])
 
 
-def freeze_label_places(ax):
-    """Place the labels of an ANIMATED axes once and for all, and have
-    them hold those places on every frame.
+class _LabelState:
+    """What an animated axes' labels follow: `frames`, how to show any
+    frame (`track_labels`); `tracks`, the table worked out from it
+    (`solve_label_tracks`); `frame`, the frame the axes shows; and
+    `solving`, set while the table is being worked out."""
 
-    The placement is the one `declutter_labels` makes, starting from
-    every label's usual place, on one reference state: the view the axes
-    shows when this is called (`plot()` calls it with frame 0 drawn, the
-    figure laid out) with EVERY label taken as shown, the ones whose
-    points an animation has not revealed yet included. No draw is made
-    for it: the placement is worked out from the figure's own geometry
-    (1.2.1 review round 2; the first version rendered the whole figure,
-    once per labeled panel of a grid). After it
-    a frame's labels depend on nothing that was drawn before: frame `i`
-    is the same picture whenever it is drawn, and no label changes place
-    during the animation (as in 1.2.0, where every label kept the one
-    fixed offset). Labels placed for the first view can meet at a later
-    one, as they could then."""
-    entries = _label_entries(ax)
-    if not entries:
+    def __init__(self):
+        self.frames = self.tracks = None
+        self.frame, self.solving = 0, False
+
+
+#: per animated axes, its `_LabelState`. Kept here and not on the axes:
+#: it holds the animation's frame function, which cannot be pickled with
+#: the figure (and a figure read back from a pickle has no animation to
+#: follow; its labels stay where the pickled frame had them).
+_LABEL_STATES = weakref.WeakKeyDictionary()
+
+
+def _label_state(ax):
+    """The `_LabelState` of `ax` (a new, empty one if it has none)."""
+    state = _LABEL_STATES.get(ax)
+    if state is None:
+        state = _LABEL_STATES[ax] = _LabelState()
+    return state
+
+
+def label_tracks(ax):
+    """The table the labels of the animated axes `ax` follow
+    (`solve_label_tracks`), or None for an axes whose labels are placed
+    when it is drawn (every static figure)."""
+    state = _LABEL_STATES.get(ax)
+    return None if state is None else state.tracks
+
+
+def tracks_labels(ax):
+    """Whether `ax` holds an animation's labels (`track_labels`)."""
+    state = _LABEL_STATES.get(ax)
+    return state is not None and state.frames is not None
+
+
+def forget_label_tracks(ax):
+    """Drop the table of `ax` and what it was made from: its labels are
+    placed when it is drawn from now on."""
+    _LABEL_STATES.pop(ax, None)
+
+
+#: how long a label of an animation takes to go from one place to the
+#: next, in seconds (`_ease_label_tracks`), and the fewest and the most
+#: frames that may take
+_LABEL_EASE_SECONDS = 0.5
+_LABEL_EASE_FRAMES = (5, 15)
+
+#: for how many glides' worth of frames a label of an animation does not
+#: go back to a place it has left while another is as clear, for how many
+#: it is not moved again for another label once it has moved (so one
+#: glide is over, and the label has been still for as long again, before
+#: the next begins), and how many it looks ahead when it picks a place
+_LABEL_NO_RETURN_EASES = 4
+_LABEL_REST_EASES = 3
+_LABEL_AHEAD_EASES = 4
+
+#: how many times at most an animation that loops is gone round: 16
+#: times with up to about 40 labels, fewer with more (a round with 200
+#: labels takes seconds), never fewer than 3
+_LABEL_LOOP_ROUNDS = 16
+_LABEL_LOOP_LABEL_ROUNDS = 640
+
+
+def _label_center_offsets(place_index, sizes):
+    """Where the MIDDLE of each label's text is, in points from its
+    point, at the places `place_index` (indices into
+    `_LABEL_CANDIDATES`; any shape ending in the labels' axis) for
+    labels of the text sizes `sizes` ``(n, 2)``."""
+    corners = np.array([corner for corner, _reach in _LABEL_CANDIDATES],
+                       dtype=float)
+    reaches = np.array([reach for _corner, reach in _LABEL_CANDIDATES])
+    return corners[place_index] * (reaches[place_index][..., None]
+                                   + 0.5 * sizes)
+
+
+def _ease_label_tracks(targets, shown, taps, periodic):
+    """Turn the places an animation's labels take frame by frame
+    (`targets`, ``(frames, labels, 2)`` offsets that change in steps)
+    into the offsets they are drawn at: every step becomes a glide over
+    the `taps` frames BEFORE the frame the label had to move at (the
+    frames to come are known, so the label is out of the way when the
+    other arrives), always toward the new place (a weighted mean of the
+    places around each frame, with weights that are never negative, so
+    one step never overshoots or turns back).
+
+    Each stretch of frames a label is shown for is eased on its own: a
+    label that appears is at its place from its first frame. In an
+    animation that loops without a seam (`periodic`) a label shown on
+    every frame is eased round the loop, last frame into first."""
+    from scipy.ndimage import convolve1d
+    weights = np.hanning(taps + 2)[1:-1]
+    weights = weights / weights.sum()
+    # (`origin`: the glide is over at the frame the label had to move at)
+    half = taps // 2
+    eased = np.array(targets, dtype=float)
+    always = shown.all(axis=0)
+    if always.any():
+        eased[:, always] = convolve1d(
+            targets[:, always], weights, axis=0, origin=half,
+            mode='wrap' if periodic else 'nearest')
+    for k in np.flatnonzero(~always & shown.any(axis=0)):
+        edges = np.flatnonzero(np.diff(np.concatenate(
+            [[False], shown[:, k], [False]]).astype(int)))
+        for first, end in zip(edges[::2], edges[1::2]):
+            if end - first > half:
+                eased[first:end, k] = convolve1d(
+                    targets[first:end, k], weights, axis=0, origin=half,
+                    mode='nearest')
+    eased[~shown] = np.nan
+    return eased
+
+
+def _settle_short_stays(place_index, shown, periodic, least, allowed):
+    """Take the short stays out of an animation's table of places
+    (`place_index`, ``(frames, labels)``, changed in place): a label
+    that would hang at a place for fewer than `least` frames keeps the
+    place it had before for those frames instead (or goes straight to
+    the one it has after), so between two moves of a label there is
+    always time for one glide to end and the label to be still. That
+    is what rules out a label going out and straight back. Stays are
+    counted round the loop in an animation that loops (`periodic`), for
+    a label shown on every frame; otherwise within each stretch of
+    frames a label is shown for.
+
+    A short stay is kept where neither neighbor will do
+    (`allowed(frames, label, place)`: the place must keep the label on
+    the canvas and off the legend, the titles and the other static
+    content on those frames)."""
+    n_frames, count = place_index.shape
+    least = min(least, n_frames // 2)
+    if least < 2:
         return
-    ax._hyp_labels_frozen = False
-    reset_label_places(ax)
-    shown = [(entry[0], entry[0].get_visible()) for entry in entries]
+    for k in range(count):
+        column = place_index[:, k]
+        if shown[:, k].all():
+            stretches = [(0, n_frames, periodic)]
+        else:
+            edges = np.flatnonzero(np.diff(np.concatenate(
+                [[False], shown[:, k], [False]]).astype(int)))
+            stretches = [(first, end, False)
+                         for first, end in zip(edges[::2], edges[1::2])]
+        for first, end, loops in stretches:
+            for _ in range(n_frames):
+                frames = np.arange(first, end)
+                values = column[first:end]
+                turn = 0
+                if loops and values[0] == values[-1]:
+                    # (start the count where a stay starts)
+                    changes = np.flatnonzero(values[1:] != values[:-1])
+                    if not len(changes):
+                        break
+                    turn = changes[0] + 1
+                    frames, values = np.roll(frames, -turn), np.roll(
+                        values, -turn)
+                starts = np.concatenate(
+                    [[0], np.flatnonzero(values[1:] != values[:-1]) + 1])
+                ends = np.concatenate([starts[1:], [len(values)]])
+                if len(starts) < 2:
+                    break
+                changed = False
+                # the shortest stay first
+                for run in np.argsort(ends - starts, kind='stable'):
+                    if ends[run] - starts[run] >= least:
+                        break
+                    span = frames[starts[run]:ends[run]]
+                    before = (values[starts[run] - 1]
+                              if run > 0 or loops else None)
+                    after = (values[ends[run] % len(values)]
+                             if run < len(starts) - 1 or loops else None)
+                    for other in (before, after):
+                        if other is not None and other != values[
+                                starts[run]] and allowed(span, k, int(other)):
+                            column[span] = other
+                            changed = True
+                            break
+                    if changed:
+                        break
+                if not changed:
+                    break
+
+
+def _labels_loop(anchors, shown):
+    """Whether an animation's last frame leads back into its first
+    without a seam, as far as its labels can tell: the same labels are
+    shown on both, and their points are no further apart between the two
+    than between other neighboring frames (a spin of whole turns; not a
+    reveal, whose last frame shows everything and whose first shows
+    one point)."""
+    if len(anchors) < 3 or not np.array_equal(shown[0], shown[-1]):
+        return False
+    if not shown[0].any():
+        return True
+    with np.errstate(invalid='ignore'):
+        steps = np.hypot(*np.moveaxis(np.diff(anchors, axis=0), -1, 0))
+        seam = np.hypot(*np.moveaxis(anchors[0] - anchors[-1], -1, 0))
+    steps = np.where(shown[1:] & shown[:-1], steps, np.nan)
+    if np.all(np.isnan(steps)):
+        return False
+    usual = np.nanmax(steps)
+    return bool(np.nanmax(np.where(shown[0], seam, np.nan))
+                <= 1.5 * usual + 1e-6)
+
+
+def solve_label_tracks(ax, _independent=False):
+    """Work out where every observation label of the ANIMATED axes `ax`
+    is drawn on every frame, and keep the answer on the axes as a table
+    (one row per frame) that the frames then show (`_apply_label_tracks`).
+
+    The rule (owner decision 2026-11-23): on every frame a label is
+    attached to its point where that frame shows it and placed by the
+    rule of a static figure (`_arrange_labels`: off the other labels and
+    off legends, colorbars, titles, suptitle and caption), and it may
+    shift from frame to frame but must not wobble back and forth.
+
+    So the whole animation is solved as ONE path, frame 0 to the last
+    frame in order, the labels of each frame starting from where the
+    frame before left them: a label keeps its side of its point for as
+    long as that place is free, moves (to the nearest free place) only
+    when an earlier label's box, a legend or the canvas edge is on its
+    own, and does not go back to a place it left within
+    `_LABEL_NO_RETURN_EASES` glides unless nothing else is as clear. A
+    label that comes into view (a sliding window, a reveal) starts at
+    its usual place. An animation that loops without a seam
+    (`_labels_loop`) is gone round until a round repeats the round
+    before (at most `_LABEL_LOOP_ROUNDS` times, fewer with very many
+    labels), so the last frame leads into the first. The moves are then turned into
+    glides (`_ease_label_tracks`). Where a glide would carry a label
+    over a legend, a colorbar, a title or a figure text that both of its
+    ends are clear of, the label jumps instead (``'forced'`` in the
+    table marks those frames).
+
+    The table belongs to the animation and not to a draw: it is worked
+    out from the figure's geometry by running the frame function for
+    every frame (`track_labels` supplies it; nothing is rendered), so
+    frame `i` is the same picture whichever frames were drawn before
+    it, in a saved file, and in a second identical call. It is worked
+    out again when the figure it was made for has changed (its size,
+    the axes' box, the labels the axes holds).
+
+    With `_independent` every frame is placed on its own, from every
+    label's usual place, and nothing is eased: the placement a single
+    frame would get as a static figure, kept for comparison (tests, and
+    the numbers in the changelog)."""
+    state = _label_state(ax)
+    spec = state.frames
+    if spec is None or state.solving:
+        return None
+    n_frames, show_frame, interval_ms = spec
+    entries = _label_entries(ax)
+    labels = [entry[0] for entry in entries
+              if not _label_user_placed(entry[0])]
+    current = state.frame
+    state.solving = True
     try:
-        # (`_visible`, not `set_visible`: nothing about the picture
-        # changes, so the figure is not marked for a redraw)
-        for label, _visible in shown:
-            label._visible = True
-        declutter_labels(ax)
+        count = len(labels)
+        anchors = np.full((n_frames, count, 2), np.nan)
+        shown = np.zeros((n_frames, count), dtype=bool)
+        turning = []
+        for frame in range(n_frames):
+            show_frame(frame)
+            _settle_axes_for_labels(ax)
+            _project_label_anchors(ax, entries)
+            origin, to_pt, canvas, anchors[frame] = _label_geometry(
+                ax, labels)
+            shown[frame] = [label.get_visible() for label in labels]
+            # (the cube's own axis labels turn with it)
+            turning.append(_whole_points(
+                axis_text_boxes_px(ax), origin, to_pt))
+        show_frame(min(current, n_frames - 1))
+        _settle_axes_for_labels(ax)
+        _project_label_anchors(ax, entries)
+        origin, to_pt, canvas, _now = _label_geometry(ax, labels)
+        signature = _label_tracks_signature(ax)
+        sizes = np.array([_label_size_pt(label) for label in labels],
+                         dtype=float).reshape(count, 2)
+        pads = _label_pads_pt(labels)
+        obstacles = _label_obstacles_pt(ax, None, origin, to_pt,
+                                        axis_text=False)
     finally:
-        for label, visible in shown:
-            label._visible = visible
-    ax._hyp_labels_frozen = True
+        state.solving = False
+    shown &= np.all(np.isfinite(anchors), axis=2)
+    home = _LABEL_CANDIDATES.index(_LABEL_HOME)
+    place_index = np.full((n_frames, count), home, dtype=int)
+    try:
+        fps = 1000.0 / float(interval_ms)
+    except (TypeError, ValueError, ZeroDivisionError):
+        fps = 15.0
+    taps = int(np.clip(round(_LABEL_EASE_SECONDS * fps),
+                       *_LABEL_EASE_FRAMES))
+    taps = max(1, min(taps, n_frames // 2)) | 1        # odd
+    periodic = not _independent and _labels_loop(anchors, shown)
+    horizon = _LABEL_NO_RETURN_EASES * taps
+    places = [_LABEL_HOME] * count
+    left = [None] * count
+    #: per label, the places it has left and the step it left each at
+    left_at = [{} for _ in range(count)]
+    #: per label, the step it last moved at
+    moved_at = np.full(count, -np.inf)
+    seen = np.where(shown[..., None], anchors, np.nan)
+    n_ahead = 0 if _independent else min(
+        _LABEL_AHEAD_EASES * taps, n_frames - 1)
+    before = np.zeros(count, dtype=bool)
+    step = 0
+    #: a loop is gone round until a round places every frame as the round
+    #: before did (the last frame then leads into the first exactly)
+    last_round = None
+    rounds = 1 if not periodic else int(np.clip(
+        _LABEL_LOOP_LABEL_ROUNDS // max(count, 1), 3, _LABEL_LOOP_ROUNDS))
+    for _round in range(rounds):
+        if last_round is not None and np.array_equal(last_round,
+                                                     place_index):
+            break
+        last_round = place_index.copy() if _round else None
+        for frame in range(n_frames):
+            here = np.flatnonzero(shown[frame])
+            for k in (here if _independent
+                      else here[~before[here]]):
+                places[k], left[k] = _LABEL_HOME, None
+                left_at[k].clear()
+                moved_at[k] = -np.inf
+            if len(here) > _LABEL_DECLUTTER_MAX:
+                for k in here:
+                    places[k], left[k] = _LABEL_HOME, None
+            elif len(here) >= 2 or (len(here) and (
+                    len(obstacles) or len(turning[frame]))):
+                was = [places[k] for k in here]
+                now = list(was)
+                gone = [left[k] for k in here]
+                avoid = None if _independent else [
+                    {place for place, when in left_at[k].items()
+                     if step - when <= horizon} for k in here]
+                ahead = resting = None
+                if not _independent:
+                    coming = np.arange(frame + 1, frame + 1 + n_ahead)
+                    coming = (coming % n_frames if periodic
+                              else coming[coming < n_frames])
+                    ahead = seen[coming][:, here]
+                    resting = (step - moved_at[here]
+                               < _LABEL_REST_EASES * taps)
+                _arrange_labels(now, gone, anchors[frame, here],
+                                sizes[here], pads[here], canvas,
+                                np.vstack([obstacles, turning[frame]]),
+                                avoid=avoid, strict=True, ahead=ahead,
+                                resting=resting)
+                for k, old, new, old_left in zip(here, was, now, gone):
+                    if new != old:
+                        left_at[k][old] = step
+                        if before[k]:
+                            moved_at[k] = step
+                    places[k], left[k] = new, old_left
+            place_index[frame, here] = [
+                _LABEL_CANDIDATES.index(places[k]) for k in here]
+            before = shown[frame]
+            step += 1
+    half_boxes = 0.5 * sizes + pads[:, None]
+
+    def _allowed(frames, k, place):
+        """Whether label `k` at the place numbered `place` is on the
+        canvas and off everything that is not a label on all of
+        `frames`."""
+        middle = anchors[frames, k] + _label_center_offsets(
+            np.array([place]), sizes[k][None])[0]
+        boxes = np.column_stack([middle - half_boxes[k],
+                                 middle + half_boxes[k]])
+        if ((boxes[:, 0] < canvas[0]) | (boxes[:, 1] < canvas[1])
+                | (boxes[:, 2] > canvas[2]) | (boxes[:, 3] > canvas[3])).any():
+            return False
+        if len(obstacles) and (_covered_area(boxes, obstacles) > 0.0).any():
+            return False
+        return not any(
+            len(turning[frame]) and _covered_area(box, turning[frame]) > 0.0
+            for frame, box in zip(frames, boxes))
+
+    if not _independent:
+        _settle_short_stays(place_index, shown, periodic,
+                            _LABEL_REST_EASES * taps, _allowed)
+    targets = _label_center_offsets(place_index, sizes)
+    forced = np.zeros((n_frames, count), dtype=bool)
+    if _independent or taps < 3:
+        offsets = np.where(shown[..., None], targets, np.nan)
+    else:
+        offsets = _ease_label_tracks(targets, shown, taps, periodic)
+        if len(obstacles):
+            half = half_boxes
+
+            def _on_obstacles(where):
+                middle = (anchors + where).reshape(-1, 2)
+                reach = np.tile(half, (n_frames, 1))
+                boxes = np.column_stack([middle - reach, middle + reach])
+                with np.errstate(invalid='ignore'):
+                    return (_covered_area(boxes, obstacles) > 0.0).reshape(
+                        n_frames, count)
+
+            # a glide over a legend or a title that both ends are clear
+            # of: the label jumps instead
+            bad = _on_obstacles(offsets) & ~_on_obstacles(targets) & shown
+            for frame, k in zip(*np.nonzero(bad)):
+                near = np.arange(frame - taps, frame + taps + 1)
+                near = (near % n_frames if periodic
+                        else near[(near >= 0) & (near < n_frames)])
+                forced[near, k] = True
+            forced &= shown
+            offsets[forced] = targets[forced]
+    state.tracks = {
+        'labels': [weakref.ref(label) for label in labels],
+        'offsets': offsets, 'places': place_index, 'shown': shown,
+        'forced': forced, 'signature': signature, 'periodic': periodic,
+        'ease_frames': taps, 'rounds': _round + 1}
+    _apply_label_tracks(ax)
+    return state.tracks
+
+
+def _label_tracks_signature(ax):
+    """What an animation's label table was made for: the canvas in
+    points, the box of the axes in it, and the labels the axes holds
+    (a figure given another size, or an axes given more labels, needs
+    its table worked out again)."""
+    fig = ax.get_figure(root=True)
+    return (tuple(np.round(fig.get_size_inches() * 72.0, 3)),
+            tuple(np.round(ax.get_position().bounds, 6)),
+            tuple(id(entry[0]) for entry in _label_entries(ax)
+                  if not _label_user_placed(entry[0])))
+
+
+def _apply_label_tracks(ax, frame=None):
+    """Put the labels of the animated axes `ax` where its table has them
+    on `frame` (the frame the axes shows, when not given). Called by the
+    frame function of every animation style (`_sync_anim_labels`), where
+    a table made for a figure that has since changed is worked out
+    again first, and at draw time (`declutter_labels`)."""
+    state = _label_state(ax)
+    tracks = state.tracks
+    if frame is not None:
+        state.frame = int(frame)
+        if state.solving:
+            return
+        if state.frames is not None and (
+                tracks is None
+                or tracks['signature'] != _label_tracks_signature(ax)):
+            tracks = solve_label_tracks(ax)
+            return
+    if tracks is None:
+        return
+    offsets = tracks['offsets']
+    row = offsets[min(max(state.frame, 0),
+                      len(offsets) - 1)]
+    for ref, (dx, dy) in zip(tracks['labels'], row):
+        label = ref()
+        if label is None or label.axes is not ax \
+                or not np.isfinite(dx) or _label_user_placed(label):
+            continue
+        _set_label_offset(label, float(dx), float(dy))
+
+
+def _set_label_offset(label, dx, dy):
+    """Draw `label` with the middle of its text (`dx`, `dy`) points from
+    its point: how an animation's table puts a label anywhere on the
+    way from one place to the next."""
+    if getattr(label, '_hyp_offset', None) == (dx, dy) and getattr(
+            label, '_hyp_place', None) is None:
+        return
+    label.set_position((dx, dy))
+    label.set_ha('center')
+    label.set_va('center')
+    label._hyp_offset = (dx, dy)
+    # (no named place: `_set_label_place` sets one afresh if this label
+    # is ever arranged as a static figure's)
+    label._hyp_place = None
+    label._hyp_place_left = None
+
+
+def track_labels(ax, n_frames, show_frame, interval_ms=None):
+    """Have the labels of the ANIMATED axes `ax` follow a table worked
+    out for the whole animation (`solve_label_tracks`), now and whenever
+    the figure changes: `show_frame(i)` runs the animation's frame
+    function for frame `i` of `n_frames` (the updater alone: nothing is
+    rendered and no `on_frame=` callback is called), and `interval_ms`
+    is the time between two frames."""
+    if not _label_entries(ax):
+        return None
+    state = _label_state(ax)
+    state.frames = (int(n_frames), show_frame, interval_ms)
+    state.tracks = None
+    return solve_label_tracks(ax)
 
 
 class _LabelDeclutter(matplotlib.artist.Artist):
@@ -682,14 +1362,14 @@ def _watch_labels(ax, labels_and_points):
     replaced the first's, whose labels were then never moved). What an
     `ax.clear()` removed is forgotten: the labels, the declutter artist
     itself (the old one is no longer a child of the axes, so a new one
-    is added) and, when none of an animation's labels are left, the hold
-    an animation put on them."""
+    is added) and, when none of an animation's labels are left, the
+    table the animation's labels followed (`solve_label_tracks`)."""
     alive = set(ax.texts)
     kept = [entry for entry in
             (getattr(ax, '_hyp_labels_and_points', None) or [])
             if entry[0] in alive]
     if not kept:
-        ax._hyp_labels_frozen = False
+        forget_label_tracks(ax)
     ax._hyp_labels_and_points = kept + [
         entry for entry in labels_and_points if entry[0] in alive]
     ax._hyp_label_answer = None
@@ -2281,8 +2961,12 @@ def _draw(
                 x2, y2, _ = proj3d.proj_transform(entry[1], entry[2], entry[3],
                                                   proj)
                 label.xy = (x2, y2)
-                if renderer is not None:
-                    label.update_positions(renderer)
+        # (the draw of the frame works out where the label's text and
+        # arrow go from that; doing it here as well cost a millisecond
+        # a label on every frame)
+        # ...and each label where the animation's table has it on this
+        # frame (`solve_label_tracks`)
+        _apply_label_tracks(ax, num)
 
     def add_labels(x, labels, explore=False):
         """Add labels to graph if available

@@ -1,9 +1,10 @@
 """1.2.1 review round 1: defects two reviews found in the GH #299 animation
 arguments and the GH #297 layout fixes.
 
-A. Observation labels are placed STABLY. An animation's labels are
-   placed once and hold those places on every frame, so a frame is the
-   same picture whatever was drawn before it; a static figure saves the
+A. Observation labels are placed STABLY. An animation's labels follow
+   a table worked out for the whole animation (review round 5), so a
+   frame is the same picture whatever was drawn before it and no label
+   hops back and forth; a static figure saves the
    same picture every time, and a label of a figure turned by hand stays
    where it is until its box is covered.
 B. Continuous ``hue=`` in an animation: markers of a line-and-marker
@@ -34,6 +35,7 @@ from mpl_toolkits.mplot3d import proj3d                         # noqa: E402
 from PIL import Image                                           # noqa: E402
 
 import hypertools as hyp                                        # noqa: E402
+from hypertools.plot.matplotlib_backend import label_tracks     # noqa: E402
 from hypertools.plot.plot import CAPTION_GID, SUPTITLE_GID      # noqa: E402
 
 
@@ -128,64 +130,76 @@ def _labeled(name, **kwargs):
     return hyp.plot(spec.pop('data'), 'o', show=False, **spec, **kwargs)
 
 
+def _tracks(fig):
+    return label_tracks(fig.axes[0])
+
+
 @pytest.mark.parametrize('name', list(LABELED_ANIMATIONS))
-def test_animated_labels_hold_their_places(name):
-    """An animation's labels are placed once and hold those places (the
-    first draft of 1.2.1 placed them afresh on every draw: 71 changes of
-    place in 60 frames with 8 labels, 777 with 30, 233 in a sliding
-    window). Not one label changes place on any frame, on a second pass
-    through the animation either, and the one placement is a real one:
-    labels were moved off each other."""
+def test_animated_labels_follow_one_table(name):
+    """An animation's labels follow a table worked out for the whole
+    animation (owner decision 2026-11-23; rewritten in review round 5
+    from the test that pinned labels placed once and held). The first
+    draft of 1.2.1 placed them afresh on every draw (71 changes of place
+    in 60 frames with 8 labels, 777 with 30, 233 in a sliding window)
+    and they hopped back and forth: now no label goes BACK to a place it
+    left within the three frames before, a second pass through the
+    animation shows every label exactly where the first did, and the
+    placement is a real one: labels were moved off each other."""
     anim = _labeled(name)
     assert anim.n_frames == 60
     places, _overlaps = _label_history(anim)
-    assert _switches(places) == (0, 0)
-    shown = [{place for place in track if place is not None}
-             for track in zip(*places)]
-    assert all(len(seen) == 1 for seen in shown), shown
-    assert any(seen != {(-20.0, 20.0)} for seen in shown)
+    tracks = _tracks(anim.figure)
+    named = [[int(place) if shown else None
+              for place, shown in zip(row, visible)]
+             for row, visible in zip(tracks['places'], tracks['shown'])]
+    _changes, returns = _switches(named)
+    assert returns == 0
+    home = tracks['places'][0, 0] if not tracks['shown'].any() else min(
+        tracks['places'][tracks['shown']])
+    assert (tracks['places'][tracks['shown']] != home).any()
     again, _overlaps = _label_history(anim)
     assert again == places
 
 
-@pytest.mark.parametrize('name, clear', [('spin, 8 labels', True),
-                                         ('window, 2-D', False)])
-def test_animated_labels_are_placed_for_the_first_view(name, clear):
-    """The one placement is made for the first frame's view with every
-    label taken as shown. There, 8 labels are all clear of each other;
-    30 crowded ones overlap far less than at their usual places."""
-    from hypertools.plot.matplotlib_backend import (_label_place,
-                                                    _send_label_home,
-                                                    _set_label_place)
+@pytest.mark.parametrize('name', ['spin, 8 labels', 'window, 3-D'])
+def test_animated_labels_are_placed_for_every_view(name):
+    """The labels are placed for each frame's own view (rewritten in
+    review round 5 from the test of one placement for the first view):
+    at the first frame, a quarter, a half and three quarters of the way
+    through, the labels shown overlap far less than they would at their
+    usual places in that view."""
+    from hypertools.plot.matplotlib_backend import (_LABEL_CANDIDATES,
+                                                    _LABEL_HOME,
+                                                    _label_center_offsets,
+                                                    _label_size_pt)
     anim = _labeled(name)
     fig = anim.figure
     labels = _labels(fig)
-    anim.draw_frame(0)
-    hidden = [label for label in labels if not label.get_visible()]
+    tracks = _tracks(fig)
 
-    def overlapping():
-        fig.canvas.draw()
-        renderer = fig.canvas.get_renderer()
-        boxes = [label.get_bbox_patch().get_window_extent(renderer)
-                 for label in labels]
-        return sum(1 for one, other in itertools.combinations(boxes, 2)
-                   if one.overlaps(other))
+    def overlapping(frames):
+        total = 0
+        for frame in frames:
+            anim.draw_frame(frame)
+            fig.canvas.draw()
+            renderer = fig.canvas.get_renderer()
+            boxes = [label.get_bbox_patch().get_window_extent(renderer)
+                     for label in labels if label.get_visible()]
+            total += sum(1 for one, other in itertools.combinations(
+                boxes, 2) if one.overlaps(other))
+        return total
 
-    places = [_label_place(label) for label in labels]
-    for label in hidden:
-        label.set_visible(True)
-    try:
-        placed = overlapping()
-        for label in labels:
-            _send_label_home(label)
-        usual = overlapping()
-    finally:
-        for label, place in zip(labels, places):
-            _set_label_place(label, *place)
-        for label in hidden:
-            label.set_visible(False)
+    frames = (0, 15, 30, 45, 59)
+    placed = overlapping(frames)
+    sizes = np.array([_label_size_pt(label) for label in labels])
+    usual_places = np.full(tracks['places'].shape,
+                           _LABEL_CANDIDATES.index(_LABEL_HOME))
+    tracks['offsets'] = np.where(
+        tracks['shown'][..., None],
+        _label_center_offsets(usual_places, sizes), np.nan)
+    usual = overlapping(frames)
     assert usual > 0
-    assert placed == 0 if clear else placed <= usual / 4, (placed, usual)
+    assert placed <= usual / 4, (placed, usual)
 
 
 @pytest.mark.parametrize('name', list(LABELED_ANIMATIONS))
@@ -227,7 +241,10 @@ def test_a_saved_animation_is_its_frames_drawn_one_at_a_time(name, tmp_path):
         assert np.array_equal(_pixels(twin.figure), forward[i]), i
 
 
-def test_animated_panels_hold_their_label_places():
+def test_animated_panels_show_a_frame_the_same_way_every_time():
+    """An animated grid's labels (rewritten in review round 5 from the
+    test that the labels hold one place): every panel's labels are
+    where they were whenever a frame is shown again, in any order."""
     data = [_walk(1), _walk(2)]
     names = [[f'a{k}' if k % 8 == 0 else None for k in range(40)],
              [f'b{k}' if k % 8 == 0 else None for k in range(40)]]
@@ -237,15 +254,18 @@ def test_animated_panels_hold_their_label_places():
     labels = [entry[0] for ax in fig.axes
               for entry in getattr(ax, '_hyp_labels_and_points', None) or []]
     assert len(labels) == 10
-    anim.draw_frame(0)
-    forward = _pixels(fig)
-    start = [tuple(label.xyann) for label in labels]
-    for i in (anim.n_frames - 1, 7, 3):
+    frames = (0, anim.n_frames - 1, 7, 3)
+    first, pictures = {}, {}
+    for i in frames:
         anim.draw_frame(i)
-        fig.canvas.draw()
-        assert [tuple(label.xyann) for label in labels] == start
-    anim.draw_frame(0)
-    assert np.array_equal(_pixels(fig), forward)
+        pictures[i] = _pixels(fig)
+        first[i] = [tuple(label.xyann) if label.get_visible() else None
+                    for label in labels]
+    for i in frames[::-1] + (7, 0):
+        anim.draw_frame(i)
+        assert np.array_equal(_pixels(fig), pictures[i]), i
+        assert [tuple(label.xyann) if label.get_visible() else None
+                for label in labels] == first[i]
 
 
 @pytest.mark.parametrize('ndims', [2, 3])

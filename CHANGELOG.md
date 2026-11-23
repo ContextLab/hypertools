@@ -86,20 +86,63 @@ Follows 1.2.0. Animated trails now work with line-and-marker formats (GH
   connect its own), and an axes that was cleared (`ax.clear()`) and
   plotted into again has its new labels placed. A label that is rotated
   or otherwise restyled after the plot was made is measured again at the
-  next draw. An animation's labels are placed once, for the
-  view of its first frame with every label taken as shown (the ones whose
-  points are revealed later included), and each label then holds that
-  place on every frame, as each held the one fixed offset in 1.2.0: no
-  label changes place while the animation plays (the first draft of this
-  fix placed every frame afresh: 71 changes of place for 8 labels on a
-  60-frame spin, 777 for 30), a frame is the same picture whatever was
-  drawn before it, and a saved file is the frames drawn one at a time.
-  Labels placed for the first view can meet at a later one. With very
-  many labels on a small figure some boxes still overlap.
+  next draw. With very many labels on a small figure some boxes still
+  overlap (for an animation's labels see the next entry).
   The arrow of a 3-D label points at its point after the cube is drawn
   smaller to clear a legend. A 2-D label the reader has dragged is left
   where it was put. Above 300 visible labels nothing is moved. Matplotlib
   backend.
+- **An animation's labels are placed on every frame, without hopping.**
+  In 1.2.0 every label of an animation hung at one fixed offset, so
+  labels covered each other whenever their points came close. Now every
+  frame's labels are placed for that frame by the rule of a static
+  figure: each label is attached to its point where the frame shows it
+  (in a turning 3-D plot the labels turn with their points), kept off
+  the other labels shown on that frame, off the legend, the colorbar, the
+  titles, the suptitle and the caption, and inside the canvas. Labels of
+  points a frame does not show are hidden, as before. Placing every
+  frame on its own made labels hop back and forth (8 labels on a
+  60-frame spin changed place 95 times, 29 of them out and straight
+  back; 30 labels 720 times), so the places are worked out for the whole animation at once, first
+  frame to last: a label keeps its side of its point while that place
+  is free; when it has to move it takes the free place that stays free
+  longest over the coming frames, glides there over about half a second
+  (finishing as the other label arrives) and is not moved again for
+  another label for a second; it does not go back to a place it left a
+  short while ago if another is as clear; and a spin of whole turns is
+  placed round the loop, so its last frame leads into its first. The
+  same spins now change place 3 times (8 labels) and 31 times (30
+  labels), every change a glide, none out and back. Frame
+  `i` is the same picture however it is reached (in order, out of order
+  with `draw_frame`, in a saved file, in a second identical call), and
+  the placement is worked out again if the figure is given another
+  size. Where a glide would carry a label across the legend or a title
+  the label jumps instead. Cost, at the time the plot is made (nothing
+  is rendered for it), for a 60-frame 3-D spin, in CPU seconds: 0.46
+  with 20 labels, 1.9 with 60, 5.4 with 200 (0.05, 0.14 and 0.48 when
+  the labels were placed once). A frame itself draws no slower (37, 106
+  and 324 ms, as before: drawing the label boxes is what a frame costs).
+  With many labels on a small cube some still overlap. Matplotlib
+  backend; on plotly the labels are annotations at one fixed offset
+  that follow their points and are shown on every frame, as before.
+- **Legends, titles and the cube keep one layout for a whole animation,
+  and a 3-D plot's axis labels stay inside the canvas as it turns.** The
+  cube of a single animated 3-D plot was fitted to the canvas without
+  its axis labels (`xlabel=`, `ylabel=`, `zlabel=`, or a DataFrame's
+  column names), which hang outside the cube and turn with it: on a
+  5 x 5 inch figure "the z axis" was up to 61 px off the canvas for
+  part of each turn, and with a legend, a title and a caption the axis
+  labels crossed them on 6 of 60 frames. The cube is now drawn small
+  enough that, at the camera angle of EVERY frame (not a sample: which
+  edge a label hangs from changes from one view to the next), each axis
+  label is on the canvas and clear of the legend, the colorbar, the
+  title, the suptitle and the caption. That one layout holds for the
+  whole animation: nothing that does not turn moves or changes size
+  between frames. A static 3-D plot is fitted the same way for its one
+  view. Observation labels keep off the cube's axis labels, and off the
+  other panels of a grid (a label that reached into the next panel was
+  painted over by that panel's background, cut off at its edge), in
+  static figures too. Matplotlib backend.
 - **Labels keep off the legend, the colorbar, the titles and the
   caption.** The labels were only kept off each other, so a label moved
   out of another label's way could land on the shared legend of a

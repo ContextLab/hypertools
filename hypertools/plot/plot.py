@@ -7992,12 +7992,44 @@ def _cube_excess(views, center, room, obstacles):
 _LEGEND_CLEAR_CUBE_SHARE = 0.7
 
 
-def _keep_cube_clear(fig, axis, handle, rotations):
+def _axis_text_boxes_px(fig, axis, azimuths):
+    """The boxes ``(x0, y0, x1, y1)``, in pixels, of every axis label
+    and tick label the 3-D axes `axis` draws, at each camera angle of
+    `azimuths` (its current elevation and box zoom): an ``(n, 4)`` array
+    of all of them, all views together
+    (`matplotlib_backend.axis_text_boxes_px` at each view)."""
+    from .matplotlib_backend import axis_text_boxes_px
+    _measurement_renderer(fig)
+    elev, azim0 = axis.elev, axis.azim
+    boxes = []
+    try:
+        for azim in azimuths:
+            axis.view_init(elev=elev, azim=azim)
+            boxes.extend(axis_text_boxes_px(axis))
+    finally:
+        axis.view_init(elev=elev, azim=azim0)
+    return np.array(boxes, dtype=float).reshape(-1, 4)
+
+
+def _keep_cube_clear(fig, axis, handle, rotations, frame_azimuths=None):
     """Zoom a single 3-D plot's cube out until, at EVERY camera angle it
     is seen from, it stays inside the canvas and off the plot's legend
     and the figure's other axes (GH #297). The one fit of a single plot's
     cube, static or animated; a `panels=` grid has its own
     (`_fit_panel_cubes`).
+
+    The cube's AXIS LABELS (and tick labels, where an axes draws any)
+    turn with the cube, hanging outside it, so they are fitted too
+    (1.2.1 review round 5): at every view the plot is seen from, each of
+    them stays on the canvas and off everything that does not move (the
+    legend, a colorbar, the title, the suptitle and the caption; the
+    boxes `_label_obstacles_pt` gives the observation labels). For an
+    animation the views are those of ALL its frames (`frame_azimuths`, a
+    callable that returns every frame's camera angle), not a sample:
+    which edge a label hangs from changes from one view to the next, so
+    the widest view cannot be found from a few. The one layout this
+    makes holds for the whole animation: nothing that does not turn is
+    moved or resized between frames.
 
     An animated 3-D axes fills the canvas and its cube is drawn zoomed
     in, so on a square or portrait figure the cube, seen corner-on,
@@ -8056,6 +8088,52 @@ def _keep_cube_clear(fig, axis, handle, rotations):
         # exactly linear in the zoom: correct and measure again)
         handle.zoom_scale[0] /= excess
     handle.draw(0)
+    if not _has_axis_text(axis):
+        return
+    from .matplotlib_backend import _label_obstacles_pt
+    azimuths = (_camera_azimuths(axis, rotations, 3.0)
+                if frame_azimuths is None else frame_azimuths())
+    azimuths = sorted({round(float(azim) % 360.0, 6) for azim in azimuths})
+    handle.draw(0)
+    pad = _OUTER_LABEL_PAD_IN * fig.dpi
+    room = (pad, pad, width - pad, height - pad)
+    for _ in range(6):
+        boxes = _axis_text_boxes_px(fig, axis, azimuths)
+        if not len(boxes):
+            break
+        # each text as a shape of its own (its box's four corners)
+        shapes = boxes[:, [[0, 1], [2, 1], [2, 3], [0, 3]]]
+        square = axis.get_position()
+        center = ((square.x0 + square.x1) * 0.5 * width,
+                  (square.y0 + square.y1) * 0.5 * height)
+        still = _label_obstacles_pt(axis, None, (0.0, 0.0), 1.0,
+                                    axis_text=False)
+        still = [(x0 - pad, y0 - pad, x1 + pad, y1 + pad)
+                 for x0, y0, x1, y1 in still]
+        excess = max(_cube_excess(shapes, center, room, []), min(
+            _cube_excess(shapes, center, room, still),
+            handle.zoom_scale[0] / (_LEGEND_CLEAR_CUBE_SHARE * start)))
+        if excess <= 1.001:
+            break
+        # (a text keeps its size while the cube it hangs from shrinks,
+        # so its reach is not linear in the zoom: correct, measure again)
+        handle.zoom_scale[0] /= excess
+        handle.draw(0)
+    handle.draw(0)
+
+
+def _has_axis_text(axis):
+    """Whether the 3-D axes `axis` draws any axis label or tick
+    label."""
+    if not getattr(axis, '_axis3don', True):
+        return False
+    for axis3d in axis._axis_map.values():
+        if axis3d.label.get_visible() and axis3d.label.get_text().strip():
+            return True
+        if any(tick.label1.get_visible() and tick.label1.get_text().strip()
+               for tick in axis3d.get_major_ticks()):
+            return True
+    return False
 
 
 class _StaticCubeZoom:
@@ -8523,15 +8601,16 @@ def _lay_out_panel_grid(fig, panel_axes, grid, strip, cells=None,
         _place_shared_furniture(fig, strip)
     # the grid is laid out: observation labels are placed from their
     # usual places on the first draw of the finished figure
-    from .matplotlib_backend import freeze_label_places, reset_label_places
+    from .matplotlib_backend import reset_label_places, track_labels
     reset_label_places(fig)
     if animated:
-        # ...and an animated grid's are placed once, with every panel at
-        # frame 0, and hold those places on every frame
+        # ...and an animated grid's follow a table worked out for every
+        # frame of each panel (`solve_label_tracks`)
         for cell in cells:
             if getattr(cell['axes'], '_hyp_labels_and_points', None):
                 cell['stub'].draw(0)
-                freeze_label_places(cell['axes'])
+                track_labels(cell['axes'], cell['stub']._save_count,
+                             cell['stub'].draw, cell['stub']._interval)
     return caption_artist
 
 
@@ -9674,13 +9753,31 @@ def plot(
         again). Several labeled calls into one `ax=` are kept off each
         other as one set. When a 3-D plot is rotated
         by hand a label stays where it is until its box is covered, and
-        does not go back when its old place becomes free. An animation's
-        labels are placed ONCE, for the view of its first frame with
-        every label taken as shown (those of points revealed later
-        included), and every label holds that place on every frame: no
-        label changes place while the animation plays, and a frame is
-        the same picture whatever was drawn before it (labels placed for
-        the first view can meet at a later one).
+        does not go back when its old place becomes free.
+
+        In an animation every frame's labels are placed for that frame:
+        each label is attached to its point where the frame shows it
+        (as a 3-D plot turns, the labels turn with their points) and
+        placed by the same rule, off the other labels shown on that
+        frame and off the legend, the colorbar, the titles, the
+        suptitle and the caption, and inside the canvas. A 3-D plot's
+        own axis labels, which turn with the cube, are kept clear as
+        well, and so is the next panel of a `panels=` grid. The labels
+        of points a frame does not show (not yet revealed, outside the
+        sliding window) are hidden. So that labels do not hop about,
+        the places are worked out for the whole animation at once,
+        first frame to last: a label keeps its side of its point while
+        that place is free, picks the free place that stays free
+        longest when it has to move, glides there over about half a
+        second (arriving as the other label does) and is then left
+        alone for a second, and an animation that loops is placed round
+        the loop. A frame is the same picture whatever was drawn before
+        it, in a saved file too. The price is paid when the plot is
+        made (every frame's geometry is worked out, nothing is
+        rendered): about half a second for 20 labels on 60 frames, 2 s
+        for 60 and 5 s for 200. Legends, titles, the suptitle, the caption and
+        the size of the cube are laid out once, for the widest view of
+        the whole animation, and do not move between frames.
 
     label_anchor : 'first', 'center', 'last', int, or None
         Where a PER-DATASET `labels=` list attaches its annotation inside
@@ -18314,11 +18411,22 @@ def plot(
                     # (a `zoom=` above 1 asks for a closer view than the
                     # canvas holds: that is the caller's to have)
                     if _zoom_scale is not None and not _zoomed_in(zoom):
+                        def _frame_azimuths():
+                            """The camera angle of every frame (each
+                            frame's updater is run; nothing is
+                            rendered)."""
+                            _angles = []
+                            for _frame in range(
+                                    content_frame_count(line_ani)):
+                                _orig_frame_func(_frame, *line_ani._args)
+                                _angles.append(ax.azim)
+                            _orig_frame_func(0, *line_ani._args)
+                            return _angles
                         _keep_cube_clear(
                             fig, ax, _AnimatedCubeZoom(
                                 _zoom_scale,
                                 lambda: _orig_frame_func(0, *line_ani._args)),
-                            rotations)
+                            rotations, frame_azimuths=_frame_azimuths)
                 elif not animate:
                     _keep_cube_clear(fig, ax, _StaticCubeZoom(ax), 0)
 
@@ -18485,22 +18593,30 @@ def plot(
             # the figure is finished: its observation labels are placed
             # from their usual places on the first draw of it, not from
             # where a draw made while it was being laid out left them
-            # An ANIMATED plot's labels are placed once, with frame 0
-            # drawn, and hold those places on every frame: a frame is
-            # then the same picture whatever was drawn before it.
+            # An ANIMATED plot's labels follow a table worked out for
+            # the whole animation, frame 0 to the last in order
+            # (`solve_label_tracks`): every frame's labels are placed
+            # for that frame's own view, and a frame is the same picture
+            # whatever was drawn before it.
             if isinstance(fig, plt.Figure):
-                from .matplotlib_backend import (freeze_label_places,
-                                                 reset_label_places)
+                from .matplotlib_backend import (reset_label_places,
+                                                 solve_label_tracks,
+                                                 track_labels,
+                                                 tracks_labels)
                 reset_label_places(fig)
-                # (so are labels a static call adds to an axes that
-                # holds an animation's: placed with them, then held)
                 if (ax is not None and _panel_animation is None
-                        and getattr(ax, '_hyp_labels_and_points', None)
-                        and (line_ani is not None or getattr(
-                            ax, '_hyp_labels_frozen', False))):
+                        and getattr(ax, '_hyp_labels_and_points', None)):
                     if line_ani is not None:
                         _orig_frame_func(0, *line_ani._args)
-                    freeze_label_places(ax)
+                        track_labels(
+                            ax, content_frame_count(line_ani),
+                            lambda _frame: _orig_frame_func(
+                                int(_frame), *line_ani._args),
+                            getattr(line_ani, '_interval', None))
+                    elif tracks_labels(ax):
+                        # (labels a static call adds to an axes that
+                        # holds an animation's join its table)
+                        solve_label_tracks(ax)
 
             # save. `fig.savefig`, NOT `plt.savefig` (release-1.0 audit,
             # F09-001: `plt.savefig` writes pyplot's CURRENT figure, so

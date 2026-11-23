@@ -43,6 +43,54 @@ a machine where four STARSTIM-8 outlets were otherwise visible, and both
 branches of `test_lsl_stream_resolves_any_stream` pass in their respective
 environments.
 
+**Discovery (why the session uses tests/lsl_loopback.cfg on macOS).** liblsl
+finds an outlet by sending a query datagram to port 16571, which every outlet
+on the machine binds with address reuse: once to 127.0.0.1 as plain unicast,
+once to the broadcast address, and once to each multicast group (224.0.0.1,
+224.0.0.183, 239.255.172.215), the whole list repeated on every network
+interface through ONE socket whose outbound interface is switched in between
+(`resolve_attempt_udp::send_next_query`, liblsl 1.17.7). Measured 2026-11-23
+on macOS 26 (Darwin 25.6), pylsl 1.18.2, load average 150 to 450:
+
+* The unicast query reaches exactly one of the sockets bound to the port (the
+  oldest), so only one outlet on the whole machine can be found that way.
+  Every other outlet depends on multicast: the second outlet of
+  `test_lsl_stream_name_takes_precedence_over_type`, and any outlet at all
+  while another process on the machine holds one.
+* Nothing sent on the Ethernet/Wi-Fi interface was looped back (0 of 40).
+* A multicast datagram sent on the loopback interface is delivered (40 of
+  40) unless the same socket is switched to another interface within about
+  half a millisecond, in which case it is lost (0 of 40 with no delay). liblsl
+  switches a few microseconds after its last loopback send, so of 20 query
+  waves 18 delivered the 224.0.0.1 datagram, 8 the 224.0.0.183 one and 4 the
+  239.255.172.215 one (11 to 13, 8 to 11 and 3 to 7 with 400 more CPU-bound
+  processes). ``[multicast] Interfaces = {127.0.0.1}`` removes the switch (20
+  of 20 for all three) but not the next problem, so it is not used.
+* Worse, while processes kept resolving, the sockets already bound to port
+  16571 stopped receiving multicast altogether after 16 to 143 s, and stayed
+  deaf until those resolvers ended: with two real outlets held by one
+  process and a second process resolving a name nobody has, a third process
+  found the second outlet by name for the first 37 s (63 s in another run;
+  143 s with every process on ``Interfaces = {127.0.0.1}``) and then in none
+  of the next 13 resolves of 8 s each. Unicast was never affected. Why the
+  kernel stops delivering is NOT known. That is the full-suite failure "no
+  LSL stream found (name='HypertoolsTestStreamB-...') within timeout=30.0s",
+  which a longer timeout could not cure.
+* With ``[lab] KnownPeers = {127.0.0.1}`` liblsl also sends every query
+  straight to each port of its port range (16572 and up), where every outlet
+  has a socket of its own. In the 37 s run, at the same time and against the
+  same outlets, two resolvers with that setting found the second outlet in
+  138 of 138 and 154 of 154 resolves, none later than 1.0 s.
+
+tests/lsl_loopback.cfg sets it, tests/conftest.py points ``LSLAPICFG`` at
+that file on macOS unless the caller set one (as in the paragraph above),
+and liblsl reads it once per process.
+`test_every_discovery_wave_queries_each_outlet_port_directly` pins it.
+Without it, a second outlet on a Mac (or one outlet while another LSL
+program runs) can be missing from `hyp.io.lsl_stream` for as long as this
+goes on; that is liblsl's and the operating system's behavior, the same
+for any LSL client.
+
 **Machines that cannot create an outlet at all.** Binding liblsl's service
 ports can fail outright (``All local ports were found occupied`` ->
 ``RuntimeError: could not create stream outlet``), which would otherwise
@@ -62,6 +110,8 @@ a real liblsl failure string with the environment as the only variable.
 """
 
 import os
+import select
+import socket
 import subprocess
 import sys
 import textwrap
@@ -158,14 +208,14 @@ def _require_outlets():
     pytest.skip(message)
 
 
-# Discovery timeouts (`lsl_stream(..., timeout=30.0)` throughout): the
-# resolve returns as soon as the named outlet answers, so a long timeout
-# costs nothing when the outlet is found. It was 5 s, and five tests of this
-# file failed in one full-suite run on a heavily loaded machine ("no LSL
-# stream found ... within timeout=5.0s"). Measured 2026-11-23, 12 cores:
-# discovery by name takes about 6 ms on a quiet machine and a steady 1.0 s
-# with 144 CPU-bound processes running (the first resolve query is missed
-# and the next one is answered), so a few more missed queries use up 5 s.
+# Discovery timeouts (5 s throughout): with tests/lsl_loopback.cfg an outlet
+# is found at once when it holds the oldest socket on the discovery port and
+# otherwise by the first direct query, 0.5 s into the resolve (25 of 25 at
+# 0.50 to 0.51 s for the second of two outlets, 292 of 292 within 1.0 s
+# while multicast delivery was down; module docstring, *Discovery*). They
+# were raised to 30 s on 2026-11-23 after five tests failed in one
+# full-suite run at 5 s; the next run failed at 30 s too, because the outlet
+# could not be heard at all, so 5 s is back.
 
 #: How long a test waits for `_start_outlet`'s thread to END after `stop` is
 #: set. The thread's closure holds the only reference to the outlet, so its
@@ -250,13 +300,13 @@ def test_ci_has_pylsl():
 
 @requires_pylsl
 def test_is_stream_true_for_lsl_stream(outlet_stream):
-    stream = hyp.io.lsl_stream(name=outlet_stream, timeout=30.0)
+    stream = hyp.io.lsl_stream(name=outlet_stream, timeout=5.0)
     assert is_stream(stream)
 
 
 @requires_pylsl
 def test_lsl_stream_receives_pushed_samples_by_name(outlet_stream):
-    stream = hyp.io.lsl_stream(name=outlet_stream, timeout=30.0)
+    stream = hyp.io.lsl_stream(name=outlet_stream, timeout=5.0)
 
     received = [next(stream) for _ in range(10)]
 
@@ -285,7 +335,7 @@ def test_lsl_stream_resolves_by_type():
     thread, stop = _start_outlet(
         f'HypertoolsTestStream-bytype-{time.time_ns()}', stream_type=stream_type)
     try:
-        with hyp.io.lsl_stream(type=stream_type, timeout=30.0) as stream:
+        with hyp.io.lsl_stream(type=stream_type, timeout=5.0) as stream:
             sample = next(stream)
         assert len(sample) == N_CHANNELS
     finally:
@@ -306,13 +356,77 @@ def test_lsl_stream_name_takes_precedence_over_type():
     outlet_b = hyp.io.lsl.synthetic_outlet(name_b, n_channels=N_CHANNELS,
                                           stream_type='EEG')
     try:
-        stream = hyp.io.lsl_stream(name=name_b, type='EEG', timeout=30.0)
+        stream = hyp.io.lsl_stream(name=name_b, type='EEG', timeout=5.0)
         sample = next(stream)
         assert len(sample) == N_CHANNELS
     finally:
         outlet_a.stop()
         outlet_b.stop()
         assert not outlet_a.thread.is_alive() and not outlet_b.thread.is_alive()
+
+
+#: the liblsl configuration tests/conftest.py selects on macOS
+_LOOPBACK_CFG = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             'lsl_loopback.cfg')
+
+
+def _require_loopback_cfg():
+    """Skip unless liblsl runs on tests/lsl_loopback.cfg in this session."""
+    if os.environ.get('LSLAPICFG') != _LOOPBACK_CFG:
+        pytest.skip('liblsl is not running on tests/lsl_loopback.cfg here '
+                    '(tests/conftest.py selects it on macOS only, and keeps '
+                    f'a caller\'s LSLAPICFG): {os.environ.get("LSLAPICFG")!r}')
+
+
+@requires_pylsl
+def test_every_discovery_wave_queries_each_outlet_port_directly():
+    """A resolve must send its query straight to every port an outlet can
+    listen on, so that finding an outlet does not depend on multicast
+    delivery to the shared discovery port -- which stopped altogether for
+    minutes at a time on the machine where `test_lsl_stream_name_takes_
+    precedence_over_type` found no stream in 30 s (*Discovery* in the
+    module docstring). Binds a real UDP socket to a free port of liblsl's
+    range, exactly where an outlet's own server would be, and counts the
+    queries a real 9 s `pylsl.resolve_byprop` sends to it (7 are due, one
+    every 1.25 s from 0.5 s on; liblsl's default configuration sends
+    none)."""
+    _require_loopback_cfg()
+    name = f'HypertoolsNobody-{time.time_ns()}'
+    listener = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    queries = []
+    done = threading.Event()
+
+    def _listen():
+        while not done.is_set():
+            if select.select([listener], [], [], 0.05)[0]:
+                data = listener.recvfrom(4096)[0]
+                if name.encode() in data:   # else: another process's query
+                    queries.append(data)
+
+    try:
+        for port in range(16572, 16604):
+            try:
+                listener.bind(('', port))
+            except OSError:
+                continue            # an outlet or a resolver has this one
+            break
+        else:
+            pytest.skip('every port of liblsl\'s range 16572-16603 is in '
+                        'use on this machine, so there is none to listen on')
+        thread = threading.Thread(target=_listen, daemon=True)
+        thread.start()
+        try:
+            assert pylsl.resolve_byprop('name', name, timeout=9.0) == []
+            time.sleep(0.3)         # let the last query arrive
+        finally:
+            done.set()
+            thread.join(timeout=10.0)
+        assert not thread.is_alive()
+    finally:
+        listener.close()
+    # 7 are due; 6 leaves room for a late timer on a loaded machine
+    assert len(queries) >= 6, len(queries)
+    assert all(q.startswith(b'LSL:shortinfo') for q in queries)
 
 
 # ------------------------------------------- hyp.io.lsl.synthetic_outlet()
@@ -342,7 +456,7 @@ def test_synthetic_outlet_is_discoverable_by_lsl_stream():
     name = f'HypertoolsSyntheticTest-{time.time_ns()}'
     outlet = hyp.io.lsl.synthetic_outlet(name)
     try:
-        stream = hyp.io.lsl_stream(name=name, timeout=30.0)
+        stream = hyp.io.lsl_stream(name=name, timeout=5.0)
         assert is_stream(stream)
         stream.close()
     finally:
@@ -356,7 +470,7 @@ def test_synthetic_outlet_samples_have_n_channels():
     name = f'HypertoolsSyntheticTest-{time.time_ns()}'
     outlet = hyp.io.lsl.synthetic_outlet(name, n_channels=6)
     try:
-        stream = hyp.io.lsl_stream(name=name, timeout=30.0)
+        stream = hyp.io.lsl_stream(name=name, timeout=5.0)
         sample = next(stream)
         assert len(sample) == 6
         stream.close()
@@ -412,7 +526,7 @@ def test_timeout_raises_hypertools_io_error():
 
 @requires_pylsl
 def test_plot_stream_end_to_end(outlet_stream):
-    stream = hyp.io.lsl_stream(name=outlet_stream, timeout=30.0)
+    stream = hyp.io.lsl_stream(name=outlet_stream, timeout=5.0)
     # _sample_for_index is a monotonically increasing ramp, so every
     # post-head sample is guaranteed outside the display box fitted on the
     # first stream_init samples -- the clamped-samples notice must fire
@@ -806,7 +920,7 @@ def _inlet_ref(stream):
 
 @requires_pylsl
 def test_close_destroys_the_inlet_and_is_idempotent(outlet_stream):
-    stream = hyp.io.lsl_stream(name=outlet_stream, timeout=30.0)
+    stream = hyp.io.lsl_stream(name=outlet_stream, timeout=5.0)
     assert len(next(stream)) == N_CHANNELS
     assert not stream.closed
     ref = _inlet_ref(stream)
@@ -827,7 +941,7 @@ def test_close_destroys_the_inlet_and_is_idempotent(outlet_stream):
 
 @requires_pylsl
 def test_context_manager_closes_the_inlet(outlet_stream):
-    with hyp.io.lsl_stream(name=outlet_stream, timeout=30.0) as stream:
+    with hyp.io.lsl_stream(name=outlet_stream, timeout=5.0) as stream:
         assert is_stream(stream)
         assert len(next(stream)) == N_CHANNELS
         ref = _inlet_ref(stream)
@@ -838,7 +952,7 @@ def test_context_manager_closes_the_inlet(outlet_stream):
 @requires_pylsl
 def test_dropping_the_last_reference_destroys_the_inlet(outlet_stream):
     import gc
-    stream = hyp.io.lsl_stream(name=outlet_stream, timeout=30.0)
+    stream = hyp.io.lsl_stream(name=outlet_stream, timeout=5.0)
     assert len(next(stream)) == N_CHANNELS
     ref = _inlet_ref(stream)
     del stream
@@ -851,7 +965,7 @@ def test_plot_stream_leaves_the_stream_open_for_reuse(outlet_stream):
     # hyp.plot stops PULLING at stream_max; it does not own the stream, so
     # the caller decides when the inlet goes (the tutorial closes it
     # explicitly, before tearing down its outlet)
-    stream = hyp.io.lsl_stream(name=outlet_stream, timeout=30.0)
+    stream = hyp.io.lsl_stream(name=outlet_stream, timeout=5.0)
     with pytest.warns(RuntimeWarning, match='outside the display box'):
         hyp.plot(stream, show=False, stream_init=20, stream_chunk=10,
                  stream_max=40)
@@ -871,7 +985,7 @@ _TEARDOWN_SCRIPT = """
     NAME = 'HypertoolsTeardownTest-%d' % time.time_ns()
     outlet = hyp.io.lsl.synthetic_outlet(NAME, n_channels=6)
 
-    stream = hyp.io.lsl_stream(name=NAME, timeout=30.0)
+    stream = hyp.io.lsl_stream(name=NAME, timeout=5.0)
     fig = hyp.plot(stream, stream_init=40, stream_chunk=20, stream_max=120,
                    show=False)
     assert fig.stream_info['n_samples'] >= 120, fig.stream_info
@@ -938,7 +1052,7 @@ _TUTORIAL_UNDER_LOAD_SCRIPT = """
         threading.Thread(target=_hog, daemon=True).start()
 
     for k in range(CYCLES):
-        stream = hyp.io.lsl_stream(name=NAME, timeout=30.0)
+        stream = hyp.io.lsl_stream(name=NAME, timeout=5.0)
         fig = hyp.plot(stream, stream_init=200, stream_chunk=20,
                        stream_max=600, save_path=SAVE_PATH, frame_rate=5,
                        show=False)

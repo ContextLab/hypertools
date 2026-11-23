@@ -192,6 +192,48 @@ for this before the animation is returned). The figure is
 made taller by what the title needs, in 2-D and in 3-D, and nothing already
 drawn moves or shrinks.
 
+Labels on the points
+--------------------
+
+``labels=`` works in an animation as it does in a static plot, and every
+frame's labels are placed for that frame (matplotlib backend):
+
+.. code-block:: python
+
+    hyp.plot(data, 'o', animate='spin', labels=names,
+             legend=['group'], title='Subjects', caption='One point each')
+
+* Each label is attached to its point where the frame shows it. As a 3-D
+  plot turns, the labels turn with their points.
+* On every frame the labels are kept off each other (as far as there is
+  room: thirty labels on a small cube still touch), off the legend, the
+  colorbar, the titles, the suptitle and the caption, off the cube's own
+  axis labels, out of the next panel of a ``panels=`` grid, and inside the
+  canvas.
+* The labels of points a frame does not show (not revealed yet, outside
+  the sliding window) are hidden.
+* Labels do not hop about. The places are worked out for the whole
+  animation at once, first frame to last: a label keeps its side of its
+  point while that place is free; when it has to move it takes the free
+  place that stays free longest, glides there over about half a second,
+  arriving as the other label does, and is then left alone for a second.
+  A spin of whole turns is placed round the loop, so its last frame leads
+  into its first.
+* A frame is the same picture however it is reached: played in order,
+  shown out of order with ``draw_frame``, or saved to a file.
+
+The legend, the titles, the suptitle, the caption, the colorbar and the
+size of the cube are laid out once, for the widest view of the whole
+animation (the cube with its axis labels, at every frame's camera angle),
+and do not move or change size from one frame to the next. The axis labels
+of a 3-D plot turn with the cube and stay inside the canvas at every angle.
+
+Working the places out costs time when the plot is made, not when it
+plays: about half a second for 20 labels over 60 frames, 2 seconds for 60
+and 5 seconds for 200. On the plotly backend the labels are annotations
+attached to their points: they follow the points as the scene turns, at
+one fixed offset, and are shown on every frame.
+
 Per-dataset styling
 -------------------
 

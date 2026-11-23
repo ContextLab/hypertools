@@ -625,3 +625,174 @@ tests/test_animation_export.py (kill within 20 s / 30 s) and one was
 WARN": with `minimum=2` and 30 s only one of two outlets was heard) at
 load average about 400; not reproduced on the rerun, cause not
 established beyond the load. `ruff check .` clean.
+
+## 1.2.1 round 5: per-frame labels (owner decision 2026-11-23)
+
+Branch `post-1.2.0`, after a11c09e9; not pushed. The owner rejected the
+design of 82933121 (an animation's labels decluttered once and held,
+`freeze_label_places`). The decision, word for word:
+
+> for axis labels, they should move with the rotations so they remain
+> aligned with the axes. same for labels of individual datapoints (e.g.,
+> in every frame the labels should have correct positioning). for static
+> text like legends, titles, and other annotations: compute placement
+> once based on the *worst case* rotations of the axes, and then place
+> once so that the static text (and other static content) remains stable
+> across frames.
+
+Added while the work was under way (relayed by the coordinator), also the
+owner's words:
+
+> slight shifts between frames are OK but not if they are wobbling back
+> and forth so that it looks glitchy. movement needs to be in a
+> consistent direction
+
+So a frame's picture is a function of (the animation, the frame index),
+not of the frame alone and never of the render order.
+
+### What was built (hypertools/plot/matplotlib_backend.py, plot.py)
+
+- `_arrange_labels(places, left, anchors, sizes, pads, canvas, obstacles, ...)`:
+  the placement rule, taken out of `declutter_labels` unchanged. ONE
+  function places a static figure's labels (`declutter_labels`, from where
+  the labels hang) and every frame of an animation (`solve_label_tracks`,
+  from where the frame before left them). The animation passes four
+  things a static draw does not: `ahead` (the anchors of the coming
+  frames: of equally clear places the one that stays clear longest is
+  taken), `avoid` (places left a short while ago), `resting` (a label that
+  has just moved is not moved again for another label) and `strict` (a
+  label at its usual place that leaves the canvas moves too).
+- `solve_label_tracks(ax)`: runs the frame function for every frame
+  (updater only, nothing rendered, no `on_frame=` call), records each
+  label's anchor in points and whether it is shown, then goes through the
+  frames in order. A loop without a seam (`_labels_loop`: same labels on
+  the first and last frame, and their points no further apart than between
+  other neighboring frames) is gone round until a round repeats the round
+  before, at most 16 times (fewer above 40 labels: 640 // labels, at
+  least 3). `_settle_short_stays` then removes every stay shorter than
+  three glides (the label keeps the place before, or goes straight to the
+  one after, where that keeps it on the canvas and off static content);
+  this is what guarantees no out-and-back. `_ease_label_tracks` turns the
+  steps into glides (Hann weights, 0.5 s, 5 to 15 frames, finished at the
+  frame the label had to move at). A glide that would cross static content
+  whose both ends are clear of becomes a jump (`'forced'` in the table).
+- The table (`label_tracks(ax)`: `offsets` (frames, labels, 2) in points
+  from the point to the middle of the text, `places`, `shown`, `forced`,
+  `periodic`, `ease_frames`, `rounds`) is kept in a module
+  `WeakKeyDictionary`, not on the axes: it holds the frame function, and
+  an attribute on the axes broke `pickle.dumps(fig)`
+  (tests/test_review_round2_1_2_1.py::test_an_animated_figure_still_pickles).
+- `_sync_anim_labels` (every animation style's updater) calls
+  `_apply_label_tracks(ax, num)`; a table whose signature (canvas size in
+  points, axes box, label ids) no longer matches is worked out again
+  there. `declutter_labels` on such an axes only reprojects and applies
+  the row. `label.update_positions(renderer)` was dropped from
+  `_sync_anim_labels`: the draw does it, and it cost about 1 ms a label on
+  every frame.
+- Static content, C: `_keep_cube_clear` measured the cube's corners only
+  (every 3 degrees of the turn, which is sufficient for the cube: its
+  reach is smooth in the angle, so between two samples it exceeds the
+  larger by at most 1 - cos(1.5 degrees) = 0.03%). The AXIS LABELS were
+  not measured at all: on a 5 x 5 inch spin "the z axis" was up to 61 px
+  off the canvas, and with legend + title + caption + suptitle the axis
+  labels crossed static content on 6 of 60 frames (scratch
+  `axes_check.py`). Now the axis texts are measured at EVERY frame's
+  camera angle (`frame_azimuths`, read by running each frame's updater;
+  which edge a label hangs from changes discretely with the view, so a
+  sample is not provably enough) by drawing the three axis objects alone
+  (`axis_text_boxes_px`), and the cube is zoomed out until each is on the
+  canvas and off `_label_obstacles_pt`. Grids keep `_fit_panel_cubes`
+  (axis labels sampled every 30 degrees); checked on every frame of a
+  2 x 2 labeled grid with and without legend/titles/caption: nothing off
+  the canvas, on static content or on another panel's label
+  (`test_a_grids_axis_labels_stay_on_the_canvas_and_apart_every_frame`).
+- `_label_obstacles_pt` gained two kinds of obstacle, for static figures
+  too: every OTHER axes of the figure (a label that reached into the next
+  panel of a grid was painted over by that panel's background; seen on the
+  first panels contact sheet), and a 3-D axes' own axis texts.
+- Plotly, F: `labels=` are layout annotations in data coordinates
+  (`_build_point_annotations`), added once to the base layout. They follow
+  their points as the scene turns (plotly projects them), at one fixed
+  offset, are never decluttered and are shown on every frame, also for
+  points not revealed yet. Not changed (placement happens in the browser).
+
+### Measured
+
+Turn-backs (an offset component goes more than 1 pt one way and more than
+1 pt back within one glide's time on either side), largest step between
+two frames in points, and changes of place, 60 frames at 15 fps; "alone" =
+every frame placed on its own from the usual places (`_independent=True`):
+
+|case|turn-backs table|turn-backs alone|max step table|max step alone|changes table|changes alone|
+|-|-|-|-|-|-|-|
+|spin, 8 labels|0|29|33.2|107.8|3|95|
+|spin, 12 labels, legend, title, suptitle, caption|0|46|12.6|188.5|3|139|
+|spin, 30 labels, legend, title, caption|0|164|47.1|188.6|31|720|
+|window, 3-D, 30 labels|0|59|0.0|188.5|0|223|
+|window, 2-D, two lines|0|0|0.0|57.5|0|8|
+|serial, 2-D|0|2|0.0|188.5|0|15|
+|2 x 2 panels, 48 labels|0|251|33.9|166.3|22|700|
+
+In a 2-D animation the points do not move on screen (only a 3-D camera
+turns), so labels there appear and disappear and need no glide.
+
+Timings, 3-D spin of 200 points, 60 frames, CPU seconds (`time.process_time`,
+best of 3; the machine's load average was 90 to 180 throughout, so wall
+times were useless: the same frame measured 107 ms and 598 ms minutes
+apart). Before = a11c09e9 (scratch `round5fix/head`), scratch `bench_cpu.py`:
+
+|labels|plot() before|plot() after|frame before|frame after|
+|-|-|-|-|-|
+|0|0.008 s|0.008 s|2.9 ms|2.9 ms|
+|20|0.054 s|0.46 s|37.4 ms|37.0 ms|
+|60|0.138 s|1.89 s|106.7 ms|106.4 ms|
+|200|0.481 s|5.39 s|365.1 ms|324.4 ms|
+
+A frame costs what drawing the label boxes costs (about 1.7 ms a label);
+applying the table is a lookup. `plot()` pays for the table: one updater
+call per frame plus up to 16 rounds of the loop (3 rounds at 200
+labels). No cap was added.
+
+### Tests
+
+New: tests/test_review_round5_1_2_1.py (50 tests). Rewritten, because
+they pinned the rejected design (every other assertion kept or made
+stricter):
+
+- tests/test_review_round1_1_2_1.py:
+  `test_animated_labels_hold_their_places` ->
+  `test_animated_labels_follow_one_table`;
+  `test_animated_labels_are_placed_for_the_first_view` ->
+  `test_animated_labels_are_placed_for_every_view`;
+  `test_animated_panels_hold_their_label_places` ->
+  `test_animated_panels_show_a_frame_the_same_way_every_time`.
+- tests/test_review_round2_1_2_1.py:
+  `test_an_axes_reused_after_an_animation_places_labels_again` (reads
+  `label_tracks(ax)` instead of `_hyp_labels_frozen`);
+  `test_labels_added_to_an_animations_axes_are_placed_once_and_held` ->
+  `test_labels_added_to_an_animations_axes_join_its_table`;
+  `test_an_animated_grid_places_its_labels_without_a_draw_per_panel`
+  (same attribute change);
+  `test_an_animations_labels_are_placed_as_a_draw_would_place_them`
+  (a row of the table placed on its own against a real static draw).
+- tests/test_review_round4_1_2_1.py:
+  `test_animated_panel_labels_are_placed_off_the_legend_and_texts` (off
+  legend, titles and figure texts on EVERY frame, and a frame shown again
+  has its labels where they were).
+
+### Known limits
+
+- With many labels on a small cube labels still overlap each other (30
+  labels on the default figure). Static content and the canvas edge are
+  kept clear on every frame of every tested case.
+- A label is allowed to overlap another for up to three glides (1.5 s)
+  rather than move twice in a row: that is the price of no wobble.
+- A dynamic (per-frame) title is measured as it stands when the table is
+  worked out, not per frame.
+- Looping animations whose rounds do not repeat within the round limit
+  keep the last round; `_settle_short_stays` still removes short stays
+  round the seam.
+- The table costs time in `plot()` (see timings), most of it in the
+  rounds of a loop.
+
+Contact sheets and GIFs: scratch `round5fix/sheet_*.png`, `anim_*.gif`.
