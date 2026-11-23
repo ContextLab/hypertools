@@ -82,8 +82,11 @@ Follows 1.2.0. Animated trails now work with line-and-marker formats (GH
   same arrangement; a figure whose size is changed is placed again. A
   redraw of an unchanged figure does not work the placement out again.
   Several labeled calls into one `ax=` are kept off each other as one
-  set, and an axes that was cleared (`ax.clear()`) and plotted into again
-  has its new labels placed. An animation's labels are placed once, for the
+  set (and share one pair of mouse callbacks, where every call used to
+  connect its own), and an axes that was cleared (`ax.clear()`) and
+  plotted into again has its new labels placed. A label that is rotated
+  or otherwise restyled after the plot was made is measured again at the
+  next draw. An animation's labels are placed once, for the
   view of its first frame with every label taken as shown (the ones whose
   points are revealed later included), and each label then holds that
   place on every frame, as each held the one fixed offset in 1.2.0: no
@@ -117,8 +120,11 @@ Follows 1.2.0. Animated trails now work with line-and-marker formats (GH
   and the short names (`mfc=`, `mec=`, `mew=`, `ms=`) were dropped, so
   hollow markers with a black edge were drawn as filled dots. They are
   now honored by the static plot and, in an animation, on the tail and on
-  the trail. Without those arguments the markers are drawn as before.
-  Matplotlib backend.
+  the trail. A half `fillstyle=` (`'left'`, `'right'`, `'top'`,
+  `'bottom'`) draws the whole outlined marker with that half filled in
+  the hue color, as matplotlib draws it on a line; the other half is
+  empty, or filled with `markerfacecoloralt=` when that is given. Without
+  those arguments the markers are drawn as before. Matplotlib backend.
 - **`hyp.plot` leaves a figure on its own canvas.** To measure a legend,
   a caption or a `panels=` grid, `hyp.plot` drew the figure on a new Agg
   canvas and left that canvas attached. In a window (macosx, QtAgg,

@@ -11,6 +11,7 @@ import contextlib
 import functools
 import itertools
 import warnings
+import weakref
 
 import matplotlib.artist
 import matplotlib.colors as mcolors
@@ -169,10 +170,22 @@ def _label_size_pt(label):
     at a higher resolution or in a vector file, so boxes that are clear
     of each other here are clear there."""
     import matplotlib.text as mtext
+    # everything the extent of the drawn text depends on: a label turned
+    # on its side (`set_rotation(90)`) or switched to plain text
+    # (`set_parse_math(False)`) after it was first measured kept its old
+    # size, so labels that now covered each other were left where they
+    # were (1.2.1 review round 3). A wrapped text is laid out against
+    # the figure it is in, so its size is measured every time.
     key = (label.get_text(), hash(label.get_fontproperties()),
-           label._linespacing, label.get_usetex())
+           label._linespacing, label.get_usetex(), label.get_parse_math(),
+           label.get_rotation(), label.get_rotation_mode(),
+           label.get_transform_rotates_text(),
+           label.get_horizontalalignment(), label.get_verticalalignment(),
+           label._multialignment)
+    if label.get_wrap():
+        key = None
     known = getattr(label, '_hyp_size_pt', None)
-    if known is not None and known[0] == key:
+    if key is not None and known is not None and known[0] == key:
         return known[1]
     if not _LABEL_METRICS_RENDERER:
         from matplotlib.backends.backend_agg import RendererAgg
@@ -593,6 +606,72 @@ def _watch_labels(ax, labels_and_points):
     watcher = getattr(ax, '_hyp_label_declutter', None)
     if watcher is None or watcher not in ax.get_children():
         ax._hyp_label_declutter = ax.add_artist(_LabelDeclutter())
+
+
+def _connect_label_events(fig, ax):
+    """Hide the labels of `ax` while a mouse button is down and put them
+    back, at their points, when it is let go (a 3-D axes is rotated in
+    between, and its labels are placed in the projected plane).
+
+    ONE pair of callbacks per axes, however many `plot()` calls label
+    it, and they read the labels the axes holds NOW (`_label_entries`).
+    Each call used to connect a pair of its own that kept that call's
+    labels: a second labeled plot into the same axes repositioned every
+    earlier call's labels again, and after an ``ax.clear()`` the first
+    call's callbacks, still connected, reached for the removed labels
+    (whose ``axes`` is None) and raised ``AttributeError`` out of every
+    button release, leaving the new labels hidden (1.2.1 review round
+    3)."""
+    # (which axes this canvas already serves is kept on the canvas: a
+    # figure given another canvas has none of the callbacks, and nothing
+    # is left on the axes or the figure that would have to be pickled)
+    canvas = fig.canvas
+    served = getattr(canvas, '_hyp_label_axes', None)
+    if served is None:
+        served = canvas._hyp_label_axes = weakref.WeakSet()
+    if ax in served:
+        return
+    served.add(ax)
+
+    def hide_labels(event):
+        for entry in _label_entries(ax):
+            entry[0]._visible = False
+
+    def update_position(event):
+        entries = _label_entries(ax)
+        if not entries:
+            return
+        # `ax.get_proj()` / `proj3d.proj_transform` only exist on 3D
+        # (Axes3D) axes -- a 2D `Axes` lacks `get_proj`. `annotate_plot`
+        # stores 4-tuples (label, x, y, z) for 3D vs. 3-tuples
+        # (label, x, y) for 2D, so branch the same way here.
+        is_3d = hasattr(ax, "get_proj")
+        if is_3d:
+            proj = ax.get_proj()
+        # repositioning the annotations needs a renderer; after plt.close()
+        # (matplotlib >= 3.11 resets the canvas) or on a headless base canvas
+        # there may be none -- update the coordinates but skip the
+        # renderer-dependent reposition rather than crash on a missing attr.
+        renderer = getattr(fig.canvas, "renderer", None)
+        if renderer is None and hasattr(fig.canvas, "get_renderer"):
+            try:
+                renderer = fig.canvas.get_renderer()
+            except Exception:
+                renderer = None
+        for entry in entries:
+            if is_3d:
+                label, x, y, z = entry
+                x2, y2, _ = proj3d.proj_transform(x, y, z, proj)
+            else:
+                label, x2, y2 = entry
+            label.xy = x2, y2
+            if renderer is not None:
+                label.update_positions(renderer)
+            label._visible = True
+        fig.canvas.draw()
+
+    canvas.mpl_connect("button_press_event", hide_labels)
+    canvas.mpl_connect("button_release_event", update_position)
 
 
 class _TraceFollowers(matplotlib.artist.Artist):
@@ -2026,44 +2105,6 @@ def _draw(
         _watch_labels(ax, labels_and_points)
         fig.canvas.draw()
 
-    def update_position(e):
-        """Update label positions in chart (2D or 3D)
-        Args:
-            e (mouse event) - event handle to update on
-        Returns:
-            None
-        """
-
-        # `ax.get_proj()` / `proj3d.proj_transform` only exist on 3D
-        # (Axes3D) axes -- a 2D `Axes` lacks `get_proj`. `annotate_plot`
-        # stores 4-tuples (label, x, y, z) for 3D vs. 3-tuples
-        # (label, x, y) for 2D (mirroring its own
-        # `data[0].shape[-1] > 2` branch), so branch the same way here.
-        is_3d = hasattr(ax, "get_proj")
-        if is_3d:
-            proj = ax.get_proj()
-        # repositioning the annotations needs a renderer; after plt.close()
-        # (matplotlib >= 3.11 resets the canvas) or on a headless base canvas
-        # there may be none -- update the coordinates but skip the
-        # renderer-dependent reposition rather than crash on a missing attr.
-        renderer = getattr(fig.canvas, "renderer", None)
-        if renderer is None and hasattr(fig.canvas, "get_renderer"):
-            try:
-                renderer = fig.canvas.get_renderer()
-            except Exception:
-                renderer = None
-        for entry in _own_labels():
-            if is_3d:
-                label, x, y, z = entry
-                x2, y2, _ = proj3d.proj_transform(x, y, z, proj)
-            else:
-                label, x2, y2 = entry
-            label.xy = x2, y2
-            if renderer is not None:
-                label.update_positions(renderer)
-            label._visible = True
-        fig.canvas.draw()
-
     def _sync_anim_labels(num, window_frames, all_visible=False, revealed=None,
                           hide_all=False, windows=None):
         """Per-animation-frame label bookkeeping (QC 2026-07): show each
@@ -2131,17 +2172,6 @@ def _draw(
                 if renderer is not None:
                     label.update_positions(renderer)
 
-    def hide_labels(e):
-        """Hides labels on button press
-        Args:
-            e (mouse event) - event handle to update on
-        Returns:
-            None
-        """
-
-        for label in _own_labels():
-            label[0]._visible = False
-
     def add_labels(x, labels, explore=False):
         """Add labels to graph if available
         Args:
@@ -2173,8 +2203,7 @@ def _draw(
             if any(isinstance(el, (list, tuple)) for el in labels):
                 labels = list(itertools.chain(*labels))
             annotate_plot(X, labels, lengths=lengths)
-            fig.canvas.mpl_connect("button_press_event", hide_labels)
-            fig.canvas.mpl_connect("button_release_event", update_position)
+            _connect_label_events(fig, ax)
 
     ##EXPLORE MODE##
     def distance(point, event):

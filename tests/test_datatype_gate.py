@@ -110,6 +110,9 @@ ALLOWLIST = {
          "animate= per-dataset morph tags given as an array (an option)"),
         ("isinstance(_lim, (list, tuple, np.ndarray))",
          "an axis-limit option: a (lo, hi) pair vs None/scalar"),
+        ("isinstance(value, np.ndarray)",
+         "a chemtrails=/precog=/bullettime= flag given as an array, "
+         "unwrapped to a list (as in trails.py)"),
     ],
     'hypertools/plot/trails.py': [
         ("isinstance(flag, (list, tuple, np.ndarray))",

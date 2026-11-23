@@ -545,3 +545,28 @@ Per item (confirmed? cause; fix):
 Test note: a caller-supplied 3-D axes is smaller than hypertools' own, so
 the same 30 crowded labels leave 3 overlaps there and 0 in an own figure;
 that is crowding, not a C2 defect (cleared axes == never-used axes).
+
+## 1.2.1 review round 3 (2026-11-23, branch `post-1.2.0`; not pushed)
+
+Four items from the third review, each reproduced with real code before
+the fix. Tests: `tests/test_review_round3_1_2_1.py` (20 of them fail on
+20192664). Scratch renders: session scratchpad `round3fix/`.
+
+| Item | Confirmed | Fix |
+|-|-|-|
+| 1. `test_datatype_gate` failed on three `isinstance(..., np.ndarray)` sites in `plot.py` | yes | The morph `labels=` check is now `_any_label_given` (shared predicates `is_array_dataset` / `is_series_like`; a Series of labels is read per entry). `_trail_flag_per_run` unwraps an OPTION array, so it has an ALLOWLIST entry like the same line in `trails.py`. |
+| 2. Stale label callbacks after `ax.clear()` | yes, 2-D and 3-D: `AttributeError: 'NoneType' object has no attribute 'transData'` out of the button release, new labels left hidden. 1.2.0 did not raise (round 2 regression); 1.2.0 did add a pair of callbacks per call | `_connect_label_events(fig, ax)`: one press/release pair per axes per canvas, reading `_label_entries(ax)` at event time. Which axes a canvas serves is a `WeakSet` on the canvas, so nothing unpicklable is on the axes or figure. |
+| 3. `_label_size_pt` cache key | yes: after `set_rotation(90)` the size stayed (78.6, 10.8) pt, and after `set_parse_math(False)` too | Key now also holds `parse_math`, rotation, rotation mode, `transform_rotates_text`, ha, va, multialignment. A wrapped text is never cached. |
+| 4. Half `fillstyle=` with continuous `hue=` | yes: only the filled half was drawn (`scatter` ignores `get_alt_path()`). 1.2.0 ignored `fillstyle=` and drew full discs | `_HueMarkerLook.wear` turns the scatter into `_HalfFilledMarkers` / `_HalfFilledMarkers3D` (module-level subclasses, so figures still pickle), whose `draw` draws the collection and then the alt path with the same edges and the `markerfacecoloralt` fill (none by default). One artist, one offset per observation, so the animated path (`_make_scatter`, `_set_points`) needed one line. |
+
+- Item 4 pixels were compared with `ax.plot(..., fillstyle='left')`.
+  With `'-o'` the hue line shows through the empty half, as in matplotlib;
+  a static plot draws the line over the markers (zorder 2 over 1, as
+  before), so the tests count outline pixels there and read single pixels
+  for `'o'` only.
+- matplotlib's own per-label drag callbacks (`DraggableAnnotation`, 2-D)
+  are six `button_release_event` entries per labeled call; matplotlib
+  drops the ones of removed labels at the next release. Not ours.
+- CHANGELOG 1.2.1: the labels entry (shared callbacks, restyled labels
+  measured again) and the hue marker entry (half fill styles,
+  `markerfacecoloralt=`).

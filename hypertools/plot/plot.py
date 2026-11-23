@@ -14,6 +14,8 @@ import os
 import sys
 import warnings
 import matplotlib.pyplot as plt
+from matplotlib.collections import PathCollection
+from mpl_toolkits.mplot3d.art3d import Path3DCollection
 import numpy as np
 import pandas as pd
 # `np` also arrives via the star import below; naming it explicitly is
@@ -4555,6 +4557,24 @@ def _labels_as_lists(labels, n_datasets):
         else:
             out.append(el)
     return out
+
+
+def _any_label_given(labels):
+    """Whether `labels=` names at least one observation: anything but
+    None, an empty sequence, or (flat or one sequence per dataset) all
+    None. A sequence may be a list, a tuple, an array or a Series, as
+    everywhere `labels=` is read (`_labels_as_lists`)."""
+    def _entries(value):
+        if value is None or is_text_item(value):
+            return [value]
+        if is_array_dataset(value) or is_series_like(value):
+            return np.asarray(value, dtype=object).ravel().tolist()
+        if isinstance(value, (list, tuple)):
+            return list(value)
+        return [value]
+
+    return any(one is not None
+               for row in _entries(labels) for one in _entries(row))
 
 
 def _flatten_dataset_labels(labels):
@@ -15794,13 +15814,7 @@ def plot(
     # cloud moved away. Neither backend shows them now, and the call
     # says so (matplotlib keeps the hidden label artists it has always
     # made, for a caller that reaches for them; plotly makes none).
-    if animate == 'morph' and labels is not None and any(
-            _one is not None for _one in (
-                itertools.chain.from_iterable(
-                    _row if isinstance(_row, (list, tuple, np.ndarray))
-                    else [_row] for _row in labels)
-                if isinstance(labels, (list, tuple, np.ndarray))
-                else [labels])):
+    if animate == 'morph' and _any_label_given(labels):
         warnings.warn(
             "animate='morph' draws one cloud that moves from each "
             "dataset's shape to the next, so it has no observation for a "
@@ -20121,6 +20135,41 @@ def _multicolor_line_colors(hue_src, orig_lengths, xform, palette, is_rgb=False,
     return out
 
 
+def _draw_both_halves(coll, renderer, draw):
+    """Draw `coll` (a scatter of half-filled markers) with `draw`, then
+    the OTHER half of every marker: the same edges around the fill
+    `coll._hyp_other_half` names (none, unless the caller gave a
+    ``markerfacecoloralt``)."""
+    draw(renderer)
+    other = getattr(coll, '_hyp_other_half', None)
+    if other is None or not coll.get_visible():
+        return
+    path, face = other
+    paths, faces = coll._paths, coll._facecolors
+    try:
+        coll._paths, coll._facecolors = [path], face
+        draw(renderer)
+    finally:
+        coll._paths, coll._facecolors = paths, faces
+
+
+class _HalfFilledMarkers(PathCollection):
+    """A scatter whose markers have a ``fillstyle`` of one half
+    (`_HueMarkerLook.wear`): one artist, one offset and one color per
+    observation like any scatter, drawn as matplotlib draws such a
+    marker on a line, the filled half and then the other."""
+
+    def draw(self, renderer):
+        _draw_both_halves(self, renderer, super().draw)
+
+
+class _HalfFilledMarkers3D(Path3DCollection):
+    """`_HalfFilledMarkers` in a 3-D axes."""
+
+    def draw(self, renderer):
+        _draw_both_halves(self, renderer, super().draw)
+
+
 class _HueMarkerLook:
     """How the markers of a dataset colored by a continuous `hue=` wear
     the marker styling the caller gave the dataset.
@@ -20134,7 +20183,9 @@ class _HueMarkerLook:
     one color: the hue fills the marker unless ``markerfacecolor`` names
     another fill (``'none'`` for a hollow marker), and it colors the
     edge unless ``markeredgecolor`` names one; ``markeredgewidth`` is
-    the edge's width and ``fillstyle`` the half that is filled.
+    the edge's width and ``fillstyle`` the half that is filled (the
+    other half is outlined, and filled with ``markerfacecoloralt`` when
+    that is given).
     matplotlib's short names (``mfc``, ``mec``, ``mew``, ``ms``) are
     read as it reads them."""
 
@@ -20151,6 +20202,7 @@ class _HueMarkerLook:
         self.edge = named.get('markeredgecolor')
         self.width = named.get('markeredgewidth')
         self.fillstyle = named.get('fillstyle')
+        self.other_face = named.get('markerfacecoloralt')
         self.size = named.get('markersize')
         for name in ('face', 'edge'):
             if isinstance(getattr(self, name), str) and getattr(
@@ -20168,6 +20220,36 @@ class _HueMarkerLook:
             return marker
         from matplotlib.markers import MarkerStyle
         return MarkerStyle(marker, fillstyle=self.fillstyle)
+
+    def wear(self, scatter, marker, alpha=None):
+        """Give `scatter` (just drawn with ``glyph(marker)``) the half
+        of each marker that its ``fillstyle`` leaves unfilled.
+
+        A scatter draws one path per marker, and for a half-filled
+        marker that is the filled half alone: ``fillstyle='left'`` drew
+        half-discs where a `Line2D` draws a whole outlined marker with
+        its left half filled (1.2.1 review round 3). The scatter becomes
+        one that draws both halves (`_HalfFilledMarkers`); it stays one
+        artist with one offset and one color per observation, so an
+        animation moves and colors it like any other."""
+        if self.fillstyle is None:
+            return
+        from matplotlib.colors import to_rgba_array
+        style = self.glyph(marker)
+        path = style.get_alt_path()
+        if path is None:      # 'full', or a marker that has no fill
+            return
+        path = path.transformed(style.get_alt_transform())
+        face = self.other_face
+        if face is None or (isinstance(face, str)
+                            and face.lower() == 'none'):
+            face = np.zeros((0, 4))
+        else:
+            face = to_rgba_array(face, alpha)
+        scatter._hyp_other_half = (path, face)
+        scatter.__class__ = (_HalfFilledMarkers3D
+                             if isinstance(scatter, Path3DCollection)
+                             else _HalfFilledMarkers)
 
     def color(self, scatter, colors, alpha=None):
         """Color `scatter` by the per-observation `colors` (rows of
@@ -20431,6 +20513,7 @@ def _apply_multicolor_animation(ax, xform, line_colors, kwargs_list,
             kwargs_list[i] if i < len(kwargs_list) else {})
         coll = ax.scatter(*pts.T, s=float(source.get_markersize()) ** 2,
                           marker=look.glyph(glyph), alpha=alpha, **extra)
+        look.wear(coll, glyph, alpha=alpha)
         if look.width is not None:
             coll.set_linewidth(look.width)
         coll._hyp_marker_look = look
@@ -20784,7 +20867,8 @@ def _apply_multicolor_markers(ax, xform, point_colors, kwargs_list,
             continue
         tkwargs = kwargs_list[i] if i < len(kwargs_list) else {}
         look = _hue_marker_look(tkwargs)
-        marker = look.glyph(_glyph(i))
+        _marker_name = _glyph(i)
+        marker = look.glyph(_marker_name)
         ms = float(look.size or plt.rcParams['lines.markersize'])
         s = ms ** 2  # scatter sizes are areas in points^2
         # the trace's alpha= travels WITH the per-point colors, as on the
@@ -20805,6 +20889,7 @@ def _apply_multicolor_markers(ax, xform, point_colors, kwargs_list,
                               depthshade=False, marker=marker)
         else:
             dots = ax.scatter(xi[:, 0], xi[:, 1], c=ci, s=s, marker=marker)
+        look.wear(dots, _marker_name, alpha=_alpha)
         if not look.plain:
             # a hollow, outlined or half-filled marker keeps that look
             # (the animated plot's scatters wear the same one)
