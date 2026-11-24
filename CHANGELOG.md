@@ -61,7 +61,7 @@ Follows 1.2.0. Animated trails now work with line-and-marker formats (GH
   static plot whose legend is in its default place) is drawn as before. A
   `zoom=` above 1 is left alone, and so are `panels=` grids (they have
   their own fit) and plots drawn into an `ax=`. To clear a large legend
-  the cube is drawn no smaller than 70% of its size. An animated plot's
+  the cube is drawn no smaller than 55% of its size. An animated plot's
   figure now shows the first frame as soon as `hyp.plot` returns (it was
   empty until the first frame was drawn). Matplotlib backend.
 - **Observation labels are not drawn on top of each other (GH #297).**
@@ -135,16 +135,26 @@ Follows 1.2.0. Animated trails now work with line-and-marker formats (GH
   With many labels on a small cube some still overlap. Matplotlib
   backend; on plotly the labels are annotations at one fixed offset
   that follow their points and are shown on every frame, as before.
+- **Observation labels are arranged the same at every resolution under
+  matplotlib 3.11, and a corner legend is cleared there.** Matplotlib
+  3.11 measures a text at its figure's resolution whatever renderer it
+  is given, so a figure saved at another `dpi=` (or as PDF or SVG) had
+  some labels at other places than on screen; the labels are now
+  measured at one fixed resolution on both versions. 3.11 also gives a
+  line of text its font's full line height, so a legend is about a
+  quarter taller, and an animated cube that had to stop at 70% of its
+  size was drawn under a ten-entry corner legend on 8 of 36 frames: to
+  clear a legend the cube may now come down to 55%. Matplotlib backend.
 - **An animation's label plan is bounded, freed, picklable and kept up
   to date.** Found by a source review of the plan above, each
   reproduced first. With more than 300 labels (which stay at their usual
   places) every frame was still run and a table of every frame kept: 58
   bytes a label and frame, 13.9 MB for 400 labels on 600 frames; the
   table now has one row (11 kB) and no frame is run. Planning took time
-  in proportion to the frames (95 CPU seconds for 60 labels on 600
-  frames, against 8.5 on 60): an animation of more than 3600 labels x
+  in proportion to the frames (30 CPU seconds for 60 labels on 600
+  frames, against 1.6 on 60): an animation of more than 3600 labels x
   frames is now planned at evenly spaced frames, with the labels moving
-  evenly between them (10 s on 600 and on 3000 frames), and the table
+  evenly between them (2.3 s on 600 frames, 2.4 s on 3000), and the table
   is 28 bytes a label and planned frame, at most about 0.4 MB an axes.
   A closed animated figure with labels was never freed (the labels'
   state held the animation's frame function), nor was the last static

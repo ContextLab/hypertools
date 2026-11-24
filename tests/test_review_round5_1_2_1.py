@@ -785,8 +785,8 @@ def test_a_long_animation_is_planned_at_a_bounded_number_of_frames():
     frame however long the animation, and between two planned frames a
     label is drawn between its offsets on the two (the same picture
     whichever frames were drawn before). Planning every frame took time
-    in proportion to the frames: 95 CPU seconds for 60 labels on 600
-    frames, against 8.5 on 60."""
+    in proportion to the frames: 30 CPU seconds for 60 labels on 600
+    frames, against 1.6 on 60."""
     anim = _quiet([CLOUD[:15], CLOUD[15:]], 'o',
                   labels=[NAMES[:15], NAMES[15:]], animate='spin',
                   duration=10, frame_rate=30)
@@ -947,12 +947,15 @@ def test_a_text_added_to_the_figure_is_planned_for():
     assert _turns == 0
 
 
-@pytest.mark.parametrize('change', ['fontsize', 'text'])
+@pytest.mark.parametrize('change', ['fontsize', 'text', 'long text'])
 def test_a_label_made_larger_is_planned_for(change):
     """`set_fontsize` or `set_text` on a label after the plan was made
     left the old offsets in place, so the larger labels lay on each
     other. The size of every label is part of what the plan was made
-    for."""
+    for. (Eight names of 24 characters, each a quarter of the canvas
+    wide, are planned with no overlap under matplotlib 3.10; under
+    3.11's wider text one glide passes over a resting label on one
+    frame of 60, the bound here.)"""
     anim = _spin8()
     ax = _labeled_axes(anim.figure)[0]
     _show(anim, 2)
@@ -960,12 +963,18 @@ def test_a_label_made_larger_is_planned_for(change):
     for label in _labels(ax):
         if change == 'fontsize':
             label.set_fontsize(15)
-        else:
+        elif change == 'text':
             label.set_text(label.get_text() + ' (b)')
+        else:
+            label.set_text(label.get_text() + ', a longer name')
     _show(anim, 3)
     second = label_tracks(ax)
     assert second is not first
-    assert _pairs_per_frame(anim).max() == 0
+    pairs = _pairs_per_frame(anim)
+    if change == 'long text':
+        assert pairs.max() <= 1 and (pairs > 0).sum() <= 1
+    else:
+        assert pairs.max() == 0
     assert label_tracks(ax) is second
     assert _census(anim)['off_canvas'] == 0
 
@@ -1063,8 +1072,10 @@ def test_edge_inputs_are_planned_and_drawn(name, tmp_path):
     assert census['off_canvas'] == 0 and census['on_static'] == 0
     # (a grid has less room, and how much depends on the width of the
     # text: its bound is `test_a_grids_labels_overlap_on_few_frames`)
-    if not name.startswith('panels'):
-        assert _pairs_per_frame(anim).max() == 0
+    # (measured for this grid: at most 2 pairs on 5 frames of 30 under
+    # matplotlib 3.10, 3 pairs on 22 frames under 3.11's wider text)
+    pairs = _pairs_per_frame(anim)
+    assert pairs.max() <= (3 if name.startswith('panels') else 0)
     anim.save(tmp_path / 'edge.gif', writer=PillowWriter(fps=10))
     assert (tmp_path / 'edge.gif').stat().st_size > 1000
 

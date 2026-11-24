@@ -195,15 +195,17 @@ def test_animated_cube_stays_off_its_colorbar():
 
 
 def test_cube_is_not_shrunk_without_limit_for_a_huge_legend():
-    """A legend that would leave the cube under 70% of its size is not
-    cleared: the cube stays at that share."""
+    """A legend that would leave the cube under 55% of its size is not
+    cleared: the cube stays at that share. (70% until review round 5:
+    under matplotlib 3.11's taller lines the ten-entry legend of
+    `test_animated_cube_stays_off_a_corner_legend` needs 61%.)"""
     data = [_walk(seed) for seed in range(24)]
     anim = hyp.plot(data, '-', animate=True, duration=2, frame_rate=10,
                     size=(8, 8), legend=[f'A long name for dataset {i}'
                                          for i in range(len(data))],
                     legend_kwargs={'loc': 'upper left', 'fontsize': 8},
                     show=False)
-    assert anim.animation._hyp_zoom_scale[0] == pytest.approx(0.7, abs=0.01)
+    assert anim.animation._hyp_zoom_scale[0] == pytest.approx(0.55, abs=0.01)
 
 
 def test_static_cube_stays_off_a_corner_legend():

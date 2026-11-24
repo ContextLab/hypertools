@@ -200,8 +200,12 @@ def _label_size_pt(label):
         # (a hidden text has no extent; visibility is put back below
         # without marking the figure as changed)
         label._visible = True
+        # (`dpi=`: matplotlib 3.11 lays a text out at its FIGURE's
+        # resolution whatever renderer it is given, so without it the
+        # size was that of the save in progress, another at every dpi,
+        # and the arrangement with it; 3.10 took the renderer's)
         box = mtext.Text.get_window_extent(
-            label, _LABEL_METRICS_RENDERER[0])
+            label, _LABEL_METRICS_RENDERER[0], dpi=_LABEL_METRICS_DPI)
         to_pt = 72.0 / _LABEL_METRICS_DPI
         size = (float(box.width) * to_pt, float(box.height) * to_pt)
     finally:

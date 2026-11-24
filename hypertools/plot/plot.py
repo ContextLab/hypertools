@@ -7988,8 +7988,13 @@ def _cube_excess(views, center, room, obstacles):
 
 #: the smallest a single plot's cube is drawn to keep it off a legend (or
 #: another axes of the figure), as a share of its usual size: under this
-#: the cube stays at that share and the legend covers part of it
-_LEGEND_CLEAR_CUBE_SHARE = 0.7
+#: the cube stays at that share and the legend covers part of it. (0.7
+#: until 1.2.1 review round 5: matplotlib 3.11 gives a line of text its
+#: font's full line height, so the ten-entry corner legend of the GH #297
+#: tests is a quarter taller there than under 3.10 and the cube needs
+#: 0.61 of its size to clear it, on 8 of 36 frames it was drawn under
+#: the legend.)
+_LEGEND_CLEAR_CUBE_SHARE = 0.55
 
 
 def _axis_text_boxes_px(fig, axis, azimuths):
