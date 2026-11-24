@@ -259,6 +259,45 @@ def test_a_per_frame_caption_raises_before_a_sample_is_consumed():
     assert not consumed
 
 
+@pytest.mark.parametrize('ndims', [2, 3])
+@pytest.mark.parametrize('kwargs,message', [
+    ({'legend': ['a', 'b']}, 'legend= was given as a list of length 2'),
+    ({'legend': ['a'], 'legend_colors': ['r', 'b']},
+     'legend_colors has 2 entries but the legend has 1'),
+    ({'legend': True, 'legend_colors': ['r', 'b']},
+     'legend_colors has 2 entries but the legend has 1'),
+])
+def test_a_wrong_entry_count_raises_before_a_sample_is_consumed(
+        ndims, kwargs, message):
+    """A stream is one dataset, so a legend or a color list of another
+    length is refused with the message of the non-stream path, and the
+    stream is left whole for the corrected call."""
+    consumed = []
+
+    def source():
+        for row in _points(30, ndims):
+            consumed.append(1)
+            yield row
+
+    stream = source()
+    with pytest.raises(ValueError, match=message):
+        hyp.plot(stream, '-', stream_init=10, ndims=ndims, show=False,
+                 **kwargs)
+    assert not consumed
+    fig = hyp.plot(stream, '-', stream_init=10, stream_chunk=5, ndims=ndims,
+                   legend=['a'], legend_colors=['r'], show=False)
+    assert len(consumed) == 30
+    assert len(_vertices_px(fig.axes[0])) == 30
+
+
+def test_label_color_pairs_define_the_stream_legend_outright():
+    fig = hyp.plot(iter(_points(30, 3)), '-', stream_init=10, stream_chunk=5,
+                   legend=['a'], legend_colors=[('x', 'r'), ('y', 'b')],
+                   show=False)
+    assert [t.get_text() for t in _legend(fig.axes[0]).get_texts()] \
+        == ['x', 'y']
+
+
 @pytest.mark.parametrize('name', ['caption', 'suptitle'])
 def test_caption_and_suptitle_refuse_a_callers_axes_as_on_any_plot(name):
     """They resize the figure to make their room, so the non-stream path

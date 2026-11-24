@@ -375,7 +375,9 @@ Follows 1.2.0. Animated trails now work with line-and-marker formats (GH
   string: a callable raises `TypeError` before a sample is consumed,
   because the number of frames of a stream is not known. With `ax=`,
   `caption=` and `suptitle=` raise `ValueError` as on any plot drawn into
-  a caller's axes, and `legend=` is drawn in that axes.
+  a caller's axes, and `legend=` is drawn in that axes. A stream is one
+  dataset: a `legend=` list or a `legend_colors=` color list of another
+  length raises `ValueError` before a sample is consumed.
 
 - **`head_marker=`: a marker at the reveal head (GH #299).**
   `hyp.plot(x, '-', animate=True, head_marker='o')` draws one marker on the

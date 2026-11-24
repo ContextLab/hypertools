@@ -13507,6 +13507,22 @@ def plot(
                 "(a callable, or a '{...}' format pattern) is not supported "
                 "for streams, whose number of frames is not known in "
                 "advance.")
+        # a stream is ONE dataset, so the entry counts can be checked
+        # here, before a sample is taken from the stream (the plot of
+        # the first stream_init samples would raise the same errors, but
+        # only after consuming them).
+        if isinstance(legend, (list, tuple)) and len(legend) != 1:
+            raise ValueError(
+                f"legend= was given as a list of length {len(legend)}, but "
+                "there are 1 dataset(s)/group(s) to plot; pass one entry "
+                "per drawn dataset, or legend=True to auto-number them.")
+        _stream_recolor, _ = _normalize_legend_colors(legend_colors)
+        if (_stream_recolor is not None and len(_stream_recolor) != 1
+                and legend is not None and legend is not False):
+            raise ValueError(
+                f"legend_colors has {len(_stream_recolor)} entries but the "
+                "legend has 1; pass one color per legend entry, or pass "
+                "(label, color) pairs to define the entries outright.")
         _stream_extras = {
             _name: _value for _name, _value in (
                 ('legend', legend), ('legend_kwargs', legend_kwargs),
