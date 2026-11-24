@@ -779,17 +779,16 @@ def test_labels_is_no_longer_named_as_ignored():
 
     with pytest.warns(UserWarning, match=IGNORED) as caught:
         hyp.plot(iter(_points(20, 3)), 'o', stream_init=10,
-                 labels=['a', 'b'], legend=['a stream'], show=False)
+                 labels=['a', 'b'], head_marker='o', show=False)
     message = next(str(w.message) for w in caught
                    if IGNORED in str(w.message))
     ignored, honored = message.split('Parameters honored for streams:')
-    assert 'legend' in ignored and 'labels' not in ignored
+    assert 'head_marker' in ignored and 'labels' not in ignored
     assert 'labels' in honored and 'label_alpha' in honored
 
 
 @pytest.mark.parametrize('name,value', [
-    ('legend', ['a stream']), ('caption', 'A caption'),
-    ('suptitle', 'A suptitle'), ('head_marker', 'o'),
+    ('head_marker', 'o'),
     ('tail_linewidth', 4), ('trail_alpha', 0.5), ('label_anchor', 'last'),
 ])
 def test_the_other_arguments_still_warn_as_ignored(name, value):

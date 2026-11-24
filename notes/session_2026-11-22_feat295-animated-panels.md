@@ -1184,3 +1184,21 @@ Two points from the 1.2.1 against 1.2.0 gallery comparison
   one unit off.
 - Tests: `tests/test_legend_key_styles.py` (26),
   `tests/test_static_cube_untouched.py` (6); both matplotlib versions.
+
+
+## 1.2.1 streaming legend, caption, suptitle (owner decision 2026-11-24)
+
+The owner's dialog answer: "Add the three now". `legend=`, `caption=` and
+`suptitle=` (with `legend_kwargs=`, `legend_colors=`, `caption_kwargs=`,
+`suptitle_kwargs=`) are forwarded by the stream dispatch in
+`hypertools/plot/plot.py` to `plot_stream`, which passes them with its
+other `plot_kwargs` to the static `hyp.plot` of the head. Nothing else was
+needed: the static path lays them out once, the display box is frozen from
+`stream_init`, and `_label_obstacles_pt` already keeps stream labels off
+legends and figure texts. All three styling arguments came for free.
+A callable caption raises `TypeError` in the dispatch (`_dynamic_caption`
+set by `_validate_caption`), before a sample is consumed. With `ax=`,
+`caption=`/`suptitle=` raise the non-stream `ValueError` (validated before
+the dispatch). `head_marker=`, `tail_linewidth=`, `trail_alpha=` still
+warn as ignored; `hold=` still raises. Tests:
+`tests/test_stream_text_1_2_1.py`.

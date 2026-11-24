@@ -360,9 +360,22 @@ Follows 1.2.0. Animated trails now work with line-and-marker formats (GH
   is bounded by the window. Without it every label stays, so memory grows
   with the number of labeled samples.
 
-  The other arguments a stream does not implement (`legend=`, `caption=`,
-  `suptitle=`, `head_marker=`, `tail_linewidth=`, `trail_alpha=` and the
-  rest) are still ignored with the warning that names them.
+  The arguments a stream does not implement (`head_marker=`,
+  `tail_linewidth=`, `trail_alpha=` and the rest) are still ignored with
+  the warning that names them.
+- **`legend=`, `caption=` and `suptitle=` on streaming plots.** A stream
+  used to ignore them with a warning. They are now drawn, in 2-D and 3-D,
+  with their styling arguments (`legend_kwargs=`, `legend_colors=`,
+  `caption_kwargs=`, `suptitle_kwargs=`). Each is laid out once, when the
+  first `stream_init` samples are drawn, and stays where it is for the
+  whole stream: the display box is frozen from those samples, so the room
+  made for the legend holds on every later frame. The legend key is drawn
+  in the style of the streamed line, and a stream's labels keep off the
+  legend, the caption and the suptitle. A stream's caption is one fixed
+  string: a callable raises `TypeError` before a sample is consumed,
+  because the number of frames of a stream is not known. With `ax=`,
+  `caption=` and `suptitle=` raise `ValueError` as on any plot drawn into
+  a caller's axes, and `legend=` is drawn in that axes.
 
 - **`head_marker=`: a marker at the reveal head (GH #299).**
   `hyp.plot(x, '-', animate=True, head_marker='o')` draws one marker on the

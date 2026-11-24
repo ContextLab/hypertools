@@ -301,10 +301,28 @@ observation. Pass either a callable or an iterable:
   a warning says so once. Without ``stream_window=`` every label stays on
   the figure, so memory grows with the number of labeled samples.
 
-The other arguments a stream does not implement (``legend=``,
-``caption=``, ``suptitle=``, ``head_marker=``, ``tail_linewidth=``,
-``trail_alpha=`` among them) are still ignored with a warning that names
-them.
+A stream also takes ``legend=`` (with ``legend_kwargs=`` and
+``legend_colors=``), ``caption=`` (with ``caption_kwargs=``) and
+``suptitle=`` (with ``suptitle_kwargs=``), new in 1.2.1:
+
+.. code-block:: python
+
+    hyp.plot(feed(), '-o', stream_init=500, legend=['sensor A'],
+             suptitle='Live recording', caption='Projected with PCA.')
+
+They are laid out once, when the first ``stream_init`` samples are drawn,
+and stay where they are for the whole stream. The display box is frozen
+from those samples, so the room made for the legend holds on every later
+frame, and the legend key is drawn in the style of the streamed line. The
+labels of a stream keep off all three. A stream's caption is one fixed
+string: a callable (a per-frame caption) raises ``TypeError``, because the
+number of frames of a stream is not known. With ``ax=``, ``caption=`` and
+``suptitle=`` raise as they do on any plot drawn into a caller's axes, and
+the legend is drawn in that axes.
+
+The arguments a stream does not implement (``head_marker=``,
+``tail_linewidth=``, ``trail_alpha=`` among them) are still ignored with a
+warning that names them.
 
 Per-dataset styling
 -------------------

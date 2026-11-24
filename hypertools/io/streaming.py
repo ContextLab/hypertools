@@ -391,6 +391,12 @@ def plot_stream(stream, fmt='-', stream_init=10000, stream_chunk=100,
     always belongs to sample k, also when the source itself dies in the
     middle of a chunk.
 
+    ``legend``, ``caption`` and ``suptitle`` (with ``legend_kwargs``,
+    ``legend_colors``, ``caption_kwargs`` and ``suptitle_kwargs``) are
+    passed on to the static plot of the head with the other
+    ``plot_kwargs``: they are laid out once, there, and never touched
+    again, which is enough because the display box is frozen.
+
     Streamed samples need >= 2 features to span a trajectory: a
     single-channel stream raises ``ValueError`` (unless it ends within
     the head, in which case it renders like a static 1-D plot).

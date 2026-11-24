@@ -12107,7 +12107,18 @@ def plot(
         ``ValueError`` -- not yet supported for streams -- but accepted at
         their defaults), `save_path`, `show`, `frame_rate`, `markersize`,
         `linewidth`, `color`, `palette`, `title`, `size`, `elev`, `azim`,
-        `ax`, and `labels` with `label_alpha` (see `labels` for the
+        `ax`, `legend` (with `legend_kwargs` and `legend_colors`),
+        `caption` (with `caption_kwargs`) and `suptitle` (with
+        `suptitle_kwargs`), which are placed once, when the first
+        `stream_init` samples are drawn, and stay where they are for the
+        whole stream (the display box is frozen from those samples,
+        so the room made for a legend then holds for every later
+        frame; a stream's `caption=` must be one fixed string: a
+        callable raises ``TypeError`` before a sample is consumed,
+        since a stream has no known number of frames; with `ax=`,
+        `caption=` and `suptitle=` raise ``ValueError`` as on any plot
+        drawn into a caller's axes, and `legend=` is drawn in that
+        axes), and `labels` with `label_alpha` (see `labels` for the
         forms a stream's labels take: a callable ``labels(index,
         sample)`` or an iterable consumed in step with the samples).
         Any other parameter explicitly set alongside a
@@ -13452,7 +13463,9 @@ def plot(
             'stream_window', 'ndims', 'reduce', 'normalize', 'align',
             'cluster', 'n_clusters', 'save_path', 'show', 'frame_rate',
             'markersize', 'linewidth', 'color', 'palette', 'title',
-            'size', 'elev', 'azim', 'ax', 'labels', 'label_alpha'}
+            'size', 'elev', 'azim', 'ax', 'labels', 'label_alpha',
+            'legend', 'legend_kwargs', 'legend_colors', 'caption',
+            'caption_kwargs', 'suptitle', 'suptitle_kwargs'}
         _local_vals = locals()
         _stream_dropped = []
         for _pname, _param in inspect.signature(plot).parameters.items():
@@ -13477,8 +13490,30 @@ def plot(
                 "stream_max, stream_window, ndims, reduce, normalize, "
                 "save_path, show, frame_rate, markersize, linewidth, "
                 "color, palette, title, size, elev, azim, ax, labels, "
-                "label_alpha (see the stream_init docstring).",
+                "label_alpha, legend, legend_kwargs, legend_colors, "
+                "caption, caption_kwargs, suptitle, suptitle_kwargs (see "
+                "the stream_init docstring).",
                 UserWarning, stacklevel=external_stacklevel())
+        # the fixed texts of a stream are placed ONCE, with the plot of
+        # the first stream_init samples. A caption that changes per frame
+        # (a callable, or a '{index}'/'{frame}' pattern: `_validate_caption`
+        # above has set it aside as `_dynamic_caption`) has no frame
+        # count to be laid out for.
+        if _dynamic_caption is not None:
+            raise TypeError(
+                "caption= on a streaming plot must be one fixed string: it "
+                "is placed once, when the first stream_init samples are "
+                "drawn, and stays for the whole stream. A per-frame caption "
+                "(a callable, or a '{...}' format pattern) is not supported "
+                "for streams, whose number of frames is not known in "
+                "advance.")
+        _stream_extras = {
+            _name: _value for _name, _value in (
+                ('legend', legend), ('legend_kwargs', legend_kwargs),
+                ('legend_colors', legend_colors), ('caption', caption),
+                ('caption_kwargs', caption_kwargs), ('suptitle', suptitle),
+                ('suptitle_kwargs', suptitle_kwargs))
+            if _value is not None}
         return plot_stream(
             x, fmt, stream_init=stream_init, stream_chunk=stream_chunk,
             stream_max=stream_max, stream_window=stream_window,
@@ -13488,7 +13523,7 @@ def plot(
             frame_rate=frame_rate, markersize=markersize,
             linewidth=linewidth, color=color, palette=palette, title=title,
             size=size, elev=elev, azim=azim, ax=ax, labels=labels,
-            label_alpha=resolved_label_alpha)
+            label_alpha=resolved_label_alpha, **_stream_extras)
 
     # remember whether the USER supplied an axis before `_draw` reassigns the
     # local `ax` to the axis it created (used by the GH #148 close below).
