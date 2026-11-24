@@ -9783,7 +9783,14 @@ def plot(
         60 frames, 1.5 s for 60 and 2.5 s for 200 (the more labels, the fewer
         times each plan is revised: above 80 labels a label that still
         lies on another is not planned a second time, and above 300 the
-        labels stay at their usual places). Legends, titles, the suptitle, the caption and
+        labels stay at their usual places). An animation with more
+        than 3600 labels x frames is planned at evenly spaced frames
+        (3600 over the number of labels, at least 40) and its labels
+        move evenly between them, so a long animation takes no longer
+        to plan than a short one. The plan is made again when the
+        figure is resized, a label's text or font is changed, or a
+        legend or text is added. A pickled or copied figure keeps its
+        labels where the frame it was taken at had them. Legends, titles, the suptitle, the caption and
         the size of the cube are laid out once, for the widest view of
         the whole animation, and do not move between frames.
 
@@ -18616,10 +18623,15 @@ def plot(
                         and getattr(ax, '_hyp_labels_and_points', None)):
                     if line_ani is not None:
                         _orig_frame_func(0, *line_ani._args)
+                        # (the animation keeps the function: the
+                        # labels' state refers to it weakly, so a
+                        # closed figure is freed)
+                        line_ani._hyp_label_frames = (
+                            lambda _frame: _orig_frame_func(
+                                int(_frame), *line_ani._args))
                         track_labels(
                             ax, content_frame_count(line_ani),
-                            lambda _frame: _orig_frame_func(
-                                int(_frame), *line_ani._args),
+                            line_ani._hyp_label_frames,
                             getattr(line_ani, '_interval', None))
                     elif tracks_labels(ax):
                         # (labels a static call adds to an axes that

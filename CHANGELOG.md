@@ -135,6 +135,27 @@ Follows 1.2.0. Animated trails now work with line-and-marker formats (GH
   With many labels on a small cube some still overlap. Matplotlib
   backend; on plotly the labels are annotations at one fixed offset
   that follow their points and are shown on every frame, as before.
+- **An animation's label plan is bounded, freed, picklable and kept up
+  to date.** Found by a source review of the plan above, each
+  reproduced first. With more than 300 labels (which stay at their usual
+  places) every frame was still run and a table of every frame kept: 58
+  bytes a label and frame, 13.9 MB for 400 labels on 600 frames; the
+  table now has one row (11 kB) and no frame is run. Planning took time
+  in proportion to the frames (95 CPU seconds for 60 labels on 600
+  frames, against 8.5 on 60): an animation of more than 3600 labels x
+  frames is now planned at evenly spaced frames, with the labels moving
+  evenly between them (10 s on 600 and on 3000 frames), and the table
+  is 28 bytes a label and planned frame, at most about 0.4 MB an axes.
+  A closed animated figure with labels was never freed (the labels'
+  state held the animation's frame function), nor was the last static
+  figure with labels (a module global); both are freed now.
+  `pickle.loads(pickle.dumps(anim.figure)).canvas.draw()` and
+  `copy.deepcopy(anim.figure)` raised `TypeError`; the copy now draws
+  and saves with its labels where the frame it was taken at had them.
+  A text or legend added to the figure, or a label given a longer text
+  or a larger font, after the plan was made was not planned for; the
+  plan is now made again, once (and for a figure that changes on every
+  frame, at the first two changes and when it stops changing).
 - **Legends, titles and the cube keep one layout for a whole animation,
   and a 3-D plot's axis labels stay inside the canvas as it turns.** The
   cube of a single animated 3-D plot was fitted to the canvas without

@@ -683,8 +683,12 @@ def declutter_labels(ax, renderer=None):
     # (a hidden label keeps its place and is no obstacle while hidden: a
     # 3-D plot's labels are hidden while the reader drags it round, and
     # they come back where they were unless their points have met)
+    # (and a label an animation's plan placed stays where the plan had
+    # it when the animation is gone: a figure read back from a pickle,
+    # a copy of the figure)
     labels = [entry[0] for entry in entries
-              if entry[0].get_visible() and not _label_user_placed(entry[0])]
+              if entry[0].get_visible() and not _label_user_placed(entry[0])
+              and not _label_planned(entry[0])]
     if len(labels) > _LABEL_DECLUTTER_MAX:
         for label in labels:
             _send_label_home(label)
@@ -734,6 +738,13 @@ def _label_place(label):
     return getattr(label, '_hyp_place', _LABEL_HOME)
 
 
+def _label_planned(label):
+    """Whether `label` is where an animation's plan put it
+    (`_set_label_offset`): anywhere between two named places, so it has
+    no place of its own for a static figure's rule to start from."""
+    return getattr(label, '_hyp_place', _LABEL_HOME) is None
+
+
 def _send_label_home(label):
     """Put `label` back where every label starts, as if never moved."""
     label._hyp_place_left = None
@@ -768,25 +779,50 @@ def reset_label_places(target):
         if label_tracks(ax) is not None:
             continue
         for entry in _label_entries(ax):
-            if not _label_user_placed(entry[0]):
+            if not _label_user_placed(entry[0]) \
+                    and not _label_planned(entry[0]):
                 _send_label_home(entry[0])
+
+
+#: the ``(label, x, y[, z])`` entries of the most recently annotated
+#: plot (`_publish_labels`); each label is a weak proxy, usable while
+#: its figure lives
+labels_and_points = []
+
+
+def _publish_labels(entries):
+    """Show `entries`, one call's ``(label, x, y[, z])`` list, as the
+    module's `labels_and_points`, without keeping the labels alive."""
+    global labels_and_points
+    labels_and_points = [(weakref.proxy(entry[0]),) + tuple(entry[1:])
+                         for entry in entries]
 
 
 class _LabelState:
     """What an animated axes' labels follow: `frames`, how to show any
-    frame (`track_labels`); `tracks`, the table worked out from it
-    (`solve_label_tracks`); `frame`, the frame the axes shows; and
-    `solving`, set while the table is being worked out."""
+    frame (`track_labels`; the frame function is held WEAKLY: it
+    belongs to the animation, and refers to the axes); `tracks`, the
+    table worked out from it (`solve_label_tracks`); `frame`, the frame
+    the axes shows; `solving`, set while the table is being worked out;
+    and, for `_apply_label_tracks`, how many frames have been shown
+    (`shows`), at which of them the table was last worked out again
+    because the figure had changed (`solved_at`), on how many frames
+    in a row it has changed (`streak`), and whether a change is still
+    waiting to be planned for (`pending`)."""
 
     def __init__(self):
         self.frames = self.tracks = None
         self.frame, self.solving = 0, False
+        self.shows, self.solved_at, self.pending = 0, -10, False
+        self.streak = 0
 
 
 #: per animated axes, its `_LabelState`. Kept here and not on the axes:
-#: it holds the animation's frame function, which cannot be pickled with
-#: the figure (and a figure read back from a pickle has no animation to
-#: follow; its labels stay where the pickled frame had them).
+#: a figure is pickled and copied without it (a figure read back from a
+#: pickle has no animation to follow; its labels stay where the pickled
+#: frame had them, `_label_planned`). Nothing in a state refers to its
+#: axes strongly (the labels and the frame function are weak
+#: references), so a closed figure and its table are freed.
 _LABEL_STATES = weakref.WeakKeyDictionary()
 
 
@@ -878,6 +914,16 @@ _LABEL_TRACK_REPLANS = 4
 #: how many times the labels that are not clear on every frame, and the
 #: labels they lie on, are planned again among all the others
 _LABEL_TRACK_ROUNDS = 3
+
+#: how many labels x frames of an animation are planned frame by frame.
+#: A longer animation is planned at evenly spaced frames, that many
+#: over its labels and at least `_LABEL_TRACK_KEYS_MIN`, and its labels
+#: move evenly from one planned frame to the next: the plan then takes
+#: no longer, and its table is no larger (28 bytes a label and planned
+#: frame: about 0.1 MB at the budget, 0.4 MB for 300 labels), however
+#: long the animation is
+_LABEL_TRACK_BUDGET = 3600
+_LABEL_TRACK_KEYS_MIN = 40
 
 
 def _label_center_offsets(place_index, sizes, candidates=None):
@@ -1170,27 +1216,48 @@ def solve_label_tracks(ax, _independent=False):
     if spec is None or state.solving:
         return None
     n_frames, show_frame, interval_ms = spec
+    show_frame = show_frame()
+    if show_frame is None:
+        # (the animation is gone: the table it left is kept as it is)
+        return state.tracks
+    total = n_frames
     entries = _label_entries(ax)
     labels = [entry[0] for entry in entries
               if not _label_user_placed(entry[0])]
     current = state.frame
+    count = len(labels)
+    # more labels than are ever arranged (`_LABEL_DECLUTTER_MAX`): they
+    # stay at their usual places, and no frame is looked at
+    crowded = count > _LABEL_DECLUTTER_MAX
+    # the frames that are planned: all of them, or, in an animation with
+    # more labels x frames than `_LABEL_TRACK_BUDGET`, that many evenly
+    # spaced ones (the labels move evenly between two of them), so the
+    # time the plan takes and the size of the table have a bound
+    keys = np.arange(total)
+    if crowded:
+        keys = keys[:1]
+    elif not _independent and count * total > _LABEL_TRACK_BUDGET:
+        wanted = min(total, max(_LABEL_TRACK_KEYS_MIN,
+                                _LABEL_TRACK_BUDGET // max(count, 1)))
+        keys = np.unique(np.round(
+            np.linspace(0, total - 1, wanted)).astype(int))
+    n_frames = len(keys)
     state.solving = True
     try:
-        count = len(labels)
         anchors = np.full((n_frames, count, 2), np.nan)
         shown = np.zeros((n_frames, count), dtype=bool)
         turning = []
-        for frame in range(n_frames):
-            show_frame(frame)
+        for row, frame in enumerate(keys if not crowded else ()):
+            show_frame(int(frame))
             _settle_axes_for_labels(ax)
             _project_label_anchors(ax, entries)
-            origin, to_pt, canvas, anchors[frame] = _label_geometry(
+            origin, to_pt, canvas, anchors[row] = _label_geometry(
                 ax, labels)
-            shown[frame] = [label.get_visible() for label in labels]
+            shown[row] = [label.get_visible() for label in labels]
             # (the cube's own axis labels turn with it)
             turning.append(_whole_points(
                 axis_text_boxes_px(ax), origin, to_pt))
-        show_frame(min(current, n_frames - 1))
+        show_frame(min(current, total - 1))
         _settle_axes_for_labels(ax)
         _project_label_anchors(ax, entries)
         origin, to_pt, canvas, _now = _label_geometry(ax, labels)
@@ -1207,6 +1274,10 @@ def solve_label_tracks(ax, _independent=False):
         fps = 1000.0 / float(interval_ms)
     except (TypeError, ValueError, ZeroDivisionError):
         fps = 15.0
+    # (planned frames a second)
+    fps *= n_frames / float(total)
+    if crowded:
+        shown[:] = True
     taps = int(np.clip(round(_LABEL_EASE_SECONDS * fps),
                        *_LABEL_EASE_FRAMES))
     taps = max(1, min(taps, n_frames // 2)) | 1        # odd
@@ -1218,7 +1289,6 @@ def solve_label_tracks(ax, _independent=False):
     forced = np.zeros((n_frames, count), dtype=bool)
     offsets = np.full((n_frames, count, 2), np.nan)
     half_boxes = 0.5 * sizes + pads[:, None]
-    crowded = shown.sum(axis=1).max(initial=0) > _LABEL_DECLUTTER_MAX
     if _independent or crowded:
         for frame in range(n_frames if not crowded else 0):
             here = np.flatnonzero(shown[frame])
@@ -1233,6 +1303,7 @@ def solve_label_tracks(ax, _independent=False):
         offsets = np.where(
             shown[..., None],
             _label_center_offsets(place_index, sizes, candidates), np.nan)
+        turning = turning or [np.zeros((0, 4))]
     else:
         reaches = np.array([reach for _corner, reach in candidates])
         aims = np.array([corner for corner, _reach in candidates],
@@ -1268,7 +1339,7 @@ def solve_label_tracks(ax, _independent=False):
         for other in ax.figure.axes:
             theirs = None if other is ax else label_tracks(other)
             if theirs is not None and theirs.get('boxes') is not None \
-                    and len(theirs['boxes']) == n_frames:
+                    and np.array_equal(theirs['frames'], keys):
                 drawn = np.concatenate([drawn, theirs['boxes']], axis=1)
 
         def _crossed(k, where, frames):
@@ -1526,51 +1597,98 @@ def solve_label_tracks(ax, _independent=False):
                 break
     # (each label's box on each frame, for the figure's other axes)
     middle = anchors + offsets
-    label_boxes = None if _independent else np.concatenate(
-        [middle - half_boxes, middle + half_boxes], axis=2)
+    label_boxes = None if _independent or crowded else np.concatenate(
+        [middle - half_boxes, middle + half_boxes],
+        axis=2).astype(np.float32)
+    # (kept small: 28 bytes a label and planned frame)
     state.tracks = {
         'labels': [weakref.ref(label) for label in labels],
-        'offsets': offsets, 'places': place_index, 'shown': shown,
+        'offsets': offsets.astype(np.float32),
+        'places': place_index.astype(np.int16), 'shown': shown,
         'forced': forced, 'signature': signature, 'periodic': periodic,
-        'ease_frames': taps, 'candidates': candidates, 'boxes': label_boxes}
+        'ease_frames': taps, 'candidates': candidates,
+        'boxes': label_boxes, 'frames': keys, 'n_frames': total}
     _apply_label_tracks(ax)
     return state.tracks
 
 
 def _label_tracks_signature(ax):
     """What an animation's label table was made for: the canvas in
-    points, the box of the axes in it, and the labels the axes holds
-    (a figure given another size, or an axes given more labels, needs
-    its table worked out again)."""
+    points, the box of the axes in it, the labels the axes holds, the
+    size of each label's text and of its frame, and everything the
+    labels are kept off (`_label_obstacles_pt`: legends, titles, figure
+    texts, the other axes). A figure given another size, an axes given
+    more labels, a label given a longer text or a larger font, a text
+    added to the figure: each needs the table worked out again."""
     fig = ax.get_figure(root=True)
+    labels = [entry[0] for entry in _label_entries(ax)
+              if not _label_user_placed(entry[0])]
+    origin, to_pt, _canvas, _anchors = _label_geometry(ax, [])
     return (tuple(np.round(fig.get_size_inches() * 72.0, 3)),
             tuple(np.round(ax.get_position().bounds, 6)),
-            tuple(id(entry[0]) for entry in _label_entries(ax)
-                  if not _label_user_placed(entry[0])))
+            tuple(id(label) for label in labels),
+            tuple(_label_size_pt(label) for label in labels),
+            _label_pads_pt(labels).tobytes(),
+            _label_obstacles_pt(ax, None, origin, to_pt,
+                                axis_text=False).tobytes())
 
 
 def _apply_label_tracks(ax, frame=None):
     """Put the labels of the animated axes `ax` where its table has them
     on `frame` (the frame the axes shows, when not given). Called by the
     frame function of every animation style (`_sync_anim_labels`), where
-    a table made for a figure that has since changed is worked out
-    again first, and at draw time (`declutter_labels`)."""
+    a table made for a figure that has since changed
+    (`_label_tracks_signature`) is worked out again first, and at draw
+    time (`declutter_labels`).
+
+    A figure that changes on EVERY frame (an `on_frame=` callback that
+    rewrites a figure text) is not planned again on every frame: the
+    table is worked out again at the first two changes in a row, and
+    once more when the figure has stopped changing.
+
+    Between two planned frames (an animation over
+    `_LABEL_TRACK_BUDGET`) a label is the matching way between its
+    offsets on the two."""
     state = _label_state(ax)
     tracks = state.tracks
     if frame is not None:
         state.frame = int(frame)
         if state.solving:
             return
-        if state.frames is not None and (
-                tracks is None
-                or tracks['signature'] != _label_tracks_signature(ax)):
-            tracks = solve_label_tracks(ax)
+        state.shows += 1
+        if state.frames is not None and tracks is None:
+            solve_label_tracks(ax)
             return
+        if state.frames is not None:
+            signature = _label_tracks_signature(ax)
+            changed = tracks['signature'] != signature
+            recent = state.shows - state.solved_at <= 1
+            if changed:
+                state.streak = state.streak + 1 if recent else 1
+                state.solved_at = state.shows
+            if changed and state.streak > 2:
+                # (changing frame after frame: wait until it stops)
+                tracks['signature'] = signature
+                state.pending = True
+            elif changed or (state.pending and not recent):
+                state.pending = False
+                solve_label_tracks(ax)
+                return
     if tracks is None:
         return
-    offsets = tracks['offsets']
-    row = offsets[min(max(state.frame, 0),
-                      len(offsets) - 1)]
+    offsets, keys = tracks['offsets'], tracks['frames']
+    at = min(max(state.frame, 0), tracks['n_frames'] - 1)
+    if len(keys) == tracks['n_frames']:
+        row = offsets[at]
+    else:
+        low = int(np.searchsorted(keys, at, side='right')) - 1
+        high = min(low + 1, len(keys) - 1)
+        share = ((at - keys[low]) / float(keys[high] - keys[low])
+                 if high > low else 0.0)
+        before, after = offsets[low], offsets[high]
+        row = np.where(np.isnan(before), after,
+                       np.where(np.isnan(after), before,
+                                (1.0 - share) * before + share * after))
     for ref, (dx, dy) in zip(tracks['labels'], row):
         label = ref()
         if label is None or label.axes is not ax \
@@ -1602,11 +1720,19 @@ def track_labels(ax, n_frames, show_frame, interval_ms=None):
     the figure changes: `show_frame(i)` runs the animation's frame
     function for frame `i` of `n_frames` (the updater alone: nothing is
     rendered and no `on_frame=` callback is called), and `interval_ms`
-    is the time between two frames."""
+    is the time between two frames.
+
+    `show_frame` is kept by a WEAK reference (it refers to the
+    animation, which refers to the figure: a strong one would keep
+    every closed figure alive): the caller keeps it alive for as long
+    as the animation lives, a function as an attribute of the
+    animation, a bound method through its object."""
     if not _label_entries(ax):
         return None
     state = _label_state(ax)
-    state.frames = (int(n_frames), show_frame, interval_ms)
+    weak = (weakref.WeakMethod(show_frame)
+            if hasattr(show_frame, '__self__') else weakref.ref(show_frame))
+    state.frames = (int(n_frames), weak, interval_ms)
     state.tracks = None
     return solve_label_tracks(ax)
 
@@ -3068,8 +3194,7 @@ def _draw(
     def _own_labels():
         """The ``(annotation, x, y[, z])`` entries `annotate_plot` recorded
         for THIS call (the axes itself holds the labels of every call that
-        drew into it, `_watch_labels`; the module global holds the most
-        recently annotated plot's)."""
+        drew into it, `_watch_labels`)."""
         return _call_labels[0] if _call_labels else []
 
     def annotate_plot(data, labels, lengths=None):
@@ -3085,13 +3210,15 @@ def _draw(
             None
         """
 
-        global labels_and_points
+        # this call's labels. `_own_labels` reads this; the axes gets
+        # them added to its own list below (`_watch_labels`). The module
+        # global `labels_and_points` still shows the LAST annotated
+        # plot's ``(label, x, y[, z])`` entries, as it always has, but
+        # through weak references (`_publish_labels`): holding the
+        # labels themselves kept the last labeled figure alive after it
+        # was closed (1.2.1 review round 5).
         labels_and_points = []
-        # ...and for this call: the module global holds only the LAST
-        # annotated plot's labels, so every earlier cell of a panel grid
-        # lost its own (an animated grid then updated the last panel's
-        # labels only; GH #295). `_own_labels` reads this; the axes gets
-        # them added to its own list below (`_watch_labels`).
+        _publish_labels(labels_and_points)
         _call_labels[:] = [labels_and_points]
 
         if lengths is not None:
@@ -3173,6 +3300,7 @@ def _draw(
         # labels that would cover each other are moved apart on every
         # draw (GH #297), static, rotated by hand or animated alike
         _watch_labels(ax, labels_and_points)
+        _publish_labels(labels_and_points)
         fig.canvas.draw()
 
     def _sync_anim_labels(num, window_frames, all_visible=False, revealed=None,
@@ -3199,9 +3327,8 @@ def _draw(
           correspond to the original labeled points, so labels are hidden for
           the duration of the morph.
         """
-        # `labels_and_points` is a module global set only when annotate_plot ran
-        # (i.e. this plot has labels); it may also still hold a PREVIOUS plot's
-        # labels, so guard for existence and restrict to THIS axes' labels.
+        # this call's labels (none if `annotate_plot` did not run), and
+        # of them only THIS axes' labels
         laps = [e for e in _own_labels()
                 if getattr(e[0], 'axes', None) is ax]
         if not laps:

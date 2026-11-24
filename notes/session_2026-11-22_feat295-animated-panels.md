@@ -980,3 +980,25 @@ figure together), `test_a_grids_labels_overlap_on_few_frames`,
 turn-back test runs on all 7 animations; `PASSING` is now the two cases in
 which labels do change place (30 labels, grid); the 30-label share against
 the usual place is 0.25 (was 0.6).
+
+### Round 5, third pass: four defects from a source review of the planner (2026-11-23 night)
+
+Head 185202a1 passed the full suite and was pushed by the coordinator. A
+source-only review reported four defects; all four REPRODUCED with real
+code (scratch `round5fix3/repro.py`) before anything was changed, and the
+8 tests written for them fail against 185202a1.
+
+| item | reproduced | fix |
+|-|-|-|
+| 1 memory and time | 400 labels x 600 frames: 13.9 MB table (58 B a label and frame); 60 labels x 600 frames: 94.7 CPU s | above 300 labels (now counted in total, not per frame) no frame is run and the table has one row (11 kB); otherwise at most `_LABEL_TRACK_BUDGET` = 3600 labels x frames are planned (evenly spaced frames, at least 40, `tracks['frames']`), frames between are interpolated in `_apply_label_tracks`; table float32/int16, 28 B a label and planned frame |
+| 2 leak | closed animated figures never freed (`_LABEL_STATES` value held the frame function); also the last static labeled figure (module global `labels_and_points`) | state holds the frame function weakly (`weakref.ref` / `WeakMethod`); the animation owns it (`line_ani._hyp_label_frames`); the global now holds weak proxies (tests/test_plotly_labels.py and test_plot_save_audit_fixes.py read it, so it stays) |
+| 3 pickle | `pickle.loads(pickle.dumps(anim.figure)).canvas.draw()` and `copy.deepcopy` raised TypeError | `_label_planned`: a planned label with no plan stays where the frame had it (not arranged, not sent home) |
+| 4 stale plan | `fig.text` on a label, `set_fontsize`, `set_text`: no re-plan | signature also has every label's size and pad and the obstacle boxes (0.27 ms a frame); re-plan once; a figure changing every frame is planned at the first two changes and once when it stops |
+
+Planning time, 60 labels (all 60 points labeled, crowded), CPU s: 60 frames
+8.5, 600 frames 10.2 (was 94.7), 3000 frames 10.3; 12 labels x 3000 frames
+8.6. Edge inputs (no labels, one label, None entries, one and two frames,
+NaN point, panels with unequal counts, two saves) did not raise before
+either; they now have tests. Known limit: with planned frames far apart (a
+long animation with many labels) a glide lasts at least 5 planned frames,
+so it is slower than 0.35 s, and labels are only checked on planned frames.

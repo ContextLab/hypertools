@@ -730,3 +730,359 @@ def test_a_grids_axis_labels_stay_on_the_canvas_and_apart_every_frame(
                 assert not any(box.overlaps(other)
                                for others in boxes[k + 1:]
                                for other in others), frame
+
+
+# --------------------------------------------------------------------------
+# Third pass: what a source review of the planner found (memory, a leak,
+# pickled figures, a plan gone stale), and edge inputs
+
+def _table_bytes(tracks):
+    return sum(value.nbytes for value in tracks.values()
+               if isinstance(value, np.ndarray))
+
+
+def test_more_labels_than_are_arranged_store_nothing_per_frame():
+    """Above 300 labels the labels stay at their usual places. The table
+    had a row for every frame all the same (58 bytes a label and frame:
+    13.9 MB for 400 labels on 600 frames, more than 10 GB for 10000
+    labels on 18000) and every frame was run to fill it. It has one
+    row, whatever the number of frames, and working it out again
+    allocates next to nothing."""
+    import tracemalloc
+    rng = np.random.default_rng(3)
+    names = [f'S{i}' for i in range(400)]
+    sizes = {}
+    for duration in (2, 20):
+        anim = _quiet(rng.normal(size=(400, 3)), 'o', labels=names,
+                      animate='spin', duration=duration, frame_rate=30)
+        ax = _labeled_axes(anim.figure)[0]
+        tracks = label_tracks(ax)
+        assert tracks['n_frames'] == anim.n_frames == 30 * duration
+        assert tracks['offsets'].shape == (1, 400, 2)
+        sizes[duration] = _table_bytes(tracks)
+        tracemalloc.start()
+        backend.solve_label_tracks(ax)
+        _now, peak = tracemalloc.get_traced_memory()
+        tracemalloc.stop()
+        assert peak < 2_000_000, peak
+        # every frame shows every label at its usual place
+        home = backend._label_center_offsets(
+            np.zeros(400, dtype=int),
+            np.array([backend._label_size_pt(label)
+                      for label in _labels(ax)]))
+        for frame in (0, anim.n_frames // 2, anim.n_frames - 1):
+            anim.draw_frame(frame)
+            assert np.allclose([label.xyann for label in _labels(ax)],
+                               home, atol=1e-4)
+        plt.close(anim.figure)
+    assert sizes[2] == sizes[20] <= 400 * 28
+
+
+def test_a_long_animation_is_planned_at_a_bounded_number_of_frames():
+    """30 labels on 300 frames are more labels x frames than are planned
+    one by one (`_LABEL_TRACK_BUDGET`): 120 evenly spaced frames are
+    planned, the table is no larger than 28 bytes a label and planned
+    frame however long the animation, and between two planned frames a
+    label is drawn between its offsets on the two (the same picture
+    whichever frames were drawn before). Planning every frame took time
+    in proportion to the frames: 95 CPU seconds for 60 labels on 600
+    frames, against 8.5 on 60."""
+    anim = _quiet([CLOUD[:15], CLOUD[15:]], 'o',
+                  labels=[NAMES[:15], NAMES[15:]], animate='spin',
+                  duration=10, frame_rate=30)
+    assert anim.n_frames == 300
+    ax = _labeled_axes(anim.figure)[0]
+    tracks = label_tracks(ax)
+    keys = tracks['frames']
+    assert len(keys) == backend._LABEL_TRACK_BUDGET // 30 == 120
+    assert keys[0] == 0 and keys[-1] == 299
+    assert tracks['offsets'].shape == (120, 30, 2)
+    assert tracks['offsets'].dtype == np.float32
+    assert _table_bytes(tracks) <= 28 * 30 * 120 + keys.nbytes
+    labels = _labels(ax)
+    # a planned frame shows its row; a frame between two is between them
+    low, high = int(keys[40]), int(keys[41])
+    assert high - low >= 2
+    seen = {}
+    for frame in (high, low + 1, low, low + 1):
+        anim.draw_frame(frame)
+        seen.setdefault(frame, []).append(
+            np.array([label.xyann for label in labels]))
+    assert np.allclose(seen[low][0], tracks['offsets'][40], atol=1e-4)
+    assert np.allclose(seen[high][0], tracks['offsets'][41], atol=1e-4)
+    assert np.array_equal(seen[low + 1][0], seen[low + 1][1])
+    share = 1.0 / (high - low)
+    assert np.allclose(
+        seen[low + 1][0],
+        (1 - share) * tracks['offsets'][40] + share * tracks['offsets'][41],
+        atol=1e-3)
+    turns, _step = _wobbles(anim)
+    assert turns == 0
+    # and the labels are still kept apart on the frames between
+    pairs = []
+    for frame in range(0, 300, 7):
+        renderer = _show(anim, frame)
+        boxes = [label.get_bbox_patch().get_window_extent(renderer)
+                 for label in labels]
+        pairs.append(sum(1 for one, other in itertools.combinations(boxes, 2)
+                         if one.overlaps(other)))
+    assert np.mean(pairs) <= 2.0, pairs
+
+
+def test_closed_figures_with_labels_are_freed():
+    """The labels' state held the animation's frame function, which
+    refers to the animation and its axes, as the value of a dictionary
+    keyed weakly by that axes: the key never died, and every closed
+    animated figure with labels stayed allocated with its table. (And
+    the last static figure with labels was kept by a module global.)"""
+    import gc
+    import weakref
+    gc.collect()
+    before = len(backend._LABEL_STATES)
+    alive = []
+    for make in (_spin8, _panels, _window2d):
+        for _again in range(2):
+            anim = make(duration=1, frame_rate=10)
+            anim.draw_frame(3)
+            anim.figure.canvas.draw()
+            alive.append(weakref.ref(anim.figure))
+            alive.extend(weakref.ref(ax) for ax in anim.figure.axes)
+            plt.close(anim.figure)
+            del anim
+    for _again in range(2):
+        fig = _quiet(CLOUD[:8], 'o', labels=NAMES[:8])
+        fig.canvas.draw()
+        alive.append(weakref.ref(fig))
+        plt.close(fig)
+        del fig
+    gc.collect()
+    gc.collect()
+    assert [ref() for ref in alive if ref() is not None] == []
+    assert len(backend._LABEL_STATES) == before
+
+
+def test_an_animation_outlives_nothing_it_needs():
+    """The frame function is held weakly, by the labels' state; the
+    animation keeps it, so the plan can still be made again while the
+    animation lives (a resized figure), garbage collection or not."""
+    import gc
+    anim = _spin8()
+    gc.collect()
+    ax = _labeled_axes(anim.figure)[0]
+    first = label_tracks(ax)
+    anim.figure.set_size_inches(9, 7)
+    anim.draw_frame(5)
+    assert label_tracks(ax) is not first
+    assert label_tracks(ax)['offsets'].shape == first['offsets'].shape
+
+
+@pytest.mark.parametrize('how', ['pickle', 'deepcopy'])
+@pytest.mark.parametrize('kind', ['animated', 'static'])
+def test_a_copied_or_unpickled_figure_draws(kind, how, tmp_path):
+    """`pickle.loads(pickle.dumps(anim.figure)).canvas.draw()` raised
+    ``TypeError: cannot unpack non-iterable NoneType object``: a planned
+    label has no named place, and the copy has no plan. A figure read
+    back from a pickle, or copied, has no animation to follow: its
+    labels stay exactly where the frame it was copied at had them, it
+    draws, and it saves. A static figure's labels are arranged as
+    before."""
+    import copy
+    import pickle
+    if kind == 'animated':
+        anim = _spin12_dressed()
+        fig = anim.figure
+        anim.draw_frame(17)
+    else:
+        fig = _quiet(CLOUD[:12], 'o', labels=NAMES[:12])
+    fig.canvas.draw()
+    was = [(label.get_text(), tuple(np.round(label.xyann, 4)),
+            label.get_ha(), label.get_va())
+           for label in _labels(_labeled_axes(fig)[0])]
+    new = (pickle.loads(pickle.dumps(fig)) if how == 'pickle'
+           else copy.deepcopy(fig))
+    new.canvas.draw()
+    new.savefig(tmp_path / 'restored.png')
+    new.canvas.draw()
+    assert (tmp_path / 'restored.png').stat().st_size > 5000
+    ax = _labeled_axes(new)[0]
+    assert label_tracks(ax) is None
+    now = [(label.get_text(), tuple(np.round(label.xyann, 4)),
+            label.get_ha(), label.get_va()) for label in _labels(ax)]
+    assert now == was
+    renderer = new._get_renderer()
+    boxes = [label.get_bbox_patch().get_window_extent(renderer)
+             for label in _labels(ax)]
+    assert not any(one.overlaps(other)
+                   for one, other in itertools.combinations(boxes, 2))
+    plt.close(new)
+
+
+def test_a_text_added_to_the_figure_is_planned_for():
+    """The plan was made again only for another figure size, axes box or
+    set of labels: a ``fig.text`` put on top of a label afterwards was
+    not kept clear on later frames. What the labels are kept off is
+    part of what the plan was made for; the plan is made again once,
+    and not again while the figure stays as it is."""
+    anim = _spin8()
+    fig = anim.figure
+    ax = _labeled_axes(fig)[0]
+    renderer = _show(anim, 3)
+    label = _labels(ax)[0]
+    box = label.get_bbox_patch().get_window_extent(renderer)
+    first = label_tracks(ax)
+    note = fig.text(0.5 * (box.x0 + box.x1) / fig.bbox.width,
+                    0.5 * (box.y0 + box.y1) / fig.bbox.height,
+                    'A NOTE ADDED LATER', ha='center', va='center')
+    renderer = _show(anim, 3)
+    second = label_tracks(ax)
+    assert second is not first
+    for frame in range(anim.n_frames):
+        renderer = _show(anim, frame)
+        there = note.get_window_extent(renderer)
+        assert not any(
+            one.get_bbox_patch().get_window_extent(renderer).overlaps(there)
+            for one in _labels(ax)), frame
+    assert label_tracks(ax) is second       # (planned once)
+    _turns, _step = _wobbles(anim)
+    assert _turns == 0
+
+
+@pytest.mark.parametrize('change', ['fontsize', 'text'])
+def test_a_label_made_larger_is_planned_for(change):
+    """`set_fontsize` or `set_text` on a label after the plan was made
+    left the old offsets in place, so the larger labels lay on each
+    other. The size of every label is part of what the plan was made
+    for."""
+    anim = _spin8()
+    ax = _labeled_axes(anim.figure)[0]
+    _show(anim, 2)
+    first = label_tracks(ax)
+    for label in _labels(ax):
+        if change == 'fontsize':
+            label.set_fontsize(15)
+        else:
+            label.set_text(label.get_text() + ' (b)')
+    _show(anim, 3)
+    second = label_tracks(ax)
+    assert second is not first
+    assert _pairs_per_frame(anim).max() == 0
+    assert label_tracks(ax) is second
+    assert _census(anim)['off_canvas'] == 0
+
+
+def test_a_figure_that_changes_every_frame_is_not_planned_every_frame():
+    """A caller who rewrites a figure text on every frame (a counter)
+    changes what the labels are kept off on every frame; the plan is
+    made again for the first two changes in a row and then waits until
+    the figure stops changing, when it is made once more."""
+    anim = _spin8()
+    fig = anim.figure
+    ax = _labeled_axes(fig)[0]
+    counter = fig.text(0.02, 0.02, 'frame 0', ha='left', va='bottom')
+    plans = {id(label_tracks(ax))}
+    kept = [label_tracks(ax)]
+    for frame in range(20):
+        counter.set_text('frame ' + '9' * (frame + 1))
+        anim.draw_frame(frame)
+        kept.append(label_tracks(ax))
+        plans.add(id(kept[-1]))
+    assert len(plans) <= 3
+    for frame in range(20, 24):             # (the text now stays)
+        anim.draw_frame(frame)
+        kept.append(label_tracks(ax))
+    final = kept[-1]
+    assert len({id(tracks) for tracks in kept}) <= 4
+    anim.draw_frame(24)
+    assert label_tracks(ax) is final
+    renderer = _show(anim, 30)
+    there = counter.get_window_extent(renderer)
+    assert not any(
+        one.get_bbox_patch().get_window_extent(renderer).overlaps(there)
+        for one in _labels(ax))
+
+
+def _nan_cloud():
+    data = CLOUD[:12].copy()
+    data[3] = np.nan
+    return data
+
+
+EDGE_INPUTS = {
+    'no labels': lambda: _quiet(
+        CLOUD[:12], 'o', animate='spin', duration=1, frame_rate=10),
+    'one label': lambda: _quiet(
+        CLOUD[:12], 'o', labels=['only'] + [None] * 11, animate='spin',
+        duration=1, frame_rate=10),
+    'labels with None entries': lambda: _quiet(
+        CLOUD[:12], 'o',
+        labels=[name if k % 2 else None
+                for k, name in enumerate(NAMES[:12])],
+        animate='spin', duration=1, frame_rate=10),
+    'one frame': lambda: _quiet(
+        CLOUD[:12], 'o', labels=NAMES[:12], animate='spin', duration=0.1,
+        frame_rate=10),
+    'two frames': lambda: _quiet(
+        CLOUD[:12], 'o', labels=NAMES[:12], animate='spin', duration=0.2,
+        frame_rate=10),
+    'NaN point, spin': lambda: _quiet(
+        _nan_cloud(), 'o', labels=NAMES[:12], animate='spin', duration=1,
+        frame_rate=10),
+    'NaN point, window': lambda: _quiet(
+        _nan_cloud(), 'o', labels=NAMES[:12], animate='window', duration=1,
+        frame_rate=10),
+    'panels with unequal label counts': lambda: _quiet(
+        [CLOUD[:12], CLOUD[:5], CLOUD[:1], CLOUD[:9]], 'o', panels=(2, 2),
+        labels=[NAMES[:12], NAMES[:5], None, NAMES[:9]], animate='spin',
+        duration=2, frame_rate=15),
+}
+EDGE_FRAMES = {'one frame': 1, 'two frames': 2,
+               'panels with unequal label counts': 30}
+EDGE_LABELS = {'no labels': [], 'one label': [1],
+               'labels with None entries': [6],
+               'panels with unequal label counts': [12, 5, 9]}
+
+
+@pytest.mark.parametrize('name', list(EDGE_INPUTS))
+def test_edge_inputs_are_planned_and_drawn(name, tmp_path):
+    """No labels, one label, None among the labels, an animation of one
+    frame and of two, a NaN point with a label (hypertools fills the
+    point in, so its label is shown), panels with different
+    numbers of labels (one with none): each is planned, every frame
+    draws with every shown label on the canvas and off the others, and
+    the animation saves."""
+    anim = EDGE_INPUTS[name]()
+    fig = anim.figure
+    assert anim.n_frames == EDGE_FRAMES.get(name, 10)
+    axes = _labeled_axes(fig)
+    counts = [len(_labels(ax)) for ax in axes]
+    assert counts == EDGE_LABELS.get(name, [12])
+    for ax, count in zip(axes, counts):
+        tracks = label_tracks(ax)
+        assert tracks['offsets'].shape == (anim.n_frames, count, 2)
+    census = _census(anim)
+    assert census['off_canvas'] == 0 and census['on_static'] == 0
+    # (a grid has less room, and how much depends on the width of the
+    # text: its bound is `test_a_grids_labels_overlap_on_few_frames`)
+    if not name.startswith('panels'):
+        assert _pairs_per_frame(anim).max() == 0
+    anim.save(tmp_path / 'edge.gif', writer=PillowWriter(fps=10))
+    assert (tmp_path / 'edge.gif').stat().st_size > 1000
+
+
+def test_saving_an_animation_twice_gives_the_same_frames(tmp_path):
+    """Two saves of one animation hold the same frames, pixel for pixel
+    (the labels' places belong to the animation and the frame, not to
+    what was drawn before)."""
+    anim = _spin12_dressed(duration=1, frame_rate=10)
+    frames = []
+    for name in ('one.gif', 'two.gif'):
+        anim.save(tmp_path / name, writer=PillowWriter(fps=10))
+        with Image.open(tmp_path / name) as saved:
+            assert saved.n_frames == anim.n_frames
+            every = []
+            for index in range(saved.n_frames):
+                saved.seek(index)
+                every.append(np.asarray(saved.convert('RGB')).copy())
+        frames.append(np.stack(every))
+    assert np.array_equal(frames[0], frames[1])
+    assert (frames[0][0] != frames[0][5]).any()

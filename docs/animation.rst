@@ -239,7 +239,14 @@ plays: about half a second for 20 labels over 60 frames, 1.5 seconds for
 60 and 2.5 seconds for 200. The more labels, the fewer times each label's plan
 is revised: above 80 labels a label that still lies on another is not
 planned a second time, and above 300 the labels stay at their usual
-places. On the plotly backend the labels are annotations
+places. An animation with more than 3600 labels x frames is planned at
+evenly spaced frames (3600 over the number of labels, at least 40), and
+its labels move evenly between them, so a long animation takes no longer
+to plan than a short one and its plan is no larger. The plan is made
+again when the figure is resized, a label's text or font is changed, or a
+legend or text is added to the figure. A pickled or copied figure has no
+animation to follow: its labels stay where the frame it was taken at had
+them. On the plotly backend the labels are annotations
 attached to their points: they follow the points as the scene turns, at
 one fixed offset, and are shown on every frame.
 
