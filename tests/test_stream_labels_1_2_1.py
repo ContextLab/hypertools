@@ -92,8 +92,12 @@ def _snapshot(ax, consumed):
 
 def _live_figures():
     gc.collect()
+    # `type()`, not `isinstance()`: the scan meets every tracked object,
+    # weak proxies of collected objects among them, and `isinstance`
+    # asks a proxy for its referent's class, which raises ReferenceError
+    # once the referent is gone.
     return [thing for thing in gc.get_objects()
-            if isinstance(thing, matplotlib.figure.Figure)]
+            if issubclass(type(thing), matplotlib.figure.Figure)]
 
 
 def _recorded(samples, frames, start, ax=None, poke=None):
