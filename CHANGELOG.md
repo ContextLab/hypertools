@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.2.1 (2026-11-23)
+## 1.2.1 (2026-11-24)
 
 Follows 1.2.0. Animated trails now work with line-and-marker formats (GH
 #299), and six small layout points in the gallery figures are fixed (GH

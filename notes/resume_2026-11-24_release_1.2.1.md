@@ -196,3 +196,28 @@ Written 2026-11-24 06:10 EST.
 4. The review page was built from 54b11252 and does not show the three
    new stream arguments; a contact sheet of them existed only in the
    temporary folder.
+
+## After the suspend (2026-11-24, from 09:52 EST)
+
+- Full suite on 57453668 (matplotlib 3.10): 9257 passed, 24 skipped. The
+  40 label, legend, layout and stream test files on matplotlib 3.11.2:
+  1794 passed, 2 skipped. Ruff clean. Pushed 57453668 at 11:51 EST.
+- `docs/tutorials/market_sectors.ipynb` re-executed
+  (`scripts/execute_tutorial.py`); its mp4 now shows the thick "Market"
+  key and thin sector keys (frame at 20 s looked at).
+- `plot_labels_001` difference explained: rendering `examples/plot_labels.py`
+  on 7a5f997e and on the current head gives 4 differing pixels of 307200
+  (0.0013%), each by 1/255, in one spot (x 446 to 463, y 163 to 172). The
+  example has no legend, so the legend-key part of 54b11252 cannot reach
+  it; what remains is its static cube zoom change. No visible change.
+- Release commit (this one): CHANGELOG heading dated 2026-11-24, the
+  re-executed market tutorial. The file gates pass with
+  `HYPERTOOLS_REQUIRE_RELEASE=1` (23 passed; the two published-gallery
+  gates are run after publishing).
+- Next, in this order (RELEASE_CHECKLIST.md step 2): build the gallery
+  from this commit; rehearse; `publish_prebuilt_gallery.py --push`;
+  commit `docs/prebuilt_gallery.json` (the one commit allowed after the
+  build); `publish_gallery_notebooks.py --ref v1.2.1 --push`; both
+  gallery gates; dist; draft GitHub release; push the branch; PR #300
+  body and ready. STOP before master, tag, PyPI: the owner chose
+  "Prepare, then ask me".
