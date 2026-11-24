@@ -981,21 +981,28 @@ def _frame_title_dict(text, index, style, segment_colors):
     return title
 
 
-def _plotly_legend_entry_traces(entries, ndims):
+def _plotly_legend_entry_traces(entries, ndims, styles=None):
     """Invisible traces that exist only to carry an explicit legend entry
     (GH #285) -- plotly's equivalent of matplotlib's proxy `Line2D` handles.
 
     Used for a matrix/mixture `hue=`'s palette swatches and for
     `legend_colors=[(label, color), ...]`, neither of which corresponds to a
     drawn trace. A 3-D figure needs `Scatter3d` (a 2-D `Scatter` cannot live
-    in a `scene`), so the trace type follows `ndims`.
+    in a `scene`), so the trace type follows `ndims`. `styles` (the
+    matplotlib backend's `legend_entry_styles`): one dict per entry when
+    each entry stands for one drawn dataset, whose given line WIDTH its
+    key then takes (the other line properties keep the plain swatch).
     """
     import plotly.graph_objects as go
+    if styles is None or len(styles) != len(entries):
+        styles = [None] * len(entries)
     traces = []
-    for label, color in entries:
+    for (label, color), given in zip(entries, styles):
+        width = (given or {}).get('linewidth')
         common = dict(mode='lines', name=str(label), showlegend=True,
                       hoverinfo='skip',
-                      line=dict(color=_to_plotly_color(color), width=2))
+                      line=dict(color=_to_plotly_color(color),
+                                width=2 if width is None else width))
         if ndims >= 3:
             traces.append(go.Scatter3d(x=[None], y=[None], z=[None],
                                        **common))
@@ -1176,6 +1183,7 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
                 segment_titles=None, ownership=None, forecast_reveal=None,
                 into=None, title_kwargs=None, title_segment_colors=None,
                 legend_kwargs=None, legend_entries=None,
+                legend_entry_styles=None,
                 axis_scale='unit', xlim=None, ylim=None, x_date=False,
                 truths=None, truth_reveal=None, forecast_labels=None,
                 forecast_datasets=None, datasets_drawn=None,
@@ -2848,7 +2856,8 @@ def plotly_draw(data, fmt=None, kwargs_list=None, labels=None, legend=None,
     # swatches, or `legend_colors=[(label, color), ...]`. Added as
     # data-free traces, plotly's equivalent of matplotlib proxy handles.
     if legend_entries:
-        fig.add_traces(_plotly_legend_entry_traces(legend_entries, ndims))
+        fig.add_traces(_plotly_legend_entry_traces(
+            legend_entries, ndims, legend_entry_styles))
     # predict= legend entries: one per model name, after the explicit
     # entries (the matplotlib legend lists them in the same order). Only
     # with a legend to list in -- like the matplotlib proxies, which exist

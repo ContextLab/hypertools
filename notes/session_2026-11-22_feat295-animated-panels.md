@@ -1133,3 +1133,54 @@ Built on `post-1.2.0` (from 00abdca2), matplotlib, 2-D and 3-D.
 - Not built, by decision: `legend=`, `caption=`, `suptitle=`,
   `head_marker=`, `tail_linewidth=`, `trail_alpha=`, `hold=` on streams.
 - Tests: `tests/test_stream_labels_1_2_1.py`.
+
+## 1.2.1 gallery review follow-ups (2026-11-24, on 7a5f997e; not pushed)
+
+Two points from the 1.2.1 against 1.2.0 gallery comparison
+(`/Users/jmanning/hypertools-review-1.2.1`).
+
+- **Market clip: the "Market" legend key was thin.** Library defect, not
+  the example. `legend_colors=[(label, color), ...]` builds proxy handles
+  (`matplotlib_backend._legend_proxy_handles`) and every one was a fixed
+  2-point solid line (or 8-point marker), whatever `linewidth=`,
+  `linestyle=`, `marker=`, `markersize=`, `alpha=` or a per-dataset `fmt`
+  said. Same in 1.2.0 and 1.1.0 (checked on a `v1.2.0` worktree: the new
+  tests fail there, 18 of 20); the 1.2.0 example hid it by drawing its
+  own legend (`lw=2` sectors, `lw=3.4` market). The legend hypertools
+  builds from the drawn artists (`legend=[...]`) was already right in
+  static, animated and panels plots.
+- Fix: with exactly one pair per drawn dataset, each key takes its
+  dataset's `fmt` and given styling (`legend_entry_styles` ->
+  `_legend_key_style`). `plot()` pairs them from `kwargs_list` before the
+  animated drawing pops `linewidth`; a `panels=` grid pairs them from the
+  grid's own kwargs (`_panel_legend_entry_styles`, handed to each panel
+  as the internal `_legend_entry_styles`), since a panel sees one
+  dataset. plotly keys take the line width. Unpaired lists, calls without
+  per-dataset styling and matrix-hue swatches are drawn as before. The
+  example is unchanged; its sector keys are now 1.1 points like their
+  paths, the market key 3.4.
+- Looked at: `scratchpad/legendfix/market_mpl310_frame0000.png`,
+  `..._frame1000.png` and the `mpl311` pair (fixture data).
+- NOT done: `docs/tutorials/market_sectors.mp4` (and the gallery clip)
+  still show the thin key until the tutorial is re-executed
+  (`scripts/execute_tutorial.py`, a 1200-frame render with live data).
+  The notebook's source needs no change.
+- Found on the way and fixed: an animation passed the format string AND
+  `linestyle=`/`marker=` to `ax.plot`, so matplotlib warned "redundantly
+  defined" once per dataset (`_plot_with_fmt` splits the format when a
+  keyword names the same property; the static path already did).
+- **Three static figures differed from 1.2.0 in 2 to 7 pixels**
+  (`plot_missing_data` 001: 7 px, e.g. (182,205), (371,262); 002: 2 px at
+  (170,210), (171,210); `plot_multiindex` 001: 6 px, e.g. (271,227),
+  (193,259); x, y from the top left, one color level each, all on
+  antialiased edges of the data lines). Cause: be7244a7 (GH #297 cube
+  fit). `_keep_cube_clear` runs on every static 3-D plot and
+  `_StaticCubeZoom.draw` called `set_box_aspect(aspect, zoom=1.0)`;
+  matplotlib rescales the aspect it is given, so it came back one unit in
+  the last place off. Unintended. `draw` now returns when the zoom is the
+  one in effect; the three figures are byte-for-byte 1.2.0 again
+  (rendered from this tree on 3.10 and compared with `/before`: 0 pixels).
+  Known limit: a cube zoomed out and back to exactly 1.0 would still be
+  one unit off.
+- Tests: `tests/test_legend_key_styles.py` (26),
+  `tests/test_static_cube_untouched.py` (6); both matplotlib versions.

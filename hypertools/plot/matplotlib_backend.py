@@ -2538,27 +2538,127 @@ class _AxisLabelExtent(matplotlib.artist.Artist):
         return Bbox.union(boxes) if boxes else Bbox.null()
 
 
-def _legend_proxy_handles(entries, fmt=None):
+def _plot_with_fmt(ax, coords, fmt, **kwargs):
+    """``ax.plot(*coords, fmt, **kwargs)``, without matplotlib's warning
+    that a property "is redundantly defined by the ... keyword argument
+    and the fmt string".
+
+    An animation drew its head and trail lines with the format string
+    positional AND the dataset's `linestyle=`/`marker=`/`color=` as
+    keywords, so every animated call that gave both (``'-'`` with
+    ``linestyle=['-', '--']``) warned once per dataset, though the static
+    plot of the same call is silent (1.2.1 gallery review follow-up; the
+    static path has split the format itself since 1.0). When a keyword
+    names a property the format string also sets, the format is split
+    here and its parts passed as keywords under the caller's, which is
+    what matplotlib does after warning: the keyword wins.
+    """
+    if fmt is None:
+        return ax.plot(*coords, **kwargs)
+    if (isinstance(fmt, str) and _process_plot_format is not None
+            and any(key in kwargs
+                    for key in ('linestyle', 'marker', 'color'))):
+        try:
+            linestyle, marker, color = _process_plot_format(fmt)
+        except Exception:  # noqa: BLE001 - matplotlib reports a bad fmt
+            return ax.plot(*coords, fmt, **kwargs)
+        style = {'linestyle': linestyle, 'marker': marker}
+        if color is not None:
+            style['color'] = color
+        style.update(kwargs)
+        return ax.plot(*coords, **style)
+    return ax.plot(*coords, fmt, **kwargs)
+
+
+#: the per-dataset line properties a legend key takes from the dataset it
+#: stands for (`legend_entry_styles`, `_legend_proxy_handles`)
+LEGEND_KEY_STYLE_KEYS = ('linewidth', 'linestyle', 'marker', 'markersize',
+                         'alpha')
+
+
+def legend_entry_styles(entries, fmts, kwargs_list):
+    """The line styling of each explicit legend entry's key, or None.
+
+    `legend_colors=[(label, color), ...]` defines the legend outright, and
+    its keys used to be one fixed swatch (a 2-point solid line) whatever
+    was drawn: the heavy line of a ``linewidth=[1.1, ..., 3.4]`` call had
+    the same thin key as the others (1.2.1 gallery review; 1.1.0 and 1.2.0
+    too). When there is exactly one entry per drawn dataset, in order,
+    entry ``i`` stands for dataset ``i`` and its key takes that dataset's
+    own `fmt` and its given line width, line style, marker, marker size
+    and alpha. `fmts` is one format string per drawn dataset (or None),
+    `kwargs_list` the per-dataset style dicts. Returns one dict per entry
+    (``'fmt'`` plus the `LEGEND_KEY_STYLE_KEYS` that were given), or None
+    when the entries do not pair up with the datasets and every key stays
+    the plain swatch.
+    """
+    if entries is None or kwargs_list is None \
+            or len(entries) != len(kwargs_list):
+        return None
+    styles = []
+    for i, kw in enumerate(kwargs_list):
+        kw = kw if isinstance(kw, dict) else {}
+        style = {key: kw[key] for key in LEGEND_KEY_STYLE_KEYS
+                 if kw.get(key) is not None}
+        if fmts is not None and i < len(fmts) and isinstance(fmts[i], str):
+            style['fmt'] = fmts[i]
+        styles.append(style)
+    return styles
+
+
+def _legend_key_style(fmt, given=None):
+    """`Line2D` properties of one explicit legend entry's key.
+
+    Without `given` (an entry no single dataset stands behind) the key is
+    the plain swatch: a 2-point solid line, or an 8-point marker when the
+    plot's `fmt` draws markers only. With `given` (one dict of
+    `legend_entry_styles`) it is the dataset's own look: the line style
+    and marker of its format string, then every property that was given
+    for it; a property nobody gave keeps the swatch's value.
+    """
+    linestyle, marker = '-', None
+    fmt = (given or {}).get('fmt', fmt)
+    if isinstance(fmt, str) and _process_plot_format is not None:
+        try:
+            linestyle, marker, _ = _process_plot_format(fmt)
+        except Exception:  # noqa: BLE001 - an unparseable fmt keeps the line
+            linestyle, marker = '-', None
+    has_line = linestyle not in (None, 'None')
+    has_marker = marker not in (None, 'None')
+    if has_marker and not has_line:
+        style = {'linestyle': 'None', 'marker': marker, 'markersize': 8}
+    else:
+        style = {'linestyle': '-', 'linewidth': 2, 'marker': None}
+    if given is None:
+        return style
+    if has_line:
+        style['linestyle'] = linestyle
+        if has_marker:
+            # an 'o-' dataset is drawn as a line with markers
+            style['marker'] = marker
+    style.update({key: given[key] for key in LEGEND_KEY_STYLE_KEYS
+                  if given.get(key) is not None})
+    return style
+
+
+def _legend_proxy_handles(entries, fmt=None, styles=None):
     """`Line2D` proxy handles for explicit legend entries (GH #285).
 
     `entries` is a list of ``(label, color)`` pairs -- from a matrix/
     mixture `hue=`'s palette columns, or from an explicit
     `legend_colors=[(label, color), ...]`. Each is drawn as a short line
     swatch, or as a marker swatch when the plot's own `fmt` draws markers
-    only, so the key looks like the artists it names.
+    only, so the key looks like the artists it names. `styles`
+    (`legend_entry_styles`): one dict per entry when each entry stands
+    for one drawn dataset, whose line styling its key then takes.
     """
     from matplotlib.lines import Line2D
-    style = {'linestyle': '-', 'linewidth': 2, 'marker': None}
     first_fmt = fmt[0] if isinstance(fmt, (list, tuple)) and fmt else fmt
-    if isinstance(first_fmt, str) and _process_plot_format is not None:
-        try:
-            linestyle, marker, _ = _process_plot_format(first_fmt)
-        except Exception:  # noqa: BLE001 - an unparseable fmt keeps the line
-            linestyle, marker = '-', None
-        if linestyle in (None, 'None') and marker not in (None, 'None'):
-            style = {'linestyle': 'None', 'marker': marker, 'markersize': 8}
-    return [Line2D([], [], color=color, label=label, **style)
-            for label, color in entries]
+    if styles is None or len(styles) != len(entries):
+        styles = [None] * len(entries)
+    return [Line2D([], [], color=color, label=label,
+                   **_legend_key_style(first_fmt, given))
+            for (label, color), given in zip(entries, styles)]
 
 
 def legend_call_kwargs(is_3d=False, zlabel=None, font=None,
@@ -3143,6 +3243,7 @@ def _draw(
     title_kwargs=None,
     legend_kwargs=None,
     legend_entries=None,
+    legend_entry_styles=None,
     legend_colors=None,
     axis_scale='unit',
     xlim=None,
@@ -4796,16 +4897,18 @@ def _draw(
         # its head is: a line+marker trail carries faded markers at the
         # observations (`_mark_observations`), a markers-only trail is its
         # faded markers -- what the plotly backend has always drawn.
-        def _fmt_args(idx):
-            return (fmt[idx],) if fmt is not None else ()
+        def _fmt_of(idx):
+            return fmt[idx] if fmt is not None else None
 
         lines = [
-            ax.plot(dat[0:1, 0], dat[0:1, 1], dat[0:1, 2], *_fmt_args(idx),
+            _plot_with_fmt(
+                    ax, (dat[0:1, 0], dat[0:1, 1], dat[0:1, 2]), _fmt_of(idx),
                     linewidth=head_linewidths[idx], **kwargs_list[idx])[0]
             for idx, dat in enumerate(x)
         ]
         trail = [
-            ax.plot(dat[0:1, 0], dat[0:1, 1], dat[0:1, 2], *_fmt_args(idx),
+            _plot_with_fmt(
+                    ax, (dat[0:1, 0], dat[0:1, 1], dat[0:1, 2]), _fmt_of(idx),
                     linewidth=linewidths[idx],
                     **_trail_kwargs(kwargs_list[idx], idx))[0]
             if _wants_trail(idx) else None
@@ -5464,16 +5567,18 @@ def _draw(
 
         # every flagged dataset gets its trail, whatever its format (GH #299:
         # see animate_plot3D)
-        def _fmt_args(idx):
-            return (fmt[idx],) if fmt is not None else ()
+        def _fmt_of(idx):
+            return fmt[idx] if fmt is not None else None
 
         lines = [
-            ax.plot(dat[0:1, 0], dat[0:1, 1], *_fmt_args(idx),
+            _plot_with_fmt(
+                    ax, (dat[0:1, 0], dat[0:1, 1]), _fmt_of(idx),
                     linewidth=head_linewidths[idx], **kwargs_list[idx])[0]
             for idx, dat in enumerate(x)
         ]
         trail = [
-            ax.plot(dat[0:1, 0], dat[0:1, 1], *_fmt_args(idx),
+            _plot_with_fmt(
+                    ax, (dat[0:1, 0], dat[0:1, 1]), _fmt_of(idx),
                     linewidth=linewidths[idx],
                     **_trail_kwargs(kwargs_list[idx], idx))[0]
             if _wants_trail(idx) else None
@@ -5870,7 +5975,8 @@ def _draw(
             # `legend_colors=[(label, color), ...]`): proxy handles, since
             # no drawn artist carries these labels.
             show_legend_keys(ax.legend(
-                handles=_legend_proxy_handles(legend_entries, fmt),
+                handles=_legend_proxy_handles(legend_entries, fmt,
+                                              legend_entry_styles),
                 **_legend_call))
         else:
             if legend_order:

@@ -38,7 +38,8 @@ from .colors import (mat2colors, colors2groups, get_palette_colors,
 from ..reduce.reduce import reduce as reducer
 from ..tools.format_data import format_data
 from .matplotlib_backend import (_draw, _apply_title, show_legend_keys,
-                                 content_frame_count, held_frame_sequence)
+                                 content_frame_count, held_frame_sequence,
+                                 legend_entry_styles)
 from .backend import manage_backend
 from .plotly_backend import resolve_backend
 from .animation_context import FrameContext, FrameHooks
@@ -4459,6 +4460,53 @@ def _panel_narrow_kwargs(kw, index, n_datasets, lengths):
         _panel_slice_forecast_kwargs(kw, index, n_datasets, grid_kw)
         kw['predict'] = _panel_bind_forecaster(kw['predict'], index,
                                                n_datasets)
+    kw['_legend_entry_styles'] = _panel_legend_entry_styles(grid_kw,
+                                                            n_datasets)
+
+
+def _panel_legend_entry_styles(grid_kw, n_datasets):
+    """The grid's `legend_entry_styles`, from the WHOLE grid's kwargs.
+
+    A ``(label, color)`` pair list is forwarded to every panel unchanged,
+    and a panel draws one dataset, so no panel can pair the entries with
+    the datasets itself. One entry per dataset of the grid (nothing
+    regrouping the traces, as in `_panel_slice_legend`) is paired here,
+    with each dataset's own `fmt` and line styling narrowed out of the
+    grid's per-dataset arguments by the rule the panels use
+    (`_panel_slice_per_dataset`). None otherwise: plain swatches.
+    """
+    from .matplotlib_backend import (LEGEND_KEY_STYLE_KEYS,
+                                     legend_entry_styles)
+    try:
+        _, entries = _normalize_legend_colors(grid_kw.get('legend_colors'))
+    except (TypeError, ValueError):
+        return None
+    if entries is None or len(entries) != n_datasets:
+        return None
+    if (grid_kw.get('hue') is not None or grid_kw.get('cluster')
+            or grid_kw.get('n_clusters') is not None):
+        return None
+
+    def _own(value, index):
+        """Dataset `index`'s value of one per-dataset argument, or None."""
+        value = _panel_slice_per_dataset(value, index, n_datasets)
+        if isinstance(value, (list, tuple)):
+            value = value[0] if len(value) == 1 else None
+        return value
+
+    aliases = {'linestyle': ('linestyle', 'linestyles'),
+               'marker': ('marker', 'markers')}
+    per_dataset, fmts = [], []
+    for index in range(n_datasets):
+        style = {}
+        for key in LEGEND_KEY_STYLE_KEYS:
+            for name in aliases.get(key, (key,)):
+                value = _own(grid_kw.get(name), index)
+                if value is not None and np.ndim(value) == 0:
+                    style[key] = value
+        per_dataset.append(style)
+        fmts.append(_own(grid_kw.get('fmt'), index))
+    return legend_entry_styles(entries, fmts, per_dataset)
 
 
 def _panel_slice_per_observation(value, index, lengths):
@@ -8156,11 +8204,22 @@ class _StaticCubeZoom:
         self._axis = axis
         self._aspect = tuple(axis.get_box_aspect())
         self.zoom_scale = [1.0]
+        #: the zoom the axes is drawn at now
+        self._applied = 1.0
 
     def draw(self, frame=0):
         """Apply the current zoom (`frame` is ignored: a static panel
-        has one)."""
-        self._axis.set_box_aspect(self._aspect, zoom=self.zoom_scale[0])
+        has one). A zoom that is in effect already is not applied again:
+        `set_box_aspect` rescales the aspect it is given, so handing an
+        axes its own aspect back at zoom 1 moved it by one unit in the
+        last place, and with it a few antialiased pixels of every static
+        3-D figure whose cube needed no fitting (1.2.1 gallery review:
+        three gallery figures differed from 1.2.0 in 2 to 7 pixels)."""
+        zoom = self.zoom_scale[0]
+        if zoom == self._applied:
+            return
+        self._axis.set_box_aspect(self._aspect, zoom=zoom)
+        self._applied = zoom
 
 
 def _has_axis_labels(axis):
@@ -9957,7 +10016,13 @@ def plot(
         REPLACES the legend outright with exactly those entries, on both
         backends -- which is how a figure adds a key entry no trace
         corresponds to (e.g. a gray "Market" line alongside per-sector
-        swatches). Mixing the two forms raises ``ValueError``. Under
+        swatches). A pair's key is a plain swatch (a 2-point solid line,
+        or a marker when `fmt` draws markers only), except when there is
+        exactly one pair per drawn dataset, in order: each key is then
+        drawn in that dataset's own `fmt` and its given `linewidth`,
+        `linestyle`, `marker`, `markersize` and `alpha` (plotly: its
+        `linewidth`), so a heavier line has a heavier key. Mixing the
+        two forms raises ``ValueError``. Under
         `panels=`, a plain list naming the datasets (one color per
         dataset, then one per shared entry such as a forecast model or
         ``truth``) recolors those entries of the grid's one shared
@@ -12578,6 +12643,10 @@ def plot(
     _grid_blend_groups = (_panel_shared or {}).get('blend_groups')
     _grid_furniture = (_panel_shared is not None
                        and 'colorbars' in _panel_shared)
+    # a `panels=` grid's legend key styling (`_panel_legend_entry_styles`):
+    # one dict per `legend_colors=` pair, paired with the GRID's datasets.
+    # Internal, never a user kwarg.
+    _grid_entry_styles = kwargs.pop('_legend_entry_styles', None)
 
     # early kwarg validation (release-1.0 audit): catch renamed/misspelled/
     # unknown keyword arguments HERE, with a clear TypeError naming the
@@ -12612,7 +12681,8 @@ def plot(
                                     '_grid_furniture', '_grid_hue_kind',
                                     '_grid_legend_names', '_grid_quiet',
                                     '_grid_report', '_grid_resolve_only',
-                                    '_grid_hue_rgb', '_grid_blend_groups')}
+                                    '_grid_hue_rgb', '_grid_blend_groups',
+                                    '_grid_entry_styles')}
         _panel_call.update(kwargs)
         return _plot_panels(x, _panels_spec, _panel_call, _name=_panels_name)
 
@@ -17110,6 +17180,16 @@ def plot(
         # fmt=None + hue on a list input crashed with a bare IndexError)
         draw_fmt = ["-"] * len(xform)
 
+    # `legend_colors=[(label, color), ...]` with one pair per drawn dataset:
+    # each key takes its dataset's own line styling (a panel's comes from
+    # the grid, which sees every dataset). Read HERE, before the animated
+    # drawing pops `linewidth` out of `kwargs_list`.
+    _legend_key_styles = _grid_entry_styles
+    if _legend_key_styles is None and _legend_entries is not None \
+            and _panel_shared is None:
+        _legend_key_styles = legend_entry_styles(
+            _legend_entries, draw_fmt, kwargs_list)
+
     # convert all nans to zeros
     for i, xi in enumerate(xform):
         xform[i] = np.nan_to_num(xi)
@@ -17468,6 +17548,7 @@ def plot(
             title_segment_colors=_title_segment_colors,
             legend_kwargs=_legend_kwargs,
             legend_entries=_final_legend_entries,
+            legend_entry_styles=_legend_key_styles,
             legend_explicit=_legend_entries is not None,
             # the pre-resampling observations, so an 'o-' marks only them
             # (the matplotlib `_draw` call's `raw_data=`)
@@ -17658,6 +17739,7 @@ def plot(
                 title_kwargs=_title_kwargs,
                 legend_kwargs=_legend_kwargs,
                 legend_entries=_final_legend_entries,
+                legend_entry_styles=_legend_key_styles,
                 legend_order=_legend_order,
                 # a plain color list recolors the FINAL legend, so it is
                 # applied after the forecast/truth entries below when

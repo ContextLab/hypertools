@@ -8,6 +8,34 @@ Follows 1.2.0. Animated trails now work with line-and-marker formats (GH
 
 ### Fixed
 
+- **A `legend_colors=` pair legend draws each key in its dataset's line
+  styling.** `legend_colors=[(label, color), ...]` drew every key as the
+  same 2-point solid line (or 8-point marker), whatever was plotted: with
+  `linewidth=[1.1, 1.1, 3.4]` the heavy line's key was as thin as the
+  others (1.1.0 and 1.2.0 too; found in the gallery's market-sectors
+  clip, whose "Market" key had been thick while the example drew its own
+  legend). When there is exactly one pair per drawn dataset, in order,
+  each key now takes that dataset's own `fmt` and its `linewidth`,
+  `linestyle`, `marker`, `markersize` and `alpha`, on static plots,
+  animations and `panels=` grids (plotly: the line width). A property
+  that was not given keeps the swatch's value, so a call without
+  per-dataset styling is drawn as before, as is a pair list with any
+  other number of entries and the palette swatches of a matrix or mixture
+  `hue=`. The legend hypertools builds itself (`legend=[...]`) already
+  showed each dataset's styling.
+- **A static 3-D plot whose cube needs no fitting is drawn exactly as in
+  1.2.0.** The cube fit added for GH #297 set the box aspect of every
+  static 3-D plot again at zoom 1, and matplotlib's rescaling of the
+  aspect moved it by one unit in the last place. Nothing visible changed,
+  but a few antialiased pixels did (2 to 7 pixels, one color level each,
+  in three gallery figures). A cube that is clear already is no longer
+  touched.
+- **An animation given a format string and `linestyle=` or `marker=` no
+  longer warns.** `hyp.plot(x, '-', linestyle=['-', '--'], animate=True)`
+  made matplotlib warn "linestyle is redundantly defined by the
+  'linestyle' keyword argument and the fmt string" once per dataset; the
+  static plot of the same call was silent. The keyword still wins and the
+  frames are drawn as before.
 - **An animated line-and-marker format draws its trails (GH #299).**
   `hyp.plot(x, '-o', animate=True, chemtrails=True)` drew the tail and no
   chemtrail, with no warning; `precog=` and `bullettime=` were dropped the
