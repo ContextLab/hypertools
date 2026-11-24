@@ -1137,7 +1137,7 @@ Built on `post-1.2.0` (from 00abdca2), matplotlib, 2-D and 3-D.
 ## 1.2.1 gallery review follow-ups (2026-11-24, on 7a5f997e; not pushed)
 
 Two points from the 1.2.1 against 1.2.0 gallery comparison
-(`/Users/jmanning/hypertools-review-1.2.1`).
+(`~/hypertools-review-1.2.1`).
 
 - **Market clip: the "Market" legend key was thin.** Library defect, not
   the example. `legend_colors=[(label, color), ...]` builds proxy handles
