@@ -568,11 +568,129 @@ def test_a_labels_callable_that_raises():
                        stream_chunk=5, labels=late, show=False)
     info = fig.stream_info
     assert isinstance(info['error'], KeyError)
-    assert info['n_samples'] == 20 == len(info['labels'])
-    assert len(info['data'][0]) == len(info['xform_data'][0]) == 20
+    # the samples of the chunk BEFORE the one that failed are kept
+    assert info['n_samples'] == 22 == len(info['labels'])
+    assert len(info['data'][0]) == len(info['xform_data'][0]) == 22
     assert sorted(label.get_text()
                   for label in _stream_labels(fig.axes[0])) \
-        == ['p0', 'p10', 'p15', 'p5']
+        == ['p0', 'p10', 'p15', 'p20', 'p5']
+
+
+def _in_step(fig, count):
+    """`count` samples are kept, and label k is on sample k."""
+    info = fig.stream_info
+    assert info['n_samples'] == count
+    assert info['labels'] == [f'p{k}' for k in range(count)]
+    assert len(info['data'][0]) == len(info['xform_data'][0]) == count
+    np.testing.assert_array_equal(info['data'][0][:, 0], np.arange(count))
+    ax = fig.axes[0]
+    points = _shown_points(ax)
+    assert len(points) == count
+    labels = _stream_labels(ax)
+    assert [label._hyp_global_idx for label in labels] == list(range(count))
+    for label in labels:
+        assert label.get_text() == f'p{label._hyp_global_idx}'
+        np.testing.assert_allclose(label.xy, points[label._hyp_global_idx],
+                                   atol=1e-9)
+
+
+def _row(k, d=2):
+    return [float(k), float(k % 2), float(k % 3)][:d]
+
+
+def _counted(count=12, d=2):
+    return iter([_row(k, d) for k in range(count)])
+
+
+@pytest.mark.parametrize('ndims', [2, 3])
+def test_a_label_error_in_the_middle_of_a_chunk_keeps_the_samples_before_it(
+        ndims):
+    """Review of 237e9111: the labels of a chunk were built in one go
+    before anything was kept, so a callable that raised for sample 4
+    (chunk 3..5) lost sample 3 and its label too."""
+    def label(index, sample):
+        if index == 4:
+            raise ValueError('no label for sample 4')
+        return f'p{index}'
+
+    with pytest.warns(RuntimeWarning, match='streaming stopped early'):
+        fig = hyp.plot(_counted(d=ndims), 'o', reduce=None, ndims=ndims,
+                       stream_init=3, stream_chunk=3, labels=label,
+                       show=False)
+    assert isinstance(fig.stream_info['error'], ValueError)
+    assert fig.stream_info['truncated'] is True
+    _in_step(fig, 4)
+
+
+def test_a_label_iterator_that_raises_keeps_the_samples_before_it():
+    def names():
+        for k in range(7):
+            yield f'p{k}'
+        raise LookupError('the names ran dry')
+
+    with pytest.warns(RuntimeWarning, match='streaming stopped early'):
+        fig = hyp.plot(_counted(), 'o', reduce=None, ndims=2, stream_init=3,
+                       stream_chunk=3, labels=names(), show=False)
+    assert isinstance(fig.stream_info['error'], LookupError)
+    _in_step(fig, 7)
+
+
+def test_a_label_error_inside_stream_init_keeps_the_samples_before_it():
+    """Like a bad sample inside the head: the models are fitted on the
+    samples before it and the figure is returned with them."""
+    def label(index, sample):
+        if index == 5:
+            raise ValueError('no label for sample 5')
+        return f'p{index}'
+
+    with pytest.warns(RuntimeWarning,
+                      match='while consuming the first stream_init'):
+        fig = hyp.plot(_counted(), 'o', reduce=None, ndims=2, stream_init=8,
+                       stream_chunk=3, labels=label, show=False)
+    assert isinstance(fig.stream_info['error'], ValueError)
+    _in_step(fig, 5)
+
+
+def test_a_source_that_dies_mid_chunk_leaves_the_labels_in_step():
+    asked = []
+
+    def source():
+        for k in range(8):
+            yield _row(k)
+        raise ConnectionError('the source went away')
+
+    def label(index, sample):
+        asked.append((index, sample[0]))
+        return f'p{index}'
+
+    with pytest.warns(RuntimeWarning, match='streaming stopped early'):
+        fig = hyp.plot(source(), 'o', reduce=None, ndims=2, stream_init=3,
+                       stream_chunk=3, labels=label, show=False)
+    assert isinstance(fig.stream_info['error'], ConnectionError)
+    # samples 6 and 7 came before the source died, in an unfinished chunk
+    _in_step(fig, 8)
+    assert asked == [(k, float(k)) for k in range(8)]
+
+
+def test_a_bad_sample_mid_chunk_keeps_the_samples_and_labels_before_it():
+    rows = [_row(k) for k in range(12)]
+    rows[7] = ['not', 'a number']
+    pulled = []
+
+    def names():
+        k = 0
+        while True:
+            pulled.append(k)
+            yield f'p{k}'
+            k += 1
+
+    with pytest.warns(RuntimeWarning, match='streaming stopped early'):
+        fig = hyp.plot(iter(rows), 'o', reduce=None, ndims=2, stream_init=3,
+                       stream_chunk=3, labels=names(), show=False)
+    assert isinstance(fig.stream_info['error'], ValueError)
+    _in_step(fig, 7)
+    # no label was pulled for the sample that could not be read
+    assert pulled == list(range(7))
 
 
 def test_a_one_feature_stream_that_ends_in_the_head_says_labels_are_not_drawn():

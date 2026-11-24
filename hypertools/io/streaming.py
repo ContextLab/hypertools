@@ -373,11 +373,23 @@ def plot_stream(stream, fmt='-', stream_init=10000, stream_chunk=100,
     the updates so far), never from a clock or the number of draws, so
     the same stream in the same chunks gives the same frames. The labels
     drawn for every consumed sample are kept under
-    ``stream_info['labels']`` (None when no ``labels`` were given). A
-    ``labels`` callable or iterator that raises while the first
-    ``stream_init`` samples are labeled raises out of the call (the
-    figure does not exist yet); later it ends the stream like a source
-    error, with the samples before it kept.
+    ``stream_info['labels']`` (None when no ``labels`` were given).
+
+    A ``labels`` callable or iterator that raises (any ``Exception``)
+    for a sample ends the stream like a source error or a sample that
+    cannot be read, at any point: a ``RuntimeWarning`` ("streaming
+    stopped early") is emitted, the exception is stored unchanged under
+    ``stream_info['error']``, ``'truncated'`` is True, and the figure
+    holds every sample BEFORE the one that failed, each with its own
+    label (the sample that failed is not kept, and no later sample is
+    pulled). That holds in the middle of a chunk (the chunk's earlier
+    samples are drawn as a last, shorter update) and inside the first
+    ``stream_init`` samples (the models are fitted on the samples
+    before it). Only a failure on the very first sample raises out of
+    the call, with the original exception: there is nothing to keep. A
+    label is asked for only after its sample has been read, so label k
+    always belongs to sample k, also when the source itself dies in the
+    middle of a chunk.
 
     Streamed samples need >= 2 features to span a trajectory: a
     single-channel stream raises ``ValueError`` (unless it ends within
@@ -473,6 +485,22 @@ def plot_stream(stream, fmt='-', stream_init=10000, stream_chunk=100,
         if head_error is None:
             head_error = e
         head_rows = head_rows[:len(head_vecs)]
+    # the head samples' labels, one sample at a time: a `labels=`
+    # callable or iterator that raises for a head sample salvages the
+    # samples before it too, exactly like a bad sample (and raises out
+    # of the call when it fails on the very first one: nothing to keep)
+    texts = None
+    if label_text is not None:
+        texts = []
+        try:
+            for i, r in enumerate(head_rows):
+                texts.append(label_text(i, r))
+        except Exception as e:
+            if not texts:
+                raise
+            head_error = e
+            head_rows = head_rows[:len(texts)]
+            head_vecs = head_vecs[:len(texts)]
     head = np.vstack(head_vecs)
 
     if head_error is None and head.shape[1] < 2 \
@@ -498,13 +526,6 @@ def plot_stream(stream, fmt='-', stream_init=10000, stream_chunk=100,
             'the reduce step, but plots are at most 3-dimensional. Set '
             "reduce/ndims so samples are projected to <= 3 dimensions "
             "(e.g. reduce='IncrementalPCA', ndims=3).")
-
-    # the head samples' labels, before the figure exists (a `labels=`
-    # callable that raises here raises out of the call with nothing to
-    # clean up)
-    texts = None
-    if label_text is not None:
-        texts = [label_text(i, r) for i, r in enumerate(head_rows)]
 
     # initial plot on the head (already normalized/reduced -> disable both).
     # Streams are always drawn with matplotlib: pin the render backend so a
@@ -694,15 +715,35 @@ def plot_stream(stream, fmt='-', stream_init=10000, stream_chunk=100,
         nonlocal n_seen, clamped, post_head
         if not rows:
             return
-        chunk = np.vstack([row_to_vector(r) for r in rows])
+        # one sample at a time: a sample that cannot be read, or whose
+        # label cannot be had (a `labels=` callable or iterator that
+        # raises), ends the stream AFTER the chunk's samples before it
+        # are kept and drawn. (The chunk was converted and labeled in
+        # one go, so one failure in its middle lost the good samples
+        # before it; review of the 1.2.1 stream labels.) A label is
+        # asked for only once its sample has been read, so label k
+        # always belongs to sample k.
+        failure = None
+        vecs = []
+        new_texts = [] if label_text is not None else None
+        for k, r in enumerate(rows):
+            try:
+                vec = row_to_vector(r)
+                one = None if label_text is None \
+                    else label_text(n_seen + k, r)
+            except Exception as e:
+                failure = e
+                break
+            vecs.append(vec)
+            if new_texts is not None:
+                new_texts.append(one)
+        if not vecs:
+            raise failure
+        rows = rows[:len(vecs)]
+        chunk = np.vstack(vecs)
         projected = project(chunk)
-        new_texts = None
-        if label_text is not None:
-            new_texts = [label_text(n_seen + k, r)
-                         for k, r in enumerate(rows)]
-        # append raw only after projection (and labeling) succeeds, so
-        # 'data', 'xform_data' and 'labels' always describe the same
-        # samples
+        # append raw only after projection succeeds, so 'data',
+        # 'xform_data' and 'labels' always describe the same samples
         raw.append(chunk)
         accum.append(projected)
         if new_texts is not None:
@@ -717,6 +758,8 @@ def plot_stream(stream, fmt='-', stream_init=10000, stream_chunk=100,
         # shorter streams
         _warn_if_clamped(_CLAMP_WARN_MIN_STREAMING)
         _redraw()
+        if failure is not None:
+            raise failure
 
     try:
         # `while head_error is None` (never mutated inside the loop) gates

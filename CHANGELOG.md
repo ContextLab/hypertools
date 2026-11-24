@@ -259,6 +259,10 @@ Follows 1.2.0. Animated trails now work with line-and-marker formats (GH
   itself, one per sample shown. A stream drawn into a caller's `ax=` that
   already held lines also updates its own line now, not the first line of
   the figure's first axes.
+- **A bad sample in the middle of a chunk keeps the samples before it.** A
+  stream sample that could not be read ended the stream and dropped the
+  samples of the same `stream_chunk` that had arrived before it. They are
+  now kept and drawn, as the samples of earlier chunks always were.
 
 ### Examples
 
@@ -295,7 +299,12 @@ Follows 1.2.0. Animated trails now work with line-and-marker formats (GH
   its sample's drawn position on every frame, and with `stream_window=` it
   is removed when its sample leaves the window. The labels of every
   consumed sample are kept in `fig.stream_info['labels']` (`None` when no
-  `labels=` was given).
+  `labels=` was given). A `labels=` callable or iterator that raises for a
+  sample ends the stream like a source error: a `RuntimeWarning`, the
+  exception under `stream_info['error']`, and a figure holding every
+  sample before that one, each with its own label, in the middle of a
+  chunk and inside the first `stream_init` samples as well. Only a
+  failure on the very first sample raises out of the call.
 
   The samples to come are unknown, so the labels are placed once per
   update, by the placement rule of every other label (off each other, off
