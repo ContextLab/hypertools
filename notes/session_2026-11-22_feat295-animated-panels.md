@@ -906,3 +906,77 @@ that code (load average 25 to 85):
 Contact sheets and GIFs were made again after the crash:
 `<scratchpad>/round5fix/sheet_{spin30_legend_title_caption,spin12_axis_labels,window2d,panels2x2}.png`
 and `anim_*.gif` of the same names; all four sheets were looked at.
+
+### Round 5, second pass: every label planned over the whole animation (2026-11-23 evening)
+
+Coordinator feedback on the first table: labels overlapped EACH OTHER in
+most sampled frames (the table kept labels still at the price of leaving
+them stacked, "allowed up to 1.5 s"). The frame-by-frame hysteresis solver
+(`avoid`, `resting`, `ahead`, loop rounds, `_settle_short_stays`) is gone;
+`_arrange_labels` is again only the static rule (plus `strict`).
+
+What `solve_label_tracks` does now (matplotlib_backend.py):
+
+- Each label gets a PLAN for all frames: the cheapest path
+  (`_cheapest_places`, exact dynamic programming over place and frames
+  spent there) through 72 places (`_LABEL_TRACK_CANDIDATES`: 16 directions,
+  reaches 20 to 130 pt). Costs: off canvas / on static content / on the
+  cube's turning axis labels 1e7 a frame (with the static 3 pt clearance);
+  on another label's DRAWN box 1e3 a frame (1 pt clearance); far out
+  0.4 per usual distance per second; pointing into the cloud 1.0 per
+  second; a change of place 3 + 0.5 per usual distance, none longer than
+  240 pt. At least `_LABEL_REST_EASES` (3) glides at a place: that is what
+  gives 0 turn-backs. Glide 0.35 s (5 frames at 15 fps).
+- Labels in the given order; then a glide that crosses something bars that
+  change on the frames it would cross (`_bar`) and the label is planned
+  again (`_LABEL_TRACK_REPLANS` 4 at 30 labels, up to 12 with fewer, 1
+  above 120); then up to 3 rounds in which labels still not clear, and the
+  labels they lie on, are planned again among ALL others (1 round above 40
+  labels, none above 80). The effort limits are in the docstring.
+- A glide that would still cross static content or the canvas edge becomes
+  a jump, made as early as the place left stops being clear.
+- A loop is planned round the loop (three rounds, then once more pinned in
+  the middle of the longest stay).
+- The other animated axes of the figure that are planned already count as
+  labels to keep off (`tracks['boxes']`): grid panels.
+
+Tried and dropped: a shorter rest for covered labels (lazy barring of
+reversals, or accepting a short-rest plan with no measured turn-back): next
+to no gain on 30 labels for 2 to 3 times the time, and turn-backs when it
+was used to get off static content.
+
+Measured (matplotlib 3.10; full table in the scratch `pairs_per_frame.txt`),
+overlapping pairs per frame, mean / max / frames with a pair of 60:
+
+| case | still rule per frame | table of 66c33a32 | now |
+|-|-|-|-|
+| spin, 8 labels | 0 / 0 / 0 | 0.67 / 3 / 30 | 0 / 0 / 0 |
+| spin, 12 labels, dressed | 0 / 0 / 0 | 0.55 / 4 / 20 | 0 / 0 / 0 |
+| spin, 30 labels, dressed | 5.58 / 10 / 60 | 10.88 / 20 / 60 | 0.75 / 3 / 30 |
+| window, 3-D | 0.05 / 2 / 2 | 0.68 / 3 / 28 | 0 / 0 / 0 |
+| 2 x 2 panels, 12 each | 0 / 0 / 0 | 2.88 / 7 / 55 | 0.07 / 1 / 4 |
+
+Turn-backs now 0 in all five (still rule: 29, 46, 164, 59, 251). With
+matplotlib 3.11 (wider text) 30 labels give 1.5 / 4 / 45 and the grid
+0.2 / 2 / 11; 8 and 12 labels stay at 0.
+
+plot() CPU seconds, 200 points, 3-D spin, 60 frames, labels 0/20/60/200:
+0.01 / 0.41 / 1.46 / 2.42 (table of 66c33a32, same run: 0.01 / 0.53 / 2.29
+/ 5.33; placed once, a11c09e9: 0.008 / 0.054 / 0.138 / 0.481). The test
+spins cost more than the benchmark at equal count because their labels are
+crowded: 30 labels 1.8 to 2.2 s (1.56 before), the grid 2.7 s (2.6).
+
+Not achieved: with 30 labels on a default cube a pair still overlaps on
+half the frames (some at rest: no place stays clear for a second in a cube
+that turns in four), and leader lines are long (mean offset about 118 pt
+against 77 for the still rule) and many cross the cube. The outward
+preference only breaks ties; what keeps a label still for a second is a far
+place.
+
+Tests (tests/test_review_round5_1_2_1.py, now 58): added
+`test_no_two_labels_overlap_on_any_frame` (5 cases, all labels of the
+figure together), `test_a_grids_labels_overlap_on_few_frames`,
+`test_thirty_labels_overlap_less_than_stills_of_each_frame`; the
+turn-back test runs on all 7 animations; `PASSING` is now the two cases in
+which labels do change place (30 labels, grid); the 30-label share against
+the usual place is 0.25 (was 0.6).

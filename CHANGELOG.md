@@ -103,25 +103,35 @@ Follows 1.2.0. Animated trails now work with line-and-marker formats (GH
   points a frame does not show are hidden, as before. Placing every
   frame on its own made labels hop back and forth (8 labels on a
   60-frame spin changed place 95 times, 29 of them out and straight
-  back; 30 labels 720 times), so the places are worked out for the whole animation at once, first
-  frame to last: a label keeps its side of its point while that place
-  is free; when it has to move it takes the free place that stays free
-  longest over the coming frames, glides there over about half a second
-  (finishing as the other label arrives) and is not moved again for
-  another label for a second; it does not go back to a place it left a
-  short while ago if another is as clear; and a spin of whole turns is
-  placed round the loop, so its last frame leads into its first. The
-  same spins now change place 3 times (8 labels) and 31 times (30
-  labels), every change a glide, none out and back. Frame
+  back; 30 labels 720 times), so every label is given a plan for the
+  whole animation before a frame is drawn: the cheapest path through
+  the frames among 72 places round its point (16 directions, up to 130
+  points out) in which it stays at a place for as long as the place is
+  clear, moves BEFORE another label arrives (a glide of about a third
+  of a second), then stays for a second, and prefers the nearer place
+  and the one whose leader line points out of the cloud. A glide that
+  would cross another label is planned again, labels that are still
+  not clear are planned again among all the others, and a spin of
+  whole turns is planned round the loop. Measured on 60-frame spins,
+  pairs of overlapping labels per frame: 0 on every frame with 8 and
+  with 12 labels and in a sliding 3-D window; with 30 labels on a
+  default-size cube 0.75 on average and at most 3 (5.6 and 10 when each
+  frame is placed on its own); in a 2 x 2 grid with 12 labels a panel,
+  one pair on 4 frames of 60. (With the wider text of matplotlib 3.11:
+  1.5 on average with 30 labels, pairs on 11 frames in the grid.)
+  No label turns back (29, 46, 164 and 251 turn-backs when each frame
+  is placed on its own). Frame
   `i` is the same picture however it is reached (in order, out of order
   with `draw_frame`, in a saved file, in a second identical call), and
   the placement is worked out again if the figure is given another
   size. Where a glide would carry a label across the legend or a title
   the label jumps instead. Cost, at the time the plot is made (nothing
-  is rendered for it), for a 60-frame 3-D spin, in CPU seconds: 0.46
-  with 20 labels, 1.9 with 60, 5.4 with 200 (0.05, 0.14 and 0.48 when
-  the labels were placed once). A frame itself draws no slower (37, 106
-  and 324 ms, as before: drawing the label boxes is what a frame costs).
+  is rendered for it), for a 60-frame 3-D spin, in CPU seconds: 0.4
+  with 20 labels, 1.5 with 60, 2.4 with 200 (0.05, 0.14 and 0.48 when
+  the labels were placed once). The more labels, the fewer times each
+  plan is revised: above 80 labels a label that still lies on another
+  is not planned a second time. A frame itself draws no slower (29, 84
+  and 271 ms: drawing the label boxes is what a frame costs).
   With many labels on a small cube some still overlap. Matplotlib
   backend; on plotly the labels are annotations at one fixed offset
   that follow their points and are shown on every frame, as before.

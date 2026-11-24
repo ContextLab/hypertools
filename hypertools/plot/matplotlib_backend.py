@@ -439,7 +439,7 @@ _LABEL_CANDIDATES = tuple((corner, reach) for reach in _LABEL_REACHES_PT
 
 
 def _arrange_labels(places, left, anchors, sizes, pads, canvas, obstacles,
-                    avoid=None, strict=False, ahead=None, resting=None):
+                    strict=False):
     """THE placement rule of observation labels, for one view: given
     where each label hangs now (`places`, a list of ``(corner, reach)``)
     and the place each one last left (`left`), move the labels that are
@@ -460,29 +460,12 @@ def _arrange_labels(places, left, anchors, sizes, pads, canvas, obstacles,
     place it moves only to one that at least halves what it covers
     (`_LABEL_MOVE_GAIN`).
 
-    This one function places the labels of a static figure
-    (`declutter_labels`, from the places the labels hang at) and of
-    every frame of an animation (`solve_label_tracks`, from the places
-    of the frame before). The animation, which knows the frames to
-    come, passes more:
-
-    * `ahead`, the labels' anchors on the next frames
-      (``(frames, n, 2)``, NaN where a label is not shown): of the
-      places that cover as little, a label takes the one that stays
-      clear for the most of those frames (of the other labels as they
-      hang now, the obstacles and the canvas edge), so it does not have
-      to move again soon;
-    * `avoid`, per label the places it left a short while ago, which
-      come after every other place that covers as little and stays
-      clear as long (a label pushed out of a place does not come back
-      to it a few frames later);
-    * `resting`, per label whether it has only just moved: it is then
-      not moved again for another label (it still is for an obstacle or
-      the canvas edge);
-    * `strict`, under which a label at its usual place that reaches off
-      the canvas moves too (in a static figure the layout has made room
-      for the usual places, and such a label stays where it has always
-      been)."""
+    `declutter_labels` calls it for a static figure, from the places
+    the labels hang at. `solve_label_tracks` calls it to place a single
+    frame of an animation as a still would be placed, with `strict`:
+    a label at its usual place that reaches off the canvas moves too
+    (in a static figure the layout has made room for the usual places,
+    and such a label stays where it has always been)."""
     count = len(places)
     gap = _LABEL_CLEARANCE_PT
     candidates = _LABEL_CANDIDATES
@@ -503,47 +486,10 @@ def _arrange_labels(places, left, anchors, sizes, pads, canvas, obstacles,
         return (box[2] - box[0]) * (box[3] - box[1])
 
     def _may_stay(k, here, on_obstacle):
-        return ((_covered_area(here, boxes[:k]) <= 0.0
-                 or (resting is not None and resting[k]))
+        return (_covered_area(here, boxes[:k]) <= 0.0
                 and on_obstacle <= 0.0
                 and ((places[k] == _LABEL_HOME and not strict)
                      or not _off_canvas(here)))
-
-    def _clear_frames(k, roomy):
-        """For each candidate place of label `k` (`roomy`, its boxes
-        there), for how many of the frames `ahead` it stays clear of the
-        other labels (hanging as they do now), the obstacles and the
-        canvas edge."""
-        xyxy = [0, 1, 0, 1]
-        own = (roomy - anchors[k][xyxy])[None] + ahead[:, k][:, None, xyxy]
-        # (only the labels that come anywhere near this one's places)
-        with np.errstate(invalid='ignore'):
-            apart = np.abs(ahead - ahead[:, k][:, None]).max(axis=2)
-            # (labels never shown on the same frame are never near)
-            apart = np.where(np.isnan(apart), np.inf, apart).min(axis=0)
-            near = apart <= (np.abs(roomy - anchors[k][xyxy]).max()
-                             + np.abs(boxes - anchors[:, xyxy]).max(axis=1))
-        near[k] = False
-        others = ((boxes - anchors[:, xyxy])[near][None]
-                  + ahead[:, near][:, :, xyxy])
-        with np.errstate(invalid='ignore'):
-            taken = ((np.minimum(own[:, :, None, 2], others[:, None, :, 2])
-                      > np.maximum(own[:, :, None, 0], others[:, None, :, 0]))
-                     & (np.minimum(own[:, :, None, 3], others[:, None, :, 3])
-                        > np.maximum(own[:, :, None, 1],
-                                     others[:, None, :, 1]))).any(axis=2)
-            taken |= ((own[..., 0] < canvas[0]) | (own[..., 1] < canvas[1])
-                      | (own[..., 2] > canvas[2]) | (own[..., 3] > canvas[3]))
-            if len(obstacles):
-                taken |= (
-                    (np.minimum(own[:, :, None, 2], obstacles[None, None, :, 2])
-                     > np.maximum(own[:, :, None, 0],
-                                  obstacles[None, None, :, 0]))
-                    & (np.minimum(own[:, :, None, 3],
-                                  obstacles[None, None, :, 3])
-                       > np.maximum(own[:, :, None, 1],
-                                    obstacles[None, None, :, 1]))).any(axis=2)
-        return np.where(taken.any(axis=0), taken.argmax(axis=0), len(ahead))
 
     def _all_at_rest():
         """Whether no label has a reason to move (every label looked at
@@ -626,37 +572,21 @@ def _arrange_labels(places, left, anchors, sizes, pads, canvas, obstacles,
                      + _LABEL_OBSTACLE_WEIGHT * on_obstacles
                      + (on_obstacles > 0.0) * (roomy[:, 2] - roomy[:, 0])
                      * (roomy[:, 3] - roomy[:, 1]))
-            sooner = np.zeros(len(candidates))
-            open_places = np.array([one != place for one in candidates])
-            least = costs[open_places].min()
-            tied = open_places & (costs <= least)
-            # (which place stays clear longest is only asked when the
-            # label is going to move and has more than one place to go)
-            if ahead is not None and len(ahead) and tied.sum() > 1 and not (
-                    least > 0.0 and least >= _LABEL_MOVE_GAIN * cost_here):
-                sooner[tied] = -_clear_frames(k, roomy[tied]).astype(float)
             boxes[k] = here
             # a short arrow before a long one, and at that distance the
             # smallest change: the place the box travels least to reach
             change = np.hypot(
                 0.5 * (roomy[:, 0] + roomy[:, 2]) - 0.5 * (here[0] + here[2]),
                 0.5 * (roomy[:, 1] + roomy[:, 3]) - 0.5 * (here[1] + here[3]))
-            if avoid is None:
-                # (the place it last left comes after the others at that
-                # distance: a label pushed out of one place and then out
-                # of the next does not hop straight back)
-                back = np.array([one == left[k] for one in candidates])
-                # the best place: least covered, then nearest reach, then
-                # not the place just left, then the smallest change (the
-                # first of equals, in the order of `candidates`)
-                order = np.lexsort((change, back, reaches, costs))
-            else:
-                # an animation: least covered, then clear for the most
-                # frames to come, then not a place left a short while
-                # ago, then the nearest reach and the smallest change
-                back = np.array([one == left[k] or one in avoid[k]
-                                 for one in candidates])
-                order = np.lexsort((change, reaches, back, sooner, costs))
+            # (the place it last left comes after the others at that
+            # distance: a label pushed out of one place and then out of
+            # the next does not hop straight back)
+            back = np.array([one == left[k] for one in candidates])
+            open_places = np.array([one != place for one in candidates])
+            # the best place: least covered, then nearest reach, then
+            # not the place just left, then the smallest change (the
+            # first of equals, in the order of `candidates`)
+            order = np.lexsort((change, back, reaches, costs))
             best = int(order[open_places[order]][0])
             cost = float(costs[best])
             if cost > 0.0 and cost >= _LABEL_MOVE_GAIN * cost_here:
@@ -891,46 +821,242 @@ def forget_label_tracks(ax):
 #: how long a label of an animation takes to go from one place to the
 #: next, in seconds (`_ease_label_tracks`), and the fewest and the most
 #: frames that may take
-_LABEL_EASE_SECONDS = 0.5
+_LABEL_EASE_SECONDS = 0.35
 _LABEL_EASE_FRAMES = (5, 15)
 
-#: for how many glides' worth of frames a label of an animation does not
-#: go back to a place it has left while another is as clear, for how many
-#: it is not moved again for another label once it has moved (so one
-#: glide is over, and the label has been still for as long again, before
-#: the next begins), and how many it looks ahead when it picks a place
-_LABEL_NO_RETURN_EASES = 4
+#: the places a label of an ANIMATION can take: the eight directions of
+#: a static figure's label and, further out than the usual distance, the
+#: eight between them, at more distances (an animation's label is placed
+#: for many views at once, and the blank canvas round the cube is where
+#: a label can stay through all of them)
+_LABEL_TRACK_REACHES_PT = (LABEL_OFFSET_PT, 2.25 * LABEL_OFFSET_PT,
+                           3.5 * LABEL_OFFSET_PT, 5.0 * LABEL_OFFSET_PT,
+                           6.5 * LABEL_OFFSET_PT)
+_LABEL_TRACK_BETWEEN = tuple(
+    (round(float(np.cos(turn)), 6), round(float(np.sin(turn)), 6))
+    for turn in np.deg2rad(22.5 + 45.0 * np.arange(8)))
+_LABEL_TRACK_CANDIDATES = tuple(
+    (corner, reach) for reach in _LABEL_TRACK_REACHES_PT
+    for corner in _LABEL_CORNERS + _LABEL_SIDES
+    + (_LABEL_TRACK_BETWEEN if reach > LABEL_OFFSET_PT else ()))
+
+#: what a frame at a place costs an animation's label
+#: (`_plan_label_places`), in the units of `_LABEL_TRACK_SWITCH`, one
+#: change of place: lying off the canvas or on static content, lying on
+#: another label (each plus the covered share of the box), and, per
+#: second, hanging one usual distance further out than usual
+_LABEL_TRACK_OFF = 1e7
+_LABEL_TRACK_COVERED = 1e3
+_LABEL_TRACK_FAR_PER_SECOND = 0.4
+_LABEL_TRACK_SWITCH = 3.0
+#: and what each usual distance a change of place carries the label over
+#: adds to it
+_LABEL_TRACK_MOVE = 0.5
+#: the longest way, in points, one change of place may carry a label
+_LABEL_TRACK_MOVE_MAX_PT = 240.0
+#: per second, what pointing straight into the cloud of labeled points
+#: costs a label (its leader line then crosses the cloud and the other
+#: labels' lines); pointing straight out of it costs nothing
+_LABEL_TRACK_INWARD_PER_SECOND = 1.0
+
+#: for how many glides' worth of frames a label of an animation stays at
+#: a place it has moved to before it may move again: one glide to get
+#: there, and then two of standing still, so no label goes out and
+#: straight back
 _LABEL_REST_EASES = 3
-_LABEL_AHEAD_EASES = 4
 
-#: how many times at most an animation that loops is gone round: 16
-#: times with up to about 40 labels, fewer with more (a round with 200
-#: labels takes seconds), never fewer than 3
-_LABEL_LOOP_ROUNDS = 16
-_LABEL_LOOP_LABEL_ROUNDS = 640
+#: the clear space, in points, a label of an animation is given round its
+#: box at a place it rests at (less than a static figure's
+#: `_LABEL_CLEARANCE_PT`: a planned label cannot switch back and forth on
+#: the border between two places, and room is scarcer over many views)
+_LABEL_TRACK_CLEARANCE_PT = 1.0
+
+#: how many times a label of an animation is planned again because a
+#: glide of its plan crossed another label
+_LABEL_TRACK_REPLANS = 4
+
+#: how many times the labels that are not clear on every frame, and the
+#: labels they lie on, are planned again among all the others
+_LABEL_TRACK_ROUNDS = 3
 
 
-def _label_center_offsets(place_index, sizes):
+def _label_center_offsets(place_index, sizes, candidates=None):
     """Where the MIDDLE of each label's text is, in points from its
-    point, at the places `place_index` (indices into
-    `_LABEL_CANDIDATES`; any shape ending in the labels' axis) for
-    labels of the text sizes `sizes` ``(n, 2)``."""
-    corners = np.array([corner for corner, _reach in _LABEL_CANDIDATES],
+    point, at the places `place_index` (indices into `candidates`, by
+    default a static figure's `_LABEL_CANDIDATES`; any shape ending in
+    the labels' axis) for labels of the text sizes `sizes` ``(n, 2)``."""
+    candidates = _LABEL_CANDIDATES if candidates is None else candidates
+    corners = np.array([corner for corner, _reach in candidates],
                        dtype=float)
-    reaches = np.array([reach for _corner, reach in _LABEL_CANDIDATES])
+    reaches = np.array([reach for _corner, reach in candidates])
     return corners[place_index] * (reaches[place_index][..., None]
                                    + 0.5 * sizes)
+
+
+def _boxes_meet(boxes, others):
+    """Per box of `boxes` ``(..., 4)``: how many boxes of `others`
+    (``(m, 4)``, or ``(..., m, 4)`` with a set of boxes for each leading
+    index of `boxes`) it overlaps, plus the share of its own area they cover
+    (0.0 for a box that is clear; NaN boxes meet nothing)."""
+    boxes = np.asarray(boxes, dtype=float)
+    if not np.shape(others)[-2]:
+        return np.zeros(boxes.shape[:-1])
+    with np.errstate(invalid='ignore', divide='ignore'):
+        wide = (np.minimum(boxes[..., None, 2], others[..., 2])
+                - np.maximum(boxes[..., None, 0], others[..., 0]))
+        tall = (np.minimum(boxes[..., None, 3], others[..., 3])
+                - np.maximum(boxes[..., None, 1], others[..., 1]))
+        hit = (wide > 0) & (tall > 0)
+        area = np.where(hit, wide * tall, 0.0).sum(axis=-1)
+        own = ((boxes[..., 2] - boxes[..., 0])
+               * (boxes[..., 3] - boxes[..., 1]))
+        return hit.sum(axis=-1) + np.where(own > 0, area / own, 0.0)
+
+
+def _cheapest_places(cost, approach, move, rest, bars=None, start=None,
+                     end=None):
+    """The cheapest way through the frames for one label: per frame the
+    index of the place it hangs at, minimizing the sum of `cost`
+    ``(frames, places)`` over the frames plus, for every change of
+    place, ``move[from, to]`` and ``approach[frame, to]`` (what gliding
+    into the place so as to be there at `frame` costs), with at least
+    `rest` frames spent at a place before the next change. `bars`, per
+    frame None or a ``(places, places)`` array, is added to `move` for a
+    change that arrives on that frame. `start` and `end` fix the first
+    and the last frame's place. Exact (dynamic programming over the
+    place and the frames spent there)."""
+    n_frames, n_places = cost.shape
+    rest = max(int(rest), 1)
+    value = np.full((n_places, rest + 1), np.inf)
+    if start is None:
+        value[:, rest] = 0.0                # (free to move from the start)
+    else:
+        value[start, 0] = 0.0
+    value += cost[0][:, None]
+    came_from = np.zeros((n_frames, n_places), dtype=int)
+    stayed_long = np.zeros((n_frames, n_places), dtype=bool)
+    columns = np.arange(n_places)
+    # (a place far dearer to leave than the cheapest cannot be the one
+    # a change of place starts from: only the others are looked at)
+    spread = float(np.ptp(move[np.isfinite(move)])) \
+        if np.isfinite(move).any() else 0.0
+    for frame in range(1, n_frames):
+        ready = value[:, rest]
+        barred = bars is not None and bars[frame] is not None
+        within = spread + (float(bars[frame].max()) if barred else 0.0)
+        lowest = ready.min()
+        if np.isfinite(lowest):
+            few = np.flatnonzero(ready <= lowest + within + 1e-9)
+        else:
+            few = columns[:1]
+        through = ready[few, None] + move[few]
+        if barred:
+            through = through + bars[frame][few]
+        best = np.argmin(through, axis=0)
+        through = through[best, columns]
+        source = few[best]
+        new = np.full_like(value, np.inf)
+        new[:, 1:rest] = value[:, 0:rest - 1]
+        stayed_long[frame] = value[:, rest] <= value[:, rest - 1]
+        new[:, rest] = np.minimum(value[:, rest], value[:, rest - 1])
+        new[:, 0] = through + approach[frame]
+        came_from[frame] = source
+        value = new + cost[frame][:, None]
+    if end is None:
+        place, age = np.unravel_index(np.argmin(value), value.shape)
+    else:
+        place, age = end, int(np.argmin(value[end]))
+    places = np.zeros(n_frames, dtype=int)
+    for frame in range(n_frames - 1, -1, -1):
+        places[frame] = place
+        if frame == 0:
+            break
+        if age == 0:
+            place, age = came_from[frame][place], rest
+        elif age == rest:
+            age = rest if stayed_long[frame][place] else rest - 1
+        else:
+            age -= 1
+    return places
+
+
+def _plan_label_places(hard, soft, move, taps, rest, loops, bars=None,
+                       passing=None):
+    """The places one label of an animation hangs at over one stretch of
+    frames it is shown for: `hard` ``(frames, places)`` is what lying off
+    the canvas, on static content or on a label placed before costs at
+    each place on each frame, `soft` ``(places,)`` what hanging far out
+    costs per frame, ``move[from, to]`` what a change of place costs.
+    The cheapest plan (`_cheapest_places`) in which the label spends
+    at least `rest` frames at a place it moved to, and in which a place
+    is also clear while the label glides into it (a glide takes `taps`
+    frames).
+
+    For an animation that loops (`loops`) the plan is made round the
+    loop: first through three rounds of it, to find the longest stay of
+    the middle round; then once more starting and ending in the middle
+    of that stay, so the last frame leads into the first with no change
+    of place.
+
+    `passing` ``(frames, places)`` is what a place costs on a frame the
+    label is still on its way to it (by default `hard`;
+    `solve_label_tracks` counts the other labels there and not static
+    content, which the label is not on until it arrives).
+
+    `bars`, per frame None or a ``(places, places)`` array, is added to
+    what a change of place that arrives on that frame costs
+    (`solve_label_tracks` bars a change whose glide was found to cross
+    another label)."""
+    n_frames = len(hard)
+    cost = hard + soft
+    rest = max(1, min(int(rest), n_frames // 3))
+    if n_frames < 2:
+        return np.argmin(cost, axis=1)
+    bars = [None] * n_frames if bars is None else list(bars)
+    passing = hard if passing is None else passing
+
+    def _approach(table, wrap):
+        """Per frame and place: the hard cost of the place over the
+        `taps` frames before (the label is on its way there)."""
+        total = np.zeros_like(table)
+        for back in range(1, taps):
+            moved = np.roll(table, back, axis=0)
+            if not wrap:
+                moved[:back] = 0.0
+            total += moved
+        return total
+
+    if not loops:
+        return _cheapest_places(cost, _approach(passing, False), move, rest,
+                                bars)
+    thrice = _cheapest_places(
+        np.tile(cost, (3, 1)), _approach(np.tile(passing, (3, 1)), True),
+        move, rest, bars * 3)
+    middle = thrice[n_frames:2 * n_frames]
+    changes = np.flatnonzero(middle != np.roll(middle, 1))
+    if not len(changes):
+        return middle
+    # the longest stay of the round, and the frame in the middle of it
+    lengths = np.diff(np.concatenate([changes, [changes[0] + n_frames]]))
+    longest = int(np.argmax(lengths))
+    turn = int(changes[longest] + lengths[longest] // 2) % n_frames
+    place = int(middle[turn])
+    plan = _cheapest_places(
+        np.roll(cost, -turn, axis=0),
+        np.roll(_approach(passing, True), -turn, axis=0), move, rest,
+        bars[turn:] + bars[:turn], start=place, end=place)
+    return np.roll(plan, turn)
 
 
 def _ease_label_tracks(targets, shown, taps, periodic):
     """Turn the places an animation's labels take frame by frame
     (`targets`, ``(frames, labels, 2)`` offsets that change in steps)
     into the offsets they are drawn at: every step becomes a glide over
-    the `taps` frames BEFORE the frame the label had to move at (the
-    frames to come are known, so the label is out of the way when the
-    other arrives), always toward the new place (a weighted mean of the
-    places around each frame, with weights that are never negative, so
-    one step never overshoots or turns back).
+    the `taps` frames BEFORE the frame the label is at its new place
+    (the frames to come are known, so the label is out of the way when
+    the other arrives), always toward the new place (a weighted mean of
+    the places around each frame, with weights that are never negative,
+    so one step never overshoots or turns back).
 
     Each stretch of frames a label is shown for is eased on its own: a
     label that appears is at its place from its first frame. In an
@@ -959,75 +1085,6 @@ def _ease_label_tracks(targets, shown, taps, periodic):
     return eased
 
 
-def _settle_short_stays(place_index, shown, periodic, least, allowed):
-    """Take the short stays out of an animation's table of places
-    (`place_index`, ``(frames, labels)``, changed in place): a label
-    that would hang at a place for fewer than `least` frames keeps the
-    place it had before for those frames instead (or goes straight to
-    the one it has after), so between two moves of a label there is
-    always time for one glide to end and the label to be still. That
-    is what rules out a label going out and straight back. Stays are
-    counted round the loop in an animation that loops (`periodic`), for
-    a label shown on every frame; otherwise within each stretch of
-    frames a label is shown for.
-
-    A short stay is kept where neither neighbor will do
-    (`allowed(frames, label, place)`: the place must keep the label on
-    the canvas and off the legend, the titles and the other static
-    content on those frames)."""
-    n_frames, count = place_index.shape
-    least = min(least, n_frames // 2)
-    if least < 2:
-        return
-    for k in range(count):
-        column = place_index[:, k]
-        if shown[:, k].all():
-            stretches = [(0, n_frames, periodic)]
-        else:
-            edges = np.flatnonzero(np.diff(np.concatenate(
-                [[False], shown[:, k], [False]]).astype(int)))
-            stretches = [(first, end, False)
-                         for first, end in zip(edges[::2], edges[1::2])]
-        for first, end, loops in stretches:
-            for _ in range(n_frames):
-                frames = np.arange(first, end)
-                values = column[first:end]
-                turn = 0
-                if loops and values[0] == values[-1]:
-                    # (start the count where a stay starts)
-                    changes = np.flatnonzero(values[1:] != values[:-1])
-                    if not len(changes):
-                        break
-                    turn = changes[0] + 1
-                    frames, values = np.roll(frames, -turn), np.roll(
-                        values, -turn)
-                starts = np.concatenate(
-                    [[0], np.flatnonzero(values[1:] != values[:-1]) + 1])
-                ends = np.concatenate([starts[1:], [len(values)]])
-                if len(starts) < 2:
-                    break
-                changed = False
-                # the shortest stay first
-                for run in np.argsort(ends - starts, kind='stable'):
-                    if ends[run] - starts[run] >= least:
-                        break
-                    span = frames[starts[run]:ends[run]]
-                    before = (values[starts[run] - 1]
-                              if run > 0 or loops else None)
-                    after = (values[ends[run] % len(values)]
-                             if run < len(starts) - 1 or loops else None)
-                    for other in (before, after):
-                        if other is not None and other != values[
-                                starts[run]] and allowed(span, k, int(other)):
-                            column[span] = other
-                            changed = True
-                            break
-                    if changed:
-                        break
-                if not changed:
-                    break
-
-
 def _labels_loop(anchors, shown):
     """Whether an animation's last frame leads back into its first
     without a seam, as far as its labels can tell: the same labels are
@@ -1052,31 +1109,48 @@ def _labels_loop(anchors, shown):
 
 def solve_label_tracks(ax, _independent=False):
     """Work out where every observation label of the ANIMATED axes `ax`
-    is drawn on every frame, and keep the answer on the axes as a table
-    (one row per frame) that the frames then show (`_apply_label_tracks`).
+    is drawn on every frame, and keep the answer as a table (one row per
+    frame) that the frames then show (`_apply_label_tracks`).
 
     The rule (owner decision 2026-11-23): on every frame a label is
-    attached to its point where that frame shows it and placed by the
-    rule of a static figure (`_arrange_labels`: off the other labels and
-    off legends, colorbars, titles, suptitle and caption), and it may
-    shift from frame to frame but must not wobble back and forth.
+    attached to its point where that frame shows it and has correct
+    positioning (off the other labels and off legends, colorbars,
+    titles, suptitle and caption, on the canvas); it may shift from
+    frame to frame but must not wobble back and forth.
 
-    So the whole animation is solved as ONE path, frame 0 to the last
-    frame in order, the labels of each frame starting from where the
-    frame before left them: a label keeps its side of its point for as
-    long as that place is free, moves (to the nearest free place) only
-    when an earlier label's box, a legend or the canvas edge is on its
-    own, and does not go back to a place it left within
-    `_LABEL_NO_RETURN_EASES` glides unless nothing else is as clear. A
-    label that comes into view (a sliding window, a reveal) starts at
-    its usual place. An animation that loops without a seam
-    (`_labels_loop`) is gone round until a round repeats the round
-    before (at most `_LABEL_LOOP_ROUNDS` times, fewer with very many
-    labels), so the last frame leads into the first. The moves are then turned into
-    glides (`_ease_label_tracks`). Where a glide would carry a label
-    over a legend, a colorbar, a title or a figure text that both of its
-    ends are clear of, the label jumps instead (``'forced'`` in the
-    table marks those frames).
+    Every frame is known before any is drawn, so the labels are not
+    placed frame after frame: each label is given a PLAN for the whole
+    animation. The labels are gone through in the order they were given
+    (as on a static figure, an earlier label never gives way to a later
+    one). For each, every place round its point (`_LABEL_TRACK_CANDIDATES`,
+    measured with the geometry of a static figure's label: `_label_geometry`,
+    `_label_size_pt`, `_label_obstacles_pt`) is priced on every frame:
+    off the canvas or on static content (the cube's own turning axis
+    labels included) costs most, lying on a label planned before, as
+    that label is DRAWN on that frame, next, and hanging further from
+    the point a little. The label takes the cheapest path through the
+    frames (`_plan_label_places`) in which it rests
+    `_LABEL_REST_EASES` glides at a place before it moves again, so it
+    stays at one place for as long as there is one that is clear, moves
+    BEFORE another label arrives, and never goes out and straight back.
+    Changes of place are then turned into glides (`_ease_label_tracks`);
+    a change whose glide would cross another label is barred on the
+    frames it would, and the label planned again (up to
+    `_LABEL_TRACK_REPLANS` times with 30 labels, more with fewer, fewer
+    with more). Labels still not clear on some frame, and the labels
+    they lie on, are then planned again among ALL the others
+    (`_LABEL_TRACK_ROUNDS` times at most, up to 40 labels; once up to
+    80; not above), and a plan is kept only if it leaves the label
+    clear on more frames. The labels of the figure's other animated
+    axes that were planned before count as labels to keep off (a grid
+    of panels). Of places that are as clear a label prefers the nearer,
+    and the one that points out of the cloud of labeled points, so its
+    leader line does not cross the cloud.
+    Where a glide would carry a label over static content the label
+    jumps instead (``'forced'`` in the table marks those frames). A
+    label that comes into view (a sliding window, a reveal) is planned
+    for the frames it is shown on; an animation that loops without a
+    seam (`_labels_loop`) is planned round the loop.
 
     The table belongs to the animation and not to a draw: it is worked
     out from the figure's geometry by running the frame function for
@@ -1086,10 +1160,11 @@ def solve_label_tracks(ax, _independent=False):
     out again when the figure it was made for has changed (its size,
     the axes' box, the labels the axes holds).
 
-    With `_independent` every frame is placed on its own, from every
-    label's usual place, and nothing is eased: the placement a single
-    frame would get as a static figure, kept for comparison (tests, and
-    the numbers in the changelog)."""
+    With `_independent` every frame is instead placed on its own by the
+    rule of a static figure (`_arrange_labels`, every label starting
+    from its usual place) and nothing is eased: what each frame would
+    get as a still, kept for comparison (tests, and the numbers in the
+    changelog)."""
     state = _label_state(ax)
     spec = state.frames
     if spec is None or state.solving:
@@ -1128,8 +1203,6 @@ def solve_label_tracks(ax, _independent=False):
     finally:
         state.solving = False
     shown &= np.all(np.isfinite(anchors), axis=2)
-    home = _LABEL_CANDIDATES.index(_LABEL_HOME)
-    place_index = np.full((n_frames, count), home, dtype=int)
     try:
         fps = 1000.0 / float(interval_ms)
     except (TypeError, ValueError, ZeroDivisionError):
@@ -1138,123 +1211,328 @@ def solve_label_tracks(ax, _independent=False):
                        *_LABEL_EASE_FRAMES))
     taps = max(1, min(taps, n_frames // 2)) | 1        # odd
     periodic = not _independent and _labels_loop(anchors, shown)
-    horizon = _LABEL_NO_RETURN_EASES * taps
-    places = [_LABEL_HOME] * count
-    left = [None] * count
-    #: per label, the places it has left and the step it left each at
-    left_at = [{} for _ in range(count)]
-    #: per label, the step it last moved at
-    moved_at = np.full(count, -np.inf)
-    seen = np.where(shown[..., None], anchors, np.nan)
-    n_ahead = 0 if _independent else min(
-        _LABEL_AHEAD_EASES * taps, n_frames - 1)
-    before = np.zeros(count, dtype=bool)
-    step = 0
-    #: a loop is gone round until a round places every frame as the round
-    #: before did (the last frame then leads into the first exactly)
-    last_round = None
-    rounds = 1 if not periodic else int(np.clip(
-        _LABEL_LOOP_LABEL_ROUNDS // max(count, 1), 3, _LABEL_LOOP_ROUNDS))
-    for _round in range(rounds):
-        if last_round is not None and np.array_equal(last_round,
-                                                     place_index):
-            break
-        last_round = place_index.copy() if _round else None
-        for frame in range(n_frames):
-            here = np.flatnonzero(shown[frame])
-            for k in (here if _independent
-                      else here[~before[here]]):
-                places[k], left[k] = _LABEL_HOME, None
-                left_at[k].clear()
-                moved_at[k] = -np.inf
-            if len(here) > _LABEL_DECLUTTER_MAX:
-                for k in here:
-                    places[k], left[k] = _LABEL_HOME, None
-            elif len(here) >= 2 or (len(here) and (
-                    len(obstacles) or len(turning[frame]))):
-                was = [places[k] for k in here]
-                now = list(was)
-                gone = [left[k] for k in here]
-                avoid = None if _independent else [
-                    {place for place, when in left_at[k].items()
-                     if step - when <= horizon} for k in here]
-                ahead = resting = None
-                if not _independent:
-                    coming = np.arange(frame + 1, frame + 1 + n_ahead)
-                    coming = (coming % n_frames if periodic
-                              else coming[coming < n_frames])
-                    ahead = seen[coming][:, here]
-                    resting = (step - moved_at[here]
-                               < _LABEL_REST_EASES * taps)
-                _arrange_labels(now, gone, anchors[frame, here],
-                                sizes[here], pads[here], canvas,
-                                np.vstack([obstacles, turning[frame]]),
-                                avoid=avoid, strict=True, ahead=ahead,
-                                resting=resting)
-                for k, old, new, old_left in zip(here, was, now, gone):
-                    if new != old:
-                        left_at[k][old] = step
-                        if before[k]:
-                            moved_at[k] = step
-                    places[k], left[k] = new, old_left
-            place_index[frame, here] = [
-                _LABEL_CANDIDATES.index(places[k]) for k in here]
-            before = shown[frame]
-            step += 1
-    half_boxes = 0.5 * sizes + pads[:, None]
-
-    def _allowed(frames, k, place):
-        """Whether label `k` at the place numbered `place` is on the
-        canvas and off everything that is not a label on all of
-        `frames`."""
-        middle = anchors[frames, k] + _label_center_offsets(
-            np.array([place]), sizes[k][None])[0]
-        boxes = np.column_stack([middle - half_boxes[k],
-                                 middle + half_boxes[k]])
-        if ((boxes[:, 0] < canvas[0]) | (boxes[:, 1] < canvas[1])
-                | (boxes[:, 2] > canvas[2]) | (boxes[:, 3] > canvas[3])).any():
-            return False
-        if len(obstacles) and (_covered_area(boxes, obstacles) > 0.0).any():
-            return False
-        return not any(
-            len(turning[frame]) and _covered_area(box, turning[frame]) > 0.0
-            for frame, box in zip(frames, boxes))
-
-    if not _independent:
-        _settle_short_stays(place_index, shown, periodic,
-                            _LABEL_REST_EASES * taps, _allowed)
-    targets = _label_center_offsets(place_index, sizes)
+    candidates = _LABEL_CANDIDATES if _independent \
+        else _LABEL_TRACK_CANDIDATES
+    home = candidates.index(_LABEL_HOME)
+    place_index = np.full((n_frames, count), home, dtype=int)
     forced = np.zeros((n_frames, count), dtype=bool)
-    if _independent or taps < 3:
-        offsets = np.where(shown[..., None], targets, np.nan)
+    offsets = np.full((n_frames, count, 2), np.nan)
+    half_boxes = 0.5 * sizes + pads[:, None]
+    crowded = shown.sum(axis=1).max(initial=0) > _LABEL_DECLUTTER_MAX
+    if _independent or crowded:
+        for frame in range(n_frames if not crowded else 0):
+            here = np.flatnonzero(shown[frame])
+            still = np.vstack([obstacles, turning[frame]])
+            if len(here) >= 2 or (len(here) and len(still)):
+                now = [_LABEL_HOME] * len(here)
+                _arrange_labels(now, [None] * len(here),
+                                anchors[frame, here], sizes[here],
+                                pads[here], canvas, still, strict=True)
+                place_index[frame, here] = [
+                    candidates.index(place) for place in now]
+        offsets = np.where(
+            shown[..., None],
+            _label_center_offsets(place_index, sizes, candidates), np.nan)
     else:
-        offsets = _ease_label_tracks(targets, shown, taps, periodic)
-        if len(obstacles):
-            half = half_boxes
+        reaches = np.array([reach for _corner, reach in candidates])
+        aims = np.array([corner for corner, _reach in candidates],
+                        dtype=float)
+        aims /= np.hypot(aims[:, 0], aims[:, 1])[:, None]
+        # the middle of the labeled points on each frame: a label that
+        # points away from it has its leader line outside the cloud
+        with np.errstate(invalid='ignore'):
+            hub = np.nanmean(np.where(shown[..., None], anchors, np.nan),
+                             axis=1) if count else np.zeros((n_frames, 2))
+        far = ((reaches - LABEL_OFFSET_PT) / LABEL_OFFSET_PT
+               * _LABEL_TRACK_FAR_PER_SECOND / fps
+               + 1e-9 * np.arange(len(candidates)))
+        #: per frame, the boxes of the cube's own axis labels (NaN rows
+        #: fill the frames that show fewer)
+        turns = np.full((n_frames, max(1, max(len(boxes)
+                                              for boxes in turning)), 4),
+                        np.nan)
+        for frame, boxes in enumerate(turning):
+            turns[frame, :len(boxes)] = boxes
+        # the more labels, the fewer times each is planned again (the
+        # time `plot()` takes to return grows with both)
+        replans = int(np.clip(_LABEL_TRACK_REPLANS * 30 // max(count, 1),
+                              1, 3 * _LABEL_TRACK_REPLANS))
+        rounds = _LABEL_TRACK_ROUNDS if count <= 40 else (
+            1 if count <= 80 else 0)
+        #: per frame, each label's box as it is drawn (NaN: not planned
+        #: yet, or not shown)
+        drawn = np.full((n_frames, count, 4), np.nan)
+        # (and, after them, the labels of the figure's other animated
+        # axes that are planned already: a panel's labels reach into
+        # the gaps of a grid, where the next panel's do too)
+        for other in ax.figure.axes:
+            theirs = None if other is ax else label_tracks(other)
+            if theirs is not None and theirs.get('boxes') is not None \
+                    and len(theirs['boxes']) == n_frames:
+                drawn = np.concatenate([drawn, theirs['boxes']], axis=1)
 
-            def _on_obstacles(where):
-                middle = (anchors + where).reshape(-1, 2)
-                reach = np.tile(half, (n_frames, 1))
-                boxes = np.column_stack([middle - reach, middle + reach])
+        def _crossed(k, where, frames):
+            """Per frame of `frames`: whether label `k`, its middle
+            `where` (one row per frame of `frames`) from its point,
+            lies on another label, on static content or over the canvas
+            edge."""
+            middle = anchors[frames, k] + where
+            boxes = np.column_stack([middle - half_boxes[k],
+                                     middle + half_boxes[k]])
+            others = np.delete(drawn[frames], k, axis=1)
+            bad = (boxes[:, 0] < canvas[0]) | (boxes[:, 1] < canvas[1]) \
+                | (boxes[:, 2] > canvas[2]) | (boxes[:, 3] > canvas[3])
+            bad |= _boxes_meet(boxes, obstacles) > 0
+            bad |= _boxes_meet(boxes, others) > 0
+            bad |= _boxes_meet(boxes, turns[frames]) > 0
+            return bad
+
+        # how far along a glide is on each frame before the one it ends on
+        step = np.zeros((4 * taps, 1, 1))
+        step[2 * taps:] = 1.0
+        along = step if taps < 3 else _ease_label_tracks(
+            step, np.ones((4 * taps, 1), dtype=bool), taps, False)
+        along = [(int(at) - 2 * taps, float(along[at, 0, 0]))
+                 for at in range(4 * taps)
+                 if 1e-3 < along[at, 0, 0] < 1.0 - 1e-3]
+
+        def _bar(k, middles, source, target, bars, move):
+            """Bar label `k` from the change of place `source` to
+            `target` on every frame a glide between the two that ends
+            there would cross something (`bars`, for
+            `_plan_label_places`)."""
+            crossed = np.zeros(n_frames, dtype=bool)
+            ends = np.arange(n_frames)
+            for back, share in along:
+                frames = ends + back
+                if periodic:
+                    frames, at = frames % n_frames, ends
+                else:
+                    inside = (frames >= 0) & (frames < n_frames)
+                    frames, at = frames[inside], ends[inside]
+                seen = shown[frames, k]
+                frames, at = frames[seen], at[seen]
+                if len(frames):
+                    where = ((1.0 - share) * middles[source]
+                             + share * middles[target])
+                    crossed[at] |= _crossed(
+                        k, np.broadcast_to(where, (len(frames), 2)), frames)
+            for at in np.flatnonzero(crossed):
+                if bars[at] is None:
+                    bars[at] = np.zeros_like(move)
+                bars[at][source, target] = _LABEL_TRACK_COVERED
+
+        def _plan(k):
+            """Plan label `k` among the labels in `drawn`: its place on
+            every frame, its middle on every frame (eased), the frames
+            it jumps on, and on how many frames it is not clear."""
+            middles = _label_center_offsets(
+                np.arange(len(candidates)), sizes[k][None], candidates)
+            # (a place is clear with `_LABEL_TRACK_CLEARANCE_PT` to spare)
+            reach = half_boxes[k] + _LABEL_TRACK_CLEARANCE_PT
+            centers = anchors[:, k][:, None, :] + middles[None]
+            rooms = np.concatenate([centers - reach, centers + reach],
+                                   axis=2)
+            # (of static content and the canvas edge, with a static
+            # figure's `_LABEL_CLEARANCE_PT`)
+            reach = half_boxes[k] + _LABEL_CLEARANCE_PT
+            wide = np.concatenate([centers - reach, centers + reach],
+                                  axis=2)
+            with np.errstate(invalid='ignore'):
+                off = ((wide[..., 0] < canvas[0])
+                       | (wide[..., 1] < canvas[1])
+                       | (wide[..., 2] > canvas[2])
+                       | (wide[..., 3] > canvas[3]))
+            hard = _LABEL_TRACK_OFF * (
+                off + np.ceil(_boxes_meet(wide, obstacles)))
+            hard += _LABEL_TRACK_OFF * np.ceil(
+                _boxes_meet(wide, turns[:, None]))
+            near = np.flatnonzero(np.isfinite(drawn[..., 0]).any(axis=0)
+                                  & (np.arange(drawn.shape[1]) != k))
+            covered = np.zeros_like(hard)
+            if len(near):
+                covered = _LABEL_TRACK_COVERED * _boxes_meet(
+                    rooms, drawn[:, None, near, :])
+            covered = np.where(shown[:, k][:, None], covered, 0.0)
+            hard = np.where(shown[:, k][:, None], hard, 0.0) + covered
+            # (pointing into the cloud: the leader line crosses it)
+            away = anchors[:, k] - hub
+            length = np.hypot(away[:, 0], away[:, 1])
+            with np.errstate(invalid='ignore', divide='ignore'):
+                away = np.where(length[:, None] > 1.0,
+                                away / length[:, None], 0.0)
+            soft = far + (0.5 * _LABEL_TRACK_INWARD_PER_SECOND / fps
+                          * (1.0 - np.nan_to_num(away) @ aims.T))
+            # (a long way to a new place costs more than a short one)
+            # (and a label does not sweep across the whole plot in one
+            # glide: no change of place is longer than
+            # `_LABEL_TRACK_MOVE_MAX_PT`)
+            way = np.hypot(*np.moveaxis(
+                middles[:, None, :] - middles[None, :, :], -1, 0))
+            move = (_LABEL_TRACK_SWITCH
+                    + _LABEL_TRACK_MOVE * way / LABEL_OFFSET_PT)
+            move[way > _LABEL_TRACK_MOVE_MAX_PT] = np.inf
+            np.fill_diagonal(move, np.inf)
+            if shown[:, k].all():
+                stretches = [(0, n_frames, periodic)]
+            else:
+                edges = np.flatnonzero(np.diff(np.concatenate(
+                    [[False], shown[:, k], [False]]).astype(int)))
+                stretches = [(first, end, False)
+                             for first, end in zip(edges[::2], edges[1::2])]
+            def _route(rest):
+                """The label's plan with at least `rest` frames at each
+                place: places, middles, jumps, the number of frames it
+                is not clear on."""
+                places = np.full(n_frames, home, dtype=int)
+                bars = [None] * n_frames
+                for _attempt in range(replans + 1):
+                    for first, end, loops in stretches:
+                        places[first:end] = _plan_label_places(
+                            hard[first:end], soft[first:end], move, taps,
+                            rest, loops, bars[first:end],
+                            covered[first:end])
+                    targets = middles[places][:, None, :]
+                    eased = targets if taps < 3 else _ease_label_tracks(
+                        targets, shown[:, [k]], taps, periodic)
+                    # a glide that crosses another label, static content
+                    # or the canvas edge: that change of place is barred
+                    # on the frames it would, and the label is planned
+                    # again
+                    gliding = np.flatnonzero(shown[:, k] & (
+                        np.abs(eased - targets).max(axis=(1, 2)) > 0.5))
+                    crossing = gliding[_crossed(k, eased[gliding, 0],
+                                                gliding)] \
+                        if len(gliding) else gliding
+                    changes = set()
+                    for frame in crossing:
+                        # (the glide ends at the next change of place)
+                        for later in range(frame, frame + taps + 1):
+                            at = later % n_frames if periodic else later
+                            if at >= n_frames:
+                                break
+                            if places[at] != places[at - 1]:
+                                changes.add((int(places[at - 1]),
+                                             int(places[at])))
+                                break
+                    if not changes or _attempt == replans:
+                        break
+                    for source, target in sorted(changes):
+                        _bar(k, middles, source, target, bars, move)
+                # a glide that would still carry the label over a
+                # legend, a title, an axis label or the canvas edge,
+                # all of which both its ends are clear of: the label
+                # jumps instead
+                def _out(where):
+                    middle = anchors[:, k] + where[:, 0]
+                    boxes = np.column_stack([middle - half_boxes[k],
+                                             middle + half_boxes[k]])
+                    with np.errstate(invalid='ignore'):
+                        return ((boxes[:, 0] < canvas[0])
+                                | (boxes[:, 1] < canvas[1])
+                                | (boxes[:, 2] > canvas[2])
+                                | (boxes[:, 3] > canvas[3])
+                                | (_boxes_meet(boxes, obstacles) > 0)
+                                | (_boxes_meet(boxes, turns) > 0))
+
+                jumps = np.zeros(n_frames, dtype=bool)
+                bad = _out(eased) & ~_out(targets) & shown[:, k]
+                for frame in np.flatnonzero(bad):
+                    by = np.arange(frame - taps, frame + taps + 1)
+                    by = (by % n_frames if periodic
+                          else by[(by >= 0) & (by < n_frames)])
+                    jumps[by] = True
+                jumps &= shown[:, k]
+                if jumps.any():
+                    # (the jump is made as early as the place the label
+                    # leaves is no longer clear of them and the place
+                    # it goes to is)
+                    for at in np.flatnonzero(
+                            jumps & (places != np.roll(places, 1))):
+                        if at == 0 and not periodic:
+                            continue
+                        source, target = places[at - 1], places[at]
+                        leaves = _out(np.broadcast_to(
+                            middles[source], (n_frames, 1, 2)))
+                        lands = _out(np.broadcast_to(
+                            middles[target], (n_frames, 1, 2)))
+                        for back in range(1, taps + 1):
+                            frame = at - back
+                            if frame < 0 and not periodic:
+                                break
+                            frame %= n_frames
+                            if (places[frame] != source or not shown[frame, k]
+                                    or not leaves[frame] or lands[frame]):
+                                break
+                            places[frame] = target
+                    targets = middles[places][:, None, :]
+                eased[jumps] = targets[jumps]
+                where = np.where(shown[:, k][:, None], eased[:, 0], np.nan)
+                visible = np.flatnonzero(shown[:, k])
+                unclear = int(_crossed(k, where[visible], visible).sum()) \
+                    if len(visible) else 0
+                return places, where, jumps, unclear
+
+            return _route(_LABEL_REST_EASES * taps + 1)
+
+        def _keep(k, plan):
+            place_index[:, k], offsets[:, k], forced[:, k] = plan[:3]
+            middle = anchors[:, k] + offsets[:, k]
+            drawn[:, k] = np.column_stack([middle - half_boxes[k],
+                                           middle + half_boxes[k]])
+
+        unclear = np.zeros(count, dtype=int)
+        for k in range(count):
+            if shown[:, k].any():
+                plan = _plan(k)
+                _keep(k, plan)
+                unclear[k] = plan[3]
+        # a label that is still not clear on some frame, and the labels
+        # it lies on, are planned again among ALL the others (the first
+        # time round a label only knew of the labels before it), for as
+        # long as that leaves fewer frames with a label on another
+        for _round in range(rounds):
+            again = np.zeros(count, dtype=bool)
+            for k in np.flatnonzero(unclear):
+                frames = np.flatnonzero(shown[:, k])
+                bad = frames[_crossed(k, offsets[frames, k], frames)]
                 with np.errstate(invalid='ignore'):
-                    return (_covered_area(boxes, obstacles) > 0.0).reshape(
-                        n_frames, count)
-
-            # a glide over a legend or a title that both ends are clear
-            # of: the label jumps instead
-            bad = _on_obstacles(offsets) & ~_on_obstacles(targets) & shown
-            for frame, k in zip(*np.nonzero(bad)):
-                near = np.arange(frame - taps, frame + taps + 1)
-                near = (near % n_frames if periodic
-                        else near[(near >= 0) & (near < n_frames)])
-                forced[near, k] = True
-            forced &= shown
-            offsets[forced] = targets[forced]
+                    met = (
+                        (np.minimum(drawn[bad, k, None, 2], drawn[bad, :, 2])
+                         > np.maximum(drawn[bad, k, None, 0],
+                                      drawn[bad, :, 0]))
+                        & (np.minimum(drawn[bad, k, None, 3],
+                                      drawn[bad, :, 3])
+                           > np.maximum(drawn[bad, k, None, 1],
+                                        drawn[bad, :, 1])))
+                again |= met.any(axis=0)[:count]
+                again[k] = True
+            better = False
+            for k in np.flatnonzero(again):
+                before = (place_index[:, k].copy(), offsets[:, k].copy(),
+                          forced[:, k].copy())
+                frames = np.flatnonzero(shown[:, k])
+                was = int(_crossed(k, offsets[frames, k], frames).sum())
+                plan = _plan(k)
+                if plan[3] < was:
+                    _keep(k, plan)
+                    better = True
+                else:
+                    _keep(k, before)
+            for k in np.flatnonzero(shown.any(axis=0)):
+                frames = np.flatnonzero(shown[:, k])
+                unclear[k] = _crossed(k, offsets[frames, k], frames).sum()
+            if not better or not unclear.any():
+                break
+    # (each label's box on each frame, for the figure's other axes)
+    middle = anchors + offsets
+    label_boxes = None if _independent else np.concatenate(
+        [middle - half_boxes, middle + half_boxes], axis=2)
     state.tracks = {
         'labels': [weakref.ref(label) for label in labels],
         'offsets': offsets, 'places': place_index, 'shown': shown,
         'forced': forced, 'signature': signature, 'periodic': periodic,
-        'ease_frames': taps, 'rounds': _round + 1}
+        'ease_frames': taps, 'candidates': candidates, 'boxes': label_boxes}
     _apply_label_tracks(ax)
     return state.tracks
 

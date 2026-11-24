@@ -122,8 +122,7 @@ ANIMATIONS = {
 }
 #: the animations whose points pass each other on screen (the cube
 #: turns), with few enough labels that every label has a free place
-PASSING = ['spin, 8 labels',
-           'spin, 12 labels, legend, title, suptitle, caption',
+PASSING = ['spin, 30 labels, legend, title, caption',
            '2 x 2 panels']
 
 
@@ -262,10 +261,84 @@ def test_labels_keep_off_static_content_and_on_the_canvas_every_frame(name):
     assert counts['off_canvas'] == 0
 
 
+def _pairs_per_frame(anim):
+    """Per frame, how many pairs of label boxes of one axes overlap, as
+    the frame is drawn."""
+    fig = anim.figure
+    pairs = []
+    for frame in range(anim.n_frames):
+        renderer = _show(anim, frame)
+        count = 0
+        # (all the figure's labels together: in a grid a panel's labels
+        # must keep off the next panel's too)
+        for boxes in [[label.get_bbox_patch().get_window_extent(renderer)
+                       for ax in _labeled_axes(fig)
+                       for label in _labels(ax) if label.get_visible()]]:
+            count += sum(1 for one, other in itertools.combinations(boxes, 2)
+                         if one.overlaps(other))
+        pairs.append(count)
+    return np.array(pairs)
+
+
+@pytest.mark.parametrize('name', [
+    'spin, 8 labels',
+    'spin, 12 labels, legend, title, suptitle, caption',
+    'window, 3-D',
+    'window, 2-D, two lines',
+    'serial, 2-D'])
+def test_no_two_labels_overlap_on_any_frame(name):
+    """With a dozen labels on a plot (the sliding windows show fewer at
+    a time) no label's box is on another's on any frame, glides from
+    place to place included. Review round 5 had 20 to 30 frames of 60
+    with stacked labels in the spins (a label was left under another
+    for up to a second and a half rather than moved)."""
+    anim = ANIMATIONS[name]()
+    pairs = _pairs_per_frame(anim)
+    assert len(pairs) == 60
+    assert pairs.max() == 0, pairs.tolist()
+
+
+def test_a_grids_labels_overlap_on_few_frames():
+    """A 2 x 2 grid with 12 labels a panel (48 on one default-size
+    figure, each panel's kept out of the other panels and off the other
+    panels' labels) has less room than a single plot: at most two pairs
+    of labels overlap at a time, on at most a quarter of the frames
+    (measured: one pair on 4 frames of 60 with matplotlib 3.10, whose
+    text is narrower, more with 3.11; review round 5 had pairs on 55
+    frames, up to 7 at once)."""
+    anim = _panels()
+    pairs = _pairs_per_frame(anim)
+    assert pairs.max() <= 2, pairs.tolist()
+    assert (pairs > 0).sum() <= 15, pairs.tolist()
+
+
+def test_thirty_labels_overlap_less_than_stills_of_each_frame():
+    """30 labels on a default-size cube that turns once in four seconds
+    are more than can be kept apart on every frame without hopping, and
+    the bound is what the rule of a static figure reaches when it places
+    each frame on its own, free to move every label on every frame
+    (4 to 10 pairs a frame, 5.6 on average, with 164 turn-backs): the
+    planned labels have at most one pair more than that on any frame,
+    never more than its worst frame, under a third as many in all, and
+    no pair at all on a quarter of the frames (measured: 0.9 a frame,
+    at most 3, no pair on 23 frames of 60 with matplotlib 3.10; 1.3 a
+    frame and at most 6 with the wider text of 3.11)."""
+    anim = ANIMATIONS['spin, 30 labels, legend, title, caption']()
+    planned = _pairs_per_frame(anim)
+    for ax in _labeled_axes(anim.figure):
+        backend.solve_label_tracks(ax, _independent=True)
+    stills = _pairs_per_frame(anim)
+    assert stills.sum() > 120
+    assert (planned <= stills + 1).all(), (planned - stills).tolist()
+    assert planned.max() <= stills.max(), planned.tolist()
+    assert planned.sum() <= stills.sum() / 3, (planned.sum(), stills.sum())
+    assert (planned == 0).sum() >= 15
+
+
 @pytest.mark.parametrize('name, share', [
     ('spin, 8 labels', 0.25),
     ('spin, 12 labels, legend, title, suptitle, caption', 0.25),
-    ('spin, 30 labels, legend, title, caption', 0.6),
+    ('spin, 30 labels, legend, title, caption', 0.25),
     ('window, 3-D', 0.25),
     ('2 x 2 panels', 0.25)])
 def test_labels_cover_each_other_far_less_than_at_the_usual_place(
@@ -341,8 +414,7 @@ def test_labels_of_points_not_shown_are_hidden(make):
 # --------------------------------------------------------------------------
 # B. no wobble
 
-@pytest.mark.parametrize('name', PASSING + ['window, 3-D',
-                                            'window, 2-D, two lines'])
+@pytest.mark.parametrize('name', list(ANIMATIONS))
 def test_no_label_turns_back_within_a_glide(name):
     """Points pass each other as the cube turns, so labels have to
     change places; no label's offset goes one way and then back by more
@@ -376,7 +448,8 @@ def test_a_label_glides_to_its_next_place(name):
         assert tracks['ease_frames'] >= 5
         sizes = np.array([backend._label_size_pt(ref())
                           for ref in tracks['labels']])
-        targets = backend._label_center_offsets(tracks['places'], sizes)
+        targets = backend._label_center_offsets(
+            tracks['places'], sizes, tracks['candidates'])
         change = np.abs(np.diff(targets, axis=0)).max(axis=2)
         jump = max(jump, float(change.max()))
     assert jump > 20.0                      # (some label changed places)

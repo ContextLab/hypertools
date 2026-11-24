@@ -9765,17 +9765,25 @@ def plot(
         well, and so is the next panel of a `panels=` grid. The labels
         of points a frame does not show (not yet revealed, outside the
         sliding window) are hidden. So that labels do not hop about,
-        the places are worked out for the whole animation at once,
-        first frame to last: a label keeps its side of its point while
-        that place is free, picks the free place that stays free
-        longest when it has to move, glides there over about half a
-        second (arriving as the other label does) and is then left
-        alone for a second, and an animation that loops is placed round
-        the loop. A frame is the same picture whatever was drawn before
-        it, in a saved file too. The price is paid when the plot is
-        made (every frame's geometry is worked out, nothing is
-        rendered): about half a second for 20 labels on 60 frames, 2 s
-        for 60 and 5 s for 200. Legends, titles, the suptitle, the caption and
+        every label is given a plan for the whole animation before a
+        frame is drawn: it stays at one place by its point for as long
+        as that place is clear, at the nearest such place, further out
+        (up to 130 points) where the plot is crowded; when another
+        label is about to arrive it glides to its next place over about
+        a third of a second, BEFORE the other gets there, and then
+        stays for a second, so it never goes out and straight back; an
+        animation that loops is planned round the loop. With a dozen
+        labels no two overlap on any frame; with more than the canvas
+        has room for (30 on a default-size cube that turns in four
+        seconds) a few still do for a moment, far fewer than if each
+        frame were placed on its own. A frame is the same picture
+        whatever was drawn before it, in a saved file too. The price is
+        paid when the plot is made (every frame's geometry is worked
+        out, nothing is rendered): about half a second for 20 labels on
+        60 frames, 1.5 s for 60 and 2.5 s for 200 (the more labels, the fewer
+        times each plan is revised: above 80 labels a label that still
+        lies on another is not planned a second time, and above 300 the
+        labels stay at their usual places). Legends, titles, the suptitle, the caption and
         the size of the cube are laid out once, for the widest view of
         the whole animation, and do not move between frames.
 

@@ -205,20 +205,26 @@ frame's labels are placed for that frame (matplotlib backend):
 
 * Each label is attached to its point where the frame shows it. As a 3-D
   plot turns, the labels turn with their points.
-* On every frame the labels are kept off each other (as far as there is
-  room: thirty labels on a small cube still touch), off the legend, the
+* On every frame the labels are kept off each other, off the legend, the
   colorbar, the titles, the suptitle and the caption, off the cube's own
   axis labels, out of the next panel of a ``panels=`` grid, and inside the
   canvas.
 * The labels of points a frame does not show (not revealed yet, outside
   the sliding window) are hidden.
-* Labels do not hop about. The places are worked out for the whole
-  animation at once, first frame to last: a label keeps its side of its
-  point while that place is free; when it has to move it takes the free
-  place that stays free longest, glides there over about half a second,
-  arriving as the other label does, and is then left alone for a second.
-  A spin of whole turns is placed round the loop, so its last frame leads
-  into its first.
+* Labels do not hop about. Every label is given a plan for the whole
+  animation before a frame is drawn: it stays at one place by its point
+  for as long as that place is clear (the nearest such place; further
+  out, up to 130 points, where the plot is crowded). When another label
+  is about to arrive it glides to its next place over about a third of a
+  second, before the other gets there, and then stays for a second, so
+  it never goes out and straight back. A spin of whole turns is planned
+  round the loop, so its last frame leads into its first.
+* With a dozen labels no two overlap on any frame. With more than the
+  canvas has room for (thirty on a default-size cube that turns once in
+  four seconds) a few still do for a moment: under one pair a frame,
+  where placing each frame on its own leaves five or six and makes the
+  labels hop. A larger figure, a slower turn or fewer labels clears
+  them.
 * A frame is the same picture however it is reached: played in order,
   shown out of order with ``draw_frame``, or saved to a file.
 
@@ -229,8 +235,11 @@ and do not move or change size from one frame to the next. The axis labels
 of a 3-D plot turn with the cube and stay inside the canvas at every angle.
 
 Working the places out costs time when the plot is made, not when it
-plays: about half a second for 20 labels over 60 frames, 2 seconds for 60
-and 5 seconds for 200. On the plotly backend the labels are annotations
+plays: about half a second for 20 labels over 60 frames, 1.5 seconds for
+60 and 2.5 seconds for 200. The more labels, the fewer times each label's plan
+is revised: above 80 labels a label that still lies on another is not
+planned a second time, and above 300 the labels stay at their usual
+places. On the plotly backend the labels are annotations
 attached to their points: they follow the points as the scene turns, at
 one fixed offset, and are shown on every frame.
 
