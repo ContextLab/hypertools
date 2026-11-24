@@ -256,9 +256,9 @@ Follows 1.2.0. Animated trails now work with line-and-marker formats (GH
   streamed in had no marker, and the first samples' markers stayed where
   they were for the whole stream, after `stream_window=` had scrolled
   those samples away as well. The streamed line now carries the markers
-  itself, one per sample shown. A stream drawn into a caller's `ax=` that already
-  held lines also updates its own line now, not the first line of the
-  figure's first axes.
+  itself, one per sample shown. A stream drawn into a caller's `ax=` that
+  already held lines also updates its own line now, not the first line of
+  the figure's first axes.
 
 ### Examples
 

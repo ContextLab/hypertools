@@ -1051,3 +1051,85 @@ way on a11c09e9 under 3.11).
   tracing, 60 points all labeled, 30 fps: 185202a1 1.56 s on 60 frames and
   29.7 s on 600; HEAD 1.58 s on 60, 2.26 s on 600, 2.37 s on 3000. Both
   corrected.
+
+## 1.2.1 streaming labels (owner decision 2026-11-23)
+
+The owner's words on text in animations: "for axis labels, they should
+move with the rotations so they remain aligned with the axes. same for
+labels of individual datapoints (e.g., in every frame the labels should
+have correct positioning). for static text like legends, titles, and other
+annotations: compute placement once based on the *worst case* rotations of
+the axes, and then place once so that the static text (and other static
+content) remains stable across frames." And: "slight shifts between frames
+are OK but not if they are wobbling back and forth so that it looks
+glitchy. movement needs to be in a consistent direction". Asked "What
+about streaming animations?" and offered options, the owner chose: add
+streaming labels to 1.2.1.
+
+Built on `post-1.2.0` (from 00abdca2), matplotlib, 2-D and 3-D.
+
+- API. A stream has no known length, so `labels=` is a callable
+  `labels(index, sample)` or any iterable consumed in step with the
+  samples (list, tuple, array, Series, iterator, generator; None after it
+  runs out). None, NaN or a blank string is no label. A bare string or a
+  non-iterable raises `TypeError` before a sample is consumed.
+  `label_alpha=` is forwarded too. `fig.stream_info['labels']` keeps the
+  label of every consumed sample. The stream code has NO channel of its
+  own for labels: `row_to_vector` drops the non-numeric fields of a dict
+  sample. Nothing was invented; the callable gets the sample as yielded,
+  so `labels=lambda i, row: row['title']` covers it.
+- Where. `hypertools/io/streaming.py`: `_stream_label_source`, and
+  `plot_stream` adds labels in the head and in `_consume` and calls
+  `tracker.step(first shown index)` in `_redraw`, once per emitted frame,
+  before the frame is grabbed. `hypertools/plot/matplotlib_backend.py`:
+  `StreamLabels` (state per label: place, place last left and when, shown
+  offset, glide, held-until). Placement is `_arrange_labels`, the one
+  rule, with three optional arguments that only a stream passes: `held`
+  (labels not looked at: gliding, resting, or stuck with no clear place),
+  `barred` (the place last left is taken only when nothing else is clear)
+  and `fresh` (a label not drawn yet takes its usual place only with
+  `_LABEL_CLEARANCE_PT` round it). Stream labels are drawn through
+  `_set_label_offset`, so `declutter_labels` at draw time treats them as
+  planned and only points 3-D anchors at the camera of the draw. Nothing
+  is stepped by a draw.
+- Constants: glide 0.4 s of updates (at least 3), rest 3 glides
+  (`_LABEL_REST_EASES`), no return for 6 glides, at most 300 visible
+  labels arranged (`_STREAM_LABEL_MAX`, the oldest; one warning).
+- Item 3 findings. The display box and the axis limits are FROZEN from
+  the first `stream_init` samples (`to_box`); later samples outside it are
+  drawn clamped to its surface, and a label is attached to that drawn
+  position. The view never changes by itself, so in a plain stream no
+  label that is shown ever moves: the only events are a label entering
+  (at a free place) and leaving (with the window). Labels do move when
+  the figure is resized or the camera turned while the stream runs; that
+  is what the glide, the rest and the no-return rule are for, and the test
+  turns the camera twice. The 3-D stream cube draws no axis or tick
+  labels (stream samples have no column names), the title is laid out by
+  the static `hyp.plot` of the head, and neither is clipped or covered in
+  the contact sheets on matplotlib 3.10 and 3.11. Nothing in the fit code
+  needed changing.
+- Found on the way and fixed: with `'-o'` the head was drawn as a line
+  with `markevery=[]` plus a markers-only copy that was never updated, so
+  streamed samples had no markers and the head's markers stayed forever.
+  And the streamed line was looked up as the first line of the figure's
+  first axes, wrong for a caller's `ax=` with other lines. `hold=` on a
+  stream raises "hold= requires an animated plot" (it is validated before
+  the stream dispatch); left as it is and pinned by a test.
+- Measured (3.10, Agg, this machine). Label step per update, a new label
+  on every update: 2-D 0.42 / 0.92 / 3.1 ms and 3-D 0.59 / 1.06 / 2.7 ms
+  median for 10 / 50 / 200 visible labels; 0.13 ms median when most
+  updates add no label. Twelve labels arriving next to each other: 0
+  overlapping pairs on every frame, 0 turn-backs, no label moves (2-D and
+  3-D, 3.10 and 3.11). Camera turned twice mid-stream: 4 pairs on the
+  frame of the second turn, 0 within one glide, 0 turn-backs, largest
+  step 7.2 pt per frame. Memory over 2000 updates with `stream_window=50`
+  and every sample labeled: the number of live objects is flat (0 more
+  annotations after 1000 further updates); traced memory grows about 0.57
+  KiB per update more than the unlabeled stream with a different text on
+  every label, which is matplotlib's own text layout cache filling (it is
+  bounded at 4096 entries) plus the strings kept in
+  `stream_info['labels']`. Without a window every label stays: about 10
+  KiB per label.
+- Not built, by decision: `legend=`, `caption=`, `suptitle=`,
+  `head_marker=`, `tail_linewidth=`, `trail_alpha=`, `hold=` on streams.
+- Tests: `tests/test_stream_labels_1_2_1.py`.
