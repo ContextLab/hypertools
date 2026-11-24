@@ -56,6 +56,23 @@ Read this first in a fresh session. Details per review round are in
 
 ## Waiting on the owner
 
+Update 2026-11-24 about 06:20 EST: he looked at the review page (version
+2, built from 54b11252) and wrote, in this session: "The new figures and
+animations look great!" Item 1 below is answered. That is approval of the
+pictures, not the go for release. He then answered three questions in a
+dialog in this session:
+- Cube floor: "Keep 55% (Recommended)". Item 2 is settled.
+- Streams: "Add the three now", meaning `legend=`, `caption=` and
+  `suptitle=` on streaming plots go into 1.2.1. Work started 06:30 EST in
+  the worktree of branch `worktree-agent-a054066ab320401bb`; see "Status
+  at wind-down" for how far it got. `head_marker=`, `tail_linewidth=` and
+  `trail_alpha=` on streams were not asked for.
+- Release: "Prepare, then ask me", meaning after the stream arguments are
+  in and green: final gallery from the last commit, publish
+  `docs-gallery-v1.2.1` and `docs-notebooks/v1.2.1/`, record commit, dist,
+  draft GitHub release, mark PR #300 ready; then STOP and ask him before
+  the master fast-forward, the tag and PyPI.
+
 1. His look at the review page (private to him):
    https://claude.ai/artifact/AYEuVQguA8jJEB9jq2yWC6
    It was built from 7a5f997e. Things he may object to: long leader lines
