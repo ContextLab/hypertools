@@ -250,6 +250,62 @@ them. On the plotly backend the labels are annotations
 attached to their points: they follow the points as the scene turns, at
 one fixed offset, and are shown on every frame.
 
+Labels on a stream
+~~~~~~~~~~~~~~~~~~
+
+A streaming plot (an iterator, a generator or a Hugging Face
+``IterableDataset`` passed as the data, see the
+:doc:`streaming data tutorial <tutorials/streaming_data>`) takes
+``labels=`` too (new in 1.2.1, matplotlib). The number of samples is not
+known in advance, so the labels are not one list with an entry per
+observation. Pass either a callable or an iterable:
+
+.. code-block:: python
+
+    # a callable: called once per sample with its position in the stream
+    # and the sample as the stream yielded it
+    hyp.plot(feed(), stream_init=500, stream_window=750,
+             labels=lambda i, sample: f't = {i}' if i % 100 == 0 else None)
+
+    # an iterable (a list, or an iterator or generator, which may be
+    # endless), consumed in step with the samples
+    hyp.plot(feed(), stream_init=500, labels=['start', None, None, 'third'])
+
+* ``None`` (or NaN, or a blank string) draws no label. A list that is
+  shorter than the stream labels the first samples only.
+* With dict samples, such as the rows of a Hugging Face stream, the
+  callable can read a text field that the numeric conversion ignores:
+  ``labels=lambda i, row: row['title']``.
+* Every label is attached to its sample's drawn position on every frame.
+  With ``stream_window=`` a label is removed when its sample leaves the
+  window. The labels of all consumed samples are kept in
+  ``fig.stream_info['labels']``.
+* The samples to come are unknown, so the labels cannot be planned for the
+  whole animation as above. They are placed once per update by the same
+  rule (off each other, off the title, legends and figure texts, inside the
+  canvas), starting from where the update before left them. A label keeps
+  its place while that place is clear. A new label takes a free place, and
+  the labels already shown stay where they are. A label that has to move
+  (the figure was resized or turned, or room came free for a label that had
+  none) glides to the nearest free place over about 0.4 seconds of frames,
+  rests there, and does not go back to the place it left for six glides
+  unless nothing else is free.
+* The title, the axes and the display box are laid out once, from the
+  first ``stream_init`` samples, and do not move while the stream runs.
+* The same stream in the same chunks saves the same frames. The placement
+  depends on the updates so far, never on a clock or on how often the
+  figure is drawn.
+* Placing the labels of an update takes about 0.5 ms with 10 visible
+  labels, 1 ms with 50 and 3 ms with 200. At most 300 visible labels are
+  kept off each other (the oldest); the others hang at the usual place and
+  a warning says so once. Without ``stream_window=`` every label stays on
+  the figure, so memory grows with the number of labeled samples.
+
+The other arguments a stream does not implement (``legend=``,
+``caption=``, ``suptitle=``, ``head_marker=``, ``tail_linewidth=``,
+``trail_alpha=`` among them) are still ignored with a warning that names
+them.
+
 Per-dataset styling
 -------------------
 

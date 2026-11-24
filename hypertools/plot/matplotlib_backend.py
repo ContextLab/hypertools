@@ -443,7 +443,7 @@ _LABEL_CANDIDATES = tuple((corner, reach) for reach in _LABEL_REACHES_PT
 
 
 def _arrange_labels(places, left, anchors, sizes, pads, canvas, obstacles,
-                    strict=False):
+                    strict=False, held=None, barred=None, fresh=None):
     """THE placement rule of observation labels, for one view: given
     where each label hangs now (`places`, a list of ``(corner, reach)``)
     and the place each one last left (`left`), move the labels that are
@@ -469,7 +469,21 @@ def _arrange_labels(places, left, anchors, sizes, pads, canvas, obstacles,
     frame of an animation as a still would be placed, with `strict`:
     a label at its usual place that reaches off the canvas moves too
     (in a static figure the layout has made room for the usual places,
-    and such a label stays where it has always been)."""
+    and such a label stays where it has always been).
+
+    A STREAM's labels (`StreamLabels`) are placed by it once per update,
+    from the places the update before left them at, with two more rules
+    that only a picture with a past needs. `held` (one flag per label)
+    names the labels that are not looked at this time: a label still on
+    its way to a place, or resting at one it has just reached. `barred`
+    (one flag per label) says that the place the label last left
+    (`left`) is too recent to go back to: it is taken only when no other
+    place is clear. `fresh` (one flag per label) names the labels that
+    have not been drawn yet: such a label takes its usual place only
+    with the clear space a moved label is given (`_LABEL_CLEARANCE_PT`)
+    round it, since nothing is lost by starting it somewhere else (a
+    label that is already shown stays until its box is actually met, so
+    that it does not move for nothing)."""
     count = len(places)
     gap = _LABEL_CLEARANCE_PT
     candidates = _LABEL_CANDIDATES
@@ -490,6 +504,11 @@ def _arrange_labels(places, left, anchors, sizes, pads, canvas, obstacles,
         return (box[2] - box[0]) * (box[3] - box[1])
 
     def _may_stay(k, here, on_obstacle):
+        if fresh is not None and fresh[k]:
+            roomy = here + (-gap, -gap, gap, gap)
+            if _covered_area(roomy, boxes[:k]) > 0.0 \
+                    or _covered_area(roomy, obstacles) > 0.0:
+                return False
         return (_covered_area(here, boxes[:k]) <= 0.0
                 and on_obstacle <= 0.0
                 and ((places[k] == _LABEL_HOME and not strict)
@@ -516,7 +535,7 @@ def _arrange_labels(places, left, anchors, sizes, pads, canvas, obstacles,
             off &= np.array([place != _LABEL_HOME for place in places])
         return not off.any()
 
-    if _all_at_rest():
+    if not (fresh is not None and any(fresh)) and _all_at_rest():
         return True
 
     #: per label, the boxes of its candidate places with their clearance
@@ -534,7 +553,8 @@ def _arrange_labels(places, left, anchors, sizes, pads, canvas, obstacles,
     for _ in range(_LABEL_PASSES):
         moved = False
         for k in range(count):
-            if not finite[k] or stayed_at.get(k) == moves:
+            if not finite[k] or stayed_at.get(k) == moves \
+                    or (held is not None and held[k]):
                 continue
             anchor, size, pad = anchors[k], sizes[k], pads[k]
             here = boxes[k].copy()
@@ -590,7 +610,11 @@ def _arrange_labels(places, left, anchors, sizes, pads, canvas, obstacles,
             # the best place: least covered, then nearest reach, then
             # not the place just left, then the smallest change (the
             # first of equals, in the order of `candidates`)
-            order = np.lexsort((change, back, reaches, costs))
+            # (a stream's label that left a place a moment ago: any
+            # other place as clear comes first, however far out)
+            shut = back if barred is not None and barred[k] \
+                else np.zeros(len(candidates), dtype=bool)
+            order = np.lexsort((change, back, reaches, shut, costs))
             best = int(order[open_places[order]][0])
             cost = float(costs[best])
             if cost > 0.0 and cost >= _LABEL_MOVE_GAIN * cost_here:
@@ -1785,6 +1809,337 @@ def _watch_labels(ax, labels_and_points):
     watcher = getattr(ax, '_hyp_label_declutter', None)
     if watcher is None or watcher not in ax.get_children():
         ax._hyp_label_declutter = ax.add_artist(_LabelDeclutter())
+
+
+#: how long a label of a STREAM takes to go from one place to the next,
+#: in seconds (`StreamLabels`), and the fewest updates that may take
+_STREAM_LABEL_EASE_SECONDS = 0.4
+_STREAM_LABEL_EASE_MIN = 3
+
+#: for how many glides' worth of updates a stream's label does not go
+#: back to the place it last left, unless no other place is clear
+_STREAM_LABEL_NO_RETURN_EASES = 6
+
+#: how many of a stream's visible labels are kept off each other (the
+#: oldest ones); the labels beyond them hang at the usual place, as a
+#: static figure's do above `_LABEL_DECLUTTER_MAX`
+_STREAM_LABEL_MAX = _LABEL_DECLUTTER_MAX
+
+
+class _StreamLabel:
+    """One label of a stream: its annotation, the index of its sample,
+    its point (in the coordinates the axes draws), what it is placed
+    from (`size`, `pad`, `anchor`, all in points), where it hangs
+    (`place`), the place it last left and on which update (`left`,
+    `left_at`), where the middle of its text is drawn (`shown`, points
+    from its point), the glide it is on (``(from, to, update)`` or
+    None), until which update it is not moved again (`held_until`), and
+    whether it has been placed at all yet (`entered`)."""
+
+    __slots__ = ('label', 'index', 'point', 'size', 'pad', 'anchor',
+                 'place', 'left', 'left_at', 'shown', 'glide',
+                 'held_until', 'entered')
+
+
+def _place_center_offset(place, size):
+    """Where the middle of a label's text of `size` is, in points from
+    its point, at `place` (``(corner, reach)``)."""
+    (sx, sy), reach = place
+    return (round(sx * (reach + 0.5 * size[0]), 4),
+            round(sy * (reach + 0.5 * size[1]), 4))
+
+
+class StreamLabels:
+    """The labels of a STREAMING plot (`hypertools.io.streaming`): one
+    per labeled sample, added when its sample arrives and removed when
+    the sample leaves the displayed window.
+
+    An animation's labels are planned for the whole animation before a
+    frame is drawn (`solve_label_tracks`). A stream has no whole: the
+    samples to come are unknown. So a stream's labels are placed
+    CAUSALLY, once per update (`step`, called by the stream loop for
+    every frame it emits and never by a draw), by the placement rule of
+    every other label (`_arrange_labels`, with the obstacles of
+    `_label_obstacles_pt`: off the other labels, the titles, legends
+    and figure texts, inside the canvas), from the places the update
+    before left them at:
+
+    - a label keeps its place for as long as it is clear;
+    - a new label is the last in the order, so it is the one that takes
+      another place when its usual place is taken, and the labels that
+      are already there stay where they are; it is first drawn AT that
+      place;
+    - a label that must move (the figure was resized, the view turned,
+      or room has come free for a label that had none) glides there
+      over `_STREAM_LABEL_EASE_SECONDS` of updates, is not moved again
+      until it has rested there (`_LABEL_REST_EASES`), and does not go
+      back to the place it left for `_STREAM_LABEL_NO_RETURN_EASES`
+      glides unless no other place is clear.
+
+    What an update shows therefore depends on the updates before it and
+    on nothing else (no clock, no count of draws): the same stream in
+    the same chunks gives the same frames.
+
+    The work of an update is bounded: sizes are measured once per
+    label, the points' positions and the static obstacles once per
+    geometry of the figure (its size, the axes' box, limits and
+    camera), and the labels are arranged only on an update that added
+    or removed one, changed that geometry, or ended a label's rest.
+    At most `_STREAM_LABEL_MAX` visible labels are arranged (the
+    oldest); the others hang at the usual place, and a warning says so
+    once."""
+
+    def __init__(self, ax, frame_rate=30, label_alpha=0.5):
+        self.ax = ax
+        self.is3d = hasattr(ax, 'get_proj')
+        self.label_alpha = label_alpha
+        try:
+            rate = float(frame_rate)
+        except (TypeError, ValueError):
+            rate = 30.0
+        if not np.isfinite(rate) or rate <= 0:
+            rate = 30.0
+        self.ease = max(_STREAM_LABEL_EASE_MIN,
+                        int(round(_STREAM_LABEL_EASE_SECONDS * rate)))
+        self.rest = self.ease * _LABEL_REST_EASES
+        self.no_return = self.ease * _STREAM_LABEL_NO_RETURN_EASES
+        self.records, self.fresh, self.moving = [], [], []
+        self.frame, self.dirty, self.look_again = 0, False, np.inf
+        self.signature = None
+        self.canvas = (0.0, 0.0, 0.0, 0.0)
+        self.obstacles = np.zeros((0, 4))
+        self.warned = False
+        # the axes' own list of labels and its draw-time watcher (which
+        # points a 3-D label at its point for the camera of each draw);
+        # a static figure's labels already in the axes keep their state
+        held = getattr(ax, '_hyp_labels_held', False)
+        answer = getattr(ax, '_hyp_label_answer', None)
+        _watch_labels(ax, [])
+        ax._hyp_labels_held, ax._hyp_label_answer = held, answer
+        _connect_label_events(ax.get_figure(root=True), ax)
+
+    def __len__(self):
+        return len(self.records)
+
+    def add(self, index, text, point):
+        """Label the sample `index`, drawn at `point` (2 or 3 values in
+        the axes' coordinates), with `text`. It is placed by the next
+        `step`."""
+        ax = self.ax
+        point = tuple(float(v) for v in point)
+        label = ax.annotate(
+            text, xy=point[:2],
+            xytext=(-LABEL_OFFSET_PT, LABEL_OFFSET_PT),
+            textcoords="offset points", ha="right", va="bottom",
+            **_label_callout_kwargs(self.label_alpha))
+        label._hyp_offset = (-LABEL_OFFSET_PT, LABEL_OFFSET_PT)
+        label._hyp_point_idx = label._hyp_global_idx = int(index)
+        label._hyp_run_idx = None
+        label._hyp_stream = True
+        record = _StreamLabel()
+        record.label, record.index, record.point = label, int(index), point
+        record.size = _label_size_pt(label)
+        record.pad = float(_label_pads_pt([label])[0])
+        record.anchor = (np.nan, np.nan)
+        record.place, record.left, record.left_at = _LABEL_HOME, None, 0
+        record.shown = _place_center_offset(_LABEL_HOME, record.size)
+        record.glide, record.held_until, record.entered = None, 0, False
+        _set_label_offset(label, *record.shown)
+        self.records.append(record)
+        self.fresh.append(record)
+        ax._hyp_labels_and_points.append((label,) + point)
+        self.dirty = True
+        return label
+
+    def _signature(self):
+        """Everything the positions of the points on the canvas and the
+        static content round them depend on."""
+        ax = self.ax
+        fig = ax.get_figure(root=True)
+        view = (ax.get_proj().tobytes() if self.is3d
+                else (tuple(ax.get_xlim()), tuple(ax.get_ylim())))
+        return (tuple(fig.get_size_inches()), float(fig.dpi),
+                tuple(ax.get_position().bounds), view,
+                ax.title.get_text(), len(fig.texts), len(fig.legends),
+                len(fig.axes), ax.get_legend() is not None,
+                len(ax.texts) - len(self.records))
+
+    def _measure(self, records, everything):
+        """Where the points of `records` are on the canvas now and, with
+        `everything`, what no label may be put on."""
+        ax = self.ax
+        labels = [record.label for record in records]
+        if self.is3d and records:
+            points = np.array([record.point for record in records])
+            x2, y2, _ = proj3d.proj_transform(
+                points[:, 0], points[:, 1], points[:, 2], ax.get_proj())
+            for label, x, y in zip(labels, np.atleast_1d(x2),
+                                   np.atleast_1d(y2)):
+                label.xy = (float(x), float(y))
+        origin, to_pt, canvas, anchors = _label_geometry(ax, labels)
+        for record, anchor in zip(records, anchors):
+            record.anchor = (float(anchor[0]), float(anchor[1]))
+        if not everything:
+            return
+        self.canvas = canvas
+        obstacles = [_label_obstacles_pt(ax, None, origin, to_pt)]
+        # the labels of a static plot drawn into the same axes before
+        others = [entry[0] for entry in _label_entries(ax)
+                  if not getattr(entry[0], '_hyp_stream', False)
+                  and entry[0].get_visible()]
+        if others:
+            _o, _t, _c, at = _label_geometry(ax, others)
+            pads = _label_pads_pt(others)
+            for label, (px, py), pad in zip(others, at, pads):
+                size, place = _label_size_pt(label), _label_place(label)
+                if place is not None:
+                    box = _label_box((px, py), size, place[0], place[1], pad)
+                else:
+                    dx, dy = label._hyp_offset
+                    box = (px + dx - 0.5 * size[0] - pad,
+                           py + dy - 0.5 * size[1] - pad,
+                           px + dx + 0.5 * size[0] + pad,
+                           py + dy + 0.5 * size[1] + pad)
+                if np.all(np.isfinite(box)):
+                    obstacles.append(np.array([box], dtype=float))
+        self.obstacles = np.vstack(obstacles)
+
+    def _arrange(self):
+        """Place the labels for this update, from where the last one
+        left them (`_arrange_labels`)."""
+        frame = self.frame
+        if len(self.records) > _STREAM_LABEL_MAX and not self.warned:
+            self.warned = True
+            warnings.warn(
+                f"the stream shows more than {_STREAM_LABEL_MAX} labels at "
+                f"once: only the {_STREAM_LABEL_MAX} oldest of them are kept "
+                "off each other, and the others hang at the usual place by "
+                "their points. Pass stream_window= to show only the most "
+                "recent samples, or label fewer samples (labels= entries "
+                "that are None draw no label).", UserWarning,
+                stacklevel=external_stacklevel())
+        records = self.records[:_STREAM_LABEL_MAX]
+        places = [record.place for record in records]
+        left = [record.left for record in records]
+        was = list(places)
+        held = [record.held_until > frame for record in records]
+        barred = [record.left is not None
+                  and frame - record.left_at < self.no_return
+                  for record in records]
+        anchors = np.array([record.anchor for record in records],
+                           dtype=float).reshape(-1, 2)
+        sizes = np.array([record.size for record in records],
+                         dtype=float).reshape(-1, 2)
+        pads = np.array([record.pad for record in records], dtype=float)
+        _arrange_labels(places, left, anchors, sizes, pads, self.canvas,
+                        self.obstacles, strict=True, held=held,
+                        barred=barred,
+                        fresh=[not record.entered for record in records])
+        # a label that found no clear place (more labels than there is
+        # room for) is not looked at again on every update: it waits
+        # one glide's worth of updates, which bounds the work of a
+        # crowded stream
+        if len(records) > 1:
+            corners = np.array([place[0] for place in places], dtype=float)
+            reaches = np.array([place[1] for place in places])[:, None]
+            middle = anchors + corners * (reaches + 0.5 * sizes)
+            half = 0.5 * sizes + pads[:, None]
+            with np.errstate(invalid='ignore'):
+                meet = np.all(
+                    np.abs(middle[:, None, :] - middle[None, :, :])
+                    < half[:, None, :] + half[None, :, :], axis=2)
+            for k in np.flatnonzero(np.tril(meet, -1).any(axis=1)):
+                records[k].held_until = max(records[k].held_until,
+                                            frame + self.ease)
+        for record, before, place in zip(records, was, places):
+            if place != before:
+                record.place = place
+                target = _place_center_offset(place, record.size)
+                if record.entered:
+                    record.left, record.left_at = before, frame
+                    record.held_until = frame + self.rest
+                    if record.glide is None:
+                        self.moving.append(record)
+                    record.glide = (record.shown, target, frame)
+                else:
+                    # a new label is first drawn AT its place
+                    record.shown = target
+                    _set_label_offset(record.label, *target)
+            record.entered = True
+        self.dirty = False
+        waits = [record.held_until for record in records
+                 if record.held_until > frame]
+        self.look_again = min(waits) if waits else np.inf
+
+    def _glide(self, finish=False):
+        """Move every label that is on its way one update further (or,
+        with `finish`, all the way)."""
+        still = []
+        for record in self.moving:
+            start, target, since = record.glide
+            share = 1.0 if finish else (self.frame - since) / float(self.ease)
+            if share >= 1.0:
+                record.shown, record.glide = target, None
+            else:
+                eased = share * share * (3.0 - 2.0 * share)
+                record.shown = (
+                    round(start[0] + (target[0] - start[0]) * eased, 4),
+                    round(start[1] + (target[1] - start[1]) * eased, 4))
+                still.append(record)
+            if record.label.axes is self.ax \
+                    and not _label_user_placed(record.label):
+                _set_label_offset(record.label, *record.shown)
+        self.moving = still
+
+    def step(self, first_index=0):
+        """One update of the stream: drop the labels of samples before
+        `first_index` (they have left the displayed window), place the
+        labels that are shown, and move the gliding ones on. Call it
+        once for every frame the stream emits, before the frame is
+        drawn."""
+        ax = self.ax
+        self.frame += 1
+        if any(record.index < first_index or record.label.axes is not ax
+               for record in self.records):
+            gone = [record for record in self.records
+                    if record.index < first_index
+                    or record.label.axes is not ax]
+            dead = {id(record.label) for record in gone}
+            for record in gone:
+                if record.label.axes is ax:
+                    record.label.remove()
+            ax._hyp_labels_and_points = [
+                entry for entry in
+                (getattr(ax, '_hyp_labels_and_points', None) or [])
+                if id(entry[0]) not in dead]
+            self.records = [record for record in self.records
+                            if id(record.label) not in dead]
+            self.fresh = [record for record in self.fresh
+                          if id(record.label) not in dead]
+            self.moving = [record for record in self.moving
+                           if id(record.label) not in dead]
+            self.dirty = True
+        if not self.records:
+            self.fresh = []
+            return
+        _settle_axes_for_labels(ax)
+        signature = self._signature()
+        if signature != self.signature:
+            self.signature = signature
+            self._measure(self.records, everything=True)
+            self.dirty = True
+        elif self.fresh:
+            self._measure(self.fresh, everything=False)
+        self.fresh = []
+        if self.dirty or self.frame >= self.look_again:
+            self._arrange()
+        self._glide()
+
+    def finish(self):
+        """The stream has stopped: every label that was on its way is
+        put where it was going, so the figure that is returned is at
+        rest."""
+        self._glide(finish=True)
 
 
 def _connect_label_events(fig, ax):

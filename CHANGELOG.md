@@ -249,6 +249,16 @@ Follows 1.2.0. Animated trails now work with line-and-marker formats (GH
   without `hue=`, each in its own color, with their trail of faded
   markers. `animate='spin'` still shows every observation, as it should.
   Matplotlib backend (plotly already animated this call).
+- **A line-and-marker stream draws a marker on every sample.** With a
+  format such as `'-o'`, a streaming plot drew the first `stream_init`
+  samples twice, as a line without markers and as a markers-only copy,
+  and only the line was updated as samples arrived. So the samples that
+  streamed in had no marker, and the first samples' markers stayed where
+  they were for the whole stream, after `stream_window=` had scrolled
+  those samples away as well. The streamed line now carries the markers
+  itself, one per sample shown. A stream drawn into a caller's `ax=` that already
+  held lines also updates its own line now, not the first line of the
+  figure's first axes.
 
 ### Examples
 
@@ -269,6 +279,53 @@ Follows 1.2.0. Animated trails now work with line-and-marker formats (GH
   corner of the cube (GH #297).
 
 ### Added
+
+- **`labels=` on streaming plots.** A stream (an iterator, a generator or
+  a Hugging Face `IterableDataset` passed to `hyp.plot`) used to ignore
+  `labels=` with a warning. It now draws them, in 2-D and 3-D, on
+  matplotlib (the backend every stream is drawn with). A stream's length
+  is not known, so the labels are a callable `labels(index, sample)`,
+  called once per consumed sample (with dict samples it can read a text
+  field: `labels=lambda i, row: row['title']`), or an iterable consumed in
+  step with the samples: a list, tuple, array or Series, or an iterator or
+  generator, which may be endless. A list shorter than the stream labels
+  the first samples only. `None`, NaN or a blank string draws no label. A
+  bare string or a non-iterable raises `TypeError` before a sample is
+  consumed. `label_alpha=` is honored as well. Each label is attached to
+  its sample's drawn position on every frame, and with `stream_window=` it
+  is removed when its sample leaves the window. The labels of every
+  consumed sample are kept in `fig.stream_info['labels']` (`None` when no
+  `labels=` was given).
+
+  The samples to come are unknown, so the labels are placed once per
+  update, by the placement rule of every other label (off each other, off
+  the title, legends and figure texts, inside the canvas), from where the
+  update before left them. A label keeps its place while that place is
+  clear. A new label takes a free place and the labels already shown stay
+  where they are. A label that has to move (the figure was resized or
+  turned, or room came free for a label that had none) glides to the
+  nearest free place over about 0.4 seconds of frames, rests there for
+  three glides, and does not go back to the place it left for six glides
+  unless nothing else is free. The title, the axes and the display box are
+  laid out once, from the first `stream_init` samples. The same stream in
+  the same chunks saves the same frames: the labels are stepped once per
+  emitted frame, never per draw or by a clock.
+
+  Measured (3-D, a new label on every update): placing the labels of one
+  update takes a median 0.6 ms with 10 visible labels, 1.1 ms with 50 and
+  2.7 ms with 200. At most 300 visible labels are kept off each other (the
+  oldest); the others hang at the usual place, and a `UserWarning` says so
+  once. With 12 labels arriving next to each other no two overlap on any
+  frame and no label moves. When the view is turned in the middle of a
+  stream the labels overlap on the frame of the turn (the turn was not
+  known in advance) and are clear again within one glide, with no label
+  turning back. With `stream_window=` the number of labels on the figure
+  is bounded by the window. Without it every label stays, so memory grows
+  with the number of labeled samples.
+
+  The other arguments a stream does not implement (`legend=`, `caption=`,
+  `suptitle=`, `head_marker=`, `tail_linewidth=`, `trail_alpha=` and the
+  rest) are still ignored with the warning that names them.
 
 - **`head_marker=`: a marker at the reveal head (GH #299).**
   `hyp.plot(x, '-', animate=True, head_marker='o')` draws one marker on the

@@ -9799,6 +9799,50 @@ def plot(
         the size of the cube are laid out once, for the widest view of
         the whole animation, and do not move between frames.
 
+        On a STREAM (an iterator, generator or Hugging Face
+        ``IterableDataset`` as `x`; matplotlib) the number of samples is
+        not known, so `labels` is not one list with an entry per
+        observation. It is either a callable ``labels(index, sample)``,
+        called once per consumed sample with the sample's position in
+        the stream (from 0) and the sample as the stream yielded it
+        (so ``labels=lambda i, row: row['title']`` reads a text field of
+        a dict sample), or any iterable consumed in step with the
+        samples, one entry per sample: a list, tuple, array or Series,
+        or an iterator or generator, which may be endless. When an
+        iterable runs out the later samples have no label, so a list of
+        5 entries labels the first 5 samples. An entry or return value
+        of None (or NaN, or a blank string) draws no label; a bare
+        string or a non-iterable raises ``TypeError`` before a sample is
+        consumed. The per-dataset form and `label_anchor=` do not apply
+        to a stream. Each label is attached to its sample's drawn
+        position on every frame and, with `stream_window=`, is removed
+        when its sample leaves the window; the labels of every consumed
+        sample are kept in ``fig.stream_info['labels']``. The samples
+        to come are not known, so the labels cannot be planned ahead as
+        an animation's are. They are placed once per update, by the
+        same rule (off the other labels, the title, legends and figure
+        texts, inside the canvas), from where the update before left
+        them: a label keeps its place while that place is clear; a new
+        label takes a free place and the labels already shown stay
+        where they are; a label that has to move (the figure was
+        resized or turned, or room has come free for a label that had
+        none) glides to the nearest free place over about 0.4 seconds
+        of frames (at `frame_rate=`, at least 3 updates), rests there
+        for three glides, and does not go back to the place it left
+        for six glides unless no other place is free. The title, the
+        axes and the display box are laid out once, from the first
+        `stream_init` samples, and do not move. The same stream in the
+        same chunks saves the same frames: the placement depends on the
+        updates so far, never on a clock or on how often the figure is
+        drawn. An update's placement is cheap (about 0.5 ms with 10
+        visible labels, 1 ms with 50, 3 ms with 200, far less than
+        drawing them); at most 300 visible labels are kept off each
+        other (the oldest), the others hang at the usual place, and a
+        ``UserWarning`` says so once. Without `stream_window=` every
+        label stays on the figure, so memory grows with the number of
+        labeled samples; with it the number of labels is bounded by
+        the window.
+
     label_anchor : 'first', 'center', 'last', int, or None
         Where a PER-DATASET `labels=` list attaches its annotation inside
         each dataset: the first observation (default), the middle one, the
@@ -11998,7 +12042,10 @@ def plot(
         ``ValueError`` -- not yet supported for streams -- but accepted at
         their defaults), `save_path`, `show`, `frame_rate`, `markersize`,
         `linewidth`, `color`, `palette`, `title`, `size`, `elev`, `azim`,
-        and `ax`. Any other parameter explicitly set alongside a
+        `ax`, and `labels` with `label_alpha` (see `labels` for the
+        forms a stream's labels take: a callable ``labels(index,
+        sample)`` or an iterable consumed in step with the samples).
+        Any other parameter explicitly set alongside a
         streaming input is ignored, with a ``UserWarning`` naming it. In
         particular, streaming plots are always drawn with the matplotlib
         backend: a `backend=` request (e.g. ``backend='plotly'``) is
@@ -13335,7 +13382,7 @@ def plot(
             'stream_window', 'ndims', 'reduce', 'normalize', 'align',
             'cluster', 'n_clusters', 'save_path', 'show', 'frame_rate',
             'markersize', 'linewidth', 'color', 'palette', 'title',
-            'size', 'elev', 'azim', 'ax'}
+            'size', 'elev', 'azim', 'ax', 'labels', 'label_alpha'}
         _local_vals = locals()
         _stream_dropped = []
         for _pname, _param in inspect.signature(plot).parameters.items():
@@ -13359,8 +13406,9 @@ def plot(
                 "honored for streams: fmt, stream_init, stream_chunk, "
                 "stream_max, stream_window, ndims, reduce, normalize, "
                 "save_path, show, frame_rate, markersize, linewidth, "
-                "color, palette, title, size, elev, azim, ax (see the "
-                "stream_init docstring).", UserWarning, stacklevel=external_stacklevel())
+                "color, palette, title, size, elev, azim, ax, labels, "
+                "label_alpha (see the stream_init docstring).",
+                UserWarning, stacklevel=external_stacklevel())
         return plot_stream(
             x, fmt, stream_init=stream_init, stream_chunk=stream_chunk,
             stream_max=stream_max, stream_window=stream_window,
@@ -13369,7 +13417,8 @@ def plot(
             n_clusters=n_clusters, save_path=save_path, show=show,
             frame_rate=frame_rate, markersize=markersize,
             linewidth=linewidth, color=color, palette=palette, title=title,
-            size=size, elev=elev, azim=azim, ax=ax)
+            size=size, elev=elev, azim=azim, ax=ax, labels=labels,
+            label_alpha=resolved_label_alpha)
 
     # remember whether the USER supplied an axis before `_draw` reassigns the
     # local `ax` to the axis it created (used by the GH #148 close below).

@@ -254,11 +254,77 @@ def _fit_stream_models(head, reduce, ndims, normalize):
     return model.transform(head_n), project, model
 
 
+def _stream_label_source(labels):
+    """How a stream's samples get their labels: ``text(index, sample)``
+    returning the label of the sample `index` (a string) or None for no
+    label, or None when `labels` asks for no labels at all.
+
+    A stream's length is unknown, so `labels=` cannot be the one list
+    with an entry per observation that a static plot takes. It may be:
+
+    - a callable ``labels(index, sample)``, called once per consumed
+      sample, in order, with the sample's position in the stream (from
+      0) and the sample as the stream yielded it (so the label can be
+      read from a field of a dict sample that the numeric conversion
+      ignores);
+    - any iterable (a list, tuple, array or Series, or an iterator or
+      generator, which may be endless): consumed in step with the
+      samples, one entry per sample. When it runs out the later samples
+      have no label, so a list of 5 labels the first 5 samples.
+
+    An entry (or a return value) that is None, NaN or blank draws no
+    label; anything else is drawn as ``str(entry)``."""
+    if labels is None or labels is False:
+        return None
+    if isinstance(labels, (str, bytes)):
+        raise TypeError(
+            f'labels= for a streaming plot must be a callable '
+            f'labels(index, sample), or an iterable with one entry per '
+            f'sample (a list, an iterator, a generator), not the single '
+            f'string {labels!r}. Wrap it in a list: labels=[{labels!r}] '
+            'labels the first sample.')
+    if callable(labels):
+        entry = labels
+    else:
+        try:
+            entries = iter(labels)
+        except TypeError:
+            raise TypeError(
+                'labels= for a streaming plot must be a callable '
+                'labels(index, sample), or an iterable with one entry per '
+                f'sample (a list, an iterator, a generator); got '
+                f'{type(labels).__name__}.') from None
+        spent = []
+
+        def entry(index, sample):
+            """The next entry of the iterable (None once it has run out)."""
+            if spent:
+                return None
+            try:
+                return next(entries)
+            except StopIteration:
+                spent.append(True)
+                return None
+
+    def text(index, sample):
+        """The label of the sample `index`, or None for no label."""
+        value = entry(index, sample)
+        if value is None:
+            return None
+        if isinstance(value, (float, np.floating)) and np.isnan(value):
+            return None
+        value = str(value)
+        return value if value.strip() else None
+
+    return text
+
+
 def plot_stream(stream, fmt='-', stream_init=10000, stream_chunk=100,
                 stream_max=None, stream_window=None, ndims=3,
                 reduce='IncrementalPCA', normalize=None, align=None,
                 cluster=None, n_clusters=None, save_path=None, show=True,
-                frame_rate=30, **plot_kwargs):
+                frame_rate=30, labels=None, label_alpha=None,
+                **plot_kwargs):
     """Plot streaming data: fit models on the first ``stream_init`` samples,
     then project and draw each subsequent chunk of ``stream_chunk`` samples
     dynamically. Called by hyp.plot() when it detects a streaming input;
@@ -297,6 +363,21 @@ def plot_stream(stream, fmt='-', stream_init=10000, stream_chunk=100,
     values stay in ``stream_info['xform_data']``). Streamed trajectories are
     drawn as raw polylines (one vertex per sample) from the first frame
     on, without the interpolation/smoothing applied to static plots.
+
+    ``labels`` (see `_stream_label_source` for the forms it takes) labels
+    samples as they arrive. A label is attached to its sample's drawn
+    position (the clamped one for a sample outside the display box) and,
+    with ``stream_window``, removed when its sample leaves the window.
+    The labels are placed once per update by
+    `hypertools.plot.matplotlib_backend.StreamLabels`: causally (from
+    the updates so far), never from a clock or the number of draws, so
+    the same stream in the same chunks gives the same frames. The labels
+    drawn for every consumed sample are kept under
+    ``stream_info['labels']`` (None when no ``labels`` were given). A
+    ``labels`` callable or iterator that raises while the first
+    ``stream_init`` samples are labeled raises out of the call (the
+    figure does not exist yet); later it ends the stream like a source
+    error, with the samples before it kept.
 
     Streamed samples need >= 2 features to span a trajectory: a
     single-channel stream raises ``ValueError`` (unless it ends within
@@ -355,6 +436,8 @@ def plot_stream(stream, fmt='-', stream_init=10000, stream_chunk=100,
     if save_path is not None:
         # fail fast on unwritable formats, BEFORE any samples are consumed
         save_path, save_ext = _validate_stream_save_path(save_path)
+    # (and a `labels=` of a kind a stream cannot use)
+    label_text = _stream_label_source(labels)
 
     it = iter(stream)
     # the head is capped by stream_max too, so the documented sample cap
@@ -416,14 +499,41 @@ def plot_stream(stream, fmt='-', stream_init=10000, stream_chunk=100,
             "reduce/ndims so samples are projected to <= 3 dimensions "
             "(e.g. reduce='IncrementalPCA', ndims=3).")
 
+    # the head samples' labels, before the figure exists (a `labels=`
+    # callable that raises here raises out of the call with nothing to
+    # clean up)
+    texts = None
+    if label_text is not None:
+        texts = [label_text(i, r) for i, r in enumerate(head_rows)]
+
     # initial plot on the head (already normalized/reduced -> disable both).
     # Streams are always drawn with matplotlib: pin the render backend so a
     # plotly preference (Colab/Kaggle auto-detection, or
     # set_interactive_backend('plotly')) cannot turn this into a plotly
     # figure (fresh-Colab feature tour, 2026-09-11).
+    own_ax = plot_kwargs.get('ax')
+    lines_before = set(own_ax.lines) if own_ax is not None else set()
     fig = hyp_plot(head_red, fmt, reduce=None, normalize=None, ndims=ndims,
                    show=False, backend='matplotlib', **plot_kwargs)
-    artist = next(ln for ln in fig.axes[0].lines if len(ln.get_data()[0]))
+    drawn = [ln for ln in (own_ax if own_ax is not None
+                           else fig.axes[0]).lines
+             if ln not in lines_before and len(ln.get_data()[0])]
+    artist = drawn[0]
+    if head_red.shape[1] >= 2:
+        # a line-and-marker format ('-o') draws the head twice: the
+        # (interpolated) line, with its markers switched off
+        # (``markevery=[]``), and a markers-only artist at the
+        # observations. Only the first is updated as samples arrive, so
+        # the samples that streamed in had no marker at all, and the
+        # head's markers stayed where they were for the whole stream,
+        # after `stream_window` had scrolled them away as well (found
+        # while adding stream labels, 1.2.1). The streamed polyline has
+        # one vertex per sample, so it carries the markers itself.
+        for extra in drawn[1:]:
+            if extra.get_linestyle() in ('None', 'none', '', ' ') \
+                    and extra.get_marker() == artist.get_marker():
+                extra.remove()
+                artist.set_markevery(None)
 
     # the axis limits and the data->box transform are FROZEN from the head:
     # hyp.plot centered the head (column means) and scaled it into the
@@ -450,6 +560,32 @@ def plot_stream(stream, fmt='-', stream_init=10000, stream_chunk=100,
     raw = [head]
     accum = [head_red]
     n_seen = len(head_rows)
+
+    # labels (`labels=`): one annotation per labeled sample, at the
+    # sample's drawn position, placed once per update by the one
+    # placement rule of every hypertools label. A 1-D stream that ended
+    # within the head is a static picture with nothing to update.
+    tracker = None
+    if texts is not None and head_red.shape[1] >= 2:
+        from ..plot.matplotlib_backend import StreamLabels
+        tracker = StreamLabels(
+            artist.axes, frame_rate=frame_rate,
+            label_alpha=0.5 if label_alpha is None else label_alpha)
+
+        def _label(first, new_texts, points):
+            # the labels of the samples first, first + 1, ...
+            for k, (one, point) in enumerate(zip(new_texts, to_box(points))):
+                if one is not None:
+                    tracker.add(first + k, one, point)
+
+        _label(0, texts, head_red)
+    elif texts is not None and any(t is not None for t in texts):
+        warnings.warn(
+            'labels= is not drawn for a single-feature stream that ended '
+            'within the first stream_init samples (it is drawn as a static '
+            '1-D plot); materialize the stream (np.array(list(stream))) and '
+            'pass labels= to a static hyp.plot instead.', UserWarning,
+            stacklevel=3)
 
     interactive = show and matplotlib.get_backend().lower() not in (
         'agg', 'pdf', 'svg', 'ps')
@@ -497,6 +633,11 @@ def plot_stream(stream, fmt='-', stream_init=10000, stream_chunk=100,
             artist.set_data_3d(full[:, 0], full[:, 1], full[:, 2])
         else:
             artist.set_data(full[:, 0], full[:, 1])
+        if tracker is not None:
+            # ONE step of the labels per emitted frame (never per draw):
+            # the labels of samples that left the window go, the others
+            # are placed for this frame
+            tracker.step(n_seen - len(shown))
         if writer is not None:
             writer.grab_frame()
         if interactive:
@@ -555,10 +696,19 @@ def plot_stream(stream, fmt='-', stream_init=10000, stream_chunk=100,
             return
         chunk = np.vstack([row_to_vector(r) for r in rows])
         projected = project(chunk)
-        # append raw only after projection succeeds, so 'data' and
-        # 'xform_data' always describe the same samples
+        new_texts = None
+        if label_text is not None:
+            new_texts = [label_text(n_seen + k, r)
+                         for k, r in enumerate(rows)]
+        # append raw only after projection (and labeling) succeeds, so
+        # 'data', 'xform_data' and 'labels' always describe the same
+        # samples
         raw.append(chunk)
         accum.append(projected)
+        if new_texts is not None:
+            texts.extend(new_texts)
+            if tracker is not None:
+                _label(n_seen, new_texts, projected)
         n_seen += len(rows)
         clamped += _n_clamped(projected)
         post_head += len(projected)
@@ -655,7 +805,13 @@ def plot_stream(stream, fmt='-', stream_init=10000, stream_chunk=100,
     # box surface with no warning at all (1.1 visual review, L13b)
     _warn_if_clamped(_CLAMP_WARN_MIN_AT_END)
 
+    if tracker is not None:
+        # a label still on its way is put where it was going, so the
+        # returned figure is at rest
+        tracker.finish()
+
     fig.stream_info = {
+        'labels': texts,
         'data': [np.vstack(raw)],
         'xform_data': [np.vstack(accum)],
         'n_samples': n_seen,
