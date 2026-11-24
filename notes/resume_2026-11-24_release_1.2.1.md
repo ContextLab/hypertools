@@ -162,9 +162,37 @@ Written 2026-11-24 06:10 EST.
 - CI on 54b11252: see `gh pr checks 300`. If it was still running at
   suspend, nobody was watching it.
 
-## Unpushed
+## Final state at 07:55 EST, before the suspend
 
-The commit that adds this file (and changes one path in the session
-notes) may be local only. `git status -sb` shows whether `post-1.2.0` is
-ahead of `origin/post-1.2.0`. It changes no code; pushing it starts a new
-CI run.
+- Pushed head is still 54b11252. CI on it finished GREEN (16 test and
+  gate jobs; Read the Docs red as expected).
+- LOCAL ONLY, on `post-1.2.0`, not pushed (`git status -sb` shows the
+  branch ahead of `origin/post-1.2.0`):
+  - two notes commits;
+  - 5585bdd4 `legend=`, `caption=`, `suptitle=` on streaming plots (his
+    "Add the three now"); 21 new tests in `tests/test_stream_text_1_2_1.py`;
+  - a last commit fixing a helper in that new test file.
+- Full suite on 5585bdd4 (matplotlib 3.10): 9255 passed, 2 failed. Both
+  failures were `test_legend_caption_and_suptitle_are_drawn_once_and_stay_clear[2]`
+  and `[3]` with `ReferenceError: weakly-referenced object no longer
+  exists`: the new test file's `_live_figures` helper scanned
+  `gc.get_objects()` with `isinstance`, the same fault fixed earlier in
+  `tests/test_stream_labels_1_2_1.py` (7a5f997e). The helper now checks
+  `type()`. The two stream test files pass together (81 passed), but the
+  FULL SUITE HAS NOT BEEN RERUN after that fix. That is why nothing was
+  pushed.
+- Nothing is running: no suite, no agent, no detached process.
+
+### First steps of the next session
+
+1. Full suite on the local head (`.venv/bin/python -m pytest -q -p
+   no:cacheprovider`, about 40 minutes) and the stream, label, legend and
+   layout test files on matplotlib 3.11.
+2. If green: push `post-1.2.0`, wait for CI.
+3. Then release preparation, as he chose ("Prepare, then ask me"): final
+   gallery from the last commit, publish `docs-gallery-v1.2.1` and
+   `docs-notebooks/v1.2.1/`, record commit, dist, draft GitHub release,
+   mark PR #300 ready. STOP and ask him before master, tag and PyPI.
+4. The review page was built from 54b11252 and does not show the three
+   new stream arguments; a contact sheet of them existed only in the
+   temporary folder.

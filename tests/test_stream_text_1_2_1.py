@@ -43,7 +43,10 @@ def _points(n, d, seed=0):
 def _live_figures():
     gc.collect()
     return [thing for thing in gc.get_objects()
-            if isinstance(thing, matplotlib.figure.Figure)]
+            # `type()`, not `isinstance()`: a weak proxy of a collected
+            # object met in the scan raises ReferenceError when asked
+            # for its referent's class.
+            if issubclass(type(thing), matplotlib.figure.Figure)]
 
 
 def _legend(ax):
