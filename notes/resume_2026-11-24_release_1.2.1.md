@@ -251,11 +251,13 @@ The owner gave the go in this session at about 17:51 EST (dialog answer
 - Read the Docs: "stable" built from 3e614e9c and serves 1.2.1. The
   "latest" build triggered by the master push was cancelled after 171 s
   (not by this session; cause not known). Redelivering the master push
-  delivery of hook 694966045 started build 36150265; see the end of this
-  section for its result.
+  delivery of hook 694966045 started build 36150265, which finished
+  successfully; "latest" serves 1.2.1 too.
 - conda-forge: https://github.com/conda-forge/hypertools-feedstock/pull/3
-  (version and sha256 only; requirements unchanged; rerender requested).
-  Its merge is the owner's.
+  (version and sha256 only; requirements unchanged; the rerender service
+  found nothing to change; all three checks green). Merged 2026-11-24
+  23:05 EST (merge commit d7dfcd0f) through the browser, at the owner's
+  request in this session.
 
 ### Open after the release
 
@@ -265,8 +267,8 @@ The owner gave the go in this session at about 17:51 EST (dialog answer
   master run, and in all 12 test jobs of the tag run.
 - The old Read the Docs webhook 11883014
   (`readthedocs.org/api/v2/webhook/github/hypertools/`) answers HTTP 400
-  on every delivery; the newer hook 694966045 does the work. Removing
-  the old one is a repository setting, the owner's call.
+  on every delivery (56 of the last 56); the newer hook 694966045 does
+  the work. DONE: the owner said to remove it; deleted 2026-11-24.
 - New work goes on a branch (this one, `post-1.2.1`), not on `master`:
   a commit on `master` makes the release gate fail, because the gallery
   manifest names 3e614e9c.
