@@ -8,6 +8,13 @@ the Docs "stable", conda-forge). Follow the 1.2.0 notes below and read `1.2.1`
 for `1.2.0` (and `v1.2.1` for `v1.2.0`) in every command, with these
 differences:
 
+- **Step 6, GitHub Release title (every release):** the title is
+  `vX.Y.Z (Month, YYYY)`, for example `v1.2.1 (November, 2026)`, as on
+  every release since 0.1: `gh release edit vX.Y.Z --title "vX.Y.Z (Month, YYYY)"`
+  (or `--title` on `gh release create`). Not `HyperTools X.Y.Z`: 1.1.0,
+  1.2.0 and 1.2.1 were first published under that form and renamed on
+  2026-11-24. The annotated tag's message is separate and stays
+  `HyperTools X.Y.Z`.
 - **Step 6, Read the Docs:** "stable" follows the highest version tag by
   itself; confirm it instead of setting it.
 - **Step 6, PyPI check:** `https://pypi.org/pypi/hypertools/<version>/json`
