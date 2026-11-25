@@ -221,3 +221,56 @@ Written 2026-11-24 06:10 EST.
   gallery gates; dist; draft GitHub release; push the branch; PR #300
   body and ready. STOP before master, tag, PyPI: the owner chose
   "Prepare, then ask me".
+
+## RELEASED: HyperTools 1.2.1, 2026-11-24 (written about 23:15 EST)
+
+The owner gave the go in this session at about 17:51 EST (dialog answer
+"Release now (Recommended)").
+
+- Steps after cf791749: 27958d07 (a stream refuses a wrong `legend=` or
+  `legend_colors=` count before it takes a sample; a Codex finding on
+  5585bdd4), final gallery built from 27958d07 on local `master`
+  (sphinx `-W` exit 0, 52 notebooks, all 141 media files byte-identical
+  to the reviewed build), `docs-gallery-v1.2.1` (commit 2b70b573) and
+  `docs-notebooks/v1.2.1/` published, record commit 3e614e9c, dist built
+  from 3e614e9c.
+- `master` == tag `v1.2.1` == 3e614e9c (fast-forward push 17:52 EST; tag
+  pushed 20:35 EST). PR #300 shows as merged; GH #297 and #299 closed by
+  the push.
+- Master CI run 45504814803: 16 of 17 green on the first attempt; `test
+  (macos-latest, 3.10)` hit the 20-minute pytest-timeout in
+  `tests/test_subplots_plotly.py::test_ax_cell_grid_renders_to_png`
+  (main thread in plotly `write_image` -> kaleido `oneshot_async_run`,
+  waiting on headless Chrome). Rerun of that job: green. Tag CI run
+  45526884386: 17 of 17 green (it took 2 h 18 min; runners were slow).
+- PyPI: https://pypi.org/project/hypertools/1.2.1/ (wheel sha256
+  0ef2b8da..., sdist sha256 18d6019c..., equal to the GitHub release
+  assets). Fresh Python 3.12 environment: `pip install hypertools==1.2.1`
+  imports as 1.2.1 and draws a static and an animated plot.
+- GitHub release: https://github.com/ContextLab/hypertools/releases/tag/v1.2.1
+- Read the Docs: "stable" built from 3e614e9c and serves 1.2.1. The
+  "latest" build triggered by the master push was cancelled after 171 s
+  (not by this session; cause not known). Redelivering the master push
+  delivery of hook 694966045 started build 36150265; see the end of this
+  section for its result.
+- conda-forge: https://github.com/conda-forge/hypertools-feedstock/pull/3
+  (version and sha256 only; requirements unchanged; rerender requested).
+  Its merge is the owner's.
+
+### Open after the release
+
+- The headless-Chrome hang above is not explained. The test calls
+  plotly's `write_image` directly; nothing in it bounds the export. It
+  passed on the same commit in the PR run, in 11 other jobs of the
+  master run, and in all 12 test jobs of the tag run.
+- The old Read the Docs webhook 11883014
+  (`readthedocs.org/api/v2/webhook/github/hypertools/`) answers HTTP 400
+  on every delivery; the newer hook 694966045 does the work. Removing
+  the old one is a repository setting, the owner's call.
+- New work goes on a branch (this one, `post-1.2.1`), not on `master`:
+  a commit on `master` makes the release gate fail, because the gallery
+  manifest names 3e614e9c.
+- The review page (https://claude.ai/artifact/AYEuVQguA8jJEB9jq2yWC6)
+  was built from 54b11252 and does not show the three stream arguments.
+- Agent worktree branches `worktree-agent-a054066ab320401bb` and
+  `worktree-agent-abf3e80dedb9e2214` are merged and can be removed.
