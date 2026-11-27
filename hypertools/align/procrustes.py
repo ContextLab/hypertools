@@ -185,13 +185,14 @@ def align(source, target, scaling=True, reflection=True, reduction=False, obliqu
             # https://en.wikipedia.org/wiki/Orthogonal_Procrustes_problem
             # for more and info and original references, see
             # https://doi.org/10.1007/BF02289451
-            nsv = len(s)
-            s[:-1] = 1
-            s[-1] = np.linalg.det(t)
-            t = np.dot(u[:, :nsv] * s, vh)
-
-        # figure out scale and final translation
-        ss = sum(s)
+            d = np.ones_like(s)
+            if np.linalg.det(t) < 0:
+                d[-1] = -1.0
+                t = np.dot(vh.T * d, u.T)
+            ss = float(np.sum(s * d))
+        else:
+            # figure out scale and final translation
+            ss = float(np.sum(s))
 
     # if we were to collect standardized distance
     # std_d = 1 - sD**2
