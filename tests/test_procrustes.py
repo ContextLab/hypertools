@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from hypertools.align.procrustes import procrustes
+from hypertools.align.procrustes import align, procrustes
 from hypertools.io.load import load
 
 
@@ -128,3 +128,44 @@ def test_procrustes_reduction_true_projects_to_lower_dimension():
     # the target far better than an unrelated matrix of the same shape
     baseline_err = np.linalg.norm(rng.rand(*target.shape) - target)
     assert err < 0.25 * baseline_err
+
+
+@pytest.mark.parametrize('scaling', [True, False])
+def test_procrustes_reflection_false_recovers_proper_rotation(scaling):
+    rng = np.random.RandomState(7)
+    source = rng.randn(20, 3)
+    rot = np.array([[0.0, -1.0, 0.0],
+                    [1.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0]])
+    target = (2.5 if scaling else 1.0) * (source @ rot)
+
+    proj = align(source, target, scaling=scaling, reflection=False)
+    out = procrustes(source, target, scaling=scaling, reflection=False,
+                     format_data=False)
+
+    assert np.linalg.det(proj) > 0
+    assert np.allclose(out, target, atol=1e-6)
+
+
+def test_procrustes_reflection_false_2d_reflected_optimal_rotation_and_scale():
+    rng = np.random.RandomState(11)
+    source = rng.randn(30, 2)
+    target = source @ np.array([[1.0, 0.0], [0.0, -1.0]])
+
+    proj = align(source, target, scaling=True, reflection=False)
+    out = source @ proj
+
+    # Compare against the closed-form optimal SO(2) scaled rotation (Umeyama 1991)
+    thetas = np.linspace(0.0, 2.0 * np.pi, 3600, endpoint=False)
+    best_err = np.inf
+    for theta in thetas:
+        rot = np.array([[np.cos(theta), -np.sin(theta)],
+                        [np.sin(theta), np.cos(theta)]])
+        rotated = source @ rot
+        scale = np.sum(rotated * target) / np.sum(rotated ** 2)
+        err = np.linalg.norm(scale * rotated - target)
+        best_err = min(best_err, err)
+
+    assert np.linalg.norm(proj) > 0
+    assert np.linalg.det(proj) > 0
+    assert np.isclose(np.linalg.norm(out - target), best_err, rtol=1e-4)
